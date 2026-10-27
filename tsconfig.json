@@ -9,6 +9,7 @@
     "noEmit": true,
     "types": ["bun"],
     "paths": {
+      "@/test/*": ["./test/*"],
       "@/*": ["./src/*"]
     }
   },

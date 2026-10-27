@@ -45,9 +45,21 @@ bun run build
 bun run check
 ```
 
-`bun run check` runs all of these checks except installation. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The `/health` response is based on direct inspection of the pinned listmonk handler; the reference runner and dual-server contract harness are deferred to M0.2 and M0.5.
+`bun run check` runs all of these checks except installation. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The `/health` response is based on direct inspection of the pinned listmonk handler; the dual-server contract harness is planned for M0.5.
 
 To enable the repository-local pre-commit formatting check, run `bun run hooks:install` once in this repository.
+
+## Development reference
+
+The opt-in reference harness runs the pinned upstream listmonk release against disposable Postgres, Mailpit and a webhook receiver. It requires Git, Docker and network access; it is separate from the SQLite application and its compiled executable.
+
+```sh
+bun run reference:prepare
+bun run reference:smoke
+bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
+```
+
+See the [reference guide](test/reference/README.md) for supported platforms, credentials, exported endpoints, cleanup and validation. The normal checks above need neither Docker nor reference downloads.
 
 ## Planned
 

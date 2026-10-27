@@ -64,6 +64,8 @@ bun run build
 bun run check
 ```
 
-`bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The M0.1 bootstrap tests exercise the compiled executable from a temporary directory; `/health` was checked against the pinned upstream handler by source inspection. M0.2 and M0.5 will add the reference runner and dual-server contract suite.
+`bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The M0.1 bootstrap tests exercise the compiled executable from a temporary directory; `/health` was checked against the pinned upstream handler by source inspection. The opt-in M0.2 reference runner and smoke checks are documented in `test/reference/README.md`; M0.5 will add the dual-server contract suite.
 
 Changes to sending, scheduling or storage must include before/after measurements, stored under `docs/perf/`.
+
+The development reference requires Git, Docker and access to the pinned GitHub releases and Postgres image. Run `bun run reference:prepare`, `bun run reference:smoke`, or `bun run reference:run -- <command> [args...]`. These are separate from `bun run check`.
