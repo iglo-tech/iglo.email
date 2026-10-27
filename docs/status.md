@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.3's implementation, local acceptance and CI are complete; both independent council round 1 reviewers are running.
+Both M0.3 council members requested changes. The lead is fixing three boundary bugs and recording the accepted positive-ID-overflow API difference before a fresh review.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.3 | council | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 1 | Head `644411b3aa798703953002dec1641559e0947f33`. All CI jobs passed, including focused server reference cases and the Linux lifecycle. Council: Opus medium and fresh Sol xhigh. [Brief](briefs/M0.3.md). |
+| M0.3 | fix | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 1 | Both CHANGES at `644411b3aa798703953002dec1641559e0947f33`: route sort precedence, empty JSON binding, literal dollar interpolation, and an undocumented ID-overflow difference. Lead fixes in progress; D17 accepts the overflow 400. [Brief](briefs/M0.3.md). |
 
 Completed worker: [M0.3: Shared HTTP and application contracts — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Reference cases were committed first at `0b732f7017f0ec46b41bf6fa0d49d63459bf4363` and passed against the pinned live upstream before implementation. Local focused server tests, compiled fixtures, full check (18 tests / 156 assertions) and existing reference smoke passed. All CI jobs are green for the exact head. The existing PR #3 watch remains active; no merged-task PR watch is active.
 
@@ -23,7 +23,7 @@ Scope review: `POST /health` returns the verified upstream 404 status but a plai
 
 ### Council round 1
 
-Both reviewers independently check exact head `644411b3aa798703953002dec1641559e0947f33`, including the live server reference cases, HTTP/compiled fixture tests and existing reference smoke. Completion wakes this lead; do not poll running delegates. The existing PR #3 watch remains active.
+Both reviewers completed with CHANGES for exact head `644411b3aa798703953002dec1641559e0947f33`: [Opus findings](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453342721), [Sol finding](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453344337). All prior acceptance and CI checks passed. The lead is adding public HTTP regressions and reference cases before fixing route-order precedence, empty-body binding and literal translation replacement. Positive numeric ID overflow is accepted as a deliberate 400 rather than upstream's database-error 500; D17 and the API-policy entry are included in the PR fix. The existing PR #3 watch remains active. A changed head requires both fresh council verdicts.
 
 - [M0.3 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa20f861c-2f11-4b66-a1d3-deedcca621e5); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa20f861c-2f11-4b66-a1d3-deedcca621e5`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa20f861c-2f11-4b66-a1d3-deedcca621e5`.
 - [M0.3 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A6cb2330e-15e6-4507-8e5f-8d32700185e7); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A6cb2330e-15e6-4507-8e5f-8d32700185e7`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A6cb2330e-15e6-4507-8e5f-8d32700185e7`.
@@ -50,6 +50,8 @@ Decisions and plan changes made by agents while the owner was away.
 The owner started the port on 2026-10-27 and set the model assignments: GPT-6.1 Sol at xhigh for the lead, GPT-6.1 Terra at max for all implementation and helpers, and Claude Opus 5.5 at medium only as a council member alongside a fresh Sol xhigh reviewer. See [work plan](design/11-work-plan.md#models).
 
 Owner correction on 2026-10-27: recurring automation must remain unbound to every thread. The dedicated chief-of-staff thread handles day-to-day work; independent scheduled runs provide recovery through the existing lock and status state.
+
+D17 (2026-10-27, recorded in PR #3 for merge): reject positive route IDs above the signed 64-bit maximum with 400 `invalid ID` before storage. Upstream ignores the conversion overflow and leaks a database error as 500. This gives callers an accurate client error without exposing storage details; the focused reference and normal HTTP cases mark the deliberate difference.
 
 ## Paused until
 
