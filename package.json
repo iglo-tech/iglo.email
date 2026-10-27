@@ -10,7 +10,10 @@
     "format:check": "oxfmt --check .",
     "hooks:install": "git config --local core.hooksPath .githooks",
     "lint": "oxlint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "reference:prepare": "bun test/reference/prepare.ts",
+    "reference:run": "bun test/reference/run.ts",
+    "reference:smoke": "bun test/reference/smoke.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
