@@ -48,6 +48,40 @@ function json(body: unknown, status = 200) {
 }
 
 describe("contract runner public boundary", () => {
+  test.each([
+    ["encoded-dot", "GET /fixture/id/%2E"],
+    ["encoded-dot-dot", "GET /fixture/id/%2E%2E"],
+    ["api-method-mismatch", "POST /api/health"],
+  ])("fixture case %s detects a nonconforming route response", async (id, expectedTarget) => {
+    const seen: string[] = [];
+    const target = createServer((request, response) => {
+      seen.push(`${request.method} ${request.url}`);
+      const preservedDot = /^\/fixture\/id\/%2E(?:%2E)?$/.test(request.url ?? "");
+      const wrongMethod = request.method === "POST" && request.url === "/api/health";
+      response.writeHead(preservedDot ? 400 : wrongMethod ? 405 : 404, {
+        "content-type": "application/json",
+      });
+      response.end(
+        preservedDot
+          ? '{"message":"invalid ID"}\n'
+          : wrongMethod
+            ? '{"message":"Method Not Allowed"}\n'
+            : '{"message":"404 unknown endpoint"}\n',
+      );
+    });
+    await new Promise<void>((ready) => target.listen(0, "127.0.0.1", ready));
+    try {
+      const address = target.address();
+      if (!address || typeof address === "string") throw new Error("missing address");
+      const result = await cli([...options(`http://127.0.0.1:${address.port}`), "--case", id]);
+      expect(result.code).not.toBe(0);
+      expect(result.output).toContain(`FAIL ${id}`);
+      expect(seen).toEqual([expectedTarget]);
+    } finally {
+      await new Promise<void>((done) => target.close(() => done()));
+    }
+  });
+
   test("selects cases explicitly and sends Basic and token credentials", async () => {
     const sent: string[] = [];
     const target = server((request) => {
