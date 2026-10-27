@@ -14,6 +14,7 @@ interface ReferenceCase {
   body?: string;
   requestContentType?: string | null;
   authenticated?: boolean;
+  auth?: "basic" | "token" | "bad-token";
   deliberateDifference?: string;
   rawPath?: boolean;
   status: number;
@@ -28,6 +29,30 @@ const cases: ReferenceCase[] = [
     status: 200,
     contentType: "application/json",
     response: '{"data":true}\n',
+  },
+  {
+    label: "protected health Basic",
+    path: "/api/health",
+    auth: "basic",
+    status: 200,
+    contentType: "application/json",
+    response: '{"data":true}\n',
+  },
+  {
+    label: "protected health token",
+    path: "/api/health",
+    auth: "token",
+    status: 200,
+    contentType: "application/json",
+    response: '{"data":true}\n',
+  },
+  {
+    label: "protected health bad token",
+    path: "/api/health",
+    auth: "bad-token",
+    status: 403,
+    contentType: "application/json",
+    response: '{"message":"invalid API credentials"}\n',
   },
   {
     label: "unknown API",
@@ -207,7 +232,13 @@ const cases: ReferenceCase[] = [
 
 for (const item of cases) {
   const headers = new Headers();
-  if (item.authenticated) headers.set("Authorization", `Basic ${btoa(`${user}:${token}`)}`);
+  if (item.authenticated || item.auth === "basic") {
+    headers.set("Authorization", `Basic ${btoa(`${user}:${token}`)}`);
+  } else if (item.auth === "token") {
+    headers.set("Authorization", `token ${user}:${token}`);
+  } else if (item.auth === "bad-token") {
+    headers.set("Authorization", `token ${user}:invalid-synthetic-token`);
+  }
   if (item.requestContentType !== undefined) {
     if (item.requestContentType !== null) headers.set("Content-Type", item.requestContentType);
   } else if (item.body !== undefined) headers.set("Content-Type", "application/json");
