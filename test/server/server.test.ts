@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createRealClock } from "@/clock";
 import { createTranslation, Translation } from "@/i18n/i18n";
 import { startFixture, TestClock } from "@/test/server/fixture";
+import { rawGet } from "@/test/server/raw-request";
 
 const fixtures: ReturnType<typeof startFixture>[] = [];
 function fixture(options: Parameters<typeof startFixture>[0] = {}) {
@@ -227,6 +228,17 @@ describe("shared HTTP contracts", () => {
         status: 400,
         contentType: "application/json",
         body: '{"message":"invalid ID"}\n',
+      });
+    }
+  });
+
+  test("D18 deliberate difference: Bun normalizes encoded dot segments before routing", async () => {
+    const { origin } = fixture();
+    for (const id of ["%2E", "%2E%2E"]) {
+      expect(await rawGet(origin, `/api/lists/${id}`)).toMatchObject({
+        status: 404,
+        contentType: "application/json",
+        body: '{"message":"404 unknown endpoint"}\n',
       });
     }
   });

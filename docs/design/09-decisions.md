@@ -121,3 +121,12 @@ Decided by agents on 2026-10-27, for owner review.
 - **Evidence:** pinned upstream `cmd/handlers.go:hasID` ignores the error from `strconv.Atoi`. The live reference request `GET /api/lists/9223372036854775808` saturates to `9223372036854775807`, reaches storage, and returns a 500 exposing a Postgres integer-range error. The iglo.email ID helper rejects the original value as invalid input.
 - **Why:** callers get an accurate client-error status, no database implementation details are exposed, and an invalid ID causes no unnecessary database work.
 - **Considered:** reproducing the ignored conversion error and resulting database failure. Rejected because it adds no useful contract for callers and conflicts with the SQLite signed 64-bit ID boundary.
+
+## D18. Use Bun's normalized request path for dot segments
+
+Decided by agents on 2026-10-27, for owner review.
+
+- **Decision:** route the normalized URL supplied by `Bun.serve`. Literal and percent-encoded dot segments are removed before application handlers see `Request.url`; the canonical target determines the response. Route middleware, including future authentication and permissions, applies to that selected target. Other escaped parameter spellings keep the default Go/Echo behavior where the runtime exposes them.
+- **Evidence:** exact HTTP request targets `/api/lists/%2E` and `/api/lists/%2E%2E`, sent without client URL normalization, return upstream 400 `invalid ID`. Bun presents their paths to handlers as `/api/lists/` and `/api/`, which currently return the API 404 fallback. The focused reference and normal HTTP fixture cases mark this as D18 and use an exact-target HTTP client.
+- **Why:** the required transport is `Bun.serve`, which does not expose the original dot-segment spelling to handlers. Using its canonical URL keeps routing and middleware on one interpretation and avoids owning a second HTTP transport/parser solely for invalid ID spellings. Ordinary URL-based clients already normalize these targets.
+- **Considered:** restoring the original request target in the application router. It is unavailable at that boundary. Replacing the HTTP transport or adding a raw-socket front end would violate the chosen stack and add substantial protocol code for no supported identifier use case.

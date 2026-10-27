@@ -1,5 +1,7 @@
 // Focused reference cases for listmonk's cmd/handlers.go and cmd/lists.go.
 // Run via reference:run; credentials and service origin are synthetic per run.
+import { rawGet } from "@/test/server/raw-request";
+
 const origin = process.env.REFERENCE_URL;
 const user = process.env.REFERENCE_API_USER;
 const token = process.env.REFERENCE_API_TOKEN;
@@ -13,6 +15,7 @@ interface ReferenceCase {
   requestContentType?: string | null;
   authenticated?: boolean;
   deliberateDifference?: string;
+  rawPath?: boolean;
   status: number;
   contentType: string | null;
   response?: string;
@@ -79,6 +82,17 @@ const cases: ReferenceCase[] = [
     status: 400,
     contentType: "application/json",
     response: '{"message":"invalid ID"}\n',
+  })),
+  ...["%2E", "%2E%2E"].map((id): ReferenceCase => ({
+    label: `encoded dot segment ${id}`,
+    path: `/api/lists/${id}`,
+    rawPath: true,
+    authenticated: true,
+    status: 400,
+    contentType: "application/json",
+    response: '{"message":"invalid ID"}\n',
+    deliberateDifference:
+      "D18: Bun normalizes dot segments before routing; iglo.email matches the canonical target",
   })),
   {
     label: "invalid field",
@@ -167,14 +181,22 @@ for (const item of cases) {
   if (item.requestContentType !== undefined) {
     if (item.requestContentType !== null) headers.set("Content-Type", item.requestContentType);
   } else if (item.body !== undefined) headers.set("Content-Type", "application/json");
-  const result = await fetch(new URL(item.path, origin), {
-    method: item.method ?? "GET",
-    headers,
-    ...(item.body === undefined ? {} : { body: item.body }),
-    signal: AbortSignal.timeout(5000),
-  });
-  const body = await result.text();
-  const contentType = result.headers.get("content-type");
+  const result = item.rawPath
+    ? await rawGet(origin, item.path, Object.fromEntries(headers))
+    : await (async () => {
+        const response = await fetch(new URL(item.path, origin), {
+          method: item.method ?? "GET",
+          headers,
+          ...(item.body === undefined ? {} : { body: item.body }),
+          signal: AbortSignal.timeout(5000),
+        });
+        return {
+          status: response.status,
+          contentType: response.headers.get("content-type"),
+          body: await response.text(),
+        };
+      })();
+  const { body, contentType } = result;
   if (
     result.status !== item.status ||
     contentType !== item.contentType ||
@@ -189,5 +211,3 @@ for (const item of cases) {
   );
   if (item.deliberateDifference) console.log(`Deliberate difference ${item.deliberateDifference}`);
 }
-
-export {};

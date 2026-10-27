@@ -5,6 +5,7 @@ export interface RequestContext {
   readonly app: App;
   readonly request: Request;
   readonly url: URL;
+  // Preserve the default Go/Echo path spelling, without extra parameter unescaping.
   readonly params: Readonly<Record<string, string>>;
   id?: number | bigint;
 }

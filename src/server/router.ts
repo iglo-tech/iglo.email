@@ -1,4 +1,5 @@
 // Routing and middleware boundaries are adapted from listmonk's cmd/handlers.go.
+// Path selection follows Echo v5.4.0 router.go and Go 1.27.2 net/url.setPath.
 import type { App } from "@/app";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { errorResponse, HttpError } from "@/server/response";
@@ -44,6 +45,22 @@ function precedence(a: Route, b: Route): number {
   return 0;
 }
 
+function routingPath(path: string): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+  // Go retains RawPath only when the spelling differs from its default escape.
+  // Echo prefers that original path and does not further unescape parameters.
+  const escaped = encodeURI(decoded).replace(
+    /[!'()*?#]/g,
+    (value) => `%${value.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return escaped === path ? decoded : path;
+}
+
 function match(route: Route, parts: string[]): Record<string, string> | undefined {
   if (parts.length !== route.segments.length) return undefined;
   const params: Record<string, string> = Object.create(null);
@@ -54,11 +71,7 @@ function match(route: Route, parts: string[]): Record<string, string> | undefine
       if (part !== segment.literal) return undefined;
     } else {
       if (!part) return undefined;
-      try {
-        params[segment.name] = decodeURIComponent(part);
-      } catch {
-        return undefined;
-      }
+      params[segment.name] = part;
     }
   }
   return params;
@@ -94,7 +107,8 @@ export class Router {
 
   async handle(app: App, request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const parts = url.pathname === "/" ? [] : url.pathname.slice(1).split("/");
+    const path = routingPath(url.pathname);
+    const parts = path === "/" ? [] : path.slice(1).split("/");
     let selected: Route | undefined;
     let params: Record<string, string> = {};
     for (const route of this.routes) {
