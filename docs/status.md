@@ -8,7 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No active task. M0.1 merged; the lead is preparing M0.2 next, following the serial M0 order.
+M0.2 is briefed and ready for its Terra max worker, following the serial M0 order.
+
+| ID | Stage | Branch / PR | Council round | Notes |
+|---|---|---|---|---|
+| M0.2 | brief | `task/M0.2-upstream-reference`, no PR | 0 | [Brief](briefs/M0.2.md). Pinned upstream/native Mailpit, disposable Postgres, local webhook capture, owned-resource cleanup and Linux reference CI. |
 
 ## Automation
 
