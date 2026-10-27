@@ -15,13 +15,14 @@ test("compiled TSX escapes by default and rejects malformed values", async () =>
     );
     const [code, error] = await Promise.all([build.exited, new Response(build.stderr).text()]);
     if (code !== 0) throw new Error(`TSX fixture build failed: ${error}`);
-    child = Bun.spawn([executable], {
+    const started = Bun.spawn([executable], {
       cwd: directory,
       env: { PATH: "" },
       stdout: "pipe",
       stderr: "pipe",
     });
-    const reader = child.stdout.getReader();
+    child = started;
+    const reader = started.stdout.getReader();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const chunk = await Promise.race([
       reader.read(),
