@@ -1,6 +1,6 @@
 # Chief of staff runbook
 
-The lead role from the [work plan](design/11-work-plan.md), run by a scheduled agent every 45 minutes. Each run starts with no memory: this file, the work plan and [`status.md`](status.md) are the whole state. The owner is away and is never asked anything; decide, log, continue.
+The lead role from the [work plan](design/11-work-plan.md), run in its own top-level chief-of-staff thread by a scheduled agent every 45 minutes. Keep implementation coordination and the recurring schedule in that dedicated thread. Each run starts with no memory: this file, the work plan and [`status.md`](status.md) are the whole state. The owner is away and is never asked anything; decide, log, continue.
 
 ## Each run
 
@@ -37,7 +37,7 @@ Call `orchestrator_capabilities` once per thread before the first `delegate_task
 | Terra worker, fixer or helper | `{ "providerInstanceId": "codex", "model": "gpt-6.1-terra", "options": { "reasoningEffort": "max" } }` |
 | Opus council member only | `{ "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": { "effort": "medium" } }` |
 
-The recurring lead schedule is bound to the Sol xhigh thread. Claude Opus 5.5 is never used for implementation or lead work.
+The recurring lead schedule is bound to the dedicated Sol xhigh chief-of-staff thread. Claude Opus 5.5 is never used for implementation or lead work.
 
 ### Worker instructions
 
