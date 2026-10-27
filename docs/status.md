@@ -8,12 +8,17 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is merged and its PR watch is stopped. M0.6 has a committed [brief](briefs/M0.6.md); worker dispatch is next. The scope includes the deferred public HTML 404 and compiled assets; the admin shell is verified in a labelled compiled test fixture until M1/M4 supply authentication and screens. No M0.6 worker or PR exists yet.
+M0.5 is merged and its PR watch is stopped. M0.6 has a Terra max worker running from the committed [brief](briefs/M0.6.md). The scope includes the deferred public HTML 404 and compiled assets; the admin shell is verified in a labelled compiled test fixture until M1/M4 supply authentication and screens. No M0.6 PR exists yet. Completion wakes this lead; do not poll or start a duplicate worker.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | brief | Planned task/M0.6-jsx-assets; no PR | 0 | [Brief](briefs/M0.6.md) reads pinned admin/public source, authorizes listed browser build dependencies and narrow shared HTTP/contract integration; production auth/domain routes stay deferred. |
+| M0.6 | worker | Planned task/M0.6-jsx-assets; no PR | 0 | [Brief](briefs/M0.6.md) reads pinned admin/public source, authorizes listed browser build dependencies and narrow shared HTTP/contract integration; production auth/domain routes stay deferred. |
 
+
+Worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 
 ## Automation
 
