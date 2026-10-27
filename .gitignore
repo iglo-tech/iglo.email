@@ -1,0 +1,10 @@
+# Upstream reference checkout and binaries (M0.2)
+/upstream/
+
+# Never commit production data or backups
+/data/
+*.db
+*.db-wal
+*.db-shm
+/*.zip
+/*.sql.gz

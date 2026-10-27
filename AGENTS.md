@@ -20,11 +20,12 @@ Design phase. The design is in `docs/design/` and is the source of truth until c
 - Background work is rows in SQLite processed by in-process loops (`docs/design/02-architecture.md`). Do not add a job queue, workflow engine or Effect without updating `docs/design/09-decisions.md` first.
 - Admin UI and public pages are server-rendered TSX with the in-house JSX runtime. Client-side interactivity uses Alpine.js and Oat, as in listmonk v7. No client framework.
 - User-authored email templates use Liquid (LiquidJS).
-- One compiled executable is the only release artifact. Do not add Docker, compose, or parallel distribution paths.
+- One compiled executable is the only release artifact until 1.0. Do not add Docker, compose, or parallel distribution paths. An official Docker image that wraps the same executable is planned after 1.0 (D3). The dev-only upstream reference harness may run Postgres in a container.
 
 ## Rules
 
 - Use `@/` path-alias imports everywhere, including tests. No relative imports (`./`, `../`) unless a tool cannot resolve aliases.
+- Keep module and function names close to listmonk's where that helps side-by-side review. Each ported file names its upstream source file in a header comment.
 - Import from the module that owns a symbol. No barrel files, re-export layers, service locators or generic registries.
 - No process-global state. Modules receive the database, settings and clock they use. Every loop takes an injected clock.
 - A module owns its tables and SQL. Other modules call its functions instead of querying its tables.
@@ -39,10 +40,15 @@ Design phase. The design is in `docs/design/` and is the source of truth until c
 ## Tests
 
 - Tests verify observable behavior through public boundaries: HTTP API, rendered pages, emails received by the SMTP sink (Mailpit), and webhook deliveries received by a test server. Never read source files as text or assert on implementation details.
-- Upstream listmonk is the reference for ported behavior: the API contract suite runs against both.
+- Upstream listmonk v7.0.0-beta.1 is the reference for ported behavior: the API contract suite runs against both. Read upstream source from a local checkout at the pinned commit, never from memory. Write the contract tests for an endpoint first and run them against upstream, then port the code.
 - Time-dependent behavior is tested by advancing the injected clock, not by sleeping.
 - Use `agent-browser` to verify the admin UI and public pages.
 - Store manual test data and test credentials in regular `.md` files in the repository.
+- Never commit production data, backups, real credentials or anything taken from them. Tests never use real SMTP servers or real webhook endpoints.
+
+## Work split
+
+The port is split into tasks in `docs/design/11-work-plan.md`. A task's worker follows its brief and the worker rules there, and changes only the modules the task owns. The chief of staff follows `docs/chief-of-staff.md` and keeps `docs/status.md` current. Agents decide and merge without the owner; decisions are logged for later review.
 
 ## Verification
 

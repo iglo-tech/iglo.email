@@ -20,8 +20,8 @@ Decided 2026-10-27.
 
 ## D3. Bun, TypeScript, one executable
 
-- **Decision:** Bun ≥ 1.4 and TypeScript, shipped as one compiled executable. No Docker image.
-- **Why:** the same stack and release model as iglo.monitor. Bun's built-in server, SQLite, password hashing and bundler remove most of the dependencies a Node port would need.
+- **Decision:** Bun ≥ 1.4 and TypeScript, shipped as one compiled executable. Until 1.0, the executable is the only release artifact. After 1.0, an official Docker image that wraps the same executable is added (updated 2026-10-27).
+- **Why:** the same stack and release model as iglo.monitor. Bun's built-in server, SQLite, password hashing and bundler remove most of the dependencies a Node port would need. The owner runs services in containers, so an image is wanted, but it only wraps the executable and does not hold up the first release.
 
 ## D4. SQLite only
 
@@ -102,3 +102,11 @@ Decided 2026-10-27.
 - **Decision:** each product runs its own iglo.email instance and database.
 - **Why:** the subscriber table, `external_id`, lists, unsubscribes and the frequency cap all assume one audience. Sharing an instance across products would mix consent and IDs. An instance is one executable and one file, so running several is cheap.
 - **Considered:** multi-tenant workspaces. Rejected for v1 as a large change to every table and query.
+
+## D16. Agents do the work, the owner reviews later
+
+Decided 2026-10-27.
+
+- **Decision:** the port is split into tasks ([Work plan](11-work-plan.md)) that agents do one at a time. A scheduled lead (the chief of staff, [runbook](../chief-of-staff.md)) briefs a worker per task, has every PR reviewed by a two-model council (Claude Opus 5.5 and GPT-6.1 Sol) and merges only when both approve the same commit. Mechanical and token-heavy work goes to Claude Haiku 5.5. Agents decide design questions themselves and record them here as "decided by agents, for owner review". The owner is not asked for approvals.
+- **Why:** the owner sets direction and is away for long stretches. Two independent reviewers and upstream as the reference catch mistakes before merge, which matters more than speed: one task at a time, a paced schedule, and a pause on usage limits instead of retries.
+- **Considered:** owner approval per PR or per wave, which stalls work while the owner is away; several workers in parallel from the start, which spends the usage limit fast and multiplies conflicts in shared contracts before they are stable.

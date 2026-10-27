@@ -14,12 +14,13 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 | 8 | [Port plan](08-port-plan.md) | Upstream baseline, milestones, testing strategy |
 | 9 | [Decisions](09-decisions.md) | Short decision records with reasons |
 | 10 | [Open questions](10-open-questions.md) | What still needs the owner |
+| 11 | [Work plan](11-work-plan.md) | Tasks, briefs, council review and merge, run by agents |
 
 ## Decisions at a glance
 
 - Independent rewrite derived from listmonk **v7.0.0-beta.1** (`6fcd95f`), not an upstream-tracking fork.
 - **AGPL-3.0**, inherited from listmonk.
-- **Bun ≥ 1.4, TypeScript, one compiled executable.** No Docker.
+- **Bun ≥ 1.4, TypeScript, one compiled executable.** An official Docker image wrapping it follows after 1.0.
 - **SQLite only** (`bun:sqlite`, WAL), one process.
 - **Durable work is rows in SQLite** processed by in-process loops. No Postgres, Redis, BullMQ or workflow engine.
 - **listmonk's HTTP API is kept** for ported endpoints, so existing SDKs and integrations keep working. New features get new endpoints.
@@ -30,4 +31,4 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 
 ## Status
 
-Design phase. No code. The [port plan](08-port-plan.md) starts with the repository skeleton.
+Design phase. No code. The [port plan](08-port-plan.md) starts with the repository skeleton. Agents do the work task by task, as described in the [work plan](11-work-plan.md); progress is in [`docs/status.md`](../status.md).

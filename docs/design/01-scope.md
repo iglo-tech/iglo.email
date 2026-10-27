@@ -37,7 +37,7 @@
 | Messengers | SMTP pool, multiple SMTP servers | postback (HTTP) messengers | |
 | Security | | CAPTCHA (Altcha) on public forms | |
 | i18n | English, with listmonk's language files carried over | other languages verified | |
-| Operations | settings UI, maintenance (purge, vacuum), logs view | | update checks against GitHub, `--install`/`--upgrade` flags (replaced by automatic migrations), Docker images, `config.toml` |
+| Operations | settings UI, maintenance (purge, vacuum), logs view | official Docker image wrapping the executable, after 1.0 | update checks against GitHub, `--install`/`--upgrade` flags (replaced by automatic migrations), listmonk's Docker images and compose files, `config.toml` |
 
 ## New in iglo.email (v1)
 
