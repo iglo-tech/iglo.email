@@ -95,6 +95,36 @@ const cases: ReferenceCase[] = [
       "D18: Bun normalizes dot segments before routing; iglo.email matches the canonical target",
   })),
   {
+    label: "literal backslash in request path",
+    path: "/api/lists\\1",
+    rawPath: true,
+    authenticated: true,
+    status: 404,
+    contentType: "application/json",
+    response: '{"message":"404 unknown endpoint"}\n',
+    deliberateDifference:
+      "D18: Bun rewrites literal backslashes to slashes before routing; iglo.email matches the canonical target",
+  },
+  ...["/api/lists/%zz", "/api/lists/1%", "/api/lists/%2", "/api/lists%zz"].map(
+    (path): ReferenceCase => ({
+      label: "malformed path escape " + path,
+      path,
+      rawPath: true,
+      authenticated: true,
+      status: 400,
+      contentType: "text/plain; charset=utf-8",
+      response: "400 Bad Request",
+    }),
+  ),
+  {
+    label: "malformed query escape is not a path error",
+    path: "/health?value=%zz",
+    rawPath: true,
+    status: 200,
+    contentType: "application/json",
+    response: '{"data":true}\n',
+  },
+  {
     label: "invalid field",
     path: "/api/lists",
     method: "POST",

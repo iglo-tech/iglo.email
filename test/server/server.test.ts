@@ -243,6 +243,43 @@ describe("shared HTTP contracts", () => {
     }
   });
 
+  test("D18 deliberate difference: Bun normalizes literal backslashes before routing", async () => {
+    const { origin } = fixture();
+    expect(await rawGet(origin, "/fixture/id\\12")).toMatchObject({
+      status: 200,
+      contentType: "application/json",
+      body: '{"data":12}\n',
+    });
+    expect(await rawGet(origin, "/fixture\\items\\x")).toMatchObject({
+      status: 200,
+      contentType: "application/json",
+      body: '{"data":{"item":"x","query":null}}\n',
+    });
+  });
+
+  test("malformed path percent escapes fail before routing while query values remain independent", async () => {
+    const { origin } = fixture();
+    for (const path of [
+      "/fixture/id/%zz",
+      "/fixture/items/%zz",
+      "/fixture/id/1%",
+      "/fixture/id/%2",
+      "/api/lists%zz",
+      "/health%zz",
+    ]) {
+      expect(await rawGet(origin, path)).toMatchObject({
+        status: 400,
+        contentType: "text/plain; charset=utf-8",
+        body: "400 Bad Request",
+      });
+    }
+    expect(await rawGet(origin, "/health?value=%zz")).toMatchObject({
+      status: 200,
+      contentType: "application/json",
+      body: '{"data":true}\n',
+    });
+  });
+
   test("translation parameters preserve literal dollar replacement sequences", async () => {
     const { origin } = fixture();
     for (const value of ["$&", "$$", "$`", "$'", "$1", "before $& $$ $` $' after"]) {
