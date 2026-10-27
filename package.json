@@ -15,7 +15,10 @@
     "reference:prepare": "bun test/reference/prepare.ts",
     "reference:run": "bun test/reference/run.ts",
     "reference:smoke": "bun test/reference/smoke.ts",
-    "server:reference": "bun run reference:run -- bun test/server/reference.ts"
+    "server:reference": "bun run contract:reference",
+    "contract:normal": "bun run build && bun test/contract/cli.ts owned production",
+    "contract:fixture": "bun test/contract/cli.ts owned fixture",
+    "contract:reference": "bun run reference:run -- bun test/contract/cli.ts run --mode reference --target upstream --profile all"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

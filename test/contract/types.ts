@@ -1,0 +1,55 @@
+export type Mode = "reference" | "normal";
+export type TargetName = "upstream" | "production" | "fixture";
+export type Profile = "all" | "core" | "staged" | "probe";
+export type Group = "core" | "staged" | "reference-only" | "production-only" | "probe";
+export type Difference = "D17" | "D18";
+
+export interface Credentials {
+  readonly user: string;
+  readonly token: string;
+}
+
+export interface VolatileField {
+  readonly path: readonly string[];
+  readonly kind: "id" | "timestamp";
+  readonly bind: string;
+  readonly after?: string;
+}
+
+export type ExpectedBody =
+  | { readonly kind: "wire"; readonly value: string }
+  | { readonly kind: "json"; readonly value: unknown; readonly volatile: readonly VolatileField[] }
+  | { readonly kind: "deferred-html" };
+
+export interface Expectation {
+  readonly status: number;
+  readonly contentType: string | null;
+  readonly body: ExpectedBody;
+}
+
+export interface Endpoint {
+  readonly path: string;
+  readonly expect: Expectation;
+}
+
+export interface ContractCase {
+  readonly id: string;
+  readonly group: Group;
+  readonly reference?: Endpoint;
+  readonly production?: Endpoint;
+  readonly fixture?: Endpoint;
+  readonly method?: "GET" | "POST" | "HEAD";
+  readonly requestBody?: string;
+  readonly requestContentType?: string;
+  readonly auth?: "basic" | "token" | "bad-token";
+  readonly difference?: Difference;
+}
+
+export interface ContractTarget {
+  readonly mode: Mode;
+  readonly target: TargetName;
+  readonly profile: Profile;
+  readonly baseUrl: string;
+  readonly credentials?: Credentials;
+  readonly signal?: AbortSignal;
+}
