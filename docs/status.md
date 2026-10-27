@@ -8,11 +8,17 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is in brief stage. M0.4 is merged and no PR watches are active. D20 resolves the protected-read ordering gap with explicit production/fixture coverage; the lead has read the pinned route/auth/reference sources.
+M0.5 is running with a Terra max worker in a delegated worktree. D20 and the committed brief separate production coverage from fixture-only authenticated/helper evidence. No PR exists yet and no PR watch is active. Completion wakes this lead; do not poll or start a duplicate worker.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.5 | brief | Planned task/M0.5-contract-harness; no PR | 0 | [Brief](briefs/M0.5.md): one base-URL corpus, scoped normalization, D17/D18 and explicit compiled-production versus fixture evidence. Protected read is reference + fixture until M1.3; no application auth stand-in. Terra max dispatch follows this committed brief. |
+| M0.5 | worker | Planned task/M0.5-contract-harness; no PR | 0 | [Brief](briefs/M0.5.md): one base-URL corpus, scoped normalization, D17/D18 and explicit compiled-production versus fixture evidence. Protected read is reference + fixture until M1.3; no application auth stand-in. Terra max worker is running; no PR yet. |
+
+
+Worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 
 ## Automation
 
