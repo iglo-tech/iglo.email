@@ -1,11 +1,10 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { constants as osConstants } from "node:os";
 import { join } from "node:path";
-import { command, stopGroup } from "@/test/reference/command";
+import { command, spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
 import { cache, prepare } from "@/test/reference/prepare";
 import { startReceiver } from "@/test/reference/webhook";
 
@@ -42,7 +41,7 @@ async function availablePorts(count: number): Promise<number[]> {
   }
 }
 
-async function stop(child: ChildProcess | undefined) {
+async function stop(child: GroupChild | undefined) {
   if (!child?.pid) return;
   stopGroup(child);
   if (child.exitCode === null && child.signalCode === null) {
@@ -60,7 +59,7 @@ async function ready(
   check: () => Promise<boolean>,
   signal: AbortSignal,
   description: string,
-  child?: ChildProcess,
+  child?: GroupChild,
   timeout = 30_000,
 ) {
   const deadline = Date.now() + timeout;
@@ -125,9 +124,9 @@ async function run(args: string[]): Promise<number> {
   const directory = join(cache, "runs", id);
   const controller = new AbortController();
   let receivedSignal: NodeJS.Signals | undefined;
-  let listmonk: ChildProcess | undefined;
-  let mailpit: ChildProcess | undefined;
-  let testCommand: ChildProcess | undefined;
+  let listmonk: GroupChild | undefined;
+  let mailpit: GroupChild | undefined;
+  let testCommand: GroupChild | undefined;
   let receiver: ReturnType<typeof startReceiver> | undefined;
   let cleanupError = false;
   let resourcesMayExist = false;
@@ -181,7 +180,7 @@ async function run(args: string[]): Promise<number> {
   function service(executable: string, argv: string[], env: NodeJS.ProcessEnv, logName: string) {
     const fd = openSync(join(directory, logName), "a", 0o600);
     try {
-      const child = spawn(executable, argv, {
+      const child = spawnGroup(executable, argv, {
         cwd: directory,
         env,
         detached: true,
@@ -398,7 +397,7 @@ async function run(args: string[]): Promise<number> {
     await ready(mailpitReady, controller.signal, "Mailpit", mailpit);
     controller.signal.throwIfAborted();
     const executable = args[0]!;
-    testCommand = spawn(executable, args.slice(1), {
+    testCommand = spawnGroup(executable, args.slice(1), {
       cwd: process.cwd(),
       detached: true,
       stdio: "inherit",

@@ -28,7 +28,7 @@ const runId = required("REFERENCE_RUN_ID");
 const authorization = `Basic ${Buffer.from(`${required("REFERENCE_API_USER")}:${required("REFERENCE_API_TOKEN")}`).toString("base64")}`;
 const state = { runId, reference, mailpit, receiver, smtpHost, smtpPort, runnerPid: process.ppid };
 
-if (mode === "wait") {
+if (mode === "wait" || mode === "orphan") {
   // Exercise the runner's escalation when its test command ignores termination.
   process.on("SIGTERM", () => {});
   process.on("SIGINT", () => {});
@@ -74,6 +74,7 @@ if (mode === "wait") {
       grandchildUrl: `http://127.0.0.1:${grandchildPort}`,
     }),
   );
+  if (mode === "orphan") process.exit(0);
   await new Promise(() => {});
 } else if (mode === "failure") {
   const captured = (await (await request(`${receiver}/deliveries`)).json()) as unknown[];

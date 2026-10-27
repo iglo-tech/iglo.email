@@ -1,9 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { join } from "node:path";
-import { command, stopGroup } from "@/test/reference/command";
+import { command, spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
 import { cache, repository, sourceCommit } from "@/test/reference/prepare";
 
 interface State {
@@ -39,17 +38,17 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${description}`);
 }
 function startRunner(args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
-  const child = spawn(process.execPath, ["run", "reference:run", "--", ...args], {
+  const child = spawnGroup(process.execPath, ["run", "reference:run", "--", ...args], {
     cwd: repository,
     env: { ...process.env, ...extraEnv },
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout.on("data", (data: Buffer) => {
+  child.stdout?.on("data", (data: Buffer) => {
     output += data.toString();
   });
-  child.stderr.on("data", (data: Buffer) => {
+  child.stderr?.on("data", (data: Buffer) => {
     output += data.toString();
   });
   const done = new Promise<number>((resolve, reject) => {
@@ -157,7 +156,7 @@ await mkdir(cache, { recursive: true });
 const temp = await mkdtemp(join(cache, "validation-"));
 const sentinelName = `iglo-reference-sentinel-${randomUUID()}`;
 const sentinelLabel = `sentinel-${randomUUID()}`;
-let sentinel: ChildProcess | undefined;
+let sentinel: GroupChild | undefined;
 let sentinelCreated = false;
 const active: Array<ReturnType<typeof startRunner>> = [];
 async function verifySentinelVolume() {
@@ -179,7 +178,7 @@ try {
   ]);
   sentinelCreated = true;
   await verifySentinelVolume();
-  sentinel = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+  sentinel = spawnGroup(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     detached: true,
     stdio: "ignore",
   });
@@ -226,6 +225,22 @@ try {
   await checkCleanup(verified.runId, verified);
   await sentinelSurvives();
   console.log("Successful run and owned cleanup passed");
+
+  const orphanPath = join(temp, "orphan.json");
+  const orphan = startRunner([
+    process.execPath,
+    "test/reference/smoke-client.ts",
+    "orphan",
+    orphanPath,
+  ]);
+  active.push(orphan);
+  const orphanCode = await finish(orphan);
+  assert(orphanCode === 0, `Exited parent cleanup failed (${orphanCode}): ${orphan.output()}`);
+  const orphanState = JSON.parse(await readFile(orphanPath, "utf8")) as State;
+  assert(orphanState.grandchildUrl, "Exited parent did not start a descendant");
+  await checkCleanup(orphanState.runId, orphanState);
+  await sentinelSurvives();
+  console.log("Exited parent descendant cleanup passed");
 
   const waitPath = join(temp, "wait-term.json");
   const term = startRunner([process.execPath, "test/reference/smoke-client.ts", "wait", waitPath]);

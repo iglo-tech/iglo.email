@@ -39,6 +39,9 @@ run ID and ports. The Postgres container has a 256 MiB memory limit and one CPU.
 The test command has a ten-minute deadline; set `REFERENCE_COMMAND_TIMEOUT_MS`
 to an integer from 1000 to 3600000 to choose a different deadline. A timeout
 stops the command's process group and exits 124.
+When a child exits, its remaining descendants are stopped immediately and its
+process-group identity is retired. Later cleanup and timeout callbacks do not
+send signals using that exited child's saved group ID.
 The Docker daemon and image cache are not changed beyond ordinary image pulls;
 verified downloads remain cached. Services do not inherit `LISTMONK_*`,
 Mailpit relay/forwarding, or `POSTGRES_*` settings from the caller. All service
@@ -82,6 +85,7 @@ binary versions, health and authenticated settings, an upstream transactional
 email received in Mailpit, webhook bytes/headers/reset/status, argument
 preservation, concurrent isolation, command failure and deadline, partial
 startup failure, termination during startup, both termination signals, and
-cleanup of a signal-resistant child and grandchild. It creates an unrelated sentinel process
+cleanup of a signal-resistant child and grandchild, including a parent that exits
+before its descendant. It creates an unrelated sentinel process
 and Docker volume and checks that they survive. These integration checks are
 explicit: `bun test` and `bun run check` do not need Docker or downloads.
