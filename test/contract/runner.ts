@@ -146,6 +146,7 @@ function normalize(
   value: unknown,
   fields: readonly VolatileField[],
   bindings: Map<string, Binding>,
+  numericTokens: WeakMap<object, Map<string, string>>,
 ): unknown {
   for (const field of fields) {
     if (!field.path.length || !/^[a-z][a-z0-9-]*$/.test(field.bind))
@@ -162,7 +163,15 @@ function normalize(
     const object = parent as Record<string, unknown>;
     const original = object[key];
     if (field.kind === "id") {
-      if (typeof original !== "number" || !Number.isSafeInteger(original) || original < 1)
+      const token = numericTokens.get(parent)?.get(key);
+      if (
+        typeof original !== "number" ||
+        !Number.isSafeInteger(original) ||
+        original < 1 ||
+        !token ||
+        !/^[1-9][0-9]*$/.test(token) ||
+        BigInt(token) > BigInt(Number.MAX_SAFE_INTEGER)
+      )
         throw new Error(`Invalid or unsafe ID at ${field.path.join(".")}`);
     } else if (field.kind === "timestamp") {
       if (
@@ -174,6 +183,8 @@ function normalize(
         throw new Error(`Invalid timestamp at ${field.path.join(".")}`);
     } else throw new Error("Unknown volatile field type");
     const previous = bindings.get(field.bind);
+    if (field.requireBound && !previous)
+      throw new Error(`${field.kind} ${field.bind} requires an existing binding`);
     if (previous && (previous.kind !== field.kind || previous.value !== original))
       throw new Error(`Inconsistent ${field.kind} binding ${field.bind}`);
     if (
@@ -208,12 +219,34 @@ function compareBody(actual: string, expected: ExpectedBody, bindings: Map<strin
   if (!actual.endsWith("\n") || actual.endsWith("\n\n"))
     throw new Error("JSON response must end with exactly one newline");
   let value: unknown;
+  // Preserve the original JSON number token so a rounded value cannot masquerade
+  // as a safe integer after parsing. Other fields retain their original values.
+  const numericTokens = new WeakMap<object, Map<string, string>>();
   try {
-    value = JSON.parse(actual);
+    const parse = JSON.parse as (
+      text: string,
+      reviver: (
+        this: object,
+        key: string,
+        entry: unknown,
+        context?: { source?: string },
+      ) => unknown,
+    ) => unknown;
+    value = parse(actual, function (key, entry, context) {
+      if (typeof entry === "number" && context?.source) {
+        let tokens = numericTokens.get(this);
+        if (!tokens) {
+          tokens = new Map();
+          numericTokens.set(this, tokens);
+        }
+        tokens.set(key, context.source);
+      }
+      return entry;
+    });
   } catch {
     throw new Error("Invalid JSON response");
   }
-  const normalized = normalize(value, expected.volatile, bindings);
+  const normalized = normalize(value, expected.volatile, bindings, numericTokens);
   if (!isDeepStrictEqual(normalized, expected.value))
     throw new Error(
       `JSON body ${JSON.stringify(normalized)}; expected ${JSON.stringify(expected.value)}`,
@@ -281,7 +314,7 @@ export async function runContract(
       target.signal?.throwIfAborted();
       failures++;
       lines.push(
-        `FAIL ${item.id}${marker}: ${redact(error instanceof Error ? error.message : "request failed", target.credentials)}`,
+        `FAIL ${item.id}${marker}: ${redact(error instanceof Error ? error.message : "request failed", target.credentials).slice(0, 1200)}`,
       );
     }
   }

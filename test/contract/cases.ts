@@ -237,7 +237,7 @@ export const cases: readonly ContractCase[] = freeze([
       body: {
         kind: "json",
         value: { data: { id: "<id:entity>" } },
-        volatile: [{ path: ["data", "id"], kind: "id", bind: "entity" }],
+        volatile: [{ path: ["data", "id"], kind: "id", bind: "entity", requireBound: true }],
       },
     }),
   },

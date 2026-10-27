@@ -14,6 +14,7 @@ export interface VolatileField {
   readonly kind: "id" | "timestamp";
   readonly bind: string;
   readonly after?: string;
+  readonly requireBound?: boolean;
 }
 
 export type ExpectedBody =

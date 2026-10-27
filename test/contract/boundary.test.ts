@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
@@ -44,6 +44,44 @@ describe("owned production lifecycle", () => {
     ).rejects.toThrow("synthetic contract failure");
     expect(origin).not.toBe("");
     await expect(get(origin)).rejects.toThrow();
+  });
+
+  test("the production CLI removes its own data after refusing an unsupported case", async () => {
+    const build = Bun.spawn([process.execPath, "run", "build"], {
+      cwd: repository,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [buildCode, buildError] = await Promise.all([
+      build.exited,
+      new Response(build.stderr).text(),
+    ]);
+    if (buildCode !== 0) throw new Error(`Production build failed: ${buildError}`);
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "iglo-contract-cli-cleanup-"));
+    try {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "test/contract/cli.ts",
+          "owned",
+          "production",
+          "--case",
+          "protected-health-basic",
+        ],
+        {
+          cwd: repository,
+          env: { PATH: process.env.PATH ?? "", TMPDIR: temporaryRoot },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      expect(code).not.toBe(0);
+      expect(output.toLowerCase()).toContain("unsupported");
+      expect(await readdir(temporaryRoot)).toEqual([]);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
   });
 
   test("closes its compiled child when the run is cancelled", async () => {
@@ -135,6 +173,48 @@ describe("difference metadata and strict transport", () => {
       expect(result.lines.join("\n")).toContain("FAIL positive-id-overflow [D17:");
     } finally {
       await server.stop(true);
+    }
+  });
+
+  test("concurrent runs keep independent ID and timestamp bindings", async () => {
+    const create = (id: number, created: string, updated: string) =>
+      Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const data = new URL(request.url).pathname.endsWith("/reference")
+            ? { id }
+            : {
+                id,
+                owner_id: id,
+                other_id: id + 1,
+                created_at: created,
+                created_copy: created,
+                updated_at: updated,
+                label: "synthetic 101",
+                fixed: { id: 77 },
+              };
+          return new Response(`${JSON.stringify({ data })}\n`, {
+            headers: { "content-type": "application/json" },
+          });
+        },
+      });
+    const first = create(101, "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:01.000Z");
+    const second = create(202, "2027-01-01T00:00:00.000Z", "2027-01-01T00:00:01.000Z");
+    try {
+      const reports = await Promise.all(
+        [first, second].map((target) =>
+          runContract({
+            mode: "normal",
+            target: "fixture",
+            profile: "probe",
+            baseUrl: `http://127.0.0.1:${target.port}`,
+          }),
+        ),
+      );
+      expect(reports.map((report) => report.passed)).toEqual([true, true]);
+    } finally {
+      await Promise.all([first.stop(true), second.stop(true)]);
     }
   });
 

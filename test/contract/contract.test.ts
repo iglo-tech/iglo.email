@@ -161,6 +161,20 @@ describe("contract runner public boundary", () => {
     }
   });
 
+  test("does not infer capabilities from 401 or 404 responses", async () => {
+    for (const status of [401, 404]) {
+      const target = server(() => json({ message: "synthetic failure" }, status));
+      try {
+        const result = await cli([...options(target.origin), "--case", "protected-health-basic"]);
+        expect(result.code).not.toBe(0);
+        expect(result.output).toContain("FAIL protected-health-basic");
+        expect(result.output).not.toContain("PASS protected-health-basic");
+      } finally {
+        await target.close();
+      }
+    }
+  });
+
   test("sends an exact dot-segment target without client URL normalization", async () => {
     const seen: string[] = [];
     const target = createServer((request, response) => {
@@ -229,6 +243,33 @@ describe("normalization at the HTTP boundary", () => {
       expect(result.output).toContain("PASS probe-entities");
       expect(result.output).toContain("PASS probe-entity-reference");
       expect(result.output).toContain("synthetic harness probe");
+    }
+  });
+  test("rejects numeric tokens that JSON parsing would round to an apparently safe ID", async () => {
+    const body = JSON.stringify(good()).replace('"id":101', '"id":101.0000000000000001');
+    const target = server(
+      () => new Response(`${body}\n`, { headers: { "content-type": "application/json" } }),
+    );
+    try {
+      const result = await cli([...options(target.origin, "probe"), "--case", "probe-entities"]);
+      expect(result.code).not.toBe(0);
+      expect(result.output).toContain("Invalid or unsafe ID");
+    } finally {
+      await target.close();
+    }
+  });
+  test("a reference case requires the entity binding established earlier in the run", async () => {
+    const target = server(() => json({ data: { id: 101 } }));
+    try {
+      const result = await cli([
+        ...options(target.origin, "probe"),
+        "--case",
+        "probe-entity-reference",
+      ]);
+      expect(result.code).not.toBe(0);
+      expect(result.output).toContain("requires an existing binding");
+    } finally {
+      await target.close();
     }
   });
   test("rejects wrong types, missing/extra fields, unsafe IDs, inconsistent references and ordinary changes", async () => {
