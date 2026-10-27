@@ -53,6 +53,7 @@ const catalogs = {
     { version: 1, sql: "CREATE TABLE unbound (id); INSERT INTO unbound VALUES (?);" },
   ],
   pragma: [{ version: 1, sql: 'PRAGMA main."user_version" = 7;' }],
+  explainPragma: [{ version: 1, sql: "EXPLAIN PRAGMA busy_timeout = 7;" }],
   triggers: [
     {
       version: 1,

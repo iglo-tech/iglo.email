@@ -154,7 +154,12 @@ test("migration bodies can create SQLite triggers while the runner owns transact
 });
 
 test("migration identifiers cannot hide transaction control or connection settings", async () => {
-  for (const catalog of ["identifierCommit", "identifierRollback", "identifierPragma"]) {
+  for (const catalog of [
+    "identifierCommit",
+    "identifierRollback",
+    "identifierPragma",
+    "explainPragma",
+  ]) {
     await withFixture(async (origin) => {
       expect((await request(origin, { action: "migrate", catalog })).status).toBe(400);
       const status = (await request(origin, { action: "status" })).result;
