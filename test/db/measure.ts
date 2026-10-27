@@ -1,15 +1,34 @@
 // Compare a bounded native SQLite workload with the same work through M0.4 helpers.
 import { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statfsSync, statSync } from "node:fs";
+import { arch, platform, release } from "node:os";
+import { join, resolve } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { runMigrations } from "@/db/migrations";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 
-const root = mkdtempSync(join(tmpdir(), "iglo-db-measure-"));
+const base = resolve(
+  process.env.IGLO_EMAIL_PERF_DIR ?? join(import.meta.dir, "../../upstream/measurements"),
+);
+mkdirSync(base, { recursive: true });
+const filesystemType = Number(statfsSync(base).type);
+if ([0x01021994, 0x858458f6].includes(filesystemType))
+  throw new Error(
+    "Storage measurements cannot use tmpfs/ramfs; set IGLO_EMAIL_PERF_DIR to disk-backed storage",
+  );
+console.log(
+  JSON.stringify({
+    kind: "environment",
+    directory: base,
+    filesystemType: `0x${filesystemType.toString(16)}`,
+    platform: platform(),
+    release: release(),
+    arch: arch(),
+  }),
+);
+const root = mkdtempSync(join(base, "iglo-db-measure-"));
 const rows = 10_000;
 const batch = 100;
 const repetitions = 3;
