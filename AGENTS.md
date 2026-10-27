@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-The M0.1 skeleton is in place; most features remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The M0.1–M0.3 skeleton and shared HTTP contracts are in place; most features remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 
@@ -62,9 +62,10 @@ bun run typecheck
 bun test
 bun run build
 bun run check
+bun test test/server
 ```
 
-`bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The M0.1 bootstrap tests exercise the compiled executable from a temporary directory; `/health` was checked against the pinned upstream handler by source inspection. The opt-in M0.2 reference runner and smoke checks are documented in `test/reference/README.md`; M0.5 will add the dual-server contract suite.
+`bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The bootstrap tests exercise the compiled executable from a temporary directory. `bun test test/server` exercises the shared HTTP contracts, including embedded translations. `bun run server:reference` uses the M0.2 runner to check focused health and error cases against the pinned upstream; it requires Docker and downloads. The runner and smoke checks are documented in `test/reference/README.md`; M0.5 will add the general dual-server contract suite.
 
 Changes to sending, scheduling or storage must include before/after measurements, stored under `docs/perf/`.
 

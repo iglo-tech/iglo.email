@@ -1,4 +1,7 @@
 // Process startup and shutdown are adapted from listmonk's cmd/main.go.
+import { createApp, createErrorLogger } from "@/app";
+import { createRealClock } from "@/clock";
+import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap } from "@/config/bootstrap";
 import { startServer } from "@/server/server";
 
@@ -9,7 +12,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const server = startServer(bootstrap.config);
+  const app = createApp({
+    bootstrap: bootstrap.config,
+    clock: createRealClock(),
+    logger: createErrorLogger(),
+    i18n: createTranslation(),
+  });
+  const server = startServer(app);
   await new Promise<void>((resolve, reject) => {
     const shutdown = () => {
       process.off("SIGTERM", shutdown);

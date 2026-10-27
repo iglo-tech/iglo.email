@@ -80,6 +80,44 @@ test/
 
 Each module owns its tables and SQL. Other modules call its functions; they do not query its tables directly. Cross-module reads that matter for performance (segment queries, sequence conditions) go through the owning module's query builder.
 
+## Application and request contracts (M0.3)
+
+`src/app.ts` owns the application context currently constructed at startup: bootstrap
+configuration, an injected clock, an error logger, and a translation instance. These
+are concrete dependencies, passed explicitly. A request has its own URL, route
+parameters, and validated ID in `src/server/context.ts`; it does not carry mutable
+application-global request state. Valid IDs use a number when exactly representable,
+and a bigint above that range, up to the signed 64-bit upstream limit. Database, stored settings and mailer dependencies
+are added by their owning tasks when they exist, rather than as empty placeholders.
+
+Bun supplies a normalized request URL; dot segments are removed and literal
+backslashes become slashes before application handlers run
+([D18](09-decisions.md#d18-use-buns-normalized-request-path)). For path spellings Bun preserves,
+parameters follow the default Go/Echo URI boundary: match the decoded path
+when its escaping is canonical, otherwise retain the original escaped spelling
+(`RawPath`). Parameters are not unescaped again. Encoded numeric IDs therefore
+fail ID validation as upstream does, while canonical space and Unicode escapes
+keep their normal decoded values. Query values use their own query decoding.
+Malformed percent-escape syntax in the exposed path is rejected before routing
+and middleware with the upstream transport's plain-text 400 response. Valid
+escapes of invalid UTF-8, such as `%FF`, still reach parameter validation.
+
+`src/clock.ts` owns `now()` and abortable `sleep()`; loops receive a clock instead of
+reading real time. The HTTP router registers routes and middleware explicitly. Static
+segments take precedence over parameter segments, and middleware runs in registration
+order around a route. Unmatched API paths use the reference JSON 404. The public 404
+HTML page is deferred; the current public fallback remains plain text, except that
+HEAD returns the verified upstream status and HTML content type without a body.
+Unexpected exceptions are logged and receive a safe JSON 500. The JSON helpers use
+upstream envelopes, newline, content type and HTML-character escaping.
+
+Each translation instance owns an immutable English base and optional language overlay;
+`Load` returns an independent instance. All 38 copied packs are embedded; English is the verified default and the other packs
+have not been reviewed. Missing keys return the key. Referenced substitutions stop
+on a cycle or after 256 resolutions, leaving the unresolved `{key}` in place; missing
+references resolve to the key without braces. Translations and parameters never use
+process-global mutable request state. No language HTTP endpoint exists until auth.
+
 ## Configuration
 
 - **Bootstrap settings come from flags and environment variables:** `--port`, `--host`, `--data-dir`, `--root-url`, and an initial admin user (`IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD`, used only when no users exist).

@@ -45,7 +45,7 @@ bun run build
 bun run check
 ```
 
-`bun run check` runs all of these checks except installation. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The `/health` response is based on direct inspection of the pinned listmonk handler; the dual-server contract harness is planned for M0.5.
+`bun run check` runs all of these checks except installation. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The shared server contracts have HTTP fixture tests (`bun test test/server`), including a compiled translation fixture. The general dual-server contract harness is planned for M0.5.
 
 To enable the repository-local pre-commit formatting check, run `bun run hooks:install` once in this repository.
 
@@ -56,10 +56,11 @@ The opt-in reference harness runs the pinned upstream listmonk release against d
 ```sh
 bun run reference:prepare
 bun run reference:smoke
+bun run server:reference
 bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
 ```
 
-See the [reference guide](test/reference/README.md) for supported platforms, credentials, exported endpoints, cleanup and validation. The normal checks above need neither Docker nor reference downloads.
+`server:reference` compares focused health, API fallback, ID, field and binding error cases to the pinned upstream, using only synthetic per-run credentials. The public HTML 404 page remains deferred, so the current non-API fallback is plain text. See the [reference guide](test/reference/README.md) for supported platforms, credentials, exported endpoints, cleanup and validation. The normal checks above need neither Docker nor reference downloads.
 
 ## Planned
 

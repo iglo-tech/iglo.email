@@ -36,6 +36,12 @@ without shell interpolation, then stops its processes and removes its own
 container, volume, and run directory even on errors, SIGTERM, or SIGINT. The
 command's exit status is returned. Each invocation has an independent random
 run ID and ports. The Postgres container has a 256 MiB memory limit and one CPU.
+Readiness requires the container's `pg_isready` to accept connections over
+`127.0.0.1:5432` and the published loopback port to complete a protocol handshake.
+The explicit TCP probe excludes the image's temporary Unix-socket initialization
+server; SSL negotiation alone can succeed while database startup is still rejected.
+The existing bounded readiness loop waits before installation; the installer is
+run once, with no automatic install retry.
 The test command has a ten-minute deadline; set `REFERENCE_COMMAND_TIMEOUT_MS`
 to an integer from 1000 to 3600000 to choose a different deadline. A timeout
 stops the command's process group and exits 124.

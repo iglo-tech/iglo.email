@@ -85,9 +85,36 @@ async function healthy(url: string) {
   return response.ok;
 }
 
-// Postgres' temporary initialization server can make pg_isready in the
-// container pass before the published TCP port accepts real connections.
-async function postgresReady(port: number): Promise<boolean> {
+// Check database acceptance over TCP: SSL negotiation alone can succeed while
+// Postgres still rejects startup packets with 57P03. An explicit TCP host also
+// excludes the image's temporary initialization server, which uses a Unix socket.
+// Keep the published-port check so Docker forwarding must be usable as well.
+async function postgresReady(
+  container: string,
+  port: number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const status = await command(
+    [
+      "docker",
+      "exec",
+      container,
+      "pg_isready",
+      "-q",
+      "-h",
+      "127.0.0.1",
+      "-p",
+      "5432",
+      "-U",
+      dbUser,
+      "-d",
+      dbName,
+      "-t",
+      "1",
+    ],
+    { timeout: 5_000, signal },
+  );
+  if (status.code !== 0) return false;
   return new Promise((resolve) => {
     const socket = createConnection({ host: "127.0.0.1", port });
     const finish = (value: boolean) => {
@@ -278,7 +305,7 @@ async function run(args: string[]): Promise<number> {
     const dbPort = /^127\.0\.0\.1:(\d+)$/m.exec(portOutput)?.[1];
     if (!dbPort) throw new Error(`Docker did not report a loopback Postgres port: ${portOutput}`);
     await ready(
-      () => postgresReady(Number(dbPort)),
+      () => postgresReady(name, Number(dbPort), controller.signal),
       controller.signal,
       "Postgres",
       undefined,

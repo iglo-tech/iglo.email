@@ -1,21 +1,18 @@
-// The health response is adapted from listmonk's cmd/handlers.go: HealthCheck.
-import type { BootstrapConfig } from "@/config/bootstrap";
+// The health handler is adapted from listmonk's cmd/handlers.go: HealthCheck.
+import type { App } from "@/app";
+import { ok } from "@/server/response";
+import { Router } from "@/server/router";
 
-export function startServer(config: BootstrapConfig) {
+export function createRouter(): Router {
+  const router = new Router();
+  router.route("GET", "/health", () => ok(true));
+  return router;
+}
+
+export function startServer(app: App, router: Router = createRouter()) {
   return Bun.serve({
-    hostname: config.host,
-    port: config.port,
-    fetch(request) {
-      if (new URL(request.url).pathname === "/health") {
-        if (request.method !== "GET") {
-          return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
-        }
-        return new Response('{"data":true}\n', {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return new Response("Not Found", { status: 404 });
-    },
+    hostname: app.bootstrap.host,
+    port: app.bootstrap.port,
+    fetch: (request) => router.handle(app, request),
   });
 }
