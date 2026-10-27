@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.3 round 3 ended with both reviewers requesting the same two URI changes. The lead fixed both and [resolved the round](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6454296622) under the runbook’s three-round rule. Final head `adc4f284d866f0f22dd165a99241bc401c361fa0` is pushed; exact-head green CI is the remaining merge gate. No fourth review is planned.
+M0.3 final-head CI reproduced the reference Postgres startup race: one Linux job failed with `57P03` while the other passed. Merge remains blocked. The lead is repairing the harness’s readiness probe within the [documented brief exception](briefs/M0.3.md#lead-ci-repair-2026-10-27), then will require fresh exact-head CI.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.3 | ci | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 3 completed; lead resolution | Head `adc4f284d866f0f22dd165a99241bc401c361fa0`: malformed percent syntax now gets the upstream plain-text 400; D18 includes backslash normalization. Local check passed (27 tests / 237 assertions) and all 28 live upstream cases passed. Both round 3 CHANGES are addressed; merge after exact-head CI passes under the three-round rule. [Brief](briefs/M0.3.md). |
+| M0.3 | fix | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 3 completed; lead resolution | At `adc4f284d866f0f22dd165a99241bc401c361fa0`, one Linux reference job failed before tests: listmonk install saw Postgres `57P03` after SSL-only readiness. Lead is adding an explicit TCP `pg_isready` check and preserving the published-port probe, deadlines and cleanup. Local validation is running; no CI or install retry. [Brief](briefs/M0.3.md). |
 
 Completed worker: [M0.3: Shared HTTP and application contracts — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Reference cases were committed first at `0b732f7017f0ec46b41bf6fa0d49d63459bf4363` and passed against the pinned live upstream before implementation. Initial acceptance and CI passed (18 tests / 156 assertions). Validation for the council fixes is recorded below. The existing PR #3 watch remains active; no merged-task PR watch is active.
 
@@ -41,12 +41,18 @@ Both reviewers requested changes on exact head `1669923c66d4cfdf9a46c078483dc518
 
 Final local validation passed: `bun run check` (27 tests / 237 assertions, including 19 server tests and the compiled build), all 28 live upstream cases and diff/format checks. Malformed visible percent syntax now returns the upstream transport’s plain-text 400 before route dispatch; valid `%FF` and independently decoded query values retain their behavior. D18 and both modes now cover literal backslash normalization. Both commits are pushed.
 
-The [lead resolution](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6454296622) applies the documented three-round rule: the bounded changes satisfy both concrete findings; no approval is claimed for the final head, and no fourth council round is planned. **Merge only after CI passes on `adc4f284d866f0f22dd165a99241bc401c361fa0`.** The existing PR #3 watch remains active.
+The [lead resolution](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6454296622) applies the documented three-round rule: the bounded changes satisfy both concrete findings; no approval is claimed for the final head, and no fourth council round is planned. **The merge gate failed on `adc4f284d866f0f22dd165a99241bc401c361fa0`; require green CI on the readiness repair head below.** The existing PR #3 watch remains active.
 
 Reference-harness observation: Sol’s first smoke attempt hit Postgres `57P03` during install (“database system is starting up”); its complete rerun passed all smoke stages. The harness is unchanged by M0.3. Retain this observation for the next harness task and investigate if it repeats, rather than adding a blind retry. Full macOS Docker lifecycle remains unverified.
 
 - [M0.3 council round 3 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A9c478460-98f0-449c-ab7d-db505871132e); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A9c478460-98f0-449c-ab7d-db505871132e`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A9c478460-98f0-449c-ab7d-db505871132e`.
 - [M0.3 council round 3 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A81aed40f-d8c2-4639-abe0-136693496704); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh, serviceTier: default`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A81aed40f-d8c2-4639-abe0-136693496704`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A81aed40f-d8c2-4639-abe0-136693496704`.
+
+### CI readiness repair
+
+The [failed reference-linux job](https://github.com/iglo-tech/iglo.email/actions/runs/40588851288/job/122487469226) reached `server:reference`, then listmonk installation failed with Postgres `57P03` before contract requests ran. The other Linux CI run passed on the same head. This repeats the round 3 observation. The harness’s published-port probe only sent an SSL negotiation packet, which can succeed while Postgres is still rejecting startup/database connections.
+
+The lead expanded only the acceptance-infrastructure scope of M0.3 to repair `test/reference/run.ts` and its README: use the existing container’s `pg_isready` with explicit TCP host `127.0.0.1`, then retain the published-port handshake. Explicit TCP excludes the image’s temporary Unix-socket initialization server. The existing bounded readiness loop waits; installation still executes once. No application storage, extra service, dependency or host policy changes. Existing full checks, Linux lifecycle smoke and focused reference validation are running before publication.
 
 ## Automation
 
