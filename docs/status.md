@@ -8,11 +8,17 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.4 is in brief stage. M0.3 is merged, and no PR watches are active. The lead has read the pinned upstream connection/query/install/upgrade and shutdown sources.
+M0.4 is running with a Terra max worker in a delegated worktree. M0.3 is merged, and no PR watches are active. Completion wakes this lead; do not poll or start a duplicate worker.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.4 | brief | Planned branch task/M0.4-database-loops; no PR | 0 | [Brief](briefs/M0.4.md): SQLite/WAL/FULL, synchronous writes, embedded migrations and named SQL, pre-migration snapshots and injected-clock loop lifecycle. Production schema stays empty until M1.1. Synthetic before/after storage measurements required. Terra max dispatch follows this committed brief. |
+| M0.4 | worker | Planned branch task/M0.4-database-loops; no PR | 0 | [Brief](briefs/M0.4.md): SQLite/WAL/FULL, synchronous writes, embedded migrations and named SQL, pre-migration snapshots and injected-clock loop lifecycle. Production schema stays empty until M1.1. Synthetic before/after storage measurements required. Terra max worker is running from the committed brief; no PR yet. |
+
+
+Worker: [M0.4: Database layer and loop helper — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9); codex / gpt-6.1-terra, reasoningEffort: max.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9
 
 ## Automation
 
