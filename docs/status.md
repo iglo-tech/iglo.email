@@ -8,7 +8,7 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.2's implementation, local acceptance and CI are complete; independent council round 1 is starting.
+M0.2's implementation, local acceptance and CI are complete; both independent council round 1 reviewers are running.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
@@ -18,6 +18,13 @@ Completed worker: [M0.2: Upstream reference and test services — Terra max](t3-
 
 - Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c`.
 - Child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c`.
+
+### Council round 1
+
+Both reviewers independently check head `4bde681665a2cef103067a48aa32fd1755e4f7b7`, including the real reference smoke. Completion wakes this lead; do not poll running delegates. The existing PR #2 watch remains active.
+
+- [M0.2 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A5f8adad9-2768-438d-8e8f-90cb9f8720fe); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A5f8adad9-2768-438d-8e8f-90cb9f8720fe`; child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A5f8adad9-2768-438d-8e8f-90cb9f8720fe`.
+- [M0.2 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A78ee67f9-222e-4d17-853c-4d38ce1c9d53); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh`. Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A78ee67f9-222e-4d17-853c-4d38ce1c9d53`; child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A78ee67f9-222e-4d17-853c-4d38ce1c9d53`.
 
 ## Automation
 
