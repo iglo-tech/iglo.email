@@ -22,7 +22,7 @@ The starting point is listmonk v7's `schema.sql` and `queries/*.sql`. Tables kee
 | `settings.value JSONB` | same layout, JSON in `TEXT` |
 | Postgres session store | `sessions` table, same columns |
 
-Query files stay as named SQL files (`-- name: get-subscriber`), the format listmonk uses. A small loader reads them at startup, prepares each statement once, and fails fast if a statement does not compile.
+Query files stay as named SQL files (`-- name: get-subscriber`), the format listmonk uses. Each owning module supplies only its own embedded text to the loader, prepares it once, binds values, and closes its statements. Duplicate names, empty blocks and invalid SQL fail at preparation. Each block contains one statement; multiple statements, including trigger bodies with statement separators, are unsupported in named query files. Semicolons and marker-like text inside strings and comments remain SQL text. Migration files can contain multiple statements.
 
 ## Segment queries
 
@@ -124,7 +124,10 @@ Indexes: `(status, created_at)`, `(subscriber_id, kind, sent_at)` for the freque
 
 - Numbered SQL files in `migrations/`, embedded in the executable, applied in order at startup inside one transaction each. The applied version is stored in `PRAGMA user_version`.
 - **The first migration is the full v1 schema**, not a translation of listmonk's migration history.
-- Forward-only. There are no down migrations; `iglo.email backup` runs automatically before a migration on a non-empty database.
+- Forward-only. The runner validates a contiguous manifest and rejects databases ahead of the executable. It takes one SQLite-consistent `VACUUM INTO` snapshot before a pending batch on a database with a previous version or user schema; an error prevents migration. It keeps each successful earlier migration if a later one fails. No public backup command exists yet.
+- M0.4's production manifest is empty; version remains 0 and there are no product tables. M1.1 adds `0001_init.sql`. Migration bodies omit transaction commands and PRAGMAs, which the runner and connection own.
+- Within each file transaction, SQLite parses one complete statement at a time, including trigger bodies and keyword identifiers. Top-level transaction/connection commands, PRAGMAs and EXPLAIN are rejected before preparation; EXPLAIN can otherwise cause PRAGMA preparation side effects. Migration SQL is static with no bound parameters. Each parsed SQL text must match the remaining source prefix before execution; all statements and the version update share the file's transaction.
+- `VACUUM INTO` makes a consistent live snapshot including committed WAL content; it is synchronous, requires free disk space, and cannot run inside a transaction. It rebuilds the database and can change implicit rowids in tables without an explicit `INTEGER PRIMARY KEY`. The runner verifies integrity and version, publishes a unique completed file, and leaves a recognizable partial directory if interrupted. SQLite documents that an interrupted snapshot can be incomplete; it is never published as a completed snapshot. Migrations run at startup under the single-process model: writes by a separate process after the snapshot are not captured. See [SQLite VACUUM](https://www.sqlite.org/lang_vacuum.html) and [backup techniques](https://www.sqlite.org/backup.html).
 
 ## Importing from listmonk
 

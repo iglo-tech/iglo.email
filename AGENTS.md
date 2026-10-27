@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-The M0.1–M0.3 skeleton and shared HTTP contracts are in place; most features remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The M0.1–M0.4 skeleton, shared HTTP contracts, SQLite primitives and loop lifecycle helper are in place; the production migration manifest is empty and most features remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 
@@ -66,6 +66,8 @@ bun test test/server
 ```
 
 `bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The bootstrap tests exercise the compiled executable from a temporary directory. `bun test test/server` exercises the shared HTTP contracts, including embedded translations. `bun run server:reference` uses the M0.2 runner to check focused health and error cases against the pinned upstream; it requires Docker and downloads. The runner and smoke checks are documented in `test/reference/README.md`; M0.5 will add the general dual-server contract suite.
+
+`bun test test/db test/loops` covers the database and loop contracts with synthetic fixture-owned stores. `bun run db:measure` repeats the bounded native-versus-helper storage workload; it is not a CI threshold.
 
 Changes to sending, scheduling or storage must include before/after measurements, stored under `docs/perf/`.
 

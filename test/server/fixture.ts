@@ -1,5 +1,9 @@
 import { createApp } from "@/app";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Clock } from "@/clock";
+import { openDatabase } from "@/db/connection";
 import type { Translation } from "@/i18n/i18n";
 import { createTranslation } from "@/i18n/i18n";
 import type { Middleware } from "@/server/context";
@@ -82,23 +86,48 @@ export function startFixture(
   const errors: unknown[] = [];
   const clock = options.clock ?? new TestClock();
   const i18n = options.i18n ?? createTranslation();
+  const dataDir = mkdtempSync(join(tmpdir(), "iglo-http-fixture-"));
+  const db = openDatabase(dataDir);
   const app = createApp({
     bootstrap: {
       host: "127.0.0.1",
       port: 0,
-      dataDir: ".",
+      dataDir,
       rootUrl: "http://fixture.test",
       initialAdmin: { user: "private-admin", password: "private-password" },
     },
     clock,
+    db,
     i18n,
     logger: { error: (error) => errors.push(error) },
   });
   const router = options.routePaths ? new Router() : createRouter();
+  function start() {
+    try {
+      const server = startServer(app, router);
+      return {
+        server,
+        errors,
+        clock,
+        origin: `http://127.0.0.1:${server.port}`,
+        async close() {
+          try {
+            await server.stop(true);
+          } finally {
+            db.close(true);
+            rmSync(dataDir, { recursive: true, force: true });
+          }
+        },
+      };
+    } catch (error) {
+      db.close(true);
+      rmSync(dataDir, { recursive: true, force: true });
+      throw error;
+    }
+  }
   if (options.routePaths) {
     for (const path of options.routePaths) router.route("GET", path, () => ok(path));
-    const server = startServer(app, router);
-    return { server, errors, clock, origin: `http://127.0.0.1:${server.port}` };
+    return start();
   }
   router.use(wrapper("outer"), wrapper("inner"));
   router.route("GET", "/fixture/items/:item", ({ params, url }) =>
@@ -209,6 +238,5 @@ export function startFixture(
       return ok(error instanceof Error ? error.name : "rejected");
     }
   });
-  const server = startServer(app, router);
-  return { server, errors, clock, origin: `http://127.0.0.1:${server.port}` };
+  return start();
 }
