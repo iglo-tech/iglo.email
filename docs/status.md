@@ -8,17 +8,19 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is running with a Terra max worker in a delegated worktree. D20 and the committed brief separate production coverage from fixture-only authenticated/helper evidence. No PR exists yet and no PR watch is active. Completion wakes this lead; do not poll or start a duplicate worker.
+M0.5 worker completed [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), head `09a87223d741c4360b3def4e19de817e2cc89436`. Stage: CI. Seven jobs passed at the handoff check; one macOS 15 preparation job is queued. The PR is watched for completion. Start both fresh council reviewers only after CI is green. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.5 | worker | Planned task/M0.5-contract-harness; no PR | 0 | [Brief](briefs/M0.5.md): one base-URL corpus, scoped normalization, D17/D18 and explicit compiled-production versus fixture evidence. Protected read is reference + fixture until M1.3; no application auth stand-in. Terra max worker is running; no PR yet. |
+| M0.5 | ci | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 0 | [Brief](briefs/M0.5.md). Head `09a87223d741c4360b3def4e19de817e2cc89436`; reference-first commit `98e15fb`. Worker reports 69 tests, 8 production cases, 23 fixture cases + 2 probes, 31 upstream cases and reference smoke passing. Seven CI jobs passed, one macOS job queued. No council dispatched. |
 
 
-Worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
+Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
+- Preserved worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-73790d45` (terminal worker; use for small lead fixes).
+- PR #5 is linked and watched in the dedicated lead thread. Both council reviewers are still pending; do not reuse previous-task approvals.
 
 ## Automation
 
