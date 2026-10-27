@@ -8,13 +8,13 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.2's Terra max worker is running, following the serial M0 order.
+M0.2's implementation is complete. Local acceptance passed; CI reference jobs are pending before council round 1.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.2 | worker | `task/M0.2-upstream-reference`, no PR | 0 | [Brief](briefs/M0.2.md). Pinned upstream/native Mailpit, disposable Postgres, local webhook capture, owned-resource cleanup and Linux reference CI. |
+| M0.2 | ci | [PR #2](https://github.com/iglo-tech/iglo.email/pull/2), `task/M0.2-upstream-reference` | 0 | Head `4bde681665a2cef103067a48aa32fd1755e4f7b7`. Ordinary checks passed; Linux reference and native macOS preparation jobs running/queued. [Brief](briefs/M0.2.md). |
 
-Worker: [M0.2: Upstream reference and test services — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c); dispatch confirmed `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Completion wakes this lead; do not poll. The M0.1 PR watch is stopped after merge.
+Completed worker: [M0.2: Upstream reference and test services — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Full local checks and Linux rootless-Docker smoke passed, including command/startup failures, timeout/signal cleanup, isolation, sentinel survival and corrupt-cache rejection. Native macOS preparation/version checks are in CI; full macOS Docker lifecycle remains unverified. The lead is watching PR #2 for CI completion. Do not poll. The M0.1 PR watch is stopped after merge.
 
 - Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c`.
 - Child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c`.
