@@ -25,52 +25,51 @@ function validateCatalog(catalog: readonly Migration[]): void {
     }
     const masked = maskSql(migration.sql);
     if (!masked.replaceAll(";", "").trim()) throw new Error(`Empty migration ${migration.version}`);
-    validateMigrationBody(masked, migration.version);
   }
 }
 
-function validateMigrationBody(masked: string, version: number): void {
-  const tokens = masked.match(/[A-Za-z_][A-Za-z_0-9$]*|[^\s]/g) ?? [];
-  let start = true;
-  let create = false;
-  let trigger = false;
-  let body = false;
-  let caseDepth = 0;
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!.toUpperCase();
-    if (start && token !== ";") {
-      if (
-        [
-          "BEGIN",
-          "COMMIT",
-          "END",
-          "ROLLBACK",
-          "SAVEPOINT",
-          "RELEASE",
-          "VACUUM",
-          "ATTACH",
-          "DETACH",
-        ].includes(token)
-      ) {
+function executeMigration(db: Database, migration: Migration): void {
+  let remaining = migration.sql;
+  while (true) {
+    const masked = maskSql(remaining);
+    if (!masked.replaceAll(";", "").trim()) return;
+    const command = /^[\s;]*([A-Za-z_]+)/.exec(masked)?.[1]?.toUpperCase();
+    if (!command) throw new Error(`Invalid SQL in migration ${migration.version}`);
+    if (
+      [
+        "BEGIN",
+        "COMMIT",
+        "END",
+        "ROLLBACK",
+        "SAVEPOINT",
+        "RELEASE",
+        "VACUUM",
+        "ATTACH",
+        "DETACH",
+        "EXPLAIN",
+      ].includes(command)
+    )
+      throw new Error(
+        `Migration ${migration.version} may not control transactions or database connections, or use EXPLAIN`,
+      );
+    // Some PRAGMAs take effect at preparation time, so reject before prepare.
+    if (command === "PRAGMA")
+      throw new Error(
+        `Migration ${migration.version} may not change connection settings or user_version`,
+      );
+    const statement = db.prepare(remaining);
+    try {
+      // SQLite finds the complete statement, including trigger bodies and identifiers.
+      // With no parameters, Bun's expanded SQL must be an exact source prefix.
+      const parsed = statement.toString();
+      if (statement.paramsCount || !parsed.length || !remaining.startsWith(parsed))
         throw new Error(
-          `Migration ${version} may not control transactions or database connections`,
+          `Migration ${migration.version} requires static SQL without bound parameters`,
         );
-      }
-      if (token === "PRAGMA")
-        throw new Error(`Migration ${version} may not change connection settings or user_version`);
-      create = token === "CREATE";
-      start = false;
-    } else if (create && !body && token === "TRIGGER") trigger = true;
-    if (trigger && token === "BEGIN") body = true;
-    else if (body && token === "CASE") caseDepth++;
-    else if (body && token === "END") {
-      if (caseDepth) caseDepth--;
-      else body = false;
-    }
-    if (token === ";" && !body) {
-      start = true;
-      create = false;
-      trigger = false;
+      statement.run();
+      remaining = remaining.slice(parsed.length);
+    } finally {
+      statement.finalize();
     }
   }
 }
@@ -128,7 +127,7 @@ export function runMigrations(
   if (version > 0 || (objects ?? 0n) > 0n) createSnapshot(db, dataDir, clock, version);
   for (const migration of catalog.slice(version)) {
     writeTransaction(db, () => {
-      db.run(migration.sql);
+      executeMigration(db, migration);
       db.run(`PRAGMA user_version = ${migration.version}`);
     });
   }

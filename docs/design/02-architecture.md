@@ -49,6 +49,10 @@ processes the bounded batch serially outside it. Stop cancels idle clock waits,
 prevents new claims and waits for started work. Expiry by itself never authorizes
 re-sending a marketing message. Processing failures are exposed to the caller,
 not automatically retried. Owners must bound their own external I/O.
+Between nonempty batches it awaits an abortable zero-delay sleep on the injected
+clock. The real clock yields an event-loop turn so synchronous processors cannot
+starve HTTP or shutdown; fake clocks release that wait explicitly with a zero-time
+advance. Empty claims retain the configured polling interval.
 
 ## Throughput target
 

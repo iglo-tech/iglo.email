@@ -56,9 +56,11 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
           if (controller.signal.aborted) break;
           await options.process(item);
         }
-        if (!items.length && !controller.signal.aborted) {
+        // A synchronous or already-resolved processor only yields microtasks.
+        // Yield through the injected clock after every bounded batch for I/O and stop delivery.
+        if (!controller.signal.aborted) {
           try {
-            await options.clock.sleep(options.intervalMs, controller.signal);
+            await options.clock.sleep(items.length ? 0 : options.intervalMs, controller.signal);
           } catch (error) {
             if (!controller.signal.aborted) throw error;
           }
