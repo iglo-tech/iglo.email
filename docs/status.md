@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is in council round 2 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `095f8c0421abf70ac11808a236029f1213218864`. All eight new-head CI jobs passed. Both fresh independent reviewers are running with the complete brief and round-1 findings. Opus sent an interim handoff without a verdict while its check was running; a single recovery read showed T3 had already resumed it automatically (run 2). Keep that existing review; no replacement was started. Their completions wake this lead. The existing PR watch remains active; do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
+M0.5 is in council round 2 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `095f8c0421abf70ac11808a236029f1213218864`. All eight CI jobs passed. Opus approved this head after finishing its automatic continuation and verifying all acceptance commands and the regression-first failures. Sol’s independent round-2 verdict is still pending; its completion wakes this lead. The existing PR watch remains active. Do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.5 | council | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 2 | [Brief](briefs/M0.5.md). Head `095f8c0421abf70ac11808a236029f1213218864`; all eight CI jobs passed. Opus findings fixed after regression-first commit `2f8efcf` (three failures before, three passes after). Lead acceptance: 72 tests / 487 assertions, 8 production cases, 23 fixture cases + 2 probes, 31 live upstream cases. Round 1: Opus CHANGES, Sol APPROVE on the original head. Both fresh round-2 reviews are running on the fixed head; verdicts pending. |
+| M0.5 | council | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 2 | [Brief](briefs/M0.5.md). Head `095f8c0421abf70ac11808a236029f1213218864`; all eight CI jobs passed. Opus findings fixed after regression-first commit `2f8efcf` (three failures before, three passes after). Lead acceptance: 72 tests / 487 assertions, 8 production cases, 23 fixture cases + 2 probes, 31 live upstream cases. Round 1: Opus CHANGES, Sol APPROVE on the original head. Round 2: Opus APPROVE on the fixed head; Sol verdict pending. |
 
 
 Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,7 +20,7 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 - Preserved worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-73790d45` (terminal worker; use for small lead fixes).
-- PR #5 is linked and watched in the dedicated lead thread. Both round-1 reviewers completed. Fresh council round 2 is running on `095f8c0`; do not reuse original-head approvals.
+- PR #5 is linked and watched in the dedicated lead thread. Both round-1 reviewers completed. Council round 2 has Opus APPROVE on `095f8c0`; Sol is still running. Do not reuse original-head approvals.
 
 ### Council round 1
 
@@ -36,7 +36,7 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 
 ### Council round 2
 
-[M0.5 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9); claude-opus-5-5. Verdict pending on `095f8c0421abf70ac11808a236029f1213218864`. Interim handoff reported seven acceptance commands passed and check still running. T3 automatically resumed the same task; final verification and a posted verdict remain required. Do not poll it.
+[M0.5 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9); claude-opus-5-5. [APPROVE](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6456090407) on `095f8c0421abf70ac11808a236029f1213218864`. All eight acceptance commands passed; verified all three new regressions fail against the prior corpus. The runtime automatically resumed an interim handoff; no duplicate reviewer was started.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
@@ -65,7 +65,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Follow-ups
 
-- M0.6/public-page work must finish the explicitly deferred public HTML 404 fallback (including `POST /health`). It remains a temporary staging gap; API error bodies are complete for the current scope.
+- M0.6/public-page work must finish the explicitly deferred public HTML 404 fallback (including `POST /health`). Update the two route-backed D18 contract fixture expectations when that fallback changes; retain the exact-target discrimination and upstream assertions. It remains a temporary staging gap; API error bodies are complete for the current scope.
 - M0.5 must carry D17/D18 markers into the general contract suite. Native macOS binary preparation passes CI; full native macOS Docker lifecycle remains unverified.
 
 ## Blocked
