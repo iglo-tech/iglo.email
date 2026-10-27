@@ -8,7 +8,7 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-The M0.3 council fixes passed local validation and all CI jobs; fresh independent council round 2 is starting.
+The M0.3 council fixes passed local validation and all CI jobs; both fresh independent council round 2 reviewers are running.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
@@ -27,6 +27,13 @@ Both reviewers completed with CHANGES for exact head `644411b3aa798703953002dec1
 
 - [M0.3 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa20f861c-2f11-4b66-a1d3-deedcca621e5); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa20f861c-2f11-4b66-a1d3-deedcca621e5`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa20f861c-2f11-4b66-a1d3-deedcca621e5`.
 - [M0.3 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A6cb2330e-15e6-4507-8e5f-8d32700185e7); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A6cb2330e-15e6-4507-8e5f-8d32700185e7`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A6cb2330e-15e6-4507-8e5f-8d32700185e7`.
+
+### Council round 2
+
+Both fresh reviewers independently assess full head `ef9b324181e69b4dd816d6145d94599bc9fed925`, the prior findings and D17, and run the actual acceptance commands. Completion wakes this lead; do not poll running delegates. The existing PR #3 watch remains active.
+
+- [M0.3 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae17fb49f-0b01-425f-b19d-0ac0020a5b5e); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae17fb49f-0b01-425f-b19d-0ac0020a5b5e`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae17fb49f-0b01-425f-b19d-0ac0020a5b5e`.
+- [M0.3 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A53c1ed19-941f-4785-9a35-be2ee4787a9f); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A53c1ed19-941f-4785-9a35-be2ee4787a9f`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A53c1ed19-941f-4785-9a35-be2ee4787a9f`.
 
 ## Automation
 
