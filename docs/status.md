@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-The M0.3 council fixes are pushed and passed local validation. The new head is awaiting CI before fresh council round 2.
+The M0.3 council fixes passed local validation and all CI jobs; fresh independent council round 2 is starting.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.3 | ci | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 1 | New head `ef9b324181e69b4dd816d6145d94599bc9fed925`: route precedence, empty bodies and literal interpolation fixed; D17 recorded and marked. Local check passed (22 tests / 207 assertions), 15 live reference cases and all eight reference-smoke stages passed. Await CI, then fresh council round 2. [Brief](briefs/M0.3.md). |
+| M0.3 | council | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 2 | Head `ef9b324181e69b4dd816d6145d94599bc9fed925`. All CI jobs green. Local check passed (22 tests / 207 assertions), 15 live reference cases and all eight reference-smoke stages passed. Fresh Opus medium and Sol xhigh review the full PR and prior findings. [Brief](briefs/M0.3.md). |
 
 Completed worker: [M0.3: Shared HTTP and application contracts — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Reference cases were committed first at `0b732f7017f0ec46b41bf6fa0d49d63459bf4363` and passed against the pinned live upstream before implementation. Initial acceptance and CI passed (18 tests / 156 assertions). Validation for the council fixes is recorded below. The existing PR #3 watch remains active; no merged-task PR watch is active.
 
