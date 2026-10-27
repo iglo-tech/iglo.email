@@ -8,11 +8,16 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.3 is briefed and ready for its Terra max worker, following the serial M0 order.
+M0.3's Terra max worker is running, following the serial M0 order.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.3 | brief | `task/M0.3-shared-contracts`, no PR | 0 | [Brief](briefs/M0.3.md). Context/clock, HTTP router/middleware/error envelopes, translation data and focused reference-first boundary checks. |
+| M0.3 | worker | `task/M0.3-shared-contracts`, no PR | 0 | [Brief](briefs/M0.3.md). Context/clock, HTTP router/middleware/error envelopes, translation data and focused reference-first boundary checks. |
+
+Worker: [M0.3: Shared HTTP and application contracts — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b); dispatch confirmed `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Completion wakes this lead; do not poll. No PR watch is active for the merged tasks.
+
+- Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b`.
+- Child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b`.
 
 ## Automation
 
