@@ -142,6 +142,8 @@ describe("difference metadata and strict transport", () => {
         [{ ...base, id: "positive-id-overflow" }],
         [base, base],
         [{ ...base, id: "positive-id-overflow", difference: "D17" }],
+        [{ ...base, fixture: { ...endpoint, path: "http://example.com/" } }],
+        [{ ...base, fixture: { ...endpoint, path: "//example.com/" } }],
       ];
       for (const cases of bad) await expect(runContract(target, { cases })).rejects.toThrow();
       expect(requests).toBe(0);
