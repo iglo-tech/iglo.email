@@ -1,6 +1,6 @@
 # Chief of staff runbook
 
-The lead role from the [work plan](design/11-work-plan.md), run in its own top-level chief-of-staff thread by a scheduled agent every 45 minutes. Keep implementation coordination and the recurring schedule in that dedicated thread. Each run starts with no memory: this file, the work plan and [`status.md`](status.md) are the whole state. The owner is away and is never asked anything; decide, log, continue.
+The lead role from the [work plan](design/11-work-plan.md). Day-to-day implementation coordination belongs in the dedicated top-level chief-of-staff thread linked in [`status.md`](status.md). The automation runs independently every 45 minutes and must remain unbound to any thread (`bindToCurrentThread: false`, returned `boundThreadId: null`), so a stuck conversation cannot prevent recovery. Each run starts with no memory: this file, the work plan, [`status.md`](status.md), the lock and GitHub are the durable state. The owner is away and is never asked anything; decide, log, continue.
 
 ## Each run
 
@@ -8,7 +8,7 @@ The lead role from the [work plan](design/11-work-plan.md), run in its own top-l
 2. **Lock.** The lock file is `~/.local/state/iglo-email-cos/lock.json`: `{ "run": "<ISO start time>", "heartbeat": "<ISO time>", "task": "<id>", "stage": "<stage>" }`.
    - On a child-completion or PR-check/review wake for the task this thread is already driving, resume its recorded stage and refresh its heartbeat. Do not mistake your own continuation for a competing run.
    - If the heartbeat is less than 90 minutes old, another run is driving. Check `gh pr list` and the PR of the active task for progress, write nothing, and end the run with one line.
-   - Otherwise take the lock: write your own start time and heartbeat. Update the heartbeat after every stage change.
+   - Otherwise take the lock: write your own start time and heartbeat. Update the heartbeat after every stage change. An independent run recovers from the recorded task, branch, PR and delegate identifiers; it does not wait for the dedicated thread to respond. Check the recorded worker and GitHub state before replacing work, and never start a duplicate worker.
 3. **Pause.** If `status.md` says "Paused until" a time in the future, release the lock and end the run.
 4. **Continue or start.** If `status.md` has an active task, continue it at its stage (the PR and its comments show where it is). Otherwise pick the next task from the work plan whose dependencies are all merged, following the critical path first. Start only one task at a time.
 5. **Drive the task** through the stages below in this run. After starting an agent, end your turn: its completion wakes this run. Never wait with `sleep`, loops, watchers or polling.
@@ -37,7 +37,7 @@ Call `orchestrator_capabilities` once per thread before the first `delegate_task
 | Terra worker, fixer or helper | `{ "providerInstanceId": "codex", "model": "gpt-6.1-terra", "options": { "reasoningEffort": "max" } }` |
 | Opus council member only | `{ "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": { "effort": "medium" } }` |
 
-The recurring lead schedule is bound to the dedicated Sol xhigh chief-of-staff thread. Claude Opus 5.5 is never used for implementation or lead work.
+The recurring lead schedule is independent and unbound; never bind it to the dedicated thread or any other thread. Keep its existing 45-minute interval and use the lock and status file for recovery. Record delegate task and thread identifiers in `status.md` after dispatch so a later run can recover without the former lead conversation. Claude Opus 5.5 is never used for implementation or lead work.
 
 ### Worker instructions
 
