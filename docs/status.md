@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-The M0.3 council fixes passed local validation and all CI jobs. Opus approved the exact round 2 head; Sol's verdict is pending.
+M0.3 round 2 ended with Opus APPROVE and Sol CHANGES. The lead is correcting an additional escaped-path parameter difference before fresh round 3.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.3 | council | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 2 | Head `ef9b324181e69b4dd816d6145d94599bc9fed925`. All CI jobs green. [Opus approved](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453600736); Sol pending. Local check passed (22 tests / 207 assertions), 15 live reference cases and all eight reference-smoke stages passed. [Brief](briefs/M0.3.md). |
+| M0.3 | fix | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 2 | At `ef9b324181e69b4dd816d6145d94599bc9fed925`, [Opus approved](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453600736) and [Sol requested changes](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453654277): router unescaping accepts encoded IDs that upstream rejects. Lead is adding reference/HTTP regressions and matching the pinned URI boundary. [Brief](briefs/M0.3.md). |
 
 Completed worker: [M0.3: Shared HTTP and application contracts — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Reference cases were committed first at `0b732f7017f0ec46b41bf6fa0d49d63459bf4363` and passed against the pinned live upstream before implementation. Initial acceptance and CI passed (18 tests / 156 assertions). Validation for the council fixes is recorded below. The existing PR #3 watch remains active; no merged-task PR watch is active.
 
@@ -30,7 +30,7 @@ Both reviewers completed with CHANGES for exact head `644411b3aa798703953002dec1
 
 ### Council round 2
 
-Opus completed and [approved](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453600736) exact head `ef9b324181e69b4dd816d6145d94599bc9fed925`: all prior findings resolved, all acceptance commands passing, no blocking findings. Sol's independent verdict remains pending. Completion wakes this lead; do not poll running delegates. The existing PR #3 watch remains active.
+Opus [approved](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453600736) and Sol [requested changes](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6453654277) for exact head `ef9b324181e69b4dd816d6145d94599bc9fed925`. Both found the round 1 issues resolved and passed acceptance. Sol additionally reproduced encoded digits/plus signs accepted by the fixture ID handler while upstream returns 400 `invalid ID`. The lead is preserving the default Go/Echo decoded-versus-escaped path choice, without an extra parameter unescape. New reference and HTTP cases precede the fix; a new head will need fresh council round 3 after CI. The existing PR #3 watch remains active.
 
 - [M0.3 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae17fb49f-0b01-425f-b19d-0ac0020a5b5e); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae17fb49f-0b01-425f-b19d-0ac0020a5b5e`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae17fb49f-0b01-425f-b19d-0ac0020a5b5e`.
 - [M0.3 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A53c1ed19-941f-4785-9a35-be2ee4787a9f); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh`. Task ID: `node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A53c1ed19-941f-4785-9a35-be2ee4787a9f`; child thread ID: `thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A53c1ed19-941f-4785-9a35-be2ee4787a9f`.
