@@ -27,6 +27,9 @@ const invalid: Record<string, () => unknown> = {
   tag: () => jsx("bad tag", {}),
   attribute: () => jsx("p", { "bad attribute": "x" }),
   "object-child": () => jsx("p", { children: { html: "<b>fake</b>" } }),
+  "forged-raw": () =>
+    jsx("p", { children: Object.create(Object.getPrototypeOf(raw("<b>trusted</b>"))) }),
+  "forged-node": () => Object.create(Object.getPrototypeOf(jsx("b", { children: "trusted" }))),
   "object-attribute": () => jsx("p", { title: { html: "<b>fake</b>" } }),
   "raw-attribute": () => jsx("p", { title: raw('<b>"') }),
   "event-handler": () => jsx("button", { onClick: () => {} }),

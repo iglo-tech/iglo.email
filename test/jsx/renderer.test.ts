@@ -44,6 +44,8 @@ test("compiled TSX escapes by default and rejects malformed values", async () =>
       "tag",
       "attribute",
       "object-child",
+      "forged-raw",
+      "forged-node",
       "object-attribute",
       "raw-attribute",
       "event-handler",

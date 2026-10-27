@@ -2,6 +2,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createTranslation } from "@/i18n/i18n";
+import { startFixture } from "@/test/server/fixture";
 import { withProduction } from "@/test/contract/owned";
 import { rawRequest } from "@/test/server/raw-request";
 
@@ -71,5 +73,31 @@ test("compiled production serves the public message page and asset boundaries", 
         body: "404 page not found\n",
       });
     }
+    // D18: Bun removes encoded dot segments before the router sees the target.
+    const traversal = await rawRequest(origin, "/public/static/%2e%2e/style.css");
+    expect(traversal.status).toBe(404);
+    expect(traversal.contentType).toBe("text/html; charset=UTF-8");
+    expect(traversal.body).toContain("<h2>404 - Not found</h2>");
   });
 }, 30_000);
+
+// Request-local translations are escaped in both heading and footer.
+test("public fallback uses and escapes the injected translation instance", async () => {
+  const i18n = createTranslation().Load({
+    "globals.terms.notFound": '<script>&"',
+    "public.poweredBy": "By <unsafe>&",
+  });
+  const fixture = startFixture({ i18n });
+  try {
+    const response = await fetch(`${fixture.origin}/missing`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    const body = await response.text();
+    expect(response.status).toBe(404);
+    expect(body).toContain("<h2>404 - &lt;script&gt;&amp;&quot;</h2>");
+    expect(body).toContain("By &lt;unsafe&gt;&amp;");
+    expect(body).not.toContain("<script>");
+  } finally {
+    await fixture.close();
+  }
+});

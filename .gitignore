@@ -12,3 +12,6 @@
 # Dependencies and compiled output
 /node_modules/
 /dist/
+
+# Generated embedded-asset imports
+/src/server/asset-manifest.ts
