@@ -35,7 +35,8 @@ function segments(path: string): Segment[] {
 }
 
 function precedence(a: Route, b: Route): number {
-  for (let i = 0; i < Math.min(a.segments.length, b.segments.length); i++) {
+  if (a.segments.length !== b.segments.length) return a.segments.length - b.segments.length;
+  for (let i = 0; i < a.segments.length; i++) {
     const left = a.segments[i]!;
     const right = b.segments[i]!;
     if ("literal" in left !== "literal" in right) return "literal" in left ? -1 : 1;

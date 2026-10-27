@@ -23,10 +23,18 @@ export function strHasLen(value: string, min: number, max: number): boolean {
 }
 
 export async function bindJSON(request: Request): Promise<unknown> {
+  let body: string;
+  try {
+    body = await request.text();
+  } catch {
+    throw new HttpError(400);
+  }
+  // Echo leaves input fields at their defaults when there is nothing to bind.
+  if (body.length === 0) return {};
   const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim();
   if (contentType !== "application/json") throw new HttpError(415);
   try {
-    return await request.json();
+    return JSON.parse(body);
   } catch {
     throw new HttpError(400);
   }

@@ -36,7 +36,7 @@ export class Translation {
     const budget = { remaining: 256 };
     for (let index = 0; index < params.length; index += 2) {
       const replacement = this.resolve(params[index + 1]!, new Set(), budget);
-      value = value.replaceAll(`{${params[index]!}}`, replacement);
+      value = value.replaceAll(`{${params[index]!}}`, () => replacement);
     }
     return value;
   }
