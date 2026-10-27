@@ -8,13 +8,13 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.3's implementation and local acceptance are complete. The lead is waiting for the remaining CI job before council round 1.
+M0.3's implementation, local acceptance and CI are complete; independent council round 1 is starting.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.3 | ci | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 0 | Head `644411b3aa798703953002dec1641559e0947f33`. Local acceptance passed (11 reference cases; 18 tests / 156 assertions; existing reference smoke). Ordinary and macOS checks passed; one Linux reference job remains in progress. [Brief](briefs/M0.3.md). |
+| M0.3 | council | [PR #3](https://github.com/iglo-tech/iglo.email/pull/3), `task/M0.3-shared-contracts` | 1 | Head `644411b3aa798703953002dec1641559e0947f33`. All CI jobs passed, including focused server reference cases and the Linux lifecycle. Council: Opus medium and fresh Sol xhigh. [Brief](briefs/M0.3.md). |
 
-Completed worker: [M0.3: Shared HTTP and application contracts — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Reference cases were committed first at `0b732f7017f0ec46b41bf6fa0d49d63459bf4363` and passed against the pinned live upstream before implementation. Local focused server tests, compiled fixtures, full check and existing reference smoke passed. The lead is watching PR #3 for CI completion; no merged-task PR watch is active.
+Completed worker: [M0.3: Shared HTTP and application contracts — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Abc6987b1-7251-4c79-8eeb-258df345672b); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Reference cases were committed first at `0b732f7017f0ec46b41bf6fa0d49d63459bf4363` and passed against the pinned live upstream before implementation. Local focused server tests, compiled fixtures, full check (18 tests / 156 assertions) and existing reference smoke passed. All CI jobs are green for the exact head. The existing PR #3 watch remains active; no merged-task PR watch is active.
 
 Scope review: `POST /health` returns the verified upstream 404 status but a plain-text body, while upstream renders its public HTML error page. The M0.3 brief explicitly defers public HTML rendering. The lead accepts this as temporary staging, already documented in the submitted architecture note and PR, rather than a permanent API difference. API 404/error bodies and `GET /health` retain the upstream contract. Track completion of the public HTML fallback with M0.6/public-page work; do not treat the temporary body as the final contract.
 
