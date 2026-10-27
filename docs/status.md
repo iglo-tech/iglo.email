@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 worker completed [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), now head `b8797e2316bfb20ad9ef590ef621aa039180c772` after a small lead documentation correction. Stage: CI. At handoff, check and all macOS jobs passed on worker head `b7f802e`; Linux reference jobs were running. Fresh CI is pending on the new head. The PR is watched; start both fresh council reviewers only after green CI. No M0.6 council has been dispatched.
+M0.6 is in council round 1 on [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), exact head `b8797e2316bfb20ad9ef590ef621aa039180c772`. All eight CI jobs passed. Both fresh independent reviewers are running with the full brief, source map and handoff notes; their completions wake this lead. The existing PR watch remains active. Do not poll or start duplicate reviewers.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | ci | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 0 | [Brief](briefs/M0.6.md). Head `b8797e2316bfb20ad9ef590ef621aa039180c772`; CI pending. Worker reports 76 tests / 564 assertions, 15 production cases, 23 fixture + 2 probes, 37 upstream cases, smoke and compiled-shell/public-404 browser checks passed. Reference-first commit `c791107`; the lead corrected the stale current-coverage table. |
+| M0.6 | council | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 1 | [Brief](briefs/M0.6.md). Head `b8797e2316bfb20ad9ef590ef621aa039180c772`; all eight CI jobs passed. Opus medium and fresh Sol xhigh round-1 verdicts pending. Worker reports 76 tests / 564 assertions, 15 production cases, 23 fixture + 2 probes, 37 upstream cases, smoke and compiled-shell/public-404 browser checks passed. Reference-first commit `c791107`; the lead corrected the stale current-coverage table. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,9 +20,21 @@ Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
-- PR #6 is linked and watched in this lead thread. No council reviewer exists yet; do not reuse M0.5 approvals.
+- PR #6 is linked and watched in this lead thread. Both fresh M0.6 round-1 reviewers are running; do not reuse M0.5 approvals.
 
 Handoff notes for council: the existing D18 dot-segment normalization also changes the refusal body for encoded traversal targets that leave the static prefix (upstream plain-text 404 versus normal HTML 404); both refuse the asset. Inspect the exact coverage and metadata against the policy. Production admin/auth remains absent, with the shell verified only by a compiled fixture. The lead documentation-only commit `b8797e2` updates the current coverage table while retaining the historical reference-first baseline.
+
+### Council round 1
+
+[M0.6 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e); claude-opus-5-5. Verdict pending on `b8797e2316bfb20ad9ef590ef621aa039180c772`.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
+
+[M0.6 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de); gpt-6.1-sol. Verdict pending on `b8797e2316bfb20ad9ef590ef621aa039180c772`.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
 
 ## Automation
 
