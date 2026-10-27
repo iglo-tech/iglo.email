@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is in council round 1 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `09a87223d741c4360b3def4e19de817e2cc89436`. All eight CI jobs passed (four job types in each run). Opus returned CHANGES; the lead is correcting two ineffective fixture paths and the minor readiness edge. Sol is still reviewing the original exact head; its completion wakes this lead. The existing PR watch remains active. Do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
+M0.5 fixes are pushed to [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), new head `095f8c0421abf70ac11808a236029f1213218864`; CI is pending on that head. All eight CI jobs passed on the earlier reviewed head `09a87223d741c4360b3def4e19de817e2cc89436`. Opus returned CHANGES there; the lead corrected both fixture paths and the minor readiness edge. Sol is still reviewing that original head; its completion wakes this lead. Collect its verdict and new-head CI before starting fresh council round 2. The existing PR watch remains active. Do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.5 | fix | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 1 | [Brief](briefs/M0.5.md). Head `09a87223d741c4360b3def4e19de817e2cc89436`; reference-first commit `98e15fb`. Worker reports 69 tests, 8 production cases, 23 fixture cases + 2 probes, 31 upstream cases and reference smoke passing. All eight CI jobs passed. Opus CHANGES: D18 dot helpers and API method mismatch did not reach registered routes. Lead fixes in progress with three regression-first tests; Sol original-head verdict pending. No replacement reviewer started. |
+| M0.5 | fix | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 1 | [Brief](briefs/M0.5.md). Head `095f8c0421abf70ac11808a236029f1213218864`; new CI pending. Opus findings fixed after regression-first commit `2f8efcf` (three failures before, three passes after). Lead acceptance: 72 tests / 487 assertions, 8 production cases, 23 fixture cases + 2 probes, 31 live upstream cases. Sol original-head round-1 verdict pending; no replacement reviewer started. |
 
 
 Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -33,6 +33,8 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
+
+Lead fix evidence: D18 dot cases now target the registered `/fixture/id/:id` helper; its normalized missing-path fallback is asserted as the actual plain-text 404. The method-mismatch case now POSTs to the fixture's GET-only `/api/health`. Regression targets preserve raw dots or return 405 on that GET-only path, and each corrected case rejects the nonconforming response. A successful final bounded readiness attempt is retained rather than overwritten by a subsequent deadline check. No production code changed.
 
 Validation environment: `/tmp` is nearly full (26 MB free at the lead check), independently confirmed by `df`; the reviewer attributed it to another project. No unrelated files were removed. Lead checks use ignored disk-backed `upstream/lead-tmp` in the worker checkout.
 
