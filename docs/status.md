@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 fixes are pushed to [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), new head `095f8c0421abf70ac11808a236029f1213218864`; CI is pending on that head. All eight CI jobs passed on the earlier reviewed head `09a87223d741c4360b3def4e19de817e2cc89436`. Opus returned CHANGES there; the lead corrected both fixture paths and the minor readiness edge. Sol approved that original head with no findings. Both round-1 reviews are terminal; neither covers the new head. Wait for new-head CI before starting both fresh council reviewers for round 2. The existing PR watch remains active. Do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
+M0.5 is in council round 2 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `095f8c0421abf70ac11808a236029f1213218864`. All eight new-head CI jobs passed. Both fresh independent reviewers are running with the complete brief and round-1 findings. Their completions wake this lead. The existing PR watch remains active; do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.5 | ci | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 1 | [Brief](briefs/M0.5.md). Head `095f8c0421abf70ac11808a236029f1213218864`; new CI pending. Opus findings fixed after regression-first commit `2f8efcf` (three failures before, three passes after). Lead acceptance: 72 tests / 487 assertions, 8 production cases, 23 fixture cases + 2 probes, 31 live upstream cases. Sol approved the original head. Both round-1 reviews are terminal; fresh round 2 awaits new-head CI. |
+| M0.5 | council | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 2 | [Brief](briefs/M0.5.md). Head `095f8c0421abf70ac11808a236029f1213218864`; all eight CI jobs passed. Opus findings fixed after regression-first commit `2f8efcf` (three failures before, three passes after). Lead acceptance: 72 tests / 487 assertions, 8 production cases, 23 fixture cases + 2 probes, 31 live upstream cases. Round 1: Opus CHANGES, Sol APPROVE on the original head. Both fresh round-2 reviews are running on the fixed head; verdicts pending. |
 
 
 Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,7 +20,7 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 - Preserved worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-73790d45` (terminal worker; use for small lead fixes).
-- PR #5 is linked and watched in the dedicated lead thread. Both round-1 reviewers completed. Fresh council round 2 awaits green CI on `095f8c0`; do not reuse original-head approvals.
+- PR #5 is linked and watched in the dedicated lead thread. Both round-1 reviewers completed. Fresh council round 2 is running on `095f8c0`; do not reuse original-head approvals.
 
 ### Council round 1
 
@@ -34,9 +34,21 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
 
+### Council round 2
+
+[M0.5 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9); claude-opus-5-5. Verdict pending on `095f8c0421abf70ac11808a236029f1213218864`.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
+
+[M0.5 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A3c149e3f-4017-474f-8485-1b00787cbebf); gpt-6.1-sol. Verdict pending on `095f8c0421abf70ac11808a236029f1213218864`.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A3c149e3f-4017-474f-8485-1b00787cbebf
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A3c149e3f-4017-474f-8485-1b00787cbebf
+
 Lead fix evidence: D18 dot cases now target the registered `/fixture/id/:id` helper; its normalized missing-path fallback is asserted as the actual plain-text 404. The method-mismatch case now POSTs to the fixture's GET-only `/api/health`. Regression targets preserve raw dots or return 405 on that GET-only path, and each corrected case rejects the nonconforming response. A successful final bounded readiness attempt is retained rather than overwritten by a subsequent deadline check. No production code changed.
 
-Validation environment: `/tmp` is nearly full (26 MB free at the lead check), independently confirmed by `df`; the reviewer attributed it to another project. No unrelated files were removed. Lead checks use ignored disk-backed `upstream/lead-tmp` in the worker checkout.
+Validation environment: `/tmp` was nearly full during round 1 (26 MB free), independently confirmed by `df`; reviewers attributed it to another project. A later bounded check found 7 GB free. This lead removed no unrelated files. Lead checks used ignored disk-backed `upstream/lead-tmp`; round-2 reviewers were told to use their own ignored disk-backed TMPDIR for stable validation.
 
 ## Automation
 
