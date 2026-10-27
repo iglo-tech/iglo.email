@@ -70,6 +70,7 @@ export async function withProduction<T>(
     // Attach a rejection handler immediately, even if readiness fails first.
     void closed.catch(() => {});
     const deadline = Date.now() + 5000;
+    let ready = false;
     while (Date.now() < deadline) {
       lifetime.throwIfAborted();
       if (child.exitCode !== null || child.signalCode !== null)
@@ -79,13 +80,16 @@ export async function withProduction<T>(
           headers: { Connection: "close" },
           signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
         });
-        if (response.status === 200 && (await response.text()) === '{"data":true}\n') break;
+        if (response.status === 200 && (await response.text()) === '{"data":true}\n') {
+          ready = true;
+          break;
+        }
       } catch {
         lifetime.throwIfAborted();
       }
       await Bun.sleep(25);
     }
-    if (Date.now() >= deadline) throw new Error("Compiled production process readiness timed out");
+    if (!ready) throw new Error("Compiled production process readiness timed out");
     let abort!: () => void;
     const cancelled = new Promise<never>((_, reject) => {
       abort = () => reject(lifetime.reason);

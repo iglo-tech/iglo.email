@@ -107,7 +107,7 @@ export const cases: readonly ContractCase[] = freeze([
     auth: "basic",
     difference: "D18",
     reference: endpoint(`/api/lists/${id}`, invalidID),
-    fixture: endpoint(`/api/lists/${id}`, notFound),
+    fixture: endpoint(`/fixture/id/${id}`, wire(404, "text/plain;charset=utf-8", "Not Found")),
   })),
   {
     id: "literal-backslash",
@@ -201,7 +201,7 @@ export const cases: readonly ContractCase[] = freeze([
     requestContentType: "application/json",
   },
   {
-    ...helper("api-method-mismatch", "/api/lists/not-an-id", "/api/lists/not-an-id", notFound),
+    ...helper("api-method-mismatch", "/api/lists/not-an-id", "/api/health", notFound),
     method: "POST",
   },
   {
