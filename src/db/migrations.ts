@@ -122,7 +122,7 @@ export function runMigrations(
   if (version === catalog.length) return;
   const objects = db
     .query<{ count: bigint }, []>(
-      "SELECT count(*) AS count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'",
+      "SELECT count(*) AS count FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'",
     )
     .get()?.count;
   if (version > 0 || (objects ?? 0n) > 0n) createSnapshot(db, dataDir, clock, version);

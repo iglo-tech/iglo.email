@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { startDbFixture } from "@/test/db/fixture";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(15_000);
@@ -198,6 +199,70 @@ describe("compiled executable", () => {
       expect((await healthWhenReady(child, port)).status).toBe(200);
     } finally {
       expect(await stop(child, "SIGTERM")).toBe(0);
+    }
+  });
+
+  test("opens the persistent empty production database on standalone restart", async () => {
+    const port = await availablePort();
+    const dataDir = join(temporaryDirectory, "persistent-db");
+    for (let i = 0; i < 2; i++) {
+      const child = start(["--port", String(port), "--data-dir", dataDir]);
+      try {
+        expect((await healthWhenReady(child, port)).status).toBe(200);
+      } finally {
+        expect(await stop(child, "SIGTERM")).toBe(0);
+      }
+    }
+    const fixture = startDbFixture(dataDir);
+    try {
+      const response = await fetch(fixture.origin, {
+        method: "POST",
+        body: JSON.stringify({ action: "status" }),
+        signal: AbortSignal.timeout(3000),
+      });
+      const { result } = (await response.json()) as {
+        result: { version: string; objects: unknown[]; integrity: string };
+      };
+      expect(result).toMatchObject({ version: "0", objects: [], integrity: "ok" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("fails cleanly when the data directory cannot be created or the port is occupied", async () => {
+    const blocked = join(temporaryDirectory, "not-a-directory");
+    await writeFile(blocked, "synthetic fixture");
+    const failure = await runCli(["--data-dir", join(blocked, "child")]);
+    expect(failure.code).not.toBe(0);
+    expect(failure.stdout).toBe("");
+    expect(failure.stderr).not.toBe("");
+
+    const socket = createServer();
+    await new Promise<void>((resolveListen, reject) => {
+      socket.once("error", reject);
+      socket.listen(0, "127.0.0.1", resolveListen);
+    });
+    try {
+      const address = socket.address();
+      if (!address || typeof address === "string") throw new Error("No test port was assigned");
+      const dataDir = join(temporaryDirectory, "listen-failure");
+      const result = await runCli(["--port", String(address.port), "--data-dir", dataDir]);
+      expect(result.code).not.toBe(0);
+      const fixture = startDbFixture(dataDir);
+      try {
+        const response = await fetch(fixture.origin, {
+          method: "POST",
+          body: JSON.stringify({ action: "status" }),
+          signal: AbortSignal.timeout(3000),
+        });
+        expect(
+          ((await response.json()) as { result: { integrity: string } }).result.integrity,
+        ).toBe("ok");
+      } finally {
+        await fixture.close();
+      }
+    } finally {
+      await new Promise<void>((resolveClose) => socket.close(() => resolveClose()));
     }
   });
 

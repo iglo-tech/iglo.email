@@ -103,3 +103,21 @@ test("rejects invalid interval, lease and batch options", async () => {
     }
   });
 });
+
+test("idle polling follows the injected clock", async () => {
+  await withFixture(async (origin) => {
+    await request(origin, { action: "start", name: "clock", hold: true, intervalMs: 100 });
+    await request(origin, { action: "sleeping" });
+    await request(origin, { action: "add", id: 9 });
+    await request(origin, { action: "advance", ms: 99 });
+    expect((await request(origin, { action: "state" })).result.started).toEqual([]);
+    await request(origin, { action: "advance", ms: 1 });
+    await request(origin, { action: "wait-started", count: 1 });
+    expect((await request(origin, { action: "state" })).result.started).toEqual([
+      { loop: "clock", id: "9", inTransaction: false },
+    ]);
+    await request(origin, { action: "stop", name: "clock" });
+    await request(origin, { action: "release", name: "clock" });
+    await request(origin, { action: "done", name: "clock" });
+  });
+});

@@ -45,11 +45,12 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
         if (!Number.isFinite(now.getTime()) || !Number.isFinite(until.getTime()))
           throw new Error("Clock returned an invalid claim time");
         const items = writeTransaction(options.db, () => {
-          const claimed = options.claim(now, until, options.batchSize);
+          const claimed: unknown = options.claim(now, until, options.batchSize);
+          if (claimed instanceof Promise) void claimed.catch(() => undefined);
           if (!Array.isArray(claimed) || claimed.length > options.batchSize) {
             throw new Error("Claim callback must return an array within the configured batch size");
           }
-          return claimed;
+          return claimed as T[];
         });
         for (const item of items) {
           if (controller.signal.aborted) break;

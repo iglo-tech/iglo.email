@@ -14,13 +14,14 @@ test("compiled fixture embeds migration and named SQL outside the checkout with 
     );
     const [code, stderr] = await Promise.all([build.exited, new Response(build.stderr).text()]);
     if (code) throw new Error(`Fixture build failed: ${stderr}`);
-    child = Bun.spawn([binary, join(directory, "data")], {
+    const started = Bun.spawn([binary, join(directory, "data")], {
       cwd: directory,
       env: { PATH: "" },
       stdout: "pipe",
       stderr: "pipe",
     });
-    const reader = child.stdout.getReader();
+    child = started;
+    const reader = started.stdout.getReader();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const chunk = await Promise.race([
       reader.read(),
