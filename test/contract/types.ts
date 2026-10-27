@@ -20,7 +20,14 @@ export interface VolatileField {
 export type ExpectedBody =
   | { readonly kind: "wire"; readonly value: string }
   | { readonly kind: "json"; readonly value: unknown; readonly volatile: readonly VolatileField[] }
-  | { readonly kind: "deferred-html" };
+  | {
+      readonly kind: "public-404";
+      readonly siteName: string;
+      readonly attribution: string;
+      readonly attributionUrl: string;
+      readonly customScript: boolean;
+    }
+  | { readonly kind: "public-css" };
 
 export interface Expectation {
   readonly status: number;

@@ -226,8 +226,173 @@ function normalize(
   return value;
 }
 
-function compareBody(actual: string, expected: ExpectedBody, bindings: Map<string, Binding>): void {
-  if (expected.kind === "deferred-html") return;
+async function comparePublic404(
+  actual: string,
+  expected: Extract<ExpectedBody, { kind: "public-404" }>,
+): Promise<void> {
+  const counts: Record<string, number> = Object.create(null);
+  let title = "",
+    heading = "",
+    footer = "",
+    message = "";
+  let styleVersion = "",
+    logoVersion = "",
+    iconVersion = "";
+  const count = (name: string) => {
+    counts[name] = (counts[name] ?? 0) + 1;
+  };
+  const version = (value: string | null, path: string): string => {
+    const match = value?.match(new RegExp(`^${path.replaceAll(".", "\\.")}\\?v=([a-f0-9]{10})$`));
+    if (!match) throw new Error(`Invalid versioned ${path}`);
+    return match[1]!;
+  };
+  const rewriter = new HTMLRewriter()
+    .onDocument({
+      doctype(node) {
+        if (node.name !== "html") throw new Error("Invalid doctype");
+        count("doctype");
+      },
+    })
+    .on("*", {
+      element(element) {
+        for (const [name, value] of element.attributes) {
+          if (
+            /^on/i.test(name) ||
+            ((name === "href" || name === "src") &&
+              /^\s*(?:javascript|vbscript|data):/i.test(value))
+          )
+            throw new Error("Unsafe HTML attribute");
+        }
+        if (["iframe", "object", "embed", "svg", "math"].includes(element.tagName))
+          throw new Error("Unexpected HTML element");
+      },
+    })
+    .on("html", {
+      element() {
+        count("html");
+      },
+    })
+    .on("head", {
+      element() {
+        count("head");
+      },
+    })
+    .on("body", {
+      element() {
+        count("body");
+      },
+    })
+    .on("head title", {
+      element() {
+        count("title");
+      },
+      text(chunk) {
+        title += chunk.text;
+      },
+    })
+    .on("body h2", {
+      element() {
+        count("heading");
+      },
+      text(chunk) {
+        heading += chunk.text;
+      },
+    })
+    .on(".wrap > div", {
+      element() {
+        count("message");
+      },
+      text(chunk) {
+        message += chunk.text;
+      },
+    })
+    .on("head link[rel=stylesheet]", {
+      element(element) {
+        const href = element.getAttribute("href");
+        if (href?.startsWith("/public/static/style.css")) {
+          count("style");
+          styleVersion = version(href, "/public/static/style.css");
+        }
+      },
+    })
+    .on("head link[rel=icon]", {
+      element(element) {
+        count("icon");
+        iconVersion = version(element.getAttribute("href"), "/public/static/favicon.png");
+      },
+    })
+    .on("body img", {
+      element(element) {
+        count("images");
+        logoVersion = version(element.getAttribute("src"), "/public/static/logo.svg");
+        const alt = expected.customScript ? "404 - Not found" : expected.siteName;
+        if (element.getAttribute("alt") !== alt) throw new Error("Wrong logo context");
+      },
+    })
+    .on("footer", {
+      element() {
+        count("footer");
+      },
+      text(chunk) {
+        footer += chunk.text;
+      },
+    })
+    .on("footer a", {
+      element(element) {
+        if (element.getAttribute("href") === expected.attributionUrl) count("attribution");
+      },
+    })
+    .on("script", {
+      element(element) {
+        count("script");
+        if (
+          !expected.customScript ||
+          !/^\/public\/custom\.js\?v=[a-f0-9]{10}$/.test(element.getAttribute("src") ?? "")
+        )
+          throw new Error("Unexpected script");
+      },
+    });
+  await rewriter.transform(new Response(actual)).text();
+  for (const name of [
+    "doctype",
+    "html",
+    "head",
+    "body",
+    "title",
+    "heading",
+    "message",
+    "style",
+    "icon",
+    "images",
+    "footer",
+    "attribution",
+  ]) {
+    if (counts[name] !== 1) throw new Error(`Expected exactly one ${name}`);
+  }
+  if ((counts.script ?? 0) !== (expected.customScript ? 1 : 0))
+    throw new Error("Wrong script count");
+  if (title !== `404 - Not found - ${expected.siteName}` || heading !== "404 - Not found")
+    throw new Error("Wrong public 404 title or heading");
+  if (
+    message.trim() !== "" ||
+    !footer.replace(/\s+/g, " ").trim().startsWith(`Powered by ${expected.attribution}`)
+  )
+    throw new Error("Wrong public 404 message or attribution");
+  if (styleVersion !== logoVersion || styleVersion !== iconVersion)
+    throw new Error("Inconsistent asset versions");
+}
+
+async function compareBody(
+  actual: string,
+  expected: ExpectedBody,
+  bindings: Map<string, Binding>,
+): Promise<void> {
+  if (expected.kind === "public-404") return comparePublic404(actual, expected);
+  if (expected.kind === "public-css") {
+    if (actual.length < 100 || !actual.includes("box-sizing"))
+      throw new Error("Invalid public stylesheet");
+    return;
+  }
   if (expected.kind === "wire") {
     if (actual !== expected.value)
       throw new Error(`body ${JSON.stringify(actual)}; expected ${JSON.stringify(expected.value)}`);
@@ -322,14 +487,10 @@ export async function runContract(
           `status/content-type ${actual.status} ${actual.contentType}; expected ${endpoint.expect.status} ${endpoint.expect.contentType}; body ${JSON.stringify(actual.body)}`,
         );
       const caseBindings = new Map(bindings);
-      compareBody(actual.body, endpoint.expect.body, caseBindings);
+      await compareBody(actual.body, endpoint.expect.body, caseBindings);
       bindings.clear();
       for (const [name, binding] of caseBindings) bindings.set(name, binding);
-      const deferred =
-        endpoint.expect.body.kind === "deferred-html"
-          ? " (status/content type only; HTML body deferred)"
-          : "";
-      lines.push(`PASS ${item.id}${marker}${deferred}`);
+      lines.push(`PASS ${item.id}${marker}`);
     } catch (error) {
       target.signal?.throwIfAborted();
       failures++;
@@ -342,12 +503,10 @@ export async function runContract(
     lines.push("NOTE synthetic harness probe; no upstream domain or production coverage");
   if (target.target !== "upstream")
     lines.push(
-      "PENDING production: protected health/auth (M1.3); list validation/domain routes (M1.5); public HTML 404 body (M0.6/public pages)",
+      "PENDING production: protected health/auth (M1.3); list validation/domain routes (M1.5)",
     );
   if (target.target === "upstream")
-    lines.push(
-      "PENDING production: protected health/auth (M1.3); list domain routes (M1.5); public HTML 404 body (M0.6/public pages)",
-    );
+    lines.push("PENDING production: protected health/auth (M1.3); list domain routes (M1.5)");
   lines.push(`RESULT ${selectedCases.length - failures} passed, ${failures} failed`);
   return { passed: failures === 0, lines };
 }

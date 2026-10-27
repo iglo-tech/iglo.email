@@ -333,3 +333,46 @@ describe("normalization at the HTTP boundary", () => {
     expect((await run(good(), 999)).code).not.toBe(0);
   });
 });
+
+test("public HTML contract rejects missing, duplicated, incorrect, or unsafe page elements", async () => {
+  const page =
+    '<!DOCTYPE html><html><head><title>404 - Not found - iglo.email</title><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><img src="/public/static/logo.svg?v=0123456789" alt="iglo.email"></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a></footer></body></html>';
+  let body = page;
+  const target = server(
+    () =>
+      new Response(body, { status: 404, headers: { "content-type": "text/html; charset=UTF-8" } }),
+  );
+  const args = [
+    "--mode",
+    "normal",
+    "--target",
+    "production",
+    "--profile",
+    "core",
+    "--base-url",
+    target.origin,
+    "--case",
+    "health-post-html",
+  ];
+  try {
+    expect((await cli(args)).code).toBe(0);
+    for (const invalid of [
+      page.replace("<!DOCTYPE html>", ""),
+      page.replace("404 - Not found - iglo.email", "wrong title"),
+      page.replace("<h2>404 - Not found</h2>", "<h2>404 - Not found</h2><h2>404 - Not found</h2>"),
+      page.replace("/public/static/style.css?v=0123456789", "/public/static/style.css?v=bad"),
+      page.replace("/public/static/logo.svg?v=0123456789", "/public/static/logo.svg?v=1111111111"),
+      page.replace("<div></div>", "<div>unexpected message</div>"),
+      page.replace("<footer>", "<script>alert(1)</script><footer>"),
+      page.replace('alt="iglo.email"', 'alt="iglo.email" onerror="alert(1)"'),
+      page.replace("https://iglo.email", "javascript:alert(1)"),
+    ]) {
+      body = invalid;
+      const result = await cli(args);
+      expect(result.code).not.toBe(0);
+      expect(result.output).toContain("FAIL health-post-html");
+    }
+  } finally {
+    await target.close();
+  }
+});
