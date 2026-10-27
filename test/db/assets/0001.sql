@@ -1,0 +1,1 @@
+CREATE TABLE fixture_records (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
