@@ -10,6 +10,7 @@ Mailpit container, fixed host port, or application container is needed.
 bun install --frozen-lockfile
 bun run reference:prepare
 bun run reference:smoke
+bun run contract:reference
 bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
 bun run check
 ```
@@ -60,7 +61,7 @@ The child inherits its caller's environment and receives these additional values
 | Variable | Meaning |
 |---|---|
 | `REFERENCE_URL` | listmonk HTTP origin |
-| `REFERENCE_API_USER`, `REFERENCE_API_TOKEN` | synthetic API username and per-run generated API token; use Basic authentication |
+| `REFERENCE_API_USER`, `REFERENCE_API_TOKEN` | synthetic API username and per-run generated API token; Basic and token authentication are exercised |
 | `MAILPIT_URL` | Mailpit HTTP origin, including `/api/v1/messages` |
 | `MAILPIT_SMTP_HOST`, `MAILPIT_SMTP_PORT` | loopback SMTP listener |
 | `WEBHOOK_URL` | webhook delivery endpoint (`POST /deliver`) |
@@ -71,6 +72,53 @@ The token is captured privately from the installer, and the harness does not
 print it. The child command is responsible for not printing it. See
 [fixtures.md](fixtures.md) for the synthetic admin, database, and mail data.
 Fresh listmonk installation also adds its own sample data.
+
+## HTTP contract corpus
+
+The shared, explicit case definitions are in `test/contract/cases.ts`; the
+reference-first protected-read observations and synthetic fixture credentials
+are in [`test/contract/fixtures.md`](../contract/fixtures.md).
+
+```sh
+bun test test/contract
+bun run contract:normal
+bun run contract:fixture
+bun run contract:reference
+bun run server:reference
+```
+
+`contract:reference` launches this runner once under `reference:run` and checks
+the pinned upstream. `server:reference` is the compatibility alias, not a second
+corpus or nested service stack. Ordinary tests and the normal/fixture commands
+need no Docker or reference downloads.
+
+The normal production profile builds and starts the compiled executable from an
+unrelated temporary working directory, with an empty PATH and fresh data dir. It
+checks the implemented public health and shared fallback boundaries, including
+that `/api/health` is unregistered. It does not claim production auth or list
+coverage. The fixture profile composes the shared modules with a synthetic auth
+gate and representative helper routes; valid Basic, valid token and invalid
+token requests run there and against upstream. Its generated ID/timestamp probes
+verify normalization only. Reports identify the mode, target, profile, case
+results, D17/D18 and pending production work. M1.3 promotes protected health to
+real production auth; domain owners promote helper cases as their routes land.
+The public HTML 404 body remains pending M0.6/public pages.
+
+For an already running owned loopback target, the CLI also accepts an explicit
+base URL and profile. For example, inside a `reference:run` child:
+
+```sh
+bun test/contract/cli.ts run --mode reference --target upstream --profile all
+```
+
+The reference URL and synthetic credentials come from `REFERENCE_URL`,
+`REFERENCE_API_USER` and `REFERENCE_API_TOKEN`; `--base-url` can override the
+origin. Normal direct runs specify the production/core or fixture/staged mode,
+target and profile, plus `--base-url`. Set both
+`CONTRACT_API_USER` and `CONTRACT_API_TOKEN` for authenticated fixture cases.
+Only numeric HTTP loopback origins with an explicit port are accepted. `--case`
+selects a known supported case; requesting an unported production case fails
+before an HTTP request. Credentials must never appear in a URL or command line.
 
 ## Webhook receiver
 
