@@ -8,17 +8,24 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.4 is running with a Terra max worker in a delegated worktree. M0.3 is merged, and no PR watches are active. Completion wakes this lead; do not poll or start a duplicate worker.
+M0.4 is in council round 1 at exact head `b15b8f87c05a9055cebb911d301bfd29a136d79c`. All eight CI jobs passed across the push and PR runs. Both fresh reviewers are running independently; their completions wake this lead. PR #4 is linked and watched; no merged-task PR watch is active.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.4 | worker | Planned branch task/M0.4-database-loops; no PR | 0 | [Brief](briefs/M0.4.md): SQLite/WAL/FULL, synchronous writes, embedded migrations and named SQL, pre-migration snapshots and injected-clock loop lifecycle. Production schema stays empty until M1.1. Synthetic before/after storage measurements required. Terra max worker is running from the committed brief; no PR yet. |
+| M0.4 | council | [PR #4](https://github.com/iglo-tech/iglo.email/pull/4), `task/M0.4-database-loops` | 1 | Head `b15b8f87c05a9055cebb911d301bfd29a136d79c`; CI check, Linux reference and both macOS prepare jobs passed in both runs. Opus medium and Sol xhigh verdicts pending. Worker reports all acceptance passed, including 45 tests, measurements and both reference commands. [Brief](briefs/M0.4.md). |
 
 
-Worker: [M0.4: Database layer and loop helper — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9); codex / gpt-6.1-terra, reasoningEffort: max.
+Completed worker: [M0.4: Database layer and loop helper — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9); codex / gpt-6.1-terra, reasoningEffort: max.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9
+
+### Council round 1
+
+The worker worktree is `/home/t3-code/.t3/worktrees/iglo.email/t3-4331ffeb`, branch `task/M0.4-database-loops`. Test/baseline evidence precedes implementation in `89b81c3`. The [measurement report](https://github.com/iglo-tech/iglo.email/blob/b15b8f87c05a9055cebb911d301bfd29a136d79c/docs/perf/M0.4-database.md) identifies the native-primitives baseline and bounded 10,000-row repetitions; it does not claim product throughput. The PR reports VACUUM snapshot limits, including implicit rowids, single-process startup and directory-entry power-loss durability. No permanent API difference is introduced. Both reviewers received the full brief, D19, upstream mapping, limitations and required acceptance commands without a lead verdict. Both are pending; never poll or duplicate them.
+
+- [M0.4 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aefdcf68a-3709-4ec5-84e1-408108f7ca9b); claudeAgent / claude-opus-5-5. Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aefdcf68a-3709-4ec5-84e1-408108f7ca9b; child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aefdcf68a-3709-4ec5-84e1-408108f7ca9b.
+- [M0.4 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A4e70b7a7-5a30-4bb9-9f67-7dcff7c5c802); codex / gpt-6.1-sol. Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A4e70b7a7-5a30-4bb9-9f67-7dcff7c5c802; child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A4e70b7a7-5a30-4bb9-9f67-7dcff7c5c802.
 
 ## Automation
 
