@@ -8,17 +8,21 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is merged and its PR watch is stopped. M0.6 has a Terra max worker running from the committed [brief](briefs/M0.6.md). The scope includes the deferred public HTML 404 and compiled assets; the admin shell is verified in a labelled compiled test fixture until M1/M4 supply authentication and screens. No M0.6 PR exists yet. Completion wakes this lead; do not poll or start a duplicate worker.
+M0.6 worker completed [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), now head `b8797e2316bfb20ad9ef590ef621aa039180c772` after a small lead documentation correction. Stage: CI. At handoff, check and all macOS jobs passed on worker head `b7f802e`; Linux reference jobs were running. Fresh CI is pending on the new head. The PR is watched; start both fresh council reviewers only after green CI. No M0.6 council has been dispatched.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | worker | Planned task/M0.6-jsx-assets; no PR | 0 | [Brief](briefs/M0.6.md) reads pinned admin/public source, authorizes listed browser build dependencies and narrow shared HTTP/contract integration; production auth/domain routes stay deferred. |
+| M0.6 | ci | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 0 | [Brief](briefs/M0.6.md). Head `b8797e2316bfb20ad9ef590ef621aa039180c772`; CI pending. Worker reports 76 tests / 564 assertions, 15 production cases, 23 fixture + 2 probes, 37 upstream cases, smoke and compiled-shell/public-404 browser checks passed. Reference-first commit `c791107`; the lead corrected the stale current-coverage table. |
 
 
-Worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
+Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
+- Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
+- PR #6 is linked and watched in this lead thread. No council reviewer exists yet; do not reuse M0.5 approvals.
+
+Handoff notes for council: the existing D18 dot-segment normalization also changes the refusal body for encoded traversal targets that leave the static prefix (upstream plain-text 404 versus normal HTML 404); both refuse the asset. Inspect the exact coverage and metadata against the policy. Production admin/auth remains absent, with the shell verified only by a compiled fixture. The lead documentation-only commit `b8797e2` updates the current coverage table while retaining the historical reference-first baseline.
 
 ## Automation
 
