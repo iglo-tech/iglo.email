@@ -1,0 +1,104 @@
+# Decisions
+
+Short records. Each one says what was decided, why, and what was considered instead. Change a decision by editing its record and noting the date.
+
+## D1. Independent rewrite derived from listmonk v7
+
+Decided 2026-10-27.
+
+- **Decision:** port listmonk v7.0.0-beta.1 to TypeScript and own the result. Do not track upstream.
+- **Why:** the needed features (sequences, events, transactional unsubscribe) are out of scope upstream and touch the data model, sending and admin UI, so carrying them as patches would cost more than owning the code. The stack also differs: Go and Postgres upstream, Bun and SQLite here.
+- **Considered:**
+  - using listmonk unchanged and building sequences in each app, which repeats the same work per app;
+  - a Go fork of listmonk, which keeps Postgres and a second language;
+  - a hosted lifecycle tool, ruled out because the project must be self-hosted at no subscription cost.
+
+## D2. AGPL-3.0
+
+- **Decision:** license iglo.email under AGPL-3.0.
+- **Why:** it is a derivative work of listmonk, which is AGPL-3.0, so the license is required, not chosen. Apps that talk to iglo.email over its HTTP API are separate programs and are not affected. A modified iglo.email that serves users over a network must offer its source to them; the public repository does that.
+
+## D3. Bun, TypeScript, one executable
+
+- **Decision:** Bun ≥ 1.4 and TypeScript, shipped as one compiled executable. No Docker image.
+- **Why:** the same stack and release model as iglo.monitor. Bun's built-in server, SQLite, password hashing and bundler remove most of the dependencies a Node port would need.
+
+## D4. SQLite only
+
+- **Decision:** `bun:sqlite`, WAL mode, one database file, one process.
+- **Why:** the expected load (thousands to hundreds of thousands of subscribers, tens of messages per second) fits SQLite with batched writes. No database server to run or back up separately.
+- **Considered:** keeping Postgres. Rejected, because it adds an external service for no needed capability.
+
+## D5. Durable work is rows plus in-process loops
+
+- **Decision:** every kind of background work (campaigns, outbox, sequences, webhooks) is a table with a status, a due time and a lease, processed by a loop in the same process.
+- **Why:**
+  - restarts lose nothing;
+  - state can be queried and shown in the admin UI;
+  - edits to sequences apply immediately;
+  - no external services are needed.
+
+  The scheduling logic is small. The value is in conditions and permissions, which no engine provides.
+- **Considered:**
+  - BullMQ or Redis, which needs an external service;
+  - Effect Workflow, unstable APIs and replay-based versioning trouble with long waits;
+  - DBOS, Workflow DevKit, Temporal, Restate, Inngest and Hatchet, which need Postgres or a separate server;
+  - bunqueue, a young project with a single maintainer that solves only the queue part.
+
+## D6. No Effect in v1
+
+- **Decision:** plain TypeScript with small explicit helpers (retry with backoff, timeouts, resource cleanup).
+- **Why:** the port translates Go code, which maps directly to plain async TypeScript. A second paradigm would make the port and its review slower. It can be revisited after 1.0 if the iglo.\* projects adopt it together.
+
+## D7. Keep listmonk's HTTP API for ported endpoints
+
+- **Decision:** same paths, fields, envelope, pagination and auth. New features get new endpoints. The documented deliberate differences are the SQL dialect, Liquid, and the `/api/tx` response.
+- **Why:** existing SDKs, the n8n listmonk node and scripts keep working, and upstream can serve as the reference in contract tests.
+
+## D8. Server-side TSX for the admin UI
+
+- **Decision:** port v7's Go-template views to TSX rendered on the server with an in-house JSX runtime that escapes by default. Reuse v7's Alpine.js, Oat, CodeMirror, Squire and Chart.js assets.
+- **Why:**
+  - typed view props;
+  - no client framework;
+  - markup stays close to v7's, so its CSS, JS and Playwright tests carry over.
+- **Considered:** a Vue 3 single-page app like iglo.monitor's. Rejected, because it means rewriting every screen instead of porting it.
+
+## D9. Liquid for user-authored templates
+
+- **Decision:** LiquidJS replaces Go `html/template` and Sprig.
+- **Why:** it is sandboxed, has resource limits and is widely known. Reimplementing Go template semantics in TypeScript is not worth it, and there are no existing templates to keep compatible.
+
+## D10. nodemailer for SMTP
+
+- **Decision:** use nodemailer for connection pooling, MIME building, attachments and DKIM.
+- **Why:** a correct SMTP client and MIME encoder is a lot of edge cases to own for no product benefit.
+
+## D11. Sequences are data, conditions are a JSON predicate language
+
+- **Decision:**
+  - sequence definitions and enrollments live in tables;
+  - conditions are `all`/`any`/`not` over `event`, `attr`, `list` predicates;
+  - raw SQL is allowed as a permission-gated escape hatch.
+- **Why:** safe to evaluate, easy to show and edit in a form, and compiles to one indexed query.
+
+## D12. Marketing delivery is at-most-once
+
+- **Decision:** a crash may skip a marketing email (send marked `unknown`, campaign batch skipped and logged). It never sends one twice. Transactional sends retry only on errors that prove the message was not accepted.
+- **Why:** a duplicate marketing email harms trust and deliverability more than a missed one, and missed ones are visible in the send log.
+
+## D13. Outbound webhooks for subscriber state
+
+- **Decision:** signed, retried webhooks for unsubscribes, blocklisting, deletion, bounces and failed sends.
+- **Why:** apps keep consent in their own database and must learn about unsubscribes. Without this, every app polls.
+
+## D14. Bootstrap from flags and environment, everything else in settings
+
+- **Decision:** port, host, data directory, root URL and the first admin user come from flags and environment variables. All other configuration lives in the `settings` table. No `config.toml`.
+- **Why:** listmonk already keeps most configuration in the database. One source of truth per setting.
+
+## D15. One instance per product
+
+- **Decision:** each product runs its own iglo.email instance and database.
+- **Why:** the subscriber table, `external_id`, lists, unsubscribes and the frequency cap all assume one audience. Sharing an instance across products would mix consent and IDs. An instance is one executable and one file, so running several is cheap.
+- **Considered:** multi-tenant workspaces. Rejected for v1 as a large change to every table and query.

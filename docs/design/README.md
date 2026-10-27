@@ -1,0 +1,33 @@
+# iglo.email design
+
+Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequences. Read in order.
+
+| # | Doc | Covers |
+|---|---|---|
+| 1 | [Scope](01-scope.md) | Goals, non-goals, what is kept, deferred or dropped from listmonk |
+| 2 | [Architecture](02-architecture.md) | Runtime, process model, background loops, module layout, configuration, distribution |
+| 3 | [Data model](03-data-model.md) | listmonk's Postgres schema mapped to SQLite, new tables, migrations |
+| 4 | [Sending](04-sending.md) | SMTP, campaigns, transactional API, unsubscribe, tracking, bounces, send log, webhooks |
+| 5 | [Sequences](05-sequences.md) | Events API, sequence definitions, conditions, scheduler, marketing rules |
+| 6 | [Templates](06-templates.md) | Template language for user-authored email and the admin UI views |
+| 7 | [API and admin UI](07-api-and-ui.md) | API compatibility policy, authentication, admin UI port, public pages |
+| 8 | [Port plan](08-port-plan.md) | Upstream baseline, milestones, testing strategy |
+| 9 | [Decisions](09-decisions.md) | Short decision records with reasons |
+| 10 | [Open questions](10-open-questions.md) | What still needs the owner |
+
+## Decisions at a glance
+
+- Independent rewrite derived from listmonk **v7.0.0-beta.1** (`6fcd95f`), not an upstream-tracking fork.
+- **AGPL-3.0**, inherited from listmonk.
+- **Bun ≥ 1.4, TypeScript, one compiled executable.** No Docker.
+- **SQLite only** (`bun:sqlite`, WAL), one process.
+- **Durable work is rows in SQLite** processed by in-process loops. No Postgres, Redis, BullMQ or workflow engine.
+- **listmonk's HTTP API is kept** for ported endpoints, so existing SDKs and integrations keep working. New features get new endpoints.
+- **Admin UI:** v7's server-rendered views ported to server-side TSX; v7's Alpine.js, Oat, CodeMirror and Squire assets reused.
+- **User-authored templates use Liquid** (LiquidJS) instead of Go templates.
+- **Sequences are data:** definitions plus enrollments with a due time. Conditions are a small JSON predicate language.
+- **Marketing sends are at-most-once:** a crash can skip an email, never duplicate it.
+
+## Status
+
+Design phase. No code. The [port plan](08-port-plan.md) starts with the repository skeleton.
