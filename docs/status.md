@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.2's implementation, local acceptance and CI are complete; both independent council round 1 reviewers are running.
+Both M0.2 council members approved round 1. The lead is addressing Opus's additional process-group lifetime note before a fresh review of the changed head.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.2 | council | [PR #2](https://github.com/iglo-tech/iglo.email/pull/2), `task/M0.2-upstream-reference` | 1 | Head `4bde681665a2cef103067a48aa32fd1755e4f7b7`. All CI jobs passed, including Linux lifecycle and native macOS arm64/x64 preparation. Council: Opus medium and fresh Sol xhigh. [Brief](briefs/M0.2.md). |
+| M0.2 | fix | [PR #2](https://github.com/iglo-tech/iglo.email/pull/2), `task/M0.2-upstream-reference` | 1 | Both approved `4bde681665a2cef103067a48aa32fd1755e4f7b7`; CI green. Lead is fixing delayed signals to exited process groups, with public descendant-cleanup coverage. [Brief](briefs/M0.2.md). |
 
 Completed worker: [M0.2: Upstream reference and test services — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Full local checks and Linux rootless-Docker smoke passed, including command/startup failures, timeout/signal cleanup, isolation, sentinel survival and corrupt-cache rejection. CI is green for the exact head, including native macOS preparation/version checks; full macOS Docker lifecycle remains unverified. The existing PR #2 watch remains active. Do not poll delegates. The M0.1 PR watch is stopped after merge.
 
@@ -21,7 +21,7 @@ Completed worker: [M0.2: Upstream reference and test services — Terra max](t3-
 
 ### Council round 1
 
-Both reviewers independently check head `4bde681665a2cef103067a48aa32fd1755e4f7b7`, including the real reference smoke. Completion wakes this lead; do not poll running delegates. The existing PR #2 watch remains active.
+Both reviewers approved head `4bde681665a2cef103067a48aa32fd1755e4f7b7` and passed acceptance: [Sol](https://github.com/iglo-tech/iglo.email/pull/2#issuecomment-6451136993), [Opus](https://github.com/iglo-tech/iglo.email/pull/2#issuecomment-6451137761). Opus also noted that cleanup could signal a saved process-group ID long after its leader exited. The lead is making group ownership end at child exit and immediately cleaning descendants, so later cleanup/timers cannot signal that saved ID. The new head will receive fresh independent council review; existing approvals apply only to the old head. The existing PR #2 watch remains active.
 
 - [M0.2 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A5f8adad9-2768-438d-8e8f-90cb9f8720fe); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A5f8adad9-2768-438d-8e8f-90cb9f8720fe`; child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A5f8adad9-2768-438d-8e8f-90cb9f8720fe`.
 - [M0.2 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A78ee67f9-222e-4d17-853c-4d38ce1c9d53); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh`. Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A78ee67f9-222e-4d17-853c-4d38ce1c9d53`; child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A78ee67f9-222e-4d17-853c-4d38ce1c9d53`.
