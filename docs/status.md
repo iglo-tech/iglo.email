@@ -6,18 +6,18 @@ Updated: 2026-10-27
 
 ## Active
 
-Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning. M0.1 is resuming here after the setup worker stopped.
+Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning. M0.1 implementation and CI are complete; independent council review is starting.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.1 | worker | `task/M0.1-project-skeleton` | 0 | Replacement Terra max worker running. Interrupted work preserved in checkpoint `91d4ecb71e62fbff924eb5aad20825a6a5c500fa`; no PR yet. Brief: [M0.1](briefs/M0.1.md). Council: Opus medium and fresh Sol xhigh. |
+| M0.1 | council | [PR #1](https://github.com/iglo-tech/iglo.email/pull/1), `task/M0.1-project-skeleton` | 1 | Head `56935d1148bdce063dd4e9d5a0e752bd126c3468`. Both CI checks passed. Council: Opus medium and fresh Sol xhigh. Brief: [M0.1](briefs/M0.1.md). |
 
-Worker: [M0.1: Resume project skeleton — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3Ab65540aa-c1ef-4668-87e0-a604245e8034). Dispatch confirmed `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Completion wakes the originating lead; do not poll.
+Completed worker: [M0.1: Resume project skeleton — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3Ab65540aa-c1ef-4668-87e0-a604245e8034), `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. All local acceptance commands passed (8 tests, 97 assertions); the live upstream runner and dual-server contract harness remain deferred to M0.2/M0.5. GitHub CI was verified green for the exact head on 2026-10-27. Completion wakes the originating lead; do not poll.
 
 - Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3Ab65540aa-c1ef-4668-87e0-a604245e8034`.
 - Child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3Ab65540aa-c1ef-4668-87e0-a604245e8034`.
 
-Handoff: the previous worker's thread reports `interrupted`, with no active run. Its partial configuration and CLI tests were checkpointed on the existing task branch; they are incomplete and have not passed acceptance. The stopped worktree is `/home/t3-code/.t3/worktrees/iglo.email/t3-c5a70f7f`. A redundant cancellation from this thread was rejected because the old task belongs to the setup conversation; terminal state had already confirmed it stopped. This transfer does not consume the worker failure retry.
+Handoff history: the setup worker stopped (`interrupted`, no active run). Its incomplete configuration and CLI tests were preserved at `91d4ecb71e62fbff924eb5aad20825a6a5c500fa` and completed by the replacement worker. The old stopped worktree remains `/home/t3-code/.t3/worktrees/iglo.email/t3-c5a70f7f`. The transfer did not consume the worker failure retry. Publishing the workflow used existing repository SSH access because the OAuth token lacks workflow scope.
 
 ## Automation
 
