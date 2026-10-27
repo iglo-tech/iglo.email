@@ -8,7 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No active task. M0.4 is merged; the lead is preparing M0.5. No PR watches are active.
+M0.5 is in brief stage. M0.4 is merged and no PR watches are active. D20 resolves the protected-read ordering gap with explicit production/fixture coverage; the lead has read the pinned route/auth/reference sources.
+
+| ID | Stage | Branch / PR | Council round | Notes |
+|---|---|---|---|---|
+| M0.5 | brief | Planned task/M0.5-contract-harness; no PR | 0 | [Brief](briefs/M0.5.md): one base-URL corpus, scoped normalization, D17/D18 and explicit compiled-production versus fixture evidence. Protected read is reference + fixture until M1.3; no application auth stand-in. Terra max dispatch follows this committed brief. |
 
 ## Automation
 
@@ -45,6 +49,8 @@ Owner correction on 2026-10-27: recurring automation must remain unbound to ever
 [D18](https://github.com/iglo-tech/iglo.email/blob/cb41fd6f29a07415541fcb95101ba84e64231ad6/docs/design/09-decisions.md#d18-use-buns-normalized-request-path) (2026-10-27, merged in PR #3): use the canonical request URL exposed by `Bun.serve`, including dot-segment removal and literal backslash-to-slash rewriting. Exact-target `%2E` / `%2E%2E` list-ID requests return upstream 400 but reach the current fixture API fallback after Bun normalization. This keeps routing and future permission middleware on one URL interpretation without introducing another HTTP transport/parser for request spelling the runtime does not expose. Both modes mark dot-segment and backslash differences for M0.5; visible malformed percent syntax is rejected with upstream’s transport response.
 
 [D19](design/09-decisions.md#d19-durable-database-primitives-and-module-owned-lease-policy) (2026-10-27): explicit durable SQLite defaults, synchronous non-replayed writes, pre-migration snapshots and a loop helper that delegates lease/status/recovery policy to each owning module. M0.4 implements the infrastructure; M1.1 still owns the first full production schema.
+
+[D20](design/09-decisions.md#d20-separate-production-and-fixture-contract-coverage-until-auth-is-ported) (2026-10-27): M0.5 separates compiled production coverage from authenticated-read/helper fixture evidence. M1.3 promotes the protected read to production auth; work-plan acceptance and testing notes now name that temporary staging explicitly.
 
 Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one whole-filesystem `find` to locate Echo source, contrary to `/home/t3-code/AGENTS.md`. It reported the scan finished quickly without a visible effect and was not repeated. The lead recorded the incident without repeating the scan. Worker and council instructions in the runbook now explicitly require named checkout/cache paths or pinned GitHub source inside the worktree, never a broader filesystem search when a dependency is absent.
 
