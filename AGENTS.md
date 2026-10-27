@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-Design phase. The design is in `docs/design/` and is the source of truth until code exists. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The M0.1 skeleton is in place; most features remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 
@@ -52,6 +52,18 @@ The port is split into tasks in `docs/design/11-work-plan.md`. A task's worker f
 
 ## Verification
 
-Until the M0 skeleton exists, changes are documentation only: check links, file names and `git status`. After M0, the commands are listed here and in `package.json`.
+Run the local checks with:
+
+```sh
+bun install --frozen-lockfile
+bun run format:check
+bun run lint
+bun run typecheck
+bun test
+bun run build
+bun run check
+```
+
+`bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The M0.1 bootstrap tests exercise the compiled executable from a temporary directory; `/health` was checked against the pinned upstream handler by source inspection. M0.2 and M0.5 will add the reference runner and dual-server contract suite.
 
 Changes to sending, scheduling or storage must include before/after measurements, stored under `docs/perf/`.

@@ -1,20 +1,28 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const repository = resolve(import.meta.dir, "../..");
+setDefaultTimeout(15_000);
 let temporaryDirectory = "";
 let executable = "";
+let adminUser = "";
+let adminPassword = "";
 
-// These processes receive only the environment needed for the test.
-const baseEnvironment = { PATH: process.env.PATH ?? "" };
+// Building needs Bun on PATH; the compiled executable does not.
+const buildEnvironment = { PATH: process.env.PATH ?? "" };
 
 beforeAll(async () => {
+  const fixture = await Bun.file(join(repository, "test/bootstrap/fixtures.md")).text();
+  adminUser = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1] ?? "";
+  adminPassword = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1] ?? "";
+  if (!adminUser || !adminPassword) throw new Error("Bootstrap test credentials are missing");
+
   const build = Bun.spawn([process.execPath, "run", "build"], {
     cwd: repository,
-    env: baseEnvironment,
+    env: buildEnvironment,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -38,7 +46,7 @@ afterAll(async () => {
 function start(args: string[], env: Record<string, string> = {}) {
   return Bun.spawn([executable, ...args], {
     cwd: temporaryDirectory,
-    env: { ...baseEnvironment, ...env },
+    env: { PATH: "", ...env },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -112,8 +120,6 @@ async function healthWhenReady(child: ReturnType<typeof start>, port: number) {
 describe("compiled executable", () => {
   test("serves the upstream health response outside the checkout and stops on SIGTERM", async () => {
     const port = await availablePort();
-    const adminUser = "test-admin-user";
-    const adminPassword = "test-admin-password";
     const child = start(["serve", "--port", String(port)], {
       IGLO_EMAIL_ADMIN_USER: adminUser,
       IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
@@ -126,6 +132,15 @@ describe("compiled executable", () => {
       expect(body).toBe('{"data":true}\n');
       expect(body).not.toContain(adminUser);
       expect(body).not.toContain(adminPassword);
+      const wrongMethod = await fetch(`http://127.0.0.1:${port}/health`, {
+        method: "POST",
+        signal: AbortSignal.timeout(1_000),
+      });
+      expect(wrongMethod.status).not.toBe(200);
+      const unknownPath = await fetch(`http://127.0.0.1:${port}/missing`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      expect(unknownPath.status).toBe(404);
     } finally {
       expect(await stop(child, "SIGTERM")).toBe(0);
     }
@@ -165,7 +180,7 @@ describe("compiled executable", () => {
 
   test("environment bootstrap values work without flags or admin credentials", async () => {
     const port = await availablePort();
-    const child = start(["serve"], {
+    const child = start([], {
       IGLO_EMAIL_PORT: String(port),
       IGLO_EMAIL_HOST: "127.0.0.1",
       IGLO_EMAIL_DATA_DIR: "./env-data",
@@ -184,6 +199,9 @@ describe("compiled executable", () => {
       expect(result.code).toBe(0);
       expect(result.stdout).toContain("--port");
       expect(result.stdout).toContain("IGLO_EMAIL_ROOT_URL");
+      expect(result.stdout).toContain("9000");
+      expect(result.stdout).toContain("127.0.0.1");
+      expect(result.stdout).toContain("./data");
       expect(result.stderr).toBe("");
     }
   });
@@ -196,10 +214,12 @@ describe("compiled executable", () => {
       "--config=old.toml",
       "--new-config",
     ]) {
-      const result = await runCli(["serve", flag]);
-      expect(result.code).not.toBe(0);
-      expect(result.stderr).toContain(flag.split("=")[0]);
-      expect(result.stderr).toContain("docs/design/01-scope.md");
+      for (const prefix of [[], ["serve"]]) {
+        const result = await runCli([...prefix, flag]);
+        expect(result.code).not.toBe(0);
+        expect(result.stderr).toContain(flag.split("=")[0]!);
+        expect(result.stderr).toContain("docs/design/01-scope.md");
+      }
     }
   });
 
@@ -222,9 +242,11 @@ describe("compiled executable", () => {
       [["--port", "65536"], {}, "port"],
       [["--port", "1.5"], {}, "port"],
       [["--host", "http://127.0.0.1"], {}, "host"],
+      [["--host", "[localhost]"], {}, "host"],
       [["--data-dir="], {}, "data-dir"],
       [["--root-url", "file:///tmp"], {}, "root-url"],
       [["--root-url", "https://user:password@example.test"], {}, "root-url"],
+      [["--root-url", "https://example.test/?q=value"], {}, "root-url"],
       [[], { IGLO_EMAIL_PORT: "abc" }, "port"],
       [[], { IGLO_EMAIL_HOST: "bad host" }, "host"],
       [[], { IGLO_EMAIL_DATA_DIR: "" }, "data-dir"],
@@ -235,5 +257,15 @@ describe("compiled executable", () => {
       expect(result.code).not.toBe(0);
       expect(result.stderr.toLowerCase()).toContain(message);
     }
+  });
+
+  test("never prints the initial admin inputs on startup failure", async () => {
+    const result = await runCli(["--port", "invalid"], {
+      IGLO_EMAIL_ADMIN_USER: adminUser,
+      IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).not.toContain(adminUser);
+    expect(result.stdout + result.stderr).not.toContain(adminPassword);
   });
 });

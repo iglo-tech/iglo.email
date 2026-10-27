@@ -31,4 +31,4 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 
 ## Status
 
-Design phase. No code. The [port plan](08-port-plan.md) starts with the repository skeleton. Agents do the work task by task, as described in the [work plan](11-work-plan.md); progress is in [`docs/status.md`](../status.md).
+The M0.1 skeleton provides the bootstrap CLI, local checks, CI and a compiled HTTP server with `/health`. The database and product features remain to be built. Agents follow the [work plan](11-work-plan.md); progress is in [`docs/status.md`](../status.md).
