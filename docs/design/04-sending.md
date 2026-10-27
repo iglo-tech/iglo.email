@@ -41,8 +41,9 @@ New response body (listmonk returns only `true`):
 
 Rules:
 
+- **Any address can receive a transactional email.** `subscriber_email` does not have to belong to a subscriber, and no subscriber is created. If the address belongs to a subscriber, their data is available to the template and the send is linked to them; otherwise the send has only `to_email`. `subscriber_mode` is accepted for compatibility: `default` and `fallback` both behave this way, and `external` skips the lookup. `subscriber_id` and `subscriber_external_id` must still name an existing subscriber, because there is no address without one. This is a deliberate difference from listmonk, whose default mode rejects unknown addresses ([API and admin UI](07-api-and-ui.md#api-compatibility-policy)).
 - **Transactional sends ignore list status** but never go to blocklisted subscribers. A transactional email is something the person needs (receipt, access, password).
-- **Marketing sends require permission:** the subscriber must be a member of `list_id` with status `confirmed`, or `unconfirmed` on a single opt-in list. Otherwise the send is recorded as `skipped` with a reason and the API returns it with `status: "skipped"`. Marketing sends also count toward and respect the frequency cap.
+- **Marketing sends require permission:** this is consent, not bookkeeping, so it stays. The recipient must be an existing subscriber whose membership of `list_id` is `confirmed`, or `unconfirmed` on a single opt-in list. Otherwise the send is recorded as `skipped` with a reason and the API returns it with `status: "skipped"`. Marketing sends also count toward and respect the frequency cap.
 - Every send is a row in `sends`, whatever its outcome.
 
 ## Outbox

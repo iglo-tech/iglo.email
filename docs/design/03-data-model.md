@@ -97,7 +97,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `uuid` | TEXT UNIQUE | Used in tracking and unsubscribe URLs |
 | `source` | TEXT CHECK IN (`tx`, `sequence`) | |
 | `kind` | TEXT CHECK IN (`marketing`, `transactional`) | |
-| `subscriber_id` | INTEGER NULL → subscribers | NULL for transactional sends to unknown addresses (`external` mode) |
+| `subscriber_id` | INTEGER NULL → subscribers | NULL for transactional sends to addresses that are not subscribers |
 | `to_email` | TEXT NOT NULL | Recipient at send time |
 | `template_id` | INTEGER NULL → templates | |
 | `enrollment_id`, `step_id` | INTEGER NULL | For sequence sends. Unique `(enrollment_id, step_id)` |

@@ -23,7 +23,7 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 - **Bun ≥ 1.4, TypeScript, one compiled executable.** An official Docker image wrapping it follows after 1.0.
 - **SQLite only** (`bun:sqlite`, WAL), one process.
 - **Durable work is rows in SQLite** processed by in-process loops. No Postgres, Redis, BullMQ or workflow engine.
-- **listmonk's HTTP API is kept** for ported endpoints, so existing SDKs and integrations keep working. New features get new endpoints.
+- **listmonk's HTTP API is kept** for ported endpoints, so existing SDKs and integrations keep working, except where upstream's design is poor: those are fixed and listed as deliberate differences. New features get new endpoints.
 - **Admin UI:** v7's server-rendered views ported to server-side TSX; v7's Alpine.js, Oat, CodeMirror and Squire assets reused.
 - **User-authored templates use Liquid** (LiquidJS) instead of Go templates.
 - **Sequences are data:** definitions plus enrollments with a due time. Conditions are a small JSON predicate language.

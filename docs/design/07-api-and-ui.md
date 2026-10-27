@@ -2,7 +2,9 @@
 
 ## API compatibility policy
 
-The listmonk HTTP API is a contract worth keeping: there are SDKs, an n8n node and scripts written against it. For every **ported** endpoint, iglo.email keeps:
+The listmonk HTTP API is worth keeping where it is sound: there are SDKs, an n8n node and scripts written against it. Compatibility is the default, not a goal in itself. When listmonk's behavior comes from a poor design decision and makes the API awkward or wrong for its callers, iglo.email fixes it in the port instead of copying it. Each such fix is a deliberate difference: listed below with its reason, and marked in the contract suite.
+
+For every **ported** endpoint, unless a difference below says otherwise, iglo.email keeps:
 
 - the path and method;
 - request field names and types;
@@ -12,12 +14,13 @@ The listmonk HTTP API is a contract worth keeping: there are SDKs, an n8n node a
 
 Deliberate differences:
 
-| Area | Difference |
-|---|---|
-| SQL in `query` parameters (`/api/subscribers?query=…`, `/api/subscribers/query/*`) | SQLite dialect, not Postgres |
-| Template bodies | Liquid, not Go templates |
-| `POST /api/tx` response | Returns the created sends instead of `true` |
-| Dropped features | Their endpoints return 404: `/api/admin/reload`, OIDC routes, update checks, and anything listed as dropped in [Scope](01-scope.md) |
+| Area | Difference | Why |
+|---|---|---|
+| SQL in `query` parameters (`/api/subscribers?query=…`, `/api/subscribers/query/*`) | SQLite dialect, not Postgres | Different database |
+| Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
+| `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
+| `POST /api/tx` recipients | Any email address can receive a transactional email. It does not have to be a subscriber first; listmonk's default mode rejects unknown addresses ([Sending](04-sending.md#transactional-api)) | A one-off email to someone is not a subscription. Forcing callers to create a subscriber first, or to know about `subscriber_mode`, is bookkeeping with no benefit |
+| Dropped features | Their endpoints return 404: `/api/admin/reload`, OIDC routes, update checks, and anything listed as dropped in [Scope](01-scope.md) | Not built |
 
 Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting reference. iglo.email publishes its own `GET /api/openapi.json`, with the new endpoints included.
 

@@ -30,7 +30,7 @@ Design phase. The design is in `docs/design/` and is the source of truth until c
 - No process-global state. Modules receive the database, settings and clock they use. Every loop takes an injected clock.
 - A module owns its tables and SQL. Other modules call its functions instead of querying its tables.
 - Network calls (SMTP, webhooks) never run inside a database transaction.
-- Keep listmonk's HTTP API contract for ported endpoints (`docs/design/07-api-and-ui.md`). Any deliberate difference is listed there and marked in the contract suite.
+- Keep listmonk's HTTP API contract for ported endpoints by default (`docs/design/07-api-and-ui.md`). Do not copy upstream behavior that comes from a poor design decision: fix it, list it there as a deliberate difference with its reason, and mark it in the contract suite. A difference needs a concrete benefit, not a matter of taste.
 - Marketing sends are at-most-once. Never add an automatic retry that could send a marketing email twice.
 - Add a runtime dependency only when the design lists it or a decision record justifies it.
 - Do not restore upstream community files (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue or PR templates, funding files).

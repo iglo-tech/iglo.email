@@ -51,7 +51,7 @@ Measurements: <docs/perf/... if the task changes sending, scheduling or storage>
 - Follow `AGENTS.md`. listmonk v7.0.0-beta.1 is the reference for ported behavior; read its source in the upstream checkout (`/home/t3-code/upstream/listmonk` until M0.2 adds the fetch script), never from memory.
 - Hand bulk mechanical work to Claude Haiku 5.5 subagents, and keep the judgment calls yourself.
 - For ported endpoints, write the contract tests first and run them against the upstream reference, then port the code. For new features, write the tests from the design docs first. Each ported file names its upstream source file in a header comment.
-- If upstream and the design disagree, or a test can only pass with a deliberate API difference, stop and report it in the PR. The lead decides it.
+- Do not copy listmonk behavior blindly. If an upstream behavior looks like a poor design decision (for example a requirement that serves upstream's internals rather than the caller), propose a fix in the PR with the reason. If upstream and the design disagree, or a test can only pass with a deliberate API difference, stop and report it in the PR. The lead decides; an accepted fix is listed in `07-api-and-ui.md` and logged for owner review.
 - No new runtime dependency, no change to a decision record, no change to another task's module without the lead.
 - Never use production data or real credentials. Fixtures are generated data and fresh installs. Real SMTP servers and real webhook endpoints are never used: mail goes to Mailpit, webhooks to the test receiver.
 
@@ -69,7 +69,7 @@ These are created in M0 and change only through a small task of their own, becau
 ### Review and merge
 
 1. The worker finishes when its PR is open, CI is green and its acceptance check passes.
-2. **Council:** both council members review the PR independently. Each checks the diff next to the upstream files it ports and against these docs and `AGENTS.md`: behavior matches upstream or a listed deliberate difference, marketing sends stay at-most-once, no network call inside a transaction, tests through public boundaries only, the task's scope respected. Each posts one PR comment with a verdict, `APPROVE` or `CHANGES`, for the exact head commit.
+2. **Council:** both council members review the PR independently. Each checks the diff next to the upstream files it ports and against these docs and `AGENTS.md`: behavior matches upstream or a listed deliberate difference with a sound reason, no poor upstream design copied without a note, marketing sends stay at-most-once, no network call inside a transaction, tests through public boundaries only, the task's scope respected. Each posts one PR comment with a verdict, `APPROVE` or `CHANGES`, for the exact head commit.
 3. **Fix loop:** on `CHANGES`, the lead fixes small findings itself and sends larger ones to a fixer agent on the same branch. Then both members review the new head again. A PR merges only when both approve the same commit.
 4. **Deadlock:** after three rounds without agreement, the lead decides. Upstream's behavior (the contract suite in reference mode) and the design docs are the tiebreaker, and the reasoning goes in the PR.
 5. The lead squash-merges, deletes the branch and updates `docs/status.md`. `main` stays green.

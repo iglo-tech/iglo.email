@@ -50,10 +50,12 @@ Decided 2026-10-27.
 - **Decision:** plain TypeScript with small explicit helpers (retry with backoff, timeouts, resource cleanup).
 - **Why:** the port translates Go code, which maps directly to plain async TypeScript. A second paradigm would make the port and its review slower. It can be revisited after 1.0 if the iglo.\* projects adopt it together.
 
-## D7. Keep listmonk's HTTP API for ported endpoints
+## D7. Keep listmonk's HTTP API for ported endpoints, unless it is badly designed
 
-- **Decision:** same paths, fields, envelope, pagination and auth. New features get new endpoints. The documented deliberate differences are the SQL dialect, Liquid, and the `/api/tx` response.
-- **Why:** existing SDKs, the n8n listmonk node and scripts keep working, and upstream can serve as the reference in contract tests.
+Updated 2026-10-27.
+
+- **Decision:** same paths, fields, envelope, pagination and auth by default. New features get new endpoints. Where listmonk's behavior follows from a poor design decision, fix it during the port instead of copying it. Every such fix is a deliberate difference listed in [API and admin UI](07-api-and-ui.md#api-compatibility-policy) with its reason and marked in the contract suite. A difference needs a concrete benefit for callers or for correctness, not a matter of taste.
+- **Why:** existing SDKs, the n8n listmonk node and scripts keep working, and upstream can serve as the reference in contract tests. But iglo.email is owned, not tracked (D1), so carrying a bad contract forever costs more than one documented break now. Example: listmonk's `/api/tx` rejects any recipient who is not already a subscriber, so a one-off email needs a subscriber created first; iglo.email sends to any address.
 
 ## D8. Server-side TSX for the admin UI
 

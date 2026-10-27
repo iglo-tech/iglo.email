@@ -57,7 +57,7 @@ You are a worker on iglo.email (https://github.com/iglo-tech/iglo.email). Do the
 You are one member of a two-member review council for iglo.email (https://github.com/iglo-tech/iglo.email). Review only; do not change code or push.
 PR: <URL>, head commit <SHA>, task <id> from docs/design/11-work-plan.md.
 - Check out the PR head in your worktree (gh pr checkout <number>). Read AGENTS.md, docs/design/11-work-plan.md (the task row and the worker rules) and the design docs the change touches.
-- Compare the change with the upstream listmonk v7.0.0-beta.1 files it ports, in /home/t3-code/upstream/listmonk. Ported endpoints must keep listmonk's API contract except for differences listed in docs/design/07-api-and-ui.md. New features must match the design docs.
+- Compare the change with the upstream listmonk v7.0.0-beta.1 files it ports, in /home/t3-code/upstream/listmonk. Ported endpoints keep listmonk's API contract except for differences listed in docs/design/07-api-and-ui.md. Flag both an unlisted difference and an upstream behavior copied blindly where it is clearly a poor design (for example a requirement that serves upstream's internals rather than the caller). New features must match the design docs.
 - Check: correctness, marketing sends stay at-most-once, no network call inside a transaction, every loop uses the injected clock, permissions on every route, scope respected, tests through public boundaries only, acceptance check really passes (run it), design docs still match the code.
 - Report only real problems, each with file, line and the concrete failure. Do not ask for optional style changes.
 - Post exactly one PR comment, starting with the first line
