@@ -8,7 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No active task. M0.2 merged; the lead is preparing M0.3 next, following the serial M0 order.
+M0.3 is briefed and ready for its Terra max worker, following the serial M0 order.
+
+| ID | Stage | Branch / PR | Council round | Notes |
+|---|---|---|---|---|
+| M0.3 | brief | `task/M0.3-shared-contracts`, no PR | 0 | [Brief](briefs/M0.3.md). Context/clock, HTTP router/middleware/error envelopes, translation data and focused reference-first boundary checks. |
 
 ## Automation
 
