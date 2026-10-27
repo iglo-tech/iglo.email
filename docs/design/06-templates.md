@@ -68,8 +68,10 @@ listmonk's default campaign, archive and transactional templates and its system 
 
 The admin UI and public pages are rendered on the server, as in listmonk v7. Its Go `html/template` views (26 views, 37 partials, 12 public templates) are ported to TSX components:
 
-- **Bun compiles TSX natively.** An in-house JSX runtime of about 100 lines renders to strings and escapes by default. A `raw()` helper marks trusted HTML. There is no React and no virtual DOM.
+- **Bun compiles TSX natively.** An in-house JSX runtime renders to strings and escapes text and attributes by default. A `raw()` helper marks trusted markup through an opaque boundary; attribute values never accept it. Callers validate URL and Alpine expression contexts separately, and browser bootstrap values use script-safe JSON. There is no React and no virtual DOM.
 - **Views are typed:** each view's props are a TypeScript type, so a handler cannot forget a field that the template uses. In Go templates that mistake fails silently.
 - **Markup stays close to v7's:** class names, Alpine.js `x-data` attributes and Oat components stay the same, so v7's CSS and JS assets work unchanged and its Playwright tests stay meaningful.
 - **Go template helpers become plain functions:** `dict`, `list` and `printf` become ordinary TypeScript, and `.L.T` becomes `t()`.
 - **i18n uses listmonk's language JSON files and keys,** so translations carry over.
+
+M0.6 implements the JSX runtime, a reusable v7-shaped admin shell, the public message shell and the production HTML 404. No admin screen or login route is installed. The shell is exercised by a compiled synthetic fixture; the v1 browser bundles and licenses are embedded from the reproducible build described in `assets/README.md`.

@@ -77,7 +77,8 @@ Fresh listmonk installation also adds its own sample data.
 
 The shared, explicit case definitions are in `test/contract/cases.ts`; the
 reference-first protected-read observations and synthetic fixture credentials
-are in [`test/contract/fixtures.md`](../contract/fixtures.md).
+are in [`test/contract/fixtures.md`](../contract/fixtures.md). Its M0.5 coverage
+table is historical; the current public-page coverage is described below.
 
 ```sh
 bun test test/contract
@@ -102,7 +103,12 @@ token requests run there and against upstream. Its generated ID/timestamp probes
 verify normalization only. Reports identify the mode, target, profile, case
 results, D17/D18 and pending production work. M1.3 promotes protected health to
 real production auth; domain owners promote helper cases as their routes land.
-The public HTML 404 body remains pending M0.6/public pages.
+Public HTML 404 semantics and embedded static responses are covered in both
+upstream and compiled production, with explicit per-target site names and
+attribution. Repeat the reference-first observations with
+`bun run reference:run -- bun test/ui/reference-observe.ts`. Static HEAD requests
+on the pinned upstream return 405 with no content type; the implementation
+retains that boundary. Encoded dot segments follow Bun normalization (D18).
 
 For an already running owned loopback target, the CLI also accepts an explicit
 base URL and profile. For example, inside a `reference:run` child:
