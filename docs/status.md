@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.4 round 1 corrections are published at `47d3149e9af51ff2615fe836375090b3e7614f1d`: disk-backed measurements, SQLite-parsed migration boundaries and cooperative busy-loop scheduling. Full local acceptance passed. Fresh exact-head CI and council round 2 are required before merge; the existing PR #4 watch remains active.
+M0.4 round 1 corrections are published at `47d3149e9af51ff2615fe836375090b3e7614f1d`: disk-backed measurements, SQLite-parsed migration boundaries and cooperative busy-loop scheduling. Full local acceptance and all eight exact-head CI jobs passed. Fresh council round 2 is running with Opus medium and Sol xhigh; both verdicts are pending. The existing PR #4 watch remains active.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.4 | ci | [PR #4](https://github.com/iglo-tech/iglo.email/pull/4), `task/M0.4-database-loops` | 1 completed; 2 next | Head `47d3149e9af51ff2615fe836375090b3e7614f1d` addresses both reviewers’ three findings. Local check: 49 tests / 381 assertions; focused db/loops: 20 tests / 134 assertions; ext4 benchmark, 28 upstream cases and eight smoke stages passed. Both round 1 CHANGES apply only to the old head. Fresh reviews follow CI. [Brief](briefs/M0.4.md). |
+| M0.4 | council | [PR #4](https://github.com/iglo-tech/iglo.email/pull/4), `task/M0.4-database-loops` | 2 | Head `47d3149e9af51ff2615fe836375090b3e7614f1d` addresses both reviewers’ three findings. Local check: 49 tests / 381 assertions; focused db/loops: 20 tests / 134 assertions; ext4 benchmark, 28 upstream cases and eight smoke stages passed. All four CI job types passed in both runs. Both fresh round 2 verdicts are pending; round 1 verdicts apply only to the earlier head. [Brief](briefs/M0.4.md). |
 
 
 Completed worker: [M0.4: Database layer and loop helper — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -39,7 +39,14 @@ Failing regressions were committed at `7c147f4` (migration identifier/transactio
 
 The loop now waits on an abortable injected-clock zero delay after each nonempty bounded batch; idle polling retains its configured interval. HTTP and stop delivery can run between busy batches. The public fixture observed 5,000 items processed before stop on the old code and one item on the new code in both fake-clock and real-clock cases; fake-clock zero advancement then permits the second item and stop prevents further starts. These before/after observations and the final ext4 storage results are in [the report](https://github.com/iglo-tech/iglo.email/blob/47d3149e9af51ff2615fe836375090b3e7614f1d/docs/perf/M0.4-database.md). No permanent HTTP API change or new runtime dependency.
 
-Final validation passed: frozen install, focused db/loop tests (20 / 134 assertions), full check (49 / 381 assertions and compiled build), disk-backed benchmark, all 28 live upstream cases, all eight reference-smoke phases and formatting/diff checks. The PR body maps the final source and evidence. Fresh CI is pending; when green, dispatch both fresh council members for round 2 with all prior findings and the measurement/SQL/loop changes. Never treat the old verdicts as approvals for this head.
+Final validation passed: frozen install, focused db/loop tests (20 / 134 assertions), full check (49 / 381 assertions and compiled build), disk-backed benchmark, all 28 live upstream cases, all eight reference-smoke phases and formatting/diff checks. The PR body maps the final source and evidence. Fresh CI passed in both runs, and both fresh council members are now running round 2 with all prior findings and the measurement/SQL/loop changes. Never treat the old verdicts as approvals for this head.
+
+### Council round 2
+
+Exact head `47d3149e9af51ff2615fe836375090b3e7614f1d` is green across check, Linux reference and both macOS prepare jobs in both push/PR runs. Both fresh reviewers were dispatched together with the full current PR, all round 1 findings/objections and the disk-backed measurement, SQLite-parsed migration and cooperative-clock changes. Both verdicts are pending. Completion wakes this lead; do not poll, reuse or duplicate these reviewers. The existing PR #4 watch remains active.
+
+- [M0.4 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa77cad97-b170-49a6-8036-66000a618fdb); claudeAgent / claude-opus-5-5. Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa77cad97-b170-49a6-8036-66000a618fdb; child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa77cad97-b170-49a6-8036-66000a618fdb.
+- [M0.4 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A48aa611a-8c58-4f38-8a4d-d177f376d72a); codex / gpt-6.1-sol. Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A48aa611a-8c58-4f38-8a4d-d177f376d72a; child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A48aa611a-8c58-4f38-8a4d-d177f376d72a.
 
 ## Automation
 
