@@ -8,3 +8,7 @@
 *.db-shm
 /*.zip
 /*.sql.gz
+
+# Dependencies and compiled output
+/node_modules/
+/dist/
