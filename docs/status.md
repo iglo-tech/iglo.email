@@ -17,6 +17,13 @@ Completed worker: [M0.1: Resume project skeleton — Terra max](t3-thread://v1/t
 - Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3Ab65540aa-c1ef-4668-87e0-a604245e8034`.
 - Child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3Ab65540aa-c1ef-4668-87e0-a604245e8034`.
 
+### Council round 1
+
+Both reviewers are running independently for head `56935d1148bdce063dd4e9d5a0e752bd126c3468`; completion wakes this lead. Do not poll running delegates.
+
+- [M0.1 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A04205234-9dc4-4945-a37f-32d12702680a); `claudeAgent`, `claude-opus-5-5`, `effort: medium`. Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A04205234-9dc4-4945-a37f-32d12702680a`; child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A04205234-9dc4-4945-a37f-32d12702680a`.
+- [M0.1 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A28e2fb5b-5385-425b-933a-457bbbdbf1aa); `codex`, `gpt-6.1-sol`, `reasoningEffort: xhigh`. Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A28e2fb5b-5385-425b-933a-457bbbdbf1aa`; child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A28e2fb5b-5385-425b-933a-457bbbdbf1aa`.
+
 Handoff history: the setup worker stopped (`interrupted`, no active run). Its incomplete configuration and CLI tests were preserved at `91d4ecb71e62fbff924eb5aad20825a6a5c500fa` and completed by the replacement worker. The old stopped worktree remains `/home/t3-code/.t3/worktrees/iglo.email/t3-c5a70f7f`. The transfer did not consume the worker failure retry. Publishing the workflow used existing repository SSH access because the OAuth token lacks workflow scope.
 
 ## Automation
