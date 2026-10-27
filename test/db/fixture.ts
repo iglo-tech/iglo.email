@@ -25,6 +25,33 @@ const catalogs = {
   unordered: [two, one],
   blank: [{ version: 1, sql: " -- empty\n" }],
   transactional: [{ version: 1, sql: "CREATE TABLE forbidden (id); COMMIT;" }],
+  identifierCommit: [
+    {
+      version: 1,
+      sql: "CREATE TABLE trigger (begin TEXT); COMMIT; CREATE TABLE leaked (id INTEGER PRIMARY KEY); INSERT INTO missing VALUES (1);",
+    },
+  ],
+  identifierRollback: [
+    {
+      version: 1,
+      sql: "CREATE TABLE trigger (begin TEXT); ROLLBACK; CREATE TABLE leaked (id INTEGER PRIMARY KEY); INSERT INTO missing VALUES (1);",
+    },
+  ],
+  identifierPragma: [
+    {
+      version: 1,
+      sql: "CREATE TABLE trigger (begin TEXT); PRAGMA busy_timeout = 7; INSERT INTO missing VALUES (1);",
+    },
+  ],
+  keywordTrigger: [
+    {
+      version: 1,
+      sql: `${first}\nCREATE TABLE fixture_audit (end TEXT); CREATE TRIGGER fixture_trigger AFTER INSERT ON fixture_records BEGIN INSERT INTO fixture_audit(end) VALUES (NEW.value); END;`,
+    },
+  ],
+  migrationParameter: [
+    { version: 1, sql: "CREATE TABLE unbound (id); INSERT INTO unbound VALUES (?);" },
+  ],
   pragma: [{ version: 1, sql: 'PRAGMA main."user_version" = 7;' }],
   triggers: [
     {
@@ -90,6 +117,8 @@ export function startDbFixture(dataDir: string) {
       }
       case "audit":
         return db.query("SELECT value FROM fixture_audit").all();
+      case "keyword-audit":
+        return db.query("SELECT end FROM fixture_audit").all();
       case "transaction": {
         const insert = () =>
           db.run("INSERT INTO fixture_records (id, value) VALUES (1, 'changed')");

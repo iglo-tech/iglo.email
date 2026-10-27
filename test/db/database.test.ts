@@ -153,6 +153,37 @@ test("migration bodies can create SQLite triggers while the runner owns transact
   });
 });
 
+test("migration identifiers cannot hide transaction control or connection settings", async () => {
+  for (const catalog of ["identifierCommit", "identifierRollback", "identifierPragma"]) {
+    await withFixture(async (origin) => {
+      expect((await request(origin, { action: "migrate", catalog })).status).toBe(400);
+      const status = (await request(origin, { action: "status" })).result;
+      expect(status.version).toBe("0");
+      expect(status.objects).toEqual([]);
+      expect(status.timeout).toBe("5000");
+      expect((await request(origin, { action: "migrate", catalog: "first" })).status).toBe(200);
+    });
+  }
+});
+
+test("migration trigger bodies accept keyword identifiers and reject unbound parameters", async () => {
+  await withFixture(async (origin) => {
+    expect((await request(origin, { action: "migrate", catalog: "keywordTrigger" })).status).toBe(
+      200,
+    );
+    await request(origin, { action: "insert", id: "1", value: "keyword identifier" });
+    expect((await request(origin, { action: "keyword-audit" })).result).toEqual([
+      { end: "keyword identifier" },
+    ]);
+  });
+  await withFixture(async (origin) => {
+    expect(
+      (await request(origin, { action: "migrate", catalog: "migrationParameter" })).status,
+    ).toBe(400);
+    expect((await request(origin, { action: "status" })).result.objects).toEqual([]);
+  });
+});
+
 test("pre-upgrade snapshot captures committed WAL contents; a failed snapshot prevents writes", async () => {
   await withFixture(async (origin) => {
     await request(origin, { action: "migrate", catalog: "first" });

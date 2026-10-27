@@ -1,5 +1,6 @@
 // Synthetic lease policy belongs to this fixture, not the reusable loop.
 import { openDatabase } from "@/db/connection";
+import { createRealClock } from "@/clock";
 import { startLoop } from "@/loops/loop";
 import { TestClock } from "@/test/server/fixture";
 
@@ -22,12 +23,27 @@ export function startLoopFixture(dataDir: string) {
       case "add":
         db.run("INSERT INTO fixture_work (id) VALUES (?)", [input.id]);
         return true;
+      case "add-many":
+        db.run(
+          "WITH RECURSIVE ids(id) AS (VALUES(1) UNION ALL SELECT id + 1 FROM ids WHERE id < ?) INSERT INTO fixture_work (id) SELECT id FROM ids",
+          [input.count],
+        );
+        return true;
       case "start": {
         const connection = databases[input.connection ?? 0]!;
         const entry: Running = {} as Running;
+        const observe = (id: number) => {
+          started.push({
+            loop: input.name,
+            id: String(id),
+            inTransaction: connection.inTransaction,
+          });
+          for (const notify of waiters.splice(0)) notify();
+          if (input.fail) throw new Error("fixture processing failed");
+        };
         const loop = startLoop<number>({
           db: connection,
-          clock,
+          clock: input.realClock ? createRealClock() : clock,
           logger: { error: (error) => failures.push(String(error)) },
           intervalMs: input.intervalMs ?? 100,
           leaseMs: input.leaseMs ?? 500,
@@ -41,19 +57,15 @@ export function startLoopFixture(dataDir: string) {
               .all(leaseUntil.getTime(), now.getTime(), batchSize)
               .map((item) => Number(item.id));
           },
-          async process(id) {
-            started.push({
-              loop: input.name,
-              id: String(id),
-              inTransaction: connection.inTransaction,
-            });
-            for (const notify of waiters.splice(0)) notify();
-            if (input.fail) throw new Error("fixture processing failed");
-            if (input.hold)
-              await new Promise<void>((resolve) => {
-                entry.release = resolve;
-              });
-          },
+          process: input.synchronous
+            ? observe
+            : async (id) => {
+                observe(id);
+                if (input.hold)
+                  await new Promise<void>((resolve) => {
+                    entry.release = resolve;
+                  });
+              },
         });
         entry.loop = loop;
         running.set(input.name, entry);

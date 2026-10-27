@@ -121,3 +121,51 @@ test("idle polling follows the injected clock", async () => {
     await request(origin, { action: "done", name: "clock" });
   });
 });
+
+test("busy synchronous batches yield through the injected clock and stop before draining the backlog", async () => {
+  await withFixture(async (origin) => {
+    await request(origin, { action: "add-many", count: 5000 });
+    await request(origin, { action: "start", name: "busy", synchronous: true });
+    const first = (await request(origin, { action: "state" })).result.started;
+    console.log(
+      JSON.stringify({
+        metric: "busy-loop-fake-clock",
+        eligible: 5000,
+        processedBeforeStop: first.length,
+      }),
+    );
+    expect(first).toHaveLength(1);
+    await request(origin, { action: "advance", ms: 0 });
+    expect((await request(origin, { action: "state" })).result.started).toHaveLength(2);
+    await request(origin, { action: "stop", name: "busy" });
+    expect((await request(origin, { action: "done", name: "busy" })).result.error).toBeNull();
+    await request(origin, { action: "advance", ms: 1000 });
+    expect((await request(origin, { action: "state" })).result.started).toHaveLength(2);
+  });
+});
+
+test("HTTP can stop a busy synchronous loop using the real clock before its backlog drains", async () => {
+  await withFixture(async (origin) => {
+    await request(origin, { action: "add-many", count: 5000 });
+    await request(origin, {
+      action: "start",
+      name: "busy",
+      synchronous: true,
+      realClock: true,
+      leaseMs: 2147483647,
+    });
+    await request(origin, { action: "stop", name: "busy" });
+    expect((await request(origin, { action: "done", name: "busy" })).result.error).toBeNull();
+    const stopped = (await request(origin, { action: "state" })).result.started.length;
+    console.log(
+      JSON.stringify({
+        metric: "busy-loop-http-stop",
+        eligible: 5000,
+        processedBeforeStop: stopped,
+      }),
+    );
+    expect(stopped).toBeGreaterThan(0);
+    expect(stopped).toBeLessThan(5000);
+    expect((await request(origin, { action: "state" })).result.started).toHaveLength(stopped);
+  });
+});
