@@ -8,47 +8,12 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is in council round 2 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `095f8c0421abf70ac11808a236029f1213218864`. All eight CI jobs passed. Opus approved this head after finishing its automatic continuation and verifying all acceptance commands and the regression-first failures. Sol’s independent round-2 verdict is still pending; its completion wakes this lead. The existing PR watch remains active. Do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
+M0.5 is merged and its PR watch is stopped. M0.6 is next; the lead is preparing its JSX/page-shell/asset brief. No worker or PR exists for M0.6 yet.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.5 | council | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 2 | [Brief](briefs/M0.5.md). Head `095f8c0421abf70ac11808a236029f1213218864`; all eight CI jobs passed. Opus findings fixed after regression-first commit `2f8efcf` (three failures before, three passes after). Lead acceptance: 72 tests / 487 assertions, 8 production cases, 23 fixture cases + 2 probes, 31 live upstream cases. Round 1: Opus CHANGES, Sol APPROVE on the original head. Round 2: Opus APPROVE on the fixed head; Sol verdict pending. |
+| M0.6 | brief | Planned task/M0.6-jsx-assets; no PR | 0 | Read pinned upstream admin asset build, base view and public 404. Prepare owned scope, compiled asset verification and the M0.5 contract handoff. |
 
-
-Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
-- Preserved worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-73790d45` (terminal worker; use for small lead fixes).
-- PR #5 is linked and watched in the dedicated lead thread. Both round-1 reviewers completed. Council round 2 has Opus APPROVE on `095f8c0`; Sol is still running. Do not reuse original-head approvals.
-
-### Council round 1
-
-[M0.5 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A36517d41-ddf0-47e0-93c4-302d1527742f); claude-opus-5-5. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6455973842): two fixture coverage gaps plus minor readiness edge. All acceptance passed using disk-backed TMPDIR after /tmp exhaustion.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A36517d41-ddf0-47e0-93c4-302d1527742f
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A36517d41-ddf0-47e0-93c4-302d1527742f
-
-[M0.5 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b); gpt-6.1-sol. [APPROVE](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6455980627) on original head `09a87223d741c4360b3def4e19de817e2cc89436`; no findings. All acceptance passed with disk-backed TMPDIR.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
-
-### Council round 2
-
-[M0.5 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9); claude-opus-5-5. [APPROVE](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6456090407) on `095f8c0421abf70ac11808a236029f1213218864`. All eight acceptance commands passed; verified all three new regressions fail against the prior corpus. The runtime automatically resumed an interim handoff; no duplicate reviewer was started.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
-
-[M0.5 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A3c149e3f-4017-474f-8485-1b00787cbebf); gpt-6.1-sol. Verdict pending on `095f8c0421abf70ac11808a236029f1213218864`.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A3c149e3f-4017-474f-8485-1b00787cbebf
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A3c149e3f-4017-474f-8485-1b00787cbebf
-
-Lead fix evidence: D18 dot cases now target the registered `/fixture/id/:id` helper; its normalized missing-path fallback is asserted as the actual plain-text 404. The method-mismatch case now POSTs to the fixture's GET-only `/api/health`. Regression targets preserve raw dots or return 405 on that GET-only path, and each corrected case rejects the nonconforming response. A successful final bounded readiness attempt is retained rather than overwritten by a subsequent deadline check. No production code changed.
-
-Validation environment: `/tmp` was nearly full during round 1 (26 MB free), independently confirmed by `df`; reviewers attributed it to another project. A later bounded check found 7 GB free. This lead removed no unrelated files. Lead checks used ignored disk-backed `upstream/lead-tmp`; round-2 reviewers were told to use their own ignored disk-backed TMPDIR for stable validation.
 
 ## Automation
 
@@ -58,6 +23,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 | ID | PR | Merged | Notes |
 |---|---|---|---|
+| M0.5 | [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 2026-10-27, `11476506671e4f326d1f7100710de051a487a42a` | Shared contract corpus, scoped normalization and D17/D18; explicit production versus fixture staging (D20). [Opus](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6456090407) and [Sol](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6456132407) approved exact head `095f8c0421abf70ac11808a236029f1213218864` in round 2; all eight CI jobs passed. 72 tests, 8 production cases, 23 fixture + 2 probe cases, 31 upstream cases. [Review record](reviews/M0.5.md). |
 | M0.4 | [#4](https://github.com/iglo-tech/iglo.email/pull/4) | 2026-10-27, `a988c62d8bbf854a98ad2e750773b76cce3f323f` | SQLite primitives, migrations/snapshots, named SQL and cooperative loop lifecycle. [Opus](https://github.com/iglo-tech/iglo.email/pull/4#issuecomment-6455376123) and [Sol](https://github.com/iglo-tech/iglo.email/pull/4#issuecomment-6455414436) approved exact head `47d3149e9af51ff2615fe836375090b3e7614f1d` in round 2; all eight CI jobs passed. Acceptance: 49 tests / 381 assertions, 28 upstream cases, eight smoke stages and corrected ext4 measurements. Production stays at version 0. [Review record](reviews/M0.4.md), [measurements](perf/M0.4-database.md). |
 | M0.3 | [#3](https://github.com/iglo-tech/iglo.email/pull/3) | 2026-10-27, `cb41fd6f29a07415541fcb95101ba84e64231ad6` | Shared HTTP/app/clock/i18n contracts. Both final CI runs passed all four job types. Three council rounds ended with matching URI findings; the lead fixed both and merged under the [three-round resolution](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6454296622), supplemented by the [reference readiness repair](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6454452814). No final-head council approval is claimed. Final local checks: 27 tests / 237 assertions, 28 upstream cases and eight smoke stages. [Review record](reviews/M0.3.md). |
 | M0.2 | [#2](https://github.com/iglo-tech/iglo.email/pull/2) | 2026-10-27, `2946b45cad2f9e1caf63311ba814fbde56c3e40f` | Upstream reference and test services. All CI jobs green; [Opus](https://github.com/iglo-tech/iglo.email/pull/2#issuecomment-6452884686) and [Sol](https://github.com/iglo-tech/iglo.email/pull/2#issuecomment-6451369141) approved exact head `cd556c981eac3e3cb6a2ff28dc2ca1e4816e2569` in round 2. Both passed full local checks and all eight Linux smoke stages. Native macOS binary preparation passed CI; full macOS Docker lifecycle remains unverified. Process-group cleanup was tightened after round 1. The Claude rate-limit pause expired before T3 automatically resumed the reviewer; no duplicate review was started. |
@@ -66,7 +32,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 ## Follow-ups
 
 - M0.6/public-page work must finish the explicitly deferred public HTML 404 fallback (including `POST /health`). Update the two route-backed D18 contract fixture expectations when that fallback changes; retain the exact-target discrimination and upstream assertions. It remains a temporary staging gap; API error bodies are complete for the current scope.
-- M0.5 must carry D17/D18 markers into the general contract suite. Native macOS binary preparation passes CI; full native macOS Docker lifecycle remains unverified.
+- M1.3 must promote the D20 protected-read cases to actual production authentication; M1.5/domain owners promote helper cases. M0.5 now carries D17/D18. Native macOS binary preparation passes CI; full native macOS Docker lifecycle remains unverified.
 
 ## Blocked
 
