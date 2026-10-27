@@ -8,7 +8,7 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is in council round 2 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `095f8c0421abf70ac11808a236029f1213218864`. All eight new-head CI jobs passed. Both fresh independent reviewers are running with the complete brief and round-1 findings. Their completions wake this lead. The existing PR watch remains active; do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
+M0.5 is in council round 2 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `095f8c0421abf70ac11808a236029f1213218864`. All eight new-head CI jobs passed. Both fresh independent reviewers are running with the complete brief and round-1 findings. Opus sent an interim handoff without a verdict while its check was running; a single recovery read showed T3 had already resumed it automatically (run 2). Keep that existing review; no replacement was started. Their completions wake this lead. The existing PR watch remains active; do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
@@ -36,7 +36,7 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 
 ### Council round 2
 
-[M0.5 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9); claude-opus-5-5. Verdict pending on `095f8c0421abf70ac11808a236029f1213218864`.
+[M0.5 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9); claude-opus-5-5. Verdict pending on `095f8c0421abf70ac11808a236029f1213218864`. Interim handoff reported seven acceptance commands passed and check still running. T3 automatically resumed the same task; final verification and a posted verdict remain required. Do not poll it.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A58f6f9b5-a1a6-4dd9-bd4b-7c79459541d9
