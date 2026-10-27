@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is in council round 1 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `09a87223d741c4360b3def4e19de817e2cc89436`. All eight CI jobs passed (four job types in each run). Both fresh independent reviewers are running; completion wakes this lead. The existing PR watch remains active. Do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
+M0.5 is in council round 1 on [PR #5](https://github.com/iglo-tech/iglo.email/pull/5), exact head `09a87223d741c4360b3def4e19de817e2cc89436`. All eight CI jobs passed (four job types in each run). Opus returned CHANGES; the lead is correcting two ineffective fixture paths and the minor readiness edge. Sol is still reviewing the original exact head; its completion wakes this lead. The existing PR watch remains active. Do not poll or start duplicate reviews. D20 keeps production coverage separate from fixture-only authenticated/helper evidence.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.5 | council | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 1 | [Brief](briefs/M0.5.md). Head `09a87223d741c4360b3def4e19de817e2cc89436`; reference-first commit `98e15fb`. Worker reports 69 tests, 8 production cases, 23 fixture cases + 2 probes, 31 upstream cases and reference smoke passing. All eight CI jobs passed. Opus medium and fresh Sol xhigh council round 1 dispatched; both verdicts pending. |
+| M0.5 | fix | task/M0.5-contract-harness; [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 1 | [Brief](briefs/M0.5.md). Head `09a87223d741c4360b3def4e19de817e2cc89436`; reference-first commit `98e15fb`. Worker reports 69 tests, 8 production cases, 23 fixture cases + 2 probes, 31 upstream cases and reference smoke passing. All eight CI jobs passed. Opus CHANGES: D18 dot helpers and API method mismatch did not reach registered routes. Lead fixes in progress with three regression-first tests; Sol original-head verdict pending. No replacement reviewer started. |
 
 
 Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,11 +20,11 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa2d2b4e7-373a-4ee9-9b79-dd5f032723cc
 - Preserved worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-73790d45` (terminal worker; use for small lead fixes).
-- PR #5 is linked and watched in the dedicated lead thread. Council round 1 is running; do not reuse previous-task approvals.
+- PR #5 is linked and watched in the dedicated lead thread. Sol council round 1 is still running; Opus completed. Collect both verdicts before a fresh council round; do not reuse previous-task approvals.
 
 ### Council round 1
 
-[M0.5 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A36517d41-ddf0-47e0-93c4-302d1527742f); claude-opus-5-5. Verdict pending.
+[M0.5 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A36517d41-ddf0-47e0-93c4-302d1527742f); claude-opus-5-5. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6455973842): two fixture coverage gaps plus minor readiness edge. All acceptance passed using disk-backed TMPDIR after /tmp exhaustion.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A36517d41-ddf0-47e0-93c4-302d1527742f
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A36517d41-ddf0-47e0-93c4-302d1527742f
@@ -33,6 +33,8 @@ Completed worker: [M0.5: Contract suite harness — Terra max](t3-thread://v1/th
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A69b1b0db-e9c8-46b1-94bd-393303feef1b
+
+Validation environment: `/tmp` is nearly full (26 MB free at the lead check), independently confirmed by `df`; the reviewer attributed it to another project. No unrelated files were removed. Lead checks use ignored disk-backed `upstream/lead-tmp` in the worker checkout.
 
 ## Automation
 
