@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-Both M0.2 council members approved round 1. The lead fixed Opus's additional process-group lifetime note; the new head is awaiting CI before fresh council round 2.
+M0.2's process-group lifetime update passed all CI jobs; fresh independent council round 2 is starting.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.2 | ci | [PR #2](https://github.com/iglo-tech/iglo.email/pull/2), `task/M0.2-upstream-reference` | 1 | New head `cd556c981eac3e3cb6a2ff28dc2ca1e4816e2569`: retire process-group ownership on child exit. `bun run check` and the real Linux reference smoke passed, including the new exiting-parent case. Await CI, then fresh council round 2. [Brief](briefs/M0.2.md). |
+| M0.2 | council | [PR #2](https://github.com/iglo-tech/iglo.email/pull/2), `task/M0.2-upstream-reference` | 2 | Head `cd556c981eac3e3cb6a2ff28dc2ca1e4816e2569`. Full local check, all eight Linux smoke stages and all CI jobs passed. Fresh Opus medium and Sol xhigh reviewers check the full PR and prior cleanup note. [Brief](briefs/M0.2.md). |
 
 Completed worker: [M0.2: Upstream reference and test services — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c); `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Full local checks and Linux rootless-Docker smoke passed, including command/startup failures, timeout/signal cleanup, isolation, sentinel survival and corrupt-cache rejection. CI is green for the exact head, including native macOS preparation/version checks; full macOS Docker lifecycle remains unverified. The existing PR #2 watch remains active. Do not poll delegates. The M0.1 PR watch is stopped after merge.
 
