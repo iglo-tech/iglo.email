@@ -10,7 +10,9 @@ interface ReferenceCase {
   path: string;
   method?: string;
   body?: string;
+  requestContentType?: string | null;
   authenticated?: boolean;
+  deliberateDifference?: string;
   status: number;
   contentType: string | null;
   response?: string;
@@ -81,6 +83,46 @@ const cases: ReferenceCase[] = [
     response: '{"message":"Invalid name."}\n',
   },
   {
+    label: "empty body without content type",
+    path: "/api/lists",
+    method: "POST",
+    authenticated: true,
+    status: 400,
+    contentType: "application/json",
+    response: '{"message":"Invalid name."}\n',
+  },
+  {
+    label: "empty JSON body",
+    path: "/api/lists",
+    method: "POST",
+    body: "",
+    authenticated: true,
+    status: 400,
+    contentType: "application/json",
+    response: '{"message":"Invalid name."}\n',
+  },
+  {
+    label: "unsupported body media type",
+    path: "/api/lists",
+    method: "POST",
+    body: "not JSON",
+    requestContentType: "text/plain",
+    authenticated: true,
+    status: 415,
+    contentType: "application/json",
+    response: '{"message":"Unsupported Media Type"}\n',
+  },
+  {
+    label: "positive ID overflow",
+    path: "/api/lists/9223372036854775808",
+    authenticated: true,
+    status: 500,
+    contentType: "application/json",
+    response:
+      '{"message":"Error fetching Lists: pq: value \\"9223372036854775807\\" is out of range for type integer (22003)"}\n',
+    deliberateDifference: 'D17: iglo.email returns 400 {"message":"invalid ID"} before storage',
+  },
+  {
     label: "invalid enum field",
     path: "/api/lists",
     method: "POST",
@@ -114,7 +156,9 @@ const cases: ReferenceCase[] = [
 for (const item of cases) {
   const headers = new Headers();
   if (item.authenticated) headers.set("Authorization", `Basic ${btoa(`${user}:${token}`)}`);
-  if (item.body !== undefined) headers.set("Content-Type", "application/json");
+  if (item.requestContentType !== undefined) {
+    if (item.requestContentType !== null) headers.set("Content-Type", item.requestContentType);
+  } else if (item.body !== undefined) headers.set("Content-Type", "application/json");
   const result = await fetch(new URL(item.path, origin), {
     method: item.method ?? "GET",
     headers,
@@ -135,6 +179,7 @@ for (const item of cases) {
   console.log(
     `${item.label}: ${result.status} ${contentType}${item.response === undefined ? " (HTML body deferred)" : ` ${JSON.stringify(body)}`}`,
   );
+  if (item.deliberateDifference) console.log(`Deliberate difference ${item.deliberateDifference}`);
 }
 
 export {};

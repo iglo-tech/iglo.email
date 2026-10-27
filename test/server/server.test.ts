@@ -68,6 +68,31 @@ describe("shared HTTP contracts", () => {
     expect((await request(origin, "/fixture/items/one", { method: "POST" })).status).toBe(404);
   });
 
+  test("static routes outrank parameters with prefix and longer routes interleaved", async () => {
+    const prefix = "/fixture/routes";
+    for (const suffix of ["", "/export"]) {
+      const parameter = `${prefix}/:id${suffix}`;
+      const literal = `${prefix}/new${suffix}`;
+      for (const routePaths of [
+        [parameter, prefix, literal],
+        [parameter, literal, prefix],
+        [prefix, parameter, literal],
+        [prefix, literal, parameter],
+        [literal, prefix, parameter],
+        [literal, parameter, prefix],
+      ]) {
+        const { origin } = fixture({ routePaths });
+        expect((await request(origin, literal)).body).toBe(
+          `${JSON.stringify({ data: literal })}\n`,
+        );
+        expect((await request(origin, `${prefix}/123${suffix}`)).body).toBe(
+          `${JSON.stringify({ data: parameter })}\n`,
+        );
+        expect((await request(origin, prefix)).body).toBe(`${JSON.stringify({ data: prefix })}\n`);
+      }
+    }
+  });
+
   test("middleware runs in registration order, can short-circuit, and errors share serialization", async () => {
     const { origin, errors } = fixture();
     expect(await request(origin, "/fixture/middleware")).toMatchObject({
@@ -110,7 +135,7 @@ describe("shared HTTP contracts", () => {
 
   test("ID and generic input validation reproduce reference 400 envelopes", async () => {
     const { origin } = fixture();
-    for (const id of ["not-an-id", "0", "-1", "9223372036854775808"]) {
+    for (const id of ["not-an-id", "0", "-1"]) {
       expect(await request(origin, `/fixture/id/${id}`)).toMatchObject({
         status: 400,
         contentType: "application/json",
@@ -142,6 +167,49 @@ describe("shared HTTP contracts", () => {
     expect(await post("{")).toMatchObject({ status: 400, body: '{"message":"Bad Request"}\n' });
     expect((await post('{"value":"hello"}')).body).toBe('{"data":"hello"}\n');
     expect((await post(JSON.stringify({ value: "é".repeat(1001) }))).status).toBe(400);
+  });
+
+  test("empty bodies reach field validation while nonempty unsupported media remains 415", async () => {
+    const { origin } = fixture();
+    for (const init of [
+      { method: "POST" },
+      { method: "POST", body: "", headers: { "Content-Type": "application/json" } },
+    ]) {
+      expect(await request(origin, "/fixture/input", init)).toMatchObject({
+        status: 400,
+        contentType: "application/json",
+        body: '{"message":"Invalid name."}\n',
+      });
+    }
+    expect(
+      await request(origin, "/fixture/input", {
+        method: "POST",
+        body: "not JSON",
+        headers: { "Content-Type": "text/plain" },
+      }),
+    ).toMatchObject({
+      status: 415,
+      contentType: "application/json",
+      body: '{"message":"Unsupported Media Type"}\n',
+    });
+  });
+
+  test("D17 deliberate difference: positive ID overflow is a client error before storage", async () => {
+    const { origin } = fixture();
+    expect(await request(origin, "/fixture/id/9223372036854775808")).toMatchObject({
+      status: 400,
+      contentType: "application/json",
+      body: '{"message":"invalid ID"}\n',
+    });
+  });
+
+  test("translation parameters preserve literal dollar replacement sequences", async () => {
+    const { origin } = fixture();
+    for (const value of ["$&", "$$", "$`", "$'", "$1", "before $& $$ $` $' after"]) {
+      const result = await request(origin, `/fixture/field/${encodeURIComponent(value)}`);
+      expect(result.status).toBe(400);
+      expect(JSON.parse(result.body)).toEqual({ message: `Invalid fields: ${value}` });
+    }
   });
 
   test("independent apps and concurrent requests use injected clocks and translations", async () => {

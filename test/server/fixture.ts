@@ -4,6 +4,7 @@ import type { Translation } from "@/i18n/i18n";
 import { createTranslation } from "@/i18n/i18n";
 import type { Middleware } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
+import { Router } from "@/server/router";
 import { createRouter, startServer } from "@/server/server";
 import { bindJSON, getID, hasID, strHasLen } from "@/server/validation";
 
@@ -75,7 +76,9 @@ function wrapper(name: string): Middleware {
   };
 }
 
-export function startFixture(options: { clock?: Clock; i18n?: Translation } = {}) {
+export function startFixture(
+  options: { clock?: Clock; i18n?: Translation; routePaths?: readonly string[] } = {},
+) {
   const errors: unknown[] = [];
   const clock = options.clock ?? new TestClock();
   const i18n = options.i18n ?? createTranslation();
@@ -91,7 +94,12 @@ export function startFixture(options: { clock?: Clock; i18n?: Translation } = {}
     i18n,
     logger: { error: (error) => errors.push(error) },
   });
-  const router = createRouter();
+  const router = options.routePaths ? new Router() : createRouter();
+  if (options.routePaths) {
+    for (const path of options.routePaths) router.route("GET", path, () => ok(path));
+    const server = startServer(app, router);
+    return { server, errors, clock, origin: `http://127.0.0.1:${server.port}` };
+  }
   router.use(wrapper("outer"), wrapper("inner"));
   router.route("GET", "/fixture/items/:item", ({ params, url }) =>
     ok({ item: params.item, query: url.searchParams.get("q") }),
