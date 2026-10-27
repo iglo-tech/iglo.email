@@ -90,13 +90,17 @@ application-global request state. Valid IDs use a number when exactly representa
 and a bigint above that range, up to the signed 64-bit upstream limit. Database, stored settings and mailer dependencies
 are added by their owning tasks when they exist, rather than as empty placeholders.
 
-Bun supplies a normalized request URL; dot segments are removed before application
-handlers run ([D18](09-decisions.md#d18-use-buns-normalized-request-path-for-dot-segments)). For path spellings Bun preserves,
+Bun supplies a normalized request URL; dot segments are removed and literal
+backslashes become slashes before application handlers run
+([D18](09-decisions.md#d18-use-buns-normalized-request-path)). For path spellings Bun preserves,
 parameters follow the default Go/Echo URI boundary: match the decoded path
 when its escaping is canonical, otherwise retain the original escaped spelling
 (`RawPath`). Parameters are not unescaped again. Encoded numeric IDs therefore
 fail ID validation as upstream does, while canonical space and Unicode escapes
 keep their normal decoded values. Query values use their own query decoding.
+Malformed percent-escape syntax in the exposed path is rejected before routing
+and middleware with the upstream transport's plain-text 400 response. Valid
+escapes of invalid UTF-8, such as `%FF`, still reach parameter validation.
 
 `src/clock.ts` owns `now()` and abortable `sleep()`; loops receive a clock instead of
 reading real time. The HTTP router registers routes and middleware explicitly. Static

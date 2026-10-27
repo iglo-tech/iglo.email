@@ -1,5 +1,6 @@
 // Routing and middleware boundaries are adapted from listmonk's cmd/handlers.go.
-// Path selection follows Echo v5.4.0 router.go and Go 1.27.2 net/url.setPath.
+// Path selection follows Echo v5.4.0 router.go and Go 1.27.2 net/url.setPath;
+// malformed path escapes follow Go's net/http/server.go transport rejection.
 import type { App } from "@/app";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { errorResponse, HttpError } from "@/server/response";
@@ -45,7 +46,8 @@ function precedence(a: Route, b: Route): number {
   return 0;
 }
 
-function routingPath(path: string): string {
+function routingPath(path: string): string | undefined {
+  if (/%(?![0-9A-Fa-f]{2})/.test(path)) return undefined;
   let decoded: string;
   try {
     decoded = decodeURIComponent(path);
@@ -108,6 +110,11 @@ export class Router {
   async handle(app: App, request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = routingPath(url.pathname);
+    if (path === undefined)
+      return new Response("400 Bad Request", {
+        status: 400,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
     const parts = path === "/" ? [] : path.slice(1).split("/");
     let selected: Route | undefined;
     let params: Record<string, string> = {};
