@@ -8,11 +8,16 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.2 is briefed and ready for its Terra max worker, following the serial M0 order.
+M0.2's Terra max worker is running, following the serial M0 order.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.2 | brief | `task/M0.2-upstream-reference`, no PR | 0 | [Brief](briefs/M0.2.md). Pinned upstream/native Mailpit, disposable Postgres, local webhook capture, owned-resource cleanup and Linux reference CI. |
+| M0.2 | worker | `task/M0.2-upstream-reference`, no PR | 0 | [Brief](briefs/M0.2.md). Pinned upstream/native Mailpit, disposable Postgres, local webhook capture, owned-resource cleanup and Linux reference CI. |
+
+Worker: [M0.2: Upstream reference and test services — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c); dispatch confirmed `codex`, `gpt-6.1-terra`, `reasoningEffort: max`. Completion wakes this lead; do not poll. The M0.1 PR watch is stopped after merge.
+
+- Task ID: `node:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c`.
+- Child thread ID: `thread:delegated-task:command%3Amcp%3A8f6bd9af-c15c-4c0b-9632-ba701ebdf4b6%3Adelegate-task%3A74fa8619-7088-4dc2-ac26-bd2acf65e42c`.
 
 ## Automation
 
