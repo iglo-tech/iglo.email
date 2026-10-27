@@ -141,6 +141,14 @@ describe("compiled executable", () => {
         signal: AbortSignal.timeout(1_000),
       });
       expect(unknownPath.status).toBe(404);
+      for (const path of ["/api/not-present", "/api/health", "/api/lang/en"]) {
+        const apiResponse = await fetch(`http://127.0.0.1:${port}${path}`, {
+          signal: AbortSignal.timeout(1_000),
+        });
+        expect(apiResponse.status).toBe(404);
+        expect(apiResponse.headers.get("content-type")).toBe("application/json");
+        expect(await apiResponse.text()).toBe('{"message":"404 unknown endpoint"}\n');
+      }
     } finally {
       expect(await stop(child, "SIGTERM")).toBe(0);
     }

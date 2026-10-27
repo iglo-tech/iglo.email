@@ -1,0 +1,16 @@
+// Request-local context is separated from the app dependencies in cmd/main.go.
+import type { App } from "@/app";
+
+export interface RequestContext {
+  readonly app: App;
+  readonly request: Request;
+  readonly url: URL;
+  readonly params: Readonly<Record<string, string>>;
+  id?: number | bigint;
+}
+
+export type Handler = (context: RequestContext) => Response | Promise<Response>;
+export type Middleware = (
+  context: RequestContext,
+  next: () => Promise<Response>,
+) => Response | Promise<Response>;

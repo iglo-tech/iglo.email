@@ -136,3 +136,5 @@ for (const item of cases) {
     `${item.label}: ${result.status} ${contentType}${item.response === undefined ? " (HTML body deferred)" : ` ${JSON.stringify(body)}`}`,
   );
 }
+
+export {};

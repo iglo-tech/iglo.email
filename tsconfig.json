@@ -9,9 +9,11 @@
     "noEmit": true,
     "types": ["bun"],
     "paths": {
+      "@locale/*": ["./i18n/*"],
       "@/test/*": ["./test/*"],
       "@/*": ["./src/*"]
-    }
+    },
+    "resolveJsonModule": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }
