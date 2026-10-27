@@ -1,5 +1,6 @@
 // Application composition is adapted from listmonk's cmd/main.go App.
 import type { Clock } from "@/clock";
+import type { Database } from "bun:sqlite";
 import type { BootstrapConfig } from "@/config/bootstrap";
 import type { Translation } from "@/i18n/i18n";
 
@@ -10,6 +11,7 @@ export interface ErrorLogger {
 export interface App {
   readonly bootstrap: BootstrapConfig;
   readonly clock: Clock;
+  readonly db: Database;
   readonly logger: ErrorLogger;
   readonly i18n: Translation;
 }

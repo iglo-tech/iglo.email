@@ -11,7 +11,7 @@ function fixture(options: Parameters<typeof startFixture>[0] = {}) {
   return result;
 }
 afterEach(async () => {
-  await Promise.all(fixtures.splice(0).map(({ server }) => server.stop(true)));
+  await Promise.all(fixtures.splice(0).map((fixture) => fixture.close()));
 });
 
 async function request(origin: string, path: string, init: RequestInit = {}) {
