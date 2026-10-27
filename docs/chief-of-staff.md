@@ -6,6 +6,7 @@ The lead role from the [work plan](design/11-work-plan.md), run by a scheduled a
 
 1. **Sync.** Work in `/home/t3-code/iglo.email` on `main`: `git pull --ff-only`. Read `AGENTS.md`, `docs/design/11-work-plan.md`, `docs/status.md` and this file.
 2. **Lock.** The lock file is `~/.local/state/iglo-email-cos/lock.json`: `{ "run": "<ISO start time>", "heartbeat": "<ISO time>", "task": "<id>", "stage": "<stage>" }`.
+   - On a child-completion or PR-check/review wake for the task this thread is already driving, resume its recorded stage and refresh its heartbeat. Do not mistake your own continuation for a competing run.
    - If the heartbeat is less than 90 minutes old, another run is driving. Check `gh pr list` and the PR of the active task for progress, write nothing, and end the run with one line.
    - Otherwise take the lock: write your own start time and heartbeat. Update the heartbeat after every stage change.
 3. **Pause.** If `status.md` says "Paused until" a time in the future, release the lock and end the run.
@@ -28,13 +29,15 @@ After three council rounds without agreement, decide yourself: upstream's behavi
 
 ## Agents
 
-Call `orchestrator_capabilities` once per run before the first `delegate_task`.
+Call `orchestrator_capabilities` once per thread before the first `delegate_task`, and again only after an error or an owner-requested provider change. Pass the model settings in `target.options`.
 
 | Agent | `target` |
 |---|---|
-| Opus worker or fixer, council member | `{ "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": { "effort": "medium" } }` |
-| Haiku worker or helper | `{ "providerInstanceId": "claudeAgent", "model": "claude-haiku-5-5", "options": { "effort": "medium" } }` |
-| Sol council member | `{ "providerInstanceId": "codex", "model": "gpt-6.1-sol", "options": { "reasoningEffort": "xhigh" } }` |
+| Sol lead and council member | `{ "providerInstanceId": "codex", "model": "gpt-6.1-sol", "options": { "reasoningEffort": "xhigh" } }` |
+| Terra worker, fixer or helper | `{ "providerInstanceId": "codex", "model": "gpt-6.1-terra", "options": { "reasoningEffort": "max" } }` |
+| Opus council member only | `{ "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": { "effort": "medium" } }` |
+
+The recurring lead schedule is bound to the Sol xhigh thread. Claude Opus 5.5 is never used for implementation or lead work.
 
 ### Worker instructions
 
@@ -44,11 +47,11 @@ Append to every worker and fixer brief:
 You are a worker on iglo.email (https://github.com/iglo-tech/iglo.email). Do the task yourself.
 - Read AGENTS.md and the docs named in the brief first. Follow the "Rules for workers" in docs/design/11-work-plan.md.
 - Upstream listmonk v7.0.0-beta.1 source: /home/t3-code/upstream/listmonk (read only). Read it; never port from memory.
-- Use Claude Haiku 5.5 subagents for bulk mechanical work (for example converting Go templates to TSX, translating SQL files, adapting Playwright specs); keep the judgment calls yourself.
+- Do not start subagents unless this task explicitly authorizes helpers. Any authorized helper uses GPT-6.1 Terra at max reasoning.
 - Work on branch task/<id>-<slug> from origin/main. Commit with short messages. Push and open one PR titled "<id>: <title>" against main. The PR body maps each upstream file to its iglo.email file and lists anything left out, with a reason.
 - Run the acceptance commands and the full local check before you finish. Do not merge. Do not watch the PR.
 - Never touch production data, real credentials, real SMTP servers or webhook endpoints, or anything outside this repository and your worktree.
-- Last line of your reply: PR <full URL>, head <SHA>, checks <state>.
+- Last line of your reply: PR <full URL>, head <SHA>, checks and reviews <state>.
 ```
 
 ### Council instructions

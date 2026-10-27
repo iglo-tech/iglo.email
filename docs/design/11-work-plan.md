@@ -17,10 +17,11 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 
 | Work | Model |
 |---|---|
-| Lead | Claude Opus 5.5 |
-| Workers on core, security- or delivery-critical code (database layer, auth and permissions, segment queries, outbox, campaign runner, unsubscribe, webhooks, conditions, scheduler) and on the rest of the port | Claude Opus 5.5, medium effort |
-| Workers on mechanical tasks (M0.2, M6.2, M6.4) and any bulk work inside other tasks (converting Go templates to TSX or Liquid, adapting Playwright specs, translating SQL files, reading large files, summarizing logs and CI output) | Claude Haiku 5.5 |
+| Lead | GPT-6.1 Sol, xhigh reasoning (extra high) |
+| All workers, fixers and helpers, including core, security- and delivery-critical code, mechanical tasks and bulk work | GPT-6.1 Terra, max reasoning |
 | Council | Claude Opus 5.5 at medium effort and GPT-6.1 Sol at xhigh reasoning |
+
+Model assignments were set by the owner on 2026-10-27. Claude Opus 5.5 is used only as a council member.
 
 ### One task
 
@@ -49,7 +50,7 @@ Measurements: <docs/perf/... if the task changes sending, scheduling or storage>
 ### Rules for workers
 
 - Follow `AGENTS.md`. listmonk v7.0.0-beta.1 is the reference for ported behavior; read its source in the upstream checkout (`/home/t3-code/upstream/listmonk` until M0.2 adds the fetch script), never from memory.
-- Hand bulk mechanical work to Claude Haiku 5.5 subagents, and keep the judgment calls yourself.
+- Do the task yourself. If the lead explicitly authorizes helpers for bulk mechanical work, they use GPT-6.1 Terra at max reasoning; keep the judgment calls yourself.
 - For ported endpoints, write the contract tests first and run them against the upstream reference, then port the code. For new features, write the tests from the design docs first. Each ported file names its upstream source file in a header comment.
 - Do not copy listmonk behavior blindly. If an upstream behavior looks like a poor design decision (for example a requirement that serves upstream's internals rather than the caller), propose a fix in the PR with the reason. If upstream and the design disagree, or a test can only pass with a deliberate API difference, stop and report it in the PR. The lead decides; an accepted fix is listed in `07-api-and-ui.md` and logged for owner review.
 - No new runtime dependency, no change to a decision record, no change to another task's module without the lead.

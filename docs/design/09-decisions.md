@@ -107,8 +107,8 @@ Updated 2026-10-27.
 
 ## D16. Agents do the work, the owner reviews later
 
-Decided 2026-10-27.
+Decided 2026-10-27. Model assignments updated by the owner on 2026-10-27.
 
-- **Decision:** the port is split into tasks ([Work plan](11-work-plan.md)) that agents do one at a time. A scheduled lead (the chief of staff, [runbook](../chief-of-staff.md)) briefs a worker per task, has every PR reviewed by a two-model council (Claude Opus 5.5 and GPT-6.1 Sol) and merges only when both approve the same commit. Mechanical and token-heavy work goes to Claude Haiku 5.5. Agents decide design questions themselves and record them here as "decided by agents, for owner review". The owner is not asked for approvals.
+- **Decision:** the port is split into tasks ([Work plan](11-work-plan.md)) that agents do one at a time. A scheduled lead (GPT-6.1 Sol at xhigh reasoning; the chief of staff, [runbook](../chief-of-staff.md)) briefs a worker per task. All implementation, fixes and mechanical work use GPT-6.1 Terra at max reasoning. Every PR is reviewed by a two-model council (Claude Opus 5.5 at medium effort and a fresh GPT-6.1 Sol at xhigh reasoning) and merges only when both approve the same commit. Claude Opus 5.5 is used only on the council. Agents decide design questions themselves and record them here as "decided by agents, for owner review". The owner is not asked for approvals.
 - **Why:** the owner sets direction and is away for long stretches. Two independent reviewers and upstream as the reference catch mistakes before merge, which matters more than speed: one task at a time, a paced schedule, and a pause on usage limits instead of retries.
 - **Considered:** owner approval per PR or per wave, which stalls work while the owner is away; several workers in parallel from the start, which spends the usage limit fast and multiplies conflicts in shared contracts before they are stable.
