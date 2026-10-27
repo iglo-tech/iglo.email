@@ -74,12 +74,18 @@ function validateCorpus(items: readonly ContractCase[], complete: boolean): void
       throw new Error("Invalid or duplicate contract case ID");
     ids.add(item.id);
     for (const endpoint of [item.reference, item.production, item.fixture]) {
+      const invalidCharacter =
+        endpoint &&
+        [...endpoint.path].some((character) => {
+          const code = character.charCodeAt(0);
+          return code <= 32 || code === 127 || character === "#";
+        });
       if (
         endpoint &&
         (!endpoint.path.startsWith("/") ||
           endpoint.path.startsWith("//") ||
           endpoint.path.startsWith("/\\") ||
-          /[\u0000-\u0020\u007f#]/.test(endpoint.path))
+          invalidCharacter)
       ) {
         throw new Error("Invalid contract request target: expected an origin-form path");
       }

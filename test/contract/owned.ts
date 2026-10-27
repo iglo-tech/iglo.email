@@ -38,6 +38,8 @@ export async function withProduction<T>(
   let child: GroupChild | undefined;
   let closed: Promise<number> | undefined;
   let completed = false;
+  let result: T | undefined;
+  let shutdownFailure: Error | undefined;
   try {
     const copy = join(directory, "iglo.email");
     await copyFile(executable, copy);
@@ -89,7 +91,6 @@ export async function withProduction<T>(
       abort = () => reject(lifetime.reason);
       lifetime.addEventListener("abort", abort, { once: true });
     });
-    let result: T;
     try {
       lifetime.throwIfAborted();
       result = await Promise.race([run(origin, lifetime), cancelled]);
@@ -99,16 +100,17 @@ export async function withProduction<T>(
     if (child.exitCode !== null || child.signalCode !== null)
       throw new Error("Compiled production process exited during the contract run");
     completed = true;
-    return result;
   } finally {
     try {
       if (child && closed) {
         const code = await stop(child, closed);
         if (completed && code !== 0)
-          throw new Error(`Compiled production process shutdown failed (exit ${code})`);
+          shutdownFailure = new Error(`Compiled production process shutdown failed (exit ${code})`);
       }
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   }
+  if (shutdownFailure) throw shutdownFailure;
+  return result as T;
 }
