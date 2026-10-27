@@ -31,4 +31,4 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 
 ## Status
 
-The M0.1–M0.3 skeleton provides the bootstrap CLI, local checks, an opt-in upstream reference, and a compiled HTTP server with `/health` and shared application, clock, routing and translation contracts. The database and product features remain to be built. Agents follow the [work plan](11-work-plan.md); progress is in [`docs/status.md`](../status.md).
+The M0.1–M0.4 skeleton provides the bootstrap CLI, local checks, an opt-in upstream reference, a compiled HTTP server with `/health`, shared application and HTTP contracts, SQLite primitives and an injected-clock loop helper. The production migration manifest is empty: M1.1 supplies the schema, and no domain loops start yet. Agents follow the [work plan](11-work-plan.md); progress is in [`docs/status.md`](../status.md).

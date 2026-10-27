@@ -6,6 +6,7 @@
   "scripts": {
     "build": "bun build --compile ./src/main.ts --outfile ./dist/iglo.email",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun run build",
+    "db:measure": "bun test/db/measure.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "hooks:install": "git config --local core.hooksPath .githooks",

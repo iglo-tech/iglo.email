@@ -6,7 +6,7 @@ Canonical repository: [iglo-tech/iglo.email](https://github.com/iglo-tech/iglo.e
 
 It is an independently maintained rewrite derived from [listmonk](https://github.com/knadh/listmonk) v7. It keeps listmonk's product model (subscribers, lists, campaigns, templates, transactional email) and adds what listmonk does not plan to have: event-triggered email sequences, unsubscribe-aware transactional email, a per-subscriber frequency cap, a send log and outbound webhooks.
 
-> **Status: early skeleton.** The executable starts an HTTP server and exposes `/health`; the planned product features and database are not implemented yet. Start with the [design docs](docs/design/README.md).
+> **Status: early skeleton.** The executable starts an HTTP server, exposes `/health`, and opens the SQLite database. The product schema and features are not implemented yet. Start with the [design docs](docs/design/README.md).
 
 ## Run the skeleton
 
@@ -29,7 +29,7 @@ Bootstrap options can be passed as `--name value` or `--name=value`. Flags take 
 | `--data-dir` | `IGLO_EMAIL_DATA_DIR` | `./data`, relative to the working directory |
 | `--root-url` | `IGLO_EMAIL_ROOT_URL` | `http://<host>:<port>` derived from the selected host and port |
 
-The port must be an integer from 1 to 65535; the host must be a hostname or IP address without a port. The data directory must be a non-empty path, and the root URL must be an absolute HTTP or HTTPS URL without credentials, a query, or a fragment. If listening on a wildcard address or using a reverse proxy, set the public root URL explicitly. The data directory is not created or used by this skeleton.
+The port must be an integer from 1 to 65535; the host must be a hostname or IP address without a port. The data directory must be a non-empty path, and the root URL must be an absolute HTTP or HTTPS URL without credentials, a query, or a fragment. If listening on a wildcard address or using a reverse proxy, set the public root URL explicitly. Startup creates the data directory and `iglo-email.db` there. The initial production migration catalog is empty, so its version stays at 0 until the first schema arrives in M1.1.
 
 `IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD` are recognized as initial-admin inputs but are not used yet. User creation is planned for M1.3; credentials are not required to start the skeleton. The listmonk flags `--install`, `--upgrade`, `--config` and `--new-config` are not supported: see the [scope](docs/design/01-scope.md).
 
@@ -45,7 +45,7 @@ bun run build
 bun run check
 ```
 
-`bun run check` runs all of these checks except installation. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The shared server contracts have HTTP fixture tests (`bun test test/server`), including a compiled translation fixture. The general dual-server contract harness is planned for M0.5.
+`bun run check` runs all of these checks except installation. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The shared server contracts have HTTP fixture tests (`bun test test/server`), including a compiled translation fixture. Database and loop fixtures run with `bun test test/db test/loops`; `bun run db:measure` runs the small storage comparison described in [M0.4 measurements](docs/perf/M0.4-database.md). The general dual-server contract harness is planned for M0.5.
 
 To enable the repository-local pre-commit formatting check, run `bun run hooks:install` once in this repository.
 
@@ -69,8 +69,7 @@ bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)
 - a transactional email API that respects unsubscribes and returns message IDs
 - an events API and email sequences ("wait 3 days, then send X if Y did not happen")
 - a server-rendered admin UI
-- SQLite storage, no external database, Redis or queue
-- one executable for deployment
+- the product schema and durable sending loops on SQLite
 
 ## Why iglo.email?
 

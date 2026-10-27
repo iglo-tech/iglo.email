@@ -4,7 +4,7 @@
 
 - **Runtime:** Bun ≥ 1.4, TypeScript, native ESM.
 - **HTTP:** `Bun.serve` with a small router. No Express or other framework.
-- **Database:** `bun:sqlite`, one database file, WAL mode, `foreign_keys = ON`, `busy_timeout` set.
+- **Database:** `bun:sqlite`, one database file, WAL mode, `foreign_keys = ON`, `synchronous = FULL`, `busy_timeout = 5000` and safe 64-bit integers.
 - **Distribution:** one executable from `bun build --compile`, with admin assets, public pages, default templates, i18n files and migrations embedded. Linux x64/arm64 and macOS arm64.
 - **No external services** apart from the SMTP server and, optionally, the provider sending bounce webhooks.
 
@@ -41,6 +41,14 @@ Rules for every loop:
 - **Graceful shutdown.** On SIGTERM, loops stop claiming, in-flight sends finish or time out, then the process exits.
 
 This replaces listmonk's in-memory channels and Postgres row scanning with the same pattern everywhere. It also means no Redis, BullMQ or workflow engine. See [Decisions](09-decisions.md) D5.
+
+M0.4 provides the lifecycle helper but starts no domain loops. Each owning store
+supplies its own synchronous claim callback, eligibility and recovery policy;
+the helper runs the claim in a short `BEGIN IMMEDIATE` transaction, then
+processes the bounded batch serially outside it. Stop cancels idle clock waits,
+prevents new claims and waits for started work. Expiry by itself never authorizes
+re-sending a marketing message. Processing failures are exposed to the caller,
+not automatically retried. Owners must bound their own external I/O.
 
 ## Throughput target
 
@@ -80,14 +88,14 @@ test/
 
 Each module owns its tables and SQL. Other modules call its functions; they do not query its tables directly. Cross-module reads that matter for performance (segment queries, sequence conditions) go through the owning module's query builder.
 
-## Application and request contracts (M0.3)
+## Application and request contracts (M0.3–M0.4)
 
 `src/app.ts` owns the application context currently constructed at startup: bootstrap
-configuration, an injected clock, an error logger, and a translation instance. These
+configuration, an injected clock, a database connection, an error logger, and a translation instance. These
 are concrete dependencies, passed explicitly. A request has its own URL, route
 parameters, and validated ID in `src/server/context.ts`; it does not carry mutable
 application-global request state. Valid IDs use a number when exactly representable,
-and a bigint above that range, up to the signed 64-bit upstream limit. Database, stored settings and mailer dependencies
+and a bigint above that range, up to the signed 64-bit upstream limit. Stored settings and mailer dependencies
 are added by their owning tasks when they exist, rather than as empty placeholders.
 
 Bun supplies a normalized request URL; dot segments are removed and literal
@@ -130,10 +138,15 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 data/
   iglo-email.db        (+ -wal, -shm)
   uploads/             media files
-  backups/             optional output of the backup command
+  backups/             automatic pre-migration snapshots when needed
 ```
 
-Backups: `iglo.email backup <path>` uses SQLite's online backup. Continuous replication (for example Litestream) is an operator choice and is documented, not built in.
+Startup opens `iglo-email.db`, validates and applies the embedded migration
+manifest, then starts HTTP. It closes the connection after HTTP shutdown or a
+startup failure. A nonempty database with pending migrations gets one verified
+SQLite `VACUUM INTO` snapshot before the batch. M0.4 has no public backup command;
+M6.2 owns the future backup command and operator guide. Continuous replication
+(for example Litestream) is an operator choice, not built in.
 
 ## Dependencies
 
