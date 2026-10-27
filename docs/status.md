@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.4 is in council round 1 at exact head `b15b8f87c05a9055cebb911d301bfd29a136d79c`. All eight CI jobs passed across the push and PR runs. Both fresh reviewers are running independently; their completions wake this lead. PR #4 is linked and watched; no merged-task PR watch is active.
+M0.4 round 1 Opus requested corrected disk-backed storage measurements; Sol is still running. The lead checkpointed that correction locally at `6c25f9ba5f52c09f26c21ba16af3f4f851a158b4` without changing the reviewed PR head. PR #4 remains linked and watched; completion wakes this lead.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.4 | council | [PR #4](https://github.com/iglo-tech/iglo.email/pull/4), `task/M0.4-database-loops` | 1 | Head `b15b8f87c05a9055cebb911d301bfd29a136d79c`; CI check, Linux reference and both macOS prepare jobs passed in both runs. Opus medium and Sol xhigh verdicts pending. Worker reports all acceptance passed, including 45 tests, measurements and both reference commands. [Brief](briefs/M0.4.md). |
+| M0.4 | fix | [PR #4](https://github.com/iglo-tech/iglo.email/pull/4), `task/M0.4-database-loops` | 1 | Reviewed head `b15b8f87c05a9055cebb911d301bfd29a136d79c`: CI green, Opus CHANGES for tmpfs measurements, Sol pending. Local correction `6c25f9ba5f52c09f26c21ba16af3f4f851a158b4` reruns original/current workloads on ext4 and makes the target explicit. No application source changed. Await Sol before publishing a new review head. [Brief](briefs/M0.4.md). |
 
 
 Completed worker: [M0.4: Database layer and loop helper — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A079011c5-d0e3-4e13-900f-ccbf0e6593d9); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -22,10 +22,16 @@ Completed worker: [M0.4: Database layer and loop helper — Terra max](t3-thread
 
 ### Council round 1
 
-The worker worktree is `/home/t3-code/.t3/worktrees/iglo.email/t3-4331ffeb`, branch `task/M0.4-database-loops`. Test/baseline evidence precedes implementation in `89b81c3`. The [measurement report](https://github.com/iglo-tech/iglo.email/blob/b15b8f87c05a9055cebb911d301bfd29a136d79c/docs/perf/M0.4-database.md) identifies the native-primitives baseline and bounded 10,000-row repetitions; it does not claim product throughput. The PR reports VACUUM snapshot limits, including implicit rowids, single-process startup and directory-entry power-loss durability. No permanent API difference is introduced. Both reviewers received the full brief, D19, upstream mapping, limitations and required acceptance commands without a lead verdict. Both are pending; never poll or duplicate them.
+The worker worktree is `/home/t3-code/.t3/worktrees/iglo.email/t3-4331ffeb`, branch `task/M0.4-database-loops`. Test/baseline evidence precedes implementation in `89b81c3`. The [measurement report](https://github.com/iglo-tech/iglo.email/blob/b15b8f87c05a9055cebb911d301bfd29a136d79c/docs/perf/M0.4-database.md) identifies the native-primitives baseline and bounded 10,000-row repetitions; it does not claim product throughput. The PR reports VACUUM snapshot limits, including implicit rowids, single-process startup and directory-entry power-loss durability. No permanent API difference is introduced. Both reviewers received the full brief, D19, upstream mapping, limitations and required acceptance commands without a lead verdict. [Opus requested changes](https://github.com/iglo-tech/iglo.email/pull/4#issuecomment-6454937538): the initial report measured on `/tmp` (tmpfs), omitting durable-storage commit cost. It found no database/loop code problems and passed acceptance. Sol is still running; never poll or duplicate it.
 
 - [M0.4 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aefdcf68a-3709-4ec5-84e1-408108f7ca9b); claudeAgent / claude-opus-5-5. Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aefdcf68a-3709-4ec5-84e1-408108f7ca9b; child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aefdcf68a-3709-4ec5-84e1-408108f7ca9b.
 - [M0.4 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A4e70b7a7-5a30-4bb9-9f67-7dcff7c5c802); codex / gpt-6.1-sol. Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A4e70b7a7-5a30-4bb9-9f67-7dcff7c5c802; child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3A4e70b7a7-5a30-4bb9-9f67-7dcff7c5c802.
+
+### Measurement correction prepared by the lead
+
+Local commit `6c25f9ba5f52c09f26c21ba16af3f4f851a158b4` in `/home/t3-code/.t3/worktrees/iglo.email/t3-4331ffeb` changes only the measurement program and report. `df -T` confirmed the selected worktree path is ext4 on `/dev/sda1`, while `/tmp` is tmpfs. The exact pre-implementation native program from `89b81c35934137743f80f44c821ba23d4c652d1d` was rerun on ext4, followed by the current native/helper workload. The report labels these as new runs of the original code, records filesystem/platform and all results, and disqualifies the prior tmpfs timings as durability evidence. It makes no stable overhead or throughput claim from three repetitions.
+
+The program now defaults to the ignored worktree `upstream/measurements` directory, accepts `IGLO_EMAIL_PERF_DIR`, prints the selected directory/filesystem type, and rejects known tmpfs/ramfs targets before the workload. The disk-backed benchmark, explicit memory-target rejection, formatting, lint, type checking and diff checks passed. Application source and its prior 45-test acceptance are unchanged. This local commit is not pushed while Sol reviews the original head; after its verdict, combine any remaining findings, publish and obtain fresh CI/council round 2.
 
 ## Automation
 
