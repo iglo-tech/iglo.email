@@ -63,9 +63,12 @@ bun test
 bun run build
 bun run check
 bun test test/server
+bun test test/contract
+bun run contract:normal
+bun run contract:fixture
 ```
 
-`bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The bootstrap tests exercise the compiled executable from a temporary directory. `bun test test/server` exercises the shared HTTP contracts, including embedded translations. `bun run server:reference` uses the M0.2 runner to check focused health and error cases against the pinned upstream; it requires Docker and downloads. The runner and smoke checks are documented in `test/reference/README.md`; M0.5 will add the general dual-server contract suite.
+`bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The bootstrap tests exercise the compiled executable from a temporary directory. `bun test test/server` exercises the shared HTTP contracts, including embedded translations. `bun run contract:normal` builds and tests the compiled production core in a fresh temporary directory; `bun run contract:fixture` tests the separately labelled synthetic auth gate, shared helpers and normalization probes. `bun run contract:reference` and its `bun run server:reference` compatibility alias use the M0.2 runner and pinned upstream; they require Docker and downloads. The commands, coverage and smoke checks are documented in `test/reference/README.md`. M1.3 promotes the protected-read cases from fixture evidence to actual production auth; list owners promote the helper cases as their endpoints are ported.
 
 `bun test test/db test/loops` covers the database and loop contracts with synthetic fixture-owned stores. `bun run db:measure` repeats the bounded native-versus-helper storage workload; it is not a CI threshold.
 

@@ -43,9 +43,12 @@ bun run typecheck
 bun test
 bun run build
 bun run check
+bun test test/contract
+bun run contract:normal
+bun run contract:fixture
 ```
 
-`bun run check` runs all of these checks except installation. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The shared server contracts have HTTP fixture tests (`bun test test/server`), including a compiled translation fixture. Database and loop fixtures run with `bun test test/db test/loops`; `bun run db:measure` runs the small storage comparison described in [M0.4 measurements](docs/perf/M0.4-database.md). The general dual-server contract harness is planned for M0.5.
+`bun run check` runs formatting, lint, type checking, the behavior tests and the compiled build. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The shared server contracts have HTTP fixture tests (`bun test test/server`), including a compiled translation fixture. Database and loop fixtures run with `bun test test/db test/loops`; `bun run db:measure` runs the small storage comparison described in [M0.4 measurements](docs/perf/M0.4-database.md). The contract corpus also has two Docker-free profiles: `contract:normal` builds and runs the compiled production executable from a fresh temporary directory with an empty PATH; `contract:fixture` exercises a labelled test-only auth gate and shared helpers. Its synthetic ID/time probes test the harness itself. The reports list pending production coverage separately.
 
 To enable the repository-local pre-commit formatting check, run `bun run hooks:install` once in this repository.
 
@@ -56,11 +59,12 @@ The opt-in reference harness runs the pinned upstream listmonk release against d
 ```sh
 bun run reference:prepare
 bun run reference:smoke
+bun run contract:reference
 bun run server:reference
 bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
 ```
 
-`server:reference` compares focused health, API fallback, ID, field and binding error cases to the pinned upstream, using only synthetic per-run credentials. The public HTML 404 page remains deferred, so the current non-API fallback is plain text. See the [reference guide](test/reference/README.md) for supported platforms, credentials, exported endpoints, cleanup and validation. The normal checks above need neither Docker nor reference downloads.
+`contract:reference` runs the same explicit corpus against pinned upstream, including the protected read with Basic and token authentication and bad credentials. `server:reference` is a compatibility alias. Production currently covers public health and shared fallbacks; `/api/health` remains unregistered and its authenticated coverage is pending M1.3. List validation examples remain helper-fixture evidence until the domain port. D17/D18 are checked against their exact reference and fixture expectations. The public HTML 404 page remains deferred, so the current non-API fallback is plain text. See the [reference guide](test/reference/README.md) for supported platforms, credentials, exported endpoints, cleanup and validation. The normal checks above need neither Docker nor reference downloads.
 
 ## Planned
 

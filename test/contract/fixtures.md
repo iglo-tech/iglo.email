@@ -42,7 +42,7 @@ ported upstream domain endpoint.
 | ------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `reference/upstream/all` | 31 pinned-upstream cases, including Basic, token and bad-token protected reads, validation and D17/D18    | Auth and list endpoints are not yet ported; public HTML 404 body is deferred                               |
 | `normal/production/core` | Compiled `/health`, API fallback/method boundaries, malformed URI handling and unregistered `/api/health` | Protected health/auth (M1.3), domain validation/list CRUD (M1.5), public HTML 404 body (M0.6/public pages) |
-| `normal/fixture/staged`  | Synthetic auth gate and representative shared helpers, including both sides of D17/D18                    | The corresponding production endpoints and auth                                                            |
+| `normal/fixture/staged`  | Synthetic auth gate and representative shared helpers, including the normal sides of D17/D18              | The corresponding production endpoints and auth                                                            |
 | `normal/fixture/probe`   | Synthetic generated ID, relationship and timestamp normalization                                          | These probes do not represent upstream ports                                                               |
 
 M1.3 must run and promote the same protected-health cases against real production
