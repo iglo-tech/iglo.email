@@ -68,6 +68,23 @@ describe("shared HTTP contracts", () => {
     expect((await request(origin, "/fixture/items/one", { method: "POST" })).status).toBe(404);
   });
 
+  test("path parameters retain the reference URI spelling without extra unescaping", async () => {
+    const { origin } = fixture();
+    for (const [path, item] of [
+      ["%31%32", "%31%32"],
+      ["%2B12", "%2B12"],
+      ["%20", " "],
+      ["%2524", "%24"],
+      ["%C3%A9", "é"],
+      ["%c3%a9", "%c3%a9"],
+      ["%2F", "%2F"],
+    ]) {
+      const result = await request(origin, `/fixture/items/${path}`);
+      expect(result.status).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ data: { item, query: null } });
+    }
+  });
+
   test("static routes outrank parameters with prefix and longer routes interleaved", async () => {
     const prefix = "/fixture/routes";
     for (const suffix of ["", "/export"]) {
@@ -203,10 +220,24 @@ describe("shared HTTP contracts", () => {
     });
   });
 
+  test("escaped IDs fail validation like the live reference", async () => {
+    const { origin } = fixture();
+    for (const id of ["%31%32", "%2B12", "1%32", "%252B12", "%FF"]) {
+      expect(await request(origin, `/fixture/id/${id}`)).toMatchObject({
+        status: 400,
+        contentType: "application/json",
+        body: '{"message":"invalid ID"}\n',
+      });
+    }
+  });
+
   test("translation parameters preserve literal dollar replacement sequences", async () => {
     const { origin } = fixture();
     for (const value of ["$&", "$$", "$`", "$'", "$1", "before $& $$ $` $' after"]) {
-      const result = await request(origin, `/fixture/field/${encodeURIComponent(value)}`);
+      const result = await request(
+        origin,
+        `/fixture/field/literal?value=${encodeURIComponent(value)}`,
+      );
       expect(result.status).toBe(400);
       expect(JSON.parse(result.body)).toEqual({ message: `Invalid fields: ${value}` });
     }

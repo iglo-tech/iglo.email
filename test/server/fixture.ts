@@ -161,8 +161,10 @@ export function startFixture(
     }
     return ok(input.value);
   });
-  router.route("GET", "/fixture/field/:field", ({ app, params }) => {
-    throw new HttpError(400, app.i18n.Ts("globals.messages.invalidFields", "name", params.field!));
+  router.route("GET", "/fixture/field/:field", ({ app, params, url }) => {
+    // Query data exercises literal translation values independently of route escaping.
+    const value = url.searchParams.get("value") ?? params.field!;
+    throw new HttpError(400, app.i18n.Ts("globals.messages.invalidFields", "name", value));
   });
   router.route("GET", "/fixture/locale", ({ app }) =>
     ok({

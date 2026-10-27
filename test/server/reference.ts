@@ -72,6 +72,14 @@ const cases: ReferenceCase[] = [
     contentType: "application/json",
     response: '{"message":"invalid ID"}\n',
   },
+  ...["%31%32", "%2B12", "1%32", "%252B12", "%FF"].map((id): ReferenceCase => ({
+    label: `escaped ID ${id}`,
+    path: `/api/lists/${id}`,
+    authenticated: true,
+    status: 400,
+    contentType: "application/json",
+    response: '{"message":"invalid ID"}\n',
+  })),
   {
     label: "invalid field",
     path: "/api/lists",
