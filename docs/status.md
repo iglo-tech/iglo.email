@@ -8,11 +8,11 @@ Updated: 2026-10-27
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.5 is merged and its PR watch is stopped. M0.6 is next; the lead is preparing its JSX/page-shell/asset brief. No worker or PR exists for M0.6 yet.
+M0.5 is merged and its PR watch is stopped. M0.6 has a committed [brief](briefs/M0.6.md); worker dispatch is next. The scope includes the deferred public HTML 404 and compiled assets; the admin shell is verified in a labelled compiled test fixture until M1/M4 supply authentication and screens. No M0.6 worker or PR exists yet.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | brief | Planned task/M0.6-jsx-assets; no PR | 0 | Read pinned upstream admin asset build, base view and public 404. Prepare owned scope, compiled asset verification and the M0.5 contract handoff. |
+| M0.6 | brief | Planned task/M0.6-jsx-assets; no PR | 0 | [Brief](briefs/M0.6.md) reads pinned admin/public source, authorizes listed browser build dependencies and narrow shared HTTP/contract integration; production auth/domain routes stay deferred. |
 
 
 ## Automation
@@ -53,6 +53,8 @@ Owner correction on 2026-10-27: recurring automation must remain unbound to ever
 [D19](design/09-decisions.md#d19-durable-database-primitives-and-module-owned-lease-policy) (2026-10-27): explicit durable SQLite defaults, synchronous non-replayed writes, pre-migration snapshots and a loop helper that delegates lease/status/recovery policy to each owning module. M0.4 implements the infrastructure; M1.1 still owns the first full production schema.
 
 [D20](design/09-decisions.md#d20-separate-production-and-fixture-contract-coverage-until-auth-is-ported) (2026-10-27): M0.5 separates compiled production coverage from authenticated-read/helper fixture evidence. M1.3 promotes the protected read to production auth; work-plan acceptance and testing notes now name that temporary staging explicitly.
+
+M0.6 plan clarification (2026-10-27): finish the public HTML 404 deferred by M0.3/M0.5 in the JSX/page-shell task. Verify the admin shell in a compiled fixture until M1/M4 provide protected screens. Copy only v1 browser assets/build dependencies; CAPTCHA and the visual builder stay later-only. The task row and [brief](briefs/M0.6.md) now make those boundaries and the contract/browser acceptance explicit.
 
 Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one whole-filesystem `find` to locate Echo source, contrary to `/home/t3-code/AGENTS.md`. It reported the scan finished quickly without a visible effect and was not repeated. The lead recorded the incident without repeating the scan. Worker and council instructions in the runbook now explicitly require named checkout/cache paths or pinned GitHub source inside the worktree, never a broader filesystem search when a dependency is absent.
 
