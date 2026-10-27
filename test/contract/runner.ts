@@ -315,7 +315,10 @@ export async function runContract(
         throw new Error(
           `status/content-type ${actual.status} ${actual.contentType}; expected ${endpoint.expect.status} ${endpoint.expect.contentType}; body ${JSON.stringify(actual.body)}`,
         );
-      compareBody(actual.body, endpoint.expect.body, bindings);
+      const caseBindings = new Map(bindings);
+      compareBody(actual.body, endpoint.expect.body, caseBindings);
+      bindings.clear();
+      for (const [name, binding] of caseBindings) bindings.set(name, binding);
       const deferred =
         endpoint.expect.body.kind === "deferred-html"
           ? " (status/content type only; HTML body deferred)"

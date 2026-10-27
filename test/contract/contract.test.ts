@@ -272,6 +272,15 @@ describe("normalization at the HTTP boundary", () => {
       await target.close();
     }
   });
+  test("a failed case cannot establish a binding for a later reference", async () => {
+    const value = good();
+    value.data.label = "changed";
+    const result = await run(value);
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("FAIL probe-entities");
+    expect(result.output).toContain("FAIL probe-entity-reference");
+    expect(result.output).toContain("requires an existing binding");
+  });
   test("rejects wrong types, missing/extra fields, unsafe IDs, inconsistent references and ordinary changes", async () => {
     const invalid: unknown[] = [
       { data: { ...good().data, id: "101" } },

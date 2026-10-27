@@ -18,11 +18,11 @@ async function availablePort(): Promise<number> {
   return address.port;
 }
 
-async function stop(child: GroupChild, closed: Promise<number>): Promise<void> {
+async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
   if (child.exitCode === null && child.signalCode === null) stopGroup(child);
   const force = setTimeout(() => stopGroup(child, "SIGKILL"), 2000);
   try {
-    await closed;
+    return await closed;
   } finally {
     clearTimeout(force);
   }
@@ -37,6 +37,7 @@ export async function withProduction<T>(
   const directory = await mkdtemp(join(tmpdir(), "iglo-contract-production-"));
   let child: GroupChild | undefined;
   let closed: Promise<number> | undefined;
+  let completed = false;
   try {
     const copy = join(directory, "iglo.email");
     await copyFile(executable, copy);
@@ -97,10 +98,15 @@ export async function withProduction<T>(
     }
     if (child.exitCode !== null || child.signalCode !== null)
       throw new Error("Compiled production process exited during the contract run");
+    completed = true;
     return result;
   } finally {
     try {
-      if (child && closed) await stop(child, closed);
+      if (child && closed) {
+        const code = await stop(child, closed);
+        if (completed && code !== 0)
+          throw new Error(`Compiled production process shutdown failed (exit ${code})`);
+      }
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

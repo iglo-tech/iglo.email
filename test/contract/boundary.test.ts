@@ -9,6 +9,7 @@ import type { ContractCase, ContractTarget, Difference } from "@/test/contract/t
 const repository = resolve(import.meta.dir, "../..");
 let directory = "";
 let executable = "";
+let badShutdownExecutable = "";
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "iglo-contract-tests-"));
@@ -19,6 +20,23 @@ beforeAll(async () => {
   );
   const [code, stderr] = await Promise.all([build.exited, new Response(build.stderr).text()]);
   if (code !== 0) throw new Error(`Compiled test setup failed: ${stderr}`);
+  badShutdownExecutable = join(directory, "bad-shutdown");
+  const fixtureBuild = Bun.spawn(
+    [
+      process.execPath,
+      "build",
+      "--compile",
+      "test/contract/shutdown-fixture.ts",
+      "--outfile",
+      badShutdownExecutable,
+    ],
+    { cwd: repository, stdout: "pipe", stderr: "pipe" },
+  );
+  const [fixtureCode, fixtureError] = await Promise.all([
+    fixtureBuild.exited,
+    new Response(fixtureBuild.stderr).text(),
+  ]);
+  if (fixtureCode !== 0) throw new Error(`Shutdown test setup failed: ${fixtureError}`);
 }, 30_000);
 afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
@@ -44,6 +62,18 @@ describe("owned production lifecycle", () => {
     ).rejects.toThrow("synthetic contract failure");
     expect(origin).not.toBe("");
     await expect(get(origin)).rejects.toThrow();
+  });
+
+  test("a nonzero child shutdown is reported as a failure", async () => {
+    const run = withProduction(
+      badShutdownExecutable,
+      new AbortController().signal,
+      async (origin) => {
+        expect((await get(origin)).status).toBe(200);
+        return true;
+      },
+    );
+    await expect(run).rejects.toThrow("shutdown");
   });
 
   test("the production CLI removes its own data after refusing an unsupported case", async () => {
