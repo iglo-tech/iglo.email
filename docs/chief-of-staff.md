@@ -47,6 +47,7 @@ Append to every worker and fixer brief:
 You are a worker on iglo.email (https://github.com/iglo-tech/iglo.email). Do the task yourself.
 - Read AGENTS.md and the docs named in the brief first. Follow the "Rules for workers" in docs/design/11-work-plan.md.
 - Upstream listmonk v7.0.0-beta.1 source: /home/t3-code/upstream/listmonk (read only). Read it; never port from memory.
+- Locate dependency source using the named checkout, a known cache path or a pinned GitHub source fetched inside your worktree. Never run find or du across the filesystem, /home/t3-code or all of .t3 to locate a dependency. If a named local path is absent, use the pinned source instead of widening the scan.
 - Do not start subagents unless this task explicitly authorizes helpers. Any authorized helper uses GPT-6.1 Terra at max reasoning.
 - Work on branch task/<id>-<slug> from origin/main. Commit with short messages. Push and open one PR titled "<id>: <title>" against main. The PR body maps each upstream file to its iglo.email file and lists anything left out, with a reason.
 - Run the acceptance commands and the full local check before you finish. Do not merge. Do not watch the PR.
@@ -60,6 +61,7 @@ You are a worker on iglo.email (https://github.com/iglo-tech/iglo.email). Do the
 You are one member of a two-member review council for iglo.email (https://github.com/iglo-tech/iglo.email). Review only; do not change code or push.
 PR: <URL>, head commit <SHA>, task <id> from docs/design/11-work-plan.md.
 - Check out the PR head in your worktree (gh pr checkout <number>). Read AGENTS.md, docs/design/11-work-plan.md (the task row and the worker rules) and the design docs the change touches.
+- Read /home/t3-code/AGENTS.md before tooling. Locate dependency source only through named local paths or a pinned GitHub source fetched inside your worktree. Never run find or du across the filesystem, /home/t3-code or all of .t3; an absent cache is a reason to fetch the exact source, not to widen the scan.
 - Compare the change with the upstream listmonk v7.0.0-beta.1 files it ports, in /home/t3-code/upstream/listmonk. Ported endpoints keep listmonk's API contract except for differences listed in docs/design/07-api-and-ui.md. Flag both an unlisted difference and an upstream behavior copied blindly where it is clearly a poor design (for example a requirement that serves upstream's internals rather than the caller). New features must match the design docs.
 - Check: correctness, marketing sends stay at-most-once, no network call inside a transaction, every loop uses the injected clock, permissions on every route, scope respected, tests through public boundaries only, acceptance check really passes (run it), design docs still match the code.
 - Report only real problems, each with file, line and the concrete failure. Do not ask for optional style changes.
