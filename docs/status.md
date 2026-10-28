@@ -10,13 +10,30 @@ Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54e
 
 Owner clarification on 2026-10-28: the chief of staff manages a continuously progressing agent fleet until the whole applicable project work plan is complete. The former four-hour/task/session stop is removed from the runbook and work plan. Each merge immediately starts the next eligible task; a blocked item does not stop other eligible work. Async delegate/CI turns hand off automatically and are not project completion. Preserve model, isolation, serial-work, review, lock and host limits; technically unavoidable waits remain incomplete work with recovery, not a claim that the goal is done.
 
-M1.2 (settings/defaults/validation and real authenticated configuration) is active at **brief**, in a fresh continuous run started 2026-10-28T20:34:55.959528+00:00. No active lock or open PR existed when acquired; all M1.6 delegates are terminal and PR #13 is merged. M1.2's M1.1/M0.5/M1.3 dependencies are merged and it unblocks M2.1 on the critical path; SMTP cannot start before settings. One worker only, no duplicate. D44 defines the bootstrap/read-only boundary, validated per-key updates, in-process supported policy activation and explicit 501 SMTP-test staging; other behavior remains pinned by default. [Brief](briefs/M1.2.md).
+M1.2 (settings/defaults/validation and real authenticated configuration) is active at **fix**, in a fresh continuous run started 2026-10-28T20:34:55.959528+00:00. No active lock or open PR existed when acquired; all M1.6 delegates are terminal and PR #13 is merged. M1.2's M1.1/M0.5/M1.3 dependencies are merged and it unblocks M2.1 on the critical path; SMTP cannot start before settings. One worker only, no duplicate. D44 defines the bootstrap/read-only boundary, validated per-key updates, in-process supported policy activation and explicit 501 SMTP-test staging; other behavior remains pinned by default. [Brief](briefs/M1.2.md).
 
 The previous run's M1.6-only stop is historical and superseded by this owner instruction. No elapsed-time cutoff applies to this continuous run. Keep advancing through implementation, Linux CI, independent two-Sol council and merge, then immediately start the next eligible task. Record every delegate ID and durable transition here before yielding.
+
+
+The continuous run dispatched [M1.2: Settings and validated configuration](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-worker-20261028T203455), GPT-6.1 Terra at max reasoning, implementation role, worktree isolation and settings in target.options. It returned running without pending question/approval and no child work. The completion instruction is to end this turn and let the worker wake it; do not poll, wait, start a duplicate or create a PR watch before a PR exists. The brief, D44, continuous runbook/work-plan changes and automation prompt are pushed. Model/council and Linux-only MVP overrides remain in force. After this task merges, immediately start the next eligible task; project completion is not implied by an assignment ending.
+
+- Worker task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-worker-20261028T203455.
+- Worker thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-worker-20261028T203455.
+- Initial worker run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-worker-20261028T203455:ordinal:1.
+- Idempotent request: iglo-email-M1.2-worker-20261028T203455.
+
+Automation prompt updated to the owner's continuous-fleet instruction, with enabled true, boundThreadId null and unchanged 2700000 ms interval. Returned next recovery check: 2026-10-28T21:23:17.229Z. This timer does not delay completion-driven work.
+
+
+The initial M1.2 Terra worker completed with substantive but incomplete draft [PR #14](https://github.com/iglo-tech/iglo.email/pull/14), branch task/M1.2-settings, head 05abd5f50e2cf58e6a8a794685bd55f80c6413a6. It has no active run/pending question/approval or child work and reports a clean worktree. Parent link is recorded once; no council or watch while implementation remains incomplete. The worker reports full local/compiled/pinned/smoke and serial ext4 measurements passed, but those existing cases do not prove the missing acceptance matrix. No readiness/approval is claimed.
+
+D45 authorizes immutable creation-time expiry in existing session JSON and a narrow user-store/auth/login-cookie seam, resolving the reported ownership block without schema changes. The current live-duration lookup could revive expired sessions; draft 501 must be removed once this safe behavior is implemented. Other reported gaps are defects to finish: Go binding/content types/duplicates/nulls, mail-address validation, cron validation, app.check_updates=false, current/retained/in-flight scope tests and complete atomic contract coverage. Locale must be dispositioned truthfully. The lead will add the two settings CI commands and push through the existing authenticated SSH identity (OAuth lacks workflow scope), then dispatch one fresh Terra max completion fixer on the same PR. No new credentials, duplicate worker or owner approval; continuous fleet management remains active.
 
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
+
+Owner update: healthy redundant check-in threads auto-settle themselves through t3_thread_organize action:settle after recording a one-line no-intervention outcome. They must leave the actual fleet owner, live workers, locks and watches untouched. Active coordinators awaiting their own delegates/checks and threads needing recovery do not qualify. This run remains the M1.2 coordinator; its outstanding worker is not settled or polled. The runbook contains the exact eligibility and tool procedure.
 
 ## Done
 
@@ -124,3 +141,5 @@ M1.3 cooldown expired at 11:22:23 UTC; automatic Opus continuation completed its
 [D43](design/09-decisions.md#d43-reject-nul-in-writable-subscriber-names-and-attributes) makes final writable NUL validation a safe subscriber input boundary after council round 2.
 
 [D44](design/09-decisions.md#d44-settings-ownership-safe-per-key-updates-and-in-process-activation) records M1.2 bootstrap ownership, safe per-key validation, supported in-process activation and explicit staged SMTP behavior.
+
+[D45](design/09-decisions.md#d45-capture-each-session-lifetime-at-creation) authorizes immutable creation-time session expiry and the narrow owner seam needed for live settings, with legacy/no-revival and cookie consistency acceptance.
