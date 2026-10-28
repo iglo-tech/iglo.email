@@ -19,9 +19,19 @@ const differences: Readonly<
       "reject unrepresentable IDs before storage; docs/design/07-api-and-ui.md and 09-decisions.md#d17-reject-positive-route-id-overflow-before-storage",
   },
   D18: {
-    cases: ["encoded-dot", "encoded-dot-dot", "literal-backslash"],
+    cases: ["encoded-dot", "encoded-dot-dot", "literal-backslash", "public-static-dot-escape"],
     reason:
       "Bun canonicalizes request paths before routing; docs/design/07-api-and-ui.md and 09-decisions.md#d18-use-buns-normalized-request-path",
+  },
+  D21: {
+    cases: [
+      "public-asset-head",
+      "public-asset-post",
+      "public-asset-options",
+      "missing-public-asset-head",
+    ],
+    reason:
+      "metadata-only HEAD for embedded assets and matching Allow; docs/design/07-api-and-ui.md and 09-decisions.md#d21-support-head-for-embedded-assets",
   },
 };
 
@@ -100,6 +110,7 @@ function validateCorpus(items: readonly ContractCase[], complete: boolean): void
       if (
         !canonical ||
         !isDeepStrictEqual(item.reference, canonical.reference) ||
+        !isDeepStrictEqual(item.production, canonical.production) ||
         !isDeepStrictEqual(item.fixture, canonical.fixture)
       )
         throw new Error("Deliberate-difference expectations do not match the declared contract");
@@ -476,6 +487,9 @@ export async function runContract(
       const actual = await rawRequest(target.baseUrl, endpoint.path, {
         method: item.method ?? "GET",
         headers,
+        ...(endpoint.expect.headers
+          ? { responseHeaders: Object.keys(endpoint.expect.headers) }
+          : {}),
         ...(item.requestBody === undefined ? {} : { body: item.requestBody }),
         ...(target.signal ? { signal: target.signal } : {}),
       });
@@ -486,6 +500,12 @@ export async function runContract(
         throw new Error(
           `status/content-type ${actual.status} ${actual.contentType}; expected ${endpoint.expect.status} ${endpoint.expect.contentType}; body ${JSON.stringify(actual.body)}`,
         );
+      for (const [name, expected] of Object.entries(endpoint.expect.headers ?? {})) {
+        if (actual.headers?.[name.toLowerCase()] !== expected)
+          throw new Error(
+            `header ${name}: ${JSON.stringify(actual.headers?.[name.toLowerCase()])}; expected ${JSON.stringify(expected)}`,
+          );
+      }
       const caseBindings = new Map(bindings);
       await compareBody(actual.body, endpoint.expect.body, caseBindings);
       bindings.clear();

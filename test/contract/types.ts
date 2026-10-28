@@ -2,7 +2,7 @@ export type Mode = "reference" | "normal";
 export type TargetName = "upstream" | "production" | "fixture";
 export type Profile = "all" | "core" | "staged" | "probe";
 export type Group = "core" | "staged" | "reference-only" | "production-only" | "probe";
-export type Difference = "D17" | "D18";
+export type Difference = "D17" | "D18" | "D21";
 
 export interface Credentials {
   readonly user: string;
@@ -33,6 +33,7 @@ export interface Expectation {
   readonly status: number;
   readonly contentType: string | null;
   readonly body: ExpectedBody;
+  readonly headers?: Readonly<Record<string, string | null>>;
 }
 
 export interface Endpoint {
@@ -46,7 +47,7 @@ export interface ContractCase {
   readonly reference?: Endpoint;
   readonly production?: Endpoint;
   readonly fixture?: Endpoint;
-  readonly method?: "GET" | "POST" | "HEAD";
+  readonly method?: "GET" | "POST" | "HEAD" | "OPTIONS";
   readonly requestBody?: string;
   readonly requestContentType?: string;
   readonly auth?: "basic" | "token" | "bad-token";

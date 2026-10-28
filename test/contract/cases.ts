@@ -30,6 +30,10 @@ const css: Expectation = {
 };
 const staticMissing = wire(404, "text/plain; charset=utf-8", "404 page not found\n");
 const staticMethod = json(405, '{"message":"Method Not Allowed"}');
+const referenceAllow = { allow: "OPTIONS, GET" };
+const normalAllow = { allow: "OPTIONS, GET, HEAD" };
+const referenceHead = { ...wire(405, null, ""), headers: referenceAllow };
+const normalHead = wire(200, "text/css; charset=utf-8", "");
 const endpoint = (path: string, expect: Expectation): Endpoint => ({ path, expect });
 const same = (path: string, expect: Expectation) => ({
   reference: endpoint(path, expect),
@@ -137,13 +141,57 @@ export const cases: readonly ContractCase[] = freeze([
     id: "public-asset-head",
     group: "core",
     method: "HEAD",
-    ...same("/public/static/style.css", wire(405, null, "")),
+    difference: "D21",
+    reference: endpoint("/public/static/style.css", referenceHead),
+    production: endpoint("/public/static/style.css", normalHead),
+    fixture: endpoint("/public/static/style.css", normalHead),
   },
   {
     id: "public-asset-post",
     group: "core",
     method: "POST",
-    ...same("/public/static/style.css", staticMethod),
+    difference: "D21",
+    reference: endpoint("/public/static/style.css", { ...staticMethod, headers: referenceAllow }),
+    production: endpoint("/public/static/style.css", { ...staticMethod, headers: normalAllow }),
+    fixture: endpoint("/public/static/style.css", { ...staticMethod, headers: normalAllow }),
+  },
+  {
+    id: "public-asset-options",
+    group: "core",
+    method: "OPTIONS",
+    difference: "D21",
+    reference: endpoint("/public/static/style.css", {
+      ...wire(204, null, ""),
+      headers: referenceAllow,
+    }),
+    production: endpoint("/public/static/style.css", {
+      ...wire(204, null, ""),
+      headers: normalAllow,
+    }),
+    fixture: endpoint("/public/static/style.css", { ...wire(204, null, ""), headers: normalAllow }),
+  },
+  {
+    id: "missing-public-asset-head",
+    group: "core",
+    method: "HEAD",
+    difference: "D21",
+    reference: endpoint("/public/static/no-such-file.css", referenceHead),
+    production: endpoint(
+      "/public/static/no-such-file.css",
+      wire(404, "text/plain; charset=utf-8", ""),
+    ),
+    fixture: endpoint(
+      "/public/static/no-such-file.css",
+      wire(404, "text/plain; charset=utf-8", ""),
+    ),
+  },
+  {
+    id: "public-static-dot-escape",
+    group: "core",
+    difference: "D18",
+    reference: endpoint("/public/static/%2e%2e/style.css", staticMissing),
+    production: endpoint("/public/static/%2e%2e/style.css", productionHTML),
+    fixture: endpoint("/public/static/%2e%2e/style.css", productionHTML),
   },
   helper("invalid-id", "/api/lists/not-an-id", "/fixture/id/not-an-id", invalidID),
   ...["%31%32", "%2B12", "1%32", "%252B12", "%FF"].map((id, index) =>

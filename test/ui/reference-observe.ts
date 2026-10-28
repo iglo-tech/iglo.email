@@ -33,6 +33,16 @@ for (const path of ["/public/static/style.css", "/admin/static/oat.min.css"]) {
   assert.equal(get.status, 200);
   assert.equal(get.contentType, "text/css; charset=utf-8");
   assert.ok(get.body.length > 100);
+  for (const method of ["HEAD", "POST", "OPTIONS"]) {
+    const response = await fetch(origin + path, {
+      method,
+      headers: { Connection: "close" },
+      signal: AbortSignal.timeout(5000),
+    });
+    assert.equal(response.status, method === "OPTIONS" ? 204 : 405);
+    assert.equal(response.headers.get("allow"), "OPTIONS, GET");
+    await response.arrayBuffer();
+  }
   const head = await rawRequest(origin, path, { method: "HEAD" });
   assert.deepEqual(head, { status: 405, contentType: null, body: "" });
   const post = await rawRequest(origin, path, { method: "POST" });

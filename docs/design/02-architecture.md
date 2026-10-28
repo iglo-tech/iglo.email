@@ -167,3 +167,5 @@ Small and justified. v1 runtime dependencies:
 | `marked` | Markdown campaigns and templates |
 
 Built-in Bun or Web APIs cover the rest: password hashing (`Bun.password`), UUIDs, HMAC and TOTP (Web Crypto), gzip, file serving, and the JSX runtime (in-house, about 100 lines). Admin UI assets are listmonk v7's browser dependencies (Alpine.js, Oat, CodeMirror, Squire, Chart.js), bundled at build time.
+
+Until authentication and M4.1 admin views are ported, unmatched non-static `/admin/*` paths use the public HTML 404. The admin-specific error page remains staged; the shell fixture does not implement production administration. Embedded static assets support metadata-only HEAD under [D21](09-decisions.md#d21-support-head-for-embedded-assets).
