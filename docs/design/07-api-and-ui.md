@@ -128,3 +128,9 @@ repeated writable fields. D36 ignores response-only and unknown metadata in
 both formats; those fields cannot assign identity, timestamps or counts. D35's
 declaration, depth, body and normalized tag limits and XML character/reference
 integrity are covered by paired cases; the suite does not claim complete XML parity.
+
+D37 replaces the XML implementation with a strict streaming parser. XML UTF-8,
+syntax and characters are validated only through the consumed first root;
+unconsumed suffix bytes are ignored as in pinned encoding/xml.Decode. The
+64 KiB body, 64-level depth and no-DTD bounds remain. JSON retains its existing
+replacement decoding. This corrects compatibility defects, not a new API exception.
