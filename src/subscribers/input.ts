@@ -75,6 +75,22 @@ function set(out: SubscriberInput, key: string, value: unknown) {
     record[key] = value;
   }
 }
+// Check final operation-owned attributes after duplicate/null binding has settled.
+export function validAttributes(value: SubscriberInput["attribs"]): boolean {
+  const pending: unknown[] = [value];
+  while (pending.length) {
+    const item = pending.pop();
+    if (typeof item === "string") {
+      if (item.includes("\0")) return false;
+    } else if (item && typeof item === "object") {
+      for (const [key, child] of Object.entries(item)) {
+        if (key.includes("\0")) return false;
+        pending.push(child);
+      }
+    }
+  }
+  return true;
+}
 export function validExternal(value: string): boolean {
   return (
     value.length > 0 &&

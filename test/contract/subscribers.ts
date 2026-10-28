@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/subscribers.go, internal/core/subscribers.go,
 // internal/core/subscriptions.go and queries/subscribers.sql at 6fcd95f.
+import { runSubscriberCouncilRevisions } from "@/test/contract/subscriber-council-revisions";
 import { runSubscriberBindingRevisions } from "@/test/contract/subscriber-binding-revisions";
 import { runSubscriberStateRevisions } from "@/test/contract/subscriber-state-revisions";
 import { runSubscriberScope } from "@/test/contract/subscriber-scope";
@@ -47,6 +48,7 @@ export async function runSubscribersContract(target: {
     return (await response.json()).data;
   }
   try {
+    await runSubscriberCouncilRevisions(target);
     await runSubscriberStateRevisions(target);
     await runSubscriberBindingRevisions(target);
     check(

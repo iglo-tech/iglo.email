@@ -6,7 +6,13 @@ import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
 import { trimSpace } from "@/lists/store";
 import { sanitizeEmail } from "@/subscribers/email";
-import { subscriberInput, validExternal, type SubscriberInput } from "@/subscribers/input";
+import { titleWords } from "@/subscribers/unicode-title";
+import {
+  subscriberInput,
+  validExternal,
+  validAttributes,
+  type SubscriberInput,
+} from "@/subscribers/input";
 import type { SubscriberStore, Scope } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 
@@ -72,6 +78,8 @@ export function registerSubscriberRoutes(
     if (creating || !patch || input.email !== undefined) input.email = email(input.email ?? "");
     if (!creating && input.name && Buffer.byteLength(input.name) > 2000)
       throw new HttpError(400, "Invalid name");
+    if (input.name?.includes("\0")) throw new HttpError(400, "Invalid name");
+    if (!validAttributes(input.attribs)) throw new HttpError(400, "Invalid attributes.");
     if (creating) {
       input.name = trimSpace(input.name ?? "");
       if (!input.name)
@@ -80,18 +88,7 @@ export function registerSubscriberRoutes(
           .replaceAll(".", " ")
           .split(/[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/)
           .filter(Boolean)
-          .map((word) =>
-            [...new Intl.Segmenter("und", { granularity: "word" }).segment(word)]
-              .map((part) =>
-                part.isWordLike
-                  ? part.segment.replace(/\p{L}/u, (letter) => {
-                      const upper = Array.from(letter.toUpperCase());
-                      return (upper[0] ?? "") + upper.slice(1).join("").toLowerCase();
-                    })
-                  : part.segment,
-              )
-              .join(""),
-          )
+          .map(titleWords)
           .join(" ");
     }
   };
@@ -170,11 +167,14 @@ export function registerSubscriberRoutes(
     };
   const deleteMany: Handler = (c) => {
     const values = c.url.searchParams.getAll("id");
-    if (!values.length) throw new HttpError(400);
+    const invalid = (error: string) =>
+      new HttpError(400, c.app.i18n.Ts("globals.messages.errorInvalidIDs", "error", error));
+    if (!values.length) throw invalid("ids");
     const ids = values.map((v) => {
       if (!/^[+-]?\d+$/.test(v)) throw new HttpError(400);
       const n = BigInt(v);
-      if (n < 1n || n > 9223372036854775807n) throw new HttpError(400);
+      if (n < -9223372036854775808n || n > 9223372036854775807n) throw new HttpError(400);
+      if (n < 1n) throw invalid(`${n} is not a valid ID`);
       return n;
     });
     return store.transaction(() => {
