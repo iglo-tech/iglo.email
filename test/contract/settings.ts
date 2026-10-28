@@ -62,7 +62,7 @@ export async function runSettingsContract(target: {
   const xml = await fetch(`${target.baseUrl}/api/settings`, {
     method: "PUT",
     headers: { Authorization: authorization, "Content-Type": "application/xml" },
-    body: "<Settings><AppFromEmail>sender@example.invalid</AppFromEmail><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
+    body: "<Settings><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
   });
   check(xml.status === 200, "xml-full-write");
   check(
@@ -72,6 +72,12 @@ export async function runSettingsContract(target: {
       ],
     ) === '["sender@example.invalid"]',
     "xml-projection",
+  );
+  check(
+    /"app.batch_size"\s*:\s*9223372036854775807(?:[,}])/.test(
+      await (await request("/api/settings")).text(),
+    ),
+    "xml-int64-projection",
   );
   const smtpTest = await request("/api/settings/smtp/test", "POST", "{}");
   if (target.mode === "reference") {
@@ -244,6 +250,35 @@ export async function runSettingsContract(target: {
     JSON.stringify("Synthetic settings"),
   );
   check(key.status === 200 && JSON.stringify(await key.json()) === '{"data":true}', "key-write");
+  const xmlKey = await fetch(`${target.baseUrl}/api/settings/app.site_name`, {
+    method: "PUT",
+    headers: { Authorization: authorization, "Content-Type": "application/xml" },
+    body: '<value>"XML value"</value>',
+  });
+  check(
+    xmlKey.status === 200 && JSON.stringify(await xmlKey.json()) === '{"data":true}',
+    "key-xml-write",
+  );
+  check(
+    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+      "app.site_name"
+    ] === "XML value",
+    "key-xml-projection",
+  );
+  const formKey = await fetch(`${target.baseUrl}/api/settings/app.site_name`, {
+    method: "PUT",
+    headers: { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "value=form",
+  });
+  check(
+    formKey.status === 400 && JSON.stringify(await formKey.json()) === '{"message":"Bad Request"}',
+    "key-form-bad-request",
+  );
+  check(
+    (await request("/api/settings/app.site_name", "PUT", JSON.stringify("Synthetic settings")))
+      .status === 200,
+    "key-restore",
+  );
   check(
     ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
       "app.site_name"
