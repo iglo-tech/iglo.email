@@ -1,8 +1,8 @@
 // Specification for the synthetic-only HTTP fixture, not a production endpoint.
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { statfsSync } from "node:fs";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { startSpikeFixture } from "@/test/perf/sqlite-write-load/fixture";
 
 async function request(origin: string, input: object) {
@@ -18,7 +18,14 @@ async function request(origin: string, input: object) {
 }
 
 async function withFixture(fn: (origin: string, reopen: () => Promise<string>) => Promise<void>) {
-  const directory = await mkdtemp(join(tmpdir(), "iglo-spike-contract-"));
+  const base = resolve(
+    process.env.IGLO_EMAIL_PERF_DIR ?? join(import.meta.dir, "../../../upstream/measurements"),
+  );
+  await mkdir(base, { recursive: true });
+  const disk = await realpath(base);
+  if ([0x01021994, 0x858458f6].includes(Number(statfsSync(disk).type)))
+    throw new Error("Synthetic subscriber/event fixtures require disk-backed storage");
+  const directory = await mkdtemp(join(disk, "iglo-spike-contract-"));
   let fixture = startSpikeFixture(directory);
   try {
     await fn(fixture.origin, async () => {
