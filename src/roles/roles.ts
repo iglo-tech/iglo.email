@@ -53,6 +53,8 @@ export interface UserRole {
   permissions: string[];
 }
 
+export class RoleChildError extends Error {}
+
 export function createRoles(db: Database, lists: ListReferences) {
   const queries = prepareNamedQueries(db, [{ name: "roles", sql }]);
   const raw = (id: bigint): RoleRow | null => queries.get("get-role").get(id) as RoleRow | null;
@@ -140,17 +142,24 @@ export function createRoles(db: Database, lists: ListReferences) {
     },
     all(type: "user" | "list", search: string, orderBy: string, order: string) {
       const rows = queries.get("all-top-roles").all(type) as RoleRow[];
-      const needle = search.toLocaleLowerCase();
+      const needle = search
+        .trim()
+        .replace(/[\t\n\v\f\r ]+/g, " ")
+        .toLowerCase();
       const field = ["name", "created_at", "updated_at"].includes(orderBy)
         ? (orderBy as "name" | "created_at" | "updated_at")
         : "created_at";
       const direction = order === "" || order === "asc" ? 1 : -1;
       return rows
-        .filter((r) => (r.name ?? "").toLocaleLowerCase().includes(needle))
+        .filter((r) => (r.name ?? "").toLowerCase().includes(needle))
         .sort(
           (a, b) =>
             direction *
-            (String(a[field] ?? "").localeCompare(String(b[field] ?? "")) || Number(a.id - b.id)),
+            ((String(a[field] ?? "") < String(b[field] ?? "")
+              ? -1
+              : String(a[field] ?? "") > String(b[field] ?? "")
+                ? 1
+                : 0) || Number(a.id - b.id)),
         )
         .map((r) => ({
           id: Number(r.id),
@@ -192,13 +201,17 @@ export function createRoles(db: Database, lists: ListReferences) {
               });
         if (type === "list") {
           queries.get("delete-children").run(result.id);
-          for (const child of children)
-            if (child.permissions.length) {
-              if (!lists.name(child.id)) throw new Error("Invalid list reference");
-              queries
-                .get("insert-child")
-                .run(result.id, child.id, JSON.stringify(child.permissions));
-            }
+          try {
+            for (const child of children)
+              if (child.permissions.length) {
+                if (!lists.name(child.id)) throw new Error("Invalid list reference");
+                queries
+                  .get("insert-child")
+                  .run(result.id, child.id, JSON.stringify(child.permissions));
+              }
+          } catch {
+            throw new RoleChildError();
+          }
         }
         return result.id;
       });

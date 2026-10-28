@@ -28,7 +28,29 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
   const roles = createRoles(db, lists);
   const users = createUserStore(db, clock, roles);
   try {
-    const auth = await createAuthentication(users, roles, clock, "http://fixture.test", policy);
+    let loginGate = false;
+    let announceLogin!: () => void;
+    let releaseLogin!: () => void;
+    const loginEntered = new Promise<void>((resolve) => {
+      announceLogin = resolve;
+    });
+    const loginRelease = new Promise<void>((resolve) => {
+      releaseLogin = resolve;
+    });
+    const auth = await createAuthentication(
+      users,
+      roles,
+      clock,
+      "http://fixture.test",
+      policy,
+      async () => {
+        if (loginGate) {
+          loginGate = false;
+          announceLogin();
+          await loginRelease;
+        }
+      },
+    );
     const admin = { user: "fixture-admin", password: "fixture-admin-password" };
     if (initialize) await bootstrapAdmin(users, auth, admin);
     const app = createApp({
@@ -115,6 +137,18 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
     });
     router.route("POST", "/fixture/gate-release", () => {
       release();
+      return ok(true);
+    });
+    router.route("POST", "/fixture/gate-login", () => {
+      loginGate = true;
+      return ok(true);
+    });
+    router.route("GET", "/fixture/login-entered", async () => {
+      await loginEntered;
+      return ok(true);
+    });
+    router.route("POST", "/fixture/login-release", () => {
+      releaseLogin();
       return ok(true);
     });
     router.route("POST", "/fixture/bootstrap", async () => {
@@ -204,6 +238,7 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
       async close() {
         try {
           release();
+          releaseLogin();
           await server.stop(true);
         } finally {
           users.close();

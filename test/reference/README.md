@@ -113,7 +113,10 @@ documented in `test/contract/fixtures.md`. No generated secret is reported.
 
 `contract:roles` runs the shared role and factor corpus against compiled production;
 `contract:roles:reference` runs that same corpus against the disposable pinned
-upstream. The list-child fixture provisions synthetic lists only in a labelled
+upstream. The compiled command also restarts a real server on the same disposable
+data directory and checks persisted sessions and factors, rejected old challenges,
+and the embedded QR/runtime dependency notices over HTTP with a detached working
+directory. The list-child fixture provisions synthetic lists only in a labelled
 loopback test boundary; it is not a production list API.
 
 The separate fixture profile retains its synthetic auth gate and representative

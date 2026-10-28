@@ -31,7 +31,7 @@ async function stop(child: GroupChild, closed: Promise<number>): Promise<number>
 export async function withProduction<T>(
   executable: string,
   signal: AbortSignal,
-  run: (origin: string, signal: AbortSignal) => Promise<T>,
+  run: (origin: string, signal: AbortSignal, restart: () => Promise<void>) => Promise<T>,
   admin?: { user: string; password: string },
   timeoutMs = 30_000,
 ): Promise<T> {
@@ -47,60 +47,68 @@ export async function withProduction<T>(
     await copyFile(executable, copy);
     const port = await availablePort();
     const origin = `http://127.0.0.1:${port}`;
-    lifetime.throwIfAborted();
-    child = spawnGroup(
-      copy,
-      [
-        "serve",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        String(port),
-        "--data-dir",
-        join(directory, "data"),
-      ],
-      {
-        cwd: directory,
-        env: {
-          PATH: "",
-          ...(admin
-            ? { IGLO_EMAIL_ADMIN_USER: admin.user, IGLO_EMAIL_ADMIN_PASSWORD: admin.password }
-            : {}),
-        },
-        stdio: ["ignore", "ignore", "pipe"],
-      },
-    );
-    let errors = "";
-    child.stderr?.on("data", (chunk: Buffer) => {
-      errors = (errors + chunk.toString()).slice(-4000);
-    });
-    closed = new Promise<number>((resolve, reject) => {
-      child!.once("error", reject);
-      child!.once("close", (code) => resolve(code ?? 1));
-    });
-    // Attach a rejection handler immediately, even if readiness fails first.
-    void closed.catch(() => {});
-    const deadline = Date.now() + 5000;
-    let ready = false;
-    while (Date.now() < deadline) {
+    const start = async () => {
       lifetime.throwIfAborted();
-      if (child.exitCode !== null || child.signalCode !== null)
-        throw new Error(`Compiled production process exited before readiness: ${errors}`);
-      try {
-        const response = await fetch(`${origin}/health`, {
-          headers: { Connection: "close" },
-          signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
-        });
-        if (response.status === 200 && (await response.text()) === '{"data":true}\n') {
-          ready = true;
-          break;
-        }
-      } catch {
+      child = spawnGroup(
+        copy,
+        [
+          "serve",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          String(port),
+          "--data-dir",
+          join(directory, "data"),
+        ],
+        {
+          cwd: directory,
+          env: {
+            PATH: "",
+            ...(admin
+              ? { IGLO_EMAIL_ADMIN_USER: admin.user, IGLO_EMAIL_ADMIN_PASSWORD: admin.password }
+              : {}),
+          },
+          stdio: ["ignore", "ignore", "pipe"],
+        },
+      );
+      let errors = "";
+      child.stderr?.on("data", (chunk: Buffer) => {
+        errors = (errors + chunk.toString()).slice(-4000);
+      });
+      closed = new Promise<number>((resolve, reject) => {
+        child!.once("error", reject);
+        child!.once("close", (code) => resolve(code ?? 1));
+      });
+      // Attach a rejection handler immediately, even if readiness fails first.
+      void closed.catch(() => {});
+      const deadline = Date.now() + 5000;
+      let ready = false;
+      while (Date.now() < deadline) {
         lifetime.throwIfAborted();
+        if (child.exitCode !== null || child.signalCode !== null)
+          throw new Error(`Compiled production process exited before readiness: ${errors}`);
+        try {
+          const response = await fetch(`${origin}/health`, {
+            headers: { Connection: "close" },
+            signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
+          });
+          if (response.status === 200 && (await response.text()) === '{"data":true}\n') {
+            ready = true;
+            break;
+          }
+        } catch {
+          lifetime.throwIfAborted();
+        }
+        await Bun.sleep(25);
       }
-      await Bun.sleep(25);
-    }
-    if (!ready) throw new Error("Compiled production process readiness timed out");
+      if (!ready) throw new Error("Compiled production process readiness timed out");
+    };
+    const restart = async () => {
+      if (!child || !closed || (await stop(child, closed)) !== 0)
+        throw new Error("Compiled production restart shutdown failed");
+      await start();
+    };
+    await start();
     let abort!: () => void;
     const cancelled = new Promise<never>((_, reject) => {
       abort = () => reject(lifetime.reason);
@@ -108,11 +116,11 @@ export async function withProduction<T>(
     });
     try {
       lifetime.throwIfAborted();
-      result = await Promise.race([run(origin, lifetime), cancelled]);
+      result = await Promise.race([run(origin, lifetime, restart), cancelled]);
     } finally {
       lifetime.removeEventListener("abort", abort);
     }
-    if (child.exitCode !== null || child.signalCode !== null)
+    if (!child || child.exitCode !== null || child.signalCode !== null)
       throw new Error("Compiled production process exited during the contract run");
     completed = true;
   } finally {

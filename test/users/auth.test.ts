@@ -519,6 +519,52 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
       body: new URLSearchParams({ nonce, token, next: "/api/profile", totp_code: code }),
     });
   }
+  const guarded = await challenge();
+  const guardPage = await fetch(`${f.origin}${guarded}`);
+  const guardNonce = /name="nonce"\s+value="([^"]+)"/.exec(await guardPage.text())?.[1] ?? "";
+  const guardCookie =
+    guardPage.headers
+      .getSetCookie()
+      .find((v) => v.startsWith("nonce="))
+      ?.split(";", 1)[0] ?? "";
+  const guardToken = new URL(guarded, f.origin).searchParams.get("token") ?? "";
+  async function guardedPost(peer: string, nonce: string, origin?: string) {
+    return fetch(`${f.origin}/admin/login/twofa`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        cookie: guardCookie,
+        "x-m13-fixture-peer": peer,
+        ...(origin ? { origin } : {}),
+      },
+      body: new URLSearchParams({ nonce, token: guardToken, totp_code: "652348" }),
+    });
+  }
+  expect((await guardedPost("origin-peer", guardNonce, "https://foreign.example")).status).toBe(
+    403,
+  );
+  expect((await guardedPost("nonce-peer", "wrong")).status).toBe(403);
+  for (let i = 0; i < 100; i++)
+    expect((await guardedPost("limited-peer", "wrong")).status).toBe(403);
+  expect((await guardedPost("limited-peer", guardNonce)).status).toBe(429);
+  expect(
+    (await guardedPost("valid-peer", guardNonce)).headers
+      .getSetCookie()
+      .some((v) => v.startsWith("session=")),
+  ).toBe(true);
+  const superseded = await challenge();
+  const replacement = await challenge();
+  expect(
+    (await verify(superseded, "652348")).headers
+      .getSetCookie()
+      .some((v) => v.startsWith("session=")),
+  ).toBe(false);
+  expect(
+    (await verify(replacement, "652348")).headers
+      .getSetCookie()
+      .some((v) => v.startsWith("session=")),
+  ).toBe(true);
   const valid = await challenge();
   const verified = await verify(valid, "751330");
   expect(verified.status).toBe(302);
@@ -652,6 +698,66 @@ test("role permissions are resolved live for retained API tokens and sessions", 
       ).toBe(403);
     }
   }
+  // Both retained identities gain only users:manage on the next request.
+  expect(
+    (
+      await call(f, `/api/roles/users/${role}`, {
+        method: "PUT",
+        session: admin,
+        body: {
+          name: "Limited role",
+          permissions: [
+            "users:manage",
+            "sequences:get",
+            "sequences:manage",
+            "subscriber_events:create",
+            "subscriber_events:get",
+            "sends:get",
+            "sends:manage",
+            "webhooks:manage",
+          ],
+        },
+      })
+    ).status,
+  ).toBe(200);
+  for (const [auth, name] of [
+    [{ session: human }, "writer-session"],
+    [{ auth: authorization }, "writer-token"],
+  ] as const) {
+    expect((await call(f, "/api/users", auth)).status).toBe(403);
+    expect((await call(f, "/api/roles/users", auth)).status).toBe(403);
+    const created = await call(f, "/api/users", {
+      ...auth,
+      method: "POST",
+      body: { username: name, type: "api", status: "enabled", user_role_id: role },
+    });
+    expect(created.status).toBe(200);
+    const createdId = ((await created.json()) as { data: { id: number } }).data.id;
+    expect(
+      (await call(f, `/api/users/${createdId}`, { method: "DELETE", session: admin })).status,
+    ).toBe(200);
+  }
+  for (const method of ["GET", "PUT", "DELETE"] as const) {
+    const suffix = method === "GET" ? "/totp" : "";
+    expect(
+      (
+        await call(f, `/api/users/${api.id}/twofa${suffix}`, {
+          method,
+          session: human,
+          ...(method === "GET" ? {} : { body: {} }),
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(f, `/api/users/${api.id}/twofa${suffix}`, {
+          method,
+          auth: authorization,
+          ...(method === "GET" ? {} : { body: {} }),
+        })
+      ).status,
+    ).toBe(403);
+  }
   expect(
     (await call(f, `/api/users/${humanId}`, { method: "DELETE", session: admin })).status,
   ).toBe(200);
@@ -681,6 +787,19 @@ test("list roles project child permissions and roll back invalid replacement and
   });
   expect(roleResponse.status).toBe(200);
   const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+  // The child is allocated immediately after its parent in this isolated fixture.
+  // A missing ID would return 500, so the 400 response also identifies a real child.
+  for (const kind of ["users", "lists"]) {
+    expect(
+      (
+        await call(f, `/api/roles/${kind}/${role + 1}`, {
+          method: "PUT",
+          session: admin,
+          body: { name: "Child target", permissions: [], lists: [] },
+        })
+      ).status,
+    ).toBe(400);
+  }
   const createApi = await call(f, "/api/users", {
     method: "POST",
     session: admin,
@@ -716,6 +835,18 @@ test("list roles project child permissions and roll back invalid replacement and
     },
   });
   expect(bad.status).toBe(500);
+  const duplicate = await call(f, `/api/roles/lists/${role}`, {
+    method: "PUT",
+    session: admin,
+    body: {
+      name: "Duplicate child",
+      lists: [
+        { id: list, permissions: ["list:get"] },
+        { id: list, permissions: ["list:manage"] },
+      ],
+    },
+  });
+  expect(duplicate.status).toBe(500);
   const roles = (
     (await (await call(f, "/api/roles/lists", { session: admin })).json()) as {
       data: Array<{
@@ -852,3 +983,370 @@ test("user creation revalidates a role deleted during password hashing", async (
   expect(created.status).toBe(400);
   expect(((await created.json()) as { message: string }).message).toBe("invalid role");
 });
+
+test("an unrelated account update does not cancel a password proof", async () => {
+  const f = await fixture();
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const a = await createHuman(f, admin, "independent-a");
+  const b = await createHuman(f, admin, "independent-b");
+  await call(f, "/fixture/gate-login", { method: "POST" });
+  const pending = login(f, a.input.username, a.input.password);
+  expect((await call(f, "/fixture/login-entered")).status).toBe(200);
+  expect(
+    (
+      await call(f, `/api/users/${b.user.id}`, {
+        method: "PUT",
+        session: admin,
+        body: { ...b.input, password: "", name: "Changed B" },
+      })
+    ).status,
+  ).toBe(200);
+  await call(f, "/fixture/login-release", { method: "POST" });
+  const session = await pending;
+  expect((await call(f, "/api/profile", { session })).status).toBe(200);
+});
+
+test("a password proof cannot survive disabling and restoring the same account", async () => {
+  const f = await fixture();
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const { input, user } = await createHuman(f, admin, "revoked-proof");
+  const page = await fetch(`${f.origin}/admin/login`);
+  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+  const nonceCookie =
+    page.headers
+      .getSetCookie()
+      .find((v) => v.startsWith("nonce="))
+      ?.split(";", 1)[0] ?? "";
+  await call(f, "/fixture/gate-login", { method: "POST" });
+  const pending = fetch(`${f.origin}/admin/login`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+    body: new URLSearchParams({ username: input.username, password: input.password, nonce }),
+  });
+  expect((await call(f, "/fixture/login-entered")).status).toBe(200);
+  for (const status of ["disabled", "enabled"]) {
+    expect(
+      (
+        await call(f, `/api/users/${user.id}`, {
+          method: "PUT",
+          session: admin,
+          body: { ...input, password: "", status },
+        })
+      ).status,
+    ).toBe(200);
+  }
+  await call(f, "/fixture/login-release", { method: "POST" });
+  const rejected = await pending;
+  expect(rejected.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+  const fresh = await login(f, input.username, input.password);
+  expect((await call(f, "/api/profile", { session: fresh })).status).toBe(200);
+});
+
+test("challenge capacity refuses safely and expiry frees slots", async () => {
+  const f = await fixture({
+    ...defaultAuthPolicy,
+    loginAttempts: 100,
+    challengeCapacity: 2,
+    challengeTtlMs: 1000,
+  });
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const users = [];
+  for (const name of ["capacity-a", "capacity-b", "capacity-c"]) {
+    const user = await createHuman(f, admin, name);
+    const session = await login(f, name, user.input.password);
+    expect(
+      (
+        await call(f, `/api/users/${user.user.id}/twofa`, {
+          method: "PUT",
+          session,
+          body: { secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", code: "391022" },
+        })
+      ).status,
+    ).toBe(200);
+    users.push(user);
+  }
+  async function attempt(username: string, password = "fixture-user-password") {
+    const page = await fetch(`${f.origin}/admin/login`);
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    const nonceCookie =
+      page.headers
+        .getSetCookie()
+        .find((v) => v.startsWith("nonce="))
+        ?.split(";", 1)[0] ?? "";
+    return fetch(`${f.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({ username, password, nonce }),
+    });
+  }
+  const invalidBefore = await attempt(users[2]!.input.username, "wrong-password");
+  expect(invalidBefore.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+  const first = await attempt(users[0]!.input.username);
+  const second = await attempt(users[1]!.input.username);
+  expect(first.status).toBe(302);
+  expect(second.status).toBe(302);
+  const full = await attempt(users[2]!.input.username);
+  expect(full.status).toBe(429);
+  expect(full.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+  const wrong = await attempt(users[2]!.input.username, "wrong-password");
+  expect(wrong.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+  expect(
+    (await fetch(`${f.origin}${first.headers.get("location")}`, { redirect: "manual" })).status,
+  ).toBe(200);
+  await call(f, "/fixture/clock", { method: "POST", body: 1000 });
+  expect(
+    (await fetch(`${f.origin}${first.headers.get("location")}`, { redirect: "manual" })).status,
+  ).toBe(302);
+  const fresh = await attempt(users[2]!.input.username);
+  expect(fresh.status).toBe(302);
+  expect(fresh.headers.get("location")).toStartWith("/admin/login/twofa?");
+  const location = fresh.headers.get("location")!;
+  const page = await fetch(`${f.origin}${location}`);
+  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+  const nonceCookie =
+    page.headers
+      .getSetCookie()
+      .find((v) => v.startsWith("nonce="))
+      ?.split(";", 1)[0] ?? "";
+  const verified = await fetch(`${f.origin}/admin/login/twofa`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+    body: new URLSearchParams({
+      nonce,
+      token: new URL(location, f.origin).searchParams.get("token") ?? "",
+      totp_code: "391022",
+    }),
+  });
+  expect(verified.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(true);
+});
+
+test("an unrelated two-factor challenge does not cancel a password proof", async () => {
+  const f = await fixture();
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const a = await createHuman(f, admin, "independent-challenge-a");
+  const b = await createHuman(f, admin, "independent-challenge-b");
+  const bSession = await login(f, b.input.username, b.input.password);
+  expect(
+    (
+      await call(f, `/api/users/${b.user.id}/twofa`, {
+        method: "PUT",
+        session: bSession,
+        body: { secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", code: "391022" },
+      })
+    ).status,
+  ).toBe(200);
+  await call(f, "/fixture/gate-login", { method: "POST" });
+  const pending = login(f, a.input.username, a.input.password);
+  expect((await call(f, "/fixture/login-entered")).status).toBe(200);
+  const page = await fetch(`${f.origin}/admin/login`);
+  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+  const nonceCookie =
+    page.headers
+      .getSetCookie()
+      .find((v) => v.startsWith("nonce="))
+      ?.split(";", 1)[0] ?? "";
+  const challenge = await fetch(`${f.origin}/admin/login`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+    body: new URLSearchParams({ username: b.input.username, password: b.input.password, nonce }),
+  });
+  expect(challenge.headers.get("location")).toStartWith("/admin/login/twofa?");
+  expect(challenge.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+  await call(f, "/fixture/login-release", { method: "POST" });
+  const session = await pending;
+  expect((await call(f, "/api/profile", { session })).status).toBe(200);
+});
+
+for (const scenario of ["password", "type", "delete", "factor"] as const) {
+  test(`an in-flight password proof is revoked by ${scenario}`, async () => {
+    const f = await fixture();
+    const admin = await login(f, f.admin.user, f.admin.password);
+    const { input, user } = await createHuman(f, admin, `proof-${scenario}`);
+    const self = scenario === "factor" ? await login(f, input.username, input.password) : undefined;
+    const page = await fetch(`${f.origin}/admin/login`);
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    const nonceCookie =
+      page.headers
+        .getSetCookie()
+        .find((v) => v.startsWith("nonce="))
+        ?.split(";", 1)[0] ?? "";
+    await call(f, "/fixture/gate-login", { method: "POST" });
+    const pending = fetch(`${f.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({ username: input.username, password: input.password, nonce }),
+    });
+    expect((await call(f, "/fixture/login-entered")).status).toBe(200);
+    if (scenario === "delete") {
+      expect(
+        (await call(f, `/api/users/${user.id}`, { method: "DELETE", session: admin })).status,
+      ).toBe(200);
+      const replacement = await createHuman(f, admin, input.username);
+      expect(replacement.user.id).toBeGreaterThan(user.id);
+    } else if (scenario === "factor") {
+      expect(
+        (
+          await call(f, `/api/users/${user.id}/twofa`, {
+            method: "PUT",
+            session: self!,
+            body: { secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", code: "391022" },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await call(f, `/api/users/${user.id}/twofa`, {
+            method: "DELETE",
+            session: self!,
+            body: { password: input.password },
+          })
+        ).status,
+      ).toBe(200);
+    } else {
+      const body =
+        scenario === "password"
+          ? { ...input, password: "replacement-password" }
+          : { ...input, password: "", type: "api" };
+      expect(
+        (await call(f, `/api/users/${user.id}`, { method: "PUT", session: admin, body })).status,
+      ).toBe(200);
+      expect(
+        (await call(f, `/api/users/${user.id}`, { method: "PUT", session: admin, body: input }))
+          .status,
+      ).toBe(200);
+    }
+    await call(f, "/fixture/login-release", { method: "POST" });
+    const response = await pending;
+    expect(response.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+    expect(response.headers.get("location")?.startsWith("/admin/login/twofa?") ?? false).toBe(
+      false,
+    );
+  });
+}
+
+for (const scenario of ["status", "password", "type", "delete", "factor"] as const) {
+  test(`a pending challenge is revoked by ${scenario}`, async () => {
+    const f = await fixture();
+    const admin = await login(f, f.admin.user, f.admin.password);
+    const { input, user } = await createHuman(f, admin, `pending-${scenario}`);
+    const self = await login(f, input.username, input.password);
+    const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    expect(
+      (
+        await call(f, `/api/users/${user.id}/twofa`, {
+          method: "PUT",
+          session: self,
+          body: { secret, code: "391022" },
+        })
+      ).status,
+    ).toBe(200);
+    const page = await fetch(`${f.origin}/admin/login`);
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    const nonceCookie =
+      page.headers
+        .getSetCookie()
+        .find((v) => v.startsWith("nonce="))
+        ?.split(";", 1)[0] ?? "";
+    const challenged = await fetch(`${f.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({ username: input.username, password: input.password, nonce }),
+    });
+    const location = challenged.headers.get("location") ?? "";
+    expect(location).toStartWith("/admin/login/twofa?");
+    const form = await fetch(`${f.origin}${location}`);
+    const formNonce = /name="nonce"\s+value="([^"]+)"/.exec(await form.text())?.[1] ?? "";
+    const formCookie =
+      form.headers
+        .getSetCookie()
+        .find((v) => v.startsWith("nonce="))
+        ?.split(";", 1)[0] ?? "";
+    if (scenario === "factor") {
+      expect(
+        (
+          await call(f, `/api/users/${user.id}/twofa`, {
+            method: "DELETE",
+            session: self,
+            body: { password: input.password },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await call(f, `/api/users/${user.id}/twofa`, {
+            method: "PUT",
+            session: self,
+            body: { secret, code: "391022" },
+          })
+        ).status,
+      ).toBe(200);
+    } else if (scenario === "delete") {
+      expect(
+        (await call(f, `/api/users/${user.id}`, { method: "DELETE", session: admin })).status,
+      ).toBe(200);
+      expect((await createHuman(f, admin, input.username)).user.id).toBeGreaterThan(user.id);
+    } else if (scenario === "status") {
+      for (const status of ["disabled", "enabled"])
+        expect(
+          (
+            await call(f, `/api/users/${user.id}`, {
+              method: "PUT",
+              session: admin,
+              body: { ...input, password: "", status },
+            })
+          ).status,
+        ).toBe(200);
+    } else if (scenario === "type") {
+      expect(
+        (
+          await call(f, `/api/users/${user.id}`, {
+            method: "PUT",
+            session: admin,
+            body: { ...input, password: "", type: "api" },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await call(f, `/api/users/${user.id}`, {
+            method: "PUT",
+            session: admin,
+            body: { ...input, password: input.password },
+          })
+        ).status,
+      ).toBe(200);
+    } else {
+      expect(
+        (
+          await call(f, `/api/users/${user.id}`, {
+            method: "PUT",
+            session: admin,
+            body: { ...input, password: "replacement-password" },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (await call(f, `/api/users/${user.id}`, { method: "PUT", session: admin, body: input }))
+          .status,
+      ).toBe(200);
+    }
+    const rejected = await fetch(`${f.origin}/admin/login/twofa`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: formCookie },
+      body: new URLSearchParams({
+        nonce: formNonce,
+        token: new URL(location, f.origin).searchParams.get("token") ?? "",
+        totp_code: "391022",
+      }),
+    });
+    expect(rejected.status).toBe(302);
+    expect(rejected.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+  });
+}

@@ -1,6 +1,6 @@
 // Adapted from listmonk cmd/roles.go and cmd/handlers.go at 6fcd95f.
 import type { Roles } from "@/roles/roles";
-import { permissions } from "@/roles/roles";
+import { permissions, RoleChildError } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -98,20 +98,23 @@ export function registerRoleRoutes(
           result = roles.mutate(
             kind,
             id,
-            data.name,
+            update ? data.name.trim() : data.name,
             kind === "user" ? data.granted : [],
             data.children,
             context.app.clock.now().toISOString(),
           );
-        } catch {
-          throw new HttpError(500, update ? "Error updating role" : "Error creating role");
+        } catch (error) {
+          const message =
+            error instanceof RoleChildError && update
+              ? "Error creating List role"
+              : update
+                ? `Error updating ${kind === "user" ? "User" : "List"} role`
+                : "Error creating Role";
+          throw new HttpError(500, message);
         }
         if (result === null) {
           if (id !== null && !roles.exists(id))
-            throw new HttpError(
-              500,
-              `Error updating ${kind === "user" ? "User" : "List"} role: sql: no rows in result set`,
-            );
+            throw new HttpError(500, `Error updating ${kind === "user" ? "User" : "List"} role`);
           throw new HttpError(400, "invalid ID");
         }
         const entry = roles.all(kind, "", "", "").find((item) => item.id === Number(result));

@@ -28,7 +28,7 @@
     "ui:verify": "bun run assets:build && bun test/ui/verify.ts",
     "runtime:spike:liquid": "bun test/perf/runtime-compat/liquid-bench.ts",
     "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",
-    "contract:roles": "bun run build && bun test/contract/cli.ts owned roles",
+    "contract:roles": "bun run build && bun test/contract/cli.ts owned roles && bun test/users/restart.ts",
     "contract:roles:reference": "bun run reference:run -- bun test/contract/roles.ts reference",
     "roles:measure": "bun run build && bun test/users/measure-roles.ts"
   },

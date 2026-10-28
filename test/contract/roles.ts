@@ -30,6 +30,20 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     const response = await request(`/api/roles/${kind}`, "POST", body);
     check(response.status === 200, `role-create-${kind}`);
     const data = ((await response.json()) as { data: { id: number } }).data;
+    const row = data as unknown as Record<string, unknown>;
+    const keys =
+      kind === "users"
+        ? ["created_at", "id", "lists", "name", "permissions", "type", "updated_at"]
+        : ["created_at", "id", "lists", "name", "updated_at"];
+    check(
+      JSON.stringify(Object.keys(row).sort()) === JSON.stringify(keys) &&
+        row.lists === null &&
+        typeof row.created_at === "string" &&
+        Number.isFinite(Date.parse(row.created_at)) &&
+        row.updated_at === row.created_at &&
+        (kind !== "users" || (row.type === "user" && Array.isArray(row.permissions))),
+      `role-create-${kind}-projection`,
+    );
     check(Number.isSafeInteger(data.id) && data.id > 1, `role-create-${kind}-id`);
     owned.push(data.id);
     return data.id;
@@ -123,6 +137,150 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       permissions: ["unknown:permission"],
     });
     check(invalid.status === 400, "role-invalid-permission");
+    const reference = target.mode === "reference";
+    check(
+      (await invalid.text()) ===
+        JSON.stringify({
+          message: reference
+            ? "Invalid fields: permission: unknown:permission"
+            : "Invalid fields: permission",
+        }) +
+          "\n",
+      "D31-invalid-user-permission-message",
+    );
+    const invalidList = await request("/api/roles/lists", "POST", {
+      name: `bad-${suffix}`,
+      lists: [{ id: 123, permissions: ["unknown:permission"] }],
+    });
+    check(
+      invalidList.status === 400 &&
+        (await invalidList.text()) ===
+          JSON.stringify({
+            message: reference
+              ? "Invalid fields: list permission: unknown:permission"
+              : "Invalid fields: list permission",
+          }) +
+            "\n",
+      "D31-invalid-list-permission-message",
+    );
+    const duplicate = await request("/api/roles/users", "POST", {
+      name: `changed-${suffix}`,
+      permissions: [],
+    });
+    const duplicateMessage = reference
+      ? `Error creating Role: pq: duplicate key value violates unique constraint "idx_roles_name" (23505). Key (type, name)=(user, changed-${suffix}) already exists.`
+      : "Error creating Role";
+    check(
+      duplicate.status === 500 &&
+        (await duplicate.text()) === JSON.stringify({ message: duplicateMessage }) + "\n",
+      "D31-duplicate-role-message",
+    );
+    const childDetail =
+      'pq: insert or update on table "roles" violates foreign key constraint "roles_list_id_fkey" (23503). Key (list_id)=(2147483647) is not present in table "lists".';
+    const badChildCreate = await request("/api/roles/lists", "POST", {
+      name: `bad-child-${suffix}`,
+      lists: [{ id: 2147483647, permissions: ["list:get"] }],
+    });
+    check(
+      badChildCreate.status === 500 &&
+        (await badChildCreate.text()) ===
+          JSON.stringify({
+            message: reference
+              ? `Error creating Role: code=500, message=Error creating Role: ${childDetail}`
+              : "Error creating Role",
+          }) +
+            "\n",
+      "D31-invalid-child-create-message",
+    );
+    const after = await request(`/api/roles/lists?query=bad-child-${suffix}`);
+    const orphans = ((await after.json()) as { data: Array<{ id: number }> }).data;
+    check(orphans.length === (reference ? 1 : 0), "D30-invalid-child-create-atomicity");
+    for (const r of orphans) owned.push(r.id);
+    const ponies = await create("users", { name: `m14 ${suffix} Ponies`, permissions: [] });
+    for (const [query, expected] of [
+      ["pony", reference],
+      [" PONIES ", true],
+      [`  ${suffix}   Ponies  `, true],
+      ["%", reference],
+      ["_", reference],
+      ["nothing-matches-m14", false],
+    ] as const) {
+      const response = await request(`/api/roles/users?query=${encodeURIComponent(query)}`);
+      const matches = ((await response.json()) as { data: Array<{ id: number }> }).data;
+      check(
+        matches.some((r) => r.id === ponies) === expected,
+        `D31-search-${query === "%" ? "percent" : query === "_" ? "underscore" : query === "pony" ? "stemming" : query.includes(suffix) ? "whitespace" : query.includes("PONIES") ? "case" : "no-match"}`,
+      );
+    }
+    const alpha = await create("users", { name: `sort-${suffix}-a`, permissions: [] });
+    const zeta = await create("users", { name: `sort-${suffix}-z`, permissions: [] });
+    for (const [order, expected] of [
+      ["asc", [alpha, zeta]],
+      ["desc", [zeta, alpha]],
+      ["invalid", [zeta, alpha]],
+    ] as const) {
+      const sorted = await request(
+        `/api/roles/users?query=sort-${suffix}&order_by=name&order=${order}`,
+      );
+      const ids = ((await sorted.json()) as { data: Array<{ id: number }> }).data.map((r) => r.id);
+      check(JSON.stringify(ids) === JSON.stringify(expected), `role-sort-${order}`);
+    }
+    for (const [query, expected] of [
+      ["order_by=invalid&order=desc", [zeta, alpha]],
+      ["order_by=invalid", [alpha, zeta]],
+    ] as const) {
+      const sorted = await request(`/api/roles/users?query=sort-${suffix}&${query}`);
+      const ids = ((await sorted.json()) as { data: Array<{ id: number }> }).data.map((r) => r.id);
+      check(
+        JSON.stringify(ids) === JSON.stringify(expected),
+        `role-sort-default-${query.includes("desc") ? "desc" : "asc"}`,
+      );
+    }
+    const trimmed = await request(`/api/roles/users/${alpha}`, "PUT", {
+      name: `  sort-${suffix}-a  `,
+      permissions: [],
+    });
+    check(
+      trimmed.status === 200 &&
+        ((await trimmed.json()) as { data: { name: string } }).data.name === `sort-${suffix}-a`,
+      "role-update-trim",
+    );
+    const longName = await request("/api/roles/users", "POST", {
+      name: "é".repeat(1001),
+      permissions: [],
+    });
+    check(longName.status === 400, "role-utf8-byte-length");
+    for (const body of [{}, { name: "" }, { name: "invalid-permissions", permissions: [42] }]) {
+      const rejected = await request("/api/roles/users", "POST", body);
+      check(rejected.status === 400, "role-malformed-or-missing-fields");
+    }
+    for (const id of ["0", "-1", "not-an-id"]) {
+      const rejected = await request(`/api/roles/users/${id}`, "PUT", {
+        name: "Invalid ID",
+        permissions: [],
+      });
+      check(rejected.status === 400, "role-invalid-id");
+    }
+    const overflow = await request("/api/roles/users/9223372036854775808", "PUT", {
+      name: "Overflow",
+      permissions: [],
+    });
+    check(overflow.status === (reference ? 500 : 400), "D17-role-overflow");
+    const missing = await request("/api/roles/users/2147483647", "PUT", {
+      name: "Missing",
+      permissions: [],
+    });
+    check(
+      missing.status === 500 &&
+        (await missing.text()) ===
+          JSON.stringify({
+            message: reference
+              ? "Error updating User role: sql: no rows in result set"
+              : "Error updating User role",
+          }) +
+            "\n",
+      "D31-missing-role",
+    );
     const primordial = await request("/api/roles/users/1", "PUT", {
       name: "ignored",
       permissions: [],
@@ -132,7 +290,17 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       name: `changed-child-${suffix}`,
       lists: [{ id: 2147483647, permissions: ["list:get"] }],
     });
-    check(invalidChild.status === 500, "D30-invalid-child-rejected");
+    check(
+      invalidChild.status === 500 &&
+        (await invalidChild.text()) ===
+          JSON.stringify({
+            message: reference
+              ? `Error creating List role: code=500, message=Error creating Role: ${childDetail}`
+              : "Error creating List role",
+          }) +
+            "\n",
+      "D31-invalid-child-update-message",
+    );
     const currentLists = await request("/api/roles/lists");
     const currentListRoles = (
       (await currentLists.json()) as { data: Array<{ id: number; name: string }> }
