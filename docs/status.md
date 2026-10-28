@@ -8,9 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No implementation task is active. M1.5 merged at 16:52:21 UTC as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e under the documented three-round lead resolution, after all eight exact-head jobs passed. Watch stopped; all delegates terminal without children. [Review and recovery ledger](reviews/M1.5.md).
+M1.6 (subscriber CRUD, external IDs and ID-selected bulk actions) is active at **brief**. M1.5 is merged as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e; its watch is confirmed stopped, all delegates terminal and identifiers archived in docs/reviews/M1.5.md. The original run start remains 2026-10-28T13:08:24.215458+00:00 and is still within about four hours. No duplicate worker exists. [Brief](briefs/M1.6.md).
 
-The run retains its original 2026-10-28T13:08:24.215458+00:00 start and is still within about four hours. M1.6 is the next eligible critical-path task (M1.5 merged); the lead is preparing its brief from the pinned source. No worker is dispatched until that scope is concrete and pushed. M1.2 remains eligible alongside the critical path; only one task runs at a time. Automation remains enabled and unbound.
+The lead read pinned subscriber handlers/core/subscription SQL, importer email/name validation and auth list-scope source. D38 makes the M1.6/M1.7 boundary explicit, stages opt-in delivery until M2.5, defines external identity/writable DTO/PATCH concurrency semantics, and removes the redundant body-ID requirement for path-addressed membership actions. Existing schema, counts/FTS and concrete owner boundaries stay intact; no new dependency, query engine, mail/queue or event/sequence side effect. All paired differences and normal-only new-feature tests must be precise. M1.2 remains eligible outside the critical path; only M1.6 starts now.
+
+The next action is one isolated GPT-6.1 Terra max worker, with the complete brief and standard worker instructions, after this preparation is pushed. No helper, reviewer or PR watch is started for implementation. Record dispatch IDs and end the turn; never poll. Automation stays enabled and unbound.
 
 ## Automation
 
@@ -46,7 +48,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Blocked
 
-No active external block or cooldown. M1.5 is merged; the same run prepares the next critical-path brief under its original 13:08:24 UTC start.
+No active external block or cooldown. M1.5 is merged; the same run starts M1.6 under its original 13:08:24 UTC start.
 
 ## For owner review
 
@@ -101,6 +103,8 @@ Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one who
 [D36](design/09-decisions.md#d36-list-writes-accept-only-writable-fields) (2026-10-28, M1.5 round 2): list writes ignore response-only metadata instead of emulating incidental Go read-model validators; malformed documents and writable-field/resource validation remain mandatory. Correct Go whitespace and numeric/literal XML integrity compatibly. The lead handles these small fixes before fresh round 3.
 
 [D37](design/09-decisions.md#d37-strict-streaming-xml-list-input) replaces the XML parser and corrects consumed-document syntax/UTF-8 and first-root boundaries after round 3; both findings sets are accepted under the lead resolution rule.
+
+[D38](design/09-decisions.md#d38-subscriber-scope-writable-input-and-external-identity) defines M1.6 scope/staging and external identity, extends the writable-input boundary and protects concurrent PATCH; one numeric membership route no longer requires a repeated body ID.
 
 ## Pause history
 

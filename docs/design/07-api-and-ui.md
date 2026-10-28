@@ -44,6 +44,8 @@ Deliberate differences:
 | Overlong list tags | After compatible normalization, reject tags longer than 100 Unicode characters with 400 Invalid fields: tags and no write on POST/PUT | Avoid upstream POST storage-error 500 and PUT silent truncation ([D35](09-decisions.md#d35-list-request-decoding-and-tag-bounds)) |
 | XML list request resources | Keep XML writes, but reject DTD/custom/external entity declarations and nesting beyond 64 levels with safe 400 under the existing body limit | Bound parsing without external resolution or entity expansion (D35) |
 | Read-only list input metadata | Ignore response-only and unknown fields in JSON/XML list writes; validate only the writable fields and the document/resource boundary | Accept list snapshots without incidental Go read-model date/map/int validation; discarded fields cannot assign identity, generated metadata or authority ([D36](09-decisions.md#d36-list-writes-accept-only-writable-fields)) |
+| Subscriber writable input | Ignore read-only/unknown metadata and validate the writable DTO; resolve PATCH omissions at commit time | Avoid incidental model validators and lost concurrent untouched fields ([D38](09-decisions.md#d38-subscriber-scope-writable-input-and-external-identity), pending M1.6) |
+| Single subscriber membership action | The path ID is sufficient; body ids need not repeat it | Remove the catch-all request struct's redundant ID requirement (D38, pending M1.6) |
 | Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
 | `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
 | `POST /api/tx` recipients | Any email address can receive a transactional email. It does not have to be a subscriber first; listmonk's default mode rejects unknown addresses ([Sending](04-sending.md#transactional-api)) | A one-off email to someone is not a subscription. Forcing callers to create a subscriber first, or to know about `subscriber_mode`, is bookkeeping with no benefit |
@@ -134,3 +136,9 @@ syntax and characters are validated only through the consumed first root;
 unconsumed suffix bytes are ignored as in pinned encoding/xml.Decode. The
 64 KiB body, 64-level depth and no-DTD bounds remain. JSON retains its existing
 replacement decoding. This corrects compatibility defects, not a new API exception.
+
+M1.6 stages numeric-ID subscriber CRUD and ID-selected bulk actions. Collection/
+search/SQL/query-selected bulk/export remain M1.7. Automatic/explicit opt-in
+mail awaits M2.5; M1.6 stores actual membership state without delivery claims.
+D38 defines the normal-only external_id field and GET/PUT/DELETE lookup routes,
+exact nullable identity, safe conflict/no-write and current-scope behavior.
