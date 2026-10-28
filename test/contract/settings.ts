@@ -48,6 +48,19 @@ export async function runSettingsContract(target: {
   const after = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
     .data;
   check(JSON.stringify(after) === JSON.stringify(snapshot), "invalid-no-write");
+  const form = await fetch(`${target.baseUrl}/api/settings`, {
+    method: "PUT",
+    headers: { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "AppFromEmail=sender%40example.invalid",
+  });
+  check(form.status === 400 && JSON.stringify(await form.json()) === JSON.stringify({ message: "at least one `from` address is required" }), "form-no-tags");
+  const xml = await fetch(`${target.baseUrl}/api/settings`, {
+    method: "PUT",
+    headers: { Authorization: authorization, "Content-Type": "application/xml" },
+    body: "<Settings><AppFromEmail>sender@example.invalid</AppFromEmail><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
+  });
+  check(xml.status === 200, "xml-full-write");
+  check(JSON.stringify(((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data["app.from_email"]) === '["sender@example.invalid"]', "xml-projection");
   const smtpTest = await request("/api/settings/smtp/test", "POST", "{}");
   if (target.mode === "reference") {
     check(smtpTest.status === 400, "smtp-test-reference-missing-email");
