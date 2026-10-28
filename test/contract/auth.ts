@@ -313,6 +313,64 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         list.data.some((entry) => entry.id === human.id && !entry.password),
       "users-list",
     );
+    const literalEmail = `m13-${suffix}@[127.0.0.1]`;
+    const literalResponse = await request(target, "/api/users", {
+      method: "POST",
+      auth: basic,
+      body: {
+        username: `m13-mail-${suffix}`,
+        email: literalEmail,
+        type: "user",
+        status: "enabled",
+        user_role_id: 1,
+      },
+    });
+    const literal = await user(literalResponse);
+    created.push(literal.id);
+    check(literal.email === literalEmail, "users-email-domain-literal");
+    for (const email of [`m13..${suffix}@example.test`, `m13-${suffix}@example..test`]) {
+      const invalidEmail = await request(target, "/api/users", {
+        method: "POST",
+        auth: basic,
+        body: {
+          username: `m13-invalid-${suffix}`,
+          email,
+          type: "user",
+          status: "enabled",
+          user_role_id: 1,
+        },
+      });
+      check(
+        invalidEmail.status === 400 &&
+          ((await invalidEmail.json()) as { message: string }).message === "Invalid fields: email",
+        "users-email-invalid-dots",
+      );
+    }
+    for (const [index, email] of [
+      `"m13.${suffix}"@example.test`,
+      `"m13 ${suffix}"@example.test`,
+      `m13-${suffix}@[anything]`,
+      `m13-${suffix}@[127.0.0.256]`,
+      `m13-${suffix}@[IPv6:::1]`,
+      `m13-${suffix}@[::1]`,
+    ].entries()) {
+      const response = await request(target, "/api/users", {
+        method: "POST",
+        auth: basic,
+        body: {
+          username: `m13-mail-probe-${index}-${suffix}`,
+          email,
+          type: "user",
+          status: "enabled",
+          user_role_id: 1,
+        },
+      });
+      check(
+        response.status === 400 &&
+          ((await response.json()) as { message: string }).message === "Invalid fields: email",
+        `users-email-probe-${index}`,
+      );
+    }
     if (target.mode === "reference") {
       const listRoleName = `m13-list-role-${suffix}`;
       const roleResponse = await request(target, "/api/roles/lists", {
@@ -368,9 +426,25 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
           "reference-user-list-empty-list-role",
         );
       } finally {
-        if (listUserId)
-          await request(target, `/api/users/${listUserId}`, { method: "DELETE", auth: basic });
-        await request(target, `/api/roles/${role.id}`, { method: "DELETE", auth: basic });
+        try {
+          if (
+            listUserId &&
+            (await request(target, `/api/users/${listUserId}`, { method: "DELETE", auth: basic }))
+              .status !== 200
+          )
+            cleanupFailed = true;
+        } catch {
+          cleanupFailed = true;
+        }
+        try {
+          if (
+            (await request(target, `/api/roles/${role.id}`, { method: "DELETE", auth: basic }))
+              .status !== 200
+          )
+            cleanupFailed = true;
+        } catch {
+          cleanupFailed = true;
+        }
       }
     }
     const spaced = await form(target, name, password);

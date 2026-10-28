@@ -78,6 +78,11 @@ role and user through upstream HTTP. User detail returns that role with
 the same role through the role owner; the production role-management API is
 still deferred to M1.4.
 
+Additional email observations confirm acceptance of an IPv4 address literal,
+and rejection of consecutive dots, quoted local parts, non-IP literals, invalid
+IPv4 literals and the tested IPv6 literal spellings. These are exercised in
+both modes through user creation.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is
@@ -93,7 +98,7 @@ ISO timestamps independently for each fixture run. Its label is `synthetic 101`
 and its unrelated nested `id` is `77`; neither is normalized. No probe is a
 ported upstream domain endpoint.
 
-## Current coverage and handoff (M0.6)
+## Historical coverage and handoff (M0.6)
 
 | Mode and profile         | Executed coverage                                                                                                                                                   | Pending production coverage                                                                               |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -102,10 +107,14 @@ ported upstream domain endpoint.
 | `normal/fixture/staged`  | Synthetic auth gate and representative shared helpers, including the normal sides of D17/D18                                                                        | The corresponding production endpoints and auth                                                           |
 | `normal/fixture/probe`   | Synthetic generated ID, relationship and timestamp normalization                                                                                                    | These probes do not represent upstream ports                                                              |
 
-M1.3 must run and promote the same protected-health cases against real production
-auth, removing that fixture-only gap. Domain workers promote their cases while
-retaining the explicit D17/D18 results. A fixture pass never implies production
-parity. M0.6 checks the rendered public HTML 404 structure, title, heading,
+M1.3 has promoted the same protected-health cases to real compiled-production
+authentication, removing the fixture-only gap. `contract:normal` now reports
+32 compiled core cases, including nine user-validation cases; `contract:auth`
+and its matching reference invocation exercise the stateful user/auth corpus.
+The empty-list-role and lower-permission normal cases remain labelled fixture
+evidence because role-management endpoints are deferred. Domain workers
+promote their helper cases while retaining the explicit D17/D18 results. A
+fixture pass never implies production parity. M0.6 checks the rendered public HTML 404 structure, title, heading,
 message, local assets and attribution with explicit per-target branding. The
 route-backed D18 helper cases assert the actual HTML fallback after Bun removes
 encoded dot segments; the upstream invalid-ID expectations remain intact. The
