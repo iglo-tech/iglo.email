@@ -46,6 +46,32 @@ export async function runListsContract(target: {
       tags: [" One Two ", "other"],
     });
     check(
+      JSON.stringify(Object.keys(list).sort()) ===
+        JSON.stringify(
+          [
+            "created_at",
+            "description",
+            "id",
+            "name",
+            "optin",
+            "status",
+            "subscriber_count",
+            "subscriber_statuses",
+            "subscription_created_at",
+            "subscription_updated_at",
+            "tags",
+            "type",
+            "updated_at",
+            "uuid",
+          ].sort(),
+        ),
+      "list-full-projection-keys",
+    );
+    check(
+      list.subscription_created_at === null && list.subscription_updated_at === null,
+      "list-null-subscription-times",
+    );
+    check(
       list.type === "private" && list.optin === "single" && list.status === "active",
       "list-defaults",
     );
@@ -328,6 +354,29 @@ export async function runListsContract(target: {
       "D33-delete-matches-preview",
     );
     if (target.mode === "reference") owned.splice(owned.indexOf(deletionTarget.id), 1);
+    const sortedFirst = await create(`sort-${suffix}-a`);
+    const sortedLast = await create(`sort-${suffix}-z`);
+    for (const [order, expected] of [
+      ["asc", [sortedFirst.id, sortedLast.id]],
+      ["desc", [sortedLast.id, sortedFirst.id]],
+      ["invalid", [sortedLast.id, sortedFirst.id]],
+    ] as const) {
+      const sorted = await request(`/api/lists?query=sort-${suffix}&order_by=name&order=${order}`);
+      const ids = (
+        (await sorted.json()) as { data: { results: { id: number }[] } }
+      ).data.results.map((item) => item.id);
+      check(JSON.stringify(ids) === JSON.stringify(expected), `list-sort-name-${order}`);
+    }
+    const pageSorted = await request(
+      `/api/lists?query=sort-${suffix}&order_by=name&per_page=1&page=2`,
+    );
+    const pageSortedData = (
+      (await pageSorted.json()) as { data: { total: number; results: { id: number }[] } }
+    ).data;
+    check(
+      pageSortedData.total === 2 && pageSortedData.results[0]?.id === sortedLast.id,
+      "list-sort-before-pagination",
+    );
     const deleted = await request(`/api/lists?id=${second.id}`, "DELETE");
     check(deleted.status === 200, "list-delete-ids");
     owned.splice(owned.indexOf(second.id), 1);
