@@ -224,6 +224,20 @@ export function createRoles(db: Database, lists: ListReferences) {
         return "ok";
       });
     },
+    listScope(role: UserRole, listRoleId: bigint | null, permission: "list:get" | "list:manage") {
+      if (
+        role.id === 1n ||
+        role.permissions.includes(permission === "list:get" ? "lists:get_all" : "lists:manage_all")
+      )
+        return { all: true, ids: [] as bigint[] };
+      const entries = listRoleId === null ? null : this.listRole(listRoleId);
+      return {
+        all: false,
+        ids: (entries?.lists ?? [])
+          .filter((entry) => entry.permissions.includes(permission))
+          .map((entry) => entry.id),
+      };
+    },
     canList(
       role: UserRole,
       listRoleId: bigint | null,

@@ -87,6 +87,8 @@ bun run contract:normal
 bun run contract:auth
 bun run contract:roles
 bun run contract:roles:reference
+bun run contract:lists
+bun run contract:lists:reference
 bun run reference:run -- bun test/contract/auth.ts reference
 bun run contract:fixture
 bun run contract:reference
@@ -123,7 +125,7 @@ The separate fixture profile retains its synthetic auth gate and representative
 list/helper routes; generated ID/timestamp probes verify normalization only.
 The labelled `test/users` fixture composes production owners with fake-clock,
 peer and synthetic list controls for cases that cannot yet be provisioned through
-production list APIs. Neither fixture is evidence of a production list endpoint. Domain owners promote helper cases as their routes land.
+production list APIs. These fixtures are not evidence of production subscriber or campaign endpoints. The shared M1.5 list corpus runs against pinned upstream and the compiled production process, with real generated API credentials. Positive membership counts and campaign snapshots are separately labelled synthetic fixture evidence. Domain owners promote helper cases as their routes land.
 Public HTML 404 semantics and embedded static responses are covered in both
 upstream and compiled production, with explicit per-target site names and
 attribution. Repeat the reference-first observations with

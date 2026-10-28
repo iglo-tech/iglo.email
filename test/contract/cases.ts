@@ -63,8 +63,10 @@ const helper = (
   expected: Expectation,
 ): ContractCase => ({
   id,
-  group: "staged",
+  group: "core",
+  fixtureGroup: "staged",
   reference: endpoint(referencePath, expected),
+  production: endpoint(referencePath, expected),
   fixture: endpoint(fixturePath, expected),
   auth: "basic",
 });
@@ -336,18 +338,22 @@ export const cases: readonly ContractCase[] = freeze([
   ),
   ...["%2E", "%2E%2E"].map((id, index): ContractCase => ({
     id: index === 0 ? "encoded-dot" : "encoded-dot-dot",
-    group: "staged",
+    group: "core",
+    fixtureGroup: "staged",
     auth: "basic",
     difference: "D18",
     reference: endpoint(`/api/lists/${id}`, invalidID),
+    production: endpoint(`/api/lists/${id}`, notFound),
     fixture: endpoint(`/fixture/id/${id}`, productionHTML),
   })),
   {
     id: "literal-backslash",
-    group: "staged",
+    group: "core",
+    fixtureGroup: "staged",
     auth: "basic",
     difference: "D18",
     reference: endpoint("/api/lists\\1", notFound),
+    production: endpoint("/api/lists\\1", json(400, '{"message":"List not found"}')),
     fixture: endpoint("/fixture/id\\12", json(200, '{"data":12}')),
   },
   ...["%zz", "1%", "%2"].map((id, index) =>
@@ -399,7 +405,8 @@ export const cases: readonly ContractCase[] = freeze([
   },
   {
     id: "positive-id-overflow",
-    group: "staged",
+    group: "core",
+    fixtureGroup: "staged",
     auth: "basic",
     difference: "D17",
     reference: endpoint(
@@ -409,6 +416,7 @@ export const cases: readonly ContractCase[] = freeze([
         '{"message":"Error fetching Lists: pq: value \\\"9223372036854775807\\\" is out of range for type integer (22003)"}',
       ),
     ),
+    production: endpoint("/api/lists/9223372036854775808", invalidID),
     fixture: endpoint("/fixture/id/9223372036854775808", invalidID),
   },
   {

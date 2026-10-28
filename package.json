@@ -30,7 +30,10 @@
     "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",
     "contract:roles": "bun run build && bun test/contract/cli.ts owned roles && bun test/users/restart.ts",
     "contract:roles:reference": "bun run reference:run -- bun test/contract/roles.ts reference",
-    "roles:measure": "bun run build && bun test/users/measure-roles.ts"
+    "roles:measure": "bun run build && bun test/users/measure-roles.ts",
+    "contract:lists": "bun run build && bun test/contract/cli.ts owned lists && bun test ./test/lists/restart.ts",
+    "contract:lists:reference": "bun run reference:run -- bun test/contract/lists.ts reference",
+    "lists:measure": "bun run build && bun test/lists/measure.ts dist/iglo.email candidate"
   },
   "dependencies": {
     "liquidjs": "10.30.0",
