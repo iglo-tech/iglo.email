@@ -261,6 +261,70 @@ export async function runListsContract(target: {
       "list-negative-query-id-overflow",
     );
 
+    // DELETE preserves raw query selectors; all probes use unique owned names.
+    for (const [label, selector, expectedStatus] of [
+      ["empty-tag", "&tag=", 200],
+      ["padded-tag", "&tag=%20retained%20", 200],
+      ["padded-type", "&type=%20private%20", 400],
+      ["padded-optin", "&optin=%20single%20", 400],
+      ["padded-status", "&status=%20active%20", 400],
+    ] as const) {
+      const preserved = await create(`selector-${label}-${suffix}`, { tags: ["retained"] });
+      const response = await request(
+        `/api/lists?query=${encodeURIComponent(preserved.name)}${selector}`,
+        "DELETE",
+      );
+      check(response.status === expectedStatus, `delete-${label}-status`);
+      check(
+        (await request(`/api/lists/${preserved.id}`)).status === 200,
+        `delete-${label}-retained`,
+      );
+    }
+    const firstQuery = await create(`first-query-${suffix}`);
+    const firstEmpty = await request(
+      `/api/lists?query=&query=${encodeURIComponent(firstQuery.name)}`,
+      "DELETE",
+    );
+    check(firstEmpty.status === 400, "delete-first-query-empty");
+    check(
+      (await request(`/api/lists/${firstQuery.id}`)).status === 200,
+      "delete-first-query-retained",
+    );
+    const formPrefix = `form-delete-${suffix}`;
+    const formA = await create(`${formPrefix}-a`, { tags: ["a"] });
+    const formAB = await create(`${formPrefix}-ab`, { tags: ["a", "b"] });
+    const formDelete = await fetch(`${target.baseUrl}/api/lists`, {
+      method: "DELETE",
+      headers: { Authorization: auth, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams([
+        ["query", formPrefix],
+        ["all", "true"],
+        ["tag", "a"],
+        ["tag", "b"],
+      ]),
+    });
+    check(
+      formDelete.status === 400 &&
+        ((await formDelete.json()) as { message: string }).message ===
+          "One or more IDs are invalid: id or query required",
+      "delete-body-selectors-ignored",
+    );
+    for (const row of [formA, formAB])
+      check((await request(`/api/lists/${row.id}`)).status === 200, "delete-body-list-retained");
+    const conjunction = await request(
+      `/api/lists?query=${encodeURIComponent(formPrefix)}&tag=a&tag=b`,
+      "DELETE",
+    );
+    check(conjunction.status === 200, "delete-url-tag-conjunction");
+    check(
+      (await request(`/api/lists/${formA.id}`)).status === 200,
+      "delete-url-single-tag-retained",
+    );
+    check(
+      (await request(`/api/lists/${formAB.id}`)).status === 400,
+      "delete-url-both-tags-removed",
+    );
+
     const userRoleResponse = await request("/api/roles/users", "POST", {
       name: `m15-user-${suffix}`,
       permissions: [],
