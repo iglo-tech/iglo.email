@@ -53,14 +53,26 @@ export async function runSettingsContract(target: {
     headers: { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" },
     body: "AppFromEmail=sender%40example.invalid",
   });
-  check(form.status === 400 && JSON.stringify(await form.json()) === JSON.stringify({ message: "at least one `from` address is required" }), "form-no-tags");
+  check(
+    form.status === 400 &&
+      JSON.stringify(await form.json()) ===
+        JSON.stringify({ message: "at least one `from` address is required" }),
+    "form-no-tags",
+  );
   const xml = await fetch(`${target.baseUrl}/api/settings`, {
     method: "PUT",
     headers: { Authorization: authorization, "Content-Type": "application/xml" },
     body: "<Settings><AppFromEmail>sender@example.invalid</AppFromEmail><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
   });
   check(xml.status === 200, "xml-full-write");
-  check(JSON.stringify(((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data["app.from_email"]) === '["sender@example.invalid"]', "xml-projection");
+  check(
+    JSON.stringify(
+      ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+        "app.from_email"
+      ],
+    ) === '["sender@example.invalid"]',
+    "xml-projection",
+  );
   const smtpTest = await request("/api/settings/smtp/test", "POST", "{}");
   if (target.mode === "reference") {
     check(smtpTest.status === 400, "smtp-test-reference-missing-email");
@@ -127,10 +139,28 @@ export async function runSettingsContract(target: {
     "sender@[IPv6:::1]",
     "Group: sender@example.invalid;",
   ];
-  check((await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 200, "from-matrix-write");
-  check(JSON.stringify(((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data["app.from_email"]) === JSON.stringify(addressMatrix["app.from_email"]), "from-matrix-projection");
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 200,
+    "from-matrix-write",
+  );
+  check(
+    JSON.stringify(
+      ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+        "app.from_email"
+      ],
+    ) === JSON.stringify(addressMatrix["app.from_email"]),
+    "from-matrix-projection",
+  );
   addressMatrix["app.from_email"] = ["bad..local@example.invalid"];
-  check((await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 400, "from-invalid");
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 400,
+    "from-invalid",
+  );
+  addressMatrix["app.from_email"] = ["=?x-unknown?Q?abc?= <a@example.invalid>"];
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 400,
+    "from-unsupported-encoded-name",
+  );
   const cronCandidate = structuredClone(updated);
   cronCandidate["app.cache_slow_queries"] = true;
   cronCandidate["app.cache_slow_queries_interval"] = "not a cron";
@@ -139,17 +169,26 @@ export async function runSettingsContract(target: {
     "invalid-enabled-cron",
   );
   cronCandidate["app.cache_slow_queries_interval"] = "0 3 L * MON-FRI";
-  check((await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200, "valid-enabled-cron");
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200,
+    "valid-enabled-cron",
+  );
   cronCandidate["app.cache_slow_queries"] = false;
   cronCandidate["app.cache_slow_queries_interval"] = "invalid but unused";
-  check((await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200, "disabled-unused-cron");
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200,
+    "disabled-unused-cron",
+  );
   check(
     (await request("/api/settings/app.check_updates", "PUT", "false")).status === 200,
     "check-updates-false",
   );
   const invalidDuration = await request("/api/settings/security.session_duration", "PUT", '"0s"');
   check(invalidDuration.status === (target.mode === "reference" ? 200 : 400), "duration-d45");
-  check((await request("/api/settings/security.session_duration", "PUT", '"7d"')).status === 200, "duration-restore");
+  check(
+    (await request("/api/settings/security.session_duration", "PUT", '"7d"')).status === 200,
+    "duration-restore",
+  );
   const ordered = JSON.stringify(updated).replace(
     /"app.site_name":"[^"]*"/,
     '"app.site_name":"first","APP.SITE_NAME":"second","app.site_name":null',
