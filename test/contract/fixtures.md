@@ -119,6 +119,28 @@ password login is verified again in both modes. This probe is for these
 invocation-owned disposable targets only. It never alters a real account or
 leaves the harness bootstrap account converted.
 
+## Round-2 corrections and D29 observations
+
+The common corpus now also submits trailing slash/dot, literal/encoded parent,
+embedded parent text, absolute and scheme-relative paths, encoded final dot and
+query-only dots. Pinned upstream cleans valid destinations to `/api/profile`
+and rejects parent text to `/`. Each Location header is exact and the issued
+identity is checked through the actual protected profile. The root page itself
+is not ported and its response is not compared. The first draft expected a root
+404 in both modes; upstream's root redirect exposed that overly broad test
+assumption, which was removed before the reference specification was committed.
+The extended reference corpus passes, while the reviewed production code fails
+`login-next-trailing-slash` before the correction.
+
+D29's six marked sole-admin PUT cases cover omitted role/status, explicit zero
+role plus empty status, and either field omitted/defaulted independently. Each
+uses the existing username/name/email and preserves password login. Upstream
+returns its exact needSuper 400; production succeeds with the same enabled
+human Super Admin identity and no secret. A subsequent GET checks that authority
+is retained. The D28 conversion rejection, reference restoration in finally and
+last-admin password login still follow these cases. This is existing safe
+production behavior made explicit, not a new storage implementation.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is

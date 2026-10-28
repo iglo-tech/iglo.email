@@ -229,6 +229,42 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         target.admin.user,
       "login-escaped-destination-authenticated",
     );
+    for (const [name, next, expected] of [
+      ["trailing-slash", "/api/profile/", "/api/profile"],
+      ["trailing-dot", "/api/profile/.", "/api/profile"],
+      ["literal-parent", "/a/../api/profile", "/"],
+      ["encoded-parent", "/%2e%2e/api/profile", "/"],
+      ["query-dots", "/api/profile?next=..", "/api/profile"],
+      ["absolute-parent", "https://outside.example.test/a/../api/profile", "/"],
+      ["scheme-relative-slash", "//outside.example.test/api/profile/", "/api/profile"],
+      ["embedded-parent", "/api/pro..file", "/"],
+      ["encoded-final-dot", "/api/profile/%2E", "/api/profile"],
+    ] as const) {
+      const login = await form(target, target.admin.user, target.admin.password, true, next);
+      check(
+        login.response.status === 302 &&
+          login.response.headers.get("location") === expected &&
+          !!login.session,
+        `login-next-${name}`,
+      );
+      // Follow only after proving this is the known local destination, never the supplied host.
+      const followed = await request(target, expected, { cookie: login.session });
+      if (expected === "/api/profile") {
+        check(
+          (await user(followed)).username === target.admin.user,
+          `login-next-${name}-authenticated`,
+        );
+      } else {
+        // The root page is not ported. Its exact fallback Location is checked
+        // above; verify the issued identity at the ported profile boundary.
+        await followed.text();
+        check(
+          (await user(await request(target, "/api/profile", { cookie: login.session })))
+            .username === target.admin.user,
+          `login-next-${name}-fallback-session`,
+        );
+      }
+    }
     const invalidWithCookie = await request(target, "/api/health", {
       auth: "token invalid:invalid",
       cookie: admin.session,
@@ -831,6 +867,58 @@ async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> 
   );
   const admin = humans[0]!;
   try {
+    const defaults: [string, Record<string, unknown>][] = [
+      ["omitted-role-status", {}],
+      ["zero-empty-role-status", { user_role_id: 0, status: "" }],
+      ["omitted-role", { status: "enabled" }],
+      ["omitted-status", { user_role_id: 1 }],
+      ["zero-role", { user_role_id: 0, status: "enabled" }],
+      ["empty-status", { user_role_id: 1, status: "" }],
+    ];
+    for (const [name, fields] of defaults) {
+      const updated = await request(target, `/api/users/${admin.id}`, {
+        method: "PUT",
+        auth: basic,
+        body: {
+          username: admin.username,
+          name: admin.name,
+          email: admin.email,
+          type: "user",
+          password_login: true,
+          ...fields,
+        },
+      });
+      if (target.mode === "reference") {
+        check(
+          updated.status === 400 &&
+            ((await updated.json()) as { message: string }).message ===
+              "User(s) couldn't be updated. There has to be at least one active Super Admin user.",
+          `d29-last-admin-${name}`,
+        );
+      } else {
+        const unchanged = await user(updated);
+        check(
+          unchanged.id === admin.id &&
+            unchanged.name === admin.name &&
+            unchanged.username === admin.username &&
+            unchanged.status === "enabled" &&
+            unchanged.type === "user" &&
+            unchanged.user_role.id === 1 &&
+            !unchanged.password,
+          `d29-last-admin-${name}`,
+        );
+      }
+      const persisted = await user(
+        await request(target, `/api/users/${admin.id}`, { auth: basic }),
+      );
+      check(
+        persisted.type === "user" &&
+          persisted.status === "enabled" &&
+          persisted.user_role.id === 1 &&
+          persisted.username === admin.username,
+        `last-admin-${name}-authority-preserved`,
+      );
+    }
     const converted = await request(target, `/api/users/${admin.id}`, {
       method: "PUT",
       auth: basic,
