@@ -25,3 +25,10 @@ permitted confirmed membership. Cleanup uses only returned IDs.
 Binding regressions create invocation-owned list and subscriber identities with
 synthetic Unicode, form, XML, repeated-key and attribute inputs; each returned ID
 is removed in cleanup. No external messages are sent.
+
+The shared binding corpus exercises Go's ordered JSON slice and map binding,
+Unicode replacement and simple email casing, finite attribute values, form
+precedence, multipart fields, XML scalars and operation-owned inputs. D38
+paired controls mark reference rejection of a discarded single-path `ids` or
+remove-action `status` member versus the normal action and its stored state.
+The production extension checks the embedded Go BSD notice.

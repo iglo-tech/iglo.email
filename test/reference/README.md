@@ -230,3 +230,10 @@ external selectors, live scope and restart cases, and real positive list counts.
 see [subscriber fixtures](../subscribers/fixtures.md). External-ID cases are
 normal-only and are never attributed to upstream. D40 explicitly records the
 reference's int32 query-width errors and the native signed-64-bit outcomes.
+
+M1.6's shared subscriber binding regressions run against both compiled
+production and the pinned reference. They exercise ordered duplicate members,
+UTF-8/Unicode and numeric attribute boundaries, email normalization, bounded
+forms and XML scalars through HTTP. D38 cases label the reference's validation
+of fields that the relevant normal operation discards. The normal subscriber
+extension also checks the embedded Go standard-library notice.

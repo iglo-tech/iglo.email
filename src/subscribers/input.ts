@@ -124,12 +124,17 @@ function normalizeStrings(raw: string): string {
   }
   return result + raw.slice(start);
 }
-function jsonInput(body: string, allowed: ReadonlySet<string>): SubscriberInput {
+function jsonInput(
+  body: string,
+  allowed: ReadonlySet<string>,
+  operation: Operation,
+): SubscriberInput {
   const document: unknown = JSON.parse(body);
   if (document === null) return {};
   if (typeof document !== "object" || Array.isArray(document)) throw new Error("object required");
   const out: SubscriberInput = {};
   const backing = new Map<string, bigint[]>();
+  const actionStatuses: string[] = [];
   function append(member: string) {
     const colon = (() => {
       let quoted = false,
@@ -148,6 +153,10 @@ function jsonInput(body: string, allowed: ReadonlySet<string>): SubscriberInput 
     const key = (JSON.parse(member.slice(0, colon)) as string).toLowerCase().replaceAll("ſ", "s");
     const raw = member.slice(colon + 1);
     if (!allowed.has(key)) return;
+    if (key === "status" && (operation === "membership" || operation === "single-membership")) {
+      actionStatuses.push(raw);
+      return;
+    }
     if (key === "attribs") finiteNumbers(raw);
     let value: unknown = arrays.has(key)
       ? JSON.parse(raw, (_key: string, val: unknown, context?: { source?: string }) => {
@@ -208,6 +217,7 @@ function jsonInput(body: string, allowed: ReadonlySet<string>): SubscriberInput 
       start = i + 1;
     }
   }
+  if (out.action === "add") for (const raw of actionStatuses) set(out, "status", JSON.parse(raw));
   return out;
 }
 function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
@@ -311,7 +321,7 @@ export async function subscriberInput(
   const type = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
   try {
     if (!body.length) return {};
-    if (type === "application/json") return jsonInput(body.toString("utf8"), allowed);
+    if (type === "application/json") return jsonInput(body.toString("utf8"), allowed, operation);
     if (type === "application/xml" || type === "text/xml") return xmlInput(body, allowed);
     if (type === "application/x-www-form-urlencoded" || type === "multipart/form-data") {
       const out: SubscriberInput = {};
