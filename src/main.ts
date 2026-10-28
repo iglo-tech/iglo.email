@@ -7,6 +7,10 @@ import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap } from "@/config/bootstrap";
 import { startServer } from "@/server/server";
 import { createRouter } from "@/server/server";
+import { createListStore } from "@/lists/store";
+import { registerListRoutes } from "@/lists/routes";
+import { createListCounts } from "@/subscribers/list-counts";
+import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
@@ -24,12 +28,18 @@ async function main(): Promise<void> {
   const clock = createRealClock();
   const db = openDatabase(bootstrap.config.dataDir);
   let lists: ReturnType<typeof createListReferences> | undefined;
+  let listStore: ReturnType<typeof createListStore> | undefined;
+  let counts: ReturnType<typeof createListCounts> | undefined;
+  let campaigns: ReturnType<typeof createCampaignListReferences> | undefined;
   let roles: ReturnType<typeof createRoles> | undefined;
   let users: ReturnType<typeof createUserStore> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
     roles = createRoles(db, lists);
+    counts = createListCounts(db);
+    campaigns = createCampaignListReferences(db);
+    listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
     const auth = await createAuthentication(
       users,
@@ -48,6 +58,7 @@ async function main(): Promise<void> {
     });
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
+    registerListRoutes(router, listStore, roles, auth);
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       const shutdown = () => {
@@ -60,6 +71,9 @@ async function main(): Promise<void> {
     });
   } finally {
     users?.close();
+    listStore?.close();
+    campaigns?.close();
+    counts?.close();
     roles?.close();
     lists?.close();
     db.close(true);

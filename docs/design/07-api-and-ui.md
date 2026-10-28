@@ -18,6 +18,7 @@ Deliberate differences:
 |---|---|---|
 | SQL in `query` parameters (`/api/subscribers?query=…`, `/api/subscribers/query/*`) | SQLite dialect, not Postgres | Different database |
 | Overflowing numeric route IDs | Positive IDs above `9223372036854775807` return HTTP 400 with `{"message":"invalid ID"}` before storage access, instead of upstream's saturated ID and database-error 500 | Invalid input should be a client error; avoid exposing database internals or issuing a query for an unrepresentable ID ([D17](09-decisions.md#d17-reject-positive-route-id-overflow-before-storage)) |
+| List IDs within signed 64-bit range but above PostgreSQL integer range | SQLite accepts these identities: a missing list GET/PUT returns 400 List not found and DELETE returns success; pinned PostgreSQL returns a database-error 500 | The storage engine supports 64-bit identities, and valid SQLite identities should not be artificially capped at PostgreSQL integer width. Paired cases record the exact behavior; accepted under [D34](09-decisions.md#d34-native-list-identity-width-and-the-separate-role-input-limit). The existing role-child JSON input still rejects IDs above JavaScript's safe integer range. D17 handles values beyond signed 64-bit range |
 | Request-path normalization | Bun removes literal or encoded `.` / `..` segments and rewrites literal backslashes to slashes before routing; the canonical target determines the response. In the shared-contract fixture, `/api/lists/%2E` and `/api/lists/%2E%2E` reach the API fallback rather than upstream's 400 `invalid ID`, and `/fixture/id\12` reaches ID 12 where upstream treats the backslash as a literal segment character. Exact `/public/static/%2e%2e/style.css` leaves the static prefix after Bun normalization and returns the public HTML 404 instead of upstream's plain-text static 404; both refuse the resource | Keep the required `Bun.serve` transport and one URL interpretation for routing and route middleware, rather than introduce a second HTTP parser for spellings the runtime does not expose ([D18](09-decisions.md#d18-use-buns-normalized-request-path)) |
 | Embedded static asset methods | HEAD returns the corresponding GET resource metadata without a body (200 for an existing asset, 404 for a missing one), instead of upstream's 405. OPTIONS and 405 responses advertise `OPTIONS, GET, HEAD`, while upstream advertises `OPTIONS, GET` | Inspect existence/type/size/cache metadata without downloading resources; advertise the methods actually implemented ([D21](09-decisions.md#d21-support-head-for-embedded-assets)) |
 | Explicit API credentials with a session cookie | A nonempty Authorization header selects the API identity and never falls back to the cookie on failure | The upstream v3 compatibility shim ignores explicit credentials whenever a session cookie is present; stale cookies must not break API calls or silently select another principal ([D26](09-decisions.md#d26-authentication-bootstrap-and-credential-boundaries)) |
@@ -99,7 +100,7 @@ Public `/health` remains public; `/api/health` requires a real identity.
   - subscriber page tabs for events, enrollments and sends.
 - **Dropped screens:** none in v1 beyond the dropped features. OIDC settings stay hidden until OIDC is built.
 
-M1.3 adds the functional password-login form and real auth boundary under D26; M1.4 adds the second-factor form under D30. Full admin screens, dashboard and password reset remain their later tasks. M0.6 serves embedded static assets and the public HTML 404. Unmatched `/admin/*` currently uses that public 404; the upstream admin-specific error view remains pending real authentication and M4.1. The compiled admin shell fixture is not a production admin route.
+M1.5 implements the authenticated lists API with live membership counts; subscriber and campaign APIs remain future work. M1.3 adds the functional password-login form and real auth boundary under D26; M1.4 adds the second-factor form under D30. Full admin screens, dashboard and password reset remain their later tasks. M0.6 serves embedded static assets and the public HTML 404. Unmatched `/admin/*` currently uses that public 404; the upstream admin-specific error view remains pending real authentication and M4.1. The compiled admin shell fixture is not a production admin route.
 
 ## Public pages
 
@@ -118,6 +119,15 @@ New, for sends (transactional and sequence messages):
 - `/m/:sendUUID/unsubscribe`: page and one-click `POST`;
 - `/m/:sendUUID/link/:linkUUID`: tracked links;
 - `/m/:sendUUID/px.png`: view pixel.
+
+
+M1.5 list writes accept JSON and XML through the bounded list decoder. XML
+field names follow the Go model's case-sensitive local names, with repeated
+`Tags` elements; JSON uses Go's case-insensitive field aliases and ordered
+repeated writable fields. D36 ignores response-only and unknown metadata in
+both formats; those fields cannot assign identity, timestamps or counts. D35's
+declaration, depth, body and normalized tag limits and XML character/reference
+integrity are covered by paired cases; the suite does not claim complete XML parity.
 
 D37 replaces the XML implementation with a strict streaming parser. XML UTF-8,
 syntax and characters are validated only through the consumed first root;

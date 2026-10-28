@@ -728,9 +728,8 @@ export async function runContract(
   }
   if (target.profile === "probe")
     lines.push("NOTE synthetic harness probe; no upstream domain or production coverage");
-  if (target.target !== "upstream")
-    lines.push("PENDING production: list validation/domain routes (M1.5)");
-  if (target.target === "upstream") lines.push("PENDING production: list domain routes (M1.5)");
+  if (target.target === "fixture")
+    lines.push("NOTE synthetic helper routes; production lists run separately");
   lines.push(`RESULT ${selectedCases.length - failures} passed, ${failures} failed`);
   return { passed: failures === 0, lines };
 }

@@ -30,12 +30,16 @@
     "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",
     "contract:roles": "bun run build && bun test/contract/cli.ts owned roles && bun test/users/restart.ts",
     "contract:roles:reference": "bun run reference:run -- bun test/contract/roles.ts reference",
-    "roles:measure": "bun run build && bun test/users/measure-roles.ts"
+    "roles:measure": "bun run build && bun test/users/measure-roles.ts",
+    "contract:lists": "bun run build && bun test/contract/cli.ts owned lists && bun test ./test/lists/restart.ts",
+    "contract:lists:reference": "bun run reference:run -- bun test/contract/lists.ts reference",
+    "lists:measure": "bun run build && bun test/lists/measure.ts dist/iglo.email candidate"
   },
   "dependencies": {
     "liquidjs": "10.30.0",
     "nodemailer": "10.2.1",
-    "qrcode": "1.5.4"
+    "qrcode": "1.5.4",
+    "saxes": "6.0.0"
   },
   "devDependencies": {
     "@codemirror/commands": "6.10.4",
@@ -62,5 +66,8 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "packageManager": "bun@1.4.4"
+  "packageManager": "bun@1.4.4",
+  "patchedDependencies": {
+    "saxes@6.0.0": "patches/saxes@6.0.0.patch"
+  }
 }

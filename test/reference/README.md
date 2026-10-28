@@ -87,6 +87,8 @@ bun run contract:normal
 bun run contract:auth
 bun run contract:roles
 bun run contract:roles:reference
+bun run contract:lists
+bun run contract:lists:reference
 bun run reference:run -- bun test/contract/auth.ts reference
 bun run contract:fixture
 bun run contract:reference
@@ -123,7 +125,7 @@ The separate fixture profile retains its synthetic auth gate and representative
 list/helper routes; generated ID/timestamp probes verify normalization only.
 The labelled `test/users` fixture composes production owners with fake-clock,
 peer and synthetic list controls for cases that cannot yet be provisioned through
-production list APIs. Neither fixture is evidence of a production list endpoint. Domain owners promote helper cases as their routes land.
+production list APIs. These fixtures are not evidence of production subscriber or campaign endpoints. The shared M1.5 list corpus runs against pinned upstream and the compiled production process, with real generated API credentials. Positive membership counts and campaign snapshots are separately labelled synthetic fixture evidence. Domain owners promote helper cases as their routes land.
 Public HTML 404 semantics and embedded static responses are covered in both
 upstream and compiled production, with explicit per-target site names and
 attribution. Repeat the reference-first observations with
@@ -182,3 +184,38 @@ The application decodes names once and cleans separators within the original
 embedded namespace, without arbitrary filesystem lookup.
 
 M1.4 D32 cases distinguish required top-level user-role permission replacement (omitted/null: reference 500, normal safe 400, unchanged stored role) from compatible omitted/null/[] list-child clearing. The common role corpus runs these in both modes; the labelled synthetic-list HTTP fixture additionally proves removal of an existing grant and its effective access.
+
+
+The D35 list corpus additionally exercises ordered Go JSON field aliases and
+slice replacement, XML local field names and repeated elements, predefined and
+numeric entities, CDATA, and the explicitly bounded XML declaration/depth/body
+cases. It records upstream POST 500/22001 and PUT truncation against the normal
+safe 400/no-write tag boundary. Compiled `contract:lists` also checks the XML
+parser's complete locked notice closure through HTTP after starting from a
+detached working directory. These cases do not assert complete XML parity.
+
+D36 covers ignored response-only metadata independently of writable fields,
+including create/update outcomes, generated identity/timestamp/count protection
+and GET snapshots. D37 corrects malformed consumed XML (ignored attributes,
+comments and text included), invalid consumed UTF-8 and first-root suffix
+handling. The paired corpus uses bytes for invalid-encoding cases and preserves
+JSON replacement decoding. Complete first roots followed by incomplete or
+invalid-byte unused suffixes remain accepted; body-size limits still apply to
+the whole request.
+
+The current parser is saxes 6.0.0 (ISC) with xmlchars 2.2.0 (MIT), replacing
+fast-xml-parser and its closure. The published saxes directory omits LICENSE;
+the complete source notice from registry gitHead
+211fa0ebec9b628affc09219199639887174bfc3 is bundled as a version-specific
+override. A committed Bun patch corrects only its TypeScript 6 declaration
+constraints and optional-property types; runtime JavaScript is unchanged and
+strict checking remains enabled. Frozen installs reproduce that patch.
+
+The event parser supplies XML syntax, character/reference and comment handling.
+The application counts depth on opening events, rejects DTD (no registration,
+expansion or external resolver), maps direct writable text/CDATA and stops after
+the first complete root. Fatal UTF-8 decoding at ASCII > boundaries ensures
+invalid consumed bytes fail without decoding the unused suffix. Compiled
+HTTP restart acceptance serves both current notices and confirms the old
+parser/override notice paths are absent. No complete XML/Go parity or parser
+maintenance guarantee is claimed; the dependency is pinned and upstream archived.

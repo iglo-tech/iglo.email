@@ -1,7 +1,7 @@
-// Bounded request bodies for the user routes adapted from listmonk cmd/users.go and cmd/auth.go.
+// Bounded user/list request bodies adapted from listmonk cmd/users.go, cmd/auth.go and cmd/lists.go.
 import { HttpError } from "@/server/response";
 
-export async function readBody(request: Request): Promise<string> {
+export async function readBodyBytes(request: Request): Promise<Buffer> {
   const limit = 64 * 1024;
   if (Number(request.headers.get("content-length")) > limit) throw new HttpError(413);
   const chunks: Uint8Array[] = [];
@@ -23,5 +23,9 @@ export async function readBody(request: Request): Promise<string> {
       reader.releaseLock();
     }
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
+}
+
+export async function readBody(request: Request): Promise<string> {
+  return (await readBodyBytes(request)).toString("utf8");
 }

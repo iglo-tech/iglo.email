@@ -90,7 +90,14 @@ describe("owned production lifecycle", () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "iglo-contract-cli-cleanup-"));
     try {
       const child = Bun.spawn(
-        [process.execPath, "test/contract/cli.ts", "owned", "production", "--case", "invalid-id"],
+        [
+          process.execPath,
+          "test/contract/cli.ts",
+          "owned",
+          "production",
+          "--case",
+          "probe-entities",
+        ],
         {
           cwd: repository,
           env: { PATH: process.env.PATH ?? "", TMPDIR: temporaryRoot },
