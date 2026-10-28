@@ -8,11 +8,16 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.5 (lists CRUD, tags, opt-in types and counts) is active at **brief**. M1.4 is merged and all prior delegates are terminal with its watch stopped. The same run retains its 2026-10-28T13:08:24.215458+00:00 start, so it remains within four hours. M1.5 is the next eligible critical-path task under the work plan. The named task branch prefix is absent; no duplicate worker is started. [Brief](briefs/M1.5.md).
+M1.5 (lists CRUD, tags, opt-in types and counts) is active at **worker**. M1.4 is merged and all prior delegates are terminal with its watch stopped. The same run retains its 2026-10-28T13:08:24.215458+00:00 start, so it remains within four hours. M1.5 is the next eligible critical-path task under the work plan. The named task branch prefix is absent; no duplicate worker is started. [Brief](briefs/M1.5.md).
 
 D33 extends the literal name-query policy to list reads/query-deletes, permits explicit description clearing while retaining omission/null behavior, and authorizes narrow subscriber count/campaign-reference owners to preserve table ownership before their full APIs exist. The worker must verify exact paired reference cases first and distinguish fixture-only positive counts/references from actual compiled list acceptance. No settings, subscriber/campaign CRUD, admin screens, sending or loops are included.
 
-Expected branch task/M1.5-lists; worker dispatch pending. Exactly one isolated GPT-6.1 Terra max worker is authorized, with no helper. Council round 0, no PR or watch yet; both future council reviewers are fresh Sol xhigh, with no Anthropic use. Record task/thread identifiers after dispatch and end the turn without waiting or polling. Automation remains unchanged and unbound.
+One isolated GPT-6.1 Terra max worker is running on expected branch task/M1.5-lists from origin/main: [M1.5: Lists CRUD, tags, opt-in types and counts](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.5-worker-20261028T1431). Model gpt-6.1-terra, target.options reasoningEffort=max, isolation worktree. No helper or duplicate worker is authorized. Council round 0, no PR or watch yet; both future council reviewers are fresh Sol xhigh, with no Anthropic use. Identifiers are recorded below; completion wakes this run, so this turn ends without waiting or polling. Automation remains unchanged and unbound.
+
+- Worker task ID: `node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.5-worker-20261028T1431`.
+- Worker thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.5-worker-20261028T1431`.
+- Initial worker run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.5-worker-20261028T1431:ordinal:1`.
+- Idempotent dispatch request: `iglo-email-M1.5-worker-20261028T1431`.
 
 ## Automation
 
