@@ -31,6 +31,12 @@ Query files stay as named SQL files (`-- name: get-subscriber`), the format list
 
 Persistent integer identities use SQLite `AUTOINCREMENT` so automatically allocated committed IDs are not reused after deletion. This preserves upstream SERIAL/BIGSERIAL identity assumptions, including retained session user IDs and references stored outside foreign keys. Application owners allocate IDs automatically and never insert a previously used or lower explicit ID; SQLite permits explicit IDs. The subscriber campaign high-water cursor depends on the same rule. SQLite `NOCASE` folds ASCII characters only, not arbitrary Unicode. Application code supplies UUIDs and sortable UTC timestamps; SQL defaults for translated upstream timestamps use UTC ISO-8601 with milliseconds. SQLite does not validate timestamp strings. Detailed foreign-key and retention choices are recorded in [M1.1 schema evidence](../perf/M1.1-schema.md).
 
+The user owner stores opaque session IDs and JSON containing the user identity
+and session-bound CSRF value. The injected clock and session policy determine
+expiry; the user is reloaded on each access. User and session writes use this
+schema without an additional migration. The role owner supplies role projections
+and permission checks, and the list owner supplies read-only labels.
+
 ## Segment queries
 
 listmonk lets admins write raw SQL `WHERE` fragments over `subscribers`, for example `subscribers.attribs->>'city' = 'Bengaluru'`. SQLite 3.38+ supports `->` and `->>` with the same meaning, so many existing queries work unchanged. Postgres-specific functions do not, and that breaking change is accepted (documented in the admin UI help text).

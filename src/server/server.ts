@@ -13,6 +13,7 @@ export function startServer(app: App, router: Router = createRouter()) {
   return Bun.serve({
     hostname: app.bootstrap.host,
     port: app.bootstrap.port,
-    fetch: (request) => router.handle(app, request),
+    fetch: (request, server) =>
+      router.handle(app, request, server.requestIP(request)?.address ?? "unknown"),
   });
 }

@@ -6,6 +6,13 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap } from "@/config/bootstrap";
 import { startServer } from "@/server/server";
+import { createRouter } from "@/server/server";
+import { createListReferences } from "@/lists/references";
+import { createRoles } from "@/roles/roles";
+import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
+import { bootstrapAdmin } from "@/users/bootstrap";
+import { registerUserRoutes } from "@/users/routes";
+import { createUserStore } from "@/users/store";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -16,8 +23,22 @@ async function main(): Promise<void> {
 
   const clock = createRealClock();
   const db = openDatabase(bootstrap.config.dataDir);
+  let lists: ReturnType<typeof createListReferences> | undefined;
+  let roles: ReturnType<typeof createRoles> | undefined;
+  let users: ReturnType<typeof createUserStore> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
+    lists = createListReferences(db);
+    roles = createRoles(db, lists);
+    users = createUserStore(db, clock, roles);
+    const auth = await createAuthentication(
+      users,
+      roles,
+      clock,
+      bootstrap.config.rootUrl,
+      defaultAuthPolicy,
+    );
+    await bootstrapAdmin(users, auth, bootstrap.config.initialAdmin);
     const app = createApp({
       bootstrap: bootstrap.config,
       clock,
@@ -25,7 +46,9 @@ async function main(): Promise<void> {
       logger: createErrorLogger(),
       i18n: createTranslation(),
     });
-    const server = startServer(app);
+    const router = createRouter();
+    registerUserRoutes(router, users, roles, auth);
+    const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       const shutdown = () => {
         process.off("SIGTERM", shutdown);
@@ -36,6 +59,9 @@ async function main(): Promise<void> {
       process.once("SIGINT", shutdown);
     });
   } finally {
+    users?.close();
+    roles?.close();
+    lists?.close();
     db.close(true);
   }
 }

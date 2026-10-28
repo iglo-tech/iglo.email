@@ -32,8 +32,10 @@ export async function withProduction<T>(
   executable: string,
   signal: AbortSignal,
   run: (origin: string, signal: AbortSignal) => Promise<T>,
+  admin?: { user: string; password: string },
+  timeoutMs = 30_000,
 ): Promise<T> {
-  const lifetime = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+  const lifetime = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
   const directory = await mkdtemp(join(tmpdir(), "iglo-contract-production-"));
   let child: GroupChild | undefined;
   let closed: Promise<number> | undefined;
@@ -57,7 +59,16 @@ export async function withProduction<T>(
         "--data-dir",
         join(directory, "data"),
       ],
-      { cwd: directory, env: { PATH: "" }, stdio: ["ignore", "ignore", "pipe"] },
+      {
+        cwd: directory,
+        env: {
+          PATH: "",
+          ...(admin
+            ? { IGLO_EMAIL_ADMIN_USER: admin.user, IGLO_EMAIL_ADMIN_PASSWORD: admin.password }
+            : {}),
+        },
+        stdio: ["ignore", "ignore", "pipe"],
+      },
     );
     let errors = "";
     child.stderr?.on("data", (chunk: Buffer) => {
@@ -117,4 +128,63 @@ export async function withProduction<T>(
   }
   if (shutdownFailure) throw shutdownFailure;
   return result as T;
+}
+
+// Provision only through the compiled process's real login and protected user API.
+export async function provisionApiUser(origin: string, admin: { user: string; password: string }) {
+  const page = await fetch(`${origin}/admin/login`);
+  const html = await page.text();
+  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(html)?.[1];
+  const nonceCookie = page.headers
+    .getSetCookie()
+    .find((item) => item.startsWith("nonce="))
+    ?.split(";", 1)[0];
+  if (page.status !== 200 || !nonce || !nonceCookie)
+    throw new Error("Unable to obtain production login form");
+  const login = await fetch(`${origin}/admin/login`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: nonceCookie },
+    body: new URLSearchParams({
+      username: admin.user,
+      password: admin.password,
+      nonce,
+      next: "/api/profile",
+    }),
+  });
+  const session = login.headers
+    .getSetCookie()
+    .find((item) => item.startsWith("session="))
+    ?.split(";", 1)[0];
+  const csrf = login.headers
+    .getSetCookie()
+    .find((item) => item.startsWith("csrf="))
+    ?.split(";", 1)[0];
+  if (login.status !== 302 || !session || !csrf)
+    throw new Error("Unable to log into production bootstrap account");
+  const user = "m13-contract-api";
+  const response = await fetch(`${origin}/api/users`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: `${session}; ${csrf}`,
+      "X-CSRF-Token": csrf.slice("csrf=".length),
+    },
+    body: JSON.stringify({ username: user, type: "api", status: "enabled", user_role_id: 1 }),
+  });
+  if (response.status !== 200)
+    throw new Error("Unable to create production contract API credential");
+  let data: { data?: { username?: unknown; password?: unknown } };
+  try {
+    data = (await response.json()) as { data?: { username?: unknown; password?: unknown } };
+  } catch {
+    throw new Error("Invalid production contract API credential");
+  }
+  if (
+    data.data?.username !== user ||
+    typeof data.data.password !== "string" ||
+    !/^[A-Za-z0-9]{48}$/.test(data.data.password)
+  )
+    throw new Error("Invalid production contract API credential");
+  return { user, token: data.data.password };
 }

@@ -26,6 +26,11 @@ Deliberate differences:
 | Initial administrator setup | Provision only from the explicit bootstrap environment pair when there are no users; no unauthenticated first-account claim form | Follow D14, keep first-account ownership at the server and preserve existing users (D26) |
 | Session revocation | Disabling/deleting/changing authentication identity revokes retained sessions; re-enabling does not revive them | A previously issued session must not regain access after an account is disabled and later restored (D26) |
 | Header-only API logout | Return the ordinary success envelope without claiming token revocation when no cookie session exists | Avoid upstream's cookie-session dereference failure for an otherwise authenticated API call (D26) |
+| Invalid user/list role on user creation or update | Return HTTP 400 with a safe invalid-role message before writing | The reference API-user failure returns a database error containing the generated token digest; client validation must not disclose credential material ([D27](09-decisions.md#d27-safe-user-role-validation-and-credential-type-changes)) |
+| Human/API account type conversion | Password-login humans require a fresh password when converted from API type; conversion to API clears the human credential and disables password login | Argon2id password hashes and SHA-256 token digests serve distinct authentication paths and must not be retained as one another; no token-rotation endpoint is added (D27) |
+| API-user profile updates | A name-only PUT /api/profile succeeds without human email/password; supplied email/password and account-control fields cannot change its API credential or account identity | Upstream projects any stored credential as password login, requires an irrelevant email and can overwrite an API digest with a human password hash; display-name updates must keep credential types separate ([D28](09-decisions.md#d28-api-profile-updates-and-preserving-a-human-administrator)) |
+| Last human Super Admin type conversion | Reject converting the last enabled human Super Admin to API type with the existing needSuper error | Upstream's update guard checks replacement role/status but omits type, allowing the last human administrator to disappear; preserve a usable human administration path (D28) |
+| Partial updates to the sole human Super Admin | Omitted/zero user_role_id and omitted/empty status retain stored values before the administrator guard; a safe ordinary update succeeds | Upstream tests raw defaults and returns needSuper even though its SET expressions would preserve the same authority. Callers should not have to resend unchanged role/status fields; explicit removal of the final human administrator remains rejected ([D29](09-decisions.md#d29-apply-the-administrator-guard-to-the-resulting-account-state)) |
 | Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
 | `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
 | `POST /api/tx` recipients | Any email address can receive a transactional email. It does not have to be a subscriber first; listmonk's default mode rejects unknown addresses ([Sending](04-sending.md#transactional-api)) | A one-off email to someone is not a subscription. Forcing callers to create a subscriber first, or to know about `subscriber_mode`, is bookkeeping with no benefit |
@@ -50,7 +55,7 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
 
 ## Authentication and permissions
 
-- **Admin users:** username and password (hashed with `Bun.password`, argon2id), optional TOTP 2FA, sessions in SQLite, `HttpOnly` + `SameSite=Lax` cookies, and CSRF tokens on every state-changing admin form.
+- **Admin users:** username and password (hashed with `Bun.password`, argon2id), sessions in SQLite, `HttpOnly` + `SameSite=Lax` cookies, and CSRF tokens on state-changing cookie requests. TOTP is deferred to M1.4; marked accounts fail closed until then.
 - **API users:** same model as listmonk (`type = 'api'`, token per user).
 - **Roles:** listmonk's user roles and list roles, with the same permission names. New permissions:
   - `sequences:get`, `sequences:manage`;
@@ -58,6 +63,17 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
   - `sends:get`, `sends:manage`;
   - `webhooks:manage`.
 - **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe) are rate-limited per IP in memory. M1.3 login uses the explicit injected policy and transport peer address under D26; M1.2 supplies persisted configuration later.
+
+M1.3's `GET /admin/login` supplies a pre-login nonce in the form and a host-only
+HttpOnly cookie; `POST /admin/login` requires both. A successful login issues a
+new seven-day session cookie and a readable host-only `csrf` cookie, both with
+`Path=/` and `SameSite=Lax`; HTTPS root URLs add `Secure`. Cookie-authenticated
+unsafe API requests, including logout, send the `csrf` cookie value as
+`X-CSRF-Token`. A supplied foreign `Origin` is rejected. Header-authenticated
+API clients do not need CSRF cookies. The default login limit is 20 POSTs per
+transport peer per minute, with at most 4,096 live peer records. Forwarded IP
+headers are ignored. Invalid explicit Authorization never falls back to a cookie.
+Public `/health` remains public; `/api/health` requires a real identity.
 
 ## Admin UI
 

@@ -109,7 +109,7 @@ export class Router {
     this.routes.sort(precedence);
   }
 
-  async handle(app: App, request: Request): Promise<Response> {
+  async handle(app: App, request: Request, peerAddress = "unknown"): Promise<Response> {
     const url = new URL(request.url);
     const path = routingPath(url.pathname);
     if (path === undefined)
@@ -129,7 +129,7 @@ export class Router {
         break;
       }
     }
-    const context: RequestContext = { app, request, url, params };
+    const context: RequestContext = { app, request, url, params, peerAddress };
     const fallback: Handler = () => {
       if (url.pathname.startsWith("/api/")) throw new HttpError(404, "404 unknown endpoint");
       const asset = assetResponse(url.pathname, request.method);

@@ -26,8 +26,8 @@ Start the HTTP server. Bootstrap options override their environment equivalents:
   --root-url <url>       IGLO_EMAIL_ROOT_URL   Public root URL (default: http://<host>:<port>)
   --help                                        Show this help
 
-IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD are reserved for initial
-admin setup, which is not yet implemented. Credentials are not required to serve.
+IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD initialize the first admin
+only when no users exist. Without them public health is available but login is denied.
 `;
 
 export function parseBootstrap(args: string[], env: Environment): BootstrapResult {
