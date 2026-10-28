@@ -39,6 +39,24 @@ export async function runSubscriberBindingRevisions(target: {
       `{"email":"binding-${suffix}@example.test","ids":"metadata","attribs":{"old":1},"lists":[${list.id}],"LISTS":[null]}`,
     );
     check(sub.lists.length === 1 && sub.lists[0].id === list.id, "slice-reuse");
+    for (const [i, lists, expected] of [
+      [0, `[${list.id},${list.id}],\"lists\":[0],\"lists\":[null,null]`, true],
+      [1, `[${list.id}],\"lists\":null,\"lists\":[null]`, false],
+      [2, `[${list.id}],\"lists\":[],\"lists\":[null]`, false],
+    ] as const) {
+      const item = await create(
+        "subscribers",
+        `{"email":"slice-${i}-${suffix}@example.test","lists":${lists}}`,
+      );
+      check(
+        item.lists.some((entry: any) => entry.id === list.id) === expected,
+        "slice-repetitions",
+      );
+      check(
+        (await get(item.id)).lists.some((entry: any) => entry.id === list.id) === expected,
+        "slice-repetitions-persisted",
+      );
+    }
     for (const raw of [
       '{"attribs":null,"attribs":{"b":2}}',
       '{"attribs":{"a":1},"ATTRIBS":null,"attribs":{"b":2}}',
@@ -96,6 +114,47 @@ export async function runSubscriberBindingRevisions(target: {
       invalid.status === 400 && JSON.stringify(await get(sub.id)) === JSON.stringify(before),
       "email-literal-no-write",
     );
+    for (const method of ["PUT", "PATCH"]) {
+      const address = `${method.toLowerCase()}-${suffix}@a\ufeffb`;
+      const r = await request(
+        `/api/subscribers/${sub.id}`,
+        method,
+        JSON.stringify({ email: address }),
+      );
+      check(
+        r.status === 200 &&
+          (await r.json()).data.email === address &&
+          (await get(sub.id)).email === address,
+        "email-update",
+      );
+      const prior = await get(sub.id);
+      const bad = await request(
+        `/api/subscribers/${sub.id}`,
+        method,
+        JSON.stringify({ email: `bad-${suffix}@[nonsense]` }),
+      );
+      check(
+        bad.status === 400 && JSON.stringify(await get(sub.id)) === JSON.stringify(prior),
+        "email-update-invalid",
+      );
+    }
+    if (target.mode !== "reference") {
+      const ext = await create(
+        "subscribers",
+        JSON.stringify({ email: `ext-${suffix}@example.test`, external_id: `binding-${suffix}` }),
+      );
+      const r = await request(
+        `/api/subscribers/external?external_id=binding-${suffix}`,
+        "PUT",
+        JSON.stringify({ email: `İ-ext-${suffix}@example.test` }),
+      );
+      check(
+        r.status === 200 &&
+          (await r.json()).data.email === `i-ext-${suffix}@example.test` &&
+          (await get(ext.id)).email === `i-ext-${suffix}@example.test`,
+        "external-email",
+      );
+    }
     const form = await create(
       "subscribers",
       `email=first-${suffix}%40example.test&email=last-${suffix}%40example.test&name=First&name=Last`,
@@ -129,6 +188,47 @@ export async function runSubscriberBindingRevisions(target: {
       );
       check(xml.email === `xml-${i}-${suffix}@example.test`, "xml-default");
     }
+    const xmlBad = await request(
+      `/api/subscribers/${sub.id}`,
+      "PATCH",
+      `<Subscriber><PreconfirmSubs>no</PreconfirmSubs></Subscriber>`,
+      "application/xml",
+    );
+    const xmlBefore = await get(sub.id);
+    check(xmlBad.status === 400, "xml-invalid-bool");
+    const xmlBadInt = await request(
+      `/api/subscribers/${sub.id}`,
+      "PATCH",
+      `<Subscriber><Lists>1.0</Lists></Subscriber>`,
+      "application/xml",
+    );
+    check(
+      xmlBadInt.status === 400 && JSON.stringify(await get(sub.id)) === JSON.stringify(xmlBefore),
+      "xml-invalid-no-write",
+    );
+    const unchanged = await get(sub.id);
+    const malformed = await request(`/api/subscribers/${sub.id}`, "PATCH", '{"ignored":{"a":}}');
+    check(
+      malformed.status === 400 && JSON.stringify(await get(sub.id)) === JSON.stringify(unchanged),
+      "ignored-invalid-document",
+    );
+    const seedPath = await request(`/api/subscribers/${sub.id}`, "PATCH", `{"lists":[${list.id}]}`);
+    check(
+      seedPath.status === 200 &&
+        (await get(sub.id)).lists.some((entry: any) => entry.id === list.id),
+      "path-seed",
+    );
+    const pathAction = await request(
+      `/api/subscribers/lists/${sub.id}`,
+      "PUT",
+      `{"ids":"metadata","target_list_ids":[${list.id}],"action":"remove"}`,
+    );
+    check(pathAction.status === (target.mode === "reference" ? 400 : 200), "D38-path-owned-ids");
+    check(
+      (await get(sub.id)).lists.some((entry: any) => entry.id === list.id) ===
+        (target.mode === "reference"),
+      "D38-path-owned-ids-state",
+    );
     const block = await request(
       "/api/subscribers/blocklist",
       "PUT",
