@@ -86,6 +86,10 @@ The user-list reference also confirms PostgreSQL's null placement for
 `loggedin_at`: nulls follow timestamps in ascending order and precede them in
 descending order.
 
+The user route also follows D17 for positive 64-bit overflow. A role ID JSON
+token with a fractional value that would round to an integer in JavaScript is
+rejected in both modes instead of silently binding the rounded ID.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is
@@ -112,7 +116,7 @@ ported upstream domain endpoint.
 
 M1.3 has promoted the same protected-health cases to real compiled-production
 authentication, removing the fixture-only gap. `contract:normal` now reports
-35 compiled core cases, including user-validation cases; `contract:auth`
+37 compiled core cases, including user-validation cases; `contract:auth`
 and its matching reference invocation exercise the stateful user/auth corpus.
 The empty-list-role and lower-permission normal cases remain labelled fixture
 evidence because role-management endpoints are deferred. Domain workers

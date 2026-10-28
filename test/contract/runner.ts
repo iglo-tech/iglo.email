@@ -14,7 +14,7 @@ const differences: Readonly<
   Record<Difference, { readonly cases: readonly string[]; readonly reason: string }>
 > = {
   D17: {
-    cases: ["positive-id-overflow"],
+    cases: ["positive-id-overflow", "users-positive-id-overflow"],
     reason:
       "reject unrepresentable IDs before storage; docs/design/07-api-and-ui.md and 09-decisions.md#d17-reject-positive-route-id-overflow-before-storage",
   },
@@ -136,6 +136,7 @@ function selected(item: ContractCase, target: ContractTarget): boolean {
   if (target.profile === "all") return item.group !== "probe" && item.group !== "production-only";
   return (
     item.group === target.profile ||
+    (target.target === "fixture" && item.fixtureGroup === target.profile) ||
     (target.target === "production" && item.group === "production-only")
   );
 }
@@ -728,11 +729,8 @@ export async function runContract(
   if (target.profile === "probe")
     lines.push("NOTE synthetic harness probe; no upstream domain or production coverage");
   if (target.target !== "upstream")
-    lines.push(
-      "PENDING production: protected health/auth (M1.3); list validation/domain routes (M1.5)",
-    );
-  if (target.target === "upstream")
-    lines.push("PENDING production: protected health/auth (M1.3); list domain routes (M1.5)");
+    lines.push("PENDING production: list validation/domain routes (M1.5)");
+  if (target.target === "upstream") lines.push("PENDING production: list domain routes (M1.5)");
   lines.push(`RESULT ${selectedCases.length - failures} passed, ${failures} failed`);
   return { passed: failures === 0, lines };
 }

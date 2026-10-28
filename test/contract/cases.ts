@@ -142,6 +142,33 @@ export const cases: readonly ContractCase[] = freeze([
     reference: endpoint("/api/users/not-an-id", invalidID),
     production: endpoint("/api/users/not-an-id", invalidID),
   },
+  {
+    id: "users-fractional-role-id",
+    group: "core",
+    method: "POST",
+    auth: "basic",
+    requestContentType: "application/json",
+    requestBody:
+      '{"username":"synthetic-user","type":"api","status":"enabled","user_role_id":1.0000000000000001}',
+    reference: endpoint("/api/users", json(400, '{"message":"Bad Request"}')),
+    production: endpoint("/api/users", json(400, '{"message":"Bad Request"}')),
+  },
+  {
+    id: "users-positive-id-overflow",
+    group: "core",
+    fixtureGroup: "staged",
+    auth: "basic",
+    difference: "D17",
+    reference: endpoint(
+      "/api/users/9223372036854775808",
+      json(
+        500,
+        '{"message":"Error fetching Users: pq: value \\"9223372036854775807\\" is out of range for type integer (22003)"}',
+      ),
+    ),
+    production: endpoint("/api/users/9223372036854775808", invalidID),
+    fixture: endpoint("/fixture/id/9223372036854775808", invalidID),
+  },
   ...[
     [
       "users-update-missing-short-password",
@@ -163,7 +190,7 @@ export const cases: readonly ContractCase[] = freeze([
     ],
   ].map(([id, requestBody, status, body]): ContractCase => ({
     id: id as string,
-    group: "reference-only",
+    group: "core",
     method: "PUT",
     auth: "basic",
     requestContentType: "application/json",

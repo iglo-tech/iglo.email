@@ -380,6 +380,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       `m13-${suffix}@[127.0.0.256]`,
       `m13-${suffix}@[IPv6:::1]`,
       `m13-${suffix}@[::1]`,
+      `m13-${suffix}\u0000@example.test`,
     ].entries()) {
       const response = await request(target, "/api/users", {
         method: "POST",
