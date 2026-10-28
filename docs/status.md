@@ -31,6 +31,14 @@ D45 authorizes immutable creation-time expiry in existing session JSON and a nar
 
 The lead pushed the missing settings CI commands on the existing PR at 5b6c03db173584959a0f3017c4a76142a49fb335 using the already available SSH identity. Both two-job Ubuntu x86-64 workflows retain compiled/reference settings gates; YAML/job checks and formatting passed. No credential/scope change or owner action is required. [M1.2 completion brief](briefs/M1.2-fix-1.md) authorizes the exact D45 user-store/auth/login seam and requires all remaining binding/address/cron/security/atomicity acceptance, with English-only runtime stated honestly. One fresh Terra max fixer will finish the same PR; no council/watch begins while implementation is incomplete.
 
+
+The sole completion fixer is dispatched: [M1.2: Complete settings and immutable session lifetime](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix1-complete-5b6c03d), GPT-6.1 Terra max, implementation role, worktree isolation and target.options, starting from PR #14 head 5b6c03d. It returned running without pending question/approval and no child work. The original worker is terminal; there is no duplicate or helper. The next instruction is to end the turn and let completion wake the lead. No polling/waiting, council dispatch or PR watch while substantive implementation remains incomplete. Continuous fleet management continues immediately through the next stage and next eligible task after merge.
+
+- Completion fixer task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix1-complete-5b6c03d.
+- Completion fixer thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix1-complete-5b6c03d.
+- Initial fixer run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-fix1-complete-5b6c03d:ordinal:1.
+- Idempotent request: iglo-email-M1.2-fix1-complete-5b6c03d.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
