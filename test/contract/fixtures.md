@@ -90,6 +90,35 @@ The user route also follows D17 for positive 64-bit overflow. A role ID JSON
 token with a fractional value that would round to an integer in JavaScript is
 rejected in both modes instead of silently binding the rounded ID.
 
+## Round-1 corrections and D28 observations
+
+On 2026-10-28 the lead extended the same stateful corpus, then ran
+`bun run reference:run -- bun test/contract/auth.ts reference` before changing
+production redirect code. All 59 reference assertions passed. The new normal
+case failed at `login-escaped-destination-canonical` on the reviewed code:
+`next=/api/%70rofile` must redirect to `/api/profile`, and that destination must
+return the authenticated identity. This is compatible behavior, not a new
+API difference.
+
+D28 marks two precise differences. An API name-only profile PUT returns
+upstream 400 `Invalid fields: email` and normal 200. A profile PUT with a valid
+human password/email returns 200 in both modes, with secrets omitted and
+account-control fields ignored. An ordinary admin update then refreshes the
+reference's API cache: the original token stops working upstream because the
+profile query replaced its persisted digest with a password hash. The normal
+original token must still work; the supplied password must never work as an API
+token in either mode. No digest, generated credential or response diagnostic is
+printed.
+
+After cleaning all invocation-created users, the common corpus verifies the
+owned bootstrap account is the sole enabled human Super Admin. Its conversion
+to API type returns upstream 200 and normal 400 with the existing needSuper
+error. The reference bootstrap account is restored in a finally block through
+the independent API administrator, using the known synthetic bootstrap password;
+password login is verified again in both modes. This probe is for these
+invocation-owned disposable targets only. It never alters a real account or
+leaves the harness bootstrap account converted.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is

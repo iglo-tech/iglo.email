@@ -45,8 +45,9 @@ async function form(
   username: string,
   password: string,
   includeNonce = true,
+  next = "/api/profile",
 ): Promise<Login> {
-  const page = await fetch(`${target.baseUrl}/admin/login?next=%2Fapi%2Fprofile`, {
+  const page = await fetch(`${target.baseUrl}/admin/login?${new URLSearchParams({ next })}`, {
     redirect: "manual",
   });
   const html = await page.text();
@@ -60,7 +61,7 @@ async function form(
     body: new URLSearchParams({
       username,
       password,
-      next: "/api/profile",
+      next,
       ...(includeNonce ? { nonce } : {}),
     }),
   });
@@ -210,6 +211,24 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     );
     const profile = await request(target, "/api/profile", { cookie: admin.session });
     check((await user(profile)).username === target.admin.user, "login-profile");
+    const escaped = await form(
+      target,
+      target.admin.user,
+      target.admin.password,
+      true,
+      "/api/%70rofile",
+    );
+    check(
+      escaped.response.status === 302 &&
+        escaped.response.headers.get("location") === "/api/profile" &&
+        !!escaped.session,
+      "login-escaped-destination-canonical",
+    );
+    check(
+      (await user(await request(target, "/api/profile", { cookie: escaped.session }))).username ===
+        target.admin.user,
+      "login-escaped-destination-authenticated",
+    );
     const invalidWithCookie = await request(target, "/api/health", {
       auth: "token invalid:invalid",
       cookie: admin.session,
@@ -506,6 +525,76 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       (await request(target, "/api/health", { auth: apiAuth })).status === 200,
       "users-created-token-auth",
     );
+    const nameOnly = await request(target, "/api/profile", {
+      method: "PUT",
+      auth: apiAuth,
+      body: { name: "API display name" },
+    });
+    if (target.mode === "reference") {
+      check(
+        nameOnly.status === 400 &&
+          ((await nameOnly.json()) as { message: string }).message === "Invalid fields: email",
+        "d28-api-profile-name-only",
+      );
+    } else {
+      const renamed = await user(nameOnly);
+      check(renamed.name === "API display name" && !renamed.password, "d28-api-profile-name-only");
+    }
+    const suppliedPassword = "m13-profile-password-not-api-token";
+    const apiProfile = await user(
+      await request(target, "/api/profile", {
+        method: "PUT",
+        auth: apiAuth,
+        body: {
+          name: "API supplied credential probe",
+          email: `${apiName}@example.test`,
+          password: suppliedPassword,
+          username: "attempted-profile-rename",
+          type: "user",
+          status: "disabled",
+          user_role_id: 999,
+        },
+      }),
+    );
+    check(
+      apiProfile.id === api.id &&
+        apiProfile.name === "API supplied credential probe" &&
+        apiProfile.username === apiName &&
+        apiProfile.type === "api" &&
+        apiProfile.status === "enabled" &&
+        apiProfile.user_role.id === 1 &&
+        apiProfile.email === null &&
+        !apiProfile.password,
+      "api-profile-restricted-fields-and-secret-omission",
+    );
+    // Upstream caches API credentials. An ordinary admin update reloads that cache,
+    // exposing whether the profile write actually preserved the persisted token.
+    await user(
+      await request(target, `/api/users/${api.id}`, {
+        method: "PUT",
+        auth: basic,
+        body: {
+          username: apiName,
+          name: apiProfile.name,
+          type: "api",
+          status: "enabled",
+          user_role_id: 1,
+        },
+      }),
+    );
+    check(
+      (await request(target, "/api/health", { auth: apiAuth })).status ===
+        (target.mode === "reference" ? 403 : 200),
+      "d28-api-profile-preserves-persisted-token",
+    );
+    check(
+      (
+        await request(target, "/api/health", {
+          auth: header({ user: apiName, token: suppliedPassword }),
+        })
+      ).status === 403,
+      "api-profile-password-is-not-api-token",
+    );
     const conversionName = `m13-convert-${suffix}`;
     const conversion = await user(
       await request(target, "/api/users", {
@@ -726,6 +815,81 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     if (cleanupFailed) process.stderr.write("FAIL cleanup-user\n");
   }
   if (cleanupFailed) throw new Error("FAIL cleanup-user");
+  await lastHumanAdmin(target, basic);
+}
+
+/** Both callers own a disposable target; restore its bootstrap account even on failure. */
+async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> {
+  const response = await request(target, "/api/users", { auth: basic });
+  const list = (await response.json()) as { data: UserRecord[] };
+  const humans = list.data.filter(
+    (entry) => entry.type === "user" && entry.status === "enabled" && entry.user_role.id === 1,
+  );
+  check(
+    response.status === 200 && humans.length === 1 && humans[0]!.username === target.admin.user,
+    "last-admin-owned-bootstrap-precondition",
+  );
+  const admin = humans[0]!;
+  try {
+    const converted = await request(target, `/api/users/${admin.id}`, {
+      method: "PUT",
+      auth: basic,
+      body: {
+        username: admin.username,
+        name: admin.name,
+        type: "api",
+        status: "enabled",
+        user_role_id: 1,
+      },
+    });
+    check(
+      converted.status === (target.mode === "reference" ? 200 : 400),
+      "d28-last-human-admin-conversion-guard",
+    );
+    if (target.mode === "reference") {
+      check((await user(converted)).type === "api", "d28-reference-final-human-converted");
+    } else {
+      check(
+        ((await converted.json()) as { message: string }).message ===
+          "User(s) couldn't be updated. There has to be at least one active Super Admin user.",
+        "d28-last-human-admin-error",
+      );
+      const preserved = await user(
+        await request(target, `/api/users/${admin.id}`, { auth: basic }),
+      );
+      check(
+        preserved.type === "user" &&
+          preserved.status === "enabled" &&
+          preserved.username === admin.username,
+        "d28-last-human-admin-preserved",
+      );
+    }
+  } finally {
+    if (target.mode === "reference") {
+      const restored = await user(
+        await request(target, `/api/users/${admin.id}`, {
+          method: "PUT",
+          auth: basic,
+          body: {
+            username: admin.username,
+            name: admin.name,
+            email: admin.email,
+            type: "user",
+            status: "enabled",
+            user_role_id: 1,
+            password_login: true,
+            password: target.admin.password,
+          },
+        }),
+      );
+      check(
+        restored.type === "user" && restored.username === admin.username && !restored.password,
+        "last-admin-reference-restored",
+      );
+    }
+  }
+  const login = await form(target, target.admin.user, target.admin.password);
+  check(login.response.status === 302 && !!login.session, "last-admin-password-login-preserved");
 }
 
 if (import.meta.main) {
