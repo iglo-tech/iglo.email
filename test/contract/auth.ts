@@ -313,6 +313,33 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         list.data.some((entry) => entry.id === human.id && !entry.password),
       "users-list",
     );
+    for (const direction of ["asc", "desc"] as const) {
+      const orderedResponse = await request(
+        target,
+        `/api/users?order_by=loggedin_at&order=${direction}`,
+        { auth: basic },
+      );
+      const ordered = ((await orderedResponse.json()) as { data: { loggedin_at: string | null }[] })
+        .data;
+      check(
+        orderedResponse.status === 200 &&
+          Array.isArray(ordered) &&
+          ordered.some((entry) => entry.loggedin_at === null) &&
+          ordered.some((entry) => entry.loggedin_at !== null) &&
+          ordered.every(
+            (entry, index) =>
+              index === 0 ||
+              (direction === "asc"
+                ? entry.loggedin_at === null ||
+                  (ordered[index - 1]!.loggedin_at !== null &&
+                    Date.parse(ordered[index - 1]!.loggedin_at!) <= Date.parse(entry.loggedin_at))
+                : ordered[index - 1]!.loggedin_at === null ||
+                  (entry.loggedin_at !== null &&
+                    Date.parse(ordered[index - 1]!.loggedin_at!) >= Date.parse(entry.loggedin_at))),
+          ),
+        `users-loggedin-order-${direction}`,
+      );
+    }
     const literalEmail = `m13-${suffix}@[127.0.0.1]`;
     const literalResponse = await request(target, "/api/users", {
       method: "POST",

@@ -82,6 +82,9 @@ Additional email observations confirm acceptance of an IPv4 address literal,
 and rejection of consecutive dots, quoted local parts, non-IP literals, invalid
 IPv4 literals and the tested IPv6 literal spellings. These are exercised in
 both modes through user creation.
+The user-list reference also confirms PostgreSQL's null placement for
+`loggedin_at`: nulls follow timestamps in ascending order and precede them in
+descending order.
 
 ## Normal fixture credentials and probe data
 
@@ -109,7 +112,7 @@ ported upstream domain endpoint.
 
 M1.3 has promoted the same protected-health cases to real compiled-production
 authentication, removing the fixture-only gap. `contract:normal` now reports
-32 compiled core cases, including nine user-validation cases; `contract:auth`
+35 compiled core cases, including user-validation cases; `contract:auth`
 and its matching reference invocation exercise the stateful user/auth corpus.
 The empty-list-role and lower-permission normal cases remain labelled fixture
 evidence because role-management endpoints are deferred. Domain workers
