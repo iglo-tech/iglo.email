@@ -90,11 +90,17 @@ export function registerSubscriberRoutes(
           .split("@")[0]!
           .replaceAll(".", " ")
           .split(/\s+/)
-          .map((w) =>
-            w.replace(
-              /(^|[^\p{L}])(\p{L})/gu,
-              (_, before: string, letter: string) => before + letter.toUpperCase(),
-            ),
+          .map((word) =>
+            [...new Intl.Segmenter("und", { granularity: "word" }).segment(word)]
+              .map((part) =>
+                part.isWordLike
+                  ? part.segment.replace(/\p{L}/u, (letter) => {
+                      const upper = Array.from(letter.toUpperCase());
+                      return (upper[0] ?? "") + upper.slice(1).join("").toLowerCase();
+                    })
+                  : part.segment,
+              )
+              .join(""),
           )
           .join(" ");
     }

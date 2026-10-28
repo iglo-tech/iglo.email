@@ -130,6 +130,23 @@ export async function runSubscribersContract(target: {
         `subscriber-email-boundary-${accepted}`,
       );
     }
+    for (const [local, expected] of [
+      ["o'connor", "O'connor"],
+      ["foo_bar", "Foo_bar"],
+      ["o+brien", "O+Brien"],
+      ["élan", "Élan"],
+      ["ßoo", "Ssoo"],
+      ["a1b", "A1b"],
+    ] as const) {
+      const result = await raw(
+        JSON.stringify({ email: `${local}-${suffix}@example.test` }),
+        "application/json",
+      );
+      check(
+        result.response.status === 200 && result.value.data.name.startsWith(`${expected}-`),
+        "subscriber-name-unicode-title",
+      );
+    }
     const aliases = await raw(
       `{"email":"wrong-${suffix}@example.test","EMAIL":"alias-${suffix}@example.test","name":"A","NAME":null,"attribs":{"n":1}}`,
       "application/json",
