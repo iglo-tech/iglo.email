@@ -21,6 +21,39 @@ v7.0.0-beta.1 at `6fcd95f32bb633d3a62a06c383c0b3322eecc898` and passed the
 The run also verified the reference sides of D17 and D18. This is upstream
 behavior evidence, not production authentication coverage.
 
+## M1.3 reference-first observations
+
+On 2026-10-28, before production users or authentication were implemented,
+these commands ran against the pinned disposable upstream:
+
+```sh
+bun run reference:run -- bun test/contract/cli.ts run --mode reference --target upstream --profile all
+bun run reference:run -- bun test/contract/auth.ts reference
+```
+
+The first command passed 52 cases, including nine new user validation and
+unauthenticated cases. The second uses only HTTP, creates uniquely named users,
+and removes only those users. It confirmed Basic and token authentication,
+login, profile and user reads, creation, update, batch deletion, token secrecy,
+disabled-token denial, and restricted profile updates. The generated credentials
+and cookies remain in memory. The checked-in fixture passwords are synthetic.
+
+The reference outcomes underlying D26 were observed as follows:
+
+| Case                                                   | Pinned upstream                                        | D26 production expectation                    |
+| ------------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------- |
+| Invalid explicit header with a valid session cookie    | Cookie wins; protected health succeeds                 | Header wins; request is denied                |
+| Valid API header with a different valid session cookie | Profile identifies the cookie user                     | Profile identifies the API user               |
+| Password POST without the login nonce                  | Login succeeds                                         | Login is denied                               |
+| Human created with spaces around the password          | Exact submitted password is trimmed on login and fails | Exact submitted password succeeds             |
+| Header-only `POST /api/logout`                         | Connection is closed after the session assertion fails | Success envelope; API token remains valid     |
+| Session logout without a CSRF token                    | Logout succeeds                                        | Logout is denied without changing the session |
+
+Malformed authorization schemes, invalid Base64, missing pairs, and empty keys
+return 403 with an embedded `code=400, message=...` error string. A disabled
+API credential is rejected on the next request. These observations are
+reference evidence only; they are not a claim of compiled-production coverage.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is
