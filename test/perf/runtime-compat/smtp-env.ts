@@ -31,6 +31,7 @@ export function referenceMailpit(env: NodeJS.ProcessEnv): ReferenceMailpit {
     api.protocol !== "http:" ||
     api.hostname !== "127.0.0.1" ||
     !api.port ||
+    Number(api.port) < 1 ||
     Number(api.port) > 65535 ||
     api.username ||
     api.password ||
@@ -40,4 +41,15 @@ export function referenceMailpit(env: NodeJS.ProcessEnv): ReferenceMailpit {
   )
     throw new Error("Mailpit API must be a numeric loopback HTTP origin with an explicit port");
   return { api: api.origin, host, port: Number(portText), runId };
+}
+
+// The runner labels its Mailpit and disables relay. Verify before sending any mail.
+export async function assertOwnedMailpit(reference: ReferenceMailpit) {
+  const response = await fetch(`${reference.api}/api/v1/webui`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) throw new Error("Cannot verify reference Mailpit identity");
+  const info = (await response.json()) as { Label?: string; MessageRelay?: { Enabled?: boolean } };
+  if (info.Label !== reference.runId || info.MessageRelay?.Enabled !== false)
+    throw new Error("Mailpit is not the labelled, relay-disabled reference for this run");
 }

@@ -13,8 +13,8 @@ export interface FixtureInput {
 export function engine(mode: "html" | "plain", options: LiquidOptions = {}) {
   const liquid = new Liquid({
     ownPropertyOnly: true,
-    // An empty in-memory mapping disables disk and network template resolution.
-    templates: {},
+    // A null-prototype empty map denies disk/network and inherited template names.
+    templates: Object.create(null),
     strictFilters: true,
     parseLimit: 64 * 1024,
     renderLimit: 1000,

@@ -10,6 +10,21 @@ export function startLiquidFixture() {
         return new Response("Not found", { status: 404 });
       try {
         const input = (await request.json()) as FixtureInput & { action?: string };
+        if (input.action === "prototype-array") {
+          const array: string[] = [];
+          array.length = 1;
+          Object.setPrototypeOf(
+            array,
+            Object.assign(Object.create(Array.prototype), { 0: "inherited-fixture" }),
+          );
+          return Response.json({
+            result: render({
+              mode: "plain",
+              body: "{{ arr[0] }}|{% for item in arr %}{{ item }}{% endfor %}",
+              data: { arr: array },
+            }),
+          });
+        }
         if (input.action === "prototype") {
           const subscriber = Object.assign(Object.create({ hidden: "secret" }), {
             visible: "visible",

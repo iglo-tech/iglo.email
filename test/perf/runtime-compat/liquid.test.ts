@@ -25,7 +25,7 @@ async function render(origin: string, input: object) {
 
 test("HTML values escape by default, raw is explicit, and text and subjects stay plain", async () => {
   await withRenderer(async (origin) => {
-    const data = { subscriber: { name: `A<&\"'`, attribs: { city: "Łódź" } } };
+    const data = { subscriber: { name: `A<&"'`, attribs: { city: "Łódź" } } };
     expect(
       await render(origin, {
         body: "{{ subscriber.name }} / {{ subscriber.name | raw }} / {{ subscriber.attribs.city }} / {{ subscriber.missing.deep }}",
@@ -37,7 +37,7 @@ test("HTML values escape by default, raw is explicit, and text and subjects stay
     });
     expect(
       await render(origin, { mode: "plain", body: "Subject {{ subscriber.name }}", data }),
-    ).toEqual({ status: 200, result: `Subject A<&\"'` });
+    ).toEqual({ status: 200, result: `Subject A<&"'` });
   });
 });
 
@@ -72,7 +72,13 @@ test("own properties are visible, inherited properties are hidden and missing va
 test("include, render and layout cannot resolve fixture-external files or URLs", async () => {
   await withRenderer(async (origin) => {
     for (const tag of ["include", "render", "layout"]) {
-      for (const target of ["/fixture-canary.txt", "https://example.test/canary"]) {
+      for (const target of [
+        "/fixture-canary.txt",
+        "https://example.test/canary",
+        "constructor",
+        "toString",
+        "__proto__",
+      ]) {
         const response = await render(origin, { body: `{% ${tag} '${target}' %}` });
         expect(response.status).toBe(400);
         expect(response.error).toContain("ENOENT");
@@ -92,5 +98,23 @@ test("parse and operation-allocation limits reject bounded examples", async () =
     });
     expect(memory.status).toBe(400);
     expect(memory.error).toContain("memory alloc limit exceeded");
+  });
+});
+
+// These observed limits deliberately document gaps M1.8 must close around the library.
+test("allocation accounting does not cap direct output and iteration can surface an inherited array element", async () => {
+  await withRenderer(async (origin) => {
+    const payload = "x".repeat(4096);
+    expect(
+      await render(origin, {
+        limit: "small-memory",
+        body: "{{ payload | raw }}",
+        data: { payload },
+      }),
+    ).toEqual({ status: 200, result: payload });
+    expect(await render(origin, { action: "prototype-array" })).toEqual({
+      status: 200,
+      result: "|inherited-fixture",
+    });
   });
 });

@@ -1,4 +1,4 @@
-// Non-pooled control; bounded synthetic sends only to the owned Mailpit reference.
+// Non-pooled control and bounded pool; synthetic sends only to the owned Mailpit reference.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { arch, cpus, platform, release, totalmem } from "node:os";
@@ -7,6 +7,7 @@ import { referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { control } from "@/test/perf/runtime-compat/smtp-control";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { percentile } from "@/test/perf/runtime-compat/metrics";
+import { processCheck } from "@/test/perf/runtime-compat/process-check";
 
 const args = new Set(process.argv.slice(2));
 for (const arg of args)
@@ -33,7 +34,10 @@ console.log(
   }),
 );
 console.log(JSON.stringify({ kind: "correctness", ...(await control(reference)) }));
-async function run(count: number, repetition: string) {
+console.log(
+  JSON.stringify({ kind: "compiled", ...(await processCheck("compiled-smtp", reference)) }),
+);
+async function run(count: number, repetition: string, mode: "non-pooled" | "pooled") {
   const marker = `m08${reference.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
   const mailpit = new Mailpit(reference, marker);
   const latencies: number[] = [];
@@ -47,6 +51,49 @@ async function run(count: number, repetition: string) {
     active = 0;
   let peakRss = process.memoryUsage().rss;
   const responses = new Set<string>();
+  const live = new Set<number>();
+  const assignments = new Map<number, number>();
+  let resources = 0,
+    peakResources = 0,
+    closedResources = 0,
+    notIdle = 0;
+  const log = (entry: { component?: string; tnx?: string; action?: string; cid?: number }) => {
+    if (entry.component !== "smtp-pool" || typeof entry.cid !== "number") return;
+    if (entry.tnx === "pool" && entry.action === "conection") {
+      resources++;
+      live.add(entry.cid);
+      peakResources = Math.max(peakResources, live.size);
+    }
+    if (entry.tnx === "pool" && entry.action === "assign")
+      assignments.set(entry.cid, (assignments.get(entry.cid) ?? 0) + 1);
+    if (entry.tnx === "connection" && entry.action === "closed") {
+      live.delete(entry.cid);
+      closedResources++;
+    }
+  };
+  const logger = { trace: log, debug: log, info: log, warn: log, error: log, fatal: log };
+  const options = {
+    host: reference.host,
+    port: reference.port,
+    secure: false,
+    ignoreTLS: true,
+    disableFileAccess: true,
+    disableUrlAccess: true,
+    connectionTimeout: 5000,
+    socketTimeout: 10000,
+  };
+  const pool =
+    mode === "pooled"
+      ? nodemailer.createTransport({
+          ...options,
+          pool: true,
+          maxConnections: 4,
+          maxMessages: 50,
+          maxRequeues: 0,
+          idleTimeout: 30_000,
+          logger,
+        })
+      : undefined;
   try {
     for (let offset = 0; offset < count; offset += 100) {
       const end = Math.min(count, offset + 100);
@@ -61,16 +108,8 @@ async function run(count: number, repetition: string) {
           const begin = performance.now();
           active++;
           peakActive = Math.max(peakActive, active);
-          const transport = nodemailer.createTransport({
-            host: reference.host,
-            port: reference.port,
-            secure: false,
-            ignoreTLS: true,
-            disableFileAccess: true,
-            disableUrlAccess: true,
-            connectionTimeout: 5000,
-            socketTimeout: 10000,
-          });
+          const transport = pool ?? nodemailer.createTransport(options);
+          if (pool && !pool.isIdle()) notIdle++;
           try {
             const info = await transport.sendMail({
               from: "sender@example.test",
@@ -88,7 +127,7 @@ async function run(count: number, repetition: string) {
             failures++;
             throw error;
           } finally {
-            transport.close();
+            if (!pool) transport.close();
             active--;
             latencies.push(performance.now() - begin);
           }
@@ -109,8 +148,9 @@ async function run(count: number, repetition: string) {
       observationMs += performance.now() - observationStart;
       peakRss = Math.max(peakRss, process.memoryUsage().rss);
     }
+    pool?.close();
     return {
-      mode: "non-pooled",
+      mode,
       repetition,
       count,
       accepted,
@@ -124,11 +164,34 @@ async function run(count: number, repetition: string) {
       peakActive,
       peakSampledRssBytes: peakRss,
       responses: [...responses],
+      poolObservations: pool
+        ? {
+            createdResources: resources,
+            peakLiveResources: peakResources,
+            closedResources,
+            maxMessagesAssignedPerResource: Math.max(0, ...assignments.values()),
+            assignments: [...assignments.values()].reduce((a, b) => a + b, 0),
+            producerSawNotIdle: notIdle,
+            producerMaxOutstanding: peakActive,
+          }
+        : null,
     };
   } finally {
+    pool?.close();
     await mailpit.removeOwned();
   }
 }
-console.log(JSON.stringify({ kind: "warmup", ...(await run(smoke ? 10 : 100, "warmup")) }));
-for (let i = 1; i <= repetitions; i++)
-  console.log(JSON.stringify({ kind: "repetition", ...(await run(count, String(i))) }));
+console.log(
+  JSON.stringify({ kind: "warmup", ...(await run(smoke ? 10 : 100, "warmup", "non-pooled")) }),
+);
+if (!args.has("--control-only"))
+  console.log(
+    JSON.stringify({ kind: "warmup", ...(await run(smoke ? 10 : 100, "warmup", "pooled")) }),
+  );
+for (let i = 1; i <= repetitions; i++) {
+  console.log(
+    JSON.stringify({ kind: "repetition", ...(await run(count, String(i), "non-pooled")) }),
+  );
+  if (!args.has("--control-only"))
+    console.log(JSON.stringify({ kind: "repetition", ...(await run(count, String(i), "pooled")) }));
+}

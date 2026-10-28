@@ -2,7 +2,11 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import nodemailer from "nodemailer";
-import { referenceMailpit, type ReferenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import {
+  assertOwnedMailpit,
+  referenceMailpit,
+  type ReferenceMailpit,
+} from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import {
   alternateBody,
@@ -16,7 +20,8 @@ import {
 } from "@/test/perf/runtime-compat/smtp-expect";
 import { verifyFixtureDkim } from "@/test/perf/runtime-compat/dkim-check";
 
-export async function control(reference: ReferenceMailpit) {
+export async function control(reference: ReferenceMailpit, pooled = false) {
+  await assertOwnedMailpit(reference);
   const marker = `m08${reference.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
   const mailpit = new Mailpit(reference, marker);
   const { privateKey, publicKey } = generateKeyPairSync("rsa", {
@@ -25,6 +30,7 @@ export async function control(reference: ReferenceMailpit) {
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
   const transport = nodemailer.createTransport({
+    ...(pooled ? { pool: true as const, maxConnections: 2, maxMessages: 5, maxRequeues: 0 } : {}),
     host: reference.host,
     port: reference.port,
     secure: false,
@@ -42,30 +48,24 @@ export async function control(reference: ReferenceMailpit) {
       to: "visible@example.test",
       headers: { "X-Fixture": marker },
     };
-    // Public stream transport exposes emitted MIME before Mailpit reconstructs Bcc.
-    const stream = nodemailer.createTransport({
-      streamTransport: true,
-      buffer: true,
-      disableFileAccess: true,
-      disableUrlAccess: true,
-    });
-    try {
-      const built = await stream.sendMail({
-        ...common,
-        subject: `${marker} stream`,
-        cc: "copy@example.test",
-        bcc: "hidden@example.test",
-        text: "synthetic",
-        messageId: expectedHtml,
+    // Public stream plugin observes the SMTP transport's generated MIME before signing.
+    let outgoingBccAbsent = false;
+    transport.use("stream", (mail, done) => {
+      if (mail.data.subject !== `${marker} html`) {
+        done();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      const stream = mail.message.createReadStream();
+      stream.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+      stream.once("error", done);
+      stream.once("end", () => {
+        outgoingBccAbsent = !headers(Buffer.concat(chunks).toString()).some((line) =>
+          /^bcc:/i.test(line),
+        );
+        done(outgoingBccAbsent ? undefined : new Error("Bcc leaked into outgoing MIME"));
       });
-      assert.ok(Buffer.isBuffer(built.message));
-      assert.ok(
-        !headers(built.message.toString()).some((line) => /^bcc:/i.test(line)),
-        "Bcc leaked into emitted MIME",
-      );
-    } finally {
-      stream.close();
-    }
+    });
     const plain = await transport.sendMail({
       ...common,
       subject: `${marker} plain`,
@@ -100,6 +100,7 @@ export async function control(reference: ReferenceMailpit) {
       subject: `${marker} automatic`,
       text: "Generated ID",
     });
+    assert.ok(outgoingBccAbsent);
     assert.equal(plain.messageId, expectedPlain);
     assert.equal(html.messageId, expectedHtml);
     assert.deepEqual([...html.accepted].sort(), [
@@ -149,7 +150,7 @@ export async function control(reference: ReferenceMailpit) {
       predeterminedIds: 2,
       automaticId: automatic.messageId.replace(/<.*@/, "<generated@"),
       dkim: "verified, corruption rejected",
-      outgoingBcc: "absent in public stream transport; reconstructed by Mailpit",
+      outgoingBcc: "absent in SMTP stream plugin; reconstructed by Mailpit",
       messages: messages.length,
     };
   } finally {

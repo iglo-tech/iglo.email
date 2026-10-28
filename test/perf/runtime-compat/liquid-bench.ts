@@ -6,6 +6,7 @@ import { arch, cpus, platform, release, totalmem } from "node:os";
 import { createRealClock } from "@/clock";
 import { compile, engine, renderCompiled } from "@/test/perf/runtime-compat/liquid-render";
 import { percentile } from "@/test/perf/runtime-compat/metrics";
+import { processCheck } from "@/test/perf/runtime-compat/process-check";
 
 const args = new Set(process.argv.slice(2));
 for (const arg of args)
@@ -32,7 +33,7 @@ function data(i: number) {
     unsubscribe_url: `https://example.test/unsubscribe?id=${i}`,
   };
 }
-function run(n: number, label: string) {
+function run(n: number, label: "parse-per-recipient" | "compile-once") {
   const parseSamples: number[] = [];
   const renderSamples: number[] = [];
   const latency: number[] = [];
@@ -40,10 +41,15 @@ function run(n: number, label: string) {
   let peakRss = process.memoryUsage().rss;
   let outputBytes = 0;
   const started = performance.now();
+  const shared =
+    label === "compile-once"
+      ? { compiled: compile(html, body, layout), subject: plain.parse(subject) }
+      : undefined;
+  const initialParseMs = performance.now() - started;
   for (let i = 0; i < n; i++) {
     const begin = performance.now();
-    const compiled = compile(html, body, layout);
-    const compiledSubject = plain.parse(subject);
+    const compiled = shared?.compiled ?? compile(html, body, layout);
+    const compiledSubject = shared?.subject ?? plain.parse(subject);
     const parsed = performance.now();
     const values = data(i);
     const rendered = renderCompiled(html, compiled, values);
@@ -68,7 +74,11 @@ function run(n: number, label: string) {
     recipients: n,
     elapsedMs: Number(elapsedMs.toFixed(3)),
     perSecond: Number(((n * 1000) / elapsedMs).toFixed(1)),
-    parseMs: Number(parseSamples.reduce((a, b) => a + b, 0).toFixed(3)),
+    parseMs: Number(
+      (label === "compile-once" ? initialParseMs : parseSamples.reduce((a, b) => a + b, 0)).toFixed(
+        3,
+      ),
+    ),
     renderMs: Number(renderSamples.reduce((a, b) => a + b, 0).toFixed(3)),
     latencyMs: percentile(latency),
     peakSampledRssBytes: peakRss,
@@ -99,8 +109,18 @@ console.log(
       "ownPropertyOnly, empty templates, HTML outputEscape, 64Ki parse, 1s render, 1M operation allocation; plain subject",
   }),
 );
+console.log(JSON.stringify({ kind: "probe", ...(await processCheck("source-liquid")) }));
+console.log(JSON.stringify({ kind: "probe", ...(await processCheck("compiled-liquid")) }));
 console.log(JSON.stringify({ kind: "warmup", ...run(smoke ? 20 : 200, "parse-per-recipient") }));
-for (let i = 1; i <= repetitions; i++)
-  console.log(
-    JSON.stringify({ kind: "repetition", repetition: i, ...run(count, "parse-per-recipient") }),
-  );
+if (!args.has("--control-only"))
+  console.log(JSON.stringify({ kind: "warmup", ...run(smoke ? 20 : 200, "compile-once") }));
+for (let i = 1; i <= repetitions; i++) {
+  const baseline = run(count, "parse-per-recipient");
+  console.log(JSON.stringify({ kind: "repetition", repetition: i, ...baseline }));
+  if (!args.has("--control-only")) {
+    const compiled = run(count, "compile-once");
+    assert.equal(compiled.sha256, baseline.sha256);
+    assert.equal(compiled.outputBytes, baseline.outputBytes);
+    console.log(JSON.stringify({ kind: "repetition", repetition: i, ...compiled }));
+  }
+}
