@@ -1,4 +1,5 @@
 // Reference: listmonk cmd/settings.go, models/settings.go and queries/misc.sql at 6fcd95f.
+import { runSettingsNul } from "@/test/contract/settings-nul";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSettingsContract(target: {
@@ -48,6 +49,7 @@ export async function runSettingsContract(target: {
   const after = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
     .data;
   check(JSON.stringify(after) === JSON.stringify(snapshot), "invalid-no-write");
+  await runSettingsNul(target);
   const form = await fetch(`${target.baseUrl}/api/settings`, {
     method: "PUT",
     headers: { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" },

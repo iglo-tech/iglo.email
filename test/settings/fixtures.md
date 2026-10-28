@@ -12,3 +12,5 @@ No SMTP test in the native settings suite creates a network connection.
 
 The settings measurement uses bootstrap username `m12-measure-admin` and password
 `m12-measure-password` only inside a fresh synthetic temporary data directory.
+
+D46 probes use only rejected synthetic `fixture\u0000secret` and A\u0000B strings, plus discarded/overwritten metadata and normalized SMTP names. They never authenticate to SMTP or use production credentials.
