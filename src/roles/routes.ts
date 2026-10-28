@@ -42,6 +42,7 @@ async function input(context: RequestContext, kind: "user" | "list") {
   if (data.name != null && typeof data.name !== "string") throw new HttpError(400);
   const name = typeof data.name === "string" ? data.name : "";
   if (!strHasLen(name, 1, 2000)) invalid("name");
+  if (kind === "user" && data.permissions == null) invalid("permissions");
   const granted = data.permissions ?? [];
   if (!Array.isArray(granted) || granted.some((v) => typeof v !== "string"))
     throw new HttpError(400);
@@ -52,17 +53,18 @@ async function input(context: RequestContext, kind: "user" | "list") {
   for (const item of items) {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new HttpError(400);
     const value = item as Record<string, unknown>;
+    const childPermissions = value.permissions ?? [];
     if (
       typeof value.id !== "number" ||
       !Number.isSafeInteger(value.id) ||
       value.id < 1 ||
-      !Array.isArray(value.permissions) ||
-      value.permissions.some((p) => typeof p !== "string")
+      !Array.isArray(childPermissions) ||
+      childPermissions.some((p) => typeof p !== "string")
     )
       throw new HttpError(400);
-    for (const p of value.permissions)
+    for (const p of childPermissions)
       if (p !== "list:get" && p !== "list:manage") invalid("list permission");
-    children.push({ id: BigInt(value.id), permissions: value.permissions as string[] });
+    children.push({ id: BigInt(value.id), permissions: childPermissions as string[] });
   }
   return { name, granted: granted as string[], children };
 }

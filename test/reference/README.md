@@ -180,3 +180,5 @@ and redundant separators. The source-first observation checks the escaped Geist
 font name; compiled-production HTTP tests verify its MIME type and WOFF2 bytes.
 The application decodes names once and cleans separators within the original
 embedded namespace, without arbitrary filesystem lookup.
+
+M1.4 D32 cases distinguish required top-level user-role permission replacement (omitted/null: reference 500, normal safe 400, unchanged stored role) from compatible omitted/null/[] list-child clearing. The common role corpus runs these in both modes; the labelled synthetic-list HTTP fixture additionally proves removal of an existing grant and its effective access.
