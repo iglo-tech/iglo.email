@@ -155,8 +155,10 @@ export function registerSubscriberRoutes(
       const externalKey = external ? selector(c) : undefined;
       const id = externalKey === undefined ? BigInt(getID(c)) : store.external(externalKey)?.id;
       if (id === undefined) throw new HttpError(400, "Subscriber not found");
-      allowed(c, [id], "manage");
-      required(c, id, external);
+      if (patch || external) {
+        allowed(c, [id], "manage");
+        required(c, id, external);
+      }
       const input = await subscriberInput(c);
       validate(c, input, false, patch);
       auth.revalidate(c, "subscribers:manage");

@@ -201,6 +201,17 @@ export async function runSubscribersContract(target: {
         "D40-subscriber-missing-high-id",
       );
     }
+    const missingNumeric = await request("/api/subscribers/2147483647");
+    check(
+      missingNumeric.status === 400 &&
+        (await missingNumeric.json()).message === "Subscriber (2147483647: ) not found",
+      "subscriber-missing-numeric-message",
+    );
+    const missingPut = await request("/api/subscribers/2147483647", "PUT", { email: "invalid" });
+    check(
+      missingPut.status === 400 && (await missingPut.json()).message === "Invalid email.",
+      "subscriber-missing-put-validates-first",
+    );
     const nullList = await raw(
       `{"email":"null-list-${suffix}@example.test","lists":[null]}`,
       "application/json",
