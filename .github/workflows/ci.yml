@@ -6,7 +6,7 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -20,7 +20,7 @@ jobs:
       - run: bun run contract:fixture
 
   reference-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -34,16 +34,3 @@ jobs:
       - run: bun run contract:lists:reference
       - run: bun run server:reference
       - run: bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
-
-  reference-macos-prepare:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, macos-15-intel]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run reference:prepare

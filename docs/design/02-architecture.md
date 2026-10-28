@@ -5,7 +5,7 @@
 - **Runtime:** Bun ≥ 1.4, TypeScript, native ESM.
 - **HTTP:** `Bun.serve` with a small router. No Express or other framework.
 - **Database:** `bun:sqlite`, one database file, WAL mode, `foreign_keys = ON`, `synchronous = FULL`, `busy_timeout = 5000` and safe 64-bit integers.
-- **Distribution:** one executable from `bun build --compile`, with admin assets, public pages, default templates, i18n files and migrations embedded. Linux x64/arm64 and macOS arm64.
+- **Distribution:** one executable from `bun build --compile`, with admin assets, public pages, default templates, i18n files and migrations embedded. Linux x86-64 for MVP; Linux arm64 and macOS are post-MVP (D42).
 - **No external services** apart from the SMTP server and, optionally, the provider sending bounce webhooks.
 
 ## Shared ground with other iglo.\* projects

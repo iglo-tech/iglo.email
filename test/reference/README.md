@@ -24,11 +24,11 @@ without overwriting it. To repair one, inspect and remove only the offending
 entry in the ignored `upstream/reference/` directory, then prepare again.
 The source lives in `.listmonk-source` so Bun's ordinary test discovery does not
 run the upstream Playwright specs.
-Preparation and native binaries support Linux and macOS on x64 and arm64.
-The Linux Docker lifecycle is exercised locally and in CI; CI also runs native
-macOS preparation and version checks on x64 and arm64. Full macOS Docker
-lifecycle is supported by the same portable commands but has not been verified
-on this Linux host.
+MVP acceptance targets Linux x86-64 only (D42). The Linux Docker lifecycle
+is exercised locally and in CI. The harness retains Linux/macOS x64 and arm64
+binary selection, but macOS and Linux arm64 preparation, lifecycle verification
+and CI coverage are post-MVP. Historical native macOS preparation checks do not
+establish full macOS Docker lifecycle verification.
 
 `reference:run` prepares as needed, creates one labelled Postgres container and
 volume, and launches native listmonk, Mailpit, and a loopback webhook receiver.

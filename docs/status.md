@@ -70,6 +70,8 @@ Final-code acceptance reportedly passed frozen install/assets, JSX/UI/ui:verify,
 
 The fixer's single PR inspection was stale at 2489e4e, but the lead's single inspection now confirms OPEN/ready head b1e117b and its new CI runs. One Intel preparation job passed, seven jobs were queued/running, none failed. Restore the PR watch for these pending checks and end the turn; on green verify exact head and dispatch two fresh full-scope Sol xhigh round-2 reviewers in separate isolated worktrees. Every prior delegate is terminal; no polling or replacement worker. Original run start, stop-after-M1.6 rule and unbound automation remain unchanged.
 
+Owner direction on 2026-10-28: D42 narrows MVP CI, reference acceptance and release artifacts to Linux x86-64; macOS and Linux arm64 move to post-MVP. The lead removes the macOS preparation matrix and pins both retained Linux jobs to ubuntu-24.04, preserving all Linux acceptance commands. The previous b1e117b macOS arm64 cancellation was hosted-runner capacity before execution; its single requested retry completed successfully before cancellation was possible. Both original Linux jobs were already green. No new macOS run is needed. This CI-only change is being integrated into PR #13 before fresh exact-head CI and round-2 council. Application inputs remain b1e117b/c9dddcf and the fixer's completed acceptance/measurement evidence remains valid for those inputs.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified during the M1.4 kickoff at 13:08 UTC on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
@@ -100,7 +102,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 - M1.8 implements [D23](design/09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application): plain sanitized data/dense arrays, explicit template allowlist, bounded input/filter costs and output emission. Engine accounting/cooperative limits alone are insufficient. M2.1/M2.2 implement [D24](design/09-decisions.md#d24-disable-library-requeues-and-classify-smtp-outcomes-before-retry): pool requeues disabled, no automatic marketing retry and transactional retries only after proven non-acceptance.
 - M5.1 must address [D22](design/09-decisions.md#d22-retain-full-durability-and-carry-the-window-boundary-miss-into-events-acceptance): measure API acceptance and commit latency, queue growth and flush deadlines over longer mixed-load runs. M0.7 did not certify strict in-window 100/s or end-to-end delivery; retain FULL durability and the existing M3.2/M5.1/M6.1 gates.
 - M0.6 completed the public HTML 404 (including `POST /health`) and updated both route-backed D18 fixture expectations without weakening raw-target discrimination. The reusable admin shell is fixture-only; M1.3 now supplies real auth and functional login, while full admin screens and the admin-specific error page remain M4.1.
-- M1.3 promoted the D20 protected-read cases to actual compiled production authentication; M1.5/domain owners promote helper cases. M0.5 now carries D17/D18. Native macOS binary preparation passes CI; full native macOS Docker lifecycle remains unverified.
+- M1.3 promoted the D20 protected-read cases to actual compiled production authentication; M1.5/domain owners promote helper cases. M0.5 now carries D17/D18. Historical native macOS preparation passed; full native macOS Docker lifecycle remains unverified. All macOS coverage is now post-MVP under D42.
 
 ## Blocked
 
@@ -173,3 +175,5 @@ The Claude API rate-limit failures at approximately 06:13 and 06:23 UTC on 2026-
 M1.3 pause (2026-10-28): Opus round-1 dispatch failed immediately at the Claude API rate limit. Paused until 2026-10-28T11:22:23+00:00; no retry/model substitution. Sol was already running, with its identifiers retained above. The PR watch was stopped, durable state pushed and the lock released for independent scheduled recovery.
 
 M1.3 cooldown expired at 11:22:23 UTC; automatic Opus continuation completed its review at 11:36 UTC. Both council results were recovered without retry or model substitution. The lead resumed only after the pause expired.
+
+[D42](design/09-decisions.md#d42-linux-x86-64-only-for-mvp) records the owner-directed Linux x86-64 MVP platform scope; macOS and Linux arm64 are post-MVP.
