@@ -182,7 +182,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
             row.id,
             permittedLists(input.lists ?? [], scope),
             scope,
-            status,
+            patch ? status : (input.status ?? ""),
             input.preconfirm_subscriptions ?? false,
             now,
           );

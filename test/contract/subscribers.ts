@@ -474,6 +474,28 @@ export async function runSubscribersContract(target: {
         value.lists.every((l: any) => l.subscription_status === "unsubscribed"),
       "subscriber-reenable-retains-consent",
     );
+    // Admin bulk add can set a membership independently of global status.
+    // An omitted status in PUT must not itself rewrite that membership.
+    response = await request(`/api/subscribers/${sub.id}/blocklist`, "PUT");
+    check(response.status === 200, "subscriber-consent-blocklist-before-add");
+    response = await request("/api/subscribers/lists", "PUT", {
+      ids: [sub.id],
+      target_list_ids: [list],
+      action: "add",
+      status: "confirmed",
+    });
+    check(response.status === 200, "subscriber-consent-add-blocklisted");
+    response = await request(`/api/subscribers/${sub.id}`, "PUT", {
+      email: sub.email,
+      lists: [list],
+    });
+    value = (await response.json()).data;
+    check(
+      response.status === 200 &&
+        value.status === "blocklisted" &&
+        value.lists.find((entry: any) => entry.id === list)?.subscription_status === "confirmed",
+      "subscriber-put-omitted-status-retains-consent",
+    );
     check(
       (
         await request("/api/subscribers/lists", "PUT", {
