@@ -173,6 +173,7 @@ Small and justified. v1 runtime dependencies:
 | `liquidjs` | Safe, sandboxed template language for user-authored email ([Templates](06-templates.md)) |
 | `nodemailer` | SMTP pool, MIME building, attachments, DKIM. Writing a correct SMTP client and MIME encoder is not worth owning |
 | `marked` | Markdown campaigns and templates |
+| `qrcode` | TOTP provisioning QR/PNG response; pinned 1.5.4, MIT ([D30](09-decisions.md#d30-role-mutations-and-the-totp-authentication-boundary)) |
 
 Built-in Bun or Web APIs cover the rest: password hashing (`Bun.password`), UUIDs, HMAC and TOTP (Web Crypto), gzip, file serving, and the JSX runtime (in-house, about 100 lines). Admin UI assets are listmonk v7's browser dependencies (Alpine.js, Oat, CodeMirror, Squire, Chart.js), bundled at build time.
 

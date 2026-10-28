@@ -8,15 +8,15 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No implementation task is active. M1.3 merged in [PR #10](https://github.com/iglo-tech/iglo.email/pull/10) at `76122c0ac428ba86cd7401fe652a49ba4b07d057` on 2026-10-28, 12:47:46 UTC. The main checkout is synced and its application/test/assets tree matches tested head `27d019e4828b7aa0117005b0c5025bd586e64064`. [Complete review and recovery record](reviews/M1.3.md).
+M1.4 (roles, permissions and TOTP) is active at **brief**. This independent run acquired the previously released lock at 2026-10-28T13:08:24.215458+00:00, synced clean main at d92b86244a158c12f0d7764666bd258a95163a88 and confirmed no open PR or active implementation. M1.3 is merged; M1.4 is the next eligible critical-path task. [Brief](briefs/M1.4.md).
 
-Three council rounds ended with Sol approving `7b3bfd1` and Opus identifying a real concurrent-update race. The lead accepted and fixed it under the [documented three-round resolution](https://github.com/iglo-tech/iglo.email/pull/10#issuecomment-6469344838), with deterministic failing-before/passing-after HTTP tests and explicit ext4 before/after controls. Final check: 139 tests / 1184 assertions, auth corpus in both modes, all UI/production/fixture/upstream contracts and eight exact-final-head CI jobs passed. No matching final-head council approval is claimed. All workers/reviewers are completed with no pending child work; the watch is confirmed stopped.
+D30 records role-type checks, atomic parent/child permission writes, rejection of assigned-role deletion (avoiding the schema's user cascade), bounded/revocable TOTP challenges and the MIT qrcode 1.5.4 provisioning dependency. The worker must record shared reference-first evidence before porting. Scope is the existing roles/users owners, narrow list-reference/auth composition, public-boundary contracts, functional second-factor form and bounded storage measurements. Persisted settings and full admin screens remain later tasks.
 
-This run started 2026-10-28T07:09:33.768313+00:00 and has exceeded four hours. Its lock is released after this status push and the run ends without starting another task. The next independent scheduled run syncs main and picks the next eligible critical-path task under the work plan. No owner approval, retry, duplicate delegate or thread responsiveness is required. The automation remains unchanged and unbound to every thread.
+Worker dispatch is pending; expected branch task/M1.4-roles-totp. No worker has been started for this task. Council round 0; no PR, check or review watch is active. The next transition dispatches exactly one GPT-6.1 Terra max worker in an isolated worktree, records its task/thread identifiers here and ends the turn. Recovery uses these records and GitHub, never the responsiveness of an earlier lead conversation.
 
 ## Automation
 
-The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified during the M0.7 kickoff on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
+The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified during the M1.4 kickoff at 13:08 UTC on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
 
 ## Done
 
@@ -44,7 +44,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Blocked
 
-No active external block or cooldown. The M1.3 rate-limit pause expired; Opus automatically resumed and completed without a duplicate. M1.3 is merged and no council work remains. The elapsed run stops at the four-hour runbook boundary rather than starting another task.
+No active external block or cooldown. The prior M1.3 run released its lock after merging. This independent run starts M1.4; the four-hour boundary uses the new run start recorded above.
 
 ## For owner review
 
@@ -81,6 +81,8 @@ M0.6 plan clarification (2026-10-27): finish the public HTML 404 deferred by M0.
 [D29](design/09-decisions.md#d29-apply-the-administrator-guard-to-the-resulting-account-state) (2026-10-28, after M1.3 round 2): preserve unchanged role/status defaults before checking the final-human-admin invariant, so ordinary partial updates need not resend authority fields. Explicit removal of that final administrator remains forbidden. The common corpus marks the upstream raw-parameter rejection versus the safe normal update. The final correction resolves defaults under the write lock after hashing so concurrent authority changes survive.
 
 Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one whole-filesystem `find` to locate Echo source, contrary to `/home/t3-code/AGENTS.md`. It reported the scan finished quickly without a visible effect and was not repeated. The lead recorded the incident without repeating the scan. Worker and council instructions in the runbook now explicitly require named checkout/cache paths or pinned GitHub source inside the worktree, never a broader filesystem search when a dependency is absent.
+
+[D30](design/09-decisions.md#d30-role-mutations-and-the-totp-authentication-boundary) (2026-10-28, before M1.4): preserve role-kind boundaries and atomic writes, refuse deletion of either assigned role kind instead of cascading away users, extend D26 through bounded/revocable TOTP challenges, and authorize MIT qrcode 1.5.4 for compatible PNG provisioning. Pinned source/schema evidence and required reference/production acceptance are in the decision and [brief](briefs/M1.4.md). Implementation and council acceptance are pending.
 
 ## Pause history
 
