@@ -8,11 +8,23 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.4 (roles, permissions and TOTP) is active at **brief**. This independent run acquired the previously released lock at 2026-10-28T13:08:24.215458+00:00, synced clean main at d92b86244a158c12f0d7764666bd258a95163a88 and confirmed no open PR or active implementation. M1.3 is merged; M1.4 is the next eligible critical-path task. [Brief](briefs/M1.4.md).
+M1.4 (roles, permissions and TOTP) is active at **fix**. This independent run acquired the previously released lock at 2026-10-28T13:08:24.215458+00:00, synced clean main at d92b86244a158c12f0d7764666bd258a95163a88 and confirmed no open PR or active implementation. M1.3 is merged; M1.4 is the next eligible critical-path task. [Brief](briefs/M1.4.md).
 
 D30 records role-type checks, atomic parent/child permission writes, rejection of assigned-role deletion (avoiding the schema's user cascade), bounded/revocable TOTP challenges and the MIT qrcode 1.5.4 provisioning dependency. The worker must record shared reference-first evidence before porting. Scope is the existing roles/users owners, narrow list-reference/auth composition, public-boundary contracts, functional second-factor form and bounded storage measurements. Persisted settings and full admin screens remain later tasks.
 
-Worker dispatch is pending; expected branch task/M1.4-roles-totp. No worker has been started for this task. Council round 0; no PR, check or review watch is active. The next transition dispatches exactly one GPT-6.1 Terra max worker in an isolated worktree, records its task/thread identifiers here and ends the turn. Recovery uses these records and GitHub, never the responsiveness of an earlier lead conversation.
+The initial [Terra max worker](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-worker-20261028T130824) completed with no pending child work. Its draft [PR #11](https://github.com/iglo-tech/iglo.email/pull/11), branch task/M1.4-roles-totp, head afc3ffe67e6ce359321d3dbe6c3175b1d240e146 is not ready for council or merge. The worker reports 147 tests / 1381 assertions, 21 focused user tests / 471 assertions, compiled/reference role and auth corpora, decoded compiled QR and a successful browser two-factor flow. These are worker-reported passes, not council acceptance. At the lead's 13:36 UTC inspection three CI jobs passed and five were queued/running; no review exists. No PR watch is active while implementation remains.
+
+D31 accepts precise literal role-name search and safe role diagnostics, with shared reference/production markers required; it also authorizes the smallest QR license collector change. One isolated Terra max fixer will complete embedded notices, missing restart/challenge-cap/concurrency/contract acceptance, exact browser reproduction and any resulting fixes on the same PR branch. [Fix brief](briefs/M1.4-fix-1.md). Exactly one GPT-6.1 Terra max completion fixer is now running with isolation worktree and reasoningEffort=max: [M1.4: Complete notices and acceptance](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-fix1-20261028T1336). No duplicate worker or helper is active. Its completion wakes this run; no waiting or polling. Lead policy comment: https://github.com/iglo-tech/iglo.email/pull/11#issuecomment-6470565295. Council round 0; both later reviewers must be fresh independent GPT-6.1 Sol xhigh agents (A and B), with no Anthropic use. The run start remains 13:08:24 UTC; no pause or external block applies.
+
+- Worker task ID: `node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-worker-20261028T130824`.
+- Worker thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-worker-20261028T130824`.
+- Initial worker run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.4-worker-20261028T130824:ordinal:1`.
+- Idempotent dispatch request: `iglo-email-M1.4-worker-20261028T130824`.
+
+- Completion fixer task ID: `node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-fix1-20261028T1336`.
+- Completion fixer thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-fix1-20261028T1336`.
+- Initial fixer run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.4-fix1-20261028T1336:ordinal:1`.
+- Idempotent fixer dispatch request: `iglo-email-M1.4-fix1-20261028T1336`.
 
 ## Automation
 
@@ -52,6 +64,8 @@ Decisions and plan changes made by agents while the owner was away.
 
 The owner started the port on 2026-10-27 and set the model assignments: GPT-6.1 Sol at xhigh for the lead, GPT-6.1 Terra at max for all implementation and helpers, and Claude Opus 5.5 at medium only as a council member alongside a fresh Sol xhigh reviewer. See [work plan](design/11-work-plan.md#models).
 
+Owner model override on 2026-10-28: skip Anthropic models for now; every council round uses two fresh independent GPT-6.1 Sol agents at xhigh reasoning, labelled A and B, in separate isolated worktrees. Both must approve the same head; lead and Terra max implementation assignments remain unchanged. Applied to the runbook, work plan and recurring automation. No M1.4 council task was active, so no reviewer cancellation or replacement was needed. Historical Opus review records below remain evidence of completed work.
+
 Owner correction on 2026-10-27: recurring automation must remain unbound to every thread. The dedicated chief-of-staff thread handles day-to-day work; independent scheduled runs provide recovery through the existing lock and status state.
 
 [D17](https://github.com/iglo-tech/iglo.email/blob/cb41fd6f29a07415541fcb95101ba84e64231ad6/docs/design/09-decisions.md#d17-reject-positive-route-id-overflow-before-storage) (2026-10-27, merged in PR #3): reject positive route IDs above the signed 64-bit maximum with 400 `invalid ID` before storage. Upstream ignores the conversion overflow and leaks a database error as 500. This gives callers an accurate client error without exposing storage details; the focused reference and normal HTTP cases mark the deliberate difference.
@@ -83,6 +97,8 @@ M0.6 plan clarification (2026-10-27): finish the public HTML 404 deferred by M0.
 Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one whole-filesystem `find` to locate Echo source, contrary to `/home/t3-code/AGENTS.md`. It reported the scan finished quickly without a visible effect and was not repeated. The lead recorded the incident without repeating the scan. Worker and council instructions in the runbook now explicitly require named checkout/cache paths or pinned GitHub source inside the worktree, never a broader filesystem search when a dependency is absent.
 
 [D30](design/09-decisions.md#d30-role-mutations-and-the-totp-authentication-boundary) (2026-10-28, before M1.4): preserve role-kind boundaries and atomic writes, refuse deletion of either assigned role kind instead of cascading away users, extend D26 through bounded/revocable TOTP challenges, and authorize MIT qrcode 1.5.4 for compatible PNG provisioning. Pinned source/schema evidence and required reference/production acceptance are in the decision and [brief](briefs/M1.4.md). Implementation and council acceptance are pending.
+
+[D31](design/09-decisions.md#d31-literal-role-name-search-and-safe-role-diagnostics) (2026-10-28, after M1.4 worker): role-name search is a literal case-insensitive substring after compatible whitespace normalization, and role diagnostics preserve status/context without reflecting permission values or SQL internals. Exact paired contracts are required. The follow-on fixer may extend the existing asset license collector for QR dependencies; no parallel artifact is added.
 
 ## Pause history
 

@@ -33,11 +33,12 @@ Call `orchestrator_capabilities` once per thread before the first `delegate_task
 
 | Agent | `target` |
 |---|---|
-| Sol lead and council member | `{ "providerInstanceId": "codex", "model": "gpt-6.1-sol", "options": { "reasoningEffort": "xhigh" } }` |
+| Sol lead and both independent council members (A and B) | `{ "providerInstanceId": "codex", "model": "gpt-6.1-sol", "options": { "reasoningEffort": "xhigh" } }` |
 | Terra worker, fixer or helper | `{ "providerInstanceId": "codex", "model": "gpt-6.1-terra", "options": { "reasoningEffort": "max" } }` |
-| Opus council member only | `{ "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": { "effort": "medium" } }` |
 
-The recurring lead schedule is independent and unbound; never bind it to the dedicated thread or any other thread. Keep its existing 45-minute interval and use the lock and status file for recovery. Record delegate task and thread identifiers in `status.md` after dispatch so a later run can recover without the former lead conversation. Claude Opus 5.5 is never used for implementation or lead work.
+Owner override on 2026-10-28: do not use Anthropic models until the owner changes this instruction. The council is two fresh, independent GPT-6.1 Sol agents at xhigh reasoning, labelled A and B. Dispatch each as a separate review task in its own isolated worktree; neither is the lead or worker. Both must approve the same head.
+
+The recurring lead schedule is independent and unbound; never bind it to the dedicated thread or any other thread. Keep its existing 45-minute interval and use the lock and status file for recovery. Record delegate task and thread identifiers in `status.md` after dispatch so a later run can recover without the former lead conversation. Do not dispatch an Anthropic worker, helper or reviewer under the current owner override.
 
 ### Worker instructions
 
@@ -60,6 +61,7 @@ You are a worker on iglo.email (https://github.com/iglo-tech/iglo.email). Do the
 ```text
 You are one member of a two-member review council for iglo.email (https://github.com/iglo-tech/iglo.email). Review only; do not change code or push.
 PR: <URL>, head commit <SHA>, task <id> from docs/design/11-work-plan.md.
+Reviewer: <A or B>, a fresh GPT-6.1 Sol agent at xhigh reasoning. Review independently; do not read the other reviewer's current-round verdict or findings before posting your own.
 - Check out the PR head in your worktree (gh pr checkout <number>). Read AGENTS.md, docs/design/11-work-plan.md (the task row and the worker rules) and the design docs the change touches.
 - Read /home/t3-code/AGENTS.md before tooling. Locate dependency source only through named local paths or a pinned GitHub source fetched inside your worktree. Never run find or du across the filesystem, /home/t3-code or all of .t3; an absent cache is a reason to fetch the exact source, not to widen the scan.
 - Compare the change with the upstream listmonk v7.0.0-beta.1 files it ports, in /home/t3-code/upstream/listmonk. Ported endpoints keep listmonk's API contract except for differences listed in docs/design/07-api-and-ui.md. Flag both an unlisted difference and an upstream behavior copied blindly where it is clearly a poor design (for example a requirement that serves upstream's internals rather than the caller). New features must match the design docs.
@@ -69,7 +71,7 @@ PR: <URL>, head commit <SHA>, task <id> from docs/design/11-work-plan.md.
   COUNCIL <your model> VERDICT: APPROVE <SHA>
   or
   COUNCIL <your model> VERDICT: CHANGES <SHA>
-  followed by the findings. Then reply with the same verdict line.
+  followed by Reviewer: <A or B> and the findings. Then reply with the same verdict line and reviewer label.
 ```
 
 ## Rules

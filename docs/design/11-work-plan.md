@@ -11,7 +11,7 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 | Owner | the project owner | Sets direction. Is not asked for approvals: agents merge and decide on their own, and log decisions for later review |
 | Lead (chief of staff) | a scheduled agent run, every 45 minutes ([runbook](../chief-of-staff.md)) | Keeps this plan and [`docs/status.md`](../status.md) current, writes task briefs, starts workers and the council, merges, decides design questions |
 | Worker | one agent per task | Does one task in its own branch and worktree, opens one PR |
-| Council | two fresh agents, never the worker: Claude Opus 5.5 (medium effort) and GPT-6.1 Sol (xhigh reasoning) | Reviews each finished PR independently against listmonk's source and these docs. A PR merges only when both approve the same commit |
+| Council | two fresh, independent GPT-6.1 Sol agents at xhigh reasoning (reviewers A and B), never the lead or worker | Reviews each finished PR independently against listmonk's source and these docs. A PR merges only when both approve the same commit |
 
 ### Models
 
@@ -19,9 +19,9 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 |---|---|
 | Lead | GPT-6.1 Sol, xhigh reasoning (extra high) |
 | All workers, fixers and helpers, including core, security- and delivery-critical code, mechanical tasks and bulk work | GPT-6.1 Terra, max reasoning |
-| Council | Claude Opus 5.5 at medium effort and GPT-6.1 Sol at xhigh reasoning |
+| Council | Two fresh, independent GPT-6.1 Sol agents, each at xhigh reasoning (extra high), labelled A and B |
 
-Model assignments were set by the owner on 2026-10-27. Claude Opus 5.5 is used only as a council member.
+Model assignments were set by the owner on 2026-10-27 and updated on 2026-10-28: skip Anthropic models for now and use two GPT-6.1 Sol xhigh council reviewers. This override remains in force until the owner changes it. Lead and Terra worker/fixer/helper assignments stay as listed above. Each council member uses a separate review task and isolated worktree, with settings in target.options.
 
 ### One task
 
@@ -70,7 +70,7 @@ These are created in M0 and change only through a small task of their own, becau
 ### Review and merge
 
 1. The worker finishes when its PR is open, CI is green and its acceptance check passes.
-2. **Council:** both council members review the PR independently. Each checks the diff next to the upstream files it ports and against these docs and `AGENTS.md`: behavior matches upstream or a listed deliberate difference with a sound reason, no poor upstream design copied without a note, marketing sends stay at-most-once, no network call inside a transaction, tests through public boundaries only, the task's scope respected. Each posts one PR comment with a verdict, `APPROVE` or `CHANGES`, for the exact head commit.
+2. **Council:** both council members review the PR independently. Each checks the diff next to the upstream files it ports and against these docs and `AGENTS.md`: behavior matches upstream or a listed deliberate difference with a sound reason, no poor upstream design copied without a note, marketing sends stay at-most-once, no network call inside a transaction, tests through public boundaries only, the task's scope respected. Each posts one PR comment with a verdict, `APPROVE` or `CHANGES`, for the exact head commit and identifies itself as reviewer A or B. Neither reads the other reviewer's current-round findings before posting its own.
 3. **Fix loop:** on `CHANGES`, the lead fixes small findings itself and sends larger ones to a fixer agent on the same branch. Then both members review the new head again. A PR merges only when both approve the same commit.
 4. **Deadlock:** after three rounds without agreement, the lead decides. Upstream's behavior (the contract suite in reference mode) and the design docs are the tiebreaker, and the reasoning goes in the PR.
 5. The lead squash-merges, deletes the branch and updates `docs/status.md`. `main` stays green.
