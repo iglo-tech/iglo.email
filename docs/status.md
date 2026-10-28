@@ -8,11 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 recovery is blocked by T3 delegate ownership. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains open at `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed, independently reconfirmed at 2026-10-28 04:53 UTC. The Opus round-2 reviewer is stalled on a cleanup approval at superseded head `cbd877d`, with no terminal verdict. The independent run acquired the available lock, but `task_cancel` again refused cross-thread cancellation. No cancellation is confirmed and no replacement reviewers or workers were started. See the recovery records and blocker below. Finish M0.6 before another implementation task, then release the lock as previously directed.
+M0.6 council recovery resumed in the dedicated lead thread. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains at `f3839c4bbf6485760540567285953a649ddd9222`, with all eight CI jobs successful. Opus round 2 is confirmed cancelled at 2026-10-28T05:00:34.756Z, with no active run, pending approval or posted verdict. Both fresh round-3 council reviews are running on that exact head. Finish M0.6, then release the lock: this originating run has exceeded four hours. No M0.7 worker starts in this run.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | recovery blocked | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 2 | [Brief](briefs/M0.6.md). Head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Prior lead validation: full check 98 tests / 635 assertions, clean lint/typecheck, 21 production cases, 43 upstream cases and 14 focused HTML tests. `ece1069` records seven false passes before the fixed-page shape/URL correction. Stalled Opus delegate cannot be canceled from this independent run; no round-3 reviewer started. |
+| M0.6 | council | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Prior lead validation: full check 98 tests / 635 assertions, clean lint/typecheck, 21 production cases, 43 upstream cases and 14 focused HTML tests. `ece1069` records seven false passes before the fixed-page shape/URL correction. Opus round 2 is terminal without a verdict; both fresh round-3 reviews are running. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,7 +20,7 @@ Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
-- PR #6 is linked in the independent recovery thread. The former lead's PR watch was removed during recovery; the independent run watches only the pending review. Both round-1 reviews and Sol round 2 are terminal with CHANGES; Opus round 2 remains stalled. No round-3 reviewer has started.
+- PR #6 remains linked. Both round-1 reviews and Sol round 2 are terminal with CHANGES; Opus round 2 is cancelled without a posted verdict. The dedicated lead resumes its pending-review watch after recovery.
 
 Lead correction: OPTIONS/405 now advertise implemented methods; D21 enables metadata-only HEAD for embedded assets. The shared corpus checks declared headers and includes a D18 static escape against actual compiled production; ui:verify executes it as well, and the public API policy names it. The admin-specific error page is recorded as pending M4.1. The expanded reference corpus passed before the application change.
 
@@ -44,7 +44,7 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 
 ### Council round 2
 
-[M0.6 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f); claude-opus-5-5. Verdict pending on `cbd877d9488063a46f2e8d9d2be348cde27570d5`. Stalled since 2026-10-28 00:26:31 UTC on a cleanup approval; independent recovery cancellation was refused. Preserve its identifiers until supported cancellation or a terminal result is confirmed.
+[M0.6 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f); claude-opus-5-5. Cancelled at 2026-10-28T05:00:34.756Z on superseded head `cbd877d9488063a46f2e8d9d2be348cde27570d5`; no posted verdict. The terminal read confirmed no active run or pending approval. Its hidden-heading/base-element concerns overlap the fixed-page correction in `f3839c4`; unposted findings are passed to fresh reviewers and are not counted as approval. Its browser/server processes were stopped before the cleanup stall. Historical recovery attempts are retained below.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
@@ -53,6 +53,20 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
+
+### Council round 3
+
+Both fresh members were dispatched together on exact head `f3839c4bbf6485760540567285953a649ddd9222` with full task scope, both rounds' findings and objections, D18/D21 decisions, all eleven acceptance commands and browser requirements. No prior or unposted verdict counts as approval of this head.
+
+[M0.6 council round 3 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a); claude-opus-5-5, effort: medium. Running asynchronously; completion wakes the originating lead.
+
+- Task ID: node:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
+- Child thread ID: thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
+
+[M0.6 council round 3 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c); gpt-6.1-sol, reasoningEffort: xhigh, serviceTier: default. Running asynchronously; completion wakes the originating lead.
+
+- Task ID: node:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c
+- Child thread ID: thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c
 
 ### Independent recovery, 2026-10-28 02:38 UTC
 
@@ -80,6 +94,12 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 - One read of the recorded Opus round-2 reviewer confirmed its original active run, one pending approval and no update since 00:26:31 UTC. One supported `task_cancel` returned `task_not_found` because the delegate does not belong to this recovery thread. No cancellation is confirmed. The pending cleanup was not approved or repeated, and no duplicate reviewer or worker was started. The documented orchestration blocker and next transition remain: confirm termination or supported cancellation, then dispatch both fresh round-3 council members on the current head.
 - Removed the previous recovery run's PR watch. Push this record, release this run's lock and watch only the pending PR review. Reverified the existing schedule with `bindToCurrentThread: false`: returned `boundThreadId: null`, enabled, interval `2700000` ms, next run `2026-10-28T05:37:06.302Z`. No new schedule or implementation task was added.
 
+### Dedicated lead recovery, 2026-10-28 05:00 UTC
+
+- The cancelled-child wake returned to the originating dedicated lead. Terminal message/activity reads confirmed `status: cancelled`, `activeRunId: null`, `pendingRequestCount: 0` and no posted verdict. The lock was absent after the independent recovery run released it; this lead acquired it for the same M0.6 continuation.
+- The superseded reviewer reproduced hidden headings in native containers and a base-URL override; these overlap Sol round 2 and the existing fixed-layout allowlist correction. Its form-action probe did not demonstrate script execution, so no such execution is claimed. Its historical export reproduced all ten `f108f7e` regression failures. Its cleanup command was held by automatic approval review for a statically unresolvable removal target and was cancelled; do not repeat or bypass it. Owned browser/server processes had already stopped.
+- All eight CI jobs are still successful on `f3839c4`. Dispatch two fresh round-3 reviews on that head with both rounds' findings, source-first regression evidence and the precise D18/D21/staging decisions. The independent 45-minute automation remains enabled and unbound. After M0.6 merges, release this run's lock and leave M0.7 to a later run.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Next run: **2026-10-28T05:37:06.302Z** (06:37 Warsaw). Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
@@ -101,7 +121,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Blocked
 
-M0.6: T3 exposes delegate cancellation only to the originating thread. The independent run's `task_cancel` calls cannot stop the Opus round-2 review stalled at a cleanup permission request, even after taking an expired lock. Recovery requires a terminal delegate result or a supported cross-thread cancellation capability before replacement council dispatch. This is an orchestration blocker, not a product-code or CI failure. No owner approval is requested; no duplicate worker/reviewer or new implementation task is started while it persists.
+None. The M0.6 orchestration blocker cleared when the superseded Opus round-2 delegate became terminal. Council review remains required.
 
 ## For owner review
 
