@@ -235,7 +235,7 @@ export async function runListsContract(target: {
       const expected =
         target.mode === "reference"
           ? {
-              message: `Error ${action} ${action === "updating" ? "List" : "Lists"}: pq: value \"2147483648\" is out of range for type integer (22003)`,
+              message: `Error ${action} ${action === "updating" ? "List" : "Lists"}: pq: value "2147483648" is out of range for type integer (22003)`,
             }
           : method === "DELETE"
             ? { data: true }
@@ -253,6 +253,14 @@ export async function runListsContract(target: {
     check((await request("/api/lists/2147483647", "DELETE")).status === 200, "list-missing-delete");
     check((await request("/api/lists", "DELETE")).status === 400, "list-empty-delete");
     check((await request("/api/lists?id=bad", "DELETE")).status === 400, "list-invalid-delete-id");
+    const overflowID = await request("/api/lists?id=-9223372036854775809", "DELETE");
+    check(
+      overflowID.status === 400 &&
+        ((await overflowID.json()) as { message: string }).message ===
+          'One or more IDs are invalid: strconv.Atoi: parsing "-9223372036854775809": value out of range',
+      "list-negative-query-id-overflow",
+    );
+
     const userRoleResponse = await request("/api/roles/users", "POST", {
       name: `m15-user-${suffix}`,
       permissions: [],
