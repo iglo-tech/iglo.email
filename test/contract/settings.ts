@@ -106,6 +106,18 @@ export async function runSettingsContract(target: {
     ][0] === addressCandidate["app.from_email"][0],
     "quoted-from-projection",
   );
+  const addressMatrix = structuredClone(updated);
+  addressMatrix["app.from_email"] = [
+    '"" <sender@example.invalid>',
+    "sender@example.invalid (Example)",
+    "Müller <üñî@example.invalid>",
+    "sender@[IPv6:::1]",
+    "Group: sender@example.invalid;",
+  ];
+  check((await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 200, "from-matrix-write");
+  check(JSON.stringify(((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data["app.from_email"]) === JSON.stringify(addressMatrix["app.from_email"]), "from-matrix-projection");
+  addressMatrix["app.from_email"] = ["bad..local@example.invalid"];
+  check((await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 400, "from-invalid");
   const cronCandidate = structuredClone(updated);
   cronCandidate["app.cache_slow_queries"] = true;
   cronCandidate["app.cache_slow_queries_interval"] = "not a cron";
@@ -113,6 +125,11 @@ export async function runSettingsContract(target: {
     (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 400,
     "invalid-enabled-cron",
   );
+  cronCandidate["app.cache_slow_queries_interval"] = "0 3 L * MON-FRI";
+  check((await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200, "valid-enabled-cron");
+  cronCandidate["app.cache_slow_queries"] = false;
+  cronCandidate["app.cache_slow_queries_interval"] = "invalid but unused";
+  check((await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200, "disabled-unused-cron");
   check(
     (await request("/api/settings/app.check_updates", "PUT", "false")).status === 200,
     "check-updates-false",
