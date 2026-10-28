@@ -156,7 +156,7 @@ Views are ported in the order of the [port plan](08-port-plan.md#milestones). Ea
 
 | ID | Task | Upstream | Depends on | Acceptance |
 |---|---|---|---|---|
-| M5.1 | Subscriber events API: event store, subscriber upsert by `external_id`, idempotency, batch, retention | none ([Sequences](05-sequences.md#events-api)) | M1.6, M0.7 | Events tests pass; 100 events per second measured while a campaign sends |
+| M5.1 | Subscriber events API: event store, subscriber upsert by `external_id`, idempotency, batch, retention | none ([Sequences](05-sequences.md#events-api)) | M1.6, M0.7 | Events tests pass; 100 events per second measured while a campaign sends; longer real-API runs check acceptance/commit timing, queue growth and the M0.7 flush-window miss ([D22](09-decisions.md#d22-retain-full-durability-and-carry-the-window-boundary-miss-into-events-acceptance)) |
 | M5.2 | Conditions: JSON predicate language, validation, compilation to one indexed query, permission-gated raw SQL | none ([Sequences](05-sequences.md#conditions)) | M5.1, M1.7 | Condition tests pass; a generated-condition fuzzer agrees with a reference evaluator on 10,000 cases |
 | M5.3 | Sequences and enrollments: definitions API, triggers, exit events, reentry, manual enroll and cancel | none ([Sequences](05-sequences.md#sequence-definition)) | M5.2 | Sequence and enrollment API tests pass |
 | M5.4 | Scheduler: claims, the decision table, frequency cap, advance | none ([Sequences](05-sequences.md#scheduler)) | M5.3, M2.4 | Every row of the decision table has a test with the injected clock; crash tests show no duplicate sends |

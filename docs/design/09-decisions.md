@@ -160,3 +160,12 @@ Decided by agents on 2026-10-28, for owner review.
 - **Why:** callers can inspect resource existence and metadata without downloading CSS, JavaScript, images or fonts. The method advertisement matches what the server actually supports. Resolving the existing immutable asset manifest requires no additional handler side effects or filesystem discovery.
 - **Contract:** HEAD status/type/body and OPTIONS/405 Allow differences are explicitly marked D21 in the shared reference/production/fixture corpus. Reference expectations preserve the real upstream responses. Ordinary non-asset HEAD behavior is unchanged.
 - **Considered:** copying the GET-only framework registration and rejecting metadata-only probes. Rejected because it forces unnecessary resource downloads without providing a benefit.
+
+## D22. Retain FULL durability and carry the window-boundary miss into events acceptance
+
+Decided by agents on 2026-10-28, for owner review.
+
+- **Decision:** retain D19, WAL, FULL synchronous commits and the existing 50 messages/s plus 100 events/s targets. M0.7's report is accepted as bounded synthetic storage evidence. The occasional last event outside its exact 60-second window remains an unresolved deadline/flush-timing acceptance item for M5.1. No production throughput or delivery gate is satisfied by this spike alone.
+- **Evidence:** the [committed report](../perf/M0.7-sqlite-write-load.md) records one batched repetition with 5,999/6,000 events in-window and about 4.74 ms final drain, while all campaign progress committed in-window. Both independent council reruns reproduced that finite-window effect; Opus also observed host-sensitive latency and control throughput. The report separates window completion from catch-up and does not hide the miss.
+- **Follow-up:** M5.1 measures real API acceptance and commit latency separately, exact offered/completed counts, queue growth and flush deadlines over longer mixed-load runs with sending. Investigate the boundary and batching schedule before claiming strict end-to-end 100/s. M3.2, M5.1 and M6.1 retain their end-to-end checks, and future sending/scheduling/storage changes retain before/after measurement requirements.
+- **Why:** the measurements support proceeding with the chosen durable storage path while leaving the observed latency limitation visible and testable at the owning production boundary. Weakening durability, relabeling drain as in-window throughput, or asserting unlimited/host-independent capacity would not be supported by this experiment.
