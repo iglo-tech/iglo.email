@@ -41,6 +41,164 @@ export async function runListsContract(target: {
       (await request("/api/lists", "GET", undefined, "")).status === 403,
       "list-unauthenticated",
     );
+    // Raw requests retain duplicate JSON keys and XML element order.
+    async function raw(
+      body: string,
+      contentType: string,
+      method = "POST",
+      id?: number,
+      authorization = auth,
+    ) {
+      const response = await fetch(
+        `${target.baseUrl}/api/lists${id === undefined ? "" : `/${id}`}`,
+        {
+          method,
+          headers: { Authorization: authorization, "Content-Type": contentType },
+          body,
+        },
+      );
+      const value = (await response.json()) as { data?: Record<string, any>; message?: string };
+      if (method === "POST" && response.status === 200 && typeof value.data?.id === "number")
+        owned.push(value.data.id);
+      return { response, value };
+    }
+    const aliasName = `alias-${suffix}`;
+    const alias = await raw(
+      `{"name":"initial","Name":"middle","name":"${aliasName}","TAGS":[null," 002 ","x"],"ignored":{"x":1}}`,
+      "application/json",
+    );
+    check(
+      alias.response.status === 200 &&
+        alias.value.data?.name === aliasName &&
+        JSON.stringify(alias.value.data.tags) === JSON.stringify(["002", "x"]),
+      "json-alias-order-null-tags",
+    );
+    const nullAlias = await raw(`{"NAME":"null-${suffix}","name":null}`, "application/json");
+    check(
+      nullAlias.response.status === 200 && nullAlias.value.data?.name === `null-${suffix}`,
+      "json-null-string-noop",
+    );
+    for (const [label, body] of [
+      ["type-before-alias", `{"name":123,"Name":"bad-${suffix}"}`],
+      ["tag-type", `{"name":"bad-${suffix}","tags":[false]}`],
+      ["top-array", "[]"],
+      ["top-string", '"x"'],
+    ] as const)
+      check((await raw(body, "application/json")).response.status === 400, `json-${label}`);
+    const xml = await raw(
+      `<Anything><name>ignored</name><Name>xml-${suffix}</Name><Tags> One Two </Tags><Tags>002</Tags><Tags><Tag>ignored</Tag></Tags><Description> 02 &amp; &#x41; <![CDATA[x<y]]></Description></Anything>`,
+      "application/xml",
+    );
+    check(
+      xml.response.status === 200 &&
+        xml.value.data?.name === `xml-${suffix}` &&
+        JSON.stringify(xml.value.data.tags) === JSON.stringify(["One-Two", "002"]) &&
+        xml.value.data.description === " 02 & A x<y",
+      "xml-fields-container-text",
+    );
+    const xmlUpdate = await raw(
+      `<List><Name>first</Name><Name>updated-${suffix}</Name><Tags><![CDATA[a & b]]></Tags></List>`,
+      "text/xml",
+      "PUT",
+      xml.value.data.id,
+    );
+    check(
+      xmlUpdate.response.status === 200 &&
+        xmlUpdate.value.data?.name === `updated-${suffix}` &&
+        JSON.stringify(xmlUpdate.value.data.tags) === JSON.stringify(["a-&-b"]),
+      "xml-update-duplicate",
+    );
+    check(
+      (await raw(`<List><name>lower-${suffix}</name></List>`, "application/xml")).response
+        .status === 400,
+      "xml-case-sensitive",
+    );
+    check(
+      (await raw("<List><Name>bad</List>", "application/xml")).response.status === 400,
+      "xml-malformed",
+    );
+    const safeText = await raw(
+      `<List><!-- <!DOCTYPE x> --><Name>safe-${suffix}</Name><Description><![CDATA[<!ENTITY x>]]></Description></List>`,
+      "application/xml",
+    );
+    check(
+      safeText.response.status === 200 && safeText.value.data?.description === "<!ENTITY x>",
+      "xml-comment-cdata-not-declaration",
+    );
+    const depth = (n: number) =>
+      `<List><Name>depth-${suffix}</Name>${"<x>".repeat(n)}${"</x>".repeat(n)}</List>`;
+    check(
+      (await raw(depth(63), "application/xml")).response.status === 200,
+      "xml-depth-64-control",
+    );
+    const tooDeep = await raw(depth(64), "application/xml");
+    check(
+      tooDeep.response.status === (target.mode === "reference" ? 200 : 400),
+      "D35-xml-depth-65",
+    );
+    const dtd = await raw(
+      `<!DOCTYPE List><List><Name>dtd-${suffix}</Name></List>`,
+      "application/xml",
+    );
+    check(dtd.response.status === (target.mode === "reference" ? 200 : 400), "D35-xml-dtd");
+    const external = await raw(
+      `<!DOCTYPE List [<!ENTITY x SYSTEM "file:///nonexistent">]><List><Name>&x;</Name></List>`,
+      "application/xml",
+    );
+    check(external.response.status === 400, "D35-xml-external-entity");
+    const longTag = "x".repeat(101),
+      limitTag = "é".repeat(100);
+    const longCreate = await raw(
+      JSON.stringify({ name: `long-${suffix}`, tags: [longTag] }),
+      "application/json",
+    );
+    check(
+      longCreate.response.status === (target.mode === "reference" ? 500 : 400) &&
+        (target.mode === "reference"
+          ? longCreate.value.message?.includes("22001")
+          : longCreate.value.message === "Invalid fields: tags"),
+      "D35-tag-post",
+    );
+    const bounded = await create(`bounded-${suffix}`, {
+      description: "retained",
+      tags: [limitTag],
+    });
+    check(JSON.stringify(bounded.tags) === JSON.stringify([limitTag]), "tag-multibyte-100");
+    const longUpdate = await raw(
+      JSON.stringify({ name: `renamed-${suffix}`, description: "changed", tags: [longTag] }),
+      "application/json",
+      "PUT",
+      bounded.id,
+    );
+    check(longUpdate.response.status === (target.mode === "reference" ? 200 : 400), "D35-tag-put");
+    const boundedRead = (
+      (await (await request(`/api/lists/${bounded.id}`)).json()) as { data: Record<string, any> }
+    ).data;
+    check(
+      target.mode === "reference"
+        ? boundedRead.name === `renamed-${suffix}` && boundedRead.tags[0] === "x".repeat(100)
+        : boundedRead.name === bounded.name &&
+            boundedRead.description === "retained" &&
+            boundedRead.tags[0] === limitTag &&
+            boundedRead.updated_at === bounded.updated_at,
+      "D35-tag-put-persistence",
+    );
+    const exact = await request(
+      `/api/lists?query=${encodeURIComponent(target.mode === "reference" ? `renamed-${suffix}` : bounded.name)}&tag=${encodeURIComponent(target.mode === "reference" ? "x".repeat(100) : limitTag)}`,
+    );
+    check(
+      ((await exact.json()) as { data: { results: { id: number }[] } }).data.results.some(
+        (x) => x.id === bounded.id,
+      ),
+      "D35-tag-exact-filter",
+    );
+    const xmlLong = await raw(
+      `<List><Name>xml-rename-${suffix}</Name><Tags>${longTag}</Tags></List>`,
+      "application/xml",
+      "PUT",
+      bounded.id,
+    );
+    check(xmlLong.response.status === (target.mode === "reference" ? 200 : 400), "D35-xml-tag-put");
     const list = await create(`m15 ${suffix} Ponies`, {
       description: "description",
       tags: [" One Two ", "other"],
