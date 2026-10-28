@@ -29,6 +29,21 @@ The initial M1.2 Terra worker completed with substantive but incomplete draft [P
 
 D45 authorizes immutable creation-time expiry in existing session JSON and a narrow user-store/auth/login-cookie seam, resolving the reported ownership block without schema changes. The current live-duration lookup could revive expired sessions; draft 501 must be removed once this safe behavior is implemented. Other reported gaps are defects to finish: Go binding/content types/duplicates/nulls, mail-address validation, cron validation, app.check_updates=false, current/retained/in-flight scope tests and complete atomic contract coverage. Locale must be dispositioned truthfully. The lead will add the two settings CI commands and push through the existing authenticated SSH identity (OAuth lacks workflow scope), then dispatch one fresh Terra max completion fixer on the same PR. No new credentials, duplicate worker or owner approval; continuous fleet management remains active.
 
+The lead pushed the missing settings CI commands on the existing PR at 5b6c03db173584959a0f3017c4a76142a49fb335 using the already available SSH identity. Both two-job Ubuntu x86-64 workflows retain compiled/reference settings gates; YAML/job checks and formatting passed. No credential/scope change or owner action is required. [M1.2 completion brief](briefs/M1.2-fix-1.md) authorizes the exact D45 user-store/auth/login seam and requires all remaining binding/address/cron/security/atomicity acceptance, with English-only runtime stated honestly. One fresh Terra max fixer will finish the same PR; no council/watch begins while implementation is incomplete.
+
+
+The sole completion fixer is dispatched: [M1.2: Complete settings and immutable session lifetime](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix1-complete-5b6c03d), GPT-6.1 Terra max, implementation role, worktree isolation and target.options, starting from PR #14 head 5b6c03d. It returned running without pending question/approval and no child work. The original worker is terminal; there is no duplicate or helper. The next instruction is to end the turn and let completion wake the lead. No polling/waiting, council dispatch or PR watch while substantive implementation remains incomplete. Continuous fleet management continues immediately through the next stage and next eligible task after merge.
+
+- Completion fixer task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix1-complete-5b6c03d.
+- Completion fixer thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix1-complete-5b6c03d.
+- Initial fixer run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-fix1-complete-5b6c03d:ordinal:1.
+- Idempotent request: iglo-email-M1.2-fix1-complete-5b6c03d.
+
+
+The first completion fixer is terminal, no active run/pending question/approval or child work, at draft PR #14 head 50e7c20e8982246b63b0c6ea63bf32d01548a8d6. It implemented D45 immutable expiry/live policy, Go-style ordered JSON/XML/key binding, From-address and cron parsing, safe false update-check values and additional security/session tests. Reported final full check 165 tests, focused 104, session suite 37, compiled/pinned/smoke and fresh serial ext4 measurements passed for covered cases. No readiness/approval is claimed.
+
+D46 accepts safe atomic rejection of final writable settings NUL strings/map keys instead of a native successful-write difference or upstream database-error 500. The lead fixes this concrete small defect directly with reference-first paired no-write cases. Remaining acceptance is a finite work list: expired-session and legacy restart, specific in-flight authorization variants, and representative JSON/XML/form/key/parser boundary cases—not a demand for an impossible exhaustive proof of all strings. Existing substantive implementation remains usable; normal completion fixes continue on the same PR, without duplicating a writer or stopping the project. No council/watch before those required cases pass.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
@@ -143,3 +158,5 @@ M1.3 cooldown expired at 11:22:23 UTC; automatic Opus continuation completed its
 [D44](design/09-decisions.md#d44-settings-ownership-safe-per-key-updates-and-in-process-activation) records M1.2 bootstrap ownership, safe per-key validation, supported in-process activation and explicit staged SMTP behavior.
 
 [D45](design/09-decisions.md#d45-capture-each-session-lifetime-at-creation) authorizes immutable creation-time session expiry and the narrow owner seam needed for live settings, with legacy/no-revival and cookie consistency acceptance.
+
+[D46](design/09-decisions.md#d46-reject-nul-in-final-writable-settings-values) records safe pre-write NUL validation for the final bound/normalized settings candidate.
