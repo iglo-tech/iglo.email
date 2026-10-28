@@ -200,6 +200,14 @@ export async function runSettingsContract(target: {
     ] === "second",
     "ordered-alias-null",
   );
+  const integerCandidate = JSON.stringify(updated).replace(
+    /"app.batch_size":\d+/,
+    '"app.batch_size":9007199254740993',
+  );
+  check((await request("/api/settings", "PUT", integerCandidate)).status === 200, "int64-write");
+  const integerProjection = await (await request("/api/settings")).text();
+  check(/"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(integerProjection), "int64-exact-projection");
+  check((await request("/api/settings", "PUT", JSON.stringify(updated))).status === 200, "int64-restore");
   const key = await request(
     "/api/settings/app.site_name",
     "PUT",
