@@ -8,11 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 corrections are pushed to [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), new head `eef7472244e51f8e05f758b7449cdead6110e316`; fresh CI is pending. Opus round 1 requested changes on original head `b8797e2`; both findings are addressed, and D21 records the lead’s decision to support asset HEAD. Sol’s original-head round-1 review remains pending. Collect its verdict and new-head CI before fresh council round 2. The existing PR watch remains active; do not poll or start duplicate reviewers.
+M0.6 corrections are pushed to [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), new head `eef7472244e51f8e05f758b7449cdead6110e316`; fresh CI is pending. Opus round 1 requested changes on original head `b8797e2`; both findings are addressed, and D21 records the lead’s decision to support asset HEAD. Sol also returned CHANGES on the original head: equivalent escaped/static filenames fail, and HTML assertions falsely accept browser-normalized executable URLs and hidden headings; its HEAD-policy finding is covered by D21. Both round-1 reviews are terminal. The lead is adding reference-first and failing public-boundary regressions for the remaining findings before new CI and fresh council round 2. The existing PR watch remains active; do not poll or start duplicate reviewers.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | fix | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 1 | [Brief](briefs/M0.6.md). Head `eef7472244e51f8e05f758b7449cdead6110e316`; new CI pending. Lead checks: 81 tests / 589 assertions, 18 production cases, 23 fixture + 2 probes, 40 upstream cases, ui:verify and focused checks passed. Four failures preceded fixes in `82f0784`; reference/header/policy evidence is `3e5d3e7`. Sol original-head verdict pending; no round-2 reviewer started. |
+| M0.6 | fix | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 1 | [Brief](briefs/M0.6.md). Head `eef7472244e51f8e05f758b7449cdead6110e316`; new CI pending. Lead checks: 81 tests / 589 assertions, 18 production cases, 23 fixture + 2 probes, 40 upstream cases, ui:verify and focused checks passed. Four failures preceded fixes in `82f0784`; reference/header/policy evidence is `3e5d3e7`. Sol CHANGES adds asset canonicalization and HTML false-pass findings; HEAD policy is addressed by D21. Both original-head reviews are terminal; remaining fixes in progress, no round-2 reviewer started. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,7 +20,7 @@ Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
-- PR #6 is linked and watched in this lead thread. Opus round 1 is terminal; Sol remains running on the original head. No replacement reviewer started.
+- PR #6 is linked and watched in this lead thread. Both round-1 reviews are terminal with CHANGES; no replacement or round-2 reviewer started.
 
 Lead correction: OPTIONS/405 now advertise implemented methods; D21 enables metadata-only HEAD for embedded assets. The shared corpus checks declared headers and includes a D18 static escape against actual compiled production; ui:verify executes it as well, and the public API policy names it. The admin-specific error page is recorded as pending M4.1. The expanded reference corpus passed before the application change.
 
@@ -33,7 +33,7 @@ Handoff notes for council: the existing D18 dot-segment normalization also chang
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
 
-[M0.6 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de); gpt-6.1-sol. Verdict pending on `b8797e2316bfb20ad9ef590ef621aa039180c772`.
+[M0.6 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de); gpt-6.1-sol. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6456715918): escaped/canonical asset spellings, copied HEAD rejection, and HTML false passes for executable URLs and hidden headings. All required acceptance and browser checks passed; tracked files unchanged.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
