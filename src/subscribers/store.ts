@@ -68,11 +68,17 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
       return value;
     }),
   });
-  const conflict = (error: unknown, updating = false): never => {
+  const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
+  const conflict = (error: unknown, email?: string): never => {
     if (error instanceof Error && error.message.includes("subscribers.external_id"))
       throw new HttpError(409, "External ID already exists");
     if (error instanceof Error && error.message.includes("subscribers.email"))
-      throw new HttpError(updating ? 500 : 409, updating ? "" : "E-mail already exists.");
+      throw email === undefined
+        ? new HttpError(409, "E-mail already exists.")
+        : new HttpError(
+            500,
+            `Error updating Subscriber: pq: duplicate key value violates unique constraint "subscribers_email_key" (23505). Key (email)=(${email}) already exists.`,
+          );
     throw error;
   };
   const permittedLists = (requested: bigint[], scope: Scope) =>
@@ -107,7 +113,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
   };
   return {
     get,
-    external: (external: string) => q.get("subscriber-by-external").get(external) as Row | null,
+    external,
     memberships,
     project,
     transaction(fn: () => Response): Response {
@@ -116,6 +122,8 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
     create(input: SubscriberInput & { email: string; name: string }, scope: Scope) {
       const now = clock.now().toISOString(),
         status = input.status || "enabled";
+      if (input.external_id != null && external(input.external_id))
+        throw new HttpError(409, "External ID already exists");
       try {
         const row = q
           .get("subscriber-insert")
@@ -154,6 +162,11 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
             ? {}
             : { ...JSON.parse(row.attribs), ...input.attribs }
         : (input.attribs ?? {});
+      if (input.external_id != null) {
+        const existing = external(input.external_id);
+        if (existing && existing.id !== row.id)
+          throw new HttpError(409, "External ID already exists");
+      }
       try {
         q.get("subscriber-update").run(
           email,
@@ -175,7 +188,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
           );
         return get(row.id)!;
       } catch (error) {
-        return conflict(error, true);
+        return conflict(error, email);
       }
     },
     remove(ids: bigint[]) {

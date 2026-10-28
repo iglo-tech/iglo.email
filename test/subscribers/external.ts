@@ -181,6 +181,15 @@ export async function runExternalContract(target: {
       name: "collision changed",
     });
     check(response.status === 409, "D38-external-rekey-collision");
+    response = await request(`/api/subscribers/${contenderData.id}`, "PATCH", {
+      email: data.email,
+      external_id: external,
+      name: "collision changed",
+    });
+    check(
+      response.status === 409 && (await response.json()).message === "External ID already exists",
+      "D38-external-and-email-collision",
+    );
     const afterCollision = (await (await request(`/api/subscribers/${contenderData.id}`)).json())
       .data;
     check(

@@ -264,7 +264,12 @@ export async function runSubscribersContract(target: {
         email: sub.email,
         name: "must not persist",
       });
-      check(collision.status === 500, "subscriber-update-duplicate-email");
+      check(
+        collision.status === 500 &&
+          (await collision.json()).message ===
+            `Error updating Subscriber: pq: duplicate key value violates unique constraint "subscribers_email_key" (23505). Key (email)=(${sub.email}) already exists.`,
+        "subscriber-update-duplicate-email",
+      );
       const unchanged = await get(semantics.id);
       check(
         unchanged.email === semantics.email &&
