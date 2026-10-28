@@ -23,7 +23,10 @@ export function createListReferences(db: Database) {
         updated_at: string | null;
       } | null;
       if (!row) return null;
-      return { ...row, id: Number(row.id), tags: row.tags ? JSON.parse(row.tags) : [] };
+      const tags = row.tags ? (JSON.parse(row.tags) as unknown[]) : null;
+      // Upstream lazy subscriber projection embeds raw list tags, unlike the
+      // standalone list API. normalizeTags stores NULL for an empty result.
+      return { ...row, id: Number(row.id), tags: tags?.length ? tags : null };
     },
     close: () => queries.close(),
   };

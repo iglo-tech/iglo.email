@@ -14,3 +14,10 @@ dot paths observe D18 normalization. The compiled corpus uses real subscriber
 writes to check list counts; the separate pre-M1.6 list-count fixture remains
 labelled synthetic evidence. D40 cases distinguish native signed-64-bit IDs
 from the reference's PostgreSQL integer-width errors.
+
+D41 state regressions use invocation-owned state/other-state/blocked-state
+addresses, an untagged list and a tagged list. They assert raw null-tag projection,
+Go NEL/BOM update trimming, safe bulk message/no-write envelopes, duplicate-email
+rollback and explicit duplicate-selector write outcomes versus pinned errors.
+A blocklisted subscriber's explicit-empty-status PATCH control preserves its
+permitted confirmed membership. Cleanup uses only returned IDs.

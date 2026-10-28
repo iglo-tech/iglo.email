@@ -207,7 +207,8 @@ export function registerSubscriberRoutes(
     });
   const blockMany: Handler = async (c) => {
     const input = await subscriberInput(c);
-    if (!input.ids?.length) throw new HttpError(400);
+    if (!input.ids?.length)
+      throw new HttpError(400, c.app.i18n.Ts("globals.messages.errorInvalidIDs", "error", "ids"));
     auth.revalidate(c, "subscribers:manage");
     return store.transaction(() => {
       allowed(c, input.ids!, "manage");
@@ -220,20 +221,26 @@ export function registerSubscriberRoutes(
     async (c) => {
       const input = await subscriberInput(c);
       const ids = single ? [BigInt(getID(c))] : (input.ids ?? []);
-      if (!ids.length || !input.target_list_ids?.length) throw new HttpError(400);
-      if (!["add", "remove", "unsubscribe"].includes(input.action ?? "")) throw new HttpError(400);
-      if (
-        input.action === "add" &&
-        input.status &&
-        !["confirmed", "unconfirmed", "unsubscribed"].includes(input.status)
-      )
-        throw new HttpError(400);
+      if (!ids.length) throw new HttpError(400, c.app.i18n.T("globals.messages.noIDs"));
+      if (!input.target_list_ids?.length)
+        throw new HttpError(400, c.app.i18n.T("subscribers.errorNoListsGiven"));
       auth.revalidate(c, "subscribers:manage");
       return store.transaction(() => {
         allowed(c, ids, "manage");
         listPermission(c, input.target_list_ids);
         const s = scope(c, "manage");
         const targets = input.target_list_ids!.filter((id) => s.all || s.ids.includes(id));
+        if (!["add", "remove", "unsubscribe"].includes(input.action ?? ""))
+          throw new HttpError(400, c.app.i18n.T("globals.messages.invalidAction"));
+        if (
+          input.action === "add" &&
+          input.status &&
+          !["confirmed", "unconfirmed", "unsubscribed"].includes(input.status)
+        )
+          throw new HttpError(
+            400,
+            c.app.i18n.Ts("globals.messages.invalidFields", "name", "status"),
+          );
         store.action(ids, targets, input.action!, input.status ?? "");
         return ok(true);
       });

@@ -1,6 +1,7 @@
 // Adapted from listmonk internal/core/subscribers.go, internal/core/subscriptions.go and queries/subscribers.sql at 6fcd95f.
 import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
+import { trimSpace } from "@/lists/store";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import type { ListReferences } from "@/lists/references";
@@ -69,16 +70,11 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
     }),
   });
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
-  const conflict = (error: unknown, email?: string): never => {
+  const conflict = (error: unknown): never => {
     if (error instanceof Error && error.message.includes("subscribers.external_id"))
       throw new HttpError(409, "External ID already exists");
     if (error instanceof Error && error.message.includes("subscribers.email"))
-      throw email === undefined
-        ? new HttpError(409, "E-mail already exists.")
-        : new HttpError(
-            500,
-            `Error updating Subscriber: pq: duplicate key value violates unique constraint "subscribers_email_key" (23505). Key (email)=(${email}) already exists.`,
-          );
+      throw new HttpError(409, "E-mail already exists.");
     throw error;
   };
   const permittedLists = (requested: bigint[], scope: Scope) =>
@@ -153,7 +149,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
     update(row: Row, input: SubscriberInput, patch: boolean, scope: Scope) {
       const now = clock.now().toISOString();
       const email = input.email || row.email,
-        name = input.name?.trim() || row.name,
+        name = (input.name === undefined ? undefined : trimSpace(input.name)) || row.name,
         status = input.status || row.status;
       const attrs = patch
         ? input.attribs === undefined
@@ -182,13 +178,13 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
             row.id,
             permittedLists(input.lists ?? [], scope),
             scope,
-            patch ? status : (input.status ?? ""),
+            patch ? (input.status ?? row.status) : (input.status ?? ""),
             input.preconfirm_subscriptions ?? false,
             now,
           );
         return get(row.id)!;
       } catch (error) {
-        return conflict(error, email);
+        return conflict(error);
       }
     },
     remove(ids: bigint[]) {
@@ -203,8 +199,8 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
     },
     action(ids: bigint[], listIDs: bigint[], action: string, status: string) {
       const now = clock.now().toISOString();
-      for (const id of ids)
-        for (const list of listIDs) {
+      for (const id of new Set(ids))
+        for (const list of new Set(listIDs)) {
           const existing = memberships(id).find((m) => m.list_id === list);
           if (action === "add") {
             if (!existing)
