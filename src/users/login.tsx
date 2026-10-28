@@ -1,4 +1,4 @@
-// Adapted from listmonk cmd/auth.go and static/public/templates/login.html at 6fcd95f.
+// Adapted from listmonk cmd/auth.go, internal/utils/utils.go and static/public/templates/login.html at 6fcd95f.
 import { posix } from "node:path";
 import { render } from "@/jsx/render";
 import { PublicShell } from "@/public/layout";
@@ -20,10 +20,20 @@ function sanitizeNext(value: string): string {
   const text = value.trim();
   if (!text || unsafeCharacters(text)) return "/";
   try {
+    // Reject against the original decoded path: WHATWG URL parsing resolves
+    // dot segments. Discard only scheme, authority, query and fragment here;
+    // URL below still validates and selects the final local destination.
+    const rawPath =
+      text
+        .replace(/^[a-z][a-z\d+.-]*:/i, "")
+        .replace(/^\/\/[^/?#]*/, "")
+        .split(/[?#]/, 1)[0] ?? "";
+    const original = decodeURIComponent(rawPath);
+    if (original.includes("..") || unsafeCharacters(original)) return "/";
     const url = new URL(text, "http://login.invalid/");
     const decoded = decodeURIComponent(url.pathname);
     if (decoded.includes("..") || unsafeCharacters(decoded)) return "/";
-    const path = posix.normalize(decoded);
+    const path = posix.normalize(decoded).replace(/\/+$/, "") || "/";
     // Clean the decoded path as upstream does, then preserve path delimiters
     // while escaping segment contents for a single, safe Location interpretation.
     return path.startsWith("/") && !path.startsWith("//")

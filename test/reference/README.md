@@ -106,7 +106,7 @@ the stateful `test/contract/auth.ts` corpus; the explicit `reference:run`
 command above runs that corpus against pinned upstream with invocation-owned
 users and role fixtures. The final sole-admin probe restores the invocation-owned
 bootstrap user in a finally block; it is not for a persistent or real server.
-Its D26-D28 differences are
+Its D26-D29 differences are
 documented in `test/contract/fixtures.md`. No generated secret is reported.
 
 The separate fixture profile retains its synthetic auth gate and representative

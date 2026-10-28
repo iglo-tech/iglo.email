@@ -58,3 +58,47 @@ the disposable server stopped with Ctrl-C and its loopback health was confirmed
 unreachable. The HTTP common corpus separately submits the escaped destination
 directly on POST, asserts the exact Location header, and follows it with the
 issued session. No generated secret was recorded.
+
+## Round-2 redirect cleanup verification
+
+The lead repeated the documented compiled browser flow with fresh data at
+http://127.0.0.1:33165 on 2026-10-28. The initial form destination for the
+successful flow was /api/profile/., opened with:
+
+```sh
+agent-browser --session m13-browser open 'http://127.0.0.1:33165/admin/login?next=%2Fapi%2Fprofile%2F.'
+```
+
+The nonce/next check returned true and valid form submission navigated to
+/api/profile with the synthetic bootstrap identity and null password. The
+wrong-password, missing-nonce, missing-CSRF, valid-CSRF logout and escaped HTML
+checks returned the same expected results recorded above. Navigation waits were
+used. The browser was closed; Ctrl-C stopped the owned server, and its health
+endpoint was confirmed unreachable.
+
+Before that flow, after opening /admin/login, this script was passed to
+`agent-browser --session m13-browser eval`. It returned
+`{ "checked": 10, "passed": true }`. Only GET forms were inspected; the shared
+HTTP corpus separately verifies direct POST Locations and issued identities.
+The form was reopened afterwards so its nonce matched the latest cookie.
+No generated nonce or cookie was printed.
+
+```js
+(async () => {
+const cases = [
+["/api/profile/","/api/profile"],["/api/profile/.","/api/profile"],
+["/a/../api/profile","/admin"],["/%2e%2e/api/profile","/admin"],
+["/api/%0d%0aprofile","/admin"],["/api/%5cprofile","/admin"],
+["//outside.example.test/api/profile/","/api/profile"],
+["/api/profile%3Fq%3Dx","/api/profile%3Fq%3Dx"],
+["/api/profile%23fragment","/api/profile%23fragment"],
+["/api/%2570rofile","/api/%2570rofile"]
+];
+for (const [next,expected] of cases) {
+ const response = await fetch("/admin/login?"+new URLSearchParams({next}));
+ const html = new DOMParser().parseFromString(await response.text(),"text/html");
+ if (response.status!==200 || html.querySelector("input[name=next]")?.value!==expected) throw new Error("Redirect form probe failed");
+}
+return {checked:cases.length,passed:true};
+})()
+```
