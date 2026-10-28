@@ -149,6 +149,8 @@ The sole round-2 parser fixer is dispatched: [M1.2: Fix round-two cron and encod
 - Fixer run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-fix-r2-parsers-b740196:ordinal:1.
 - Idempotent request: iglo-email-M1.2-fix-r2-parsers-b740196.
 
+CI wake checkpoint: exact b740196ada3652fda844283a485b165384ce21d1 has four successful Linux check/reference-linux push/PR results; PR #14 is OPEN/draft. This validates the lead SMTP Unicode/documentation fixes, not completion of the remaining cron/address defects or a council approval. The sole Terra max round-2 parser assignment retains ownership and stage fix; no delegate was polled, interrupted, replaced or duplicated. Existing completion-driven next action and PR watch stay unchanged, without relink/re-watch. Final corrected-head acceptance/CI and fresh round-3 council follow its completion.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
