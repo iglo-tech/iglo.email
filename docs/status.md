@@ -16,7 +16,7 @@ The lead fixed these small findings directly in the completed worker's worktree 
 
 Lead verification passed: extended stateful reference and compiled-auth corpus; `bun run check` (135 tests, 1064 assertions); `ui:verify`; 38 compiled core contracts; 24 staged contracts plus two probes; and 58 upstream core/helper cases. The compiled browser flow with escaped `next` passed wrong-password, nonce, canonical authenticated destination, CSRF/logout and input-safety checks; the browser was closed and server confirmed stopped. The worktree is clean after the push. The PR body records exact corrections, evidence and disclosed limits.
 
-All eight fresh-head CI jobs are successful on `be6095bf7d0e076787576a65f0dd335f82d39351`, verified at 11:50 UTC after the check wake; the PR is open and mergeable. Existing comments are the two handled round-1 findings, with no formal review decision. Capabilities were rechecked after the earlier provider error and still offer the exact requested models/settings. Council round 2 uses fresh Opus medium and Sol xhigh delegates together in isolated worktrees, with [round-2 instructions](briefs/M1.3-council-r2.md), both prior findings and D28. Every reviewer independently runs all acceptance and browser checks; bounded measurements share the lead-owned measurement.lock. No worker/fixer or duplicate round-1 reviewer is running. Both dispatches are running; exact recovery IDs and requested/returned settings are below. The existing PR linkage/watch stays in place; do not relink/rewatch or poll delegates. After M1.3 merges, this elapsed run must release the lock and end.
+All eight fresh-head CI jobs are successful on `be6095bf7d0e076787576a65f0dd335f82d39351`, verified at 11:50 UTC after the check wake; the PR is open and mergeable. Existing comments are the two handled round-1 findings, with no formal review decision. Capabilities were rechecked after the earlier provider error and still offer the exact requested models/settings. Council round 2 uses fresh Opus medium and Sol xhigh delegates together in isolated worktrees, with [round-2 instructions](briefs/M1.3-council-r2.md), both prior findings and D28. Every reviewer independently runs all acceptance and browser checks; bounded measurements share the lead-owned measurement.lock. No worker/fixer or duplicate round-1 reviewer is running. Opus has completed with CHANGES; Sol was already running and its completion is still pending. Exact recovery IDs and requested/returned settings are below. No new delegate or code change while that review uses the current head. The existing PR linkage/watch stays in place; do not relink/rewatch or poll delegates. After M1.3 merges, this elapsed run must release the lock and end.
 
 ### Council round 2 recovery
 
@@ -27,7 +27,7 @@ All eight fresh-head CI jobs are successful on `be6095bf7d0e076787576a65f0dd335f
 - Child thread ID: `thread:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-opus-be6095b-20261028T1150`.
 - Child run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A423a906d-05dd-4fea-80a6-69824cfebe5c%253Adelegate-task%253Aiglo-email-M1.3-council-r2-opus-be6095b-20261028T1150:ordinal:1`.
 - Returned options: `[{"id":"effort","value":"medium"}]`.
-- State: running at dispatch, no pending question/approval or child runs. Next: completion wakes the lead; end the turn without waiting or polling.
+- State: completed with `CHANGES be6095bf7d0e076787576a65f0dd335f82d39351` at approximately 11:59 UTC. [Single verdict](https://github.com/iglo-tech/iglo.email/pull/10#issuecomment-6468380784). Terminal completion inspected, no pending questions/approvals or child runs. Worktree clean; no changes or pushes.
 
 [M1.3 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-sol-be6095b-20261028T1150), dispatched 2026-10-28T11:51:47.896Z with `isolation: "worktree"`, `mode: "async"`, `role: "review"`, `target: {"providerInstanceId":"codex","model":"gpt-6.1-sol","options":{"reasoningEffort":"xhigh"}}`.
 
@@ -37,6 +37,13 @@ All eight fresh-head CI jobs are successful on `be6095bf7d0e076787576a65f0dd335f
 - Child run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A423a906d-05dd-4fea-80a6-69824cfebe5c%253Adelegate-task%253Aiglo-email-M1.3-council-r2-sol-be6095b-20261028T1150:ordinal:1`.
 - Returned options: `[{"id":"reasoningEffort","value":"xhigh"},{"id":"serviceTier","value":"default"}]`.
 - State: running at dispatch, no pending question/approval or child runs. Next: completion wakes the lead; end the turn without waiting or polling.
+
+
+### Delivered round-2 findings (remaining reviewer still running)
+
+Opus requests changes at `src/users/login.tsx:23-31`: `/api/profile/` and `/api/profile/.` redirect to a trailing-slash destination that returns 404 in production, whereas upstream cleans both to `/api/profile` and returns the authenticated result. `/a/../api/profile` and `/%2e%2e/api/profile` are rejected to `/` upstream but normalized to `/api/profile` before the production `..` check. It requests trailing-slash cleanup (except root), validation before URL normalization and marked shared cases. These are compatibility regressions to correct, not an approved new difference. Keep the head stable until the already-running Sol review completes, then combine findings and fix the small issues directly before fresh CI and council round 3; do not poll or duplicate it.
+
+Opus independently confirms every round-1 issue is resolved, including canonical escaped destinations, D28 API-profile credential preservation after cache reload and the final-human-admin guard/restoration. All twelve acceptance commands and browser checks ultimately passed. Its first full check failed two tests (a contract request and a 15-second compiled-bootstrap timeout); targeted files passed 37/37 and 12/12, and the repeated full check passed 135/135. Host contention was observed, but no cause is asserted or timeout/test weakening authorized. Measurements ran under the shared lock and did not replace data. Browser and invocation-owned servers were closed. CI remained 8/8 green. The PR is unmerged, with no round-2 approval yet.
 
 
 ## Automation
