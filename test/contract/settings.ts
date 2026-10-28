@@ -119,6 +119,18 @@ export async function runSettingsContract(target: {
   );
   const invalidDuration = await request("/api/settings/security.session_duration", "PUT", '"0s"');
   check(invalidDuration.status === (target.mode === "reference" ? 200 : 400), "duration-d45");
+  check((await request("/api/settings/security.session_duration", "PUT", '"7d"')).status === 200, "duration-restore");
+  const ordered = JSON.stringify(updated).replace(
+    /"app.site_name":"[^"]*"/,
+    '"app.site_name":"first","APP.SITE_NAME":"second","app.site_name":null',
+  );
+  check((await request("/api/settings", "PUT", ordered)).status === 200, "ordered-write");
+  check(
+    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+      "app.site_name"
+    ] === "second",
+    "ordered-alias-null",
+  );
   const key = await request(
     "/api/settings/app.site_name",
     "PUT",
