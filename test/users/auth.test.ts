@@ -149,9 +149,13 @@ test("legacy and malformed session records retain their safe expiry behavior", a
   const admin = await login(f, f.admin.user, f.admin.password);
   const legacy = await login(f, f.admin.user, f.admin.password);
   const invalid = await login(f, f.admin.user, f.admin.password);
+  const overflow = await login(f, f.admin.user, f.admin.password);
+  const beforeCreated = await login(f, f.admin.user, f.admin.password);
   const future = await login(f, f.admin.user, f.admin.password);
   f.arrangeSession(legacy.cookie, "legacy");
   f.arrangeSession(invalid.cookie, "invalid");
+  f.arrangeSession(overflow.cookie, "overflow");
+  f.arrangeSession(beforeCreated.cookie, "before-created");
   f.arrangeSession(future.cookie, "future-created");
   expect(
     (
@@ -164,6 +168,8 @@ test("legacy and malformed session records retain their safe expiry behavior", a
   ).toBe(200);
   expect((await call(f, "/api/profile", { session: legacy })).status).toBe(200);
   expect((await call(f, "/api/profile", { session: invalid })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: overflow })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: beforeCreated })).status).toBe(403);
   expect((await call(f, "/api/profile", { session: future })).status).toBe(403);
   await call(f, "/fixture/clock", { method: "POST", body: defaultAuthPolicy.sessionDurationMs });
   expect((await call(f, "/api/profile", { session: legacy })).status).toBe(403);
@@ -667,12 +673,20 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
   expect(verified.headers.get("location")).toBe("/api/profile");
   expect(verified.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(true);
   for (const header of verified.headers.getSetCookie()) expect(header).toContain("Max-Age=3");
+  const factorCookie = verified.headers
+    .getSetCookie()
+    .filter((v) => v.startsWith("session=") || v.startsWith("csrf="))
+    .map((v) => v.split(";", 1)[0])
+    .join("; ");
+  const factorSession = { cookie: factorCookie, csrf: "", headers: [] };
+  expect((await call(f, "/api/profile", { session: factorSession })).status).toBe(200);
   expect((await verify(valid, "652348")).status).toBe(302);
   const attempts = await challenge();
   for (let i = 0; i < 5; i++) expect((await verify(attempts, "bad")).status).toBe(200);
   expect((await verify(attempts, "652348")).status).toBe(302);
   const expired = await challenge();
   await call(f, "/fixture/clock", { method: "POST", body: 300_000 });
+  expect((await call(f, "/api/profile", { session: factorSession })).status).toBe(403);
   expect((await verify(expired, "652348")).status).toBe(302);
   const revoked = await challenge();
   expect(

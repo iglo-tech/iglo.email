@@ -255,7 +255,10 @@ export async function startUserFixture(
       admin,
       origin: `http://127.0.0.1:${server.port}`,
       // Arrange historical and damaged synthetic records; observations use HTTP.
-      arrangeSession(cookie: string, expiry: "legacy" | "invalid" | "future-created") {
+      arrangeSession(
+        cookie: string,
+        expiry: "legacy" | "invalid" | "overflow" | "before-created" | "future-created",
+      ) {
         const id = /(?:^|;\s*)session=([^;]+)/.exec(cookie)?.[1];
         if (!id) throw new Error("Missing synthetic session");
         if (expiry === "legacy")
@@ -266,6 +269,14 @@ export async function startUserFixture(
           db.query(
             "UPDATE sessions SET data = json_set(data, '$.expires_at', 'invalid') WHERE id = ?",
           ).run(id);
+        else if (expiry === "overflow")
+          db.query(
+            "UPDATE sessions SET data = json_set(data, '$.expires_at', 8640000000000001) WHERE id = ?",
+          ).run(id);
+        else if (expiry === "before-created")
+          db.query("UPDATE sessions SET data = json_set(data, '$.expires_at', 0) WHERE id = ?").run(
+            id,
+          );
         else
           db.query("UPDATE sessions SET created_at = ? WHERE id = ?").run(
             new Date(clock.now().getTime() + 1000).toISOString(),

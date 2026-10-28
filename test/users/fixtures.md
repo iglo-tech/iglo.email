@@ -22,7 +22,8 @@ and `  fixture-admin-reset-password  ` with the surrounding spaces. The fixture
 never connects to an external service.
 
 For D45, the fixture may remove the expiry property from a freshly issued
-synthetic session, or set an invalid expiry/future creation time, to represent
+synthetic session, or set an invalid, overflowing or pre-creation expiry, or a
+future creation time, to represent
 pre-M1.2 or damaged persisted records. Only HTTP responses are asserted; this
 arrangement is not a production route and does not use production data.
 

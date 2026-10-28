@@ -112,7 +112,12 @@ export function cronError(input: string): string | null {
       if (high < min || high > max)
         return `${option}: value ${high} out of valid range [${min}, ${max}]`;
       if (high < low) return `${option}: beginning of range (${low}) beyond end of range (${high})`;
-      if (slash.length > 1 && !(number(slash[1]!) > 0)) return `step should be > 0, got 0`;
+      if (slash.length > 1) {
+        const step = slash[1]!;
+        if (!/^\+?\d+$/.test(step) || !Number.isSafeInteger(Number(step)))
+          return `failed to parse int from ${step}: strconv.Atoi: parsing ${JSON.stringify(step)}: invalid syntax`;
+        if (Number(step) === 0) return "step should be > 0, got 0";
+      }
     }
   }
   return null;
