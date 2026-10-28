@@ -312,6 +312,28 @@ export async function runSubscriberBindingRevisions(target: {
         (await get(sub.id)).lists.some((entry: any) => entry.id === list.id),
       "path-seed",
     );
+    const irrelevantStatus = await request(
+      "/api/subscribers/lists",
+      "PUT",
+      `{"ids":[${sub.id}],"target_list_ids":[${list.id}],"action":"remove","status":42}`,
+    );
+    check(
+      irrelevantStatus.status === (target.mode === "reference" ? 400 : 200),
+      "D38-remove-ignores-status",
+    );
+    check(
+      (await get(sub.id)).lists.some((entry: any) => entry.id === list.id) ===
+        (target.mode === "reference"),
+      "D38-remove-status-state",
+    );
+    if (target.mode !== "reference") {
+      const restore = await request(
+        `/api/subscribers/${sub.id}`,
+        "PATCH",
+        `{"lists":[${list.id}]}`,
+      );
+      check(restore.status === 200, "path-reseed");
+    }
     const pathAction = await request(
       `/api/subscribers/lists/${sub.id}`,
       "PUT",
