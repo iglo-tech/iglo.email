@@ -20,6 +20,12 @@ Deliberate differences:
 | Overflowing numeric route IDs | Positive IDs above `9223372036854775807` return HTTP 400 with `{"message":"invalid ID"}` before storage access, instead of upstream's saturated ID and database-error 500 | Invalid input should be a client error; avoid exposing database internals or issuing a query for an unrepresentable ID ([D17](09-decisions.md#d17-reject-positive-route-id-overflow-before-storage)) |
 | Request-path normalization | Bun removes literal or encoded `.` / `..` segments and rewrites literal backslashes to slashes before routing; the canonical target determines the response. In the shared-contract fixture, `/api/lists/%2E` and `/api/lists/%2E%2E` reach the API fallback rather than upstream's 400 `invalid ID`, and `/fixture/id\12` reaches ID 12 where upstream treats the backslash as a literal segment character. Exact `/public/static/%2e%2e/style.css` leaves the static prefix after Bun normalization and returns the public HTML 404 instead of upstream's plain-text static 404; both refuse the resource | Keep the required `Bun.serve` transport and one URL interpretation for routing and route middleware, rather than introduce a second HTTP parser for spellings the runtime does not expose ([D18](09-decisions.md#d18-use-buns-normalized-request-path)) |
 | Embedded static asset methods | HEAD returns the corresponding GET resource metadata without a body (200 for an existing asset, 404 for a missing one), instead of upstream's 405. OPTIONS and 405 responses advertise `OPTIONS, GET, HEAD`, while upstream advertises `OPTIONS, GET` | Inspect existence/type/size/cache metadata without downloading resources; advertise the methods actually implemented ([D21](09-decisions.md#d21-support-head-for-embedded-assets)) |
+| Explicit API credentials with a session cookie | A nonempty Authorization header selects the API identity and never falls back to the cookie on failure | The upstream v3 compatibility shim ignores explicit credentials whenever a session cookie is present; stale cookies must not break API calls or silently select another principal ([D26](09-decisions.md#d26-authentication-bootstrap-and-credential-boundaries)) |
+| Password login | Passwords keep their exact contents, including surrounding spaces, consistently with creation | Upstream stores the created password unchanged but trims login input, so accepted passwords can become unusable (D26) |
+| Cookie-backed mutations and password login | Require session-bound CSRF / pre-login nonce protection, reject foreign Origin on unsafe requests, and rate-limit password-login POSTs by transport peer IP | Enforce the security boundary required by this design; Basic/token clients remain supported without cookie CSRF tokens (D26) |
+| Initial administrator setup | Provision only from the explicit bootstrap environment pair when there are no users; no unauthenticated first-account claim form | Follow D14, keep first-account ownership at the server and preserve existing users (D26) |
+| Session revocation | Disabling/deleting/changing authentication identity revokes retained sessions; re-enabling does not revive them | A previously issued session must not regain access after an account is disabled and later restored (D26) |
+| Header-only API logout | Return the ordinary success envelope without claiming token revocation when no cookie session exists | Avoid upstream's cookie-session dereference failure for an otherwise authenticated API call (D26) |
 | Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
 | `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
 | `POST /api/tx` recipients | Any email address can receive a transactional email. It does not have to be a subscriber first; listmonk's default mode rejects unknown addresses ([Sending](04-sending.md#transactional-api)) | A one-off email to someone is not a subscription. Forcing callers to create a subscriber first, or to know about `subscriber_mode`, is bookkeeping with no benefit |
@@ -51,7 +57,7 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
   - `subscriber_events:create`, `subscriber_events:get`;
   - `sends:get`, `sends:manage`;
   - `webhooks:manage`.
-- **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe) are rate-limited per IP in memory.
+- **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe) are rate-limited per IP in memory. M1.3 login uses the explicit injected policy and transport peer address under D26; M1.2 supplies persisted configuration later.
 
 ## Admin UI
 
@@ -65,7 +71,7 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
   - subscriber page tabs for events, enrollments and sends.
 - **Dropped screens:** none in v1 beyond the dropped features. OIDC settings stay hidden until OIDC is built.
 
-M0.6 serves embedded static assets and the public HTML 404. Unmatched `/admin/*` currently uses that public 404; the upstream admin-specific error view remains pending real authentication and M4.1. The compiled admin shell fixture is not a production admin route.
+M1.3 adds the functional password-login form and real auth boundary under D26; full admin screens, dashboard and password reset remain their later tasks. M0.6 serves embedded static assets and the public HTML 404. Unmatched `/admin/*` currently uses that public 404; the upstream admin-specific error view remains pending real authentication and M4.1. The compiled admin shell fixture is not a production admin route.
 
 ## Public pages
 

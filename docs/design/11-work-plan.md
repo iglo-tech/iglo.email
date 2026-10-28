@@ -109,8 +109,8 @@ Serial, then the spikes in parallel after M0.4.
 | ID | Task | Upstream | Depends on | Acceptance |
 |---|---|---|---|---|
 | M1.1 | v1 schema: `migrations/0001_init.sql` from `schema.sql` in the SQLite dialect, plus the new tables from [Data model](03-data-model.md) | `schema.sql` | M0.4 | Fresh install creates every table in the data model; `PRAGMA integrity_check` and foreign keys pass |
-| M1.2 | Settings: table, defaults, validation, `GET/PUT /api/settings`, SMTP test endpoint stubbed until M2.1 | `cmd/settings.go`, `internal/core/settings.go` | M1.1, M0.5 | Settings contract tests pass in both modes |
-| M1.3 | Users, API tokens, sessions, login and logout, Basic and token auth, CSRF, login rate limit | `cmd/auth.go`, `cmd/users.go`, `internal/auth`, `queries/users.sql` | M1.1, M0.5 | User and auth contract tests pass in both modes; promote M0.5’s protected-read fixture case to actual normal production auth (D20) |
+| M1.2 | Settings: table, defaults, validation, `GET/PUT /api/settings`, SMTP test endpoint stubbed until M2.1 | `cmd/settings.go`, `internal/core/settings.go` | M1.1, M0.5, M1.3 | Settings contract tests pass in both modes behind real auth (D26) |
+| M1.3 | Users, API tokens, sessions, functional password login and logout, Basic/token auth, CSRF and login limits; minimal role bootstrap/lookup/permission foundation (D26) | `cmd/auth.go`, `cmd/users.go`, `internal/auth`, `queries/users.sql` | M1.1, M0.5 | User and auth contract tests pass in both modes; promote M0.5’s protected-read fixture case to actual normal production auth (D20); D26 boundaries and browser login checks pass |
 | M1.4 | Roles and permissions: user roles, list roles, permission checks on every route, TOTP 2FA | `cmd/roles.go`, permission handling in `internal/auth`, `queries/roles.sql` | M1.3 | Role contract tests pass; every ported route is denied without its permission |
 | M1.5 | Lists: CRUD, tags, opt-in types, counts | `cmd/lists.go`, `queries/lists.sql`, `internal/core/lists.go` | M1.4 | List contract tests pass in both modes |
 | M1.6 | Subscribers: CRUD, `attribs`, `external_id` routes, list subscriptions, blocklist, bulk actions | `cmd/subscribers.go` (CRUD and bulk), `queries/subscribers.sql`, `internal/core/subscribers.go` | M1.5 | Subscriber contract tests pass, `external_id` routes against the design |
@@ -145,7 +145,7 @@ Views are ported in the order of the [port plan](08-port-plan.md#milestones). Ea
 
 | ID | Task | Upstream | Depends on | Acceptance |
 |---|---|---|---|---|
-| M4.1 | Login, 2FA, password reset, dashboard | `static/public/templates` (login, twofa, reset), `views/dashboard.html`, `cmd/admin.go`, `cmd/views.go` | M0.6, M1.4, M3.3 | Login and dashboard work in the browser; 2FA flow passes |
+| M4.1 | Login integration/polish, 2FA and password-reset screens, dashboard (M1.3 already supplies functional password login) | `static/public/templates` (login, twofa, reset), `views/dashboard.html`, `cmd/admin.go`, `cmd/views.go` | M0.6, M1.4, M3.3 | Login and dashboard work in the browser; 2FA flow passes |
 | M4.2 | Subscribers and lists screens | `views/subscribers.html`, `subscriber.html`, `lists.html`, `list.html` | M4.1, M1.7 | `subscribers.spec.js` and `lists.spec.js` adapted and passing |
 | M4.3 | Templates and campaigns screens | `views/templates.html`, `template.html`, `campaigns.html`, `campaign.html` | M4.1, M3.1 | `templates.spec.js` and `campaigns.spec.js` adapted and passing |
 | M4.4 | Settings, users, roles, profile | `views/settings.html`, `users.html`, `user.html`, `roles.html`, `user-role.html`, `list-role.html`, `profile.html` | M4.1 | `settings.spec.js` and `users.spec.js` adapted and passing |
