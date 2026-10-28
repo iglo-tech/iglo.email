@@ -86,3 +86,11 @@ treating HTMLRewriter's raw attribute values as browser-decoded strings. The
 reference-only archive RSS title/link is explicitly expected; production does not
 claim archive functionality. Seven additional CLI negatives first passed
 incorrectly, then failed correctly after the shape checks were tightened.
+
+Round 3 adds explicit parents for every allowed element and checks all document
+text, including text outside the normal selectors and after the closing tags.
+All images must occupy the one logo slot. Footer text and ordered link targets
+and labels are exact per target; arbitrary suffixes are not normalized away.
+Nine public CLI regressions first exposed false passes for misplaced images,
+sibling/bare/trailing text and a changed attribution link. Correct real upstream
+and compiled-production pages still pass this bounded default-page schema.

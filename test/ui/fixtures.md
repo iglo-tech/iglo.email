@@ -99,3 +99,13 @@ not arbitrary HTML. These are assertion gaps; production page rendering did not
 change. The actual reference was fetched to retain its configured RSS archive
 metadata explicitly, while normal production expects no archive link. Passing
 reference/compiled-production pages were rechecked after the stricter validation.
+
+## Whole-document assertion correction (round 3)
+
+Nine new public CLI negatives reproduce the remaining misplaced-content false
+passes: images in the head or after the document, a sibling message container,
+bare wrapper/header text, extra footer text, text after body/document close, and
+a changed second attribution link. The checker now validates each token's parent,
+permits text only in the specified slots, and requires the exact per-target footer
+text and ordered link labels/URLs. This avoids treating HTMLRewriter's token
+selectors as the browser's repaired tree. No application rendering changed.

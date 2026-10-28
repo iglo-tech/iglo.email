@@ -23,8 +23,8 @@ export type ExpectedBody =
   | {
       readonly kind: "public-404";
       readonly siteName: string;
-      readonly attribution: string;
-      readonly attributionUrl: string;
+      readonly footerText: string;
+      readonly footerLinks: readonly { readonly text: string; readonly href: string }[];
       readonly customScript: boolean;
       readonly archiveTitle: string | null;
     }

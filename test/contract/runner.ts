@@ -278,16 +278,113 @@ async function comparePublic404(
     header: ["header"],
     footer: ["container"],
   };
+  // HTMLRewriter exposes tokens without a browser's tree-repair step. Validate
+  // every token's parent instead of letting selectors silently skip misplaced
+  // content that a browser would move into the visible document.
+  const stack: { tag: string; role: string; text: string }[] = [];
+  let headClosed = false,
+    bodyClosed = false,
+    documentClosed = false;
+  const parents: Readonly<Record<string, string>> = {
+    html: "document",
+    head: "html",
+    body: "html",
+    title: "head",
+    meta: "head",
+    link: "head",
+    script: "head",
+    header: "wrap",
+    h2: "wrap",
+    footer: "body",
+  };
+  const voidTags = new Set(["meta", "link", "img"]);
   const rewriter = new HTMLRewriter()
     .onDocument({
       doctype(node) {
-        if (node.name !== "html") throw new Error("Invalid doctype");
+        if (node.name !== "html" || stack.length || counts.html || documentClosed)
+          throw new Error("Invalid doctype");
         count("doctype");
+      },
+      text(chunk) {
+        const current = stack.at(-1);
+        if (current?.role === "footer-link") current.text += chunk.text;
+        if (
+          chunk.text.trim() &&
+          !["title", "h2", "message", "footer", "footer-link"].includes(current?.role ?? "")
+        )
+          throw new Error("Unexpected public page text");
       },
     })
     .on("*", {
       element(element) {
         if (!Object.hasOwn(attributes, element.tagName)) throw new Error("Unexpected HTML element");
+        const tag = element.tagName;
+        const parent = stack.at(-1)?.role ?? "document";
+        let role = tag;
+        let requiredParent = parents[tag];
+        if (tag === "div") {
+          const names = element.getAttribute("class")?.split(/\s+/) ?? [];
+          if (names.includes("wrap")) {
+            role = "wrap";
+            requiredParent = "body";
+          } else if (names.includes("logo")) {
+            role = "logo";
+            requiredParent = "header";
+          } else if (!names.length) {
+            role = "message";
+            requiredParent = "wrap";
+          }
+        } else if (tag === "img") {
+          requiredParent = expected.customScript ? "logo-link" : "logo";
+        } else if (tag === "a") {
+          if (parent === "footer") {
+            role = "footer-link";
+            requiredParent = "footer";
+            const link = expected.footerLinks[counts.footerLinks ?? 0];
+            if (!link || element.getAttribute("href") !== link.href)
+              throw new Error("Unexpected footer link");
+            count("footerLinks");
+          } else if (expected.customScript) {
+            role = "logo-link";
+            requiredParent = "logo";
+            const href = element.getAttribute("href");
+            if (href !== "") {
+              const url = new URL(href ?? "");
+              if (
+                url.protocol !== "http:" ||
+                url.hostname !== "127.0.0.1" ||
+                !url.port ||
+                url.pathname !== "/subscription/form" ||
+                url.search ||
+                url.hash
+              )
+                throw new Error("Unexpected logo link");
+            }
+            count("logoLink");
+          }
+        }
+        if (
+          requiredParent !== parent ||
+          bodyClosed ||
+          documentClosed ||
+          (tag === "html" && counts.doctype !== 1) ||
+          (tag === "body" && !headClosed)
+        )
+          throw new Error("Unexpected public page element placement");
+        if (!voidTags.has(tag)) {
+          const entry = { tag, role, text: "" };
+          const footerLink =
+            role === "footer-link" ? expected.footerLinks[counts.footerLinks! - 1] : null;
+          stack.push(entry);
+          element.onEndTag(() => {
+            if (stack.pop() !== entry) throw new Error("Unclosed public page element");
+            if (footerLink && entry.text.trim() !== footerLink.text)
+              throw new Error("Wrong footer link text");
+            if (tag === "head") headClosed = true;
+            if (tag === "body") bodyClosed = true;
+            if (tag === "html") documentClosed = true;
+          });
+        }
         if (element.tagName === "h2") count("allHeadings");
         for (const [name, value] of element.attributes) {
           if (!attributes[element.tagName]!.includes(name))
@@ -434,7 +531,7 @@ async function comparePublic404(
         }
       },
     })
-    .on("body img", {
+    .on("img", {
       element(element) {
         count("images");
         logoVersion = version(element.getAttribute("src"), "/public/static/logo.svg");
@@ -450,11 +547,6 @@ async function comparePublic404(
         footer += chunk.text;
       },
     })
-    .on("footer a", {
-      element(element) {
-        if (element.getAttribute("href") === expected.attributionUrl) count("attribution");
-      },
-    })
     .on("script", {
       element(element) {
         count("script");
@@ -466,6 +558,8 @@ async function comparePublic404(
       },
     });
   await rewriter.transform(new Response(actual)).text();
+  if (stack.length || !bodyClosed || !documentClosed)
+    throw new Error("Unclosed public page document");
   for (const name of [
     "doctype",
     "html",
@@ -482,12 +576,16 @@ async function comparePublic404(
     "icon",
     "images",
     "footer",
-    "attribution",
   ]) {
     if (counts[name] !== 1) throw new Error(`Expected exactly one ${name}`);
   }
   if ((counts.script ?? 0) !== (expected.customScript ? 1 : 0))
     throw new Error("Wrong script count");
+  if (
+    counts.footerLinks !== expected.footerLinks.length ||
+    (counts.logoLink ?? 0) !== (expected.customScript ? 1 : 0)
+  )
+    throw new Error("Wrong public link count");
   if (
     (counts.customStyle ?? 0) !== (expected.customScript ? 1 : 0) ||
     (counts.archive ?? 0) !== (expected.archiveTitle ? 1 : 0)
@@ -495,10 +593,7 @@ async function comparePublic404(
     throw new Error("Wrong reference-only asset count");
   if (title !== `404 - Not found - ${expected.siteName}` || heading !== "404 - Not found")
     throw new Error("Wrong public 404 title or heading");
-  if (
-    message.trim() !== "" ||
-    !footer.replace(/\s+/g, " ").trim().startsWith(`Powered by ${expected.attribution}`)
-  )
+  if (message.trim() !== "" || footer.replace(/\s+/g, " ").trim() !== expected.footerText)
     throw new Error("Wrong public 404 message or attribution");
   if (styleVersion !== logoVersion || styleVersion !== iconVersion)
     throw new Error("Inconsistent asset versions");

@@ -13,23 +13,32 @@ const invalidID = json(400, '{"message":"invalid ID"}');
 const badEscape = wire(400, "text/plain; charset=utf-8", "400 Bad Request");
 const html404 = (
   siteName: string,
-  attribution: string,
-  attributionUrl: string,
+  footerText: string,
+  footerLinks: readonly { readonly text: string; readonly href: string }[],
   customScript: boolean,
   archiveTitle: string | null,
 ): Expectation => ({
   status: 404,
   contentType: "text/html; charset=UTF-8",
-  body: { kind: "public-404", siteName, attribution, attributionUrl, customScript, archiveTitle },
+  body: { kind: "public-404", siteName, footerText, footerLinks, customScript, archiveTitle },
 });
 const referenceHTML = html404(
   "Mailing list",
-  "listmonk",
-  "https://listmonk.app",
+  "Powered by listmonk",
+  [{ text: "listmonk", href: "https://listmonk.app" }],
   true,
   "Mailing list archive - Mailing list",
 );
-const productionHTML = html404("iglo.email", "iglo.email", "https://iglo.email", false, null);
+const productionHTML = html404(
+  "iglo.email",
+  "Powered by iglo.email. Based on listmonk.",
+  [
+    { text: "iglo.email", href: "https://iglo.email" },
+    { text: "listmonk", href: "https://listmonk.app" },
+  ],
+  false,
+  null,
+);
 const css: Expectation = {
   status: 200,
   contentType: "text/css; charset=utf-8",
