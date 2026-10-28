@@ -21,3 +21,7 @@ Go NEL/BOM update trimming, safe bulk message/no-write envelopes, duplicate-emai
 rollback and explicit duplicate-selector write outcomes versus pinned errors.
 A blocklisted subscriber's explicit-empty-status PATCH control preserves its
 permitted confirmed membership. Cleanup uses only returned IDs.
+
+Binding regressions create invocation-owned list and subscriber identities with
+synthetic Unicode, form, XML, repeated-key and attribute inputs; each returned ID
+is removed in cleanup. No external messages are sent.

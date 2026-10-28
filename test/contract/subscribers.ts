@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/subscribers.go, internal/core/subscribers.go,
 // internal/core/subscriptions.go and queries/subscribers.sql at 6fcd95f.
+import { runSubscriberBindingRevisions } from "@/test/contract/subscriber-binding-revisions";
 import { runSubscriberStateRevisions } from "@/test/contract/subscriber-state-revisions";
 import { runSubscriberScope } from "@/test/contract/subscriber-scope";
 import type { Credentials, Mode } from "@/test/contract/types";
@@ -47,6 +48,7 @@ export async function runSubscribersContract(target: {
   }
   try {
     await runSubscriberStateRevisions(target);
+    await runSubscriberBindingRevisions(target);
     check(
       (await request("/api/subscribers/1", "GET", undefined, "")).status === 403,
       "subscriber-unauthenticated",
