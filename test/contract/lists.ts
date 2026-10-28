@@ -209,6 +209,29 @@ export async function runListsContract(target: {
       (await request("/api/lists", "POST", { name: "é".repeat(1001) })).status === 400,
       "list-utf8-length",
     );
+    // Pinned PostgreSQL uses int32 identities; SQLite uses int64. The lead must
+    // review this narrow observed difference; D17 only covers int64 overflow.
+    for (const [path, method, body, action] of [
+      ["/api/lists/2147483648", "GET", undefined, "fetching"],
+      ["/api/lists/2147483648", "PUT", { name: "out-of-range" }, "updating"],
+      ["/api/lists/2147483648", "DELETE", undefined, "deleting"],
+      ["/api/lists?id=2147483648", "DELETE", undefined, "deleting"],
+    ] as const) {
+      const response = await request(path, method, body);
+      const expected =
+        target.mode === "reference"
+          ? {
+              message: `Error ${action} ${action === "updating" ? "List" : "Lists"}: pq: value \"2147483648\" is out of range for type integer (22003)`,
+            }
+          : method === "DELETE"
+            ? { data: true }
+            : { message: "List not found" };
+      check(
+        response.status === (target.mode === "reference" ? 500 : method === "DELETE" ? 200 : 400) &&
+          JSON.stringify(await response.json()) === JSON.stringify(expected),
+        `list-int32-limit-${action}-${path.includes("?") ? "query" : "path"}`,
+      );
+    }
     check(
       (await request("/api/lists/2147483647", "PUT", { name: "missing" })).status === 400,
       "list-missing-update",
