@@ -37,15 +37,17 @@ export function validFromAddress(input: string): boolean {
       }
       bytes = Uint8Array.from(values);
     }
+    // EqualFold's long-s equivalence matters for the ASCII built-in charset names.
+    const charset = match[1]!.toLowerCase().replace(/ſ/g, "s");
     return {
       encoded: true,
       content:
-        match[1]!.toLowerCase() === "iso-8859-1"
+        charset === "iso-8859-1"
           ? Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")
-          : match[1]!.toLowerCase() === "us-ascii"
+          : charset === "us-ascii"
             ? Array.from(bytes, (byte) => String.fromCharCode(byte < 128 ? byte : 0xfffd)).join("")
-            : new TextDecoder().decode(bytes),
-      error: !["utf-8", "iso-8859-1", "us-ascii"].includes(match[1]!.toLowerCase()),
+            : new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes),
+      error: !["utf-8", "iso-8859-1", "us-ascii"].includes(charset),
     };
   };
   const quoted = (allowEmpty = false) => {

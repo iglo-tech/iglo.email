@@ -5,7 +5,7 @@ import { readBodyBytes } from "@/users/input";
 import type { Authentication } from "@/users/auth";
 import type { SettingsStore } from "@/settings/store";
 import { bindFull, bindKey, masked, shapes } from "@/settings/validate";
-import { orderedJson } from "@/settings/json";
+import { decodeJsonBytes, orderedJson } from "@/settings/json";
 import { xmlSettings, xmlValue } from "@/settings/xml";
 
 export function registerSettingsRoutes(
@@ -29,7 +29,7 @@ export function registerSettingsRoutes(
       let body: unknown;
       try {
         if (!bytes.length) body = {};
-        else if (media === "application/json") body = orderedJson(bytes.toString("utf8"));
+        else if (media === "application/json") body = orderedJson(decodeJsonBytes(bytes));
         else if (media === "application/xml" || media === "text/xml")
           body = xmlSettings(bytes, shapes);
         else if (media === "application/x-www-form-urlencoded") {
@@ -85,7 +85,7 @@ export function registerSettingsRoutes(
       try {
         if (media === "application/xml" || media === "text/xml")
           body = orderedJson(xmlValue(bytes));
-        else if (media === "application/json") body = orderedJson(bytes.toString("utf8"));
+        else if (media === "application/json") body = orderedJson(decodeJsonBytes(bytes));
         else throw new Error("invalid raw value");
       } catch {
         throw new HttpError(400);

@@ -1,6 +1,32 @@
-// Ordered JSON settings members preserve encoding/json duplicate and alias behavior.
+// Ordered settings JSON and UTF-8 decoding follow Go encoding/json and unicode/utf8 at Go 1.27.2.
+// The Go BSD notice is embedded from assets/licenses/go-1.27.2-BSD.txt.
 export class Members {
   constructor(readonly entries: [string, unknown][]) {}
+}
+// DecodeRune consumes one byte on invalid input, unlike WHATWG maximal-subpart replacement.
+export function decodeJsonBytes(bytes: Uint8Array): string {
+  const out: string[] = [];
+  for (let index = 0; index < bytes.length;) {
+    const first = bytes[index]!;
+    if (first < 128) {
+      out.push(String.fromCharCode(first));
+      index++;
+      continue;
+    }
+    const width = first >= 0xc2 && first <= 0xf4 ? (first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4) : 0;
+    let valid = width > 0 && index + width <= bytes.length;
+    let rune = first & (width === 2 ? 31 : width === 3 ? 15 : 7);
+    for (let offset = 1; valid && offset < width; offset++) {
+      const next = bytes[index + offset]!;
+      valid = (next & 0xc0) === 0x80;
+      rune = (rune << 6) | (next & 63);
+    }
+    const minimum = width === 2 ? 0x80 : width === 3 ? 0x800 : 0x10000;
+    valid &&= rune >= minimum && rune <= 0x10ffff && (rune < 0xd800 || rune > 0xdfff);
+    out.push(valid ? String.fromCodePoint(rune) : "\ufffd");
+    index += valid ? width : 1;
+  }
+  return out.join("");
 }
 const raw = JSON as typeof JSON & {
   rawJSON(value: string): unknown;

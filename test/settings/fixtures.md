@@ -29,6 +29,12 @@ cases. Lowercase `us/eastern` and a single location made from
 `Europe/Warsaw\nEurope/Zagreb` are rejected without changing the settings
 snapshot. The newline is an actual character in the HTTP fixture.
 
+Round-3 fixtures use encoded BOM/long-s charset phrases at `a@example.invalid`,
+site-name marker `ROUND_THREE_UTF8`, invalid UTF-8 byte sequences E1 80 41,
+E1 80, ED A0 80 and F0 80 80 AF, and valid C3 A9. The D48 duplicate-array
+probe uses the synthetic SMTP name `second`, host `retained.example`, port 25,
+and array lengths 2, 1, 2. No SMTP connection or credential proof is performed.
+
 Round-2 parser cases use synthetic `example.invalid` addresses, encoded words,
 cron expressions and timezone identifiers. Rejected full writes carry a synthetic
 site-name sentinel and compare the complete masked settings projection.

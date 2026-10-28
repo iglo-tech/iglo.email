@@ -124,6 +124,7 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
   }
   if (Array.isArray(shape)) {
     if (!Array.isArray(value)) return fail();
+    // D48 discards truncated elements rather than retaining Go slice backing capacity.
     return value.map((item, index) => bind(item, shape[0], previous?.[index] ?? zero(shape[0])));
   }
   if (typeof shape === "object") {

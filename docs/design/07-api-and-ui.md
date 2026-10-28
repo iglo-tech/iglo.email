@@ -177,6 +177,22 @@ the same checksum-pinned archive through ZONEINFO to make named-zone cases
 reproducible; the earlier unaligned host lacked US/Eastern and rejected it.
 This does not add a cron or timezone-offset engine.
 
+D48 binds repeated settings arrays using their current logical elements.
+Shrinking discards the truncated tail; later growth starts new elements from
+field zero values rather than resurrecting Go decoder backing-array contents.
+The paired SMTP cases show native 400/no-write when the only enabled server was
+discarded, versus reference 200 with that server retained. When the first server
+is enabled, both accept, but native's newly grown second element stays zero-valued.
+This prevents removed configuration from reappearing through allocation history;
+ordinary ordered prefix merging and null/empty rules remain unchanged.
+
+Settings JSON strings follow Go's per-invalid-byte UTF-8 replacement decoding.
+Under D44, this same typed decoding applies to recognized per-key candidates:
+native accepts structurally valid repaired strings, while pinned raw per-key
+bytes reach PostgreSQL and return 500/no-write. The common corpus explicitly
+pairs both outcomes and complete reference rollback; valid UTF-8, malformed JSON
+syntax, field-shape rejection and XML's existing strict boundary are preserved.
+
 Shared compiled and reference corpora exercise binding, safe error envelopes,
 numeric ranges, supported document and per-key types, address and cron cases.
 This finite coverage is representative; reproduced unlisted differences must

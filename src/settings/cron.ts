@@ -24,10 +24,11 @@ function durationString(value: bigint): string {
 
 function parseIntError(value: string): string {
   const quote = JSON.stringify(value).replace(/\ufeff/g, "\\ufeff");
-  const reason =
-    /^\+?\d+$/.test(value) && BigInt(value) > 9223372036854775807n
-      ? "value out of range"
-      : "invalid syntax";
+  const parsed = /^[+-]?\d+$/.test(value) ? BigInt(value) : null;
+  const inRange =
+    parsed !== null && parsed >= -9223372036854775808n && parsed <= 9223372036854775807n;
+  if (inRange && parsed < 0n) return `negative number (${parsed}) not allowed: ${value}`;
+  const reason = parsed !== null && !inRange ? "value out of range" : "invalid syntax";
   return `failed to parse int from ${value}: strconv.Atoi: parsing ${quote}: ${reason}`;
 }
 
@@ -146,6 +147,10 @@ export function cronError(input: string): string | null {
       }
       const wild = first === "*" || (first === "?" && (index === 2 || index === 4));
       if (wild && range.length > 1) return `${option}: invalid expression`;
+      const expression =
+        slash.length > 1 && range.length === 1
+          ? `${wild ? min : first}-${max}/${slash[1]}`
+          : option;
       const low = wild ? BigInt(min) : first === "L" && index === 4 ? 6n : number(first);
       const high = wild
         ? BigInt(max)
@@ -156,14 +161,15 @@ export function cronError(input: string): string | null {
             : low;
       if (low === null) return parseIntError(first);
       if (low < BigInt(min) || low > BigInt(max))
-        return `${option}: value ${low} out of valid range [${min}, ${max}]`;
+        return `${expression}: value ${low} out of valid range [${min}, ${max}]`;
       if (high === null) return parseIntError(range[1]!);
       if (high < BigInt(min) || high > BigInt(max))
-        return `${option}: value ${high} out of valid range [${min}, ${max}]`;
-      if (high < low) return `${option}: beginning of range (${low}) beyond end of range (${high})`;
+        return `${expression}: value ${high} out of valid range [${min}, ${max}]`;
+      if (high < low)
+        return `${expression}: beginning of range (${low}) beyond end of range (${high})`;
       if (slash.length > 1) {
         const step = slash[1]!;
-        if (!/^\+?\d+$/.test(step) || BigInt(step) > 9223372036854775807n)
+        if (!/^[+-]?\d+$/.test(step) || BigInt(step) < 0n || BigInt(step) > 9223372036854775807n)
           return parseIntError(step);
         if (BigInt(step) === 0n) return "step should be > 0, got 0";
       }

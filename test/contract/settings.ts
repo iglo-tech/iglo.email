@@ -2,6 +2,7 @@
 import { runSettingsCouncilParser } from "@/test/contract/settings-council-parser";
 import { runSettingsNul } from "@/test/contract/settings-nul";
 import { runSettingsCouncilSmall } from "@/test/contract/settings-council-small";
+import { runSettingsCouncilFinal } from "@/test/contract/settings-council-final";
 import { runSettingsBinding } from "@/test/contract/settings-binding";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
@@ -61,6 +62,7 @@ export async function runSettingsContract(target: {
   await runSettingsCouncilSmall(target);
   await runSettingsCouncilParser(target);
   await runSettingsBinding(target);
+  await runSettingsCouncilFinal(target);
   const form = await settingsFetch(
     `${target.baseUrl}/api/settings`,
     {
