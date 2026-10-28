@@ -15,6 +15,14 @@ export async function runSubscriberScope(target: {
   function check(value: unknown, label: string): asserts value {
     if (!value) throw new Error(`FAIL ${label}`);
   }
+  async function denied(response: Response, subject: string, label: string) {
+    check(
+      response.status === 403 &&
+        JSON.stringify(await response.json()) ===
+          JSON.stringify({ message: `Permission denied: ${subject}` }),
+      label,
+    );
+  }
   const request = (
     path: string,
     method = "GET",
@@ -81,14 +89,20 @@ export async function runSubscriberScope(target: {
         !("description" in row.lists.find((entry: any) => entry.id === hidden.id)),
       "subscriber-scope-mask",
     );
-    check(
-      (await request(`/api/subscribers/${invisible.id}`, "GET", undefined, limited)).status === 403,
-      "subscriber-scope-invisible-get",
-    );
-    check(
-      (await request(`/api/subscribers/${invisible.id}`, "PATCH", {}, limited)).status === 403,
-      "subscriber-scope-empty-patch",
-    );
+    const invisibleBefore = (await (await request(`/api/subscribers/${invisible.id}`)).json()).data;
+    const visibleBefore = (await (await request(`/api/subscribers/${visible.id}`)).json()).data;
+    for (const [method, body] of [
+      ["GET", undefined],
+      ["PUT", { email: invisible.email, name: "denied" }],
+      ["PATCH", {}],
+      ["DELETE", undefined],
+    ] as const) {
+      await denied(
+        await request(`/api/subscribers/${invisible.id}`, method, body, limited),
+        `subscriber: ${invisible.id}`,
+        `subscriber-scope-invisible-${method}-envelope`,
+      );
+    }
     if (target.mode === "normal") {
       for (const path of [
         `/api/subscribers/external?external_id=${encodeURIComponent(`visible-${suffix}`)}`,
@@ -103,14 +117,17 @@ export async function runSubscriberScope(target: {
         `/api/subscribers/external?external_id=${encodeURIComponent(`hidden-${suffix}`)}`,
         `/api/subscribers/external/${encodeURIComponent(`hidden-${suffix}`)}`,
       ]) {
-        check(
-          (await request(path, "GET", undefined, limited)).status === 403,
-          "D39-scope-external-hidden",
-        );
-        check(
-          (await request(path, "DELETE", undefined, limited)).status === 403,
-          "D39-scope-external-delete-denied",
-        );
+        for (const [method, body] of [
+          ["GET", undefined],
+          ["PUT", { email: invisible.email }],
+          ["DELETE", undefined],
+        ] as const) {
+          await denied(
+            await request(path, method, body, limited),
+            `subscriber: ${invisible.id}`,
+            `D39-scope-external-${method}-envelope`,
+          );
+        }
       }
     }
     const deniedCreate = await request(
@@ -120,22 +137,54 @@ export async function runSubscriberScope(target: {
       limited,
     );
     if (deniedCreate.status === 200) {
-      const unexpected = (await deniedCreate.json()).data;
+      const unexpected = (await deniedCreate.clone().json()).data;
       if (typeof unexpected?.id === "number")
         resources.push({ kind: "subscribers", id: unexpected.id });
     }
-    check(deniedCreate.status === 403, "subscriber-scope-create-denied");
-    check(
-      (
+    await denied(deniedCreate, "lists", "subscriber-scope-create-denied-envelope");
+    for (const method of ["PUT", "PATCH"]) {
+      await denied(
         await request(
-          "/api/subscribers/blocklist",
-          "PUT",
-          { ids: [visible.id, invisible.id] },
+          `/api/subscribers/${visible.id}`,
+          method,
+          { email: visible.email, name: "denied", lists: [hidden.id] },
           limited,
-        )
-      ).status === 403,
-      "subscriber-scope-mixed-bulk",
+        ),
+        "lists",
+        `subscriber-scope-update-${method}-lists-envelope`,
+      );
+    }
+    await denied(
+      await request(
+        "/api/subscribers/lists",
+        "PUT",
+        { ids: [visible.id], target_list_ids: [hidden.id], action: "remove" },
+        limited,
+      ),
+      "lists",
+      "subscriber-scope-membership-target-envelope",
     );
+    for (const [path, method, body] of [
+      ["/api/subscribers/blocklist", "PUT", { ids: [visible.id, invisible.id] }],
+      [`/api/subscribers?id=${visible.id}&id=${invisible.id}`, "DELETE", undefined],
+      [
+        "/api/subscribers/lists",
+        "PUT",
+        { ids: [visible.id, invisible.id], target_list_ids: [accessible.id], action: "remove" },
+      ],
+    ] as const) {
+      await denied(
+        await request(path, method, body, limited),
+        `subscriber: ${invisible.id}`,
+        "subscriber-scope-mixed-bulk-envelope",
+      );
+    }
+    for (const before of [visibleBefore, invisibleBefore])
+      check(
+        JSON.stringify((await (await request(`/api/subscribers/${before.id}`)).json()).data) ===
+          JSON.stringify(before),
+        "subscriber-scope-denied-state-unchanged",
+      );
     row = (await (await request(`/api/subscribers/${visible.id}`)).json()).data;
     check(
       row.status === "enabled" &&

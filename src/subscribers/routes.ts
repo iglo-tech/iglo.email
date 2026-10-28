@@ -45,7 +45,10 @@ export function registerSubscriberRoutes(
     if (s.all) return;
     for (const id of ids)
       if (store.get(id) && !store.memberships(id).some((m) => s.ids.includes(m.list_id)))
-        throw new HttpError(403, "permission denied");
+        throw new HttpError(
+          403,
+          c.app.i18n.Ts("globals.messages.permissionDenied", "name", `subscriber: ${id}`),
+        );
   };
   const required = (c: RequestContext, id: bigint, external = false) =>
     store.get(id) ??
@@ -57,7 +60,10 @@ export function registerSubscriberRoutes(
     if (ids?.length) {
       const s = scope(c, "manage");
       if (!s.all && !ids.some((id) => s.ids.includes(id)))
-        throw new HttpError(403, "permission denied");
+        throw new HttpError(
+          403,
+          c.app.i18n.Ts("globals.messages.permissionDenied", "name", "lists"),
+        );
     }
   };
   const email = (value: string) => {
