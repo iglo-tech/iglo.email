@@ -335,7 +335,7 @@ describe("normalization at the HTTP boundary", () => {
 });
 
 const public404Page =
-  '<!DOCTYPE html><html><head><title>404 - Not found - iglo.email</title><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><img src="/public/static/logo.svg?v=0123456789" alt="iglo.email"></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a></footer></body></html>';
+  '<!DOCTYPE html><html><head><title>404 - Not found - iglo.email</title><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><img src="/public/static/logo.svg?v=0123456789" alt="iglo.email"></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a>. Based on <a href="https://listmonk.app">listmonk</a>.</footer></body></html>';
 
 test("public HTML contract rejects missing, duplicated, incorrect, or unsafe page elements", async () => {
   const page = public404Page;
@@ -445,6 +445,24 @@ test.each([
     public404Page.replace("</head>", '<base href="https://example.invalid/"></head>'),
   ],
   ["closed popover ancestor", public404Page.replace('class="wrap"', 'class="wrap" popover')],
+  [
+    "image in head",
+    public404Page.replace("</head>", '<img src="https://example.invalid/t.png" alt="x"></head>'),
+  ],
+  ["image after document", public404Page + '<img src="https://example.invalid/t.png" alt="x">'],
+  [
+    "sibling message container",
+    public404Page.replace("</body>", '<div class="container">unexpected message</div></body>'),
+  ],
+  ["bare wrapper text", public404Page.replace("<h2>", "unexpected message<h2>")],
+  ["bare header text", public404Page.replace("<header>", "<header>unexpected message")],
+  ["extra footer text", public404Page.replace("</footer>", " unexpected message</footer>")],
+  ["text after body", public404Page.replace("</body>", "</body>unexpected message")],
+  ["text after document", public404Page + "unexpected message"],
+  [
+    "unexpected footer link",
+    public404Page.replace("https://listmonk.app", "https://example.invalid"),
+  ],
 ])("public HTML contract rejects %s", async (_name, body) => {
   const target = server(
     () =>
