@@ -56,6 +56,8 @@ Deliberate differences:
 
 Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting reference. iglo.email publishes its own `GET /api/openapi.json`, with the new endpoints included.
 
+| NUL in writable subscriber names or attributes | Final bound names and recursive attribute keys/string values containing U+0000 return safe HTTP 400 before any write; upstream returns database-error 500 | Predictable validation and unchanged subscriber/membership state; avoid storing text that native consumers can truncate or reject. Discarded metadata and overwritten values absent from final writable input are unaffected ([D43](09-decisions.md#d43-reject-nul-in-writable-subscriber-names-and-attributes)) |
+
 ## New endpoints
 
 | Endpoint | Purpose |
