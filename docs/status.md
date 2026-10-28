@@ -8,7 +8,7 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.6 (subscriber CRUD, external IDs and ID-selected bulk actions) is active at **fix**. M1.5 is merged as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e; its watch is confirmed stopped, all delegates terminal and identifiers archived in docs/reviews/M1.5.md. The original run start remains 2026-10-28T13:08:24.215458+00:00; the four-hour boundary has now passed, so finish M1.6 then release the lock without starting another task. No duplicate worker exists. [Brief](briefs/M1.6.md).
+M1.6 (subscriber CRUD, external IDs and ID-selected bulk actions) is active at **ci**. M1.5 is merged as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e; its watch is confirmed stopped, all delegates terminal and identifiers archived in docs/reviews/M1.5.md. The original run start remains 2026-10-28T13:08:24.215458+00:00; the four-hour boundary has now passed, so finish M1.6 then release the lock without starting another task. No duplicate worker exists. [Brief](briefs/M1.6.md).
 
 The lead read pinned subscriber handlers/core/subscription SQL, importer email/name validation and auth list-scope source. D38 makes the M1.6/M1.7 boundary explicit, stages opt-in delivery until M2.5, defines external identity/writable DTO/PATCH concurrency semantics, and removes the redundant body-ID requirement for path-addressed membership actions. Existing schema, counts/FTS and concrete owner boundaries stay intact; no new dependency, query engine, mail/queue or event/sequence side effect. All paired differences and normal-only new-feature tests must be precise. M1.2 remains eligible outside the critical path; only M1.6 starts now.
 
@@ -63,6 +63,12 @@ Decoder/email completion is dispatched: [M1.6: Complete subscriber binding and e
 - Fixer thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-fix1-bindings-2489e4e`.
 - Initial fixer run: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.6-fix1-bindings-2489e4e:ordinal:1`.
 - Idempotent dispatch: `iglo-email-M1.6-fix1-bindings-2489e4e`.
+
+The sole decoder/email fixer completed without children, pending question or approval and pushed candidate `b1e117b28e167bcf057c454e92787a4325464ec6` on PR #13, now ready. It reports all round-1 binding/email findings addressed while retaining root 2489e4e fixes and D38–D41 protections. The lead inspected the updated mapping, Go bare-address/simple-case source attribution, recursive/ordered binding evidence, notice integration and serial measurement report; this is implementation evidence, not fresh council approval.
+
+Final-code acceptance reportedly passed frozen install/assets, JSX/UI/ui:verify, full check (162 tests), focused 69 tests, every compiled/pinned profile, scope/race/rollback/restart/notices and reference:smoke. New shared regressions ran pinned reference before implementation. A prior asset-build/focused-test overlap failed; the complete final run was serialized and passed. Three serial c0955d6-before/final-after ext4 FULL/WAL repetitions ran after acceptance; rebuilt before hash matches 2c05a019c9676c7ef0276eeca5eeb9ffc4b11d471336fe181cc16eb0204ec044. Final code c9dddcf and executable 357d4007892e7a3e3d20eac80d7b4f24b1e00470448c2d87dbe71e396a735c3c are recorded; actual final hash matches and runtime/build inputs compare equal through b1e117b. The Go 1.27.2 BSD notice is embedded; the lead additionally passed detached compiled GET/HEAD notice checks. No new runtime dependency/schema is reported, and no speed/scaling guarantee is claimed.
+
+The fixer's single PR inspection was stale at 2489e4e, but the lead's single inspection now confirms OPEN/ready head b1e117b and its new CI runs. One Intel preparation job passed, seven jobs were queued/running, none failed. Restore the PR watch for these pending checks and end the turn; on green verify exact head and dispatch two fresh full-scope Sol xhigh round-2 reviewers in separate isolated worktrees. Every prior delegate is terminal; no polling or replacement worker. Original run start, stop-after-M1.6 rule and unbound automation remain unchanged.
 
 ## Automation
 
