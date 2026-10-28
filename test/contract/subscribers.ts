@@ -84,6 +84,54 @@ export async function runSubscribersContract(target: {
       ).status === 400,
       "subscriber-invalid-status",
     );
+    async function raw(body: string | ArrayBuffer, contentType: string) {
+      const response = await fetch(`${target.baseUrl}/api/subscribers`, {
+        method: "POST",
+        headers: { Authorization: auth, "Content-Type": contentType },
+        body,
+      });
+      const value = await response.json();
+      if (response.status === 200 && typeof value.data?.id === "number")
+        subscribers.push(value.data.id);
+      return { response, value };
+    }
+    const aliases = await raw(
+      `{"email":"wrong-${suffix}@example.test","EMAIL":"alias-${suffix}@example.test","name":"A","NAME":null,"attribs":{"n":1}}`,
+      "application/json",
+    );
+    check(
+      aliases.response.status === 200 &&
+        aliases.value.data.email === `alias-${suffix}@example.test` &&
+        aliases.value.data.name === "A",
+      "subscriber-json-alias-null",
+    );
+    for (const body of [
+      `{"email":"bad-${suffix}@example.test","attribs":[]}`,
+      `{"email":23,"Email":"bad-${suffix}@example.test"}`,
+      `{"email":"bad-${suffix}@example.test","lists":[false]}`,
+      "[1]",
+      "{broken",
+    ]) {
+      check(
+        (await raw(body, "application/json")).response.status === 400,
+        "subscriber-json-invalid",
+      );
+    }
+    const xml = await raw(
+      `<Subscriber attr="&amp;"><Email>xml-${suffix}@example.test</Email><Name> <![CDATA[x<y]]> &amp; &#00000000000000000000000065;</Name><!-- valid --></Subscriber><unused`,
+      "application/xml",
+    );
+    check(
+      xml.response.status === 200 && xml.value.data.name === "x<y & A",
+      "subscriber-xml-document",
+    );
+    for (const body of [
+      `<Subscriber><Email>bad-${suffix}@example.test</Subscriber>`,
+      `<Subscriber bad="&broken"><Email>bad-${suffix}@example.test</Email></Subscriber>`,
+      `<Subscriber><Email>bad-${suffix}@example.test</Email><Ignored>\u0000</Ignored></Subscriber>`,
+    ]) {
+      check((await raw(body, "application/xml")).response.status === 400, "subscriber-xml-invalid");
+    }
     const semantics = await create({
       email: `semantics-${suffix}@example.test`,
       attribs: { first: 1, nested: { one: 1, two: 2 } },
