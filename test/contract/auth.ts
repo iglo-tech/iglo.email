@@ -313,6 +313,66 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         list.data.some((entry) => entry.id === human.id && !entry.password),
       "users-list",
     );
+    if (target.mode === "reference") {
+      const listRoleName = `m13-list-role-${suffix}`;
+      const roleResponse = await request(target, "/api/roles/lists", {
+        method: "POST",
+        auth: basic,
+        body: { name: listRoleName, lists: [] },
+      });
+      if (roleResponse.status !== 200) throw new Error("FAIL reference-list-role-setup");
+      const role = ((await roleResponse.json()) as { data: { id: number } }).data;
+      if (!Number.isSafeInteger(role.id) || role.id < 1)
+        throw new Error("FAIL reference-list-role-id");
+      let listUserId = 0;
+      try {
+        const response = await request(target, "/api/users", {
+          method: "POST",
+          auth: basic,
+          body: {
+            username: `m13-list-user-${suffix}`,
+            email: `m13-list-user-${suffix}@example.test`,
+            type: "user",
+            status: "enabled",
+            user_role_id: 1,
+            list_role_id: role.id,
+          },
+        });
+        if (response.status !== 200) throw new Error("FAIL reference-list-user-setup");
+        const entry = (
+          (await response.json()) as {
+            data: { id: number; list_role_id: number; list_role: unknown };
+          }
+        ).data;
+        listUserId = entry.id;
+        check(
+          Number.isSafeInteger(listUserId) &&
+            listUserId > 0 &&
+            entry.list_role_id === role.id &&
+            JSON.stringify(entry.list_role) ===
+              JSON.stringify({ id: role.id, name: listRoleName, lists: null }),
+          "reference-user-detail-empty-list-role",
+        );
+        const responseList = await request(target, "/api/users", { auth: basic });
+        const entries = (
+          (await responseList.json()) as { data: { id: number; list_role: unknown }[] }
+        ).data;
+        const listRole = entries.find((item) => item.id === listUserId)?.list_role;
+        check(
+          JSON.stringify(listRole) ===
+            JSON.stringify({
+              id: role.id,
+              name: listRoleName,
+              lists: [{ id: 0, name: "", permissions: [] }],
+            }),
+          "reference-user-list-empty-list-role",
+        );
+      } finally {
+        if (listUserId)
+          await request(target, `/api/users/${listUserId}`, { method: "DELETE", auth: basic });
+        await request(target, `/api/roles/${role.id}`, { method: "DELETE", auth: basic });
+      }
+    }
     const spaced = await form(target, name, password);
     check(
       target.mode === "reference"

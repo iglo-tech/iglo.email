@@ -71,6 +71,13 @@ result is 400 with a safe invalid-role message and no digest. This narrow error
 change requires lead review. Duplicate usernames separately retain upstream's
 500 error shape without exposing a credential.
 
+The reference run also provisions and removes one invocation-owned empty list
+role and user through upstream HTTP. User detail returns that role with
+`lists: null`, while the user list returns a single empty list projection
+(`id: 0`, `name: ""`, empty permissions). The labelled normal fixture supplies
+the same role through the role owner; the production role-management API is
+still deferred to M1.4.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is
