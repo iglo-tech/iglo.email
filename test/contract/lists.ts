@@ -141,6 +141,20 @@ export async function runListsContract(target: {
       status: "archived",
       tags: ["one", "two"],
     });
+    const repeatedMinimal = await request(
+      `/api/lists?minimal=&minimal=true&status=&status=archived`,
+    );
+    const repeatedMinimalData = (
+      (await repeatedMinimal.json()) as {
+        data: { results: { id: number; subscriber_statuses: unknown }[] };
+      }
+    ).data;
+    check(
+      repeatedMinimalData.results.some(
+        (entry) => entry.id === second.id && entry.subscriber_statuses === null,
+      ),
+      "list-repeated-minimal-status",
+    );
     const filtered = await request(`/api/lists?query=${suffix}&status=archived&tag=one&tag=two`);
     const result = (
       (await filtered.json()) as { data: { results: { id: number }[]; total: number } }
@@ -390,6 +404,20 @@ export async function runListsContract(target: {
       ).data.results.map((item) => item.id);
       check(JSON.stringify(ids) === JSON.stringify(expected), `list-sort-name-${order}`);
     }
+    const repeatedSort = await request(
+      `/api/lists?query=sort-${suffix}&order_by=&order_by=name&order=desc&per_page=&per_page=1&page=&page=2`,
+    );
+    const repeatedSortData = (
+      (await repeatedSort.json()) as {
+        data: { page: number; per_page: number; results: { id: number }[] };
+      }
+    ).data;
+    check(
+      repeatedSortData.page === 2 &&
+        repeatedSortData.per_page === 1 &&
+        repeatedSortData.results[0]?.id === sortedFirst.id,
+      "list-repeated-pagination-sort",
+    );
     const pageSorted = await request(
       `/api/lists?query=sort-${suffix}&order_by=name&per_page=1&page=2`,
     );
