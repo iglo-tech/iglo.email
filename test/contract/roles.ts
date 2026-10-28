@@ -14,6 +14,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
   const suffix = randomUUID().replaceAll("-", "");
   const owned: number[] = [];
   let human = 0;
+  let realList = 0;
   let cleanupFailed = false;
   async function request(path: string, method = "GET", body?: unknown, authorization = auth) {
     return fetch(`${target.baseUrl}${path}`, {
@@ -95,6 +96,34 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       permissions: ["users:get", "roles:get"],
     });
     const list = await create("lists", { name: `m14-list-${suffix}`, lists: [] });
+    const listResource = await request("/api/lists", "POST", { name: `m14-owned-list-${suffix}` });
+    check(listResource.status === 200, "role-real-list-create");
+    realList = ((await listResource.json()) as { data: { id: number } }).data.id;
+    const grant = await request(`/api/roles/lists/${list}`, "PUT", {
+      name: `m14-list-${suffix}`,
+      lists: [{ id: realList, permissions: ["list:get"] }],
+    });
+    check(grant.status === 200, "role-real-list-grant");
+    const grants = await request(`/api/roles/lists?query=m14-list-${suffix}`);
+    const granted = (
+      (await grants.json()) as {
+        data: { id: number; lists: { id: number; name: string; permissions: string[] }[] }[];
+      }
+    ).data.find((item) => item.id === list);
+    check(
+      granted?.lists.some(
+        (item) =>
+          item.id === realList &&
+          item.name === `m14-owned-list-${suffix}` &&
+          item.permissions.includes("list:get"),
+      ),
+      "role-real-list-projection",
+    );
+    const clearGrant = await request(`/api/roles/lists/${list}`, "PUT", {
+      name: `m14-list-${suffix}`,
+      lists: [],
+    });
+    check(clearGrant.status === 200, "role-real-list-clear");
     const users = await request(`/api/roles/users?query=${suffix}`);
     const userRoles = (
       (await users.json()) as {
@@ -524,6 +553,8 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       const response = await request(`/api/roles/${id}`, "DELETE");
       if (response.status !== 200) cleanupFailed = true;
     }
+    if (realList && (await request(`/api/lists/${realList}`, "DELETE")).status !== 200)
+      cleanupFailed = true;
   }
   if (cleanupFailed) throw new Error("FAIL role-cleanup");
 }
