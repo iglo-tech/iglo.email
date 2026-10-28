@@ -4,6 +4,7 @@ import { startContractFixture } from "@/test/contract/fixture";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { runListsContract } from "@/test/contract/lists";
 import { runSubscribersContract } from "@/test/contract/subscribers";
+import { runSubscriberScope } from "@/test/contract/subscriber-scope";
 import { runExternalContract } from "@/test/subscribers/external";
 import { runRolesContract } from "@/test/contract/roles";
 import { runAuthContract } from "@/test/contract/auth";
@@ -111,6 +112,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         if (args[1] === "subscribers") {
           await runSubscribersContract({ mode: "normal", baseUrl, credentials });
           await runExternalContract({ baseUrl, credentials, restart });
+          await runSubscriberScope({ mode: "normal", baseUrl, credentials, restart });
           return true;
         }
         if (args[1] === "lists") {

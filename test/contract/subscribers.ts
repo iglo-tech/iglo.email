@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/subscribers.go, internal/core/subscribers.go,
 // internal/core/subscriptions.go and queries/subscribers.sql at 6fcd95f.
+import { runSubscriberScope } from "@/test/contract/subscriber-scope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSubscribersContract(target: {
@@ -10,6 +11,7 @@ export async function runSubscribersContract(target: {
   const suffix = crypto.randomUUID();
   const subscribers: number[] = [];
   const lists: number[] = [];
+  let cleanupFailed = false;
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", body?: unknown, authorization = auth) =>
     fetch(`${target.baseUrl}${path}`, {
@@ -95,6 +97,30 @@ export async function runSubscribersContract(target: {
         subscribers.push(value.data.id);
       return { response, value };
     }
+    for (const [local, domain, accepted] of [
+      [".dot", "example.test", false],
+      ["dot.", "example.test", false],
+      ["double..dot", "example.test", false],
+      ["local", ".example.test", false],
+      ["local", "example.test.", false],
+      ["quoted", "localhost", true],
+      ["with+plus", "example.test", true],
+      ["δοκιμή", "example.test", true],
+      ["local", "[127.0.0.1]", true],
+      ['"quoted"', "example.test", false],
+      ["bad\u0000local", "example.test", false],
+    ] as const) {
+      const part = local.endsWith(".") ? `${suffix}${local}` : `${local}-${suffix}`;
+      const candidate = `${part}@${domain}`;
+      const result = await raw(
+        JSON.stringify({ email: candidate, name: "Known" }),
+        "application/json",
+      );
+      check(
+        result.response.status === (accepted ? 200 : 400),
+        `subscriber-email-boundary-${accepted}`,
+      );
+    }
     const aliases = await raw(
       `{"email":"wrong-${suffix}@example.test","EMAIL":"alias-${suffix}@example.test","name":"A","NAME":null,"attribs":{"n":1}}`,
       "application/json",
@@ -117,6 +143,30 @@ export async function runSubscribersContract(target: {
         "subscriber-json-invalid",
       );
     }
+    const highID = await raw(
+      `{"email":"high-${suffix}@example.test","lists":[9223372036854775807]}`,
+      "application/json",
+    );
+    check(highID.response.status === 500, "subscriber-json-int64-id-reference-width");
+    for (const token of ["1.0", "1e0", "9223372036854775808", "-9223372036854775809"]) {
+      check(
+        (
+          await raw(
+            `{"email":"invalid-id-${suffix}@example.test","lists":[${token}]}`,
+            "application/json",
+          )
+        ).response.status === 400,
+        "subscriber-json-invalid-int64",
+      );
+    }
+    const nullList = await raw(
+      `{"email":"null-list-${suffix}@example.test","lists":[null]}`,
+      "application/json",
+    );
+    check(
+      nullList.response.status === 200 && nullList.value.data.lists.length === 0,
+      "subscriber-json-null-list-element",
+    );
     const xml = await raw(
       `<Subscriber attr="&amp;"><Email>xml-${suffix}@example.test</Email><Name> <![CDATA[x<y]]> &amp; &#00000000000000000000000065;</Name><!-- valid --></Subscriber><unused`,
       "application/xml",
@@ -132,6 +182,50 @@ export async function runSubscribersContract(target: {
     ]) {
       check((await raw(body, "application/xml")).response.status === 400, "subscriber-xml-invalid");
     }
+    const form = await raw(
+      new URLSearchParams({
+        email: `form-${suffix}@example.test`,
+        name: "  Form Name  ",
+      }).toString(),
+      "application/x-www-form-urlencoded",
+    );
+    check(
+      form.response.status === 200 && form.value.data.name === "Form Name",
+      "subscriber-form-fields",
+    );
+    const bytes = (prefix: string, byte: number, tail: string) =>
+      new Uint8Array([...new TextEncoder().encode(prefix), byte, ...new TextEncoder().encode(tail)])
+        .buffer;
+    const replacement = await raw(
+      bytes(`{"email":"bytes-${suffix}@example.test","name":"`, 255, '"}'),
+      "application/json",
+    );
+    check(
+      replacement.response.status === 200 && replacement.value.data.name === "\ufffd",
+      "subscriber-json-replacement-utf8",
+    );
+    const invalidXML = await raw(
+      bytes(
+        `<Subscriber><Email>bad-${suffix}@example.test</Email><Ignored>`,
+        255,
+        "</Ignored></Subscriber>",
+      ),
+      "application/xml",
+    );
+    check(invalidXML.response.status === 400, "subscriber-xml-invalid-utf8");
+    const suffixXML = await raw(
+      bytes(`<Subscriber><Email>suffix-${suffix}@example.test</Email></Subscriber>`, 255, ""),
+      "application/xml",
+    );
+    check(suffixXML.response.status === 200, "subscriber-xml-unused-invalid-suffix");
+    const doctype = await raw(
+      `<!DOCTYPE Subscriber><Subscriber><Email>doctype-${suffix}@example.test</Email></Subscriber>`,
+      "application/xml",
+    );
+    check(
+      doctype.response.status === (target.mode === "reference" ? 200 : 400),
+      "D37-subscriber-xml-doctype",
+    );
     const semantics = await create({
       email: `semantics-${suffix}@example.test`,
       attribs: { first: 1, nested: { one: 1, two: 2 } },
@@ -166,6 +260,16 @@ export async function runSubscribersContract(target: {
         semanticsData.email === semantics.email &&
         semanticsData.name === semantics.name,
       "subscriber-patch-null-fields",
+    );
+    const xmlAction = await fetch(`${target.baseUrl}/api/subscribers/lists`, {
+      method: "PUT",
+      headers: { Authorization: auth, "Content-Type": "application/xml" },
+      body: `<Request><SubscriberIDs>${semantics.id}</SubscriberIDs><TargetListIDs>${list}</TargetListIDs><Action>unsubscribe</Action></Request>`,
+    });
+    check(
+      xmlAction.status === 200 &&
+        (await get(semantics.id)).lists[0]?.subscription_status === "unsubscribed",
+      "subscriber-xml-bulk-action",
     );
     check(
       (await request(`/api/subscribers/${semantics.id}`, "PUT", {})).status === 400,
@@ -303,13 +407,12 @@ export async function runSubscribersContract(target: {
     subscribers.splice(subscribers.indexOf(sub.id), 1);
     check((await request(`/api/subscribers/${sub.id}`)).status === 400, "subscriber-deleted");
   } finally {
-    let failed = false;
     for (const id of subscribers.reverse())
-      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) failed = true;
+      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
     for (const id of lists.reverse())
-      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) failed = true;
-    if (failed) throw new Error("FAIL subscriber-cleanup");
+      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
   }
+  if (cleanupFailed) throw new Error("FAIL subscriber-cleanup");
 }
 
 if (import.meta.main) {
@@ -322,6 +425,7 @@ if (import.meta.main) {
     } = process.env;
     if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
     await runSubscribersContract({ mode: "reference", baseUrl, credentials: { user, token } });
+    await runSubscriberScope({ mode: "reference", baseUrl, credentials: { user, token } });
   } catch (error) {
     process.stderr.write(
       `${error instanceof Error && /^FAIL [a-zA-Z0-9-]+$/.test(error.message) ? error.message : "Subscribers contract failed"}\n`,
