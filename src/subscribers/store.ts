@@ -107,7 +107,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
             : preconfirm
               ? "confirmed"
               : "unconfirmed";
-      if (previous) q.get("membership-update").run(target, now, id, list);
+      if (previous) q.get("membership-status").run(target, id, list);
       else q.get("membership-insert").run(id, list, target, now, now);
     }
   };
@@ -209,7 +209,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
           if (action === "add") {
             if (!existing)
               q.get("membership-insert").run(id, list, status || "unconfirmed", now, now);
-            else if (status) q.get("membership-update").run(status, now, id, list);
+            else if (status) q.get("membership-status").run(status, id, list);
           } else if (action === "remove") q.get("membership-delete").run(id, list);
           else if (action === "unsubscribe" && existing)
             q.get("membership-update").run("unsubscribed", now, id, list);

@@ -13,6 +13,8 @@ UPDATE subscribers SET email=?, name=?, status=?, attribs=?, external_id=?, upda
 DELETE FROM subscribers WHERE id=?;
 -- name: membership-insert
 INSERT INTO subscriber_lists (subscriber_id,list_id,status,created_at,updated_at) VALUES (?,?,?,?,?) ON CONFLICT (subscriber_id,list_id) DO NOTHING;
+-- name: membership-status
+UPDATE subscriber_lists SET status=? WHERE subscriber_id=? AND list_id=?;
 -- name: membership-update
 UPDATE subscriber_lists SET status=?, updated_at=? WHERE subscriber_id=? AND list_id=?;
 -- name: membership-delete

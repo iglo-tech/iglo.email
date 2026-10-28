@@ -409,6 +409,7 @@ export async function runSubscribersContract(target: {
         value.lists.length === 1,
       "subscriber-patch-replacement",
     );
+    const originalMembershipUpdate = value.lists[0].subscription_updated_at;
     response = await request(`/api/subscribers/${sub.id}`, "PATCH", {
       lists: [list, secondList],
       preconfirm_subscriptions: true,
@@ -419,6 +420,11 @@ export async function runSubscribersContract(target: {
       value.lists.length === 2 &&
         value.lists.every((l: any) => l.subscription_status === "confirmed"),
       "subscriber-patch-confirmed",
+    );
+    check(
+      value.lists.find((entry: any) => entry.id === list)?.subscription_updated_at ===
+        originalMembershipUpdate,
+      "subscriber-replacement-preserves-membership-update-time",
     );
     response = await request(`/api/subscribers/lists/${sub.id}`, "PUT", {
       action: "unsubscribe",
