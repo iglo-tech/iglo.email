@@ -325,6 +325,39 @@ test("fresh installation, persistence, constraints, deletion and transactional F
   }
 });
 
+test("deleted identities never resolve to replacement accounts or entities after restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "iglo-schema-identities-"));
+  let fixture = startSchemaFixture(directory);
+  try {
+    expect((await call(fixture.origin, "migrate")).status).toBe(200);
+    expect((await call(fixture.origin, "seed")).status).toBe(200);
+    const deleted = await call(fixture.origin, "delete-identities");
+    expect(deleted.status).toBe(200);
+    await fixture.close();
+    fixture = startSchemaFixture(directory);
+    expect((await call(fixture.origin, "migrate")).status).toBe(200);
+    const replacement = await call(fixture.origin, "replace-identities");
+    expect(replacement.status).toBe(200);
+    expect(replacement.result.retainedSessionUser).toBe(deleted.result.user);
+    expect(replacement.result.resolvedSessionUser).toBeNull();
+    expect(BigInt(replacement.result.user)).toBeGreaterThan(BigInt(deleted.result.user));
+    for (const entity of ["lists", "templates", "campaigns"] as const) {
+      expect(BigInt(replacement.result.entities[entity])).toBeGreaterThan(
+        BigInt(deleted.result.entities[entity]),
+      );
+    }
+    expect((await call(fixture.origin, "status")).result).toMatchObject({
+      integrity: "ok",
+      foreignKeyErrors: [],
+      version: "1",
+      backups: [],
+    });
+  } finally {
+    await fixture.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("an unexpected version-zero object is snapshotted and left intact on atomic migration failure", async () => {
   const directory = await mkdtemp(join(tmpdir(), "iglo-schema-conflict-"));
   const fixture = startSchemaFixture(directory);

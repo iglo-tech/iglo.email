@@ -309,6 +309,75 @@ export function startSchemaFixture(directory: string) {
       campaignTemplate: scalar(db, "SELECT template_id FROM campaigns WHERE id=1"),
     };
   }
+  function deleteIdentities() {
+    const now = clock.now().toISOString();
+    return writeTransaction(db, () => {
+      db.run("INSERT INTO roles(type,name,created_at,updated_at) VALUES ('user','viewer',?,?)", [
+        now,
+        now,
+      ]);
+      const role = scalar(db, "SELECT id FROM roles WHERE name='viewer'");
+      if (typeof role !== "bigint") throw new Error("Missing viewer role");
+      db.run(
+        "INSERT INTO users(username,email,name,user_role_id,status,created_at,updated_at) VALUES ('departed','departed@example.test','Departed',?,'enabled',?,?)",
+        [role, now, now],
+      );
+      const user = scalar(db, "SELECT id FROM users WHERE username='departed'");
+      if (typeof user !== "bigint") throw new Error("Missing departed user");
+      db.run(
+        "INSERT INTO sessions(id,data,created_at) VALUES ('retained-user',json_object('user_id',?),?)",
+        [user, now],
+      );
+      const entities = {
+        lists: scalar(db, "SELECT id FROM lists WHERE uuid='list-1'"),
+        templates: scalar(db, "SELECT id FROM templates WHERE name='Receipt'"),
+        campaigns: scalar(db, "SELECT id FROM campaigns WHERE uuid='campaign-1'"),
+      };
+      db.run("DELETE FROM users WHERE id=?", [user]);
+      db.run(
+        "DELETE FROM campaigns WHERE uuid='campaign-1'; DELETE FROM templates WHERE name='Receipt'; DELETE FROM lists WHERE uuid='list-1'",
+      );
+      return { user, entities };
+    });
+  }
+  function replaceIdentities() {
+    const now = clock.now().toISOString();
+    return writeTransaction(db, () => {
+      db.run(
+        "INSERT INTO users(username,email,name,user_role_id,status,created_at,updated_at) VALUES ('replacement','replacement@example.test','Replacement',1,'enabled',?,?)",
+        [now, now],
+      );
+      db.run(
+        "INSERT INTO lists(uuid,name,type,created_at,updated_at) VALUES ('list-replacement','Replacement','public',?,?)",
+        [now, now],
+      );
+      db.run(
+        "INSERT INTO templates(name,subject,body,created_at,updated_at) VALUES ('Replacement','Subject','Body',?,?)",
+        [now, now],
+      );
+      db.run(
+        "INSERT INTO campaigns(uuid,name,subject,from_email,body,messenger,created_at,updated_at) VALUES ('campaign-replacement','Replacement','Subject','sender@example.test','Body','smtp',?,?)",
+        [now, now],
+      );
+      return {
+        user: scalar(db, "SELECT id FROM users WHERE username='replacement'"),
+        retainedSessionUser: scalar(
+          db,
+          "SELECT json_extract(data,'$.user_id') FROM sessions WHERE id='retained-user'",
+        ),
+        resolvedSessionUser:
+          scalar(
+            db,
+            "SELECT u.username FROM users u JOIN sessions s ON u.id=json_extract(s.data,'$.user_id') WHERE s.id='retained-user'",
+          ) ?? null,
+        entities: {
+          lists: scalar(db, "SELECT id FROM lists WHERE uuid='list-replacement'"),
+          templates: scalar(db, "SELECT id FROM templates WHERE name='Replacement'"),
+          campaigns: scalar(db, "SELECT id FROM campaigns WHERE uuid='campaign-replacement'"),
+        },
+      };
+    });
+  }
   function conflict() {
     db.run("CREATE TABLE settings(marker TEXT); INSERT INTO settings VALUES ('preserved')");
     return true;
@@ -363,6 +432,12 @@ export function startSchemaFixture(directory: string) {
             break;
           case "delete":
             result = deletions();
+            break;
+          case "delete-identities":
+            result = deleteIdentities();
+            break;
+          case "replace-identities":
+            result = replaceIdentities();
             break;
           case "persist":
             db.run(

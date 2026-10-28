@@ -32,7 +32,7 @@ CREATE TRIGGER subscribers_fts_update AFTER UPDATE OF id, name, email ON subscri
 END;
 
 CREATE TABLE lists (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('public', 'private', 'temporary')),
@@ -66,7 +66,7 @@ CREATE INDEX idx_sub_lists_created_at ON subscriber_lists(created_at);
 CREATE INDEX idx_sub_lists_unsubscribed_updated_at ON subscriber_lists(updated_at) WHERE status = 'unsubscribed';
 
 CREATE TABLE templates (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'campaign' CHECK (type IN ('campaign', 'campaign_visual', 'tx')),
   subject TEXT NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE templates (
 CREATE UNIQUE INDEX idx_templates_default ON templates(is_default) WHERE is_default = 1;
 
 CREATE TABLE campaigns (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   subject TEXT NOT NULL,
@@ -114,7 +114,7 @@ CREATE INDEX idx_camps_created_at ON campaigns(created_at);
 CREATE INDEX idx_camps_updated_at ON campaigns(updated_at);
 
 CREATE TABLE campaign_lists (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE ON UPDATE CASCADE,
   list_id INTEGER REFERENCES lists(id) ON DELETE SET NULL ON UPDATE CASCADE,
   list_name TEXT NOT NULL DEFAULT '',
@@ -124,7 +124,7 @@ CREATE INDEX idx_camp_lists_camp_id ON campaign_lists(campaign_id);
 CREATE INDEX idx_camp_lists_list_id ON campaign_lists(list_id);
 
 CREATE TABLE media (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   provider TEXT NOT NULL DEFAULT '',
   filename TEXT NOT NULL,
@@ -142,7 +142,7 @@ CREATE TABLE campaign_media (
 CREATE UNIQUE INDEX idx_camp_media_id ON campaign_media(campaign_id, media_id);
 CREATE INDEX idx_camp_media_camp_id ON campaign_media(campaign_id);
 CREATE TABLE links (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   url TEXT NOT NULL UNIQUE,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -155,7 +155,7 @@ CREATE TABLE settings (
 CREATE INDEX idx_settings_key ON settings(key);
 
 CREATE TABLE roles (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   type TEXT NOT NULL DEFAULT 'user' CHECK (type IN ('user', 'list')),
   parent_id INTEGER REFERENCES roles(id) ON DELETE CASCADE ON UPDATE CASCADE,
   list_id INTEGER REFERENCES lists(id) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -167,7 +167,7 @@ CREATE TABLE roles (
 CREATE UNIQUE INDEX idx_roles ON roles(parent_id, list_id);
 CREATE UNIQUE INDEX idx_roles_name ON roles(type, name) WHERE name IS NOT NULL;
 CREATE TABLE users (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   password_login INTEGER NOT NULL DEFAULT 0 CHECK (password_login IN (0, 1)),
   password TEXT,
@@ -192,7 +192,7 @@ CREATE TABLE sessions (
 CREATE INDEX idx_sessions ON sessions(id, created_at);
 
 CREATE TABLE events (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   subscriber_id INTEGER NOT NULL REFERENCES subscribers(id) ON DELETE CASCADE ON UPDATE CASCADE,
   name TEXT NOT NULL,
   data TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(data) AND json_type(data) = 'object'),
@@ -203,7 +203,7 @@ CREATE TABLE events (
 );
 CREATE INDEX idx_events_subscriber_name_time ON events(subscriber_id, name, occurred_at);
 CREATE TABLE sequences (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'paused', 'archived')),
@@ -215,7 +215,7 @@ CREATE TABLE sequences (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE TABLE sequence_steps (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   sequence_id INTEGER NOT NULL REFERENCES sequences(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   position INTEGER NOT NULL,
@@ -233,7 +233,7 @@ CREATE TABLE sequence_steps (
 );
 CREATE UNIQUE INDEX idx_sequence_steps_active_position ON sequence_steps(sequence_id, position) WHERE status = 'active';
 CREATE TABLE enrollments (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   sequence_id INTEGER NOT NULL REFERENCES sequences(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   subscriber_id INTEGER NOT NULL REFERENCES subscribers(id) ON DELETE CASCADE ON UPDATE CASCADE,
   trigger_event_id INTEGER REFERENCES events(id) ON DELETE SET NULL ON UPDATE CASCADE,
@@ -249,7 +249,7 @@ CREATE TABLE enrollments (
 CREATE INDEX idx_enrollments_due ON enrollments(status, due_at);
 CREATE INDEX idx_enrollments_subscriber_sequence ON enrollments(subscriber_id, sequence_id);
 CREATE TABLE sends (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   source TEXT NOT NULL CHECK (source IN ('tx', 'sequence')),
   kind TEXT NOT NULL CHECK (kind IN ('marketing', 'transactional')),
@@ -275,7 +275,7 @@ CREATE INDEX idx_sends_outbox ON sends(status, created_at);
 CREATE INDEX idx_sends_cap ON sends(subscriber_id, kind, sent_at);
 
 CREATE TABLE campaign_views (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE ON UPDATE CASCADE,
   send_id INTEGER REFERENCES sends(id) ON DELETE CASCADE ON UPDATE CASCADE,
   subscriber_id INTEGER REFERENCES subscribers(id) ON DELETE SET NULL ON UPDATE CASCADE,
@@ -287,7 +287,7 @@ CREATE INDEX idx_views_send_id ON campaign_views(send_id);
 CREATE INDEX idx_views_subscriber_id ON campaign_views(subscriber_id);
 CREATE INDEX idx_views_date ON campaign_views(created_at);
 CREATE TABLE link_clicks (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE ON UPDATE CASCADE,
   send_id INTEGER REFERENCES sends(id) ON DELETE CASCADE ON UPDATE CASCADE,
   link_id INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -301,7 +301,7 @@ CREATE INDEX idx_clicks_link_id ON link_clicks(link_id);
 CREATE INDEX idx_clicks_sub_id ON link_clicks(subscriber_id);
 CREATE INDEX idx_clicks_date ON link_clicks(created_at);
 CREATE TABLE bounces (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   subscriber_id INTEGER REFERENCES subscribers(id) ON DELETE CASCADE ON UPDATE CASCADE,
   campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL ON UPDATE CASCADE,
   send_id INTEGER REFERENCES sends(id) ON DELETE SET NULL ON UPDATE CASCADE,
@@ -317,7 +317,7 @@ CREATE INDEX idx_bounces_source ON bounces(source);
 CREATE INDEX idx_bounces_date ON bounces(created_at);
 
 CREATE TABLE webhooks (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   url TEXT NOT NULL,
   secret TEXT NOT NULL,
   events TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(events) AND json_type(events) = 'array'),
@@ -326,7 +326,7 @@ CREATE TABLE webhooks (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE TABLE webhook_deliveries (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT NOT NULL UNIQUE,
   webhook_id INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE ON UPDATE CASCADE,
   event TEXT NOT NULL,

@@ -6,7 +6,7 @@ The starting point is listmonk v7's `schema.sql` and `queries/*.sql`. Tables kee
 
 | Postgres in listmonk | SQLite in iglo.email |
 |---|---|
-| `SERIAL` / `BIGSERIAL` | `INTEGER PRIMARY KEY` (rowid) |
+| `SERIAL` / `BIGSERIAL` | `INTEGER PRIMARY KEY AUTOINCREMENT` (non-reused automatic identities) |
 | `uuid` columns, `pgcrypto` | `TEXT`, generated in app code (`crypto.randomUUID()`) |
 | `ENUM` types (14 of them) | `TEXT` with a `CHECK (col IN (...))` constraint |
 | `JSONB` | `TEXT` holding JSON, with `CHECK (json_valid(col))`. Read with `->`, `->>` and `json_extract` |
@@ -29,7 +29,7 @@ API implementation, and do not establish end-to-end feature acceptance.
 
 Query files stay as named SQL files (`-- name: get-subscriber`), the format listmonk uses. Each owning module supplies only its own embedded text to the loader, prepares it once, binds values, and closes its statements. Duplicate names, empty blocks and invalid SQL fail at preparation. Each block contains one statement; multiple statements, including trigger bodies with statement separators, are unsupported in named query files. Semicolons and marker-like text inside strings and comments remain SQL text. Migration files can contain multiple statements.
 
-Subscriber IDs use SQLite `AUTOINCREMENT` so automatically allocated committed IDs are not reused after deletion. The campaign high-water cursor also relies on future application code allocating subscriber IDs automatically and never inserting a previously used or lower explicit ID; SQLite permits explicit IDs. SQLite `NOCASE` folds ASCII characters only, not arbitrary Unicode. Application code supplies UUIDs and sortable UTC timestamps; SQL defaults for translated upstream timestamps use UTC ISO-8601 with milliseconds. SQLite does not validate timestamp strings. Detailed foreign-key and retention choices are recorded in [M1.1 schema evidence](../perf/M1.1-schema.md).
+Persistent integer identities use SQLite `AUTOINCREMENT` so automatically allocated committed IDs are not reused after deletion. This preserves upstream SERIAL/BIGSERIAL identity assumptions, including retained session user IDs and references stored outside foreign keys. Application owners allocate IDs automatically and never insert a previously used or lower explicit ID; SQLite permits explicit IDs. The subscriber campaign high-water cursor depends on the same rule. SQLite `NOCASE` folds ASCII characters only, not arbitrary Unicode. Application code supplies UUIDs and sortable UTC timestamps; SQL defaults for translated upstream timestamps use UTC ISO-8601 with milliseconds. SQLite does not validate timestamp strings. Detailed foreign-key and retention choices are recorded in [M1.1 schema evidence](../perf/M1.1-schema.md).
 
 ## Segment queries
 
