@@ -8,7 +8,16 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.3 — Users and production authentication is active at **brief**, on planned branch `task/M1.3-users-auth`; [committed brief](briefs/M1.3.md). M1.1/M0.5 prerequisites are merged and no other worker or PR is active. The lead read the pinned auth/user/session/role/login source and recorded D26 before dispatch: production auth precedes settings, minimal role ownership stays explicit, and functional login is separated from M4.1's full screens. The brief requires reference-first contracts, actual compiled authentication, D25 identity regression, CSRF/origin/revocation/rate-limit coverage, browser evidence and bounded storage measurements. One Terra max worker will implement; no helpers are authorized.
+M1.3 — Users and production authentication is active at **worker**, on branch `task/M1.3-users-auth`; [committed brief](briefs/M1.3.md) at `a08a208`. M1.1/M0.5 prerequisites are merged and no other implementation task is active. One [M1.3: Users and production authentication — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%3Adelegate-task%3Aiglo-email-M1.3-worker-20261028T070933-recovery) was dispatched at 2026-10-28T09:27:29.519Z with `isolation: "worktree"`, `mode: "async"`, `role: "implementation"`, `target: { providerInstanceId: "codex", model: "gpt-6.1-terra", options: { reasoningEffort: "max" } }`. No helpers are authorized. The tool reports running, no pending question/approval or child runs; its next instruction is to end the turn and resume on completion, without polling.
+
+Recovery identifiers:
+
+- Client request ID: `iglo-email-M1.3-worker-20261028T070933-recovery`.
+- Delegate task ID: `node:delegated-task:command%3Amcp%3A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%3Adelegate-task%3Aiglo-email-M1.3-worker-20261028T070933-recovery`.
+- Child thread ID: `thread:delegated-task:command%3Amcp%3A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%3Adelegate-task%3Aiglo-email-M1.3-worker-20261028T070933-recovery`.
+- Child run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%253Adelegate-task%253Aiglo-email-M1.3-worker-20261028T070933-recovery:ordinal:1`.
+
+The lead read the pinned auth/user/session/role/login source and recorded D26 before dispatch: production auth precedes settings, minimal role ownership stays explicit, and functional login is separated from M4.1's full screens. The brief requires reference-first contracts, actual compiled authentication, D25 identity regression, CSRF/origin/revocation/rate-limit coverage, browser evidence and bounded storage measurements. On completion inspect the worker's PR and CI, then fresh independent council on the exact head; never start a duplicate worker while this one is active.
 
 The recovery run started 2026-10-28T07:09:33.768313+00:00 and remains within its four-hour limit. M1.1 merged at `34a246fca3d9b2061da92df8c6b8650e8d79f7e6` after both final-head approvals and green CI; its watch is stopped and both reviewers completed with no pending child runs. [Review and recovery record](reviews/M1.1.md). M1.2 now depends on M1.3 so its settings routes receive real authentication. Independent recovery uses this active record, the lock and the forthcoming delegate IDs, without relying on any lead thread to respond.
 
