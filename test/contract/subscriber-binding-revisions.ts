@@ -96,6 +96,28 @@ export async function runSubscriberBindingRevisions(target: {
         "attrib-overflow-no-write",
       );
     }
+    const overflowPost = await request(
+      "/api/subscribers",
+      "POST",
+      `{"email":"overflow-${suffix}@example.test","attribs":{"n":1e400}}`,
+    );
+    check(overflowPost.status === 400, "attrib-post-overflow");
+    const afterOverflow = await create(
+      "subscribers",
+      `{"email":"overflow-${suffix}@example.test","attribs":{"x":["\\ud800"]}}`,
+    );
+    check((await get(afterOverflow.id)).attribs.x[0] === "�", "attrib-post-persisted");
+    const putBefore = await get(afterOverflow.id);
+    const overflowPut = await request(
+      `/api/subscribers/${afterOverflow.id}`,
+      "PUT",
+      `{"email":"overflow-${suffix}@example.test","attribs":{"n":1e999}}`,
+    );
+    check(
+      overflowPut.status === 400 &&
+        JSON.stringify(await get(afterOverflow.id)) === JSON.stringify(putBefore),
+      "attrib-put-overflow-no-write",
+    );
     for (const [i, address, expected] of [
       [0, `İ-post-${suffix}@example.test`, `i-post-${suffix}@example.test`],
       [1, `ΟΣ-post-${suffix}@a\ufeffb`, `οσ-post-${suffix}@a\ufeffb`],
@@ -187,6 +209,26 @@ export async function runSubscriberBindingRevisions(target: {
           (await r.json()).data.email === `i-ext-${suffix}@example.test` &&
           (await get(ext.id)).email === `i-ext-${suffix}@example.test`,
         "external-email",
+      );
+      const extAttrib = await request(
+        `/api/subscribers/external?external_id=binding-${suffix}`,
+        "PUT",
+        `{"email":"i-ext-${suffix}@example.test","attribs":{"s":"\\ud800"}}`,
+      );
+      check(
+        extAttrib.status === 200 && (await get(ext.id)).attribs.s === "�",
+        "external-attrib-persisted",
+      );
+      const extBefore = await get(ext.id);
+      const extOverflow = await request(
+        `/api/subscribers/external?external_id=binding-${suffix}`,
+        "PUT",
+        `{"email":"i-ext-${suffix}@example.test","attribs":{"n":1e400}}`,
+      );
+      check(
+        extOverflow.status === 400 &&
+          JSON.stringify(await get(ext.id)) === JSON.stringify(extBefore),
+        "external-attrib-overflow-no-write",
       );
       const prior = await get(ext.id);
       const bad = await request(
