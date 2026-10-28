@@ -28,6 +28,8 @@ Automation prompt updated to the owner's continuous-fleet instruction, with enab
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
 
+Owner update: healthy redundant check-in threads auto-settle themselves through t3_thread_organize action:settle after recording a one-line no-intervention outcome. They must leave the actual fleet owner, live workers, locks and watches untouched. Active coordinators awaiting their own delegates/checks and threads needing recovery do not qualify. This run remains the M1.2 coordinator; its outstanding worker is not settled or polled. The runbook contains the exact eligibility and tool procedure.
+
 ## Done
 
 | ID | PR | Merged | Notes |
