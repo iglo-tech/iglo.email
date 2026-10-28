@@ -8,13 +8,15 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No active task. M0.6 merged as `986e3edc1cd3a5ce6477b1a7a693e8c8c4df9b63`; all final-head CI jobs passed and every council finding was fixed under the [three-round lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487). The PR watch stopped. [Review and recovery record](reviews/M0.6.md).
+**M0.7 — SQLite write-load spike** is active at stage `brief`. Independent run started **2026-10-28T05:37:56.419578+00:00**; lock claimed after confirming no prior lock, no open PR and no active task. Main was current. [Brief](briefs/M0.7.md).
 
-Next: **M0.7 — SQLite write-load spike**, with M0.4 already merged. This originating run exceeded four hours; it releases the lock after this status commit and starts no new worker. The next independent scheduled run writes the M0.7 brief and continues. Automation stays enabled and unbound.
+Branch: `task/M0.7-sqlite-write-load`. Worker attempt 1 is prepared, not yet dispatched; request ID `iglo-email-M0.7-worker-20261028T053756`. Requested worker: GPT-6.1 Terra at max reasoning, isolated worktree. No PR or council round yet. Next transition: dispatch this single worker, persist its task/thread IDs, then end the turn until completion. Later runs must inspect these IDs and GitHub before replacing work.
+
+M0.6 remains merged at `986e3edc1cd3a5ce6477b1a7a693e8c8c4df9b63`; its PR watch stopped. [Review and recovery record](reviews/M0.6.md).
 
 ## Automation
 
-The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Next run: **2026-10-28T05:37:06.302Z** (06:37 Warsaw). Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
+The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified during the M0.7 kickoff on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Next run: **2026-10-28T06:22:07.689Z** (07:22 Warsaw). Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
 
 ## Done
 
