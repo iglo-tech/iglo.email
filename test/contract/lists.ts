@@ -256,10 +256,11 @@ export async function runListsContract(target: {
       "D35-xml-depth-self-closing",
     );
     const whitespaceTag = await create(`tag-spaces-${suffix}`, {
-      tags: ["\u0085" + "a".repeat(100) + "\u0085", "\ufeffx\ufeff"],
+      tags: ["\u0085" + "a".repeat(100) + "\u0085", "\ufeffx\ufeff", "a\vb"],
     });
     check(
-      JSON.stringify(whitespaceTag.tags) === JSON.stringify(["a".repeat(100), "\ufeffx\ufeff"]),
+      JSON.stringify(whitespaceTag.tags) ===
+        JSON.stringify(["a".repeat(100), "\ufeffx\ufeff", "a\vb"]),
       "tag-go-unicode-trim",
     );
     const longTag = "x".repeat(101),
