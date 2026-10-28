@@ -118,3 +118,9 @@ New, for sends (transactional and sequence messages):
 - `/m/:sendUUID/unsubscribe`: page and one-click `POST`;
 - `/m/:sendUUID/link/:linkUUID`: tracked links;
 - `/m/:sendUUID/px.png`: view pixel.
+
+D37 replaces the XML implementation with a strict streaming parser. XML UTF-8,
+syntax and characters are validated only through the consumed first root;
+unconsumed suffix bytes are ignored as in pinned encoding/xml.Decode. The
+64 KiB body, 64-level depth and no-DTD bounds remain. JSON retains its existing
+replacement decoding. This corrects compatibility defects, not a new API exception.
