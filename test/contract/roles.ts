@@ -148,6 +148,82 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
           "\n",
       "D31-invalid-user-permission-message",
     );
+    // User-role replacement requires an explicit array; list children retain
+    // their separate upstream null/omitted-as-empty clearing contract.
+    async function currentUserRole() {
+      const response = await request(`/api/roles/users?query=${suffix}`);
+      check(response.status === 200, "D32-user-role-read");
+      const entries = ((await response.json()) as { data: Record<string, unknown>[] }).data;
+      return entries.find((entry) => entry.id === role);
+    }
+    for (const variant of ["omitted", "null"] as const) {
+      const missing = variant === "null" ? { permissions: null } : {};
+      const before = await currentUserRole();
+      for (const method of ["POST", "PUT"] as const) {
+        const name = `missing-${method}-${variant}-${suffix}`;
+        const response = await request(
+          method === "POST" ? "/api/roles/users" : `/api/roles/users/${role}`,
+          method,
+          { name, ...missing },
+        );
+        const body = (await response.json()) as { message?: string; data?: { id: number } };
+        // Retain cleanup even if a regression unexpectedly creates a role.
+        if (method === "POST" && response.status === 200 && body.data?.id) owned.push(body.data.id);
+        check(response.status === (reference ? 500 : 400), `D32-${method}-${variant}-status`);
+        check(
+          reference
+            ? typeof body.message === "string" &&
+                body.message.startsWith(
+                  method === "POST" ? "Error creating Role: " : "Error updating User role: ",
+                ) &&
+                body.message.includes('null value in column "permissions"')
+            : body.message === "Invalid fields: permissions",
+          `D32-${method}-${variant}-message`,
+        );
+        check(
+          JSON.stringify(await currentUserRole()) === JSON.stringify(before),
+          `D32-${method}-${variant}-grants-unchanged`,
+        );
+        const named = await request(`/api/roles/users?query=${name}`);
+        check(
+          ((await named.json()) as { data: unknown[] }).data.length === 0,
+          `D32-${method}-${variant}-name-not-written`,
+        );
+      }
+    }
+    const explicitEmpty = await request(`/api/roles/users/${role}`, "PUT", {
+      name: `changed-${suffix}`,
+      permissions: [],
+    });
+    check(
+      explicitEmpty.status === 200 &&
+        JSON.stringify((await currentUserRole())?.permissions) === "[]",
+      "D32-explicit-empty-user-grants",
+    );
+    for (const variant of ["omitted", "null", "empty"] as const) {
+      const child = {
+        id: 2147483647,
+        ...(variant === "omitted" ? {} : { permissions: variant === "null" ? null : [] }),
+      };
+      const cleared = await create("lists", {
+        name: `empty-child-${variant}-${suffix}`,
+        lists: [child],
+      });
+      const replacement = await request(`/api/roles/lists/${list}`, "PUT", {
+        name: `m14-list-${suffix}`,
+        lists: [child],
+      });
+      check(replacement.status === 200, `list-child-${variant}-replacement`);
+      const response = await request(`/api/roles/lists?query=${suffix}`);
+      const entries = ((await response.json()) as { data: { id: number; lists: unknown[] }[] })
+        .data;
+      check(
+        [list, cleared].every((id) =>
+          entries.some((entry) => entry.id === id && entry.lists.length === 0),
+        ),
+        `list-child-${variant}-no-grant`,
+      );
+    }
     const invalidList = await request("/api/roles/lists", "POST", {
       name: `bad-${suffix}`,
       lists: [{ id: 123, permissions: ["unknown:permission"] }],

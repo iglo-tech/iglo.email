@@ -867,6 +867,42 @@ test("list roles project child permissions and roll back invalid replacement and
       ).json()) as { data: boolean }
     ).data,
   ).toBe(true);
+  for (const variant of ["omitted", "null", "empty"] as const) {
+    const restored = await call(f, `/api/roles/lists/${role}`, {
+      method: "PUT",
+      session: admin,
+      body: { name: "Synthetic list role", lists: [{ id: list, permissions: ["list:get"] }] },
+    });
+    expect(restored.status).toBe(200);
+    const permission = async () =>
+      (
+        (await (
+          await call(f, `/fixture/list-permission/${list}`, { auth: authorization })
+        ).json()) as { data: boolean }
+      ).data;
+    expect(await permission()).toBe(true);
+    const cleared = await call(f, `/api/roles/lists/${role}`, {
+      method: "PUT",
+      session: admin,
+      body: {
+        name: "Synthetic list role",
+        lists: [
+          {
+            id: list,
+            ...(variant === "omitted" ? {} : { permissions: variant === "null" ? null : [] }),
+          },
+        ],
+      },
+    });
+    expect(cleared.status).toBe(200);
+    const entries = (
+      (await (await call(f, "/api/roles/lists", { session: admin })).json()) as {
+        data: { id: number; lists: unknown[] }[];
+      }
+    ).data;
+    expect(entries.find((entry) => entry.id === role)?.lists).toEqual([]);
+    expect(await permission()).toBe(false);
+  }
   expect((await call(f, `/api/roles/${role}`, { method: "DELETE", session: admin })).status).toBe(
     400,
   );
