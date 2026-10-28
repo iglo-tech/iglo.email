@@ -220,13 +220,13 @@ HTTP restart acceptance serves both current notices and confirms the old
 parser/override notice paths are absent. No complete XML/Go parity or parser
 maintenance guarantee is claimed; the dependency is pinned and upstream archived.
 
-## M1.6 subscriber contract work in progress
+## M1.6 subscriber contracts
 
 `bun run contract:subscribers:reference` runs the invocation-owned subscriber
 CRUD/membership and scoped authorization observations against pinned upstream.
-`bun run contract:subscribers` is the paired compiled-production and D38
-external-identity specification; it is not a passing acceptance gate yet because
-subscriber routes are unimplemented. `bun test/subscribers/dot-path-observe.ts`
-reproduces the D18/D38 dot-segment transport conflict with raw loopback HTTP;
+`bun run contract:subscribers` runs the paired compiled-production corpus, D38/D39
+external selectors, live scope and restart cases, and real positive list counts.
+`bun test/subscribers/dot-path-observe.ts` records D18 dot-segment normalization with raw loopback HTTP;
 see [subscriber fixtures](../subscribers/fixtures.md). External-ID cases are
-normal-only and are never attributed to upstream.
+normal-only and are never attributed to upstream. D40 explicitly records the
+reference's int32 query-width errors and the native signed-64-bit outcomes.

@@ -53,6 +53,25 @@ export async function runExternalContract(target: {
       );
       const wire = await response;
       dotStatuses.push(Number(/^HTTP\/1\.1 (\d+)/.exec(wire)?.[1]));
+      for (const method of ["PUT", "DELETE"]) {
+        const raw = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+        const reply = new Promise<string>((resolve, reject) => {
+          let wire = "";
+          raw.on("data", (part) => (wire += part.toString()));
+          raw.on("end", () => resolve(wire));
+          raw.on("error", reject);
+        });
+        await new Promise<void>((resolve, reject) => {
+          raw.once("error", reject);
+          raw.once("connect", resolve);
+        });
+        const body =
+          method === "PUT" ? JSON.stringify({ email: dotData.email, name: "wrong" }) : "";
+        raw.end(
+          `${method} /api/subscribers/external/${encoded} HTTP/1.1\r\nHost: ${url.host}\r\nAuthorization: ${auth}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
+        );
+        check((await reply).includes(" 404 "), "D39-dot-path-no-write");
+      }
       const query = `/api/subscribers/external?external_id=${encodeURIComponent(dot)}`;
       const found = await request(query);
       check(found.status === 200 && (await found.json()).data.id === dotData.id, "D39-dot-query");
@@ -65,6 +84,45 @@ export async function runExternalContract(target: {
       dotStatuses.every((status) => status === 404),
       "D39-dot-path-normalized",
     );
+    // D39: values that look like encodings are separate opaque identities.
+    for (const [index, value] of [".", "%2E", "..", "%2E%2E", "%", "/", "\\", " + é"].entries()) {
+      const created = await request("/api/subscribers", "POST", {
+        email: `selector-${index}-${suffix}@example.test`,
+        external_id: value,
+      });
+      const row = (await created.json()).data;
+      if (created.status === 200 && typeof row?.id === "number") owned.push(row.id);
+      check(created.status === 200, "D39-selector-create");
+      const query = `/api/subscribers/external?external_id=${encodeURIComponent(value)}`;
+      const response = await request(query);
+      check(
+        response.status === 200 && (await response.json()).data.id === row.id,
+        "D39-selector-exact-query",
+      );
+      if (value !== "." && value !== "..") {
+        const path = await request(`/api/subscribers/external/${encodeURIComponent(value)}`);
+        check(
+          path.status === 200 && (await path.json()).data.id === row.id,
+          "D39-selector-exact-path",
+        );
+      }
+    }
+    for (const query of ["", "?external_id=", "?external_id=a&external_id=b"]) {
+      for (const method of ["GET", "PUT", "DELETE"]) {
+        check(
+          (
+            await request(
+              `/api/subscribers/external${query}`,
+              method,
+              method === "PUT"
+                ? { email: `missing-${suffix}@example.test`, external_id: "%" }
+                : undefined,
+            )
+          ).status === 400,
+          "D39-selector-invalid",
+        );
+      }
+    }
     const external = ` /é/${suffix} `;
     let response = await request("/api/subscribers", "POST", {
       email: `external-${suffix}@example.test`,
@@ -151,51 +209,57 @@ export async function runExternalContract(target: {
         .join(",") === "200,409",
       "D38-external-concurrent-claim",
     );
-    const payload = JSON.stringify({
-      email: `retarget-${suffix}@example.test`,
-      name: "wrong target",
-    });
-    const cut = 8,
-      url = new URL(target.baseUrl);
-    const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
-    const result = new Promise<string>((resolve, reject) => {
-      let output = "";
-      socket.on("data", (chunk) => (output += chunk.toString()));
-      socket.on("end", () => resolve(output));
-      socket.on("error", reject);
-    });
-    await new Promise<void>((resolve, reject) => {
-      socket.once("error", reject);
-      socket.once("connect", resolve);
-    });
-    socket.write(
-      `PUT /api/subscribers/external/${encodeURIComponent(external)} HTTP/1.1\r\nHost: ${url.host}\r\nAuthorization: ${auth}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, cut)}`,
-    );
-    check(
-      (await request(`/api/subscribers/${id}`, "PATCH", { external_id: null })).status === 200,
-      "D38-inflight-clear",
-    );
-    check(
-      (await request(`/api/subscribers/${contenderData.id}`, "PATCH", { external_id: external }))
-        .status === 200,
-      "D38-inflight-rebind",
-    );
-    socket.end(payload.slice(cut));
-    check((await result).includes(" 400 "), "D38-inflight-rebind-rejected");
-    const untouched = (await (await request(`/api/subscribers/${contenderData.id}`)).json()).data;
-    check(
-      untouched.name === contenderData.name && untouched.email === contenderData.email,
-      "D38-inflight-rebind-no-write",
-    );
-    check(
-      (await request(`/api/subscribers/${contenderData.id}`, "PATCH", { external_id: null }))
-        .status === 200,
-      "D38-inflight-contender-clear",
-    );
-    check(
-      (await request(`/api/subscribers/${id}`, "PATCH", { external_id: external })).status === 200,
-      "D38-inflight-restore",
-    );
+    for (const [label, selector] of [
+      ["path", `/api/subscribers/external/${encodeURIComponent(external)}`],
+      ["query", `/api/subscribers/external?external_id=${encodeURIComponent(external)}`],
+    ]) {
+      const payload = JSON.stringify({
+        email: `retarget-${suffix}@example.test`,
+        name: "wrong target",
+      });
+      const cut = 8,
+        url = new URL(target.baseUrl);
+      const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+      const result = new Promise<string>((resolve, reject) => {
+        let output = "";
+        socket.on("data", (chunk) => (output += chunk.toString()));
+        socket.on("end", () => resolve(output));
+        socket.on("error", reject);
+      });
+      await new Promise<void>((resolve, reject) => {
+        socket.once("error", reject);
+        socket.once("connect", resolve);
+      });
+      socket.write(
+        `PUT ${selector} HTTP/1.1\r\nHost: ${url.host}\r\nAuthorization: ${auth}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, cut)}`,
+      );
+      check(
+        (await request(`/api/subscribers/${id}`, "PATCH", { external_id: null })).status === 200,
+        "D38-inflight-clear",
+      );
+      check(
+        (await request(`/api/subscribers/${contenderData.id}`, "PATCH", { external_id: external }))
+          .status === 200,
+        "D38-inflight-rebind",
+      );
+      socket.end(payload.slice(cut));
+      check((await result).includes(" 400 "), `D39-inflight-rebind-rejected-${label}`);
+      const untouched = (await (await request(`/api/subscribers/${contenderData.id}`)).json()).data;
+      check(
+        untouched.name === contenderData.name && untouched.email === contenderData.email,
+        "D38-inflight-rebind-no-write",
+      );
+      check(
+        (await request(`/api/subscribers/${contenderData.id}`, "PATCH", { external_id: null }))
+          .status === 200,
+        "D38-inflight-contender-clear",
+      );
+      check(
+        (await request(`/api/subscribers/${id}`, "PATCH", { external_id: external })).status ===
+          200,
+        "D38-inflight-restore",
+      );
+    }
     await target.restart();
     response = await request(`/api/subscribers/external/${encodeURIComponent(external)}`);
     data = (await response.json()).data;
@@ -203,6 +267,43 @@ export async function runExternalContract(target: {
       response.status === 200 && data.id === id && data.uuid === uuid && data.attribs.persisted,
       "D38-external-restart",
     );
+    response = await request(
+      `/api/subscribers/external?external_id=${encodeURIComponent(external)}`,
+    );
+    check(
+      response.status === 200 && (await response.json()).data.id === id,
+      "D39-external-query-restart",
+    );
+    // Omitted PATCH fields are resolved from the current row after the body arrives.
+    {
+      const body = JSON.stringify({ attribs: { late: true } });
+      const url = new URL(target.baseUrl);
+      const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+      const reply = new Promise<string>((resolve, reject) => {
+        let wire = "";
+        socket.on("data", (part) => (wire += part.toString()));
+        socket.on("end", () => resolve(wire));
+        socket.on("error", reject);
+      });
+      await new Promise<void>((resolve, reject) => {
+        socket.once("error", reject);
+        socket.once("connect", resolve);
+      });
+      socket.write(
+        `PATCH /api/subscribers/${id} HTTP/1.1\r\nHost: ${url.host}\r\nAuthorization: ${auth}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body.slice(0, 4)}`,
+      );
+      check(
+        (await request(`/api/subscribers/${id}`, "PATCH", { name: "Concurrent" })).status === 200,
+        "subscriber-patch-concurrent-first",
+      );
+      socket.end(body.slice(4));
+      check((await reply).includes(" 200 "), "subscriber-patch-concurrent-second");
+      const current = (await (await request(`/api/subscribers/${id}`)).json()).data;
+      check(
+        current.name === "Concurrent" && current.attribs.persisted && current.attribs.late,
+        "subscriber-patch-current-omissions",
+      );
+    }
     const rekey = `new-${suffix}`;
     response = await request(`/api/subscribers/external/${encodeURIComponent(external)}`, "PUT", {
       email: data.email,

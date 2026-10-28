@@ -8,7 +8,9 @@ compiled process and a synthetic admin provisioned by `test/contract/owned.ts`.
 No real mail is delivered by these tests.
 
 `dot-path-observe.ts` sends raw requests to a temporary loopback Bun server and
-prints only the normalized paths. `external.ts` is a production-only D38
-specification; it is expected to fail until the feature and the dot-segment
-contract conflict are resolved. The existing subscriber list-count fixture is
-synthetic and is not evidence of a production subscriber API.
+prints only the normalized paths. `external.ts` is a compiled-production-only
+D38/D39 specification: query selectors support every valid opaque ID, while raw
+dot paths observe D18 normalization. The compiled corpus uses real subscriber
+writes to check list counts; the separate pre-M1.6 list-count fixture remains
+labelled synthetic evidence. D40 cases distinguish native signed-64-bit IDs
+from the reference's PostgreSQL integer-width errors.

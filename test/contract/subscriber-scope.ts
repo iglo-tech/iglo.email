@@ -47,11 +47,13 @@ export async function runSubscriberScope(target: {
       email: `visible-${suffix}@example.test`,
       lists: [accessible.id, hidden.id],
       preconfirm_subscriptions: true,
+      ...(target.mode === "normal" ? { external_id: `visible-${suffix}` } : {}),
     });
     const invisible = await create("/api/subscribers", "subscribers", {
       email: `hidden-${suffix}@example.test`,
       lists: [hidden.id],
       preconfirm_subscriptions: true,
+      ...(target.mode === "normal" ? { external_id: `hidden-${suffix}` } : {}),
     });
     const role = await create("/api/roles/users", "roles", {
       name: `subscriber-role-${suffix}`,
@@ -86,6 +88,30 @@ export async function runSubscriberScope(target: {
       (await request(`/api/subscribers/${invisible.id}`, "PATCH", {}, limited)).status === 403,
       "subscriber-scope-empty-patch",
     );
+    if (target.mode === "normal") {
+      for (const path of [
+        `/api/subscribers/external?external_id=${encodeURIComponent(`visible-${suffix}`)}`,
+        `/api/subscribers/external/${encodeURIComponent(`visible-${suffix}`)}`,
+      ]) {
+        check(
+          (await request(path, "GET", undefined, limited)).status === 200,
+          "D39-scope-external-visible",
+        );
+      }
+      for (const path of [
+        `/api/subscribers/external?external_id=${encodeURIComponent(`hidden-${suffix}`)}`,
+        `/api/subscribers/external/${encodeURIComponent(`hidden-${suffix}`)}`,
+      ]) {
+        check(
+          (await request(path, "GET", undefined, limited)).status === 403,
+          "D39-scope-external-hidden",
+        );
+        check(
+          (await request(path, "DELETE", undefined, limited)).status === 403,
+          "D39-scope-external-delete-denied",
+        );
+      }
+    }
     const deniedCreate = await request(
       "/api/subscribers",
       "POST",
@@ -171,6 +197,24 @@ export async function runSubscriberScope(target: {
       "subscriber-scope-session-read",
     );
     if (target.mode === "normal") {
+      const alias = `/api/subscribers/external?external_id=${encodeURIComponent(`visible-${suffix}`)}`;
+      check(
+        (await request(alias, "GET", undefined, sessionHeaders)).status === 200,
+        "D39-session-external-read",
+      );
+      check(
+        (await request(alias, "PUT", { email: visible.email }, { Cookie: session })).status === 403,
+        "D39-session-external-csrf",
+      );
+      if (target.restart) {
+        await target.restart();
+        check(
+          (await request(alias, "GET", undefined, sessionHeaders)).status === 200,
+          "D39-session-external-restart",
+        );
+      }
+    }
+    if (target.mode === "normal") {
       const payload = JSON.stringify({ name: "late change" });
       const url = new URL(target.baseUrl),
         socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
@@ -209,6 +253,17 @@ export async function runSubscriberScope(target: {
       );
       row = (await (await request(`/api/subscribers/${visible.id}`)).json()).data;
       check(row.name === "scope update", "subscriber-scope-revocation-no-write");
+      check(
+        (
+          await request(
+            `/api/subscribers/external?external_id=${encodeURIComponent(`visible-${suffix}`)}`,
+            "GET",
+            undefined,
+            sessionHeaders,
+          )
+        ).status === 403,
+        "D39-session-external-revoked",
+      );
     }
   } finally {
     for (const { kind, id } of resources.reverse())

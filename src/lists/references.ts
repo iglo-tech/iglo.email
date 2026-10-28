@@ -9,6 +9,22 @@ export function createListReferences(db: Database) {
     name(id: bigint): string | null {
       return (queries.get("list-name").get(id) as { name: string } | null)?.name ?? null;
     },
+    subscriberMetadata(id: bigint) {
+      const row = queries.get("subscriber-list-metadata").get(id) as {
+        id: bigint;
+        uuid: string;
+        name: string;
+        type: string;
+        optin: string;
+        status: string;
+        tags: string | null;
+        description: string;
+        created_at: string | null;
+        updated_at: string | null;
+      } | null;
+      if (!row) return null;
+      return { ...row, id: Number(row.id), tags: row.tags ? JSON.parse(row.tags) : [] };
+    },
     close: () => queries.close(),
   };
 }

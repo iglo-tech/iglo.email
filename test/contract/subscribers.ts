@@ -68,6 +68,13 @@ export async function runSubscribersContract(target: {
         sub.lists[0].subscription_status === "confirmed",
       "subscriber-create-membership",
     );
+    if (target.mode === "normal") {
+      const counts = (await (await request(`/api/lists/${list}`)).json()).data;
+      check(
+        counts.subscriber_count === 1 && counts.subscriber_statuses.confirmed === 1,
+        "subscriber-production-positive-list-count",
+      );
+    }
     check(sub.attribs.nested.n === 1 && sub.attribs.array[1] === null, "subscriber-attribs");
     check(
       (await request("/api/subscribers", "POST", { email })).status === 409,
@@ -98,6 +105,8 @@ export async function runSubscribersContract(target: {
       return { response, value };
     }
     for (const [local, domain, accepted] of [
+      ["a[b]", "example.test", false],
+      ["local", "bad[thing]", false],
       [".dot", "example.test", false],
       ["dot.", "example.test", false],
       ["double..dot", "example.test", false],
@@ -164,6 +173,18 @@ export async function runSubscribersContract(target: {
         "subscriber-json-invalid-int64",
       );
     }
+    for (const high of [
+      "2147483648",
+      "9007199254740992",
+      "9007199254740993",
+      "9223372036854775807",
+    ]) {
+      check(
+        (await request(`/api/subscribers/${high}`)).status ===
+          (target.mode === "reference" ? 500 : 400),
+        "D40-subscriber-missing-high-id",
+      );
+    }
     const nullList = await raw(
       `{"email":"null-list-${suffix}@example.test","lists":[null]}`,
       "application/json",
@@ -184,6 +205,8 @@ export async function runSubscribersContract(target: {
       `<Subscriber><Email>bad-${suffix}@example.test</Subscriber>`,
       `<Subscriber bad="&broken"><Email>bad-${suffix}@example.test</Email></Subscriber>`,
       `<Subscriber><Email>bad-${suffix}@example.test</Email><Ignored>\u0000</Ignored></Subscriber>`,
+      `<Subscriber><Email>bad-${suffix}@example.test</Email><Attribs><item>x</item></Attribs></Subscriber>`,
+      `<Subscriber><Email>bad-${suffix}@example.test</Email><PreconfirmSubs>bad</PreconfirmSubs></Subscriber>`,
     ]) {
       check((await raw(body, "application/xml")).response.status === 400, "subscriber-xml-invalid");
     }
@@ -236,6 +259,20 @@ export async function runSubscribersContract(target: {
       attribs: { first: 1, nested: { one: 1, two: 2 } },
       lists: [list],
     });
+    for (const method of ["PUT", "PATCH"]) {
+      const collision = await request(`/api/subscribers/${semantics.id}`, method, {
+        email: sub.email,
+        name: "must not persist",
+      });
+      check(collision.status === 500, "subscriber-update-duplicate-email");
+      const unchanged = await get(semantics.id);
+      check(
+        unchanged.email === semantics.email &&
+          unchanged.name === semantics.name &&
+          unchanged.lists.length === 1,
+        "subscriber-update-duplicate-email-atomic",
+      );
+    }
     let semanticsResponse = await request(`/api/subscribers/${semantics.id}`, "PATCH", {
       attribs: { nested: { one: 3 } },
     });
@@ -266,6 +303,33 @@ export async function runSubscribersContract(target: {
         semanticsData.name === semantics.name,
       "subscriber-patch-null-fields",
     );
+    const highUpdate = await fetch(`${target.baseUrl}/api/subscribers/${semantics.id}`, {
+      method: "PUT",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: `{"email":"${semantics.email}","name":"high update","lists":[9223372036854775807]}`,
+    });
+    check(
+      highUpdate.status === (target.mode === "reference" ? 500 : 200),
+      "D40-subscriber-high-list-update",
+    );
+    const highAfter = await get(semantics.id);
+    check(
+      target.mode === "reference"
+        ? highAfter.name !== "high update" && highAfter.lists.length === 1
+        : highAfter.name === "high update" && highAfter.lists.length === 0,
+      "D40-subscriber-high-list-update-state",
+    );
+    if (target.mode === "normal") {
+      check(
+        (
+          await request(`/api/subscribers/${semantics.id}`, "PATCH", {
+            lists: [list],
+            name: semantics.name,
+          })
+        ).status === 200,
+        "D40-subscriber-high-list-restore",
+      );
+    }
     const xmlAction = await fetch(`${target.baseUrl}/api/subscribers/lists`, {
       method: "PUT",
       headers: { Authorization: auth, "Content-Type": "application/xml" },
@@ -411,6 +475,10 @@ export async function runSubscribersContract(target: {
     );
     subscribers.splice(subscribers.indexOf(sub.id), 1);
     check((await request(`/api/subscribers/${sub.id}`)).status === 400, "subscriber-deleted");
+    if (target.mode === "normal") {
+      const counts = (await (await request(`/api/lists/${secondList}`)).json()).data;
+      check(counts.subscriber_count === 0, "subscriber-production-count-after-delete");
+    }
   } finally {
     for (const id of subscribers.reverse())
       if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
