@@ -1,4 +1,5 @@
-// Synthetic selection/progress informed by listmonk schema.sql and queries/campaigns.sql;
+// Synthetic selection/progress informed by listmonk schema.sql, queries/campaigns.sql,
+// internal/manager/manager.go and internal/manager/pipe.go;
 // cursor reservation before simulated processing follows docs/design/04-sending.md.
 // FTS5 and events are new SQLite design fixtures, not upstream query ports.
 import { existsSync, statSync } from "node:fs";

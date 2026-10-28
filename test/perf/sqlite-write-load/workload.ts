@@ -19,6 +19,7 @@ type Samples = {
   eventCommitLagMs: number[];
   transactionMs: number[];
   wakeLagMs: number[];
+  pumpBlockMs: number[];
 };
 
 export class Workload {
@@ -30,6 +31,7 @@ export class Workload {
     eventCommitLagMs: [],
     transactionMs: [],
     wakeLagMs: [],
+    pumpBlockMs: [],
   };
   readonly transactions: Record<string, { count: number; records: number }> = {};
   readonly postWindowTransactions: Record<string, { count: number; records: number }> = {};
@@ -87,55 +89,78 @@ export class Workload {
     const now = this.clock.now().getTime();
     this.observeQueues(now);
     if (!drain && now >= this.endAt) return;
+    const maxBatch = this.options.mode === "record" ? 1 : 50;
     const campaignEnd = Math.min(this.offered(now, 20), this.campaignDone + 50);
     while (this.campaignDone < campaignEnd) {
       const index = this.campaignDone;
-      const ids = this.store.reserve(1);
-      if (ids.length !== 1 || ids[0] !== index + 1)
+      const count = Math.min(maxBatch, campaignEnd - index);
+      const ids = this.store.reserve(count);
+      if (ids.length !== count || ids.some((id, offset) => id !== index + offset + 1))
         throw new Error("Unexpected campaign reservation");
-      this.store.process(1);
+      this.store.process(count);
       const completed = this.clock.now().getTime();
-      this.campaignDone++;
+      this.campaignDone += count;
       if (completed < this.endAt) {
-        this.inWindowCampaign++;
-        this.samples.campaignLagMs.push(Math.max(0, completed - (this.startedAt + index * 20)));
+        this.inWindowCampaign += count;
+        for (let offset = 0; offset < count; offset++)
+          this.samples.campaignLagMs.push(
+            Math.max(0, completed - (this.startedAt + (index + offset) * 20)),
+          );
       }
     }
     const eventsEnd = Math.min(this.eventOffered(now), this.eventsDone + 50);
     while (this.eventsDone < eventsEnd) {
       const index = this.eventsDone;
+      const count = Math.min(maxBatch, eventsEnd - index);
       const accepted = this.clock.now().getTime();
-      const event: SyntheticEvent = {
-        subscriber: (index % this.options.subscribers) + 1,
-        key: `event-${index}`,
-        sequence: index,
-        occurredAt: new Date(this.startedAt + index * 10).toISOString(),
-      };
-      this.store.events([event]);
+      const events: SyntheticEvent[] = Array.from({ length: count }, (_, offset) => {
+        const sequence = index + offset;
+        return {
+          subscriber: (sequence % this.options.subscribers) + 1,
+          key: `event-${sequence}`,
+          sequence,
+          occurredAt: new Date(Date.parse("2026-01-02T03:04:05Z") + sequence * 10).toISOString(),
+        };
+      });
+      this.store.events(events);
       const committed = this.clock.now().getTime();
-      this.eventsDone++;
+      this.eventsDone += count;
       if (committed < this.endAt) {
-        this.inWindowEvents++;
-        this.samples.eventAcceptLagMs.push(Math.max(0, accepted - (this.startedAt + index * 10)));
-        this.samples.eventCommitLagMs.push(Math.max(0, committed - (this.startedAt + index * 10)));
+        this.inWindowEvents += count;
+        for (let offset = 0; offset < count; offset++) {
+          const deadline = this.startedAt + (index + offset) * 10;
+          this.samples.eventAcceptLagMs.push(Math.max(0, accepted - deadline));
+          this.samples.eventCommitLagMs.push(Math.max(0, committed - deadline));
+        }
       }
     }
     const churnEnd = Math.min(this.churnOffered(now), this.churnDone + 20);
     while (this.churnDone < churnEnd) {
-      const id = this.options.subscribers + this.churnDone + 1;
-      const operations: Mutation[] = [
-        { operation: "insert", id, name: `Churn original ${id}`, email: `churn${id}@example.test` },
-        {
-          operation: "update",
-          id,
-          name: `Churn changed ${id}`,
-          email: `updated${id}@example.test`,
-        },
-        { operation: "delete", id },
-      ];
-      for (const operation of operations) this.store.mutate([operation]);
-      this.churnDone++;
-      if (this.clock.now().getTime() < this.endAt) this.inWindowChurn++;
+      const count = Math.min(maxBatch, churnEnd - this.churnDone);
+      const operations: Mutation[] = [];
+      for (let offset = 0; offset < count; offset++) {
+        const id = this.options.subscribers + this.churnDone + offset + 1;
+        operations.push(
+          {
+            operation: "insert",
+            id,
+            name: `Churn original ${id}`,
+            email: `churn${id}@example.test`,
+          },
+          {
+            operation: "update",
+            id,
+            name: `Churn changed ${id}`,
+            email: `updated${id}@example.test`,
+          },
+          { operation: "delete", id },
+        );
+      }
+      if (this.options.mode === "record") {
+        for (const operation of operations) this.store.mutate([operation]);
+      } else this.store.mutate(operations);
+      this.churnDone += count;
+      if (this.clock.now().getTime() < this.endAt) this.inWindowChurn += count;
     }
   }
   drain() {

@@ -186,3 +186,37 @@ test("independent fixed deadlines use the injected clock and exclude catch-up fr
     });
   });
 });
+
+test("batched and per-record modes commit the same offered work with fewer transactions", async () => {
+  const observations: Record<string, any> = {};
+  for (const mode of ["record", "batch", "campaign-only"]) {
+    await withFixture(async (origin) => {
+      await request(origin, { action: "setup", subscribers: 200 });
+      await request(origin, { action: "start", durationMs: 1000, mode });
+      await request(origin, { action: "advance", ms: 200 });
+      observations[mode] = {
+        workload: (await request(origin, { action: "workload" })).result,
+        status: (await request(origin, { action: "status" })).result,
+      };
+    });
+  }
+  for (const mode of ["record", "batch"]) {
+    expect(observations[mode].status).toMatchObject({
+      cursor: 11,
+      sent: 11,
+      events: 21,
+      distinctEvents: 21,
+    });
+    expect(observations[mode].workload.completedChurn).toBe(2);
+  }
+  for (const kind of ["reservation", "progress", "events", "subscriber"]) {
+    expect(observations.batch.workload.transactions[kind].records).toBe(
+      observations.record.workload.transactions[kind].records,
+    );
+    expect(observations.batch.workload.transactions[kind].count).toBeLessThan(
+      observations.record.workload.transactions[kind].count,
+    );
+  }
+  expect(observations["campaign-only"].status).toMatchObject({ cursor: 11, sent: 11, events: 0 });
+  expect(observations["campaign-only"].workload.offeredChurn).toBe(0);
+});

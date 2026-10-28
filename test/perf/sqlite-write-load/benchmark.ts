@@ -6,7 +6,8 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRealClock } from "@/clock";
 import { SpikeStore } from "@/test/perf/sqlite-write-load/store";
-import { Workload } from "@/test/perf/sqlite-write-load/workload";
+import { runFtsIsolation } from "@/test/perf/sqlite-write-load/fts-isolation";
+import { Workload, type Mode } from "@/test/perf/sqlite-write-load/workload";
 
 const args = new Set(process.argv.slice(2));
 for (const arg of args)
@@ -43,6 +44,7 @@ try {
   console.log(
     JSON.stringify({
       kind: "environment",
+      run: "comparison",
       directory,
       filesystemType: `0x${filesystemType.toString(16)}`,
       df: command("df", ["-T", directory]),
@@ -60,107 +62,151 @@ try {
       smoke,
     }),
   );
+  const modes: Mode[] = args.has("--control-only")
+    ? ["record"]
+    : ["record", "batch", "campaign-only"];
   for (let repetition = 1; repetition <= repetitions; repetition++) {
-    const runDir = join(root, `record-${repetition}`);
-    let store = new SpikeStore(runDir);
-    const seedStarted = performance.now();
-    store.seed(subscribers);
-    const seedMs = performance.now() - seedStarted;
-    const canary = subscribers + 500_000;
-    store.mutate([
-      { operation: "insert", id: canary, name: "Zebra original", email: "original@example.test" },
-    ]);
-    assert.deepEqual(store.search("zebra"), [canary]);
-    store.mutate([
-      { operation: "update", id: canary, name: "Otter changed", email: "changed@example.test" },
-    ]);
-    assert.deepEqual(store.search("zebra"), []);
-    assert.deepEqual(store.search("otter"), [canary]);
-    store.mutate([{ operation: "delete", id: canary }], true);
-    assert.deepEqual(store.search("otter"), [canary]);
-    store.mutate([{ operation: "delete", id: canary }]);
-    store.mutate(
-      [
-        {
-          operation: "insert",
-          id: canary,
-          name: "Rollback canary",
-          email: "rollback@example.test",
-        },
-      ],
-      true,
-    );
-    assert.deepEqual(store.search("rollback"), []);
-    const sqlite = store.sqliteVersion();
-    const clock = createRealClock();
-    const workload = new Workload(store, clock, { mode: "record", durationMs, subscribers });
-    const measuredStart = performance.now();
-    let next = workload.startedAt;
-    while (clock.now().getTime() < workload.endAt) {
-      workload.observeWake(next);
-      workload.pump();
-      next = Math.min(next + 100, workload.endAt - 10);
-      if (next <= clock.now().getTime() && next === workload.endAt - 10) break;
-      await clock.sleep(Math.max(0, next - clock.now().getTime()));
+    for (const mode of modes) {
+      const runDir = join(root, `${mode}-${repetition}`);
+      let store = new SpikeStore(runDir);
+      const seedStarted = performance.now();
+      store.seed(subscribers);
+      const seedMs = performance.now() - seedStarted;
+      const canary = subscribers + 500_000;
+      store.mutate([
+        { operation: "insert", id: canary, name: "Zebra original", email: "original@example.test" },
+      ]);
+      assert.deepEqual(store.search("zebra"), [canary]);
+      store.mutate([
+        { operation: "update", id: canary, name: "Otter changed", email: "changed@example.test" },
+      ]);
+      assert.deepEqual(store.search("zebra"), []);
+      assert.deepEqual(store.search("otter"), [canary]);
+      store.mutate([{ operation: "delete", id: canary }], true);
+      assert.deepEqual(store.search("otter"), [canary]);
+      store.mutate([{ operation: "delete", id: canary }]);
+      store.mutate(
+        [
+          {
+            operation: "insert",
+            id: canary,
+            name: "Rollback canary",
+            email: "rollback@example.test",
+          },
+        ],
+        true,
+      );
+      assert.deepEqual(store.search("rollback"), []);
+      const sqlite = store.sqliteVersion();
+      const clock = createRealClock();
+      const workload = new Workload(store, clock, { mode, durationMs, subscribers });
+      const measuredStart = performance.now();
+      let next = workload.startedAt;
+      while (clock.now().getTime() < workload.endAt) {
+        workload.observeWake(next);
+        const blockStarted = performance.now();
+        workload.pump();
+        workload.samples.pumpBlockMs.push(performance.now() - blockStarted);
+        const now = clock.now().getTime();
+        if (now >= workload.endAt) break;
+        const regular =
+          workload.startedAt + (Math.floor((now - workload.startedAt) / 100) + 1) * 100;
+        const candidates = [
+          regular,
+          workload.endAt - 20,
+          workload.endAt - 10,
+          workload.endAt,
+        ].filter((deadline) => deadline > now);
+        next = Math.min(...candidates);
+        await clock.sleep(Math.max(0, next - clock.now().getTime()));
+      }
+      const measuredElapsedMs = performance.now() - measuredStart;
+      const window = structuredClone(workload.result());
+      const sizesBeforeCheckpoint = store.sizes();
+      const drainStarted = performance.now();
+      workload.drain();
+      const explicitDrainMs = performance.now() - drainStarted;
+      const drainMs = Math.max(0, performance.now() - measuredStart - durationMs);
+      store.observer = undefined;
+      const afterDrain = workload.result();
+      assert.equal(afterDrain.campaignBacklog, 0);
+      assert.equal(afterDrain.eventBacklog, 0);
+      assert.equal(afterDrain.churnBacklog, 0);
+      const status = store.status();
+      assert.equal(status.events, window.offeredEvents);
+      assert.equal(status.distinctEvents, window.offeredEvents);
+      assert.equal(status.cursor, window.offeredCampaign);
+      assert.equal(status.sent, window.offeredCampaign);
+      assert.equal(status.integrity, "ok");
+      assert.equal(status.foreignKeyErrors, 0);
+      store.verifyFts();
+      assert.deepEqual(store.search("churn"), []);
+      const checkpointStarted = performance.now();
+      const checkpoint = store.checkpoint();
+      const checkpointMs = performance.now() - checkpointStarted;
+      const sizesAfterCheckpoint = store.sizes();
+      store.close();
+      store = new SpikeStore(runDir);
+      assert.deepEqual(store.status(), status);
+      store.verifyFts();
+      store.close();
+      console.log(
+        JSON.stringify(
+          {
+            kind: "scenario",
+            run: "comparison",
+            mode,
+            repetition,
+            sqlite,
+            seedMs,
+            measuredElapsedMs,
+            window,
+            drainMs,
+            explicitDrainMs,
+            afterDrain,
+            checkpoint,
+            checkpointMs,
+            sizesBeforeCheckpoint,
+            sizesAfterCheckpoint,
+            status,
+            samples: Object.fromEntries(
+              Object.entries(workload.samples).map(([key, values]) => {
+                const summary = summarize(values);
+                const interval =
+                  key === "campaignLagMs"
+                    ? 20
+                    : key === "eventAcceptLagMs" || key === "eventCommitLagMs"
+                      ? 10
+                      : undefined;
+                return [
+                  key,
+                  summary && interval
+                    ? {
+                        ...summary,
+                        intervalMs: interval,
+                        overInterval: values.filter((value) => value > interval).length,
+                      }
+                    : summary,
+                ];
+              }),
+            ),
+          },
+          (_key, value) => (typeof value === "bigint" ? String(value) : value),
+        ),
+      );
     }
-    if (clock.now().getTime() < workload.endAt) {
-      await clock.sleep(Math.max(0, workload.endAt - clock.now().getTime()));
-    }
-    const measuredElapsedMs = performance.now() - measuredStart;
-    const window = structuredClone(workload.result());
-    const sizesBeforeCheckpoint = store.sizes();
-    const drainStarted = performance.now();
-    workload.drain();
-    const explicitDrainMs = performance.now() - drainStarted;
-    const drainMs = Math.max(0, measuredElapsedMs - durationMs) + explicitDrainMs;
-    store.observer = undefined;
-    const afterDrain = workload.result();
-    assert.equal(afterDrain.campaignBacklog, 0);
-    assert.equal(afterDrain.eventBacklog, 0);
-    assert.equal(afterDrain.churnBacklog, 0);
-    const status = store.status();
-    assert.equal(status.events, window.offeredEvents);
-    assert.equal(status.distinctEvents, window.offeredEvents);
-    assert.equal(status.cursor, window.offeredCampaign);
-    assert.equal(status.sent, window.offeredCampaign);
-    assert.equal(status.integrity, "ok");
-    assert.equal(status.foreignKeyErrors, 0);
-    store.verifyFts();
-    assert.deepEqual(store.search("churn"), []);
-    const checkpointStarted = performance.now();
-    const checkpoint = store.checkpoint();
-    const checkpointMs = performance.now() - checkpointStarted;
-    const sizesAfterCheckpoint = store.sizes();
-    store.close();
-    store = new SpikeStore(runDir);
-    assert.deepEqual(store.status(), status);
-    store.verifyFts();
-    store.close();
-    console.log(
-      JSON.stringify(
-        {
-          kind: "scenario",
-          mode: "record",
-          repetition,
-          sqlite,
-          seedMs,
-          measuredElapsedMs,
-          window,
-          drainMs,
-          explicitDrainMs,
-          afterDrain,
-          checkpoint,
-          checkpointMs,
-          sizesBeforeCheckpoint,
-          sizesAfterCheckpoint,
-          status,
-          samples: Object.fromEntries(
-            Object.entries(workload.samples).map(([key, values]) => [key, summarize(values)]),
+  }
+  if (!args.has("--control-only")) {
+    for (let repetition = 1; repetition <= repetitions; repetition++) {
+      for (const triggers of repetition % 2 ? [false, true] : [true, false]) {
+        const result = runFtsIsolation(root, triggers, repetition, subscribers, smoke ? 200 : 3000);
+        console.log(
+          JSON.stringify(result, (_key, value) =>
+            typeof value === "bigint" ? String(value) : value,
           ),
-        },
-        (_key, value) => (typeof value === "bigint" ? String(value) : value),
-      ),
-    );
+        );
+      }
+    }
   }
 } finally {
   rmSync(root, { recursive: true, force: true });

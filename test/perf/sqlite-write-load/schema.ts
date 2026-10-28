@@ -1,4 +1,4 @@
-// Reduced synthetic schema informed by listmonk schema.sql and queries/campaigns.sql.
+// Reduced synthetic schema informed by listmonk schema.sql, queries/campaigns.sql and queries/subscribers.sql.
 // Events and FTS5 are new SQLite design work, not upstream endpoint ports.
 export const schema = `
 CREATE TABLE IF NOT EXISTS spike_subscribers (
