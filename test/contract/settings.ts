@@ -174,6 +174,11 @@ export async function runSettingsContract(target: {
     (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 400,
     "invalid-enabled-cron",
   );
+  cronCandidate["app.cache_slow_queries_interval"] = "0 0 * JAN/DEC *";
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 400,
+    "invalid-cron-named-step",
+  );
   cronCandidate["app.cache_slow_queries_interval"] = "0 3 L * MON-FRI";
   check(
     (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200,
