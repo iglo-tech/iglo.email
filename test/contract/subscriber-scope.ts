@@ -45,6 +45,7 @@ export async function runSubscriberScope(target: {
     });
     const visible = await create("/api/subscribers", "subscribers", {
       email: `visible-${suffix}@example.test`,
+      attribs: { persisted: { value: 1 } },
       lists: [accessible.id, hidden.id],
       preconfirm_subscriptions: true,
       ...(target.mode === "normal" ? { external_id: `visible-${suffix}` } : {}),
@@ -219,8 +220,19 @@ export async function runSubscriberScope(target: {
       );
       if (target.restart) {
         await target.restart();
+        const persisted = await request(alias, "GET", undefined, sessionHeaders);
+        const afterRestart = (await persisted.json()).data;
         check(
-          (await request(alias, "GET", undefined, sessionHeaders)).status === 200,
+          persisted.status === 200 &&
+            afterRestart.id === visible.id &&
+            afterRestart.uuid === visible.uuid &&
+            afterRestart.email === visible.email &&
+            afterRestart.external_id === `visible-${suffix}` &&
+            afterRestart.status === "enabled" &&
+            afterRestart.attribs.persisted.value === 1 &&
+            afterRestart.lists.length === 2 &&
+            afterRestart.lists.every((entry: any) => entry.subscription_status === "confirmed") &&
+            afterRestart.lists.find((entry: any) => entry.id === hidden.id)?.restricted === true,
           "D39-session-external-restart",
         );
       }
