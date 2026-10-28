@@ -236,6 +236,13 @@ export async function runListsContract(target: {
       deepSelf.response.status === (target.mode === "reference" ? 200 : 400),
       "D35-xml-depth-self-closing",
     );
+    const whitespaceTag = await create(`tag-spaces-${suffix}`, {
+      tags: ["\u0085" + "a".repeat(100) + "\u0085", "\ufeffx\ufeff"],
+    });
+    check(
+      JSON.stringify(whitespaceTag.tags) === JSON.stringify(["a".repeat(100), "\ufeffx\ufeff"]),
+      "tag-go-unicode-trim",
+    );
     const longTag = "x".repeat(101),
       limitTag = "é".repeat(100);
     const longCreate = await raw(
