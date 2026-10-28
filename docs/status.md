@@ -8,7 +8,9 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No implementation task is active. M0.8 merged at `5c048d12adf3a5dbc44bdd26040cac4d9fc2c1e0`, with both council approvals on the same head and green CI. [Review and recovery record](reviews/M0.8.md). All M0 tasks are merged. The recovery run (started 2026-10-28T07:09:33.768313+00:00) is within its four-hour limit and is preparing M1.1, the next critical-path task. Both reviewers are complete, no worker is running, and the M0.8 PR watch is stopped.
+**M1.1 — Full v1 SQLite schema** is active at stage `brief`, worker attempt 1 pending dispatch. [Brief](briefs/M1.1.md). Branch: `task/M1.1-v1-schema`. The worker uses GPT-6.1 Terra at max reasoning in an isolated worktree; no helpers. M0.4 and all M0 tasks are merged. This is the next critical-path task: it creates the first full production migration and storage acceptance, with no domain endpoints or loops. The lead read the entire pinned schema (including enum/table/index/settings/summary definitions), checked the summary consumers and current migration/bootstrap interfaces, and bounded the worker scope in the brief. Both M0.8 reviewers are complete, no worker is running, and GitHub has no open PR; no duplicate worker exists. The recovery run began 2026-10-28T07:09:33.768313+00:00 and remains within its four-hour limit.
+
+M0.8 merged at `5c048d12adf3a5dbc44bdd26040cac4d9fc2c1e0`, with both exact-head approvals and green CI. D23/D24 and their production task gates are recorded. Its PR watch is stopped. [Review and recovery record](reviews/M0.8.md).
 
 ## Automation
 
