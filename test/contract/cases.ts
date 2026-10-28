@@ -11,6 +11,45 @@ const ok = json(200, '{"data":true}');
 const notFound = json(404, '{"message":"404 unknown endpoint"}');
 const invalidID = json(400, '{"message":"invalid ID"}');
 const badEscape = wire(400, "text/plain; charset=utf-8", "400 Bad Request");
+const html404 = (
+  siteName: string,
+  footerText: string,
+  footerLinks: readonly { readonly text: string; readonly href: string }[],
+  customScript: boolean,
+  archiveTitle: string | null,
+): Expectation => ({
+  status: 404,
+  contentType: "text/html; charset=UTF-8",
+  body: { kind: "public-404", siteName, footerText, footerLinks, customScript, archiveTitle },
+});
+const referenceHTML = html404(
+  "Mailing list",
+  "Powered by listmonk",
+  [{ text: "listmonk", href: "https://listmonk.app" }],
+  true,
+  "Mailing list archive - Mailing list",
+);
+const productionHTML = html404(
+  "iglo.email",
+  "Powered by iglo.email. Based on listmonk.",
+  [
+    { text: "iglo.email", href: "https://iglo.email" },
+    { text: "listmonk", href: "https://listmonk.app" },
+  ],
+  false,
+  null,
+);
+const css: Expectation = {
+  status: 200,
+  contentType: "text/css; charset=utf-8",
+  body: { kind: "public-css" },
+};
+const staticMissing = wire(404, "text/plain; charset=utf-8", "404 page not found\n");
+const staticMethod = json(405, '{"message":"Method Not Allowed"}');
+const referenceAllow = { allow: "OPTIONS, GET" };
+const normalAllow = { allow: "OPTIONS, GET, HEAD" };
+const referenceHead = { ...wire(405, null, ""), headers: referenceAllow };
+const normalHead = wire(200, "text/css; charset=utf-8", "");
 const endpoint = (path: string, expect: Expectation): Endpoint => ({ path, expect });
 const same = (path: string, expect: Expectation) => ({
   reference: endpoint(path, expect),
@@ -89,13 +128,91 @@ export const cases: readonly ContractCase[] = freeze([
   },
   {
     id: "health-post-html",
-    group: "reference-only",
+    group: "core",
     method: "POST",
-    reference: endpoint("/health", {
-      status: 404,
-      contentType: "text/html; charset=UTF-8",
-      body: { kind: "deferred-html" },
+    reference: endpoint("/health", referenceHTML),
+    production: endpoint("/health", productionHTML),
+    fixture: endpoint("/health", productionHTML),
+  },
+  {
+    id: "missing-public-html",
+    group: "core",
+    reference: endpoint("/missing-public-page", referenceHTML),
+    production: endpoint("/missing-public-page", productionHTML),
+    fixture: endpoint("/missing-public-page", productionHTML),
+  },
+  {
+    id: "missing-public-head",
+    group: "core",
+    method: "HEAD",
+    ...same("/missing-public-page", wire(404, "text/html; charset=UTF-8", "")),
+  },
+  { id: "public-style", group: "core", ...same("/public/static/style.css", css) },
+  ...["%73tyle.css", "style%2ecss", "/style.css"].map((spelling, index): ContractCase => ({
+    id: `public-style-equivalent-${index + 1}`,
+    group: "core",
+    ...same(`/public/static/${spelling}`, css),
+  })),
+  {
+    id: "missing-public-asset",
+    group: "core",
+    ...same("/public/static/no-such-file.css", staticMissing),
+  },
+  {
+    id: "public-asset-head",
+    group: "core",
+    method: "HEAD",
+    difference: "D21",
+    reference: endpoint("/public/static/style.css", referenceHead),
+    production: endpoint("/public/static/style.css", normalHead),
+    fixture: endpoint("/public/static/style.css", normalHead),
+  },
+  {
+    id: "public-asset-post",
+    group: "core",
+    method: "POST",
+    difference: "D21",
+    reference: endpoint("/public/static/style.css", { ...staticMethod, headers: referenceAllow }),
+    production: endpoint("/public/static/style.css", { ...staticMethod, headers: normalAllow }),
+    fixture: endpoint("/public/static/style.css", { ...staticMethod, headers: normalAllow }),
+  },
+  {
+    id: "public-asset-options",
+    group: "core",
+    method: "OPTIONS",
+    difference: "D21",
+    reference: endpoint("/public/static/style.css", {
+      ...wire(204, null, ""),
+      headers: referenceAllow,
     }),
+    production: endpoint("/public/static/style.css", {
+      ...wire(204, null, ""),
+      headers: normalAllow,
+    }),
+    fixture: endpoint("/public/static/style.css", { ...wire(204, null, ""), headers: normalAllow }),
+  },
+  {
+    id: "missing-public-asset-head",
+    group: "core",
+    method: "HEAD",
+    difference: "D21",
+    reference: endpoint("/public/static/no-such-file.css", referenceHead),
+    production: endpoint(
+      "/public/static/no-such-file.css",
+      wire(404, "text/plain; charset=utf-8", ""),
+    ),
+    fixture: endpoint(
+      "/public/static/no-such-file.css",
+      wire(404, "text/plain; charset=utf-8", ""),
+    ),
+  },
+  {
+    id: "public-static-dot-escape",
+    group: "core",
+    difference: "D18",
+    reference: endpoint("/public/static/%2e%2e/style.css", staticMissing),
+    production: endpoint("/public/static/%2e%2e/style.css", productionHTML),
+    fixture: endpoint("/public/static/%2e%2e/style.css", productionHTML),
   },
   helper("invalid-id", "/api/lists/not-an-id", "/fixture/id/not-an-id", invalidID),
   ...["%31%32", "%2B12", "1%32", "%252B12", "%FF"].map((id, index) =>
@@ -107,7 +224,7 @@ export const cases: readonly ContractCase[] = freeze([
     auth: "basic",
     difference: "D18",
     reference: endpoint(`/api/lists/${id}`, invalidID),
-    fixture: endpoint(`/fixture/id/${id}`, wire(404, "text/plain;charset=utf-8", "Not Found")),
+    fixture: endpoint(`/fixture/id/${id}`, productionHTML),
   })),
   {
     id: "literal-backslash",

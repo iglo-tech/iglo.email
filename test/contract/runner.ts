@@ -19,9 +19,19 @@ const differences: Readonly<
       "reject unrepresentable IDs before storage; docs/design/07-api-and-ui.md and 09-decisions.md#d17-reject-positive-route-id-overflow-before-storage",
   },
   D18: {
-    cases: ["encoded-dot", "encoded-dot-dot", "literal-backslash"],
+    cases: ["encoded-dot", "encoded-dot-dot", "literal-backslash", "public-static-dot-escape"],
     reason:
       "Bun canonicalizes request paths before routing; docs/design/07-api-and-ui.md and 09-decisions.md#d18-use-buns-normalized-request-path",
+  },
+  D21: {
+    cases: [
+      "public-asset-head",
+      "public-asset-post",
+      "public-asset-options",
+      "missing-public-asset-head",
+    ],
+    reason:
+      "metadata-only HEAD for embedded assets and matching Allow; docs/design/07-api-and-ui.md and 09-decisions.md#d21-support-head-for-embedded-assets",
   },
 };
 
@@ -100,6 +110,7 @@ function validateCorpus(items: readonly ContractCase[], complete: boolean): void
       if (
         !canonical ||
         !isDeepStrictEqual(item.reference, canonical.reference) ||
+        !isDeepStrictEqual(item.production, canonical.production) ||
         !isDeepStrictEqual(item.fixture, canonical.fixture)
       )
         throw new Error("Deliberate-difference expectations do not match the declared contract");
@@ -226,8 +237,379 @@ function normalize(
   return value;
 }
 
-function compareBody(actual: string, expected: ExpectedBody, bindings: Map<string, Binding>): void {
-  if (expected.kind === "deferred-html") return;
+async function comparePublic404(
+  actual: string,
+  expected: Extract<ExpectedBody, { kind: "public-404" }>,
+): Promise<void> {
+  const counts: Record<string, number> = Object.create(null);
+  let title = "",
+    heading = "",
+    footer = "",
+    message = "";
+  let styleVersion = "",
+    logoVersion = "",
+    iconVersion = "";
+  const count = (name: string) => {
+    counts[name] = (counts[name] ?? 0) + 1;
+  };
+  const version = (value: string | null, path: string): string => {
+    const match = value?.match(new RegExp(`^${path.replaceAll(".", "\\.")}\\?v=([a-f0-9]{10})$`));
+    if (!match) throw new Error(`Invalid versioned ${path}`);
+    return match[1]!;
+  };
+  // This is the specified default 404 page, not an arbitrary HTML sanitizer.
+  const attributes: Readonly<Record<string, readonly string[]>> = {
+    html: [],
+    head: [],
+    body: [],
+    title: [],
+    h2: [],
+    meta: ["http-equiv", "content", "name"],
+    link: ["href", "rel", "type", "title"],
+    div: ["class"],
+    header: ["class"],
+    footer: ["class"],
+    img: ["src", "alt"],
+    a: ["href", "target", "rel"],
+    script: ["src", "async", "defer"],
+  };
+  const classes: Readonly<Record<string, readonly string[]>> = {
+    div: ["container", "wrap", "logo"],
+    header: ["header"],
+    footer: ["container"],
+  };
+  // HTMLRewriter exposes tokens without a browser's tree-repair step. Validate
+  // every token's parent instead of letting selectors silently skip misplaced
+  // content that a browser would move into the visible document.
+  const stack: { tag: string; role: string; text: string }[] = [];
+  let headClosed = false,
+    bodyClosed = false,
+    documentClosed = false;
+  const parents: Readonly<Record<string, string>> = {
+    html: "document",
+    head: "html",
+    body: "html",
+    title: "head",
+    meta: "head",
+    link: "head",
+    script: "head",
+    header: "wrap",
+    h2: "wrap",
+    footer: "body",
+  };
+  const voidTags = new Set(["meta", "link", "img"]);
+  const rewriter = new HTMLRewriter()
+    .onDocument({
+      doctype(node) {
+        if (node.name !== "html" || stack.length || counts.html || documentClosed)
+          throw new Error("Invalid doctype");
+        count("doctype");
+      },
+      text(chunk) {
+        const current = stack.at(-1);
+        if (current?.role === "footer-link") current.text += chunk.text;
+        if (
+          chunk.text.trim() &&
+          !["title", "h2", "message", "footer", "footer-link"].includes(current?.role ?? "")
+        )
+          throw new Error("Unexpected public page text");
+      },
+    })
+    .on("*", {
+      element(element) {
+        if (!Object.hasOwn(attributes, element.tagName)) throw new Error("Unexpected HTML element");
+        const tag = element.tagName;
+        const parent = stack.at(-1)?.role ?? "document";
+        let role = tag;
+        let requiredParent = parents[tag];
+        if (tag === "div") {
+          const names = element.getAttribute("class")?.split(/\s+/) ?? [];
+          if (names.includes("wrap")) {
+            role = "wrap";
+            requiredParent = "body";
+          } else if (names.includes("logo")) {
+            role = "logo";
+            requiredParent = "header";
+          } else if (!names.length) {
+            role = "message";
+            requiredParent = "wrap";
+          }
+        } else if (tag === "img") {
+          requiredParent = expected.customScript ? "logo-link" : "logo";
+        } else if (tag === "a") {
+          if (parent === "footer") {
+            role = "footer-link";
+            requiredParent = "footer";
+            const link = expected.footerLinks[counts.footerLinks ?? 0];
+            if (!link || element.getAttribute("href") !== link.href)
+              throw new Error("Unexpected footer link");
+            count("footerLinks");
+          } else if (expected.customScript) {
+            role = "logo-link";
+            requiredParent = "logo";
+            const href = element.getAttribute("href");
+            if (href !== "") {
+              const url = new URL(href ?? "");
+              if (
+                url.protocol !== "http:" ||
+                url.hostname !== "127.0.0.1" ||
+                !url.port ||
+                url.pathname !== "/subscription/form" ||
+                url.search ||
+                url.hash
+              )
+                throw new Error("Unexpected logo link");
+            }
+            count("logoLink");
+          }
+        }
+        if (
+          requiredParent !== parent ||
+          bodyClosed ||
+          documentClosed ||
+          (tag === "html" && counts.doctype !== 1) ||
+          (tag === "body" && !headClosed)
+        )
+          throw new Error("Unexpected public page element placement");
+        if (!voidTags.has(tag)) {
+          const entry = { tag, role, text: "" };
+          const footerLink =
+            role === "footer-link" ? expected.footerLinks[counts.footerLinks! - 1] : null;
+          stack.push(entry);
+          element.onEndTag(() => {
+            if (stack.pop() !== entry) throw new Error("Unclosed public page element");
+            if (footerLink && entry.text.trim() !== footerLink.text)
+              throw new Error("Wrong footer link text");
+            if (tag === "head") headClosed = true;
+            if (tag === "body") bodyClosed = true;
+            if (tag === "html") documentClosed = true;
+          });
+        }
+        if (element.tagName === "h2") count("allHeadings");
+        for (const [name, value] of element.attributes) {
+          if (!attributes[element.tagName]!.includes(name))
+            throw new Error(`Unexpected HTML attribute ${element.tagName}.${name}`);
+          if (
+            name === "class" &&
+            value.split(/\s+/).some((value) => !classes[element.tagName]?.includes(value))
+          )
+            throw new Error("Unexpected HTML class");
+          if (name === "href" || name === "src") {
+            // These fixed URLs contain neither character references nor raw
+            // control characters. HTMLRewriter exposes attribute spellings,
+            // not browser-decoded values, so reject unsupported encodings.
+            if (
+              [...value].some(
+                (character) =>
+                  character === "&" ||
+                  character.charCodeAt(0) <= 32 ||
+                  character.charCodeAt(0) === 127,
+              )
+            )
+              throw new Error("Unsupported encoded HTML URL");
+            // WHATWG URL parsing removes embedded ASCII tabs/newlines just as
+            // a browser does; a literal scheme-prefix regex misses those URLs.
+            const url = new URL(value, "http://127.0.0.1/");
+            if (url.protocol !== "http:" && url.protocol !== "https:")
+              throw new Error("Unsafe HTML URL");
+          }
+        }
+        if (element.tagName === "meta") {
+          const kind = element.getAttribute("http-equiv")?.toLowerCase();
+          const name = element.getAttribute("name");
+          const content = element.getAttribute("content");
+          if (
+            !(kind === "content-type" && content?.toLowerCase() === "text/html; charset=utf-8") &&
+            !(name === "description" && content === "") &&
+            !(
+              name === "viewport" &&
+              content === "width=device-width, initial-scale=1, minimum-scale=1"
+            )
+          )
+            throw new Error("Unexpected public metadata");
+        }
+      },
+    })
+    .on("html", {
+      element() {
+        count("html");
+      },
+    })
+    .on("head", {
+      element() {
+        count("head");
+      },
+    })
+    .on("body", {
+      element() {
+        count("body");
+      },
+    })
+    .on("head title", {
+      element() {
+        count("title");
+      },
+      text(chunk) {
+        title += chunk.text;
+      },
+    })
+    .on("body > .wrap", {
+      element(element) {
+        count("wrap");
+        if (
+          element
+            .getAttribute("class")
+            ?.split(/\s+/)
+            .some((name) => name !== "wrap" && name !== "container")
+        )
+          throw new Error("Unexpected page wrapper class");
+      },
+    })
+    .on("body > .wrap > header", {
+      element() {
+        count("header");
+      },
+    })
+    .on("body > .wrap > header .logo", {
+      element() {
+        count("logo");
+      },
+    })
+    .on("body > .wrap > h2", {
+      element() {
+        count("heading");
+      },
+      text(chunk) {
+        heading += chunk.text;
+      },
+    })
+    .on("body > .wrap > div", {
+      element() {
+        count("message");
+      },
+      text(chunk) {
+        message += chunk.text;
+      },
+    })
+    .on("body link, body script", {
+      element() {
+        throw new Error("Unexpected body asset");
+      },
+    })
+    .on("link", {
+      element(element) {
+        const relation = element.getAttribute("rel");
+        const href = element.getAttribute("href");
+        if (relation === "icon") {
+          count("icon");
+          iconVersion = version(href, "/public/static/favicon.png");
+        } else if (relation === "stylesheet" && href?.startsWith("/public/static/style.css")) {
+          count("style");
+          styleVersion = version(href, "/public/static/style.css");
+        } else if (
+          relation === "stylesheet" &&
+          expected.customScript &&
+          /^\/public\/custom\.css\?v=[a-f0-9]{10}$/.test(href ?? "")
+        ) {
+          count("customStyle");
+        } else if (relation === "alternate" && expected.archiveTitle) {
+          const url = new URL(href ?? "");
+          if (
+            element.getAttribute("type") !== "application/rss+xml" ||
+            element.getAttribute("title") !== expected.archiveTitle ||
+            url.protocol !== "http:" ||
+            url.hostname !== "127.0.0.1" ||
+            !url.port ||
+            url.pathname !== "/archive.xml" ||
+            url.search ||
+            url.hash
+          )
+            throw new Error("Unexpected archive metadata");
+          count("archive");
+        } else {
+          throw new Error("Unexpected public stylesheet");
+        }
+      },
+    })
+    .on("img", {
+      element(element) {
+        count("images");
+        logoVersion = version(element.getAttribute("src"), "/public/static/logo.svg");
+        const alt = expected.customScript ? "404 - Not found" : expected.siteName;
+        if (element.getAttribute("alt") !== alt) throw new Error("Wrong logo context");
+      },
+    })
+    .on("body > footer", {
+      element() {
+        count("footer");
+      },
+      text(chunk) {
+        footer += chunk.text;
+      },
+    })
+    .on("script", {
+      element(element) {
+        count("script");
+        if (
+          !expected.customScript ||
+          !/^\/public\/custom\.js\?v=[a-f0-9]{10}$/.test(element.getAttribute("src") ?? "")
+        )
+          throw new Error("Unexpected script");
+      },
+    });
+  await rewriter.transform(new Response(actual)).text();
+  if (stack.length || !bodyClosed || !documentClosed)
+    throw new Error("Unclosed public page document");
+  for (const name of [
+    "doctype",
+    "html",
+    "head",
+    "body",
+    "title",
+    "heading",
+    "allHeadings",
+    "wrap",
+    "header",
+    "logo",
+    "message",
+    "style",
+    "icon",
+    "images",
+    "footer",
+  ]) {
+    if (counts[name] !== 1) throw new Error(`Expected exactly one ${name}`);
+  }
+  if ((counts.script ?? 0) !== (expected.customScript ? 1 : 0))
+    throw new Error("Wrong script count");
+  if (
+    counts.footerLinks !== expected.footerLinks.length ||
+    (counts.logoLink ?? 0) !== (expected.customScript ? 1 : 0)
+  )
+    throw new Error("Wrong public link count");
+  if (
+    (counts.customStyle ?? 0) !== (expected.customScript ? 1 : 0) ||
+    (counts.archive ?? 0) !== (expected.archiveTitle ? 1 : 0)
+  )
+    throw new Error("Wrong reference-only asset count");
+  if (title !== `404 - Not found - ${expected.siteName}` || heading !== "404 - Not found")
+    throw new Error("Wrong public 404 title or heading");
+  if (message.trim() !== "" || footer.replace(/\s+/g, " ").trim() !== expected.footerText)
+    throw new Error("Wrong public 404 message or attribution");
+  if (styleVersion !== logoVersion || styleVersion !== iconVersion)
+    throw new Error("Inconsistent asset versions");
+}
+
+async function compareBody(
+  actual: string,
+  expected: ExpectedBody,
+  bindings: Map<string, Binding>,
+): Promise<void> {
+  if (expected.kind === "public-404") return comparePublic404(actual, expected);
+  if (expected.kind === "public-css") {
+    if (actual.length < 100 || !actual.includes("box-sizing"))
+      throw new Error("Invalid public stylesheet");
+    return;
+  }
   if (expected.kind === "wire") {
     if (actual !== expected.value)
       throw new Error(`body ${JSON.stringify(actual)}; expected ${JSON.stringify(expected.value)}`);
@@ -311,6 +693,9 @@ export async function runContract(
       const actual = await rawRequest(target.baseUrl, endpoint.path, {
         method: item.method ?? "GET",
         headers,
+        ...(endpoint.expect.headers
+          ? { responseHeaders: Object.keys(endpoint.expect.headers) }
+          : {}),
         ...(item.requestBody === undefined ? {} : { body: item.requestBody }),
         ...(target.signal ? { signal: target.signal } : {}),
       });
@@ -321,15 +706,17 @@ export async function runContract(
         throw new Error(
           `status/content-type ${actual.status} ${actual.contentType}; expected ${endpoint.expect.status} ${endpoint.expect.contentType}; body ${JSON.stringify(actual.body)}`,
         );
+      for (const [name, expected] of Object.entries(endpoint.expect.headers ?? {})) {
+        if (actual.headers?.[name.toLowerCase()] !== expected)
+          throw new Error(
+            `header ${name}: ${JSON.stringify(actual.headers?.[name.toLowerCase()])}; expected ${JSON.stringify(expected)}`,
+          );
+      }
       const caseBindings = new Map(bindings);
-      compareBody(actual.body, endpoint.expect.body, caseBindings);
+      await compareBody(actual.body, endpoint.expect.body, caseBindings);
       bindings.clear();
       for (const [name, binding] of caseBindings) bindings.set(name, binding);
-      const deferred =
-        endpoint.expect.body.kind === "deferred-html"
-          ? " (status/content type only; HTML body deferred)"
-          : "";
-      lines.push(`PASS ${item.id}${marker}${deferred}`);
+      lines.push(`PASS ${item.id}${marker}`);
     } catch (error) {
       target.signal?.throwIfAborted();
       failures++;
@@ -342,12 +729,10 @@ export async function runContract(
     lines.push("NOTE synthetic harness probe; no upstream domain or production coverage");
   if (target.target !== "upstream")
     lines.push(
-      "PENDING production: protected health/auth (M1.3); list validation/domain routes (M1.5); public HTML 404 body (M0.6/public pages)",
+      "PENDING production: protected health/auth (M1.3); list validation/domain routes (M1.5)",
     );
   if (target.target === "upstream")
-    lines.push(
-      "PENDING production: protected health/auth (M1.3); list domain routes (M1.5); public HTML 404 body (M0.6/public pages)",
-    );
+    lines.push("PENDING production: protected health/auth (M1.3); list domain routes (M1.5)");
   lines.push(`RESULT ${selectedCases.length - failures} passed, ${failures} failed`);
   return { passed: failures === 0, lines };
 }

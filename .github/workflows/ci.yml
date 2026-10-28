@@ -12,6 +12,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - run: bun run ui:verify
       - run: bun run contract:normal
       - run: bun run contract:fixture
 

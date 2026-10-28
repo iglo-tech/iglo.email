@@ -4,6 +4,8 @@
 import type { App } from "@/app";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { errorResponse, HttpError } from "@/server/response";
+import { assetResponse } from "@/server/assets";
+import { publicNotFound } from "@/public/message";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 type Segment = { name: string } | { literal: string };
@@ -130,13 +132,9 @@ export class Router {
     const context: RequestContext = { app, request, url, params };
     const fallback: Handler = () => {
       if (url.pathname.startsWith("/api/")) throw new HttpError(404, "404 unknown endpoint");
-      // Rendering the upstream HTML 404 page is deferred to the public-page task.
-      if (request.method === "HEAD")
-        return new Response(null, {
-          status: 404,
-          headers: { "Content-Type": "text/html; charset=UTF-8" },
-        });
-      return new Response("Not Found", { status: 404 });
+      const asset = assetResponse(url.pathname, request.method);
+      if (asset) return asset;
+      return publicNotFound(app.i18n, request.method);
     };
     const chain = [...this.middleware, ...(selected?.middleware ?? [])];
     const handler = selected?.handler ?? fallback;

@@ -333,3 +333,160 @@ describe("normalization at the HTTP boundary", () => {
     expect((await run(good(), 999)).code).not.toBe(0);
   });
 });
+
+const public404Page =
+  '<!DOCTYPE html><html><head><title>404 - Not found - iglo.email</title><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><img src="/public/static/logo.svg?v=0123456789" alt="iglo.email"></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a>. Based on <a href="https://listmonk.app">listmonk</a>.</footer></body></html>';
+
+test("public HTML contract rejects missing, duplicated, incorrect, or unsafe page elements", async () => {
+  const page = public404Page;
+
+  let body = page;
+  const target = server(
+    () =>
+      new Response(body, { status: 404, headers: { "content-type": "text/html; charset=UTF-8" } }),
+  );
+  const args = [
+    "--mode",
+    "normal",
+    "--target",
+    "production",
+    "--profile",
+    "core",
+    "--base-url",
+    target.origin,
+    "--case",
+    "health-post-html",
+  ];
+  try {
+    expect((await cli(args)).code).toBe(0);
+    for (const invalid of [
+      page.replace("<!DOCTYPE html>", ""),
+      page.replace("404 - Not found - iglo.email", "wrong title"),
+      page.replace("<h2>404 - Not found</h2>", "<h2>404 - Not found</h2><h2>404 - Not found</h2>"),
+      page.replace("/public/static/style.css?v=0123456789", "/public/static/style.css?v=bad"),
+      page.replace("/public/static/logo.svg?v=0123456789", "/public/static/logo.svg?v=1111111111"),
+      page.replace("<div></div>", "<div>unexpected message</div>"),
+      page.replace("<footer>", "<script>alert(1)</script><footer>"),
+      page.replace('alt="iglo.email"', 'alt="iglo.email" onerror="alert(1)"'),
+      page.replace("https://iglo.email", "javascript:alert(1)"),
+    ]) {
+      body = invalid;
+      const result = await cli(args);
+      expect(result.code).not.toBe(0);
+      expect(result.output).toContain("FAIL health-post-html");
+    }
+  } finally {
+    await target.close();
+  }
+});
+
+test.each([
+  [
+    "newline executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java\nscript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "tab executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java\tscript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "carriage-return executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java\rscript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  ["hidden heading", public404Page.replace("<h2>", "<h2 hidden>")],
+  ["hidden heading ancestor", public404Page.replace('class="wrap"', 'class="wrap" hidden')],
+  ["styled hidden heading", public404Page.replace("<h2>", '<h2 style="display:none">')],
+  [
+    "entity newline executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java&#10;script:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "entity initial executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="&#106;avascript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "entity colon executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="javascript&colon;globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "closed disclosure heading",
+    public404Page.replace(
+      "<h2>404 - Not found</h2>",
+      "<details><summary>Closed</summary><h2>404 - Not found</h2></details>",
+    ),
+  ],
+  [
+    "body stylesheet",
+    public404Page.replace(
+      "</body>",
+      '<link rel="stylesheet" href="https://example.invalid/hide.css"></body>',
+    ),
+  ],
+  [
+    "foreign document base",
+    public404Page.replace("</head>", '<base href="https://example.invalid/"></head>'),
+  ],
+  ["closed popover ancestor", public404Page.replace('class="wrap"', 'class="wrap" popover')],
+  [
+    "image in head",
+    public404Page.replace("</head>", '<img src="https://example.invalid/t.png" alt="x"></head>'),
+  ],
+  ["image after document", public404Page + '<img src="https://example.invalid/t.png" alt="x">'],
+  [
+    "sibling message container",
+    public404Page.replace("</body>", '<div class="container">unexpected message</div></body>'),
+  ],
+  ["bare wrapper text", public404Page.replace("<h2>", "unexpected message<h2>")],
+  ["bare header text", public404Page.replace("<header>", "<header>unexpected message")],
+  ["extra footer text", public404Page.replace("</footer>", " unexpected message</footer>")],
+  ["text after body", public404Page.replace("</body>", "</body>unexpected message")],
+  ["text after document", public404Page + "unexpected message"],
+  [
+    "unexpected footer link",
+    public404Page.replace("https://listmonk.app", "https://example.invalid"),
+  ],
+])("public HTML contract rejects %s", async (_name, body) => {
+  const target = server(
+    () =>
+      new Response(body, {
+        status: 404,
+        headers: { "content-type": "text/html; charset=UTF-8" },
+      }),
+  );
+  try {
+    const result = await cli([
+      "--mode",
+      "normal",
+      "--target",
+      "production",
+      "--profile",
+      "core",
+      "--base-url",
+      target.origin,
+      "--case",
+      "health-post-html",
+    ]);
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("FAIL health-post-html");
+  } finally {
+    await target.close();
+  }
+});

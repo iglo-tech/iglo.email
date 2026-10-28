@@ -6,7 +6,7 @@ Canonical repository: [iglo-tech/iglo.email](https://github.com/iglo-tech/iglo.e
 
 It is an independently maintained rewrite derived from [listmonk](https://github.com/knadh/listmonk) v7. It keeps listmonk's product model (subscribers, lists, campaigns, templates, transactional email) and adds what listmonk does not plan to have: event-triggered email sequences, unsubscribe-aware transactional email, a per-subscriber frequency cap, a send log and outbound webhooks.
 
-> **Status: early skeleton.** The executable starts an HTTP server, exposes `/health`, and opens the SQLite database. The product schema and features are not implemented yet. Start with the [design docs](docs/design/README.md).
+> **Status: early skeleton.** The executable starts an HTTP server, exposes `/health`, renders a public HTML 404, serves embedded browser assets, and opens the SQLite database. The reusable admin shell is available only to test fixtures until authentication and screens are implemented. The product schema and features are not implemented yet. Start with the [design docs](docs/design/README.md).
 
 ## Run the skeleton
 
@@ -37,18 +37,21 @@ The port must be an integer from 1 to 65535; the host must be a hostname or IP a
 
 ```sh
 bun install --frozen-lockfile
+bun run assets:build
+bun test test/jsx test/ui
+bun run ui:verify
 bun run format:check
 bun run lint
 bun run typecheck
 bun test
 bun run build
 bun run check
-bun test test/contract
+bun test test/server test/contract
 bun run contract:normal
 bun run contract:fixture
 ```
 
-`bun run check` runs formatting, lint, type checking, the behavior tests and the compiled build. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The shared server contracts have HTTP fixture tests (`bun test test/server`), including a compiled translation fixture. Database and loop fixtures run with `bun test test/db test/loops`; `bun run db:measure` runs the small storage comparison described in [M0.4 measurements](docs/perf/M0.4-database.md). The contract corpus also has two Docker-free profiles: `contract:normal` builds and runs the compiled production executable from a fresh temporary directory with an empty PATH; `contract:fixture` exercises a labelled test-only auth gate and shared helpers. Its synthetic ID/time probes test the harness itself. The reports list pending production coverage separately.
+`bun install` generates the ignored asset manifest and browser bundles; `bun run assets:build` reproduces them, and `bun run build` rebuilds them before compiling. `bun run ui:verify` checks a compiled synthetic admin shell and compiled production public page from temporary directories with empty PATH. Browser inputs, third-party licenses and deferred assets are documented in [assets/README.md](assets/README.md). `bun run check` runs formatting, lint, type checking, the behavior tests and the compiled build. The bootstrap tests build and copy the executable into a temporary directory, exercise its CLI and HTTP boundary there, and stop their own server processes. The shared server contracts have HTTP fixture tests (`bun test test/server`), including a compiled translation fixture. Database and loop fixtures run with `bun test test/db test/loops`; `bun run db:measure` runs the small storage comparison described in [M0.4 measurements](docs/perf/M0.4-database.md). The contract corpus also has two Docker-free profiles: `contract:normal` builds and runs the compiled production executable from a fresh temporary directory with an empty PATH; `contract:fixture` exercises a labelled test-only auth gate and shared helpers. Its synthetic ID/time probes test the harness itself. The reports list pending production coverage separately.
 
 To enable the repository-local pre-commit formatting check, run `bun run hooks:install` once in this repository.
 
@@ -64,7 +67,7 @@ bun run server:reference
 bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
 ```
 
-`contract:reference` runs the same explicit corpus against pinned upstream, including the protected read with Basic and token authentication and bad credentials. `server:reference` is a compatibility alias. Production currently covers public health and shared fallbacks; `/api/health` remains unregistered and its authenticated coverage is pending M1.3. List validation examples remain helper-fixture evidence until the domain port. D17/D18 are checked against their exact reference and fixture expectations. The public HTML 404 page remains deferred, so the current non-API fallback is plain text. See the [reference guide](test/reference/README.md) for supported platforms, credentials, exported endpoints, cleanup and validation. The normal checks above need neither Docker nor reference downloads.
+`contract:reference` runs the same explicit corpus against pinned upstream, including the protected read with Basic and token authentication and bad credentials. `server:reference` is a compatibility alias. Production currently covers public health and shared fallbacks; `/api/health` remains unregistered and its authenticated coverage is pending M1.3. List validation examples remain helper-fixture evidence until the domain port. D17/D18 are checked against their exact reference and fixture expectations. The production public HTML 404 and embedded static-file boundaries are checked against explicit reference and production page expectations. See the [reference guide](test/reference/README.md) for supported platforms, credentials, exported endpoints, cleanup and validation. The normal checks above need neither Docker nor reference downloads.
 
 ## Planned
 

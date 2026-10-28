@@ -36,17 +36,61 @@ ISO timestamps independently for each fixture run. Its label is `synthetic 101`
 and its unrelated nested `id` is `77`; neither is normalized. No probe is a
 ported upstream domain endpoint.
 
-## Coverage examples and handoff
+## Current coverage and handoff (M0.6)
 
-| Mode and profile         | Executed coverage                                                                                         | Pending production coverage                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `reference/upstream/all` | 31 pinned-upstream cases, including Basic, token and bad-token protected reads, validation and D17/D18    | Auth and list endpoints are not yet ported; public HTML 404 body is deferred                               |
-| `normal/production/core` | Compiled `/health`, API fallback/method boundaries, malformed URI handling and unregistered `/api/health` | Protected health/auth (M1.3), domain validation/list CRUD (M1.5), public HTML 404 body (M0.6/public pages) |
-| `normal/fixture/staged`  | Synthetic auth gate and representative shared helpers, including the normal sides of D17/D18              | The corresponding production endpoints and auth                                                            |
-| `normal/fixture/probe`   | Synthetic generated ID, relationship and timestamp normalization                                          | These probes do not represent upstream ports                                                               |
+| Mode and profile         | Executed coverage                                                                                                                                                   | Pending production coverage                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `reference/upstream/all` | 43 pinned-upstream cases, including protected reads, public HTML 404 and asset boundaries, validation and D17/D18/D21                                               | Auth and list endpoints remain unported; public HTML 404 and embedded assets now have production coverage |
+| `normal/production/core` | 21 compiled-production cases: `/health`, public HTML 404 and embedded assets, API fallback/method boundaries, malformed URI handling and unregistered `/api/health` | Protected health/auth (M1.3), domain validation/list CRUD (M1.5)                                          |
+| `normal/fixture/staged`  | Synthetic auth gate and representative shared helpers, including the normal sides of D17/D18                                                                        | The corresponding production endpoints and auth                                                           |
+| `normal/fixture/probe`   | Synthetic generated ID, relationship and timestamp normalization                                                                                                    | These probes do not represent upstream ports                                                              |
 
 M1.3 must run and promote the same protected-health cases against real production
 auth, removing that fixture-only gap. Domain workers promote their cases while
 retaining the explicit D17/D18 results. A fixture pass never implies production
-parity. The reference HTML 404 case checks status and content type only; its
-body is explicitly pending, not a deliberate API difference.
+parity. M0.6 checks the rendered public HTML 404 structure, title, heading,
+message, local assets and attribution with explicit per-target branding. The
+route-backed D18 helper cases assert the actual HTML fallback after Bun removes
+encoded dot segments; the upstream invalid-ID expectations remain intact. The
+reference-first baseline above records M0.5 history, not current coverage.
+
+M0.6's method correction records D21: static HEAD resolves the same embedded
+resource as GET and returns its metadata without bytes; OPTIONS and rejected
+methods advertise `OPTIONS, GET, HEAD`. The source-first reference still asserts
+upstream's HEAD 405 and `OPTIONS, GET` advertisement. Declared response headers
+are compared explicitly, including missing or incorrect Allow values.
+
+The core D18 `public-static-dot-escape` case sends the exact encoded target to
+both upstream and actual compiled production. It requires upstream's plain-text
+404 and the normal public HTML 404, and a synthetic plain-text normal response
+fails. Unmatched non-static admin paths still use the public error page until
+M4.1 supplies the authenticated admin error view.
+
+Equivalent static spellings now run through the core corpus in both modes:
+`%73tyle.css`, `style%2ecss` and a redundant separator resolve to the same public
+stylesheet. The reference observation and compiled-production HTTP tests also
+verify the escaped Geist font name and WOFF2 signature. Asset lookup decodes once
+and cleans POSIX separators inside the original embedded namespace. It never
+uses the request path for filesystem access.
+
+The HTML CLI rejects newline/tab/carriage-return executable URL schemes after
+browser-compatible URL parsing, hidden headings and ancestors, inline visibility
+styles and unrecognized stylesheets. These checks remain specific to the fixed
+public 404 layout; wire and JSON comparisons are unchanged.
+
+The fixed-page HTML contract now allows only the known 404 tags, attributes and
+layout classes, requires the heading directly under the body wrapper, and checks
+stylesheet links in all locations while rejecting body assets and document bases.
+Its fixed URL contexts reject character-reference/control spellings instead of
+treating HTMLRewriter's raw attribute values as browser-decoded strings. The
+reference-only archive RSS title/link is explicitly expected; production does not
+claim archive functionality. Seven additional CLI negatives first passed
+incorrectly, then failed correctly after the shape checks were tightened.
+
+Round 3 adds explicit parents for every allowed element and checks all document
+text, including text outside the normal selectors and after the closing tags.
+All images must occupy the one logo slot. Footer text and ordered link targets
+and labels are exact per target; arbitrary suffixes are not normalized away.
+Nine public CLI regressions first exposed false passes for misplaced images,
+sibling/bare/trailing text and a changed attribution link. Correct real upstream
+and compiled-production pages still pass this bounded default-page schema.

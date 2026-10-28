@@ -77,7 +77,8 @@ Fresh listmonk installation also adds its own sample data.
 
 The shared, explicit case definitions are in `test/contract/cases.ts`; the
 reference-first protected-read observations and synthetic fixture credentials
-are in [`test/contract/fixtures.md`](../contract/fixtures.md).
+are in [`test/contract/fixtures.md`](../contract/fixtures.md). Its M0.5 coverage
+table is historical; the current public-page coverage is described below.
 
 ```sh
 bun test test/contract
@@ -100,9 +101,18 @@ coverage. The fixture profile composes the shared modules with a synthetic auth
 gate and representative helper routes; valid Basic, valid token and invalid
 token requests run there and against upstream. Its generated ID/timestamp probes
 verify normalization only. Reports identify the mode, target, profile, case
-results, D17/D18 and pending production work. M1.3 promotes protected health to
+results, D17/D18/D21 and pending production work. M1.3 promotes protected health to
 real production auth; domain owners promote helper cases as their routes land.
-The public HTML 404 body remains pending M0.6/public pages.
+Public HTML 404 semantics and embedded static responses are covered in both
+upstream and compiled production, with explicit per-target site names and
+attribution. Repeat the reference-first observations with
+`bun run reference:run -- bun test/ui/reference-observe.ts`. Static HEAD requests
+on the pinned upstream return 405 with no content type. The normal implementation
+supports metadata-only HEAD under D21 and advertises `OPTIONS, GET, HEAD` on
+OPTIONS/405, versus upstream's `OPTIONS, GET`. Declared Allow headers are checked
+by the corpus. Encoded static dot segments have an explicit D18 case against
+real compiled production as well as upstream; both refuse the resource with
+their documented plain-text versus HTML 404 bodies.
 
 For an already running owned loopback target, the CLI also accepts an explicit
 base URL and profile. For example, inside a `reference:run` child:
@@ -143,3 +153,9 @@ cleanup of a signal-resistant child and grandchild, including a parent that exit
 before its descendant. It creates an unrelated sentinel process
 and Docker volume and checks that they survive. These integration checks are
 explicit: `bun test` and `bun run check` do not need Docker or downloads.
+
+The shared static corpus also covers equivalent escaped stylesheet filenames
+and redundant separators. The source-first observation checks the escaped Geist
+font name; compiled-production HTTP tests verify its MIME type and WOFF2 bytes.
+The application decodes names once and cleans separators within the original
+embedded namespace, without arbitrary filesystem lookup.

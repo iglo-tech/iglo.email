@@ -117,9 +117,13 @@ escapes of invalid UTF-8, such as `%FF`, still reach parameter validation.
 `src/clock.ts` owns `now()` and abortable `sleep()`; loops receive a clock instead of
 reading real time. The HTTP router registers routes and middleware explicitly. Static
 segments take precedence over parameter segments, and middleware runs in registration
-order around a route. Unmatched API paths use the reference JSON 404. The public 404
-HTML page is deferred; the current public fallback remains plain text, except that
-HEAD returns the verified upstream status and HTML content type without a body.
+order around a route. Unmatched API paths use the reference JSON 404. Unmatched
+public paths render the escaped public HTML 404 through the injected translation
+instance; HEAD returns the same verified status and content type without a body.
+Explicitly built static assets are embedded and served without runtime disk lookup.
+Their methods and missing-path responses follow the pinned reference for paths
+Bun preserves; encoded dot segments still follow D18 normalization. The admin shell
+has only a synthetic compiled fixture until authentication and screens exist.
 Unexpected exceptions are logged and receive a safe JSON 500. The JSON helpers use
 upstream envelopes, newline, content type and HTML-character escaping.
 
@@ -163,3 +167,5 @@ Small and justified. v1 runtime dependencies:
 | `marked` | Markdown campaigns and templates |
 
 Built-in Bun or Web APIs cover the rest: password hashing (`Bun.password`), UUIDs, HMAC and TOTP (Web Crypto), gzip, file serving, and the JSX runtime (in-house, about 100 lines). Admin UI assets are listmonk v7's browser dependencies (Alpine.js, Oat, CodeMirror, Squire, Chart.js), bundled at build time.
+
+Until authentication and M4.1 admin views are ported, unmatched non-static `/admin/*` paths use the public HTML 404. The admin-specific error page remains staged; the shell fixture does not implement production administration. Embedded static assets support metadata-only HEAD under [D21](09-decisions.md#d21-support-head-for-embedded-assets).

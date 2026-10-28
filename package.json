@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build --compile ./src/main.ts --outfile ./dist/iglo.email",
+    "build": "bun run assets:build && bun build --compile ./src/main.ts --outfile ./dist/iglo.email",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun run build",
     "db:measure": "bun test/db/measure.ts",
     "format": "oxfmt .",
@@ -18,12 +18,29 @@
     "server:reference": "bun run contract:reference",
     "contract:normal": "bun run build && bun test/contract/cli.ts owned production",
     "contract:fixture": "bun test/contract/cli.ts owned fixture",
-    "contract:reference": "bun run reference:run -- bun test/contract/cli.ts run --mode reference --target upstream --profile all"
+    "contract:reference": "bun run reference:run -- bun test/contract/cli.ts run --mode reference --target upstream --profile all",
+    "assets:build": "bun scripts/assets-build.ts",
+    "postinstall": "bun run assets:build",
+    "ui:verify": "bun run assets:build && bun test/ui/verify.ts"
   },
   "devDependencies": {
+    "@codemirror/commands": "6.10.4",
+    "@codemirror/lang-css": "6.3.1",
+    "@codemirror/lang-html": "6.4.11",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-markdown": "6.5.0",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/search": "6.7.1",
+    "@codemirror/state": "6.7.0",
+    "@codemirror/view": "6.43.4",
+    "@knadh/oat": "1.0.0",
+    "@lezer/highlight": "1.2.3",
     "@types/bun": "1.4.4",
+    "alpinejs": "3.15.12",
+    "chart.js": "4.5.1",
     "oxfmt": "0.75.0",
     "oxlint": "1.90.0",
+    "squire-rte": "2.4.8",
     "typescript": "6.0.3"
   },
   "engines": {

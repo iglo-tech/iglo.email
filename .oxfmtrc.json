@@ -1,3 +1,15 @@
 {
-  "ignorePatterns": ["AGENTS.md", "README.md", "docs/**", "bun.lock", "i18n/*.json"]
+  "ignorePatterns": [
+    "AGENTS.md",
+    "README.md",
+    "docs/**",
+    "bun.lock",
+    "i18n/*.json",
+    "assets/admin/js/**",
+    "assets/admin/css/**",
+    "assets/admin/static/**",
+    "assets/public/static/**",
+    "assets/licenses/**",
+    "src/server/asset-manifest.ts"
+  ]
 }

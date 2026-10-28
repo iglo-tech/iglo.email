@@ -2,7 +2,7 @@ export type Mode = "reference" | "normal";
 export type TargetName = "upstream" | "production" | "fixture";
 export type Profile = "all" | "core" | "staged" | "probe";
 export type Group = "core" | "staged" | "reference-only" | "production-only" | "probe";
-export type Difference = "D17" | "D18";
+export type Difference = "D17" | "D18" | "D21";
 
 export interface Credentials {
   readonly user: string;
@@ -20,12 +20,21 @@ export interface VolatileField {
 export type ExpectedBody =
   | { readonly kind: "wire"; readonly value: string }
   | { readonly kind: "json"; readonly value: unknown; readonly volatile: readonly VolatileField[] }
-  | { readonly kind: "deferred-html" };
+  | {
+      readonly kind: "public-404";
+      readonly siteName: string;
+      readonly footerText: string;
+      readonly footerLinks: readonly { readonly text: string; readonly href: string }[];
+      readonly customScript: boolean;
+      readonly archiveTitle: string | null;
+    }
+  | { readonly kind: "public-css" };
 
 export interface Expectation {
   readonly status: number;
   readonly contentType: string | null;
   readonly body: ExpectedBody;
+  readonly headers?: Readonly<Record<string, string | null>>;
 }
 
 export interface Endpoint {
@@ -39,7 +48,7 @@ export interface ContractCase {
   readonly reference?: Endpoint;
   readonly production?: Endpoint;
   readonly fixture?: Endpoint;
-  readonly method?: "GET" | "POST" | "HEAD";
+  readonly method?: "GET" | "POST" | "HEAD" | "OPTIONS";
   readonly requestBody?: string;
   readonly requestContentType?: string;
   readonly auth?: "basic" | "token" | "bad-token";
