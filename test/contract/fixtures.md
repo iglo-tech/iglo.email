@@ -218,3 +218,10 @@ and labels are exact per target; arbitrary suffixes are not normalized away.
 Nine public CLI regressions first exposed false passes for misplaced images,
 sibling/bare/trailing text and a changed attribution link. Correct real upstream
 and compiled-production pages still pass this bounded default-page schema.
+
+M1.5 D35 cases use invocation-owned lists to distinguish ordered JSON aliases,
+null tag elements and XML binding from declaration/depth/body restrictions.
+Overlong normalized tags are deliberately rejected before either write on normal
+production, while reference POST fails with 22001 and PUT truncates. The corpus
+checks stored fields and exact tag filtering; a labelled synthetic campaign
+fixture also checks unchanged snapshots, timestamps and grants after rejection.

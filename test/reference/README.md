@@ -184,3 +184,23 @@ The application decodes names once and cleans separators within the original
 embedded namespace, without arbitrary filesystem lookup.
 
 M1.4 D32 cases distinguish required top-level user-role permission replacement (omitted/null: reference 500, normal safe 400, unchanged stored role) from compatible omitted/null/[] list-child clearing. The common role corpus runs these in both modes; the labelled synthetic-list HTTP fixture additionally proves removal of an existing grant and its effective access.
+
+
+The D35 list corpus additionally exercises ordered Go JSON field aliases and
+slice replacement, XML local field names and repeated elements, predefined and
+numeric entities, CDATA, and the explicitly bounded XML declaration/depth/body
+cases. It records upstream POST 500/22001 and PUT truncation against the normal
+safe 400/no-write tag boundary. Compiled `contract:lists` also checks the XML
+parser's complete locked notice closure through HTTP after starting from a
+detached working directory. These cases do not assert complete XML parity.
+
+The parser and its locked declared closure are MIT: `fast-xml-parser@5.11.2`,
+`@nodable/entities@3.1.0`, `fast-xml-builder@1.3.1`, `is-unsafe@2.0.2`,
+`path-expression-matcher@1.6.2`, `strnum@2.5.1`, `xml-naming@0.3.0` and
+`anynum@1.0.1`. The `@nodable/entities` package omits its license file from its
+published directory; the exact v3.1.0 upstream source license at commit
+`b89ecb0d419969e2989b74c5304bc9b66931727e` is bundled as the pinned override.
+The installed FXP source uses `DocTypeReader` and an entity decoder; declarations
+are rejected before either registration or expansion, and the element callback
+checks depth even on self-closing nodes. Parser exceptions are converted to safe
+HTTP errors. No external entity resolver is registered.
