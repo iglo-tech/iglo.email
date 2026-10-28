@@ -8,11 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 assertion corrections are pushed to [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), new head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Sol round 2 requested two remaining HTML assertion changes on `cbd877d`, now addressed with seven regression-first failures and a specified fixed-page shape. Opus round 2 is still pending on `cbd877d`. Its terminal verdict is the remaining gate before both fresh round-3 reviews. The existing PR watch remains active; do not poll or start duplicate reviewers. This run is past four hours: finish M0.6, then release the lock for independent recovery/next work rather than starting M0.7 in this run.
+M0.6 recovery is blocked by T3 delegate ownership. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains open at `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed, independently confirmed at 2026-10-28 02:38 UTC. The Opus round-2 reviewer is stalled on a cleanup approval at superseded head `cbd877d`, with no terminal verdict. The independent run acquired the expired lock, but `task_cancel` refused cross-thread cancellation. No cancellation is confirmed and no replacement reviewers or workers were started. See the recovery record and blocker below. Finish M0.6 before another implementation task, then release the lock as previously directed.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | fix | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 2 | [Brief](briefs/M0.6.md). Head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Lead validation: full check 98 tests / 635 assertions, clean lint/typecheck, 21 production cases, 43 upstream cases and 14 focused HTML tests. `ece1069` records seven false passes before the fixed-page shape/URL correction. Opus round-2 original-head verdict pending; no round-3 reviewer started. |
+| M0.6 | recovery blocked | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 2 | [Brief](briefs/M0.6.md). Head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Prior lead validation: full check 98 tests / 635 assertions, clean lint/typecheck, 21 production cases, 43 upstream cases and 14 focused HTML tests. `ece1069` records seven false passes before the fixed-page shape/URL correction. Stalled Opus delegate cannot be canceled from this independent run; no round-3 reviewer started. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,7 +20,7 @@ Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
-- PR #6 is linked and watched in this lead thread. Both round-1 reviews are terminal with CHANGES; no replacement or round-2 reviewer started.
+- PR #6 is linked in the independent recovery thread. The former lead's PR watch was removed during recovery; the independent run watches only the pending review. Both round-1 reviews and Sol round 2 are terminal with CHANGES; Opus round 2 remains stalled. No round-3 reviewer has started.
 
 Lead correction: OPTIONS/405 now advertise implemented methods; D21 enables metadata-only HEAD for embedded assets. The shared corpus checks declared headers and includes a D18 static escape against actual compiled production; ui:verify executes it as well, and the public API policy names it. The admin-specific error page is recorded as pending M4.1. The expanded reference corpus passed before the application change.
 
@@ -44,7 +44,7 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 
 ### Council round 2
 
-[M0.6 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f); claude-opus-5-5. Verdict pending on `cbd877d9488063a46f2e8d9d2be348cde27570d5`.
+[M0.6 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f); claude-opus-5-5. Verdict pending on `cbd877d9488063a46f2e8d9d2be348cde27570d5`. Stalled since 2026-10-28 00:26:31 UTC on a cleanup approval; independent recovery cancellation was refused. Preserve its identifiers until supported cancellation or a terminal result is confirmed.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
@@ -53,6 +53,14 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
+
+### Independent recovery, 2026-10-28 02:38 UTC
+
+- Recovery thread: `thread:project:33e4dcad-e50e-45f0-bf99-8f120653d39c:dbb1e78f-bfe2-4f97-89da-2b228f20480b`, GPT-6.1 Sol at xhigh. Synced `/home/t3-code/iglo.email` on `main`; inspected the lock, active PR and recorded delegate before attempting replacement. The previous heartbeat was 2026-10-28T00:46:04.757560+00:00, 112 minutes old when the lock was taken.
+- The reviewer completed its browser checks and stopped its shell, production and hostile-page servers before the stall. Its last command attempted cleanup of its historical export and temporary directories. Automatic approval review held that command for a statically unresolvable `rm` target. No approval was granted, no cleanup was repeated, and no rate limit was observed.
+- `task_cancel` returned `task_not_found`: the recorded task "does not belong to thread" of this independent run. Supplying the original parent thread identifier also failed. The original delegate still reported an active run with one pending approval. A child-thread interrupt, an approval bypass, and starting duplicate reviewers are not valid recovery paths. No new delegate was dispatched.
+- Removed the former lead's PR watch successfully. Record this infrastructure blocker, push the status, release the local lock and watch only for a pending PR review. The 45-minute automation remains unchanged and unbound. A later independent run can inspect durable PR/delegate state without waiting on either lead conversation.
+- Next transition: confirm the superseded-head review is terminal or cancel it through a supported cross-thread control, then dispatch both fresh round-3 council members together on the current green head with the prescribed models/settings and worktree isolation. Record their identifiers after dispatch. Do not count an unposted verdict or a superseded-head approval as approval of `f3839c4`.
 
 ## Automation
 
@@ -75,7 +83,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Blocked
 
-None.
+M0.6: T3 exposes delegate cancellation only to the originating thread. The independent run's `task_cancel` calls cannot stop the Opus round-2 review stalled at a cleanup permission request, even after taking an expired lock. Recovery requires a terminal delegate result or a supported cross-thread cancellation capability before replacement council dispatch. This is an orchestration blocker, not a product-code or CI failure. No owner approval is requested; no duplicate worker/reviewer or new implementation task is started while it persists.
 
 ## For owner review
 
