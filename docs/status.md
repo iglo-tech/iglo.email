@@ -6,6 +6,8 @@ Updated: 2026-10-28
 
 ## Active
 
+Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
+
 No active task. M1.6 merged through [PR #13](https://github.com/iglo-tech/iglo.email/pull/13) as 7764c13084fce10c52fb7c13ab295e756085a5d3 on 2026-10-28 at 20:08:12 UTC. All four Linux checks passed exact final head 25dd8d5237a60f71bc9855eba52f78e38e455394. The remaining scope-message finding was fixed under the documented three-round lead disposition; no amended-head council approval is claimed. All delegates are terminal and its PR watch is confirmed stopped. [Review and recovery archive](reviews/M1.6.md).
 
 The original run started at 2026-10-28T13:08:24.215458+00:00 and ends after M1.6 because its four-hour boundary passed. No next task starts in this run. Release the completed lock after this status/archive push; the next independent scheduled run selects eligible work from the work plan. Linux x86-64 is the MVP platform; macOS and Linux arm64 are post-MVP (D42).
