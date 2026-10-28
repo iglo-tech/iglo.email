@@ -20,3 +20,6 @@ Council round-1 regressions use synthetic `first-synthetic` and
 `synthetic-header`, `synthetic-constructor` and `synthetic-string` header values.
 Only settings persistence and masked lengths are observed; SMTP authentication
 and delivery are not tested by these cases.
+
+The round-2 SMTP-name regression uses `🚀` and `--` as distinct synthetic
+server names; their normalized projections are `email--` and `email---`.

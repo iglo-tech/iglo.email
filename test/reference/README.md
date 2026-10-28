@@ -238,14 +238,20 @@ forms and XML scalars through HTTP. D38 cases label the reference's validation
 of fields that the relevant normal operation discards. The normal subscriber
 extension also checks the embedded Go standard-library notice.
 
-### M1.2 settings draft
+### M1.2 settings
 
-`bun run contract:settings:reference` runs the initial settings corpus against
+`bun run contract:settings:reference` runs the shared settings corpus against
 a disposable pinned instance. `bun run contract:settings` runs that corpus
 against compiled production, plus restart, domain policy, authorization, CSRF,
 origin, and in-flight checks. D44's unknown and malformed per-key writes are
-paired explicitly. The suite does not yet establish complete settings binding,
-error-envelope or validation parity, and session-duration mutation is staged
-as a 501 pending a durable session-expiry seam. The masked-secret checks do not
-prove a future SMTP delivery uses the original secret; that must be tested by
-M2.1 with Mailpit.
+paired explicitly. Session-duration writes update the policy for newly created
+sessions under D45; each issued session retains its saved expiry, and legacy
+sessions retain their creation time plus seven days. Expired sessions cannot be
+revived by increasing the policy. Injected-clock expiry and legacy cases reopen
+fixture owners and their database; a separate compiled test exercises an actual
+process restart with a retained valid session. D46 covers final writable NUL
+rejection with safe native 400/no write versus reference 500/no write. The corpus
+is representative rather than an exhaustive proof of parser compatibility.
+The SMTP test route remains guarded 501 until M2.1. Masked-secret checks do not
+prove a future SMTP delivery uses the original secret; M2.1 verifies that with
+Mailpit.

@@ -215,7 +215,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   for (const server of next.smtp) {
     if (!server || typeof server !== "object") return fail();
     if (server.enabled && !server.exclude_from_default) hasDefault = true;
-    let name = simpleLower(trimSpace(server.name)).replace(/[^a-z0-9-]/g, "-");
+    let name = simpleLower(trimSpace(server.name)).replace(/[^a-z0-9-]/gu, "-");
     if (name) {
       if (!name.startsWith("email-")) name = `email-${name}`;
       if (names.has(name)) return fail(`Duplicate messenger name: ${name}`);

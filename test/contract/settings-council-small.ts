@@ -47,6 +47,19 @@ export async function runSettingsCouncilSmall(target: {
   templated["app.from_email"] = ["valid@example.invalid", "{{ .Subscriber.Email }}"];
   check((await request("/api/settings", "PUT", templated)).status === 200, "ordered-template");
 
+  const supplementary = candidate();
+  const primary = { ...supplementary.smtp[0], name: "🚀", enabled: true };
+  supplementary.smtp = [primary, { ...primary, name: "--", enabled: false, uuid: "" }];
+  check(
+    (await request("/api/settings", "PUT", supplementary)).status === 200,
+    "supplementary-name-no-false-collision",
+  );
+  check(
+    JSON.stringify((await read()).smtp.map((server: { name: string }) => server.name)) ===
+      '["email--","email---"]',
+    "supplementary-name-rune-projection",
+  );
+
   const maps = candidate();
   maps["bounce.actions"] = JSON.parse(
     '{"__proto__":{"count":3,"action":"blocklist"},"constructor":{"count":4,"action":"none"}}',
