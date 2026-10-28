@@ -8,9 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No implementation task is active. M1.4 merged in [PR #11](https://github.com/iglo-tech/iglo.email/pull/11) at `b60a0e8ab96822d2415c181bb95569387082e3d9` on 2026-10-28 at 14:31:08 UTC. Both fresh Sol xhigh council reviewers approved exact head `c2736379b5300a9bab6986d7d89adba22cee18b3` in round 2; all eight CI jobs passed. The synced main application/test/assets/build/schema/CI tree matches that tested head. [Complete review and recovery record](reviews/M1.4.md).
+M1.5 (lists CRUD, tags, opt-in types and counts) is active at **brief**. M1.4 is merged and all prior delegates are terminal with its watch stopped. The same run retains its 2026-10-28T13:08:24.215458+00:00 start, so it remains within four hours. M1.5 is the next eligible critical-path task under the work plan. The named task branch prefix is absent; no duplicate worker is started. [Brief](briefs/M1.5.md).
 
-Both implementation delegates and all four council delegates are completed with no pending child work. The PR watch is confirmed stopped. This run began at 13:08:24.215458 UTC and remains within four hours, so it continues by briefing the next eligible critical-path task, M1.5. The automation remains enabled and unbound; no owner approval, duplicate delegate or earlier-thread responsiveness is needed.
+D33 extends the literal name-query policy to list reads/query-deletes, permits explicit description clearing while retaining omission/null behavior, and authorizes narrow subscriber count/campaign-reference owners to preserve table ownership before their full APIs exist. The worker must verify exact paired reference cases first and distinguish fixture-only positive counts/references from actual compiled list acceptance. No settings, subscriber/campaign CRUD, admin screens, sending or loops are included.
+
+Expected branch task/M1.5-lists; worker dispatch pending. Exactly one isolated GPT-6.1 Terra max worker is authorized, with no helper. Council round 0, no PR or watch yet; both future council reviewers are fresh Sol xhigh, with no Anthropic use. Record task/thread identifiers after dispatch and end the turn without waiting or polling. Automation remains unchanged and unbound.
 
 ## Automation
 
@@ -43,7 +45,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Blocked
 
-No active external block or cooldown. M1.4 is merged with matching round-2 approvals and no remaining child work. The same run continues under its original 13:08:24 UTC start; the next critical-path task is M1.5.
+No active external block or cooldown. M1.4 is merged; the same run continues with M1.5 under its original 13:08:24 UTC start.
 
 ## For owner review
 
@@ -88,6 +90,8 @@ Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one who
 [D31](design/09-decisions.md#d31-literal-role-name-search-and-safe-role-diagnostics) (2026-10-28, after M1.4 worker): role-name search is a literal case-insensitive substring after compatible whitespace normalization, and role diagnostics preserve status/context without reflecting permission values or SQL internals. Exact paired contracts are required. The follow-on fixer may extend the existing asset license collector for QR dependencies; no parallel artifact is added.
 
 [D32](design/09-decisions.md#d32-require-explicit-user-role-permission-replacement) (2026-10-28, after M1.4 round 1): reject omitted/null user-role permission replacement with a safe 400, preserve explicit [] and restore the distinct compatible null/omitted list-child clearing contract. Both council findings are accepted; no owner approval is needed.
+
+[D33](design/09-decisions.md#d33-list-name-search-explicit-description-clearing-and-owner-boundaries) (2026-10-28, before M1.5): normalized literal list-name reads/query-deletes use one predicate; explicit empty description can clear old text; live count and campaign snapshot foundations stay in their table owners. Reference-first evidence and staged-to-production promotion are required in the [brief](briefs/M1.5.md).
 
 ## Pause history
 
