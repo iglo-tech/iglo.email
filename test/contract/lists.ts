@@ -148,6 +148,14 @@ export async function runListsContract(target: {
         namespaced.value.data.tags[0] === "007",
       "xml-local-names",
     );
+    const xmlFirst = await raw(
+      `<List><Name>first-root-${suffix}</Name></List><List><Name>ignored-${suffix}</Name></List>`,
+      "application/xml",
+    );
+    check(
+      xmlFirst.response.status === 200 && xmlFirst.value.data?.name === `first-root-${suffix}`,
+      "xml-first-root",
+    );
     const xml = await raw(
       `<Anything><name>ignored</name><Name>xml-${suffix}</Name><Tags> One Two </Tags><Tags>002</Tags><Tags><Tag>ignored</Tag></Tags><Description> 02 &amp; &#x41; <![CDATA[x<y]]></Description></Anything>`,
       "application/xml",
