@@ -120,6 +120,8 @@ async function userUpdates(origin: string, authorization: string) {
       throw new Error("Update measurement authority failed");
     return performance.now() - started;
   };
+  let result: { userUpdateMeanMs: number; passwordUpdateMeanMs: number } | undefined;
+  const failures: unknown[] = [];
   try {
     await update(false);
     await update(true);
@@ -127,12 +129,19 @@ async function userUpdates(origin: string, authorization: string) {
       hashed = [];
     for (let i = 0; i < 10; i++) plain.push(await update(false));
     for (let i = 0; i < 3; i++) hashed.push(await update(true));
-    return { userUpdateMeanMs: mean(plain), passwordUpdateMeanMs: mean(hashed) };
-  } finally {
+    result = { userUpdateMeanMs: mean(plain), passwordUpdateMeanMs: mean(hashed) };
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
     const removed = await fetch(`${origin}/api/users/${id}`, { method: "DELETE", headers });
     await removed.text();
     if (removed.status !== 200) throw new Error("Update measurement cleanup failed");
+  } catch (error) {
+    failures.push(error);
   }
+  if (failures.length) throw new AggregateError(failures, "Update measurement failed");
+  return result!;
 }
 
 for (let repetition = 1; repetition <= 3; repetition++) {

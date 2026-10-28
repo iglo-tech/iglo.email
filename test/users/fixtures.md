@@ -20,3 +20,10 @@ The labelled loopback owner fixture uses `fixture-admin` /
 `fixture-user-password`. Password-change cases use `  fixture-changed-password  `
 and `  fixture-admin-reset-password  ` with the surrounding spaces. The fixture
 never connects to an external service.
+
+The deterministic concurrent-target cases use fixture-concurrent-new-password.
+A labelled /fixture/gated-user/:id route gates completion of production password
+hashing through the fixture auth object; /fixture/gate-entered and
+/fixture/gate-release coordinate HTTP requests without sleeps. Production main
+has none of these routes or controls. Reader/list roles are provisioned through
+fixture-owned public helpers while role administration remains M1.4.
