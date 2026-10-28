@@ -8,7 +8,9 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No implementation task is active. M0.7 merged at `8a0b3bf9012b606542b85cedd70e51488e3a2813`, with both council approvals on the same head and green CI. [Review and recovery record](reviews/M0.7.md). The recovery run remains within its four-hour budget and is preparing M0.8, the final M0 runtime spike and a prerequisite of M2.1. M0.2/M0.4 dependencies are merged; no duplicate worker is running. The M0.7 PR watch stopped after merge.
+**M0.8 — Bun SMTP and LiquidJS spikes** is active at stage `brief`, worker attempt 1 pending dispatch. [Brief](briefs/M0.8.md). Branch: `task/M0.8-bun-runtime-spikes`. The next worker uses GPT-6.1 Terra at max reasoning in an isolated worktree; no helpers. M0.2/M0.4 dependencies are merged. M0.8 closes the last M0 runtime experiment needed by M2.1 before the M1 core-data port. The lead read the exact pinned SMTP, template-model, rendering and sample-template comparison sources while preparing this brief. Both prior reviewers completed, no pending child work was reported by the completed Opus continuation, and GitHub has no open PR; no duplicate worker exists. This same recovery run began 2026-10-28T07:09:33.768313+00:00 and remains within its four-hour limit.
+
+M0.7 merged at `8a0b3bf9012b606542b85cedd70e51488e3a2813`, with both council approvals on the same head and green CI. Its PR watch is stopped. [Review and recovery record](reviews/M0.7.md).
 
 ## Automation
 
