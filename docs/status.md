@@ -75,6 +75,19 @@ Linux CI is green on exact ready head c30caf2a8b7385bba1db2838a173beaf9aa3c34d: 
 
 The existing PR watch stays active for pending council reviews; no relink or re-watch. Both delegates instruct the lead to end the turn and resume on completion. Do not poll/wait or dispatch duplicates. All implementation delegates are terminal. After both verdicts, drive fixes/review/merge as required and immediately start the next eligible project task. The independent recovery automation remains unbound.
 
+Council round 1: [Sol B](https://github.com/iglo-tech/iglo.email/pull/14#issuecomment-6482159880) completed CHANGES on exact c30caf2. Its terminal thread was read: no active run, pending request, child work or implementation changes. Six paired HTTP findings require resolution:
+
+- Legal map keys such as __proto__ disappear from bounce actions and SMTP headers through ordinary object assignment.
+- WHATWG repair admits malformed trusted URLs that pinned validation rejects; the invalid-URL envelope also differs.
+- Reversed template delimiters bypass From-address validation.
+- Valid IPv4-mapped address literals and a concrete failed encoded-word fallback phrase are rejected.
+- Enabled slow-query cron differs for Local/empty locations, Go whitespace, signed-64 steps, BOM and two exact errors.
+- Empty SMTP passwords with duplicate saved UUIDs retain the first matching secret instead of the pinned last match, observed through mask lengths.
+
+B independently passed full acceptance (171 tests/2,004 assertions), focused 110/1,343, compiled/pinned/UI/restart/notices/smoke and all nine serial measurements with matching binary hashes. Passing existing suites does not dispose of the six additional failures. Full concrete inputs, source locations and evidence are in its verdict comment.
+
+A remains dispatched under its existing completion-wakes-lead instruction; it has not been polled or replaced. Keep the reviewed head stable and combine both verdicts when A completes, then use direct small fixes or one fresh Terra max fixer as appropriate. No merge, new worker, duplicate reviewer, relink or re-watch. The existing watch remains for pending council review. End this coordination turn and resume on completion; continuous project work remains active.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
