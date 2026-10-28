@@ -95,10 +95,13 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     create(fields: UserFields): UserRow {
       return insert(fields);
     },
-    update(id: bigint, fields: UserFields): UserRow | null {
+    update(id: bigint, resolve: (current: UserRow) => UserFields): UserRow | null {
       return writeTransaction(db, () => {
         const previous = byId(id);
         if (!previous) return null;
+        // Resolve omitted fields only after obtaining the current row and the
+        // write lock. Password hashing must already have finished outside here.
+        const fields = resolve(previous);
         if (
           previous.type === "user" &&
           previous.status === "enabled" &&

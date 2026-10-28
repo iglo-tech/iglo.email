@@ -140,7 +140,7 @@ function needSuper(context: RequestContext): never {
 function storageFailure(
   error: unknown,
   action: "creating" | "updating",
-  fields: UserFields,
+  fields: Pick<UserFields, "username" | "email">,
 ): never {
   if (error instanceof Error) {
     for (const column of ["username", "email"] as const) {
@@ -245,33 +245,63 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
         !roles.hasRole(input.listRoleId, "list"))
     )
       throw new HttpError(400, "invalid role");
-    const password =
-      type === "api"
-        ? previous.type === "api"
-          ? previous.password
-          : null
-        : input.passwordLogin
-          ? input.password
-            ? await auth.hash(input.password)
-            : previous.password
-          : null;
-    const fields: UserFields = {
-      username: input.username,
-      name: input.name || input.username,
-      email: input.email.toLowerCase() || previous.email,
-      type,
-      status: (input.status || previous.status) as "enabled" | "disabled",
-      passwordLogin: type === "api" ? false : input.passwordLogin,
-      password,
-      userRoleId,
-      listRoleId: input.listRoleId === 0n ? previous.list_role_id : input.listRoleId,
-    };
+    // Prepare possible human credentials without holding a transaction. The
+    // target may change type/authority while this asynchronous work is running.
+    const hash =
+      input.type !== "api" && input.passwordLogin && input.password
+        ? await auth.hash(input.password)
+        : null;
     auth.revalidate(context, "users:manage");
     let updated;
+    let fields: UserFields | undefined;
     try {
-      updated = store.update(id, fields);
+      updated = store.update(id, (current) => {
+        const currentType = (input.type || current.type) as "user" | "api";
+        if (
+          currentType === "user" &&
+          input.passwordLogin &&
+          hash === null &&
+          (!current.password || current.type === "api")
+        )
+          invalid(context, "password");
+        const currentRole = input.userRoleId === 0n ? current.user_role_id : input.userRoleId;
+        if (
+          !roles.hasRole(currentRole, "user") ||
+          (input.listRoleId !== null &&
+            input.listRoleId !== 0n &&
+            !roles.hasRole(input.listRoleId, "list"))
+        )
+          throw new HttpError(400, "invalid role");
+        fields = {
+          username: input.username,
+          name: input.name || input.username,
+          email: input.email.toLowerCase() || current.email,
+          type: currentType,
+          status: (input.status || current.status) as "enabled" | "disabled",
+          passwordLogin: currentType === "api" ? false : input.passwordLogin,
+          password:
+            currentType === "api"
+              ? current.type === "api"
+                ? current.password
+                : null
+              : input.passwordLogin
+                ? (hash ?? current.password)
+                : null,
+          userRoleId: currentRole,
+          listRoleId: input.listRoleId === 0n ? current.list_role_id : input.listRoleId,
+        };
+        return fields;
+      });
     } catch (error) {
-      storageFailure(error, "updating", fields);
+      if (error instanceof HttpError) throw error;
+      storageFailure(
+        error,
+        "updating",
+        fields ?? {
+          username: input.username,
+          email: input.email.toLowerCase(),
+        },
+      );
     }
     if (!updated) needSuper(context);
     return ok(projectUser(updated, roles));
