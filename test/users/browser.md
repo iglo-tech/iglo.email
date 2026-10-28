@@ -85,20 +85,24 @@ No generated nonce or cookie was printed.
 
 ```js
 (async () => {
-const cases = [
-["/api/profile/","/api/profile"],["/api/profile/.","/api/profile"],
-["/a/../api/profile","/admin"],["/%2e%2e/api/profile","/admin"],
-["/api/%0d%0aprofile","/admin"],["/api/%5cprofile","/admin"],
-["//outside.example.test/api/profile/","/api/profile"],
-["/api/profile%3Fq%3Dx","/api/profile%3Fq%3Dx"],
-["/api/profile%23fragment","/api/profile%23fragment"],
-["/api/%2570rofile","/api/%2570rofile"]
-];
-for (const [next,expected] of cases) {
- const response = await fetch("/admin/login?"+new URLSearchParams({next}));
- const html = new DOMParser().parseFromString(await response.text(),"text/html");
- if (response.status!==200 || html.querySelector("input[name=next]")?.value!==expected) throw new Error("Redirect form probe failed");
-}
-return {checked:cases.length,passed:true};
-})()
+  const cases = [
+    ["/api/profile/", "/api/profile"],
+    ["/api/profile/.", "/api/profile"],
+    ["/a/../api/profile", "/admin"],
+    ["/%2e%2e/api/profile", "/admin"],
+    ["/api/%0d%0aprofile", "/admin"],
+    ["/api/%5cprofile", "/admin"],
+    ["//outside.example.test/api/profile/", "/api/profile"],
+    ["/api/profile%3Fq%3Dx", "/api/profile%3Fq%3Dx"],
+    ["/api/profile%23fragment", "/api/profile%23fragment"],
+    ["/api/%2570rofile", "/api/%2570rofile"],
+  ];
+  for (const [next, expected] of cases) {
+    const response = await fetch("/admin/login?" + new URLSearchParams({ next }));
+    const html = new DOMParser().parseFromString(await response.text(), "text/html");
+    if (response.status !== 200 || html.querySelector("input[name=next]")?.value !== expected)
+      throw new Error("Redirect form probe failed");
+  }
+  return { checked: cases.length, passed: true };
+})();
 ```
