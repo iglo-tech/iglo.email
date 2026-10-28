@@ -23,6 +23,23 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
+test("compiled executable includes the vendored editor theme MIT notice", async () => {
+  await withProduction(executable, new AbortController().signal, async (origin) => {
+    const response = await fetch(
+      `${origin}/admin/static/licenses/fsegurai-codemirror-themes-MIT.txt`,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    const notice = await response.text();
+    expect(notice).toContain("Copyright (c) 2025 fsegurai");
+    expect(notice).toContain("Permission is hereby granted, free of charge");
+    expect(notice).toContain(
+      "The above copyright notice and this permission notice shall be included",
+    );
+    expect(notice).toContain('THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND');
+  });
+});
+
 test.each([
   "/public/static/%73tyle.css",
   "/public/static/style%2ecss",
