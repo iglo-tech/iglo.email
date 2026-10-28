@@ -8,11 +8,16 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.4 (roles, permissions and TOTP) is active at **brief**. This independent run acquired the previously released lock at 2026-10-28T13:08:24.215458+00:00, synced clean main at d92b86244a158c12f0d7764666bd258a95163a88 and confirmed no open PR or active implementation. M1.3 is merged; M1.4 is the next eligible critical-path task. [Brief](briefs/M1.4.md).
+M1.4 (roles, permissions and TOTP) is active at **worker**. This independent run acquired the previously released lock at 2026-10-28T13:08:24.215458+00:00, synced clean main at d92b86244a158c12f0d7764666bd258a95163a88 and confirmed no open PR or active implementation. M1.3 is merged; M1.4 is the next eligible critical-path task. [Brief](briefs/M1.4.md).
 
 D30 records role-type checks, atomic parent/child permission writes, rejection of assigned-role deletion (avoiding the schema's user cascade), bounded/revocable TOTP challenges and the MIT qrcode 1.5.4 provisioning dependency. The worker must record shared reference-first evidence before porting. Scope is the existing roles/users owners, narrow list-reference/auth composition, public-boundary contracts, functional second-factor form and bounded storage measurements. Persisted settings and full admin screens remain later tasks.
 
-Worker dispatch is pending; expected branch task/M1.4-roles-totp. No worker has been started for this task. Council round 0; no PR, check or review watch is active. The next transition dispatches exactly one GPT-6.1 Terra max worker in an isolated worktree, records its task/thread identifiers here and ends the turn. Recovery uses these records and GitHub, never the responsiveness of an earlier lead conversation.
+One GPT-6.1 Terra worker at max reasoning is running with isolation worktree and options reasoningEffort=max: [M1.4: Roles, permissions and TOTP](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-worker-20261028T130824). Branch task/M1.4-roles-totp from origin/main; kickoff commit 2286d22. No duplicate worker or helper is authorized. Council round 0; no PR, check or review watch is active. Completion wakes this originating run; this turn ends after recording dispatch, with no polling or waiting. Independent recovery checks the durable task and GitHub state before replacing work.
+
+- Worker task ID: `node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-worker-20261028T130824`.
+- Worker thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.4-worker-20261028T130824`.
+- Initial worker run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.4-worker-20261028T130824:ordinal:1`.
+- Idempotent dispatch request: `iglo-email-M1.4-worker-20261028T130824`.
 
 ## Automation
 
