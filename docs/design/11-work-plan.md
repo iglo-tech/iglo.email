@@ -56,7 +56,7 @@ Measurements: <docs/perf/... if the task changes sending, scheduling or storage>
 - Follow `AGENTS.md`. listmonk v7.0.0-beta.1 is the reference for ported behavior; read its source in the upstream checkout (`/home/t3-code/upstream/listmonk` until M0.2 adds the fetch script), never from memory.
 - Do the task yourself. If the lead explicitly authorizes helpers for bulk mechanical work, they use GPT-6.1 Terra at max reasoning; keep the judgment calls yourself.
 - For ported endpoints, write the contract tests first and run them against the upstream reference, then port the code. For new features, write the tests from the design docs first. Each ported file names its upstream source file in a header comment.
-- Do not copy listmonk behavior blindly. If an upstream behavior looks like a poor design decision (for example a requirement that serves upstream's internals rather than the caller), propose a fix in the PR with the reason. If upstream and the design disagree, or a test can only pass with a deliberate API difference, stop and report it in the PR. The lead decides; an accepted fix is listed in `07-api-and-ui.md` and logged for owner review.
+- Do not copy listmonk behavior blindly. If an upstream behavior looks like a poor design decision (for example a requirement that serves upstream's internals rather than the caller), propose a fix in the PR with the reason. If upstream and the design disagree, or a test can only pass with a deliberate API difference, document the blocked portion and a concrete proposal in the PR, then continue independent authorized work. Do not abandon the whole assignment or wait for owner approval. The lead decides; an accepted fix is listed in `07-api-and-ui.md` and logged for owner review.
 - No new runtime dependency, no change to a decision record, no change to another task's module without the lead.
 - Never use production data or real credentials. Fixtures are generated data and fresh installs. Real SMTP servers and real webhook endpoints are never used: mail goes to Mailpit, webhooks to the test receiver.
 
@@ -81,7 +81,9 @@ These are created in M0 and change only through a small task of their own, becau
 
 ### Pace
 
-Correct first time over fast. One task at a time, end to end; the next one starts after the previous one is merged. At most three agents run at once (the worker, or the two council members), plus short lead-run helpers. If any agent hits a usage or rate limit, the lead pauses new work for an hour instead of retrying. Parallel tasks are considered only after M1 is merged, and still at most two workers.
+Owner clarification on 2026-10-28: the lead manages a continuous fleet until the applicable project work plan is complete. There is no four-hour, conversation, session or per-task stop. After each merge/status push, immediately start the next eligible task; task completion is a handoff. Preserve one task at a time and independent council review. Async delegate/CI turns yield for their completion, without polling or idling until the next timer. A blocked item must not stop other eligible work; a technically unavoidable wait/cooldown remains an incomplete project with durable automatic recovery, never a completion claim.
+
+Correct first time over fast. One task at a time, end to end; the next one starts after the previous one is merged. At most three agents run at once (the worker, or the two council members), plus short lead-run helpers. If an agent hits a usage or rate limit, the lead records a one-hour cooldown for that affected capacity instead of retrying or duplicating it; continue useful authorized work through available capacity, with no unasked model substitution. Parallel tasks are considered only after M1 is merged, and still at most two workers.
 
 ### Hard limits
 

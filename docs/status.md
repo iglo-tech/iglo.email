@@ -8,9 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-No active task. M1.6 merged through [PR #13](https://github.com/iglo-tech/iglo.email/pull/13) as 7764c13084fce10c52fb7c13ab295e756085a5d3 on 2026-10-28 at 20:08:12 UTC. All four Linux checks passed exact final head 25dd8d5237a60f71bc9855eba52f78e38e455394. The remaining scope-message finding was fixed under the documented three-round lead disposition; no amended-head council approval is claimed. All delegates are terminal and its PR watch is confirmed stopped. [Review and recovery archive](reviews/M1.6.md).
+Owner clarification on 2026-10-28: the chief of staff manages a continuously progressing agent fleet until the whole applicable project work plan is complete. The former four-hour/task/session stop is removed from the runbook and work plan. Each merge immediately starts the next eligible task; a blocked item does not stop other eligible work. Async delegate/CI turns hand off automatically and are not project completion. Preserve model, isolation, serial-work, review, lock and host limits; technically unavoidable waits remain incomplete work with recovery, not a claim that the goal is done.
 
-The original run started at 2026-10-28T13:08:24.215458+00:00 and ends after M1.6 because its four-hour boundary passed. No next task starts in this run. Release the completed lock after this status/archive push; the next independent scheduled run selects eligible work from the work plan. Linux x86-64 is the MVP platform; macOS and Linux arm64 are post-MVP (D42).
+M1.2 (settings/defaults/validation and real authenticated configuration) is active at **brief**, in a fresh continuous run started 2026-10-28T20:34:55.959528+00:00. No active lock or open PR existed when acquired; all M1.6 delegates are terminal and PR #13 is merged. M1.2's M1.1/M0.5/M1.3 dependencies are merged and it unblocks M2.1 on the critical path; SMTP cannot start before settings. One worker only, no duplicate. D44 defines the bootstrap/read-only boundary, validated per-key updates, in-process supported policy activation and explicit 501 SMTP-test staging; other behavior remains pinned by default. [Brief](briefs/M1.2.md).
+
+The previous run's M1.6-only stop is historical and superseded by this owner instruction. No elapsed-time cutoff applies to this continuous run. Keep advancing through implementation, Linux CI, independent two-Sol council and merge, then immediately start the next eligible task. Record every delegate ID and durable transition here before yielding.
 
 ## Automation
 
@@ -47,7 +49,7 @@ The existing 45-minute chief-of-staff schedule remains enabled and independent: 
 
 ## Blocked
 
-No active external block or cooldown. M1.6 is merged; this original run stops after completing it. The next independent schedule selects the next eligible task. No pause or owner approval is required.
+No active external block or cooldown. M1.2 is starting under continuous fleet management; task completion no longer stops a run. Genuine item-level blocks must not stop other eligible work.
 
 ## For owner review
 
@@ -120,3 +122,5 @@ M1.3 cooldown expired at 11:22:23 UTC; automatic Opus continuation completed its
 [D42](design/09-decisions.md#d42-linux-x86-64-only-for-mvp) records the owner-directed Linux x86-64 MVP platform scope; macOS and Linux arm64 are post-MVP.
 
 [D43](design/09-decisions.md#d43-reject-nul-in-writable-subscriber-names-and-attributes) makes final writable NUL validation a safe subscriber input boundary after council round 2.
+
+[D44](design/09-decisions.md#d44-settings-ownership-safe-per-key-updates-and-in-process-activation) records M1.2 bootstrap ownership, safe per-key validation, supported in-process activation and explicit staged SMTP behavior.

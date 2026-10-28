@@ -2,6 +2,14 @@
 
 The lead role from the [work plan](design/11-work-plan.md). Day-to-day implementation coordination belongs in the dedicated top-level chief-of-staff thread linked in [`status.md`](status.md). The automation runs independently every 45 minutes and must remain unbound to any thread (`bindToCurrentThread: false`, returned `boundThreadId: null`), so a stuck conversation cannot prevent recovery. Each run starts with no memory: this file, the work plan, [`status.md`](status.md), the lock and GitHub are the durable state. The owner is away and is never asked anything; decide, log, continue.
 
+## Continuous fleet objective
+
+Owner instruction on 2026-10-28: manage the agent fleet continuously toward the whole project. The fleet must not become idle just because an assignment, PR, council round, conversation or arbitrary time budget ended. Keep one authorized task moving through implementation, checks, independent review and merge; immediately hand off to the next eligible task. Preserve the existing model, isolation, serial-work, lock, CI and host limits.
+
+Ending a turn after async dispatch or a PR watch is an orchestration handoff, not stopping work. Record all IDs and the next action before yielding; delegate/check completion resumes the next transition immediately. The unbound 45-minute schedule recovers stalled work; it is not a deliberate delay between tasks. Never poll/wait for running delegates, start duplicates, or bypass genuine rate/resource limits.
+
+If a task is blocked, finish its independent authorized work and move to another eligible task when its state is safe and no writer is running. A single blocked item must not stop the whole fleet. If all remaining work is blocked or allowed execution capacity is unavailable, persist each concrete blocker, retain the project as incomplete and let the earliest legitimate completion/recovery/cooldown resume it. Do useful authorized lead work while other capacity is unavailable. Only an entirely completed work plan may be reported as project completion.
+
 ## Each run
 
 1. **Sync.** Work in `/home/t3-code/iglo.email` on `main`: `git pull --ff-only`. Read `AGENTS.md`, `docs/design/11-work-plan.md`, `docs/status.md` and this file.
@@ -9,10 +17,10 @@ The lead role from the [work plan](design/11-work-plan.md). Day-to-day implement
    - On a child-completion or PR-check/review wake for the task this thread is already driving, resume its recorded stage and refresh its heartbeat. Do not mistake your own continuation for a competing run.
    - If the heartbeat is less than 90 minutes old, another run is driving. Check `gh pr list` and the PR of the active task for progress, write nothing, and end the run with one line.
    - Otherwise take the lock: write your own start time and heartbeat. Update the heartbeat after every stage change. An independent run recovers from the recorded task, branch, PR and delegate identifiers; it does not wait for the dedicated thread to respond. Check the recorded worker and GitHub state before replacing work, and never start a duplicate worker.
-3. **Pause.** If `status.md` says "Paused until" a time in the future, release the lock and end the run.
+3. **Capacity and recovery.** Respect recorded cooldowns for the affected agent/provider/resource. Continue other eligible authorized work through available capacity; a blocked item is not a reason to stop the fleet. Yield for scheduled recovery only if all remaining work is genuinely blocked or required capacity is unavailable, keeping the project explicitly incomplete. Never treat a task completion or elapsed time as a pause.
 4. **Continue or start.** If `status.md` has an active task, continue it at its stage (the PR and its comments show where it is). Otherwise pick the next task from the work plan whose dependencies are all merged, following the critical path first. Start only one task at a time.
 5. **Drive the task** through the stages below in this run. After starting an agent, end your turn: its completion wakes this run. Never wait with `sleep`, loops, watchers or polling.
-6. **Finish.** When the task merges, update `status.md`, commit it to `main` (`status: <id> merged`) and push. Start the next task in the same run, unless more than about four hours have passed since this run started; then release the lock and end, and the next run continues.
+6. **Continue after every merge.** Update `status.md`, commit it to `main` (`status: <id> merged`) and push. Immediately select, brief and dispatch the next eligible task. A task/PR completion is a fleet handoff, never completion of the project goal. There is no elapsed-run, four-hour, task-count or session cutoff. Keep the lock and advance it to the next task; do not release it merely because one task merged or wait for the next timer. Stop project work only when the entire applicable work plan is complete or the owner explicitly changes the goal. If work is temporarily impossible, record the actual block/cooldown and recovery action without declaring the goal complete.
 
 ## Stages
 
@@ -79,7 +87,7 @@ Reviewer: <A or B>, a fresh GPT-6.1 Sol agent at xhigh reasoning. Review indepen
 ## Rules
 
 - **No owner input.** Every question is decided by the lead. Design decisions go into `docs/design/09-decisions.md` marked "Decided by agents on <date>, for owner review" and are listed in `status.md`. Open questions keep their defaults.
-- **Pace.** One task at a time. At most three agents at once. If an agent fails with a usage or rate limit, write "Paused until <now + 60 min>" in `status.md`, commit, push, release the lock and end the run. Do not retry in a loop.
+- **Pace and capacity.** One task at a time, at most three agents at once under the existing model/isolation limits. A usage/rate-limit failure gets a documented 60-minute cooldown for the affected execution capacity; do not retry it in a loop, substitute models or start a duplicate. Continue authorized work that does not need that unavailable capacity, including other eligible work after safely recording a blocked task. Record a project-wide "Paused until" only when no remaining work can make progress under the actual shared limit; keep the goal incomplete and recovery scheduled.
 - **Failures.** A worker that ends without a usable PR gets one retry with a sharper brief. After that, mark the task blocked in `status.md` with the reason and move to the next task whose dependencies are met.
 - **Hard limits** from the work plan always apply: no production data, no real credentials, no external services beyond those listed, nothing destructive outside the repository, and the host rules in `/home/t3-code/AGENTS.md`.
 - **Plan changes.** The lead may change the work plan, this runbook and design docs when a spike or upstream behavior requires it. Commit those changes to `main` with a clear message and note them in `status.md`.
