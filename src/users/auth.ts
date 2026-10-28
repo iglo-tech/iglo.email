@@ -6,6 +6,7 @@ import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Identity, UserRow } from "@/users/models";
 import type { UserStore } from "@/users/store";
+import { verifyTOTP } from "@/users/totp";
 
 export interface AuthPolicy {
   readonly sessionDurationMs: number;
@@ -14,6 +15,8 @@ export interface AuthPolicy {
   readonly maxPeers: number;
   readonly maxHashWorkers: number;
   readonly maxHashQueue: number;
+  readonly challengeCapacity: number;
+  readonly challengeTtlMs: number;
 }
 
 export const defaultAuthPolicy: AuthPolicy = Object.freeze({
@@ -23,6 +26,8 @@ export const defaultAuthPolicy: AuthPolicy = Object.freeze({
   maxPeers: 4096,
   maxHashWorkers: 4,
   maxHashQueue: 32,
+  challengeCapacity: 4096,
+  challengeTtlMs: 300_000,
 });
 
 function randomValue(): string {
@@ -89,6 +94,7 @@ export async function createAuthentication(
   clock: Clock,
   rootUrl: string,
   policy: AuthPolicy,
+  afterLoginVerification?: (username: string) => Promise<void>,
 ) {
   if (
     policy.sessionDurationMs < 1 ||
@@ -96,13 +102,56 @@ export async function createAuthentication(
     policy.loginAttempts < 1 ||
     policy.maxPeers < 1 ||
     policy.maxHashWorkers < 1 ||
-    policy.maxHashQueue < 0
+    policy.maxHashQueue < 0 ||
+    policy.challengeCapacity < 1 ||
+    policy.challengeTtlMs < 1
   )
     throw new Error("Invalid authentication policy");
   const root = new URL(rootUrl);
   const work = new PasswordWork(policy);
   const dummy = await work.run(() => Bun.password.hash(randomValue(), { algorithm: "argon2id" }));
   const attempts = new Map<string, { start: number; count: number }>();
+  const challenges = new Map<string, { user: UserRow; expires: number; failed: number }>();
+  // Only in-flight proofs have entries; completed operations leave no per-user history.
+  const activeProofs = new Map<bigint, Set<{ valid: boolean }>>();
+  let activeProofCount = 0;
+  function beginProof(userId: bigint) {
+    if (activeProofCount >= 4096) throw new HttpError(429, "Too many requests");
+    activeProofCount++;
+    const proof = { valid: true };
+    let entries = activeProofs.get(userId);
+    if (!entries) activeProofs.set(userId, (entries = new Set()));
+    entries.add(proof);
+    return {
+      current: () => proof.valid,
+      release: () => {
+        entries.delete(proof);
+        activeProofCount--;
+        if (!entries.size) activeProofs.delete(userId);
+      },
+    };
+  }
+  function clearChallenges(userId: bigint) {
+    for (const [token, challenge] of challenges)
+      if (challenge.user.id === userId) challenges.delete(token);
+  }
+  function invalidate(userId: bigint) {
+    for (const proof of activeProofs.get(userId) ?? []) proof.valid = false;
+    clearChallenges(userId);
+  }
+  store.onIdentityMutation(invalidate);
+  function challenge(token: string) {
+    const value = challenges.get(token);
+    if (
+      value &&
+      (value.expires <= clock.now().getTime() ||
+        value.expires > clock.now().getTime() + policy.challengeTtlMs)
+    ) {
+      challenges.delete(token);
+      return undefined;
+    }
+    return value;
+  }
   function checkOrigin(request: Request): void {
     const origin = request.headers.get("origin");
     if (origin === null) return;
@@ -204,6 +253,17 @@ export async function createAuthentication(
     },
     checkOrigin,
     limit,
+    async withIdentityProof<T>(
+      id: bigint,
+      work: (current: () => boolean) => Promise<T>,
+    ): Promise<T> {
+      const proof = beginProof(id);
+      try {
+        return await work(proof.current);
+      } finally {
+        proof.release();
+      }
+    },
     nonce(): string {
       return randomValue();
     },
@@ -224,28 +284,80 @@ export async function createAuthentication(
     async hash(password: string): Promise<string> {
       return work.run(() => Bun.password.hash(password, { algorithm: "argon2id" }));
     },
-    async login(username: string, password: string): Promise<{ id: string; csrf: string } | null> {
+    async login(
+      username: string,
+      password: string,
+    ): Promise<{ id: string; csrf: string } | { token: string } | null> {
       const user = store.byName(username);
       const candidate =
         user?.type === "user" &&
         user.status === "enabled" &&
         user.password_login !== 0n &&
-        user.twofa_type === "none" &&
+        (user.twofa_type === "none" || (user.twofa_type === "totp" && !!user.twofa_key)) &&
         user.password?.startsWith("$argon2id$")
           ? user
           : null;
-      let valid = false;
+      const proof = candidate ? beginProof(candidate.id) : null;
       try {
-        valid = await work.run(() => Bun.password.verify(password, candidate?.password ?? dummy));
-      } catch (error) {
-        if (error instanceof HttpError) throw error;
-        await work.run(() => Bun.password.verify(password, dummy));
+        let valid = false;
+        try {
+          valid = await work.run(() => Bun.password.verify(password, candidate?.password ?? dummy));
+        } catch (error) {
+          if (error instanceof HttpError) throw error;
+          await work.run(() => Bun.password.verify(password, dummy));
+          return null;
+        }
+        if (afterLoginVerification) await afterLoginVerification(username);
+        if (!valid || !candidate || !proof?.current()) return null;
+        if (candidate.twofa_type === "totp") {
+          const current = store.byId(candidate.id);
+          if (
+            !current ||
+            current.type !== "user" ||
+            current.status !== "enabled" ||
+            current.password_login === 0n ||
+            current.username !== candidate.username ||
+            current.password !== candidate.password ||
+            current.twofa_type !== candidate.twofa_type ||
+            current.twofa_key !== candidate.twofa_key
+          )
+            return null;
+          for (const key of challenges.keys()) challenge(key);
+          clearChallenges(candidate.id);
+          if (challenges.size >= policy.challengeCapacity)
+            throw new HttpError(429, "Too many requests");
+          const token = randomValue();
+          challenges.set(token, {
+            user: current,
+            expires: clock.now().getTime() + policy.challengeTtlMs,
+            failed: 0,
+          });
+          return { token };
+        }
+        const id = randomValue(),
+          csrf = randomValue();
+        return store.createSession(candidate, id, csrf) ? { id, csrf } : null;
+      } finally {
+        proof?.release();
+      }
+    },
+    challengeExists(token: string): boolean {
+      return !!challenge(token);
+    },
+    verifyChallenge(token: string, code: string): { id: string; csrf: string } | null {
+      const entry = challenge(token);
+      if (!entry) return null;
+      if (!verifyTOTP(entry.user.twofa_key ?? "", code, clock.now())) {
+        if (++entry.failed >= 5) challenges.delete(token);
         return null;
       }
-      if (!valid || !candidate) return null;
+      challenges.delete(token);
       const id = randomValue(),
         csrf = randomValue();
-      return store.createSession(candidate, id, csrf) ? { id, csrf } : null;
+      return store.createSession(entry.user, id, csrf) ? { id, csrf } : null;
+    },
+    async verifyPassword(password: string, hash: string): Promise<boolean> {
+      return work.run(() => Bun.password.verify(password, hash));
     },
     endSession(context: RequestContext): void {
       if (context.identity?.sessionId) store.deleteSession(context.identity.sessionId);

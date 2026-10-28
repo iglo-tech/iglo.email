@@ -1,6 +1,7 @@
 // Adapted from listmonk internal/core/roles.go, internal/auth/models.go and queries/roles.sql at 6fcd95f.
 import type { Database } from "bun:sqlite";
 import { prepareNamedQueries } from "@/db/queries";
+import { writeTransaction } from "@/db/transaction";
 import type { ListReferences } from "@/lists/references";
 import sql from "@/roles/queries.sql" with { type: "text" };
 
@@ -42,6 +43,8 @@ interface RoleRow {
   permissions: string;
   parent_id: bigint | null;
   list_id: bigint | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface UserRole {
@@ -49,6 +52,8 @@ export interface UserRole {
   name: string;
   permissions: string[];
 }
+
+export class RoleChildError extends Error {}
 
 export function createRoles(db: Database, lists: ListReferences) {
   const queries = prepareNamedQueries(db, [{ name: "roles", sql }]);
@@ -107,6 +112,9 @@ export function createRoles(db: Database, lists: ListReferences) {
       const row = queries.get("create-list-role").get(name, now, now) as { id: bigint };
       return row.id;
     },
+    exists(id: bigint): boolean {
+      return raw(id) !== null;
+    },
     hasRole(id: bigint, type: "user" | "list"): boolean {
       return role(id, type) !== null;
     },
@@ -131,6 +139,110 @@ export function createRoles(db: Database, lists: ListReferences) {
         name: value.name ?? "",
         lists: entries.length ? entries : null,
       };
+    },
+    all(type: "user" | "list", search: string, orderBy: string, order: string) {
+      const rows = queries.get("all-top-roles").all(type) as RoleRow[];
+      const needle = search
+        .trim()
+        .replace(/[\t\n\v\f\r ]+/g, " ")
+        .toLowerCase();
+      const field = ["name", "created_at", "updated_at"].includes(orderBy)
+        ? (orderBy as "name" | "created_at" | "updated_at")
+        : "created_at";
+      const direction = order === "" || order === "asc" ? 1 : -1;
+      return rows
+        .filter((r) => (r.name ?? "").toLowerCase().includes(needle))
+        .sort(
+          (a, b) =>
+            direction *
+            ((String(a[field] ?? "") < String(b[field] ?? "")
+              ? -1
+              : String(a[field] ?? "") > String(b[field] ?? "")
+                ? 1
+                : 0) || Number(a.id - b.id)),
+        )
+        .map((r) => ({
+          id: Number(r.id),
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          ...(type === "user"
+            ? { type: r.type, name: r.name, permissions: decoded(r), lists: null }
+            : {
+                name: r.name,
+                lists: (queries.get("list-role-children").all(r.id) as RoleRow[]).map((child) => ({
+                  id: Number(child.list_id),
+                  name: child.list_id === null ? "" : lists.name(child.list_id),
+                  permissions: decoded(child),
+                })),
+              }),
+        }));
+    },
+    mutate(
+      type: "user" | "list",
+      id: bigint | null,
+      name: string,
+      granted: string[],
+      children: { id: bigint; permissions: string[] }[],
+      now: string,
+    ) {
+      return writeTransaction(db, () => {
+        if (id !== null && (id === 1n || !role(id, type))) return null;
+        const result =
+          id === null
+            ? (queries
+                .get(type === "user" ? "create-user-role" : "create-list-role")
+                .get(
+                  ...(type === "user"
+                    ? [name, JSON.stringify(granted), now, now]
+                    : [name, now, now]),
+                ) as { id: bigint })
+            : (queries.get("update-top-role").get(name, JSON.stringify(granted), now, id, type) as {
+                id: bigint;
+              });
+        if (type === "list") {
+          queries.get("delete-children").run(result.id);
+          try {
+            for (const child of children)
+              if (child.permissions.length) {
+                if (!lists.name(child.id)) throw new Error("Invalid list reference");
+                queries
+                  .get("insert-child")
+                  .run(result.id, child.id, JSON.stringify(child.permissions));
+              }
+          } catch {
+            throw new RoleChildError();
+          }
+        }
+        return result.id;
+      });
+    },
+    remove(id: bigint, assigned: (id: bigint) => boolean): "invalid" | "assigned" | "ok" {
+      return writeTransaction(db, () => {
+        if (id === 1n) return "invalid";
+        if (assigned(id)) return "assigned";
+        queries.get("delete-role").run(id);
+        return "ok";
+      });
+    },
+    canList(
+      role: UserRole,
+      listRoleId: bigint | null,
+      permission: "list:get" | "list:manage",
+      ids: bigint[],
+    ): boolean {
+      if (
+        role.id === 1n ||
+        role.permissions.includes(permission === "list:get" ? "lists:get_all" : "lists:manage_all")
+      )
+        return true;
+      const entries = listRoleId === null ? null : this.listRole(listRoleId);
+      return ids.every(
+        (id) =>
+          id <= 0n ||
+          !!entries?.lists?.some(
+            (entry) => entry.id === id && entry.permissions.includes(permission),
+          ),
+      );
     },
     can(role: UserRole, permission: string): boolean {
       return role.id === 1n || role.permissions.includes(permission);

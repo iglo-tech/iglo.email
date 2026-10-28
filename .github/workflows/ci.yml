@@ -14,6 +14,8 @@ jobs:
       - run: bun run check
       - run: bun run ui:verify
       - run: bun run contract:normal
+      - run: bun run contract:auth
+      - run: bun run contract:roles
       - run: bun run contract:fixture
 
   reference-linux:
@@ -26,6 +28,8 @@ jobs:
       - run: bun run reference:prepare
       - run: bun run reference:smoke
       - run: bun run contract:reference
+      - run: bun run reference:run -- bun test/contract/auth.ts reference
+      - run: bun run contract:roles:reference
       - run: bun run server:reference
       - run: bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
 

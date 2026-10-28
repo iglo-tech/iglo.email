@@ -15,6 +15,7 @@ import { TestClock } from "@/test/server/fixture";
 import { createAuthentication, defaultAuthPolicy, type AuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserHandlers } from "@/users/handlers";
+import { createFactorHandlers } from "@/users/factor";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 
@@ -27,7 +28,29 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
   const roles = createRoles(db, lists);
   const users = createUserStore(db, clock, roles);
   try {
-    const auth = await createAuthentication(users, roles, clock, "http://fixture.test", policy);
+    let loginGate = false;
+    let announceLogin!: () => void;
+    let releaseLogin!: () => void;
+    const loginEntered = new Promise<void>((resolve) => {
+      announceLogin = resolve;
+    });
+    const loginRelease = new Promise<void>((resolve) => {
+      releaseLogin = resolve;
+    });
+    const auth = await createAuthentication(
+      users,
+      roles,
+      clock,
+      "http://fixture.test",
+      policy,
+      async () => {
+        if (loginGate) {
+          loginGate = false;
+          announceLogin();
+          await loginRelease;
+        }
+      },
+    );
     const admin = { user: "fixture-admin", password: "fixture-admin-password" };
     if (initialize) await bootstrapAdmin(users, auth, admin);
     const app = createApp({
@@ -54,6 +77,20 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
       release = resolve;
     });
     router.route(
+      "POST",
+      "/fixture/gated-create-user",
+      createUserHandlers(users, roles, {
+        ...auth,
+        async hash(password) {
+          const hashed = await auth.hash(password);
+          announce();
+          await gate;
+          return hashed;
+        },
+      }).createUser,
+      auth.middleware("users:manage"),
+    );
+    router.route(
       "PUT",
       "/fixture/gated-user/:id",
       createUserHandlers(users, roles, {
@@ -66,6 +103,21 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
         },
       }).updateUser,
       auth.middleware("users:manage"),
+      hasID,
+    );
+    router.route(
+      "DELETE",
+      "/fixture/gated-twofa/:id",
+      createFactorHandlers(users, {
+        ...auth,
+        async verifyPassword(password, hash) {
+          const verified = await auth.verifyPassword(password, hash);
+          announce();
+          await gate;
+          return verified;
+        },
+      }).disable,
+      auth.middleware(),
       hasID,
     );
     router.route(
@@ -85,6 +137,18 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
     });
     router.route("POST", "/fixture/gate-release", () => {
       release();
+      return ok(true);
+    });
+    router.route("POST", "/fixture/gate-login", () => {
+      loginGate = true;
+      return ok(true);
+    });
+    router.route("GET", "/fixture/login-entered", async () => {
+      await loginEntered;
+      return ok(true);
+    });
+    router.route("POST", "/fixture/login-release", () => {
+      releaseLogin();
       return ok(true);
     });
     router.route("POST", "/fixture/bootstrap", async () => {
@@ -132,6 +196,27 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
       });
       return ok(Number(user.id));
     });
+    // Synthetic list provisioning is a fixture boundary, not a production list API.
+    router.route("POST", "/fixture/list", () => {
+      const row = db
+        .query("INSERT INTO lists(uuid, name, type) VALUES (?, ?, 'private') RETURNING id")
+        .get(crypto.randomUUID(), "Synthetic list") as { id: bigint };
+      return ok(Number(row.id));
+    });
+    router.route(
+      "GET",
+      "/fixture/list-permission/:id",
+      (context) => {
+        const principal = context.identity!;
+        return ok(
+          roles.canList(principal.role, principal.user.list_role_id, "list:get", [
+            BigInt(context.id!),
+          ]),
+        );
+      },
+      auth.middleware(),
+      hasID,
+    );
     router.route("POST", "/fixture/list-role", () =>
       ok(Number(roles.createListRole("Fixture list role", clock.now().toISOString()))),
     );
@@ -153,6 +238,7 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
       async close() {
         try {
           release();
+          releaseLogin();
           await server.stop(true);
         } finally {
           users.close();

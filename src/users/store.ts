@@ -45,6 +45,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         count: bigint;
       }
     ).count;
+  let onMutation: (id: bigint) => void = () => {};
   function insert(fields: UserFields): UserRow {
     const time = now();
     return queries
@@ -66,6 +67,12 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
   }
   return {
     count,
+    onIdentityMutation(callback: (id: bigint) => void): void {
+      onMutation = callback;
+    },
+    roleAssigned(id: bigint): boolean {
+      return (queries.get("assigned-role-count").get(id, id) as { count: bigint }).count > 0n;
+    },
     byId,
     byName,
     bootstrap(username: string, hash: string): void {
@@ -96,7 +103,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       return insert(fields);
     },
     update(id: bigint, resolve: (current: UserRow) => UserFields): UserRow | null {
-      return writeTransaction(db, () => {
+      const result = writeTransaction(db, () => {
         const previous = byId(id);
         if (!previous) return null;
         // Resolve omitted fields only after obtaining the current row and the
@@ -136,6 +143,8 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
           revoke(id);
         return updated;
       });
+      if (result) onMutation(id);
+      return result;
     },
     updateProfile(
       id: bigint,
@@ -144,7 +153,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       hash: string | null,
       sessionId: string,
     ): UserRow | null {
-      return writeTransaction(db, () => {
+      const result = writeTransaction(db, () => {
         const previous = byId(id);
         if (!previous) return null;
         const updated = queries
@@ -159,15 +168,47 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         if (updated && hash !== null) revoke(id, sessionId);
         return updated;
       });
+      if (result && hash !== null) onMutation(id);
+      return result;
+    },
+    setFactor(
+      expected: UserRow,
+      type: "none" | "totp",
+      secret: string | null,
+      session: string,
+      revalidate: () => void,
+    ): boolean {
+      const changed = writeTransaction(db, () => {
+        revalidate();
+        const current = byId(expected.id);
+        if (
+          !current ||
+          current.type !== "user" ||
+          current.status !== "enabled" ||
+          current.password_login === 0n ||
+          current.password !== expected.password ||
+          current.username !== expected.username ||
+          current.twofa_type !== expected.twofa_type ||
+          current.twofa_key !== expected.twofa_key
+        )
+          return false;
+        queries.get("set-twofa").run(type, secret, now(), current.id);
+        revoke(current.id, session);
+        return true;
+      });
+      if (changed) onMutation(expected.id);
+      return changed;
     },
     delete(ids: bigint[]): boolean {
-      return writeTransaction(db, () => {
+      const result = writeTransaction(db, () => {
         if (!ids.length || remaining(ids) === 0n) return false;
         const result = queries.get("delete-users").run(JSON.stringify(ids.map(String)));
         if (!result.changes) return false;
         for (const id of ids) revoke(id);
         return true;
       });
+      if (result) for (const id of ids) onMutation(id);
+      return result;
     },
     createSession(user: UserRow, id: string, csrf: string): boolean {
       return writeTransaction(db, () => {
@@ -177,7 +218,8 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
           current.type !== "user" ||
           current.status !== "enabled" ||
           current.password_login === 0n ||
-          current.twofa_type !== "none" ||
+          current.twofa_type !== user.twofa_type ||
+          current.twofa_key !== user.twofa_key ||
           current.password !== user.password ||
           current.username !== user.username
         )
@@ -218,13 +260,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       const sessionUserId = BigInt(record.user_id);
       if (sessionUserId > 9223372036854775807n) return null;
       const user = byId(sessionUserId);
-      if (
-        !user ||
-        user.status !== "enabled" ||
-        user.type !== "user" ||
-        user.password_login === 0n ||
-        user.twofa_type !== "none"
-      )
+      if (!user || user.status !== "enabled" || user.type !== "user" || user.password_login === 0n)
         return null;
       return { user, csrf: record.csrf };
     },

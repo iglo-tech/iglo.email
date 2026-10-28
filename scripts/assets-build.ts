@@ -33,6 +33,9 @@ if (!built.success) throw new AggregateError(built.logs, "Browser asset build fa
 
 // Bundle project, vendored-source and npm licenses alongside executable assets.
 const packages = [
+  "liquidjs",
+  "nodemailer",
+  "qrcode",
   "alpinejs",
   "@knadh/oat",
   "@codemirror/commands",
@@ -67,7 +70,7 @@ for (let index = 0; index < packages.length; index++) {
   };
   packages.push(...Object.keys(info.dependencies ?? {}));
   const files = (await readdir(directory))
-    .filter((file) => /^(licen[sc]e|copying)(\..*)?$/i.test(file))
+    .filter((file) => /^(licen[sc]e|copying)([.-].*)?$/i.test(file))
     .sort();
   const license =
     name === "alpinejs"

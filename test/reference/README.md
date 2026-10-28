@@ -85,6 +85,8 @@ bun test test/contract
 bun test test/users
 bun run contract:normal
 bun run contract:auth
+bun run contract:roles
+bun run contract:roles:reference
 bun run reference:run -- bun test/contract/auth.ts reference
 bun run contract:fixture
 bun run contract:reference
@@ -109,12 +111,19 @@ bootstrap user in a finally block; it is not for a persistent or real server.
 Its D26-D29 differences are
 documented in `test/contract/fixtures.md`. No generated secret is reported.
 
+`contract:roles` runs the shared role and factor corpus against compiled production;
+`contract:roles:reference` runs that same corpus against the disposable pinned
+upstream. The compiled command also restarts a real server on the same disposable
+data directory and checks persisted sessions and factors, rejected old challenges,
+and the embedded QR/runtime dependency notices over HTTP with a detached working
+directory. The list-child fixture provisions synthetic lists only in a labelled
+loopback test boundary; it is not a production list API.
+
 The separate fixture profile retains its synthetic auth gate and representative
 list/helper routes; generated ID/timestamp probes verify normalization only.
 The labelled `test/users` fixture composes production owners with fake-clock,
-peer and minimal role controls for cases that cannot yet be provisioned through
-production role APIs. Neither fixture is evidence of a production list or role
-management endpoint. Domain owners promote helper cases as their routes land.
+peer and synthetic list controls for cases that cannot yet be provisioned through
+production list APIs. Neither fixture is evidence of a production list endpoint. Domain owners promote helper cases as their routes land.
 Public HTML 404 semantics and embedded static responses are covered in both
 upstream and compiled production, with explicit per-target site names and
 attribution. Repeat the reference-first observations with
@@ -171,3 +180,5 @@ and redundant separators. The source-first observation checks the escaped Geist
 font name; compiled-production HTTP tests verify its MIME type and WOFF2 bytes.
 The application decodes names once and cleans separators within the original
 embedded namespace, without arbitrary filesystem lookup.
+
+M1.4 D32 cases distinguish required top-level user-role permission replacement (omitted/null: reference 500, normal safe 400, unchanged stored role) from compatible omitted/null/[] list-child clearing. The common role corpus runs these in both modes; the labelled synthetic-list HTTP fixture additionally proves removal of an existing grant and its effective access.

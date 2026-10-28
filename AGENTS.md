@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place. The version-1 migration installs the schema; M1.3 supplies users, real authentication and a functional password-login form. Other domain endpoints and loops remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place. The version-1 migration installs the schema; M1.3 supplies users, real authentication and a functional password-login form; M1.4 adds role administration and TOTP login. Other domain endpoints and loops remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 
@@ -69,6 +69,8 @@ bun test test/server
 bun test test/contract
 bun run contract:normal
 bun run contract:fixture
+bun run contract:roles
+bun run contract:roles:reference
 ```
 
 `bun install` prepares the generated browser bundles and asset manifest; `bun run assets:build` reproduces them. `bun run ui:verify` checks the compiled test-only shell and production public page without Docker. `bun run check` includes formatting, lint, types, behavior tests and the compiled build. `bun run hooks:install` enables the repository-local pre-commit formatting check. The bootstrap tests exercise the compiled executable from a temporary directory. `bun test test/server` exercises the shared HTTP contracts, including embedded translations. `bun run contract:normal` tests the compiled production core and real protected health with a generated API credential; `bun run contract:auth` runs the shared stateful user/auth corpus against compiled production. `bun run contract:fixture` retains the separately labelled synthetic gate, shared helpers and normalization probes. `bun run contract:reference` and its `bun run server:reference` compatibility alias use the M0.2 runner and pinned upstream; they require Docker and downloads. The commands, coverage and smoke checks are documented in `test/reference/README.md`. List owners promote the remaining helper cases as their endpoints are ported.
