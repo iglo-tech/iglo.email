@@ -8,9 +8,9 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-**M0.7 — SQLite write-load spike** is active at stage `brief`. Independent run started **2026-10-28T05:37:56.419578+00:00**; lock claimed after confirming no prior lock, no open PR and no active task. Main was current. [Brief](briefs/M0.7.md).
+**M0.7 — SQLite write-load spike** is active at stage `worker`. Independent run started **2026-10-28T05:37:56.419578+00:00**; lock claimed after confirming no prior lock, no open PR and no active task. Main was current. [Brief](briefs/M0.7.md).
 
-Branch: `task/M0.7-sqlite-write-load`. Worker attempt 1 is prepared, not yet dispatched; request ID `iglo-email-M0.7-worker-20261028T053756`. Requested worker: GPT-6.1 Terra at max reasoning, isolated worktree. No PR or council round yet. Next transition: dispatch this single worker, persist its task/thread IDs, then end the turn until completion. Later runs must inspect these IDs and GitHub before replacing work.
+Branch: `task/M0.7-sqlite-write-load`. Worker attempt 1 dispatched: [M0.7: SQLite write-load spike](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aa105bef9-2c53-466f-9d7b-81d6e89a93bb%3Adelegate-task%3Aiglo-email-M0.7-worker-20261028T053756). Task ID: `node:delegated-task:command%3Amcp%3Aa105bef9-2c53-466f-9d7b-81d6e89a93bb%3Adelegate-task%3Aiglo-email-M0.7-worker-20261028T053756`; child thread ID: `thread:delegated-task:command%3Amcp%3Aa105bef9-2c53-466f-9d7b-81d6e89a93bb%3Adelegate-task%3Aiglo-email-M0.7-worker-20261028T053756`; request ID: `iglo-email-M0.7-worker-20261028T053756`. Model: GPT-6.1 Terra at max reasoning, isolated worktree. No PR or council round yet. Next transition: worker completion wakes this lead run; inspect its PR/CI, then dispatch the independent Opus medium and fresh Sol xhigh council. No polling or duplicate worker. Later independent runs must inspect the recorded delegate and GitHub before replacement, without depending on this lead thread responding.
 
 M0.6 remains merged at `986e3edc1cd3a5ce6477b1a7a693e8c8c4df9b63`; its PR watch stopped. [Review and recovery record](reviews/M0.6.md).
 
