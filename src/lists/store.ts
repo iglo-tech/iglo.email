@@ -39,8 +39,14 @@ export interface ListScope {
   ids: bigint[];
 }
 const normalize = (s: string) => s.trim().replace(/[\t\n\v\f\r ]+/g, " ");
+// bytes.TrimSpace uses Go Unicode whitespace (including NEL, excluding BOM).
+const trimTag = (tag: string) =>
+  tag.replace(
+    /^[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g,
+    "",
+  );
 export const normalizeTags = (tags: string[]) =>
-  tags.map((tag) => normalize(tag).replaceAll(" ", "-")).filter(Boolean);
+  tags.map((tag) => trimTag(tag).replace(/[\t\n\v\f\r ]+/g, "-")).filter(Boolean);
 
 export function createListStore(
   db: Database,
