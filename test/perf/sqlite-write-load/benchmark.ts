@@ -99,8 +99,8 @@ try {
       assert.deepEqual(store.search("rollback"), []);
       const sqlite = store.sqliteVersion();
       const clock = createRealClock();
-      const workload = new Workload(store, clock, { mode, durationMs, subscribers });
       const measuredStart = performance.now();
+      const workload = new Workload(store, clock, { mode, durationMs, subscribers });
       let next = workload.startedAt;
       while (clock.now().getTime() < workload.endAt) {
         workload.observeWake(next);
@@ -120,6 +120,10 @@ try {
         next = Math.min(...candidates);
         await clock.sleep(Math.max(0, next - clock.now().getTime()));
       }
+      // Date-based injected clock deadlines have millisecond precision. Wait out any
+      // fractional offset so the monotonic measured window is at least the requested duration.
+      while (performance.now() - measuredStart < durationMs)
+        await clock.sleep(Math.ceil(durationMs - (performance.now() - measuredStart)));
       const measuredElapsedMs = performance.now() - measuredStart;
       const window = structuredClone(workload.result());
       const sizesBeforeCheckpoint = store.sizes();
