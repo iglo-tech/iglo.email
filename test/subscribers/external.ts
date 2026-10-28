@@ -24,6 +24,15 @@ export async function runExternalContract(target: {
     if (!condition) throw new Error(`FAIL ${label}`);
   }
   try {
+    const goNotice = await fetch(`${target.baseUrl}/admin/static/licenses/go-1.27.2-BSD.txt`);
+    const notice = await goNotice.text();
+    check(
+      goNotice.status === 200 &&
+        notice.includes("Copyright 2009 The Go Authors.") &&
+        notice.includes("Redistribution and use in source and binary forms") &&
+        notice.includes("THIS SOFTWARE IS PROVIDED"),
+      "subscriber-go-notice",
+    );
     // D39 preserves dot IDs through the canonical query selector. Bun normalizes
     // the raw path before routing; it must not accidentally modify either row.
     const dotStatuses: number[] = [];

@@ -60,6 +60,7 @@ await cp(
   join(root, "assets/licenses/fsegurai-codemirror-themes-MIT.txt"),
   join(licenseDir, "fsegurai-codemirror-themes-MIT.txt"),
 );
+await cp(join(root, "assets/licenses/go-1.27.2-BSD.txt"), join(licenseDir, "go-1.27.2-BSD.txt"));
 for (let index = 0; index < packages.length; index++) {
   const name = packages[index]!;
   if (seen.has(name)) continue;

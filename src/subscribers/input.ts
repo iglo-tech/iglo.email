@@ -3,12 +3,15 @@ import { SaxesParser } from "saxes";
 import type { RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import { readBodyBytes } from "@/users/input";
+import { trimSpace } from "@/lists/store";
 
 export interface SubscriberInput {
   email?: string;
   name?: string;
   status?: string;
   attribs?: Record<string, unknown> | null;
+  // Transient binding state, never populated from a request field.
+  attribsReset?: boolean;
   external_id?: string | null;
   lists?: bigint[] | null;
   preconfirm_subscriptions?: boolean;
@@ -32,6 +35,21 @@ function id(value: unknown): bigint {
   if (typeof value !== "bigint" || value < min || value > max) throw new Error("invalid id");
   return value;
 }
+type Operation = "crud" | "blocklist" | "membership" | "single-membership";
+const operationFields: Record<Operation, ReadonlySet<string>> = {
+  crud: new Set([
+    "email",
+    "name",
+    "status",
+    "attribs",
+    "external_id",
+    "lists",
+    "preconfirm_subscriptions",
+  ]),
+  blocklist: new Set(["ids"]),
+  membership: new Set(["ids", "target_list_ids", "action", "status"]),
+  "single-membership": new Set(["target_list_ids", "action", "status"]),
+};
 function set(out: SubscriberInput, key: string, value: unknown) {
   if (!fields.has(key)) return;
   const record = out as Record<string, unknown>;
@@ -66,11 +84,52 @@ export function validExternal(value: string): boolean {
   );
 }
 // Parse each top-level member independently, preserving aliases and duplicates.
-function jsonInput(body: string): SubscriberInput {
+// Validate every numeric token, including values later overwritten by duplicate keys.
+function finiteNumbers(raw: string) {
+  let quoted = false,
+    escaped = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') quoted = false;
+    } else if (c === '"') quoted = true;
+    else if (c === "-" || (c >= "0" && c <= "9")) {
+      const token = raw.slice(i).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)?.[0];
+      if (!token || !Number.isFinite(Number(token))) throw new Error("invalid number");
+      i += token.length - 1;
+    }
+  }
+}
+// Normalize JSON strings before parsing so keys that collapse to U+FFFD retain
+// their original duplicate-member order, as encoding/json does.
+function normalizeStrings(raw: string): string {
+  let result = "",
+    start = 0;
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] !== '"') continue;
+    const begin = i;
+    let escaped = false;
+    while (++i < raw.length) {
+      const c = raw[i]!;
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') break;
+    }
+    result +=
+      raw.slice(start, begin) +
+      JSON.stringify((JSON.parse(raw.slice(begin, i + 1)) as string).toWellFormed());
+    start = i + 1;
+  }
+  return result + raw.slice(start);
+}
+function jsonInput(body: string, allowed: ReadonlySet<string>): SubscriberInput {
   const document: unknown = JSON.parse(body);
   if (document === null) return {};
   if (typeof document !== "object" || Array.isArray(document)) throw new Error("object required");
   const out: SubscriberInput = {};
+  const backing = new Map<string, bigint[]>();
   function append(member: string) {
     const colon = (() => {
       let quoted = false,
@@ -88,14 +147,33 @@ function jsonInput(body: string): SubscriberInput {
     })();
     const key = (JSON.parse(member.slice(0, colon)) as string).toLowerCase().replaceAll("ſ", "s");
     const raw = member.slice(colon + 1);
-    const value: unknown = arrays.has(key)
+    if (!allowed.has(key)) return;
+    if (key === "attribs") finiteNumbers(raw);
+    let value: unknown = arrays.has(key)
       ? JSON.parse(raw, (_key: string, val: unknown, context?: { source?: string }) => {
           if (typeof val !== "number") return val;
           const source = context?.source ?? "";
           if (!/^-?(?:0|[1-9]\d*)$/.test(source)) throw new Error("invalid integer");
           return BigInt(source);
         })
-      : JSON.parse(raw);
+      : JSON.parse(key === "attribs" ? normalizeStrings(raw) : raw);
+    if (arrays.has(key)) {
+      if (value === null) backing.delete(key);
+      else if (Array.isArray(value)) {
+        if (!value.length) backing.delete(key);
+        const cells = backing.get(key) ?? [];
+        const mapped = value.map((item, index) => {
+          const n = item === null ? (cells[index] ?? 0n) : id(item);
+          cells[index] = n;
+          return n;
+        });
+        value = mapped;
+        if (mapped.length) backing.set(key, cells);
+      }
+    }
+    if (key === "attribs") {
+      if (value === null) out.attribsReset = true;
+    }
     if (
       key === "attribs" &&
       value &&
@@ -132,7 +210,7 @@ function jsonInput(body: string): SubscriberInput {
   }
   return out;
 }
-function xmlInput(body: Buffer): SubscriberInput {
+function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
   const out: SubscriberInput = {};
   const names: Record<string, string> = {
     Email: "email",
@@ -167,8 +245,9 @@ function xmlInput(body: Buffer): SubscriberInput {
     depth++;
     if (depth === 2) {
       const local = tag.name.slice(tag.name.indexOf(":") + 1);
-      if (local === "Attribs") throw new Error("unsupported XML map");
+      if (local === "Attribs" && allowed.has("attribs")) throw new Error("unsupported XML map");
       field = names[local];
+      if (field && !allowed.has(field)) field = undefined;
       text = "";
     }
   });
@@ -180,13 +259,31 @@ function xmlInput(body: Buffer): SubscriberInput {
   parser.on("closetag", () => {
     if (depth === 2 && field) {
       if (arrays.has(field)) {
-        if (!/^[+-]?\d+$/.test(text.trim())) throw new Error("invalid integer");
-        const n = id(BigInt(text.trim()));
+        const scalar = text.length ? trimSpace(text) : "0";
+        if (!/^[+-]?\d+$/.test(scalar)) throw new Error("invalid integer");
+        const n = id(BigInt(scalar));
         const rec = out as Record<string, unknown>;
         rec[field] = [...((rec[field] as bigint[] | undefined) ?? []), n];
       } else if (field === "preconfirm_subscriptions") {
-        if (!["true", "false", "1", "0"].includes(text)) throw new Error("invalid boolean");
-        set(out, field, text === "true" || text === "1");
+        const scalar = text.length ? trimSpace(text) : "false";
+        if (
+          ![
+            "1",
+            "t",
+            "T",
+            "TRUE",
+            "true",
+            "True",
+            "0",
+            "f",
+            "F",
+            "FALSE",
+            "false",
+            "False",
+          ].includes(scalar)
+        )
+          throw new Error("invalid boolean");
+        set(out, field, ["1", "t", "T", "TRUE", "true", "True"].includes(scalar));
       } else set(out, field, text);
       field = undefined;
     }
@@ -205,17 +302,41 @@ function xmlInput(body: Buffer): SubscriberInput {
   if (!complete) throw new Error("root required");
   return out;
 }
-export async function subscriberInput(context: RequestContext): Promise<SubscriberInput> {
+export async function subscriberInput(
+  context: RequestContext,
+  operation: Operation,
+): Promise<SubscriberInput> {
+  const allowed = operationFields[operation];
   const body = await readBodyBytes(context.request);
   const type = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
   try {
     if (!body.length) return {};
-    if (type === "application/json") return jsonInput(body.toString("utf8"));
-    if (type === "application/xml" || type === "text/xml") return xmlInput(body);
-    if (type === "application/x-www-form-urlencoded") {
+    if (type === "application/json") return jsonInput(body.toString("utf8"), allowed);
+    if (type === "application/xml" || type === "text/xml") return xmlInput(body, allowed);
+    if (type === "application/x-www-form-urlencoded" || type === "multipart/form-data") {
       const out: SubscriberInput = {};
-      for (const [k, v] of new URLSearchParams(body.toString("utf8")))
-        if (k === "email" || k === "name") set(out, k, v);
+      const values: [string, string][] = [];
+      if (type === "application/x-www-form-urlencoded") {
+        const encoded = body.toString("utf8"),
+          query = context.url.search.slice(1);
+        for (const part of [encoded, query])
+          if (/%(?![a-fA-F0-9]{2})/.test(part) || part.includes(";"))
+            throw new Error("invalid form");
+        values.push(...new URLSearchParams(encoded));
+        values.push(...new URLSearchParams(query));
+      } else {
+        const form = await new Response(Uint8Array.from(body), {
+          headers: { "Content-Type": context.request.headers.get("content-type")! },
+        }).formData();
+        for (const [key, value] of form) if (typeof value === "string") values.push([key, value]);
+      }
+      if (operation !== "crud") return out;
+      for (const field of ["email", "name"]) {
+        const entry =
+          values.find(([key]) => key === field) ??
+          values.find(([key]) => key.toLowerCase() === field);
+        if (entry) set(out, field, entry[1]);
+      }
       return out;
     }
     throw new HttpError(415);

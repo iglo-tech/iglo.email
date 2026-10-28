@@ -5,6 +5,7 @@ import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
 import { trimSpace } from "@/lists/store";
+import { sanitizeEmail } from "@/subscribers/email";
 import { subscriberInput, validExternal, type SubscriberInput } from "@/subscribers/input";
 import type { SubscriberStore, Scope } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
@@ -54,25 +55,8 @@ export function registerSubscriberRoutes(
     }
   };
   const email = (value: string) => {
-    const result = trimSpace(value).toLowerCase();
-    const parts = result.split("@");
-    if (
-      parts.length !== 2 ||
-      !parts[0] ||
-      !parts[1] ||
-      /[\s\x00-\x1f\x7f<>(),:;\\"]/u.test(result) ||
-      !Array.from(parts[0]).every(
-        (ch) => ch.codePointAt(0)! > 127 || /[A-Za-z0-9!#$%&'*+\-/=?^_`{|}~.]/.test(ch),
-      ) ||
-      parts[0].startsWith(".") ||
-      parts[0].endsWith(".") ||
-      parts[0].includes("..") ||
-      ((parts[1].includes("[") || parts[1].includes("]")) && !/^\[[^\[\]]+\]$/.test(parts[1])) ||
-      parts[1].startsWith(".") ||
-      parts[1].endsWith(".") ||
-      parts[1].includes("..")
-    )
-      throw new HttpError(400, "Invalid email.");
+    const result = sanitizeEmail(value);
+    if (result === undefined) throw new HttpError(400, "Invalid email.");
     return result;
   };
   const validate = (
@@ -137,7 +121,7 @@ export function registerSubscriberRoutes(
       return ok(store.project(required(c, id, external), maskScope(c)));
     };
   const create: Handler = async (c) => {
-    const input = await subscriberInput(c);
+    const input = await subscriberInput(c, "crud");
     validate(c, input, true, false);
     auth.revalidate(c, "subscribers:manage");
     return store.transaction(() => {
@@ -159,7 +143,7 @@ export function registerSubscriberRoutes(
         allowed(c, [id], "manage");
         required(c, id, external);
       }
-      const input = await subscriberInput(c);
+      const input = await subscriberInput(c, "crud");
       validate(c, input, false, patch);
       auth.revalidate(c, "subscribers:manage");
       return store.transaction(() => {
@@ -206,7 +190,7 @@ export function registerSubscriberRoutes(
       return ok(true);
     });
   const blockMany: Handler = async (c) => {
-    const input = await subscriberInput(c);
+    const input = await subscriberInput(c, "blocklist");
     if (!input.ids?.length)
       throw new HttpError(400, c.app.i18n.Ts("globals.messages.errorInvalidIDs", "error", "ids"));
     auth.revalidate(c, "subscribers:manage");
@@ -219,7 +203,7 @@ export function registerSubscriberRoutes(
   const action =
     (single: boolean): Handler =>
     async (c) => {
-      const input = await subscriberInput(c);
+      const input = await subscriberInput(c, single ? "single-membership" : "membership");
       const ids = single ? [BigInt(getID(c))] : (input.ids ?? []);
       if (!ids.length) throw new HttpError(400, c.app.i18n.T("globals.messages.noIDs"));
       if (!input.target_list_ids?.length)

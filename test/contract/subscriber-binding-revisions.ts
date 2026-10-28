@@ -40,9 +40,9 @@ export async function runSubscriberBindingRevisions(target: {
     );
     check(sub.lists.length === 1 && sub.lists[0].id === list.id, "slice-reuse");
     for (const [i, lists, expected] of [
-      [0, `[${list.id},${list.id}],\"lists\":[0],\"lists\":[null,null]`, true],
-      [1, `[${list.id}],\"lists\":null,\"lists\":[null]`, false],
-      [2, `[${list.id}],\"lists\":[],\"lists\":[null]`, false],
+      [0, `[${list.id},${list.id}],"lists":[0],"lists":[null,null]`, true],
+      [1, `[${list.id}],"lists":null,"lists":[null]`, false],
+      [2, `[${list.id}],"lists":[],"lists":[null]`, false],
     ] as const) {
       const item = await create(
         "subscribers",

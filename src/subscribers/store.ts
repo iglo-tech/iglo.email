@@ -156,7 +156,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
           ? JSON.parse(row.attribs)
           : input.attribs === null
             ? {}
-            : { ...JSON.parse(row.attribs), ...input.attribs }
+            : { ...(input.attribsReset ? {} : JSON.parse(row.attribs)), ...input.attribs }
         : (input.attribs ?? {});
       if (input.external_id != null) {
         const existing = external(input.external_id);
