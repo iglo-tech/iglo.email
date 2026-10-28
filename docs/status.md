@@ -46,6 +46,14 @@ D46 accepts safe atomic rejection of final writable settings NUL strings/map key
 
 The lead fixed D46 directly and pushed a6dd6d119d89fe338036cba247ce47c4c435fbe3. Reference-first full/key site-name, secret and nested header string/map-key probes verify upstream 500/no-write versus native safe 400/no-write, complete rollback, ignored/overwritten inputs and legitimate SMTP-name normalization. The old executable failed first; fixed compiled and reference settings passed, with strict types and 104 focused tests/1,242 assertions. No other writer is running. Remaining finite acceptance inventory is in [M1.2-fix-2](briefs/M1.2-fix-2.md); a normal completion fixer will finish representative binding/parser cases and the explicit restart/in-flight requirements on this same usable draft. A vague lack of universal grammar proof is not itself a blocker, and no known failing case may be hidden. No council/watch yet.
 
+
+The sole finite acceptance completion fixer is running: [M1.2: Finish restart, authorization and parser acceptance](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix2-acceptance-a6dd6d1), GPT-6.1 Terra max, implementation role, isolated worktree and target.options, from a6dd6d1. Both earlier delegates are terminal; no duplicate writer or helper. It has no pending question/approval or child work. Its finite inventory covers expired/legacy restart, retained-session/token in-flight mutation authority and representative binding/XML/form/address/cron classes, with exact source-first cases and real final acceptance. Completion resumes the fleet automatically; no polling, waiting, premature council or PR watch.
+
+- Active completion task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix2-acceptance-a6dd6d1.
+- Active completion thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix2-acceptance-a6dd6d1.
+- Initial run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-fix2-acceptance-a6dd6d1:ordinal:1.
+- Idempotent request: iglo-email-M1.2-fix2-acceptance-a6dd6d1.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
