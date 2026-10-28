@@ -79,6 +79,15 @@ export async function runSubscriberBindingRevisions(target: {
         saved["�"].nested[3] === null,
       "attrib-surrogates",
     );
+    const collision = await request(
+      `/api/subscribers/${sub.id}`,
+      "PATCH",
+      '{"attribs":{"\\ud800":1,"�":2,"\\ud800":3}}',
+    );
+    check(
+      collision.status === 200 && (await get(sub.id)).attribs["�"] === 3,
+      "attrib-normalized-key-order",
+    );
     for (const raw of ['{"attribs":{"n":1e400}}', '{"attribs":{"n":1e999,"n":1}}']) {
       const before = await get(sub.id);
       const r = await request(`/api/subscribers/${sub.id}`, "PATCH", raw);
@@ -161,10 +170,36 @@ export async function runSubscriberBindingRevisions(target: {
       "application/x-www-form-urlencoded",
     );
     check(form.email === `first-${suffix}@example.test` && form.name === "First", "form-first");
+    const queryForm = await request(
+      `/api/subscribers?email=query-${suffix}%40example.test&name=Query`,
+      "POST",
+      `email=body-${suffix}%40example.test&name=Body`,
+      "application/x-www-form-urlencoded",
+    );
+    const queryResult = (await queryForm.json()).data;
+    if (queryForm.status === 200) owned.push({ path: "subscribers", id: queryResult.id });
+    check(
+      queryForm.status === 200 &&
+        queryResult.email === `body-${suffix}@example.test` &&
+        queryResult.name === "Body",
+      "form-query-precedence",
+    );
+    const badFormBefore = await get(sub.id);
+    const badForm = await request(
+      `/api/subscribers/${sub.id}`,
+      "PATCH",
+      "name=%ZZ",
+      "application/x-www-form-urlencoded",
+    );
+    check(
+      badForm.status === 400 && JSON.stringify(await get(sub.id)) === JSON.stringify(badFormBefore),
+      "form-malformed-no-write",
+    );
     const boundary = `test-${suffix}`;
     const multipart = [
       `--${boundary}\r\nContent-Disposition: form-data; name="email"\r\n\r\nmulti-${suffix}@example.test\r\n`,
       `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\nMultipart\r\n`,
+      `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\nLater\r\n`,
       `--${boundary}--\r\n`,
     ].join("");
     const multi = await create(
