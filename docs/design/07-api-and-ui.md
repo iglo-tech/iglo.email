@@ -32,9 +32,9 @@ Deliberate differences:
 | Last human Super Admin type conversion | Reject converting the last enabled human Super Admin to API type with the existing needSuper error | Upstream's update guard checks replacement role/status but omits type, allowing the last human administrator to disappear; preserve a usable human administration path (D28) |
 | Partial updates to the sole human Super Admin | Omitted/zero user_role_id and omitted/empty status retain stored values before the administrator guard; a safe ordinary update succeeds | Upstream tests raw defaults and returns needSuper even though its SET expressions would preserve the same authority. Callers should not have to resend unchanged role/status fields; explicit removal of the final human administrator remains rejected ([D29](09-decisions.md#d29-apply-the-administrator-guard-to-the-resulting-account-state)) |
 | Wrong-kind role update | User/list role update routes reject a target of the other type or a child role with 400 invalid ID | Prevent cross-kind permission changes; upstream update-role omits the type check ([D30](09-decisions.md#d30-role-mutations-and-the-totp-authentication-boundary), implementation pending M1.4) |
-| Assigned-role deletion | Reject deletion of roles assigned as either user or list roles with 400 cantDeleteRole | Avoid the upstream list-role cascade deleting users and potentially the final human administrator (D30, implementation pending M1.4) |
-| Role writes with list permissions | Commit the parent and child permission replacement atomically | Invalid child entries must not leave a partial role or changed authority (D30, implementation pending M1.4) |
-| TOTP challenge and factor changes | Extend D26 nonce/Origin, peer limits, revocation and live-state rechecks through bounded single-use five-minute challenges | Prevent second-factor guessing or completion after account/credential/factor revocation; no authenticated session before both factors (D30, implementation pending M1.4) |
+| Assigned-role deletion | Reject deletion of roles assigned as either user or list roles with 400 cantDeleteRole | Avoid the upstream list-role cascade deleting users and potentially the final human administrator (D30) |
+| Role writes with list permissions | Commit the parent and child permission replacement atomically | Invalid child entries must not leave a partial role or changed authority (D30) |
+| TOTP challenge and factor changes | Extend D26 nonce/Origin, peer limits, revocation and live-state rechecks through bounded single-use five-minute challenges | Prevent second-factor guessing or completion after account/credential/factor revocation; no authenticated session before both factors (D30) |
 | Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
 | `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
 | `POST /api/tx` recipients | Any email address can receive a transactional email. It does not have to be a subscriber first; listmonk's default mode rejects unknown addresses ([Sending](04-sending.md#transactional-api)) | A one-off email to someone is not a subscription. Forcing callers to create a subscriber first, or to know about `subscriber_mode`, is bookkeeping with no benefit |
@@ -59,7 +59,7 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
 
 ## Authentication and permissions
 
-- **Admin users:** username and password (hashed with `Bun.password`, argon2id), sessions in SQLite, `HttpOnly` + `SameSite=Lax` cookies, and CSRF tokens on state-changing cookie requests. TOTP is deferred to M1.4; marked accounts fail closed until then.
+- **Admin users:** username and password (hashed with `Bun.password`, argon2id), sessions in SQLite, `HttpOnly` + `SameSite=Lax` cookies, and CSRF tokens on state-changing cookie requests. TOTP uses a bounded, single-use password challenge and the functional second-factor form under D30.
 - **API users:** same model as listmonk (`type = 'api'`, token per user).
 - **Roles:** listmonk's user roles and list roles, with the same permission names. New permissions:
   - `sequences:get`, `sequences:manage`;
@@ -91,7 +91,7 @@ Public `/health` remains public; `/api/health` requires a real identity.
   - subscriber page tabs for events, enrollments and sends.
 - **Dropped screens:** none in v1 beyond the dropped features. OIDC settings stay hidden until OIDC is built.
 
-M1.3 adds the functional password-login form and real auth boundary under D26; full admin screens, dashboard and password reset remain their later tasks. M0.6 serves embedded static assets and the public HTML 404. Unmatched `/admin/*` currently uses that public 404; the upstream admin-specific error view remains pending real authentication and M4.1. The compiled admin shell fixture is not a production admin route.
+M1.3 adds the functional password-login form and real auth boundary under D26; M1.4 adds the second-factor form under D30. Full admin screens, dashboard and password reset remain their later tasks. M0.6 serves embedded static assets and the public HTML 404. Unmatched `/admin/*` currently uses that public 404; the upstream admin-specific error view remains pending real authentication and M4.1. The compiled admin shell fixture is not a production admin route.
 
 ## Public pages
 

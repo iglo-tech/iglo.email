@@ -14,6 +14,7 @@ export interface UserRow {
   list_role_id: bigint | null;
   status: "enabled" | "disabled";
   twofa_type: "none" | "totp";
+  twofa_key: string | null;
   loggedin_at: string | null;
   created_at: string | null;
   updated_at: string | null;

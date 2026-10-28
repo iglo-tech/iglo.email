@@ -27,11 +27,15 @@
     "postinstall": "bun run assets:build",
     "ui:verify": "bun run assets:build && bun test/ui/verify.ts",
     "runtime:spike:liquid": "bun test/perf/runtime-compat/liquid-bench.ts",
-    "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts"
+    "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",
+    "contract:roles": "bun run build && bun test/contract/cli.ts owned roles",
+    "contract:roles:reference": "bun run reference:run -- bun test/contract/roles.ts reference",
+    "roles:measure": "bun run build && bun test/users/measure-roles.ts"
   },
   "dependencies": {
     "liquidjs": "10.30.0",
-    "nodemailer": "10.2.1"
+    "nodemailer": "10.2.1",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "@codemirror/commands": "6.10.4",
@@ -47,6 +51,7 @@
     "@lezer/highlight": "1.2.3",
     "@types/bun": "1.4.4",
     "@types/nodemailer": "8.0.2",
+    "@types/qrcode": "1.5.6",
     "alpinejs": "3.15.12",
     "chart.js": "4.5.1",
     "oxfmt": "0.75.0",

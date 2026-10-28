@@ -127,11 +127,100 @@ export function createLoginHandlers(auth: Authentication) {
       );
     const session = await auth.login(username, password);
     if (!session) return page(context, auth, next, context.app.i18n.T("users.invalidLogin"));
+    if ("token" in session) {
+      const params = new URLSearchParams({ token: session.token, next });
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `/admin/login/twofa?${params}`, "Cache-Control": "no-store" },
+      });
+    }
     auth.replaceSession(context.request);
     const headers = new Headers({ Location: next, "Cache-Control": "no-store" });
     for (const value of auth.sessionCookies(session.id, session.csrf))
       headers.append("Set-Cookie", value);
     return new Response(null, { status: 302, headers });
   };
-  return { getLogin, postLogin };
+  function twofaPage(context: RequestContext, token: string, next: string, message = ""): Response {
+    const nonce = auth.nonce();
+    const i18n = context.app.i18n;
+    const title = i18n.T("users.twoFA");
+    const body = render(
+      <PublicShell
+        title={title}
+        siteName="iglo.email"
+        assetVersion={assetVersion}
+        poweredBy={i18n.T("public.poweredBy")}
+      >
+        <section class="login">
+          <h2>{title}</h2>
+          <p>{i18n.T("users.totpCodeHelp")}</p>
+          <form method="post" action="/admin/login/twofa" class="form">
+            <input type="hidden" name="token" value={token} />
+            <input type="hidden" name="next" value={next} />
+            <input type="hidden" name="nonce" value={nonce} />
+            <input
+              id="totp_code"
+              name="totp_code"
+              type="text"
+              autofocus
+              required
+              pattern="[0-9]{6}"
+              maxlength="6"
+              aria-label={i18n.T("users.totpCode")}
+            />
+            {message ? (
+              <p>
+                <span class="error">{message}</span>
+              </p>
+            ) : null}
+            <p class="submit">
+              <button class="button" type="submit">
+                {i18n.T("globals.buttons.continue")}
+              </button>
+            </p>
+          </form>
+        </section>
+      </PublicShell>,
+    );
+    return new Response(`<!DOCTYPE html>${body}`, {
+      headers: {
+        "Content-Type": "text/html; charset=UTF-8",
+        "Set-Cookie": auth.nonceCookie(nonce),
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+  const getTwofa: Handler = (context) => {
+    const token = context.url.searchParams.get("token") ?? "";
+    if (!auth.challengeExists(token))
+      return Response.redirect(new URL("/admin", context.request.url), 302);
+    const next = sanitizeNext(context.url.searchParams.get("next") ?? "");
+    return twofaPage(context, token, next === "/" ? "/admin" : next);
+  };
+  const postTwofa: Handler = async (context) => {
+    auth.limit(context.peerAddress);
+    auth.checkOrigin(context.request);
+    if (
+      context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !==
+      "application/x-www-form-urlencoded"
+    )
+      throw new HttpError(415);
+    const fields = new URLSearchParams(await readBody(context.request));
+    if (!auth.nonceValid(context.request, fields.get("nonce") ?? ""))
+      throw new HttpError(403, "invalid nonce");
+    const token = fields.get("token") ?? "";
+    if (!auth.challengeExists(token))
+      return Response.redirect(new URL("/admin", context.request.url), 302);
+    const nextValue = sanitizeNext(fields.get("next") ?? "");
+    const next = nextValue === "/" ? "/admin" : nextValue;
+    const session = auth.verifyChallenge(token, (fields.get("totp_code") ?? "").trim());
+    if (!session)
+      return twofaPage(context, token, next, context.app.i18n.T("globals.messages.invalidValue"));
+    auth.replaceSession(context.request);
+    const headers = new Headers({ Location: next, "Cache-Control": "no-store" });
+    for (const value of auth.sessionCookies(session.id, session.csrf))
+      headers.append("Set-Cookie", value);
+    return new Response(null, { status: 302, headers });
+  };
+  return { getLogin, postLogin, getTwofa, postTwofa };
 }

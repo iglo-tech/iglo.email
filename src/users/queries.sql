@@ -49,3 +49,9 @@ DELETE FROM sessions WHERE id = ?;
 
 -- name: delete-user-sessions
 DELETE FROM sessions WHERE json_extract(data, '$.user_id') = ? AND (? = '' OR id != ?);
+
+-- name: assigned-role-count
+SELECT count(*) AS count FROM users WHERE user_role_id = ? OR list_role_id = ?;
+
+-- name: set-twofa
+UPDATE users SET twofa_type = ?, twofa_key = ?, updated_at = ? WHERE id = ?;

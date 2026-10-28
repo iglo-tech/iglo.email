@@ -448,3 +448,407 @@ test("a TOTP-marked user cannot bypass the deferred second factor or use a human
   const header = `Basic ${Buffer.from("fixture-totp:fixture-user-password").toString("base64")}`;
   expect((await call(f, "/api/health", { auth: header })).status).toBe(403);
 });
+
+test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime, attempts and revocation", async () => {
+  const f = await fixture({ ...defaultAuthPolicy, loginAttempts: 100 });
+  const first = await login(f, f.admin.user, f.admin.password);
+  const other = await login(f, f.admin.user, f.admin.password);
+  const profile = await call(f, "/api/profile", { session: first });
+  const id = ((await profile.json()) as { data: { id: number } }).data.id;
+  // RFC 6238 SHA-1 key; these independent codes are for the fixture clock at 2026-01-02T03:04:05Z.
+  const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+  expect(
+    (
+      await call(f, `/api/users/${id}/twofa`, {
+        method: "PUT",
+        session: first,
+        body: { secret, code: "594060" },
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await call(f, `/api/users/${id}/twofa`, {
+        method: "PUT",
+        session: first,
+        body: { secret, code: "391022" },
+      })
+    ).status,
+  ).toBe(200);
+  expect((await call(f, "/api/profile", { session: other })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: first })).status).toBe(200);
+  async function challenge() {
+    const page = await fetch(`${f.origin}/admin/login`);
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    const nonceCookie =
+      page.headers
+        .getSetCookie()
+        .find((v) => v.startsWith("nonce="))
+        ?.split(";", 1)[0] ?? "";
+    const response = await fetch(`${f.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({
+        username: f.admin.user,
+        password: f.admin.password,
+        nonce,
+        next: "/api/profile",
+      }),
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(false);
+    const location = response.headers.get("location")!;
+    expect(location.startsWith("/admin/login/twofa?")).toBe(true);
+    return location;
+  }
+  async function verify(location: string, code: string) {
+    const page = await fetch(`${f.origin}${location}`, { redirect: "manual" });
+    if (page.status !== 200) return page;
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    const nonceCookie =
+      page.headers
+        .getSetCookie()
+        .find((v) => v.startsWith("nonce="))
+        ?.split(";", 1)[0] ?? "";
+    const token = new URL(location, f.origin).searchParams.get("token") ?? "";
+    return fetch(`${f.origin}/admin/login/twofa`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({ nonce, token, next: "/api/profile", totp_code: code }),
+    });
+  }
+  const valid = await challenge();
+  const verified = await verify(valid, "751330");
+  expect(verified.status).toBe(302);
+  expect(verified.headers.get("location")).toBe("/api/profile");
+  expect(verified.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(true);
+  expect((await verify(valid, "652348")).status).toBe(302);
+  const attempts = await challenge();
+  for (let i = 0; i < 5; i++) expect((await verify(attempts, "bad")).status).toBe(200);
+  expect((await verify(attempts, "652348")).status).toBe(302);
+  const expired = await challenge();
+  await call(f, "/fixture/clock", { method: "POST", body: 300_000 });
+  expect((await verify(expired, "652348")).status).toBe(302);
+  const revoked = await challenge();
+  expect(
+    (
+      await call(f, `/api/users/${id}/twofa`, {
+        method: "DELETE",
+        session: first,
+        body: { password: f.admin.password },
+      })
+    ).status,
+  ).toBe(200);
+  expect((await verify(revoked, "652348")).status).toBe(302);
+});
+
+test("role permissions are resolved live for retained API tokens and sessions", async () => {
+  const f = await fixture({ ...defaultAuthPolicy, loginAttempts: 100 });
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const createRole = await call(f, "/api/roles/users", {
+    method: "POST",
+    session: admin,
+    body: { name: "Limited role", permissions: ["roles:get", "users:get"] },
+  });
+  expect(createRole.status).toBe(200);
+  const role = ((await createRole.json()) as { data: { id: number } }).data.id;
+  const humanName = "m14-limited-human";
+  const createHumanResponse = await call(f, "/api/users", {
+    method: "POST",
+    session: admin,
+    body: {
+      username: humanName,
+      name: humanName,
+      email: `${humanName}@example.test`,
+      type: "user",
+      status: "enabled",
+      password_login: true,
+      password: "fixture-user-password",
+      user_role_id: role,
+    },
+  });
+  expect(createHumanResponse.status).toBe(200);
+  const humanId = ((await createHumanResponse.json()) as { data: { id: number } }).data.id;
+  const human = await login(f, humanName, "fixture-user-password");
+  const createApi = await call(f, "/api/users", {
+    method: "POST",
+    session: admin,
+    body: { username: "m14-limited-api", type: "api", status: "enabled", user_role_id: role },
+  });
+  expect(createApi.status).toBe(200);
+  const api = (
+    (await createApi.json()) as { data: { id: number; username: string; password: string } }
+  ).data;
+  const authorization = `token ${api.username}:${api.password}`;
+  for (const auth of [{ session: human }, { auth: authorization }]) {
+    expect((await call(f, "/api/roles/users", auth)).status).toBe(200);
+    expect((await call(f, "/api/users", auth)).status).toBe(200);
+    expect((await call(f, "/api/profile", auth)).status).toBe(200);
+    expect((await call(f, "/api/health", auth)).status).toBe(200);
+    expect(
+      (await call(f, "/api/roles/users", { ...auth, method: "POST", body: { name: "Denied" } }))
+        .status,
+    ).toBe(403);
+    expect((await call(f, "/api/users", { ...auth, method: "POST", body: {} })).status).toBe(403);
+  }
+  expect((await call(f, `/api/roles/${role}`, { method: "DELETE", session: admin })).status).toBe(
+    400,
+  );
+  expect(
+    (
+      await call(f, `/api/roles/users/${role}`, {
+        method: "PUT",
+        session: admin,
+        body: { name: "Limited role", permissions: ["roles:manage"] },
+      })
+    ).status,
+  ).toBe(200);
+  for (const auth of [{ session: human }, { auth: authorization }]) {
+    expect((await call(f, "/api/roles/users", auth)).status).toBe(403);
+    expect((await call(f, "/api/users", auth)).status).toBe(403);
+    const created = await call(f, "/api/roles/users", {
+      ...auth,
+      method: "POST",
+      body: { name: auth.session ? "session-write" : "api-write", permissions: [] },
+    });
+    expect(created.status).toBe(200);
+  }
+  expect(
+    (
+      await call(f, `/api/roles/users/${role}`, {
+        method: "PUT",
+        session: admin,
+        body: { name: "Limited role", permissions: [] },
+      })
+    ).status,
+  ).toBe(200);
+  // After revocation, every ported users/roles permission-protected route denies.
+  for (const auth of [{ session: human }, { auth: authorization }]) {
+    for (const [method, path] of [
+      ["GET", "/api/users"],
+      ["GET", `/api/users/${humanId}`],
+      ["POST", "/api/users"],
+      ["PUT", `/api/users/${humanId}`],
+      ["DELETE", `/api/users/${humanId}`],
+      ["DELETE", `/api/users?id=${humanId}`],
+      ["GET", "/api/roles/users"],
+      ["GET", "/api/roles/lists"],
+      ["POST", "/api/roles/users"],
+      ["POST", "/api/roles/lists"],
+      ["PUT", `/api/roles/users/${role}`],
+      ["PUT", `/api/roles/lists/${role}`],
+      ["DELETE", `/api/roles/${role}`],
+    ] as const) {
+      expect(
+        (
+          await call(f, path, {
+            ...auth,
+            method,
+            ...(method === "POST" || method === "PUT" ? { body: {} } : {}),
+          })
+        ).status,
+      ).toBe(403);
+    }
+  }
+  expect(
+    (await call(f, `/api/users/${humanId}`, { method: "DELETE", session: admin })).status,
+  ).toBe(200);
+  expect((await call(f, `/api/users/${api.id}`, { method: "DELETE", session: admin })).status).toBe(
+    200,
+  );
+  expect((await call(f, `/api/roles/${role}`, { method: "DELETE", session: admin })).status).toBe(
+    200,
+  );
+});
+
+test("list roles project child permissions and roll back invalid replacement and assigned deletion", async () => {
+  const f = await fixture();
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const listResponse = await call(f, "/fixture/list", { method: "POST" });
+  const list = ((await listResponse.json()) as { data: number }).data;
+  const userRoleResponse = await call(f, "/api/roles/users", {
+    method: "POST",
+    session: admin,
+    body: { name: "No permissions", permissions: [] },
+  });
+  const userRole = ((await userRoleResponse.json()) as { data: { id: number } }).data.id;
+  const roleResponse = await call(f, "/api/roles/lists", {
+    method: "POST",
+    session: admin,
+    body: { name: "Synthetic list role", lists: [{ id: list, permissions: ["list:get"] }] },
+  });
+  expect(roleResponse.status).toBe(200);
+  const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+  const createApi = await call(f, "/api/users", {
+    method: "POST",
+    session: admin,
+    body: {
+      username: "m14-list-api",
+      type: "api",
+      status: "enabled",
+      user_role_id: userRole,
+      list_role_id: role,
+    },
+  });
+  expect(createApi.status).toBe(200);
+  const api = (
+    (await createApi.json()) as { data: { id: number; username: string; password: string } }
+  ).data;
+  const authorization = `token ${api.username}:${api.password}`;
+  expect(
+    (
+      (await (
+        await call(f, `/fixture/list-permission/${list}`, { auth: authorization })
+      ).json()) as { data: boolean }
+    ).data,
+  ).toBe(true);
+  const bad = await call(f, `/api/roles/lists/${role}`, {
+    method: "PUT",
+    session: admin,
+    body: {
+      name: "Should roll back",
+      lists: [
+        { id: list, permissions: ["list:manage"] },
+        { id: list + 999, permissions: ["list:get"] },
+      ],
+    },
+  });
+  expect(bad.status).toBe(500);
+  const roles = (
+    (await (await call(f, "/api/roles/lists", { session: admin })).json()) as {
+      data: Array<{
+        id: number;
+        name: string;
+        lists: Array<{ id: number; name: string; permissions: string[] }>;
+      }>;
+    }
+  ).data;
+  expect(roles.find((entry) => entry.id === role)).toMatchObject({
+    name: "Synthetic list role",
+    lists: [{ id: list, name: "Synthetic list", permissions: ["list:get"] }],
+  });
+  expect(
+    (
+      (await (
+        await call(f, `/fixture/list-permission/${list}`, { auth: authorization })
+      ).json()) as { data: boolean }
+    ).data,
+  ).toBe(true);
+  expect((await call(f, `/api/roles/${role}`, { method: "DELETE", session: admin })).status).toBe(
+    400,
+  );
+  expect((await call(f, "/api/profile", { auth: authorization })).status).toBe(200);
+  expect((await call(f, `/api/users/${api.id}`, { method: "DELETE", session: admin })).status).toBe(
+    200,
+  );
+  expect((await call(f, `/api/roles/${role}`, { method: "DELETE", session: admin })).status).toBe(
+    200,
+  );
+});
+
+for (const scenario of ["password", "type", "status", "factor"] as const) {
+  test(`a factor disable in flight cannot outlive a concurrent ${scenario} change`, async () => {
+    const f = await fixture();
+    const admin = await login(f, f.admin.user, f.admin.password);
+    const { input, user } = await createHuman(f, admin, "m14-race-human");
+    const session = await login(f, input.username, input.password);
+    const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    expect(
+      (
+        await call(f, `/api/users/${user.id}/twofa`, {
+          method: "PUT",
+          session,
+          body: { secret, code: "652348" },
+        })
+      ).status,
+    ).toBe(200);
+    const pending = call(f, `/fixture/gated-twofa/${user.id}`, {
+      method: "DELETE",
+      session,
+      body: { password: input.password },
+    });
+    expect((await call(f, "/fixture/gate-entered")).status).toBe(200);
+    if (scenario === "factor") {
+      expect(
+        (
+          await call(f, `/api/users/${user.id}/twofa`, {
+            method: "DELETE",
+            session,
+            body: { password: input.password },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await call(f, `/api/users/${user.id}/twofa`, {
+            method: "PUT",
+            session,
+            body: { secret, code: "652348" },
+          })
+        ).status,
+      ).toBe(200);
+    } else {
+      const changed = await call(f, `/api/users/${user.id}`, {
+        method: "PUT",
+        session: admin,
+        body: {
+          ...input,
+          password: scenario === "password" ? "new-synthetic-password" : "",
+          ...(scenario === "type" ? { type: "api" } : {}),
+          ...(scenario === "status" ? { status: "disabled" } : {}),
+        },
+      });
+      expect(changed.status).toBe(200);
+      if (scenario === "status") {
+        expect(
+          (
+            await call(f, `/api/users/${user.id}`, {
+              method: "PUT",
+              session: admin,
+              body: { ...input, password: "", status: "enabled" },
+            })
+          ).status,
+        ).toBe(200);
+      }
+    }
+    expect((await call(f, "/fixture/gate-release", { method: "POST" })).status).toBe(200);
+    expect((await pending).status).toBe(403);
+    const after = await call(f, `/api/users/${user.id}`, { session: admin });
+    expect(((await after.json()) as { data: { twofa_type: string } }).data.twofa_type).toBe("totp");
+  });
+}
+
+test("user creation revalidates a role deleted during password hashing", async () => {
+  const f = await fixture();
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const response = await call(f, "/api/roles/users", {
+    method: "POST",
+    session: admin,
+    body: { name: "Ephemeral", permissions: [] },
+  });
+  const role = ((await response.json()) as { data: { id: number } }).data.id;
+  const pending = call(f, "/fixture/gated-create-user", {
+    method: "POST",
+    session: admin,
+    body: {
+      username: "m14-race-new",
+      name: "Race",
+      email: "m14-race-new@example.test",
+      type: "user",
+      status: "enabled",
+      password_login: true,
+      password: "fixture-user-password",
+      user_role_id: role,
+    },
+  });
+  expect((await call(f, "/fixture/gate-entered")).status).toBe(200);
+  expect((await call(f, `/api/roles/${role}`, { method: "DELETE", session: admin })).status).toBe(
+    200,
+  );
+  expect((await call(f, "/fixture/gate-release", { method: "POST" })).status).toBe(200);
+  const created = await pending;
+  expect(created.status).toBe(400);
+  expect(((await created.json()) as { message: string }).message).toBe("invalid role");
+});

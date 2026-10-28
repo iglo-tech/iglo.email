@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { startContractFixture } from "@/test/contract/fixture";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { runRolesContract } from "@/test/contract/roles";
 import { runAuthContract } from "@/test/contract/auth";
 import { runContract } from "@/test/contract/runner";
 import type { ContractTarget, Credentials, Mode, Profile, TargetName } from "@/test/contract/types";
@@ -79,11 +80,14 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
     if (!(await report(target, values["--case"]))) process.exitCode = 1;
     return;
   }
-  if (operation === "owned" && (args[1] === "production" || args[1] === "auth")) {
+  if (
+    operation === "owned" &&
+    (args[1] === "production" || args[1] === "auth" || args[1] === "roles")
+  ) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
       throw new Error("Invalid owned production arguments");
-    if (args[1] === "auth" && Object.keys(values).length)
+    if ((args[1] === "auth" || args[1] === "roles") && Object.keys(values).length)
       throw new Error("Invalid owned auth arguments");
     const admin = await productionAdmin();
     const passed = await withProduction(
@@ -91,6 +95,10 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       signal,
       async (baseUrl, runSignal) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "roles") {
+          await runRolesContract({ mode: "normal", baseUrl, credentials, admin });
+          return true;
+        }
         if (args[1] === "auth") {
           try {
             await runAuthContract({ mode: "normal", baseUrl, credentials, admin });

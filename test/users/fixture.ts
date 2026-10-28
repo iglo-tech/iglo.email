@@ -15,6 +15,7 @@ import { TestClock } from "@/test/server/fixture";
 import { createAuthentication, defaultAuthPolicy, type AuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserHandlers } from "@/users/handlers";
+import { createFactorHandlers } from "@/users/factor";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 
@@ -54,6 +55,20 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
       release = resolve;
     });
     router.route(
+      "POST",
+      "/fixture/gated-create-user",
+      createUserHandlers(users, roles, {
+        ...auth,
+        async hash(password) {
+          const hashed = await auth.hash(password);
+          announce();
+          await gate;
+          return hashed;
+        },
+      }).createUser,
+      auth.middleware("users:manage"),
+    );
+    router.route(
       "PUT",
       "/fixture/gated-user/:id",
       createUserHandlers(users, roles, {
@@ -66,6 +81,21 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
         },
       }).updateUser,
       auth.middleware("users:manage"),
+      hasID,
+    );
+    router.route(
+      "DELETE",
+      "/fixture/gated-twofa/:id",
+      createFactorHandlers(users, {
+        ...auth,
+        async verifyPassword(password, hash) {
+          const verified = await auth.verifyPassword(password, hash);
+          announce();
+          await gate;
+          return verified;
+        },
+      }).disable,
+      auth.middleware(),
       hasID,
     );
     router.route(
@@ -132,6 +162,27 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
       });
       return ok(Number(user.id));
     });
+    // Synthetic list provisioning is a fixture boundary, not a production list API.
+    router.route("POST", "/fixture/list", () => {
+      const row = db
+        .query("INSERT INTO lists(uuid, name, type) VALUES (?, ?, 'private') RETURNING id")
+        .get(crypto.randomUUID(), "Synthetic list") as { id: bigint };
+      return ok(Number(row.id));
+    });
+    router.route(
+      "GET",
+      "/fixture/list-permission/:id",
+      (context) => {
+        const principal = context.identity!;
+        return ok(
+          roles.canList(principal.role, principal.user.list_role_id, "list:get", [
+            BigInt(context.id!),
+          ]),
+        );
+      },
+      auth.middleware(),
+      hasID,
+    );
     router.route("POST", "/fixture/list-role", () =>
       ok(Number(roles.createListRole("Fixture list role", clock.now().toISOString()))),
     );

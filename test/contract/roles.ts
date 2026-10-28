@@ -14,6 +14,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
   const suffix = randomUUID().replaceAll("-", "");
   const owned: number[] = [];
   let human = 0;
+  let cleanupFailed = false;
   async function request(path: string, method = "GET", body?: unknown, authorization = auth) {
     return fetch(`${target.baseUrl}${path}`, {
       method,
@@ -127,6 +128,20 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       permissions: [],
     });
     check(primordial.status === 400, "role-primordial-protected");
+    const invalidChild = await request(`/api/roles/lists/${list}`, "PUT", {
+      name: `changed-child-${suffix}`,
+      lists: [{ id: 2147483647, permissions: ["list:get"] }],
+    });
+    check(invalidChild.status === 500, "D30-invalid-child-rejected");
+    const currentLists = await request("/api/roles/lists");
+    const currentListRoles = (
+      (await currentLists.json()) as { data: Array<{ id: number; name: string }> }
+    ).data;
+    check(
+      currentListRoles.find((r) => r.id === list)?.name ===
+        (target.mode === "reference" ? `changed-child-${suffix}` : `m14-list-${suffix}`),
+      "D30-invalid-child-atomicity",
+    );
     const username = `m14-human-${suffix}`;
     const password = "m14-synthetic-password";
     const created = await request("/api/users", "POST", {
@@ -222,6 +237,32 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     );
     const disabled = await self(`/api/users/${human}/twofa`, "DELETE", { password });
     check(disabled.status === 200, "factor-disable");
+    const assignedRole = await create("lists", { name: `m14-assigned-${suffix}`, lists: [] });
+    const assigned = await request(`/api/users/${human}`, "PUT", {
+      username,
+      name: username,
+      email: `${username}@example.test`,
+      type: "user",
+      status: "enabled",
+      password_login: true,
+      user_role_id: 1,
+      list_role_id: assignedRole,
+    });
+    check(assigned.status === 200, "role-list-assignment");
+    const deletion = await request(`/api/roles/${assignedRole}`, "DELETE");
+    check(
+      deletion.status === (target.mode === "reference" ? 200 : 400),
+      "D30-assigned-list-role-delete",
+    );
+    const afterDelete = await request(`/api/users/${human}`);
+    if (target.mode === "reference") {
+      owned.splice(owned.indexOf(assignedRole), 1);
+      human = 0;
+    }
+    check(
+      afterDelete.status === (target.mode === "reference" ? 404 : 200),
+      "D30-assigned-list-role-user-preserved",
+    );
     const wrongKind = await request(`/api/roles/users/${list}`, "PUT", {
       name: `wrong-${suffix}`,
       permissions: [],
@@ -233,13 +274,14 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
   } finally {
     if (human) {
       const response = await request(`/api/users/${human}`, "DELETE");
-      if (response.status !== 200) throw new Error("FAIL factor-human-cleanup");
+      if (response.status !== 200) cleanupFailed = true;
     }
     for (const id of owned.reverse()) {
       const response = await request(`/api/roles/${id}`, "DELETE");
-      if (response.status !== 200) throw new Error("FAIL role-cleanup");
+      if (response.status !== 200) cleanupFailed = true;
     }
   }
+  if (cleanupFailed) throw new Error("FAIL role-cleanup");
 }
 
 if (import.meta.main) {

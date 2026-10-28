@@ -1,9 +1,11 @@
 // Route registration adapted from listmonk cmd/handlers.go at 6fcd95f.
 import type { Roles } from "@/roles/roles";
+import { registerRoleRoutes } from "@/roles/routes";
 import type { Router } from "@/server/router";
 import { hasID } from "@/server/validation";
 import { ok } from "@/server/response";
 import type { Authentication } from "@/users/auth";
+import { createFactorHandlers } from "@/users/factor";
 import { createUserHandlers } from "@/users/handlers";
 import { createLoginHandlers } from "@/users/login";
 import type { UserStore } from "@/users/store";
@@ -14,10 +16,17 @@ export function registerUserRoutes(
   roles: Roles,
   auth: Authentication,
 ): void {
+  registerRoleRoutes(router, roles, store, auth);
   const handlers = createUserHandlers(store, roles, auth);
   const login = createLoginHandlers(auth);
+  const factor = createFactorHandlers(store, auth);
+  router.route("GET", "/api/users/:id/twofa/totp", factor.generate, auth.middleware(), hasID);
+  router.route("PUT", "/api/users/:id/twofa", factor.enable, auth.middleware(), hasID);
+  router.route("DELETE", "/api/users/:id/twofa", factor.disable, auth.middleware(), hasID);
   router.route("GET", "/admin/login", login.getLogin);
   router.route("POST", "/admin/login", login.postLogin);
+  router.route("GET", "/admin/login/twofa", login.getTwofa);
+  router.route("POST", "/admin/login/twofa", login.postTwofa);
   router.route("GET", "/api/health", () => ok(true), auth.middleware());
   router.route("GET", "/api/profile", handlers.getProfile, auth.middleware());
   router.route("PUT", "/api/profile", handlers.updateProfile, auth.middleware());

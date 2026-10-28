@@ -85,6 +85,8 @@ bun test test/contract
 bun test test/users
 bun run contract:normal
 bun run contract:auth
+bun run contract:roles
+bun run contract:roles:reference
 bun run reference:run -- bun test/contract/auth.ts reference
 bun run contract:fixture
 bun run contract:reference
@@ -109,12 +111,16 @@ bootstrap user in a finally block; it is not for a persistent or real server.
 Its D26-D29 differences are
 documented in `test/contract/fixtures.md`. No generated secret is reported.
 
+`contract:roles` runs the shared role and factor corpus against compiled production;
+`contract:roles:reference` runs that same corpus against the disposable pinned
+upstream. The list-child fixture provisions synthetic lists only in a labelled
+loopback test boundary; it is not a production list API.
+
 The separate fixture profile retains its synthetic auth gate and representative
 list/helper routes; generated ID/timestamp probes verify normalization only.
 The labelled `test/users` fixture composes production owners with fake-clock,
-peer and minimal role controls for cases that cannot yet be provisioned through
-production role APIs. Neither fixture is evidence of a production list or role
-management endpoint. Domain owners promote helper cases as their routes land.
+peer and synthetic list controls for cases that cannot yet be provisioned through
+production list APIs. Neither fixture is evidence of a production list endpoint. Domain owners promote helper cases as their routes land.
 Public HTML 404 semantics and embedded static responses are covered in both
 upstream and compiled production, with explicit per-target site names and
 attribution. Repeat the reference-first observations with

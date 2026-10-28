@@ -203,6 +203,12 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       listRoleId: input.listRoleId,
     };
     auth.revalidate(context, "users:manage");
+    // The role could have been removed while password hashing yielded.
+    if (
+      !roles.hasRole(fields.userRoleId, "user") ||
+      (fields.listRoleId !== null && !roles.hasRole(fields.listRoleId, "list"))
+    )
+      throw new HttpError(400, "invalid role");
     let created;
     try {
       created = store.create(fields);
