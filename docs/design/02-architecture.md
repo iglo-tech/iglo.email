@@ -61,6 +61,12 @@ advance. Empty claims retain the configured polling interval.
 
 SQLite in WAL mode handles this with batched writes: the campaign runner records progress per batch, not per message. Any change to sending, scheduling or storage must include before/after measurements (same rule as iglo.monitor).
 
+M0.7 measured the durable SQLite path with synthetic campaign progress, events
+and FTS churn on one host; see [the spike report](../perf/M0.7-sqlite-write-load.md)
+for the bounded queues and one-event window miss. This is storage-component
+evidence, not end-to-end acceptance of campaign sending or the events API;
+M3.2, M5.1 and M6.1 own those checks.
+
 ## Module layout (initial)
 
 ```text

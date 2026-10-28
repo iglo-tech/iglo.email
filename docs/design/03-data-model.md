@@ -22,6 +22,11 @@ The starting point is listmonk v7's `schema.sql` and `queries/*.sql`. Tables kee
 | `settings.value JSONB` | same layout, JSON in `TEXT` |
 | Postgres session store | `sessions` table, same columns |
 
+M0.7 measured a reduced synthetic event store and subscriber FTS5 triggers;
+[the spike report](../perf/M0.7-sqlite-write-load.md) records churn and rollback
+costs. These fixtures are not the production migration or a subscriber-search
+API implementation, and do not establish end-to-end feature acceptance.
+
 Query files stay as named SQL files (`-- name: get-subscriber`), the format listmonk uses. Each owning module supplies only its own embedded text to the loader, prepares it once, binds values, and closes its statements. Duplicate names, empty blocks and invalid SQL fail at preparation. Each block contains one statement; multiple statements, including trigger bodies with statement separators, are unsupported in named query files. Semicolons and marker-like text inside strings and comments remain SQL text. Migration files can contain multiple statements.
 
 ## Segment queries
