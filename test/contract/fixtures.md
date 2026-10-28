@@ -64,6 +64,13 @@ first conversion and clear the credential for the second. This prevents one
 credential type from being persisted as another, satisfies the task's Argon2id
 and SHA-256 storage requirements, and does not invent a token-rotation API.
 
+A create request for an API user with an invalid role returned 500 upstream and
+its database error contained a 64-character SHA-256 credential digest. The
+corpus checks this without printing the error or digest. The proposed normal
+result is 400 with a safe invalid-role message and no digest. This narrow error
+change requires lead review. Duplicate usernames separately retain upstream's
+500 error shape without exposing a credential.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is

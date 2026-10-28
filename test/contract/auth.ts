@@ -258,6 +258,46 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         !human.password,
       "users-create-human",
     );
+    const duplicate = await request(target, "/api/users", {
+      method: "POST",
+      auth: basic,
+      body: {
+        username: name,
+        email: `duplicate-${suffix}@example.test`,
+        type: "user",
+        status: "enabled",
+        user_role_id: 1,
+      },
+    });
+    const duplicateBody = (await duplicate.json()) as { message: string };
+    check(
+      duplicate.status === 500 &&
+        duplicateBody.message ===
+          `Error creating User: pq: duplicate key value violates unique constraint "users_username_key" (23505). Key (username)=(${name}) already exists.`,
+      "users-duplicate-username",
+    );
+    const noRole = await request(target, "/api/users", {
+      method: "POST",
+      auth: basic,
+      body: {
+        username: `m13-invalid-role-${suffix}`,
+        type: "api",
+        status: "enabled",
+        user_role_id: 0,
+      },
+    });
+    // Upstream's database error may contain credential digests; never print its body.
+    check(
+      noRole.status === (target.mode === "reference" ? 500 : 400),
+      "proposed-invalid-role-safe-error",
+    );
+    const invalidRoleMessage = ((await noRole.json()) as { message: string }).message;
+    check(
+      target.mode === "reference"
+        ? /\b[a-f0-9]{64}\b/.test(invalidRoleMessage)
+        : !/\b[a-f0-9]{64}\b/.test(invalidRoleMessage),
+      "proposed-invalid-role-no-digest-leak",
+    );
     const fetched = await user(await request(target, `/api/users/${human.id}`, { auth: basic }));
     check(
       fetched.id === human.id && fetched.username === name && !fetched.password,
