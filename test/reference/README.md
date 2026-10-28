@@ -125,7 +125,7 @@ The separate fixture profile retains its synthetic auth gate and representative
 list/helper routes; generated ID/timestamp probes verify normalization only.
 The labelled `test/users` fixture composes production owners with fake-clock,
 peer and synthetic list controls for cases that cannot yet be provisioned through
-production list APIs. These fixtures are not evidence of production subscriber or campaign endpoints. The shared M1.5 list corpus runs against pinned upstream and the compiled production process, with real generated API credentials. Positive membership counts and campaign snapshots are separately labelled synthetic fixture evidence. Domain owners promote helper cases as their routes land.
+production list APIs. These fixtures are not evidence of production subscriber or campaign endpoints. The shared M1.5 list corpus runs against pinned upstream and the compiled production process, with real generated API credentials. Positive membership counts are also checked through the production subscriber API; campaign snapshots remain separately labelled synthetic fixture evidence. Domain owners promote helper cases as their routes land.
 Public HTML 404 semantics and embedded static responses are covered in both
 upstream and compiled production, with explicit per-target site names and
 attribution. Repeat the reference-first observations with
