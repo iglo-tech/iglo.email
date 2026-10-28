@@ -136,7 +136,7 @@ export function createLoginHandlers(auth: Authentication) {
     }
     auth.replaceSession(context.request);
     const headers = new Headers({ Location: next, "Cache-Control": "no-store" });
-    for (const value of auth.sessionCookies(session.id, session.csrf))
+    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration))
       headers.append("Set-Cookie", value);
     return new Response(null, { status: 302, headers });
   };
@@ -218,7 +218,7 @@ export function createLoginHandlers(auth: Authentication) {
       return twofaPage(context, token, next, context.app.i18n.T("globals.messages.invalidValue"));
     auth.replaceSession(context.request);
     const headers = new Headers({ Location: next, "Cache-Control": "no-store" });
-    for (const value of auth.sessionCookies(session.id, session.csrf))
+    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration))
       headers.append("Set-Cookie", value);
     return new Response(null, { status: 302, headers });
   };

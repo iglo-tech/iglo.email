@@ -20,6 +20,7 @@ import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
+import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 
 async function main(): Promise<void> {
@@ -49,13 +50,15 @@ async function main(): Promise<void> {
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
-    const auth = await createAuthentication(
-      users,
-      roles,
-      clock,
-      bootstrap.config.rootUrl,
-      defaultAuthPolicy,
-    );
+    const auth = await createAuthentication(users, roles, clock, bootstrap.config.rootUrl, {
+      ...defaultAuthPolicy,
+      get sessionDurationMs() {
+        return sessionDuration(
+          settings!.read()["security.session_duration"],
+          clock.now().getTime(),
+        );
+      },
+    });
     await bootstrapAdmin(users, auth, bootstrap.config.initialAdmin);
     const app = createApp({
       bootstrap: bootstrap.config,

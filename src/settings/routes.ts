@@ -1,10 +1,12 @@
 // Settings endpoints adapted from listmonk cmd/settings.go and cmd/handlers.go at 6fcd95f.
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
-import { readBody } from "@/users/input";
+import { readBodyBytes } from "@/users/input";
 import type { Authentication } from "@/users/auth";
 import type { SettingsStore } from "@/settings/store";
-import { bindFull, bindKey, masked } from "@/settings/validate";
+import { bindFull, bindKey, masked, shapes } from "@/settings/validate";
+import { orderedJson } from "@/settings/json";
+import { xmlSettings, xmlValue } from "@/settings/xml";
 
 export function registerSettingsRoutes(
   router: Router,
@@ -21,16 +23,36 @@ export function registerSettingsRoutes(
     "PUT",
     "/api/settings",
     async (context) => {
-      const text = await readBody(context.request);
-      if (
-        text &&
-        context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json"
-      )
-        throw new HttpError(415);
+      const bytes = await readBodyBytes(context.request);
+      const contentType = context.request.headers.get("content-type") ?? "";
+      const media = contentType.split(";", 1)[0]?.trim();
       let body: unknown;
       try {
-        body = text ? JSON.parse(text) : {};
+        if (!bytes.length) body = {};
+        else if (media === "application/json") body = orderedJson(bytes.toString("utf8"));
+        else if (media === "application/xml" || media === "text/xml")
+          body = xmlSettings(bytes, shapes);
+        else if (media === "application/x-www-form-urlencoded") body = {};
+        else if (media === "multipart/form-data") {
+          await new Request("http://fixture.invalid", {
+            method: "POST",
+            headers: { "content-type": contentType },
+            body: Uint8Array.from(bytes),
+          }).formData();
+          body = {};
+        } else throw new HttpError(415);
       } catch {
+        if (
+          bytes.length &&
+          ![
+            "application/json",
+            "application/xml",
+            "text/xml",
+            "application/x-www-form-urlencoded",
+            "multipart/form-data",
+          ].includes(media ?? "")
+        )
+          throw new HttpError(415);
         throw new HttpError(400);
       }
       auth.revalidate(context, "settings:manage");
@@ -43,15 +65,25 @@ export function registerSettingsRoutes(
     "PUT",
     "/api/settings/:key",
     async (context) => {
-      const text = await readBody(context.request);
+      const bytes = await readBodyBytes(context.request);
+      const media = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
       if (
-        text &&
-        context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json"
+        bytes.length &&
+        ![
+          "application/json",
+          "application/xml",
+          "text/xml",
+          "application/x-www-form-urlencoded",
+          "multipart/form-data",
+        ].includes(media ?? "")
       )
         throw new HttpError(415);
       let body: unknown;
       try {
-        body = JSON.parse(text);
+        if (media === "application/xml" || media === "text/xml")
+          body = orderedJson(xmlValue(bytes));
+        else if (media === "application/json") body = orderedJson(bytes.toString("utf8"));
+        else throw new Error("invalid raw value");
       } catch {
         throw new HttpError(400);
       }

@@ -160,11 +160,22 @@ dot path segments cannot encode those identities; . and .. remain valid and
 use the query form. Selector values are decoded exactly once, never recursively.
 The path convenience form and query form share permissions and atomic behavior.
 
-The M1.2 draft supplies a persisted settings owner and the authenticated
-settings routes, including the D44 SMTP-test staging boundary. The draft is not
-complete: session duration changes return 501 without a write until sessions
-can retain their original expiry; a changing lookup-wide duration would revive
-expired identities. Full settings binding and validation still need the complete
-pinned reference corpus, including XML/form binding, ordered duplicate aliases,
-Go address parsing and slow-query cron validation. Those gaps are blockers to
-claiming the settings API as fully compatible or ready for M2.1.
+The M1.2 draft supplies persisted settings and authenticated routes, including
+the D44 SMTP-test staging boundary. Newly issued sessions capture their expiry;
+legacy sessions retain the original seven-day policy. Subscriber mutations use
+the current domain policy. `app.lang` is retained as configuration, but the
+current runtime translation remains English; changing it does not hot-switch the
+language. Later-owner settings do not implement their engines.
+
+The draft is not complete: the full Go binding and validation matrix still
+needs reference coverage and compatibility work, including exact errors, numeric
+ranges, unusual XML and per-key body types, and address and cron edge cases.
+Those gaps block a claim that the settings API is fully compatible or ready for
+M2.1. Secret retention is visible through masked projections only until M2.1
+can verify actual delivery with Mailpit.
+
+One observed gap needs a decision: pinned PostgreSQL rejects a bound NUL in a
+settings value with HTTP 500 and no write, whereas SQLite currently stores it.
+D43 is limited to subscriber fields. A safe atomic rejection without database
+diagnostics is a possible correction, but its status and envelope need lead
+disposition rather than an implicit extension of D43.

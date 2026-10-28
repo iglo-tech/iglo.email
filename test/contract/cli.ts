@@ -115,7 +115,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         const credentials = await provisionApiUser(baseUrl, admin);
         if (args[1] === "settings") {
           await runSettingsContract({ mode: "normal", baseUrl, credentials, restart });
-          await runSettingsLive({ baseUrl, credentials, admin });
+          await runSettingsLive({ baseUrl, credentials, admin, restart });
           return true;
         }
         if (args[1] === "subscribers") {

@@ -196,7 +196,7 @@ export async function createAuthentication(
     } else {
       sessionId = cookie(request, "session");
       if (!/^[A-Za-z0-9_-]{43}$/.test(sessionId)) throw new HttpError(403, "invalid session");
-      const session = store.session(sessionId, policy.sessionDurationMs);
+      const session = store.session(sessionId);
       if (!session) throw new HttpError(403, "invalid session");
       user = session.user;
       csrf = session.csrf;
@@ -274,8 +274,8 @@ export async function createAuthentication(
     nonceCookie(value: string): string {
       return setCookie("nonce", value, true);
     },
-    sessionCookies(id: string, csrf: string): string[] {
-      const age = Math.floor(policy.sessionDurationMs / 1000);
+    sessionCookies(id: string, csrf: string, duration: number): string[] {
+      const age = Math.floor(duration / 1000);
       return [setCookie("session", id, true, age), setCookie("csrf", csrf, false, age)];
     },
     clearCookies(): string[] {
@@ -287,7 +287,7 @@ export async function createAuthentication(
     async login(
       username: string,
       password: string,
-    ): Promise<{ id: string; csrf: string } | { token: string } | null> {
+    ): Promise<{ id: string; csrf: string; duration: number } | { token: string } | null> {
       const user = store.byName(username);
       const candidate =
         user?.type === "user" &&
@@ -336,7 +336,8 @@ export async function createAuthentication(
         }
         const id = randomValue(),
           csrf = randomValue();
-        return store.createSession(candidate, id, csrf) ? { id, csrf } : null;
+        const duration = policy.sessionDurationMs;
+        return store.createSession(candidate, id, csrf, duration) ? { id, csrf, duration } : null;
       } finally {
         proof?.release();
       }
@@ -344,7 +345,10 @@ export async function createAuthentication(
     challengeExists(token: string): boolean {
       return !!challenge(token);
     },
-    verifyChallenge(token: string, code: string): { id: string; csrf: string } | null {
+    verifyChallenge(
+      token: string,
+      code: string,
+    ): { id: string; csrf: string; duration: number } | null {
       const entry = challenge(token);
       if (!entry) return null;
       if (!verifyTOTP(entry.user.twofa_key ?? "", code, clock.now())) {
@@ -354,7 +358,8 @@ export async function createAuthentication(
       challenges.delete(token);
       const id = randomValue(),
         csrf = randomValue();
-      return store.createSession(entry.user, id, csrf) ? { id, csrf } : null;
+      const duration = policy.sessionDurationMs;
+      return store.createSession(entry.user, id, csrf, duration) ? { id, csrf, duration } : null;
     },
     async verifyPassword(password: string, hash: string): Promise<boolean> {
       return work.run(() => Bun.password.verify(password, hash));

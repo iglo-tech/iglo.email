@@ -59,7 +59,38 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         await restart();
         await request("/api/settings");
       });
-      process.stdout.write(`${JSON.stringify({ repetition, get, full, key, restartMs })}\n`);
+      let sessionCookie = "";
+      const sessionLogin = await measure(10, 2, async () => {
+        const page = await fetch(origin + "/admin/login");
+        const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1];
+        const cookie = page.headers
+          .getSetCookie()
+          .find((value) => value.startsWith("nonce="))
+          ?.split(";", 1)[0];
+        if (!nonce || !cookie) throw new Error("Missing synthetic login nonce");
+        const response = await fetch(origin + "/admin/login", {
+          method: "POST",
+          redirect: "manual",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie },
+          body: new URLSearchParams({ username: admin.user, password: admin.password, nonce }),
+        });
+        sessionCookie =
+          response.headers
+            .getSetCookie()
+            .find((value) => value.startsWith("session="))
+            ?.split(";", 1)[0] ?? "";
+        if (response.status !== 302 || !sessionCookie) throw new Error("Synthetic login failed");
+      });
+      const sessionRead = await measure(50, 5, async () => {
+        const response = await fetch(origin + "/api/profile", {
+          headers: { Cookie: sessionCookie },
+        });
+        if (response.status !== 200) throw new Error("Synthetic session read failed");
+        await response.arrayBuffer();
+      });
+      process.stdout.write(
+        `${JSON.stringify({ repetition, get, full, key, restartMs, sessionLogin, sessionRead })}\n`,
+      );
     },
     admin,
     120_000,

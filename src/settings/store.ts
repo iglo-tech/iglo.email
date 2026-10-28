@@ -5,8 +5,8 @@ import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import { defaults } from "@/settings/defaults";
-import { HttpError } from "@/server/response";
 import { normalize, projectRaw, type Settings } from "@/settings/validate";
+import { parseStoredJson } from "@/settings/json";
 import sql from "@/settings/queries.sql" with { type: "text" };
 
 export function createSettings(db: Database, clock: Clock, rootUrl: string, roles: Roles) {
@@ -18,7 +18,7 @@ export function createSettings(db: Database, clock: Clock, rootUrl: string, role
   function read(): Settings {
     const out: Record<string, unknown> = {};
     for (const row of queries.get("all").all() as { key: string; value: string }[]) {
-      if (Object.hasOwn(defaults, row.key)) out[row.key] = JSON.parse(row.value);
+      if (Object.hasOwn(defaults, row.key)) out[row.key] = parseStoredJson(row.value);
     }
     out["app.root_url"] = rootUrl;
     out["app.check_updates"] = false;
@@ -30,12 +30,7 @@ export function createSettings(db: Database, clock: Clock, rootUrl: string, role
       writeTransaction(db, () => {
         const current = read();
         const proposed = build(current);
-        // Retained sessions currently have no durable per-session expiry. Refuse
-        // changes until their owner supplies that seam, rather than report a
-        // configuration change that the running authentication cannot honor.
-        const candidate = normalize(proposed, current, roles);
-        if (candidate["security.session_duration"] !== current["security.session_duration"])
-          throw new HttpError(501, "Session duration changes are not implemented");
+        const candidate = normalize(proposed, current, roles, clock.now().getTime());
         const now = clock.now().toISOString();
         for (const key of Object.keys(defaults))
           queries.get("update").run(JSON.stringify(candidate[key]), now, key);

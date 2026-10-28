@@ -21,6 +21,11 @@ The labelled loopback owner fixture uses `fixture-admin` /
 and `  fixture-admin-reset-password  ` with the surrounding spaces. The fixture
 never connects to an external service.
 
+For D45, the fixture may remove the expiry property from a freshly issued
+synthetic session, or set an invalid expiry/future creation time, to represent
+pre-M1.2 or damaged persisted records. Only HTTP responses are asserted; this
+arrangement is not a production route and does not use production data.
+
 The deterministic concurrent-target cases use fixture-concurrent-new-password.
 A labelled /fixture/gated-user/:id route gates completion of production password
 hashing through the fixture auth object; /fixture/gate-entered and

@@ -62,6 +62,10 @@ await cp(
 );
 await cp(join(root, "assets/licenses/go-1.27.2-BSD.txt"), join(licenseDir, "go-1.27.2-BSD.txt"));
 await cp(
+  join(root, "assets/licenses/gdgvda-cron-0.7.0-MIT.txt"),
+  join(licenseDir, "gdgvda-cron-0.7.0-MIT.txt"),
+);
+await cp(
   join(root, "assets/licenses/unicode-17.0.0-3.0.txt"),
   join(licenseDir, "unicode-17.0.0-3.0.txt"),
 );

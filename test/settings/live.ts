@@ -6,6 +6,7 @@ export async function runSettingsLive(target: {
   baseUrl: string;
   credentials: Credentials;
   admin: { user: string; password: string };
+  restart?: () => Promise<void>;
 }) {
   const base = target.baseUrl;
   const adminAuth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
@@ -21,7 +22,13 @@ export async function runSettingsLive(target: {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  async function pending(path: string, authorization: string, payload: string, method = "PUT") {
+  async function pending(
+    path: string,
+    authorization: string,
+    payload: string,
+    method = "PUT",
+    extra = "",
+  ) {
     const url = new URL(base),
       socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
     const result = new Promise<string>((resolve, reject) => {
@@ -36,7 +43,7 @@ export async function runSettingsLive(target: {
     });
     const split = Math.floor(payload.length / 2);
     socket.write(
-      `${method} ${path} HTTP/1.1\r\nHost: ${url.host}\r\nAuthorization: ${authorization}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, split)}`,
+      `${method} ${path} HTTP/1.1\r\nHost: ${url.host}\r\n${authorization ? `Authorization: ${authorization}\r\n` : ""}${extra}Content-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, split)}`,
     );
     return {
       finish: () => {
@@ -48,12 +55,17 @@ export async function runSettingsLive(target: {
   const get = async () =>
     ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data;
   const key = (name: string, body: unknown) => request(`/api/settings/${name}`, "PUT", body);
-  const initial = await get();
-  check((await key("security.session_duration", "1h")).status === 501, "session-duration-staged");
+  const notice = await fetch(`${base}/admin/static/licenses/gdgvda-cron-0.7.0-MIT.txt`);
+  const noticeText = await notice.text();
   check(
-    (await get())["security.session_duration"] === initial["security.session_duration"],
-    "session-duration-unchanged",
+    notice.status === 200 &&
+      noticeText.includes("Copyright (C) 2012 Rob Figueiredo") &&
+      noticeText.includes("Permission is hereby granted"),
+    "cron-notice",
   );
+  const initial = await get();
+  check((await key("security.session_duration", "1h")).status === 200, "session-duration-set");
+  check((await get())["security.session_duration"] === "1h", "session-duration-current");
   check((await key("app.root_url", "http://example.invalid")).status === 400, "root-readonly");
   check(
     (await key("app.check_updates", true)).status === 400 &&
@@ -96,6 +108,11 @@ export async function runSettingsLive(target: {
   check((await key("privacy.domain_allowlist", ["example.test"])).status === 200, "allowlist-set");
   check((await create("a@example.test")).status === 200, "allowlist-precedence");
   check((await create("b@sub.example.test")).status === 400, "allowlist-excludes");
+  const external = await request("/api/subscribers", "POST", {
+    email: "external@example.test",
+    external_id: "m12-external-policy",
+  });
+  check(external.status === 200, "external-policy-create");
   check(
     (await request(`/api/subscribers/${id}`, "PATCH", { name: "Still allowed" })).status === 200,
     "patch-untouched-email",
@@ -111,6 +128,30 @@ export async function runSettingsLive(target: {
     "inflight-policy-change",
   );
   check((await pendingSubscriber.finish()).includes(" 400 "), "inflight-policy-current");
+  const queryExternal = "/api/subscribers/external?external_id=m12-external-policy";
+  const pathExternal = "/api/subscribers/external/m12-external-policy";
+  check(
+    (
+      await request(queryExternal, "PUT", {
+        email: "rejected@example.test",
+        name: "Must not write",
+      })
+    ).status === 400,
+    "external-query-policy",
+  );
+  const unchangedExternal = (
+    (await (await request(queryExternal)).json()) as { data: { email: string; name: string } }
+  ).data;
+  check(
+    unchangedExternal.email === "external@example.test" &&
+      unchangedExternal.name !== "Must not write",
+    "external-policy-atomic",
+  );
+  check(
+    (await request(pathExternal, "PUT", { email: "allowed@other.test", name: "Allowed" }))
+      .status === 200,
+    "external-path-policy",
+  );
   const badSmtp = structuredClone(initial.smtp);
   for (const server of badSmtp) server.enabled = false;
   const before = await get();
@@ -226,6 +267,111 @@ export async function runSettingsLive(target: {
       "cookie-origin",
     );
     check((await cookieRequest({ "X-CSRF-Token": csrf.slice(5) })).status === 200, "cookie-valid");
+    async function human(perms: string[]) {
+      const name = `m12-human-${crypto.randomUUID()}`;
+      const roleResponse = await request("/api/roles/users", "POST", { name, permissions: perms });
+      check(roleResponse.status === 200, "human-role-create");
+      const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+      roles.push(role);
+      const password = "m12-synthetic-human-password";
+      const userResponse = await request("/api/users", "POST", {
+        username: name,
+        email: `${name}@example.test`,
+        type: "user",
+        status: "enabled",
+        password_login: true,
+        password,
+        user_role_id: role,
+      });
+      check(userResponse.status === 200, "human-create");
+      users.push(((await userResponse.json()) as { data: { id: number } }).data.id);
+      const page = await fetch(base + "/admin/login");
+      const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1];
+      const nc = page.headers
+        .getSetCookie()
+        .find((c) => c.startsWith("nonce="))
+        ?.split(";", 1)[0];
+      check(nonce && nc, "human-login-form");
+      const response = await fetch(base + "/admin/login", {
+        method: "POST",
+        redirect: "manual",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: nc },
+        body: new URLSearchParams({ username: name, password, nonce }),
+      });
+      const sc = response.headers
+        .getSetCookie()
+        .find((c) => c.startsWith("session="))
+        ?.split(";", 1)[0];
+      const cc = response.headers
+        .getSetCookie()
+        .find((c) => c.startsWith("csrf="))
+        ?.split(";", 1)[0];
+      check(sc && cc, "human-login");
+      return { role, name, cookie: `${sc}; ${cc}`, csrf: cc.slice(5) };
+    }
+    const humanReader = await human(["settings:get"]);
+    const humanWriter = await human(["settings:manage"]);
+    const humanDenied = await human([]);
+    async function humanRequest(
+      person: typeof humanReader,
+      path: string,
+      method = "GET",
+      body?: string,
+    ) {
+      return fetch(base + path, {
+        method,
+        headers: {
+          Cookie: person.cookie,
+          "X-CSRF-Token": person.csrf,
+          "Content-Type": "application/json",
+        },
+        ...(body === undefined ? {} : { body }),
+      });
+    }
+    check((await humanRequest(humanReader, "/api/settings")).status === 200, "human-reader-get");
+    check(
+      (await humanRequest(humanReader, "/api/settings/app.site_name", "PUT", '"denied"')).status ===
+        403,
+      "human-reader-put",
+    );
+    check((await humanRequest(humanWriter, "/api/settings")).status === 403, "human-writer-get");
+    check(
+      (await humanRequest(humanWriter, "/api/settings/app.site_name", "PUT", '"human"')).status ===
+        200,
+      "human-writer-put",
+    );
+    check((await humanRequest(humanDenied, "/api/settings")).status === 403, "human-denied-get");
+    const held = await pending(
+      "/api/settings/app.site_name",
+      "",
+      '"late-human"',
+      "PUT",
+      `Cookie: ${humanWriter.cookie}\r\nX-CSRF-Token: ${humanWriter.csrf}\r\n`,
+    );
+    check(
+      (
+        await request(`/api/roles/users/${humanWriter.role}`, "PUT", {
+          name: humanWriter.name,
+          permissions: [],
+        })
+      ).status === 200,
+      "human-revoke-role",
+    );
+    check((await held.finish()).includes(" 403 "), "human-inflight-revoked");
+    check(
+      (await humanRequest(humanWriter, "/api/settings/app.site_name", "PUT", '"denied"')).status ===
+        403,
+      "human-live-revoked",
+    );
+    check((await get())["app.site_name"] === "human", "human-inflight-no-write");
+    if (target.restart) {
+      await target.restart();
+      check(
+        (await fetch(base + "/api/profile", { headers: { Cookie: cookie } })).status === 200,
+        "session-restart",
+      );
+      check((await get())["security.session_duration"] === "1h", "session-policy-restart");
+    }
   } finally {
     for (const id of users) await request(`/api/users/${id}`, "DELETE");
     for (const id of roles) await request(`/api/roles/users/${id}`, "DELETE");

@@ -107,6 +107,92 @@ test("session cookies rotate on login and expire according to the injected clock
   expect((await call(f, "/api/profile", { session: second })).status).toBe(403);
 });
 
+test("settings capture new session lifetimes without reviving retained sessions", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const old = await login(f, f.admin.user, f.admin.password);
+  const change = (value: string) =>
+    call(f, "/api/settings/security.session_duration", {
+      method: "PUT",
+      session: old,
+      body: value,
+    });
+  expect((await change("2s")).status).toBe(200);
+  const short = await login(f, f.admin.user, f.admin.password);
+  for (const header of short.headers) expect(header).toContain("Max-Age=2");
+  await call(f, "/fixture/clock", { method: "POST", body: 2000 });
+  expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: old })).status).toBe(200);
+  expect((await change("8d")).status).toBe(200);
+  const longer = await login(f, f.admin.user, f.admin.password);
+  for (const header of longer.headers) expect(header).toContain("Max-Age=691200");
+  expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
+  for (const value of ["0s", "1ms", "invalid", "999999999999999999d"]) {
+    expect((await change(value)).status).toBe(400);
+    expect(
+      ((await (await call(f, "/api/settings", { session: old })).json()) as any).data[
+        "security.session_duration"
+      ],
+    ).toBe("8d");
+  }
+  await call(f, "/fixture/clock", {
+    method: "POST",
+    body: defaultAuthPolicy.sessionDurationMs - 2000,
+  });
+  expect((await call(f, "/api/profile", { session: old })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: longer })).status).toBe(200);
+});
+
+test("legacy and malformed session records retain their safe expiry behavior", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const legacy = await login(f, f.admin.user, f.admin.password);
+  const invalid = await login(f, f.admin.user, f.admin.password);
+  const future = await login(f, f.admin.user, f.admin.password);
+  f.arrangeSession(legacy.cookie, "legacy");
+  f.arrangeSession(invalid.cookie, "invalid");
+  f.arrangeSession(future.cookie, "future-created");
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "8d",
+      })
+    ).status,
+  ).toBe(200);
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(200);
+  expect((await call(f, "/api/profile", { session: invalid })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: future })).status).toBe(403);
+  await call(f, "/fixture/clock", { method: "POST", body: defaultAuthPolicy.sessionDurationMs });
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(403);
+});
+
+test("an in-flight login captures the duration in force at session creation", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  await call(f, "/fixture/gate-login", { method: "POST" });
+  const pending = login(f, f.admin.user, f.admin.password);
+  expect((await call(f, "/fixture/login-entered")).status).toBe(200);
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "3s",
+      })
+    ).status,
+  ).toBe(200);
+  await call(f, "/fixture/login-release", { method: "POST" });
+  const created = await pending;
+  for (const header of created.headers) expect(header).toContain("Max-Age=3");
+  await call(f, "/fixture/clock", { method: "POST", body: 3000 });
+  expect((await call(f, "/api/profile", { session: created })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: admin })).status).toBe(200);
+});
+
 test("profile and admin password changes, disable and delete revoke the right sessions", async () => {
   const f = await fixture();
   const admin = await login(f, f.admin.user, f.admin.password);
@@ -450,7 +536,8 @@ test("a TOTP-marked user cannot bypass the deferred second factor or use a human
 });
 
 test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime, attempts and revocation", async () => {
-  const f = await fixture({ ...defaultAuthPolicy, loginAttempts: 100 });
+  const f = await startUserFixture({ ...defaultAuthPolicy, loginAttempts: 100 }, true, true);
+  fixtures.push(f);
   const first = await login(f, f.admin.user, f.admin.password);
   const other = await login(f, f.admin.user, f.admin.password);
   const profile = await call(f, "/api/profile", { session: first });
@@ -566,10 +653,20 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
       .some((v) => v.startsWith("session=")),
   ).toBe(true);
   const valid = await challenge();
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: first,
+        body: "3s",
+      })
+    ).status,
+  ).toBe(200);
   const verified = await verify(valid, "751330");
   expect(verified.status).toBe(302);
   expect(verified.headers.get("location")).toBe("/api/profile");
   expect(verified.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(true);
+  for (const header of verified.headers.getSetCookie()) expect(header).toContain("Max-Age=3");
   expect((await verify(valid, "652348")).status).toBe(302);
   const attempts = await challenge();
   for (let i = 0; i < 5; i++) expect((await verify(attempts, "bad")).status).toBe(200);

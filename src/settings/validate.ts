@@ -2,7 +2,10 @@
 import { defaults } from "@/settings/defaults";
 import { trimSpace } from "@/lists/store";
 import { simpleLower } from "@/subscribers/unicode-lower";
-import { sanitizeEmail } from "@/subscribers/email";
+import { validFromAddress } from "@/settings/mail";
+import { goDuration, sessionDuration } from "@/settings/duration";
+import { cronError } from "@/settings/cron";
+import { cloneJson, int64, Members } from "@/settings/json";
 import { HttpError } from "@/server/response";
 import type { Roles } from "@/roles/roles";
 
@@ -57,7 +60,7 @@ const mailboxShape = {
   scan_interval: "",
 };
 const oidcRoleShape = { claim: "", match: "", user_role_id: null, list_role_id: null };
-const shapes: Record<string, unknown> = {
+export const shapes: Record<string, unknown> = {
   ...defaults,
   smtp: [smtpShape],
   messengers: [messengerShape],
@@ -99,32 +102,43 @@ function zero(shape: any): any {
   if (typeof shape === "boolean") return false;
   return 0;
 }
-function bind(value: unknown, shape: any): any {
-  if (value === null) return shape === null || Array.isArray(shape) ? null : zero(shape);
+function entries(value: unknown): [string, unknown][] {
+  if (value instanceof Members) return value.entries;
+  if (value && typeof value === "object" && !Array.isArray(value)) return Object.entries(value);
+  return fail();
+}
+function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
+  if (value === null)
+    return shape === null ||
+      Array.isArray(shape) ||
+      (shape && typeof shape === "object" && Object.hasOwn(shape, "*"))
+      ? null
+      : previous;
   if (shape === null) {
     if (typeof value !== "number" || !Number.isSafeInteger(value)) return fail();
     return value;
   }
   if (Array.isArray(shape)) {
     if (!Array.isArray(value)) return fail();
-    return value.map((item) => bind(item, shape[0]));
+    return value.map((item, index) => bind(item, shape[0], previous?.[index] ?? zero(shape[0])));
   }
   if (typeof shape === "object") {
-    if (typeof value !== "object" || Array.isArray(value)) return fail();
-    const result: Record<string, unknown> = {};
+    const members = entries(value);
+    const result: Record<string, unknown> = previous ? cloneJson(previous) : {};
     if (Object.hasOwn(shape, "*")) {
-      for (const [key, entry] of Object.entries(value)) result[key] = bind(entry, shape["*"]);
+      for (const [key, entry] of members) result[key] = bind(entry, shape["*"]);
       return result;
     }
-    for (const [key, fallback] of Object.entries(shape)) result[key] = zero(fallback);
-    for (const [key, entry] of Object.entries(value)) {
+    for (const [key, fallback] of Object.entries(shape))
+      if (!Object.hasOwn(result, key)) result[key] = zero(fallback);
+    for (const [key, entry] of members) {
       const match = Object.keys(shape).find((name) => name.toLowerCase() === key.toLowerCase());
-      if (match) result[match] = bind(entry, shape[match]);
+      if (match) result[match] = bind(entry, shape[match], result[match]);
     }
     return result;
   }
-  if (typeof value !== typeof shape || (typeof value === "number" && !Number.isSafeInteger(value)))
-    return fail();
+  if (typeof shape === "number") return int64(value) ?? fail();
+  if (typeof value !== typeof shape) return fail();
   return typeof value === "string" ? value.toWellFormed() : value;
 }
 export function projectRaw(value: Settings, root: string): Settings {
@@ -142,9 +156,9 @@ export function bindFull(value: unknown, root: string): Settings {
     else if (shape && typeof shape === "object") out[key] = bind({}, shape);
     else out[key] = typeof shape === "string" ? "" : typeof shape === "boolean" ? false : 0;
   }
-  for (const [key, entry] of Object.entries(value ?? {})) {
+  for (const [key, entry] of value === null ? [] : entries(value)) {
     const match = Object.keys(shapes).find((name) => name.toLowerCase() === key.toLowerCase());
-    if (match) out[match] = bind(entry, shapes[match]);
+    if (match) out[match] = bind(entry, shapes[match], out[match]);
   }
   out["app.root_url"] = root;
   out["app.check_updates"] = false;
@@ -153,11 +167,11 @@ export function bindFull(value: unknown, root: string): Settings {
 export function bindKey(current: Settings, key: string, value: unknown): Settings {
   if (
     !Object.hasOwn(shapes, key) ||
-    key === "app.check_updates" ||
+    (key === "app.check_updates" && value !== false) ||
     (value === null && !arrays.has(key))
   )
     return fail();
-  const out = structuredClone(current);
+  const out = cloneJson(current);
   out[key] = bind(value, shapes[key]);
   return out;
 }
@@ -167,31 +181,7 @@ function preserve(item: Settings, old: Settings[]) {
   if (!item.password && previous) item.password = previous.password;
   if (!item.password) delete item.password;
 }
-function duration(input: string): number {
-  const units: Record<string, number> = {
-    ns: 1e-6,
-    us: 1e-3,
-    µs: 1e-3,
-    μs: 1e-3,
-    ms: 1,
-    s: 1000,
-    m: 60000,
-    h: 3600000,
-    d: 86400000,
-  };
-  let total = 0,
-    pos = 0;
-  const re = /(\d+(?:\.\d+)?|\.\d+)(ns|us|µs|μs|ms|s|m|h|d)/gy;
-  while (pos < input.length) {
-    re.lastIndex = pos;
-    const m = re.exec(input);
-    if (!m) return NaN;
-    total += Number(m[1]) * units[m[2]!]!;
-    pos = re.lastIndex;
-  }
-  return total;
-}
-export function normalize(next: Settings, current: Settings, roles: Roles): Settings {
+export function normalize(next: Settings, current: Settings, roles: Roles, now: number): Settings {
   for (const key of arrays) next[key] ??= [];
   const addresses: string[] = [];
   if (next["app.from_email"].length > 250) return fail("omax 250 `from` addresses are allowed");
@@ -203,9 +193,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles): Sett
     if (tpl && !addresses.length)
       return fail("default (first) `from` address cannot contain template expressions");
     if (!tpl) {
-      const match = /^(?:[^<>]*<([^<>]+)>|([^<>]+))$/.exec(value);
-      if (!match || !sanitizeEmail(match[1] ?? match[2] ?? ""))
-        return fail(`invalid from email address: ${value}`);
+      if (!validFromAddress(value)) return fail(`invalid from email address: ${value}`);
     }
     if (!addresses.includes(value)) addresses.push(value);
   }
@@ -239,7 +227,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles): Sett
   for (const box of next["bounce.mailboxes"]) {
     if (!box || typeof box !== "object") return fail();
     box.host = trimSpace(box.host);
-    if (!(duration(box.scan_interval) >= 60000))
+    if (!(goDuration(box.scan_interval) >= 60000))
       return fail("Bounce scan interval should be minimum 1 minute.");
     preserve(box, current["bounce.mailboxes"]);
   }
@@ -312,12 +300,17 @@ export function normalize(next: Settings, current: Settings, roles: Roles): Sett
         `OIDC role mapping ${i + 1}: list role ID ${mapping.list_role_id} does not exist`,
       );
   }
+  if (next["app.cache_slow_queries"]) {
+    const error = cronError(next["app.cache_slow_queries_interval"]);
+    if (error) return fail(`Invalid data.: slow query cron: ${error}`);
+  }
+  sessionDuration(next["security.session_duration"], now);
   next["app.root_url"] = current["app.root_url"];
   next["app.check_updates"] = false;
   return next;
 }
 export function masked(settings: Settings): Settings {
-  const out = structuredClone(settings);
+  const out = cloneJson(settings);
   const mask = (value: string | undefined) => "•".repeat([...(value ?? "")].length);
   for (const key of ["smtp", "messengers", "bounce.mailboxes"])
     for (const item of out[key]) {
