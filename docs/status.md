@@ -8,18 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.3 — Users and production authentication is active at **ci**, on branch `task/M1.3-users-auth`; [committed brief](briefs/M1.3.md) at `a08a208`. M1.1/M0.5 prerequisites are merged and no other implementation task is active. One [M1.3: Users and production authentication — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%3Adelegate-task%3Aiglo-email-M1.3-worker-20261028T070933-recovery) was dispatched at 2026-10-28T09:27:29.519Z with `isolation: "worktree"`, `mode: "async"`, `role: "implementation"`, `target: { providerInstanceId: "codex", model: "gpt-6.1-terra", options: { reasoningEffort: "max" } }`. No helpers are authorized. The worker completed with a usable PR, no pending question/approval or child runs; no duplicate or retry is needed.
+M1.3 — Users and production authentication is active at **fix after council round 1**, PR [#10](https://github.com/iglo-tech/iglo.email/pull/10), branch `task/M1.3-users-auth`, current reviewed head `03f5fa6ff063358d320774386fecd2f2ffc918e4`. Both [Sol](https://github.com/iglo-tech/iglo.email/pull/10#issuecomment-6466648757) and [Opus](https://github.com/iglo-tech/iglo.email/pull/10#issuecomment-6467970128) request changes. All acceptance/browser commands and eight CI jobs passed on that head. Neither reviewer has pending questions or child runs; Opus's automatic continuation completed ordinal 2 after its initial limit failure. [Round-1 findings and complete worker/delegate recovery IDs](reviews/M1.3-round1.md); [worker brief](briefs/M1.3.md).
 
-Recovery identifiers:
+The pause expired at 2026-10-28T11:22:23+00:00. This same recovery lead resumed at approximately 11:37 UTC, found no competing run lock and acquired it for M1.3 fixes. The original run started 2026-10-28T07:09:33.768313+00:00 and is now beyond four hours: finish this active task, then release the lock instead of starting another task. The automation remains unbound and unchanged.
 
-- Client request ID: `iglo-email-M1.3-worker-20261028T070933-recovery`.
-- Delegate task ID: `node:delegated-task:command%3Amcp%3A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%3Adelegate-task%3Aiglo-email-M1.3-worker-20261028T070933-recovery`.
-- Child thread ID: `thread:delegated-task:command%3Amcp%3A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%3Adelegate-task%3Aiglo-email-M1.3-worker-20261028T070933-recovery`.
-- Child run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A66367fa0-bcc8-47c5-90a2-61b3f5f6f7b3%253Adelegate-task%253Aiglo-email-M1.3-worker-20261028T070933-recovery:ordinal:1`.
-
-The lead read the pinned auth/user/session/role/login source and recorded D26 before dispatch: production auth precedes settings, minimal role ownership stays explicit, and functional login is separated from M4.1's full screens. The brief requires reference-first contracts, actual compiled authentication, D25 identity regression, CSRF/origin/revocation/rate-limit coverage, browser evidence and bounded storage measurements. PR [#10](https://github.com/iglo-tech/iglo.email/pull/10) opened at `a134d16bc31aafb94dec803ecda6d30d65cef7ea`, linked to the lead. The first lead inspection found six CI jobs passed and two Linux reference jobs pending across push/PR runs; no comments or reviews. All worker acceptance passed: check 135 tests, 38 compiled-production contracts, 24 staged contracts plus two probes, 58 upstream cases, common stateful auth corpus in both modes, compiled browser checks and three bounded measurement repetitions. The worker's two source-observed safety proposals are accepted as D27 (safe invalid-role rejection and distinct credentials on type conversion); the lead will replace proposed markers and update the PR before fresh CI and independent council. Populated list-role labels and automatically allocated IDs above the JavaScript safe range remain disclosed coverage gaps for council assessment; role CRUD/TOTP/settings/full screens remain later tasks. No code-level approval is implied by accepting the policy.
-
-The recovery run started 2026-10-28T07:09:33.768313+00:00 and remains within its four-hour limit. M1.1 merged at `34a246fca3d9b2061da92df8c6b8650e8d79f7e6` after both final-head approvals and green CI; its watch is stopped and both reviewers completed with no pending child runs. [Review and recovery record](reviews/M1.1.md). M1.2 now depends on M1.3 so its settings routes receive real authentication. Independent recovery uses this active record, the lock and the forthcoming delegate IDs, without relying on any lead thread to respond.
+The lead will fix these small findings directly in the completed worker's clean worktree `/home/t3-code/.t3/worktrees/iglo.email/t3-085ef8e0`, without a fixer or duplicate worker: canonical escaped login redirects and common regression coverage, plus marked API-profile and last-human-admin cases under D28. D28 retains name-only API profile updates without credential mutation and the stronger human-admin guard; a safe redirect is canonicalized consistently with pinned upstream. Then run reference/production acceptance, push the new head and require fresh CI plus both independent reviewers in round 2. No round-2 delegate is dispatched yet. The PR is already linked; its watch was stopped for the pause and should resume only when awaiting checks/reviews.
 
 ## Automation
 
@@ -49,7 +42,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Blocked
 
-No external block or active cooldown.
+No active external block or cooldown. The M1.3 rate-limit pause expired; Opus automatically resumed and completed without a duplicate. Both council findings are being addressed before further review.
 
 ## For owner review
 
@@ -81,8 +74,14 @@ M0.6 plan clarification (2026-10-27): finish the public HTML 404 deferred by M0.
 
 [D27](design/09-decisions.md#d27-safe-user-role-validation-and-credential-type-changes) (2026-10-28, during PR #10): invalid roles return a safe 400 instead of exposing a generated credential digest in a database error. Human/API conversions never reuse the other credential type; password login requires a fresh human password, and a human-to-API conversion clears the old credential without inventing token rotation. Shared reference/production observations support these narrow changes; independent review remains pending.
 
+[D28](design/09-decisions.md#d28-api-profile-updates-and-preserving-a-human-administrator) (2026-10-28, after M1.3 round 1): API users can update their display name without human credentials; profile password/email fields cannot change the API credential. The final human Super Admin cannot be converted to an API user. These sensible existing protections need explicit reference/normal cases and API-policy rows; the escaped redirect regression is corrected rather than made a difference.
+
 Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one whole-filesystem `find` to locate Echo source, contrary to `/home/t3-code/AGENTS.md`. It reported the scan finished quickly without a visible effect and was not repeated. The lead recorded the incident without repeating the scan. Worker and council instructions in the runbook now explicitly require named checkout/cache paths or pinned GitHub source inside the worktree, never a broader filesystem search when a dependency is absent.
 
 ## Pause history
 
 The Claude API rate-limit failures at approximately 06:13 and 06:23 UTC on 2026-10-28 led to a cooldown through 07:25:04 UTC. The owner explicitly cleared it at approximately 07:08 UTC after reporting restored limits. Work resumed with the requested models and no substitution, after direct inspection confirmed the old reviewers terminal and unsnoozed. Any new usage/rate-limit failure starts a fresh one-hour pause under the runbook.
+
+M1.3 pause (2026-10-28): Opus round-1 dispatch failed immediately at the Claude API rate limit. Paused until 2026-10-28T11:22:23+00:00; no retry/model substitution. Sol was already running, with its identifiers retained above. The PR watch was stopped, durable state pushed and the lock released for independent scheduled recovery.
+
+M1.3 cooldown expired at 11:22:23 UTC; automatic Opus continuation completed its review at 11:36 UTC. Both council results were recovered without retry or model substitution. The lead resumed only after the pause expired.
