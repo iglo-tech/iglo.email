@@ -8,11 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 final checker correction is pushed to [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), head `cd8e392bcaf9d9e57842a57fe5425c822daf1d8e`. CI is pending on the new head; all eleven local acceptance commands passed (107 tests / 653 assertions, 21 production cases, 23 staged cases + 2 probes, 43 upstream cases). Opus round 3 returned CHANGES on `f3839c4` for misplaced images/text; nine public CLI regressions reproduced the false passes before the fix. Sol round 3 remains running on its pinned `f3839c4`. After its terminal verdict and green CI, apply the runbook's three-round lead resolution using the source/design/real-reference evidence. Finish M0.6, then release this run's lock; do not start M0.7.
+M0.6 awaits final-head CI on [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), head `bc5f4f30388c953dfeb42a378cae04d86408cbe0`. Both round-3 reviews are terminal with CHANGES on `f3839c4`; the lead fixed Opus's misplaced-content checker finding and Sol's missing MIT notice finding. The [three-round lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487) accepts the corrected task once CI passes; no final-head council approval is claimed. Final full check: 108 tests / 659 assertions; compiled UI verification, 21 production cases, 23 fixture cases + 2 probes and 43 upstream cases pass. Rebuilding reproduces 50 assets and the manifest. After green CI, squash-merge, archive the review, update status and release this run's lock; do not start M0.7.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | ci | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `cd8e392bcaf9d9e57842a57fe5425c822daf1d8e`; new CI pending. All eleven commands passed, including 107 tests / 653 assertions and 43 upstream cases. `67b7add` records nine failures before `cd8e392` enforces all element parents/text slots and exact footer text/links. Opus CHANGES fixed; Sol verdict pending. |
+| M0.6 | ci | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `bc5f4f30388c953dfeb42a378cae04d86408cbe0`; CI pending. Final check 108 tests / 659 assertions; UI, 21 production, 23 fixture + 2 probes and 43 upstream cases pass. Both round-3 findings fixed. [Lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487) permits merge after exact-head CI. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -63,7 +63,7 @@ Both fresh members were dispatched together on original head `f3839c4bbf64857605
 - Task ID: node:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
 - Child thread ID: thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
 
-[M0.6 council round 3 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c); gpt-6.1-sol, reasoningEffort: xhigh, serviceTier: default. Running asynchronously; completion wakes the originating lead.
+[M0.6 council round 3 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c); gpt-6.1-sol, reasoningEffort: xhigh, serviceTier: default. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461240280): missing fsegurai MIT notice for vendored editor-theme source. Earlier findings resolved; all eleven acceptance commands, historical regressions and standalone/browser checks passed. The lead includes the pinned 2025 notice as a tracked/embedded input and tests its actual HTTP delivery.
 
 - Task ID: node:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c
 - Child thread ID: thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c
@@ -104,7 +104,13 @@ Both fresh members were dispatched together on original head `f3839c4bbf64857605
 
 - `67b7add` reproduces nine public CLI false passes before the correction: images in head/after html, sibling/bare/trailing text and a modified second footer link. The complete fixed-document check in `cd8e392` validates each element's parent, all document text, one logo slot, explicit per-target footer text and ordered link targets/labels. It rejects elements/non-whitespace text after body/document close. Production rendering is unchanged.
 - The pinned public templates define the two page shapes. The final real upstream corpus passes all 43 cases, compiled production passes 21, fixture passes 23 + 2 probes, and all eleven acceptance commands passed, including the reference lifecycle smoke and 107 tests / 653 assertions. Focused server/contract tests: 67 / 305 assertions. Logs are in the terminal worker checkout's ignored `upstream/lead-m06-round3/` directory.
-- Await final-head CI and Sol's original-head round-3 verdict, then record the three-round lead resolution in the PR. Do not claim council approval of the corrected head or dispatch a fourth council round merely to repeat the cycle. Unresolved real findings must be fixed before merge. The run is past four hours; release the lock after M0.6 merges.
+- Both round-3 verdicts are now terminal. The lead fixed both remaining findings and recorded the three-round resolution below. Await final-head CI; do not claim council approval of the corrected head. Release the lock after M0.6 merges.
+
+### Final notice correction and lead resolution, 2026-10-28
+
+- Sol round 3 reported the absent MIT notice for the vendored editor theme. The original source header names fsegurai, 2025. The lead fetched the complete original notice at `60a37d73bfa803721baadc4a61401de6ba3c116e` (not the later 2026 copyright edit); SHA-256 `05bdafe7f6449073a01c438eda00e030e4122bd30434e9944cbc088c7f5ea0e7`. Provenance is linked in `assets/README.md`.
+- Regression-first `fffdb7d` demonstrates the standalone HTTP notice returning 404. `bc5f4f3` tracks the notice and explicitly copies it into the embedded assets independently of npm license discovery and minified comments. The compiled HTTP test now passes. Final full check: 108 tests / 659 assertions; `ui:verify`, 21 production cases, 23 fixture + 2 probes and 43 real-reference cases passed again. Rebuilding reproduced all 50 assets and the manifest byte-for-byte.
+- [Three-round lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487): all findings are accepted and fixed, with pinned source, public regression tests and live upstream evidence as the tiebreaker. No final-head council approval is claimed. Merge exact `bc5f4f30388c953dfeb42a378cae04d86408cbe0` only after CI is green. Preserve D18/D21 differences and explicit admin/auth/domain/macOS limits. Then archive, update main, unwatch PR #6, release the lock and end this run under the four-hour rule.
 
 ## Automation
 
