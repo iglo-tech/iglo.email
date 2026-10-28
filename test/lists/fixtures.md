@@ -13,3 +13,7 @@ Other fixed, non-production values used by the tests are:
 - Restart bootstrap: `m15-restart-admin` / `m15-restart-password`.
 - Measurement bootstrap: `m15-measure-admin` / `m15-measure-password`.
 - Session test: `session-fixture` / `fixture-password`.
+
+The test-only sequence control advances the disposable list allocator before
+creating a list through the real API, to exercise a 64-bit ID above the safe
+JavaScript number range. It does not insert an explicit list identity.

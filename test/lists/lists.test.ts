@@ -114,6 +114,14 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
     expect((await request(`/api/lists/${second}`)).status).toBe(200);
     const replacement = await create("replacement fixture");
     expect(replacement).toBeGreaterThan(first);
+    expect((await request("/fixture/list-sequence", "POST")).status).toBe(200);
+    const high = await request("/api/lists", "POST", { name: "large automatic identity" });
+    const highText = await high.text();
+    expect(high.status).toBe(200);
+    expect(highText).toContain('"id":9007199254740993');
+    const highRead = await request("/api/lists/9007199254740993");
+    expect(highRead.status).toBe(200);
+    expect(await highRead.text()).toContain('"id":9007199254740993');
   } finally {
     await fixture.close();
   }

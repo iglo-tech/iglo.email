@@ -64,7 +64,10 @@ export function createListStore(
     );
   };
   const project = (row: Row, statuses: Record<string, number> | null) => ({
-    id: Number(row.id),
+    id:
+      row.id <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? Number(row.id)
+        : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(row.id.toString()),
     created_at: row.created_at,
     updated_at: row.updated_at,
     uuid: row.uuid,

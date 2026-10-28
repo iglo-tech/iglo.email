@@ -57,6 +57,11 @@ export async function startListFixture() {
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, lists, roles, auth);
+    // Test-only sequence setup; production still allocates every list ID automatically.
+    router.route("POST", "/fixture/list-sequence", () => {
+      db.query("UPDATE sqlite_sequence SET seq = ? WHERE name = 'lists'").run(9007199254740992n);
+      return ok(true);
+    });
     router.route("POST", "/fixture/membership", async ({ request }) => {
       const { list, status, subscriberStatus } = (await request.json()) as {
         list: number;
