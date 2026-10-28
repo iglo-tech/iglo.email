@@ -101,6 +101,8 @@ The sole round-1 parser fixer is dispatched: [M1.2: Fix trusted URL, mail and cr
 - Fixer run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-fix-r1-parsers-1513a76:ordinal:1.
 - Idempotent request: iglo-email-M1.2-fix-r1-parsers-1513a76.
 
+CI wake checkpoint: exact 1513a765b8692aa9f443c20f12b28d6ce3f6e1ed has four successful Linux check/reference-linux results. PR #14 remains OPEN/draft. This validates the lead small-fix head, not completion of the remaining parser defects or fresh council approval. The existing sole Terra max parser assignment remains the active work; no delegate was polled, interrupted, replaced or duplicated. Keep stage fix and the existing completion-driven next action. Do not relink/re-watch or start council before the completed corrected head and its acceptance/CI are ready.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
