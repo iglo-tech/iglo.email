@@ -313,6 +313,7 @@ async function run(args: string[]): Promise<number> {
     );
     const referenceEnv = {
       ...serviceEnv,
+      ZONEINFO: binaries.zoneinfo,
       LISTMONK_app__address: `127.0.0.1:${referencePort}`,
       LISTMONK_db__host: "127.0.0.1",
       LISTMONK_db__port: dbPort,

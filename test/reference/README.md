@@ -24,6 +24,14 @@ without overwriting it. To repair one, inspect and remove only the offending
 entry in the ignored `upstream/reference/` directory, then prepare again.
 The source lives in `.listmonk-source` so Bun's ordinary test discovery does not
 run the upstream Playwright specs.
+Under D47, preparation also checksum-caches Go 1.27.2's `lib/time/zoneinfo.zip`
+(IANA 2026c, SHA-256
+`b2d18a7c8fa8142097a48c99609fb3c92db5ee98bc740294e57eab8ae9f94779`).
+The runner passes its absolute path as `ZONEINFO` to the unchanged listmonk
+process. Named-zone comparisons use the same pinned identifiers as native
+validation, including `US/Eastern`, rather than depending on which aliases
+the host installed. Go retains its system fallback for names absent from the
+archive; this does not establish parity for arbitrary host extensions.
 MVP acceptance targets Linux x86-64 only (D42). The Linux Docker lifecycle
 is exercised locally and in CI. The harness retains Linux/macOS x64 and arm64
 binary selection, but macOS and Linux arm64 preparation, lifecycle verification

@@ -24,6 +24,11 @@ and delivery are not tested by these cases.
 The round-2 SMTP-name regression uses `🚀` and `--` as distinct synthetic
 server names; their normalized projections are `email--` and `email---`.
 
+D47 uses `US/Eastern` and `CRON_TZ=US/Eastern` as accepted pinned-data alias
+cases. Lowercase `us/eastern` and a single location made from
+`Europe/Warsaw\nEurope/Zagreb` are rejected without changing the settings
+snapshot. The newline is an actual character in the HTTP fixture.
+
 Round-2 parser cases use synthetic `example.invalid` addresses, encoded words,
 cron expressions and timezone identifiers. Rejected full writes carry a synthetic
 site-name sentinel and compare the complete masked settings projection.

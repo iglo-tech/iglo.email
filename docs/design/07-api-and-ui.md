@@ -168,6 +168,15 @@ the current domain policy. `app.lang` is retained as configuration, but the
 current runtime translation remains English; changing it does not hot-switch the
 language. Later-owner settings do not implement their engines.
 
+D47 pins native cron location validation to the complete case-sensitive
+identifier set in Go 1.27.2's IANA 2026c archive, plus Go's empty/UTC/Local
+special names. Valid aliases such as US/Eastern work without a production
+timezone file. Names outside that set, including host-only extensions, return
+the safe unknown-location error with no write. The reference runner supplies
+the same checksum-pinned archive through ZONEINFO to make named-zone cases
+reproducible; the earlier unaligned host lacked US/Eastern and rejected it.
+This does not add a cron or timezone-offset engine.
+
 Shared compiled and reference corpora exercise binding, safe error envelopes,
 numeric ranges, supported document and per-key types, address and cron cases.
 This finite coverage is representative; reproduced unlisted differences must

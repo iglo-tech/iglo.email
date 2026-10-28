@@ -112,6 +112,8 @@ export async function runSettingsCouncilParser(target: {
     ["cron-utc", "TZ=UTC 0 0 * * *"],
     ["cron-gmt", "TZ=GMT 0 0 * * *"],
     ["cron-warsaw", "TZ=Europe/Warsaw 0 0 * * *"],
+    ["cron-us-eastern-alias", "TZ=US/Eastern 0 0 * * *"],
+    ["cron-us-eastern-prefix", "CRON_TZ=US/Eastern 0 0 * * *"],
     ["cron-etc-offset", "TZ=Etc/GMT+1 0 0 * * *"],
     ["cron-empty-zone", "TZ= 0 0 * * *"],
     ["cron-nel", "0\u00850\u0085*\u0085*\u0085*"],
@@ -125,11 +127,13 @@ export async function runSettingsCouncilParser(target: {
   ])
     await accepted("app.cache_slow_queries_interval", cron, label!);
   for (const [label, cron, error] of [
-    ...["utc", "gmt", "europe/warsaw", "+01:00"].map((zone, index) => [
-      `cron-bad-zone-${index}`,
-      `TZ=${zone} 0 0 * * *`,
-      `provided bad location ${zone}: unknown time zone ${zone}`,
-    ]),
+    ...["utc", "gmt", "europe/warsaw", "us/eastern", "+01:00", "Europe/Warsaw\nEurope/Zagreb"].map(
+      (zone, index) => [
+        `cron-bad-zone-${index}`,
+        `TZ=${zone} 0 0 * * *`,
+        `provided bad location ${zone}: unknown time zone ${zone}`,
+      ],
+    ),
     [
       "cron-named-occurrence",
       "0 0 * * MON#mon",
