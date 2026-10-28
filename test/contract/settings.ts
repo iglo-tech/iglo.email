@@ -48,6 +48,64 @@ export async function runSettingsContract(target: {
   const after = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
     .data;
   check(JSON.stringify(after) === JSON.stringify(snapshot), "invalid-no-write");
+  const smtpTest = await request("/api/settings/smtp/test", "POST", "{}");
+  if (target.mode === "reference") {
+    check(smtpTest.status === 400, "smtp-test-reference-missing-email");
+  } else {
+    check(smtpTest.status === 501, "smtp-test-staged");
+  }
+  const candidate = structuredClone(snapshot);
+  candidate["app.from_email"] = [
+    "  Example <sender@example.invalid>  ",
+    "Example <sender@example.invalid>",
+  ];
+  candidate["privacy.domain_blocklist"] = ["  EXAMPLE.COM ", ""];
+  candidate["upload.extensions"] = [" .JPG ", "PNG"];
+  candidate.smtp = candidate.smtp.map((item: Record<string, unknown>, index: number) => ({
+    ...item,
+    name: index === 0 ? " My Server " : "",
+    password: "",
+    host: ` ${item.host} `,
+  }));
+  candidate["bounce.mailboxes"] = candidate["bounce.mailboxes"].map(
+    (item: Record<string, unknown>) => ({ ...item, password: "" }),
+  );
+  const write = await request("/api/settings", "PUT", JSON.stringify(candidate));
+  check(
+    write.status === 200 && JSON.stringify(await write.json()) === '{"data":true}',
+    "full-write",
+  );
+  const updated = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
+    .data;
+  check(
+    JSON.stringify(updated["app.from_email"]) === '["Example <sender@example.invalid>"]',
+    "from-normalization",
+  );
+  check(
+    JSON.stringify(updated["privacy.domain_blocklist"]) === '["example.com"]',
+    "domain-normalization",
+  );
+  check(
+    JSON.stringify(updated["upload.extensions"]) === '["jpg","png"]',
+    "extension-normalization",
+  );
+  check(
+    updated.smtp[0].name === "email-my-server" && updated.smtp[0].host === snapshot.smtp[0].host,
+    "smtp-normalization",
+  );
+  check(typeof updated.smtp[0].uuid === "string" && updated.smtp[0].uuid.length > 0, "smtp-uuid");
+  const key = await request(
+    "/api/settings/app.site_name",
+    "PUT",
+    JSON.stringify("Synthetic settings"),
+  );
+  check(key.status === 200 && JSON.stringify(await key.json()) === '{"data":true}', "key-write");
+  check(
+    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+      "app.site_name"
+    ] === "Synthetic settings",
+    "key-read",
+  );
 }
 
 if (import.meta.main) {
