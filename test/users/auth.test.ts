@@ -197,6 +197,102 @@ test("a profile write already in flight cannot outlive revocation", async () => 
   expect(profile.data.name).toBe(input.username);
 });
 
+for (const scenario of ["omitted", "zero-empty", "converted-api", "explicit"] as const) {
+  test(`password update preserves concurrent target changes: ${scenario}`, async () => {
+    const f = await fixture();
+    const admin = await login(f, f.admin.user, f.admin.password);
+    const { input, user } = await createHuman(f, admin, "fixture-concurrent-target");
+    const victim = await login(f, input.username, input.password);
+    const roleResponse = await call(f, "/fixture/role", {
+      method: "POST",
+      body: { name: "Reader", permissions: ["users:get"] },
+    });
+    const role = ((await roleResponse.json()) as { data: number }).data;
+    const listResponse = await call(f, "/fixture/list-role", { method: "POST" });
+    const listRole = ((await listResponse.json()) as { data: number }).data;
+    const defaults =
+      scenario === "explicit"
+        ? { type: "user", status: "enabled", user_role_id: 1 }
+        : scenario === "zero-empty"
+          ? { type: "", status: "", user_role_id: 0 }
+          : {};
+    const pending = call(f, `/fixture/gated-user/${user.id}`, {
+      method: "PUT",
+      session: admin,
+      body: {
+        username: input.username,
+        name: "Password changed",
+        email: input.email,
+        password_login: true,
+        password: "fixture-concurrent-new-password",
+        list_role_id: 0,
+        ...defaults,
+      },
+    });
+    void pending.catch(() => {});
+    expect((await call(f, "/fixture/gate-entered")).status).toBe(200);
+    const concurrent = await call(f, `/api/users/${user.id}`, {
+      method: "PUT",
+      session: admin,
+      body: {
+        ...input,
+        password: "",
+        status: "disabled",
+        user_role_id: role,
+        list_role_id: listRole,
+        type: scenario === "converted-api" ? "api" : "user",
+        password_login: scenario !== "converted-api",
+      },
+    });
+    expect(concurrent.status).toBe(200);
+    expect(((await concurrent.json()) as { data: { status: string } }).data.status).toBe(
+      "disabled",
+    );
+    expect((await call(f, "/fixture/gate-release", { method: "POST" })).status).toBe(200);
+    expect((await pending).status).toBe(200);
+    const response = await call(f, `/api/users/${user.id}`, { session: admin });
+    const result = (
+      (await response.json()) as {
+        data: {
+          name: string;
+          type: string;
+          status: string;
+          password: string | null;
+          password_login: boolean;
+          user_role: { id: number };
+          list_role: { id: number };
+        };
+      }
+    ).data;
+    expect(result.name).toBe("Password changed");
+    expect(result.status).toBe(scenario === "explicit" ? "enabled" : "disabled");
+    expect(result.user_role.id).toBe(scenario === "explicit" ? 1 : role);
+    expect(result.list_role.id).toBe(listRole);
+    expect(result.type).toBe(scenario === "converted-api" ? "api" : "user");
+    expect(result.password).toBeNull();
+    expect(result.password_login).toBe(scenario !== "converted-api");
+    expect((await call(f, "/api/profile", { session: victim })).status).toBe(403);
+    if (scenario !== "converted-api") {
+      const enabled = await call(f, `/api/users/${user.id}`, {
+        method: "PUT",
+        session: admin,
+        body: {
+          ...input,
+          name: result.name,
+          password: "",
+          status: "enabled",
+          user_role_id: 0,
+          list_role_id: 0,
+        },
+      });
+      expect(enabled.status).toBe(200);
+      expect((await call(f, "/api/profile", { session: victim })).status).toBe(403);
+      const fresh = await login(f, input.username, "fixture-concurrent-new-password");
+      expect((await call(f, "/api/profile", { session: fresh })).status).toBe(200);
+    }
+  });
+}
+
 test("lower-permission API users can read only where granted and cannot escalate their profiles", async () => {
   const f = await fixture();
   const admin = await login(f, f.admin.user, f.admin.password);

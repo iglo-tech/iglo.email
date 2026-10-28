@@ -1,6 +1,7 @@
 // Bounded, opt-in measurements against fresh compiled, disk-backed processes.
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -77,6 +78,63 @@ async function loginLogout(
   return { page: pageTime, login: loginTime, logout: logoutTime };
 }
 
+async function userUpdates(origin: string, authorization: string) {
+  const headers = { authorization, "content-type": "application/json" };
+  const fields = {
+    username: "m13-measure-update",
+    name: "Measured user",
+    email: "m13-measure-update@example.test",
+    type: "user",
+    status: "enabled",
+    user_role_id: 1,
+    password_login: true,
+    password: admin.password,
+  };
+  const created = await fetch(`${origin}/api/users`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(fields),
+  });
+  if (created.status !== 200) throw new Error("Update measurement setup failed");
+  const id = ((await created.json()) as { data: { id: number } }).data.id;
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error("Update measurement ID failed");
+  const update = async (withPassword: boolean) => {
+    const started = performance.now();
+    const response = await fetch(`${origin}/api/users/${id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        username: fields.username,
+        name: fields.name,
+        email: fields.email,
+        type: "user",
+        password_login: true,
+        password: withPassword ? admin.password : "",
+      }),
+    });
+    if (response.status !== 200) throw new Error("Update measurement failed");
+    const result = (
+      (await response.json()) as { data: { status: string; user_role: { id: number } } }
+    ).data;
+    if (result.status !== "enabled" || result.user_role.id !== 1)
+      throw new Error("Update measurement authority failed");
+    return performance.now() - started;
+  };
+  try {
+    await update(false);
+    await update(true);
+    const plain = [],
+      hashed = [];
+    for (let i = 0; i < 10; i++) plain.push(await update(false));
+    for (let i = 0; i < 3; i++) hashed.push(await update(true));
+    return { userUpdateMeanMs: mean(plain), passwordUpdateMeanMs: mean(hashed) };
+  } finally {
+    const removed = await fetch(`${origin}/api/users/${id}`, { method: "DELETE", headers });
+    await removed.text();
+    if (removed.status !== 200) throw new Error("Update measurement cleanup failed");
+  }
+}
+
 for (let repetition = 1; repetition <= 3; repetition++) {
   let started = performance.now();
   let unprovisioned = 0;
@@ -102,9 +160,11 @@ for (let repetition = 1; repetition <= 3; repetition++) {
       await loginLogout(origin);
       const samples = [];
       for (let i = 0; i < 3; i++) samples.push(await loginLogout(origin));
+      const updates = await userUpdates(origin, authorization);
       process.stdout.write(
         JSON.stringify({
           repetition,
+          temporaryRoot: tmpdir(),
           startupUnprovisionedMs: unprovisioned,
           startupBootstrapMs: bootstrapped,
           publicHealthMeanMs: plain,
@@ -112,6 +172,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           loginPageMeanMs: mean(samples.map((item) => item.page)),
           passwordLoginSessionMeanMs: mean(samples.map((item) => item.login)),
           logoutMeanMs: mean(samples.map((item) => item.logout)),
+          ...updates,
         }) + "\n",
       );
     },

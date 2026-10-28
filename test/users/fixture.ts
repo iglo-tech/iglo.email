@@ -9,6 +9,7 @@ import { createTranslation } from "@/i18n/i18n";
 import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { ok, HttpError } from "@/server/response";
+import { hasID } from "@/server/validation";
 import { createRouter } from "@/server/server";
 import { TestClock } from "@/test/server/fixture";
 import { createAuthentication, defaultAuthPolicy, type AuthPolicy } from "@/users/auth";
@@ -52,6 +53,21 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
+    router.route(
+      "PUT",
+      "/fixture/gated-user/:id",
+      createUserHandlers(users, roles, {
+        ...auth,
+        async hash(password) {
+          const hashed = await auth.hash(password);
+          announce();
+          await gate;
+          return hashed;
+        },
+      }).updateUser,
+      auth.middleware("users:manage"),
+      hasID,
+    );
     router.route(
       "PUT",
       "/fixture/gated-profile",
