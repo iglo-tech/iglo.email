@@ -40,8 +40,8 @@ ported upstream domain endpoint.
 
 | Mode and profile         | Executed coverage                                                                                                                                                   | Pending production coverage                                                                               |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `reference/upstream/all` | 40 pinned-upstream cases, including protected reads, public HTML 404 and asset boundaries, validation and D17/D18/D21                                               | Auth and list endpoints remain unported; public HTML 404 and embedded assets now have production coverage |
-| `normal/production/core` | 18 compiled-production cases: `/health`, public HTML 404 and embedded assets, API fallback/method boundaries, malformed URI handling and unregistered `/api/health` | Protected health/auth (M1.3), domain validation/list CRUD (M1.5)                                          |
+| `reference/upstream/all` | 43 pinned-upstream cases, including protected reads, public HTML 404 and asset boundaries, validation and D17/D18/D21                                               | Auth and list endpoints remain unported; public HTML 404 and embedded assets now have production coverage |
+| `normal/production/core` | 21 compiled-production cases: `/health`, public HTML 404 and embedded assets, API fallback/method boundaries, malformed URI handling and unregistered `/api/health` | Protected health/auth (M1.3), domain validation/list CRUD (M1.5)                                          |
 | `normal/fixture/staged`  | Synthetic auth gate and representative shared helpers, including the normal sides of D17/D18                                                                        | The corresponding production endpoints and auth                                                           |
 | `normal/fixture/probe`   | Synthetic generated ID, relationship and timestamp normalization                                                                                                    | These probes do not represent upstream ports                                                              |
 
@@ -65,3 +65,15 @@ both upstream and actual compiled production. It requires upstream's plain-text
 404 and the normal public HTML 404, and a synthetic plain-text normal response
 fails. Unmatched non-static admin paths still use the public error page until
 M4.1 supplies the authenticated admin error view.
+
+Equivalent static spellings now run through the core corpus in both modes:
+`%73tyle.css`, `style%2ecss` and a redundant separator resolve to the same public
+stylesheet. The reference observation and compiled-production HTTP tests also
+verify the escaped Geist font name and WOFF2 signature. Asset lookup decodes once
+and cleans POSIX separators inside the original embedded namespace. It never
+uses the request path for filesystem access.
+
+The HTML CLI rejects newline/tab/carriage-return executable URL schemes after
+browser-compatible URL parsing, hidden headings and ancestors, inline visibility
+styles and unrecognized stylesheets. These checks remain specific to the fixed
+public 404 layout; wire and JSON comparisons are unchanged.

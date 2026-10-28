@@ -267,14 +267,26 @@ async function comparePublic404(
     .on("*", {
       element(element) {
         for (const [name, value] of element.attributes) {
+          if (/^on/i.test(name)) throw new Error("Unsafe HTML attribute");
+          if (name === "href" || name === "src") {
+            // WHATWG URL parsing removes embedded ASCII tabs/newlines just as
+            // a browser does; a literal scheme-prefix regex misses those URLs.
+            const url = new URL(value, "http://127.0.0.1/");
+            if (url.protocol !== "http:" && url.protocol !== "https:")
+              throw new Error("Unsafe HTML URL");
+          }
           if (
-            /^on/i.test(name) ||
-            ((name === "href" || name === "src") &&
-              /^\s*(?:javascript|vbscript|data):/i.test(value))
+            name === "hidden" ||
+            name === "style" ||
+            (name === "aria-hidden" && value.toLowerCase() === "true")
           )
-            throw new Error("Unsafe HTML attribute");
+            throw new Error("Unexpected HTML visibility attribute");
         }
-        if (["iframe", "object", "embed", "svg", "math"].includes(element.tagName))
+        if (
+          ["iframe", "object", "embed", "svg", "math", "style", "template"].includes(
+            element.tagName,
+          )
+        )
           throw new Error("Unexpected HTML element");
       },
     })
@@ -323,6 +335,11 @@ async function comparePublic404(
         if (href?.startsWith("/public/static/style.css")) {
           count("style");
           styleVersion = version(href, "/public/static/style.css");
+        } else if (
+          !expected.customScript ||
+          !/^\/public\/custom\.css\?v=[a-f0-9]{10}$/.test(href ?? "")
+        ) {
+          throw new Error("Unexpected public stylesheet");
         }
       },
     })

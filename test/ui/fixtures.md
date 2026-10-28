@@ -76,3 +76,15 @@ and ui:verify. It requires the normal HTML refusal and rejects a synthetic serve
 returning the reference plain-text body. The API-policy row names this static
 path. Admin-specific error views remain pending M4.1; no production admin route
 or authentication is claimed.
+
+## Asset spelling and HTML assertion correction (2026-10-28)
+
+Source-first requests confirmed 200 for `/public/static/%73tyle.css`,
+`/public/static/style%2ecss`, `/public/static//style.css` and the escaped Geist
+font filename. The shared corpus now contains all three stylesheet spellings;
+the observation and compiled tests also validate the font MIME and WOFF2 magic.
+Ten regressions failed before the fixes: four asset spellings and six HTML false
+passes covering newline/tab/CR executable URLs and hidden/styled headings or
+ancestors. They pass after namespace-confined asset canonicalization and stricter
+404 assertions. Browser-compatible URL parsing rejects schemes that Chromium
+normalizes to executable URLs. The current production shell remains unchanged.

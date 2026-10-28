@@ -73,7 +73,7 @@ for (const path of [
   "/public/static//style.css",
   "/admin/static/fonts/Geist%2dVariable.woff2",
 ]) {
-  const response = await fetch(origin + path, {
+  const response: Response = await fetch(origin + path, {
     headers: { Connection: "close" },
     signal: AbortSignal.timeout(5000),
   });

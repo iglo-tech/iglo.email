@@ -153,3 +153,9 @@ cleanup of a signal-resistant child and grandchild, including a parent that exit
 before its descendant. It creates an unrelated sentinel process
 and Docker volume and checks that they survive. These integration checks are
 explicit: `bun test` and `bun run check` do not need Docker or downloads.
+
+The shared static corpus also covers equivalent escaped stylesheet filenames
+and redundant separators. The source-first observation checks the escaped Geist
+font name; compiled-production HTTP tests verify its MIME type and WOFF2 bytes.
+The application decodes names once and cleans separators within the original
+embedded namespace, without arbitrary filesystem lookup.
