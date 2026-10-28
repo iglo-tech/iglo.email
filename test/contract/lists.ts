@@ -32,7 +32,9 @@ export async function runListsContract(target: {
     return data.data;
   }
   async function search(query: string) {
-    const response = await request(`/api/lists?query=${encodeURIComponent(query)}&status=`);
+    const response = await request(
+      `/api/lists?query=${encodeURIComponent(query)}&status=&per_page=all`,
+    );
     check(response.status === 200, "list-search-status");
     return ((await response.json()) as { data: { results: Record<string, any>[] } }).data.results;
   }
