@@ -96,6 +96,31 @@ export async function runSubscriberBindingRevisions(target: {
         "attrib-overflow-no-write",
       );
     }
+    for (const [i, address, expected] of [
+      [0, `İ-post-${suffix}@example.test`, `i-post-${suffix}@example.test`],
+      [1, `ΟΣ-post-${suffix}@a\ufeffb`, `οσ-post-${suffix}@a\ufeffb`],
+      [2, `literal-${suffix}@[127.0.0.1]`, `literal-${suffix}@[127.0.0.1]`],
+    ] as const) {
+      const created = await create(
+        "subscribers",
+        JSON.stringify({ email: address, name: `Post ${i}` }),
+      );
+      check(
+        created.email === expected && (await get(created.id)).email === expected,
+        "email-post-persisted",
+      );
+    }
+    const invalidPost = await request(
+      "/api/subscribers",
+      "POST",
+      JSON.stringify({ email: `badpost-${suffix}@[garbage]` }),
+    );
+    check(invalidPost.status === 400, "email-post-invalid");
+    const validAfter = await create(
+      "subscribers",
+      JSON.stringify({ email: `badpost-${suffix}@example.test` }),
+    );
+    check(validAfter.email === `badpost-${suffix}@example.test`, "email-post-after-invalid");
     for (const [address, expected] of [
       [`İ-${suffix}@example.test`, `i-${suffix}@example.test`],
       [`ΟΣ-${suffix}@example.test`, `οσ-${suffix}@example.test`],
@@ -163,6 +188,16 @@ export async function runSubscriberBindingRevisions(target: {
           (await get(ext.id)).email === `i-ext-${suffix}@example.test`,
         "external-email",
       );
+      const prior = await get(ext.id);
+      const bad = await request(
+        `/api/subscribers/external?external_id=binding-${suffix}`,
+        "PUT",
+        JSON.stringify({ email: `ext-${suffix}@[garbage]` }),
+      );
+      check(
+        bad.status === 400 && JSON.stringify(await get(ext.id)) === JSON.stringify(prior),
+        "external-email-invalid",
+      );
     }
     const form = await create(
       "subscribers",
@@ -222,6 +257,30 @@ export async function runSubscriberBindingRevisions(target: {
         "application/xml",
       );
       check(xml.email === `xml-${i}-${suffix}@example.test`, "xml-default");
+    }
+    for (const [i, value] of [
+      "1",
+      "t",
+      "T",
+      "TRUE",
+      "True",
+      "0",
+      "f",
+      "F",
+      "FALSE",
+      "False",
+    ].entries()) {
+      const r = await create(
+        "subscribers",
+        `<Subscriber><Email>xml-bool-${i}-${suffix}@example.test</Email><PreconfirmSubs>${value}</PreconfirmSubs><Lists> ${list.id} </Lists></Subscriber>`,
+        "application/xml",
+      );
+      const status = i < 5 ? "confirmed" : "unconfirmed";
+      check(
+        r.lists[0]?.subscription_status === status &&
+          (await get(r.id)).lists[0]?.subscription_status === status,
+        "xml-bool-spellings",
+      );
     }
     const xmlBad = await request(
       `/api/subscribers/${sub.id}`,
