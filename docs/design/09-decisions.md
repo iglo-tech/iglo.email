@@ -69,7 +69,7 @@ Updated 2026-10-27.
 ## D9. Liquid for user-authored templates
 
 - **Decision:** LiquidJS replaces Go `html/template` and Sprig.
-- **Why:** it is sandboxed, has resource limits and is widely known. Reimplementing Go template semantics in TypeScript is not worth it, and there are no existing templates to keep compatible.
+- **Why:** its explicit template language and familiar data/filter model fit user-authored email. Application-enforced boundaries and the precise library limit semantics are required by D23; library options alone are not a complete sandbox. Reimplementing Go template semantics is not worth it, and no existing templates need compatibility.
 
 ## D10. nodemailer for SMTP
 
@@ -169,3 +169,23 @@ Decided by agents on 2026-10-28, for owner review.
 - **Evidence:** the [committed report](../perf/M0.7-sqlite-write-load.md) records one batched repetition with 5,999/6,000 events in-window and about 4.74 ms final drain, while all campaign progress committed in-window. Both independent council reruns reproduced that finite-window effect; Opus also observed host-sensitive latency and control throughput. The report separates window completion from catch-up and does not hide the miss.
 - **Follow-up:** M5.1 measures real API acceptance and commit latency separately, exact offered/completed counts, queue growth and flush deadlines over longer mixed-load runs with sending. Investigate the boundary and batching schedule before claiming strict end-to-end 100/s. M3.2, M5.1 and M6.1 retain their end-to-end checks, and future sending/scheduling/storage changes retain before/after measurement requirements.
 - **Why:** the measurements support proceeding with the chosen durable storage path while leaving the observed latency limitation visible and testable at the owning production boundary. Weakening durability, relabeling drain as in-window throughput, or asserting unlimited/host-independent capacity would not be supported by this experiment.
+
+## D23. Liquid template boundaries are enforced by the application
+
+Decided by agents on 2026-10-28, for owner review.
+
+- **Decision:** retain LiquidJS under D9, but require M1.8 to enforce a capability and resource boundary before production template use. Expose recursively copied plain data, finite scalar strings/numbers and dense arrays, with bounded input size/depth; reject executable values, accessors and class instances. Do not expose inherited array elements. Use ownPropertyOnly as an additional property-lookup restriction. Resolve only allowlisted in-memory templates through a null-prototype mapping, with no host filesystem or URL fallback. Register only reviewed, bounded-cost filters.
+- **Output and work:** M1.8 must enforce finite parse/input/filter budgets and a byte-counted output emission path that aborts before accumulating output beyond its cap; a final string-size check alone is insufficient. Also account for intermediate captures, filter allocations and trusted layout composition. Choose and document concrete limits with adversarial public-boundary tests and measurements. Until actual bounds are implemented and verified, do not advertise production hard output or execution guarantees.
+- **Library semantics:** parseLimit counts UTF-16 code units per parse; renderLimit is a cooperative deadline checked between rendering steps and cannot preempt synchronous filters; memoryLimit accounts selected operations and is neither a heap nor a complete output cap. All require explicit finite configuration. HTML values remain escaped unless the template explicitly uses raw; a previously rendered HTML body is inserted into the layout with `{{ content | raw }}` to avoid double escaping. URL/script contexts need their own validation.
+- **Evidence:** the [M0.8 report](../perf/M0.8-liquidjs.md), independently reproduced by both reviewers, records output beyond memoryLimit, a slow filter exceeding renderLimit before rejection, inherited array iteration and inherited template-name lookup with an ordinary-object mapping. The corrected fixture denies template files/URLs/inherited names but is not a finished production template subsystem.
+- **Why:** keep the chosen language while making its actual enforcement requirements testable. Correct the original broad sandbox/hard-limit claims rather than assuming an engine option provides preemption or a byte allocation cap. No new runtime service or dependency is authorized by this decision.
+
+## D24. Disable library requeues and classify SMTP outcomes before retry
+
+Decided by agents on 2026-10-28, for owner review.
+
+- **Decision:** retain nodemailer under D10, explicitly set pool maxRequeues to 0 for all D12-governed transports, and keep retry policy in the owning application module. No automatic marketing retry is permitted. A transactional retry requires proof that the server did not accept that message; uncertainty is unknown and does not authorize resend.
+- **Outcomes:** preserve the Message-ID generated before SMTP and record recipient-level acceptance/rejection and the relevant transport stage. A partial recipient failure must not cause accepted recipients to be resent. Connection loss around DATA/final acknowledgement can be ambiguous; a 4xx/5xx label alone is not a full acceptance classification. SMTP 250 is server acceptance, not final delivery or proof of at-most-once.
+- **Acceptance:** M2.1 verifies actual transport configuration, partial rejection, failure before/after DATA acceptance, TLS/auth modes, IDs and bounded shutdown. M2.2 tests proof-based transactional retry and that ambiguous/restarted/marketing work is never automatically resent, with the injected clock and crash scenarios. End-to-end M3.2/M6.1 acceptance remains required.
+- **Evidence:** the [M0.8 report](../perf/M0.8-nodemailer.md) and both independent dependency inspections found default pool maxRequeues of five, disabled with zero. Successful sink/MIME/DKIM/ID tests do not exercise ambiguous provider failures. The benchmark correctly uses zero requeues and makes no production delivery claim.
+- **Why:** a library default must not bypass the durable application record and at-most-once policy. D12 stays unchanged; this specifies the configuration and failure-boundary evidence required to implement it.

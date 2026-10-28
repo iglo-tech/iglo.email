@@ -9,14 +9,14 @@ There are two kinds of templates:
 
 listmonk uses Go's `html/template` with Sprig functions (`{{ .Subscriber.FirstName }}`, `{{ UnsubscribeURL }}`). A TypeScript port needs an engine of its own. iglo.email uses **Liquid**, through [LiquidJS](https://liquidjs.com):
 
-- **It is sandboxed:** templates can read the data they are given and call registered filters, nothing else. Prototype access is off (`ownPropertyOnly`).
-- **It has hard limits:** `parseLimit`, `renderLimit` and `memoryLimit` stop runaway templates.
+- **Its capabilities are explicit:** M1.8 supplies sanitized plain data, dense arrays, reviewed filters and an allowlisted in-memory template resolver. `ownPropertyOnly` additionally restricts property lookup; it does not sanitize inherited array iteration. No filesystem or URL fallback is allowed ([D23](09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application)).
+- **Resource bounds are enforced by the application:** finite input/filter budgets and byte-counted output emission must complement the engine limits. `parseLimit` counts UTF-16 units, `renderLimit` is cooperative, and `memoryLimit` accounts selected operations without capping all output or heap use. M1.8 must implement and test those bounds before production use (D23).
 - **It is familiar:** Shopify, Jekyll and many email tools use it, so most people writing email templates have seen it.
 - **No reimplementation:** reimplementing Go template semantics in TypeScript to keep old templates working is not worth it. There are no existing iglo.email templates to keep compatible.
 
 HTML templates render with `outputEscape: "escape"`, so values are HTML-escaped unless piped through `raw`. Plain-text templates render without escaping.
 
-M0.8 measured the selected library and found qualifications to the sandbox and hard-limit claims above ([evidence](../perf/M0.8-liquidjs.md)): filesystem lookup must be explicitly denied or mapped, `ownPropertyOnly` does not sanitize iteration, `memoryLimit` does not cap all output, and `renderLimit` is cooperative. The report proposes concrete M1.8 boundaries for the lead to decide; no production guarantee is established by this fixture.
+M0.8 measured the selected library and found the precise library-limit semantics and capability boundaries ([evidence](../perf/M0.8-liquidjs.md)): filesystem lookup must be explicitly denied or mapped, `ownPropertyOnly` does not sanitize iteration, `memoryLimit` does not cap all output, and `renderLimit` is cooperative. D23 sets the required M1.8 boundaries; the fixture does not itself implement the production guarantee.
 
 ### Data and functions
 
@@ -29,7 +29,7 @@ M0.8 measured the selected library and found qualifications to the sandbox and h
 | `{{ .Campaign.Name }}`, `.Subject`, `.UUID` | `{{ campaign.name }}`, `campaign.subject`, `campaign.uuid` |
 | `{{ .Tx.Data.order_id }}` | `{{ data.order_id }}` |
 | — | `{{ trigger.data.price }}`, `{{ sequence.name }}`, `{{ step.position }}` (sequence sends) |
-| `{{ template "content" . }}` (in campaign layouts) | `{{ content }}` |
+| `{{ template "content" . }}` (in campaign layouts) | `{{ content \| raw }}` (already rendered HTML body) |
 | `{{ UnsubscribeURL }}` | `{{ unsubscribe_url }}`, campaigns and marketing sends |
 | `{{ UnsubscribeURL }}?manage=true` | `{{ manage_url }}` |
 | `{{ OptinURL }}` | `{{ optin_url }}` |
@@ -46,7 +46,7 @@ M0.8 measured the selected library and found qualifications to the sandbox and h
 
 ### Layouts
 
-As in listmonk, a **campaign template** is a layout containing `{{ content }}`, and a campaign or sequence step supplies the body. A **transactional template** is a complete message with its own subject. Sequence steps use either:
+As in listmonk, a **campaign template** is a layout containing `{{ content }}`, and a campaign or sequence step supplies the body. A **transactional template** is a complete message with its own subject. An already rendered HTML body is inserted as `{{ content | raw }}`; values were escaped within that body, and the raw insertion prevents double escaping during trusted layout composition. Sequence steps use either:
 
 - a transactional template;
 - a campaign template plus a body stored on the step. This lets a sequence share the newsletter's layout.

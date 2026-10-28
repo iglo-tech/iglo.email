@@ -115,15 +115,15 @@ Serial, then the spikes in parallel after M0.4.
 | M1.5 | Lists: CRUD, tags, opt-in types, counts | `cmd/lists.go`, `queries/lists.sql`, `internal/core/lists.go` | M1.4 | List contract tests pass in both modes |
 | M1.6 | Subscribers: CRUD, `attribs`, `external_id` routes, list subscriptions, blocklist, bulk actions | `cmd/subscribers.go` (CRUD and bulk), `queries/subscribers.sql`, `internal/core/subscribers.go` | M1.5 | Subscriber contract tests pass, `external_id` routes against the design |
 | M1.7 | Segment queries, FTS5 search and subscriber data export | `cmd/subscribers.go` (query, export), segment parts of `queries/subscribers.sql` | M1.6, M0.7 | Query contract tests pass with the SQLite-dialect difference marked |
-| M1.8 | Templates: store, LiquidJS setup and functions, preview, built-in templates converted to Liquid | `cmd/templates.go`, `queries/templates.sql`, `static/email-templates` | M1.4 | Template contract tests pass with the Liquid difference marked; built-ins render |
+| M1.8 | Templates: store, LiquidJS setup and functions, preview, built-in templates converted to Liquid | `cmd/templates.go`, `queries/templates.sql`, `static/email-templates` | M1.4 | Template contract tests pass with the Liquid difference marked; built-ins render; enforce and adversarially test the data/resolver/input/output boundaries in [D23](09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application) |
 | M1.9 | CSV subscriber import | `cmd/import.go`, `internal/subimporter` | M1.6 | Import contract tests pass; a 100,000-row import is measured |
 
 ### M2: individual sending
 
 | ID | Task | Upstream | Depends on | Acceptance |
 |---|---|---|---|---|
-| M2.1 | Messaging: SMTP pool with nodemailer, several servers, message building, `Message-ID` capture, SMTP test endpoint | `internal/messenger/email` | M0.8, M1.2 | Messages in Mailpit match upstream's for the same input |
-| M2.2 | Sends and outbox: `sends` table, outbox loop, transactional retry only on proven rejection, `GET /api/sends`, resend | none ([Sending](04-sending.md#outbox)) | M2.1, M1.6 | Crash tests: no duplicate after a kill at each point; send log readable through the API |
+| M2.1 | Messaging: SMTP pool with nodemailer, several servers, message building, `Message-ID` capture, SMTP test endpoint | `internal/messenger/email` | M0.8, M1.2 | Messages in Mailpit match upstream's for the same input; pool requeues are disabled and partial/ambiguous DATA outcomes are tested under [D24](09-decisions.md#d24-disable-library-requeues-and-classify-smtp-outcomes-before-retry) |
+| M2.2 | Sends and outbox: `sends` table, outbox loop, transactional retry only on proven rejection, `GET /api/sends`, resend | none ([Sending](04-sending.md#outbox)) | M2.1, M1.6 | Crash tests: no duplicate after a kill at each point; send log readable through the API; [D24](09-decisions.md#d24-disable-library-requeues-and-classify-smtp-outcomes-before-retry) proof-based transactional retry and no automatic marketing/ambiguous resend |
 | M2.3 | Transactional API: `POST /api/tx` with the new fields, idempotency keys, attachments, headers | `cmd/tx.go` | M2.2, M1.8 | Tx contract tests pass with the response difference marked |
 | M2.4 | Unsubscribe and frequency cap: marketing unsubscribe, one-click `List-Unsubscribe`, `/m/:sendUUID` pages and tracking, the cap check | none ([Sending](04-sending.md#unsubscribe)) | M2.3 | Unsubscribe from a received email in Mailpit works by link and by one-click `POST` |
 | M2.5 | Public pages: subscription form, opt-in, preferences, export and wipe, public rate limits | `cmd/public.go`, `static/public/templates` | M2.1, M1.6, M0.6 | Public page tests pass in both modes; `forms.spec.js` adapted |
