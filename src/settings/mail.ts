@@ -86,9 +86,11 @@ export function validFromAddress(input: string): boolean {
         return false;
       }
       const literal = input.slice(pos + 1, end);
-      const valid = literal.startsWith("IPv6:")
-        ? isIP(literal.slice(5)) !== 0
-        : isIP(literal) === 4;
+      const ip = literal.startsWith("IPv6:") ? literal.slice(5) : literal;
+      const kind = ip.includes("%") ? 0 : isIP(ip);
+      // To4 also recognizes IPv4-mapped IPv6, including hexadecimal spelling.
+      const mapped = kind === 6 && new URL(`http://[${ip}]`).hostname.startsWith("[::ffff:");
+      const valid = literal.startsWith("IPv6:") ? kind !== 0 : kind === 4 || mapped;
       if (!valid) {
         pos = start;
         return false;
@@ -118,7 +120,10 @@ export function validFromAddress(input: string): boolean {
           pos = before;
           break;
         }
-        if (input[before] !== '"' && !decodable(input.slice(before, pos))) return -1;
+        if (input[before] !== '"' && !decodable(input.slice(before, pos))) {
+          if (!words) return -1;
+          break;
+        }
         words++;
       }
       if (!words) return -1;

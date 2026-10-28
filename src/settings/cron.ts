@@ -1,5 +1,6 @@
 // Syntax validation adapted from github.com/gdgvda/cron v0.7.0, parser.go and internal/parser.
 // Copyright Rob Figueiredo; the complete MIT license is embedded with the assets.
+import { trimSpace } from "@/lists/store";
 import { goDuration } from "@/settings/duration";
 
 // time.Duration.String formats the parsed duration, rather than its input spelling.
@@ -17,6 +18,15 @@ function durationString(milliseconds: number): string {
   return `${sign}${hours ? `${hours}h` : ""}${hours || minutes ? `${minutes}m` : ""}${decimal(seconds)}s`;
 }
 
+function parseIntError(value: string): string {
+  const quote = JSON.stringify(value).replace(/\ufeff/g, "\\ufeff");
+  const reason =
+    /^\+?\d+$/.test(value) && BigInt(value) > 9223372036854775807n
+      ? "value out of range"
+      : "invalid syntax";
+  return `failed to parse int from ${value}: strconv.Atoi: parsing ${quote}: ${reason}`;
+}
+
 export function cronError(input: string): string | null {
   if (!input) return "empty spec string";
   let spec = input;
@@ -25,11 +35,11 @@ export function cronError(input: string): string | null {
     if (i < 0) return `invalid location descriptior: ${spec}`;
     const zone = spec.slice(spec.indexOf("=") + 1, i);
     try {
-      new Intl.DateTimeFormat("en", { timeZone: zone });
+      if (zone !== "" && zone !== "Local") new Intl.DateTimeFormat("en", { timeZone: zone });
     } catch {
       return `provided bad location ${zone}: unknown time zone ${zone}`;
     }
-    spec = spec.slice(i).trim();
+    spec = trimSpace(spec.slice(i));
   }
   if (spec.startsWith("@")) {
     if (
@@ -49,7 +59,12 @@ export function cronError(input: string): string | null {
     }
     return `unrecognized descriptor: ${spec}`;
   }
-  const fields = spec.trim() ? spec.trim().split(/\s+/u) : [];
+  const trimmed = trimSpace(spec);
+  const fields = trimmed
+    ? trimmed.split(
+        /[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/u,
+      )
+    : [];
   if (fields.length !== 5)
     return `expected exactly 5 fields, found ${fields.length}: [${fields.join(" ")}]`;
   const months = [
@@ -92,8 +107,11 @@ export function cronError(input: string): string | null {
       if (slash.length > 2 || range.length > 2) return `${option}: invalid expression`;
       const first = range[0]!;
       if (index === 2 && first === "L") {
-        if (slash.length > 1 || (range.length === 2 && !(number(range[1]!) <= 30)))
-          return `${option}: invalid expression`;
+        if (slash.length > 1) return `${option}: invalid expression`;
+        if (range.length === 2 && number(range[1]!) > 30)
+          return `${option}: invalid amount of days subtracted`;
+        if (range.length === 2 && !Number.isFinite(number(range[1]!)))
+          return parseIntError(range[1]!);
         continue;
       }
       if (index === 2 && first.endsWith("W")) {
@@ -105,33 +123,34 @@ export function cronError(input: string): string | null {
       if (index === 4 && first !== "L" && (first.endsWith("L") || first.includes("#"))) {
         if (range.length > 1 || slash.length > 1) return `${option}: invalid expression`;
         const parts = first.endsWith("L") ? [first.slice(0, -1)] : first.split("#");
-        if (
-          number(parts[0]!) > 6 ||
-          !Number.isFinite(number(parts[0]!)) ||
-          (parts.length > 1 &&
-            (parts.length !== 2 || !(number(parts[1]!) >= 1 && number(parts[1]!) <= 5)))
-        )
-          return `${option}: invalid expression`;
+        if (parts.length > 2) return `${option}: invalid expression`;
+        const day = number(parts[0]!);
+        if (!Number.isFinite(day)) return parseIntError(parts[0]!);
+        if (day > 6) return `${option}: value ${day} out of valid range [0, 6]`;
+        if (parts.length > 1) {
+          const occurrence = number(parts[1]!);
+          if (!Number.isFinite(occurrence)) return parseIntError(parts[1]!);
+          if (occurrence < 1 || occurrence > 5)
+            return `${option}: value ${occurrence} out of valid range [1, 5]`;
+        }
         continue;
       }
       const wild = first === "*" || (first === "?" && (index === 2 || index === 4));
       if (wild && range.length > 1) return `${option}: invalid expression`;
       const low = wild ? min : first === "L" && index === 4 ? 6 : number(first);
       const high = wild ? max : range.length > 1 ? number(range[1]!) : slash.length > 1 ? max : low;
-      if (!Number.isFinite(low))
-        return `failed to parse int from ${first}: strconv.Atoi: parsing ${JSON.stringify(first)}: invalid syntax`;
+      if (!Number.isFinite(low)) return parseIntError(first);
       if (low < min || low > max)
         return `${option}: value ${low} out of valid range [${min}, ${max}]`;
-      if (!Number.isFinite(high))
-        return `failed to parse int from ${range[1]}: strconv.Atoi: parsing ${JSON.stringify(range[1])}: invalid syntax`;
+      if (!Number.isFinite(high)) return parseIntError(range[1]!);
       if (high < min || high > max)
         return `${option}: value ${high} out of valid range [${min}, ${max}]`;
       if (high < low) return `${option}: beginning of range (${low}) beyond end of range (${high})`;
       if (slash.length > 1) {
         const step = slash[1]!;
-        if (!/^\+?\d+$/.test(step) || !Number.isSafeInteger(Number(step)))
-          return `failed to parse int from ${step}: strconv.Atoi: parsing ${JSON.stringify(step)}: invalid syntax`;
-        if (Number(step) === 0) return "step should be > 0, got 0";
+        if (!/^\+?\d+$/.test(step) || BigInt(step) > 9223372036854775807n)
+          return parseIntError(step);
+        if (BigInt(step) === 0n) return "step should be > 0, got 0";
       }
     }
   }

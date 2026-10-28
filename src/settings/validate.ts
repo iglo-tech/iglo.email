@@ -1,3 +1,4 @@
+import { validTrustedURL } from "@/settings/url";
 // Settings model and transformations adapted from listmonk models/settings.go and cmd/settings.go at 6fcd95f.
 import { defaults } from "@/settings/defaults";
 import { trimSpace } from "@/lists/store";
@@ -276,15 +277,8 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
   for (const url of next["security.trusted_urls"])
-    if (url !== "*") {
-      try {
-        const u = new URL(url);
-        if (!["http:", "https:"].includes(u.protocol) || !u.host)
-          return fail(`Invalid data.: invalid trusted URL: ${url}`);
-      } catch {
-        return fail(`Invalid data.: invalid trusted URL: ${url}`);
-      }
-    }
+    if (url !== "*" && !validTrustedURL(url))
+      return fail(`Invalid data: invalid trusted URL: ${url}`);
   const oidc = next["security.oidc"];
   if (!oidc) return fail();
   if (oidc.roles === null) oidc.roles = current["security.oidc"].roles;
