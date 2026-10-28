@@ -86,16 +86,22 @@ function filter(
   context: RequestContext,
   params: URLSearchParams,
   defaultStatus: string,
+  deletion = false,
 ): ListFilter {
+  // Upstream DeleteLists uses raw first URL values and all raw tags, while
+  // collection makeQuery trims fields and discards empty tag values.
+  const field = (key: string) => (deletion ? (params.get(key) ?? "") : first(params, key));
   const result = {
-    query: first(params, "query"),
-    type: first(params, "type"),
-    optin: first(params, "optin"),
-    status: first(params, "status") || defaultStatus,
-    tags: params
-      .getAll("tag")
-      .map((v) => v.trim())
-      .filter(Boolean),
+    query: field("query").trim(),
+    type: field("type"),
+    optin: field("optin"),
+    status: field("status") || defaultStatus,
+    tags: deletion
+      ? params.getAll("tag")
+      : params
+          .getAll("tag")
+          .map((v) => v.trim())
+          .filter(Boolean),
   };
   validate(context, result.type, result.optin, result.status);
   return result;
@@ -168,13 +174,9 @@ export function registerListRoutes(
     );
     return ok(true);
   };
-  const removeMany: Handler = async (context) => {
-    const params = new URLSearchParams(context.url.searchParams);
-    const contentType = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
-    if (contentType === "application/x-www-form-urlencoded") {
-      const form = new URLSearchParams(await readBody(context.request));
-      for (const [key, value] of form) if (!params.has(key)) params.append(key, value);
-    }
+  const removeMany: Handler = (context) => {
+    // Pinned Go ParseForm does not consume URL-encoded DELETE bodies.
+    const params = context.url.searchParams;
     const raw = context.url.searchParams.getAll("id");
     const ids: bigint[] = [];
     for (const value of raw) {
@@ -196,7 +198,7 @@ export function registerListRoutes(
     }
     const f = ids.length
       ? { query: "", type: "", optin: "", status: "", tags: [] }
-      : filter(context, params, "");
+      : filter(context, params, "", true);
     if (!ids.length && !f.query && params.get("all") !== "true")
       throw new HttpError(
         400,
