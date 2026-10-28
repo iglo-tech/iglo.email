@@ -8,11 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 council recovery resumed in the dedicated lead thread. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains at `f3839c4bbf6485760540567285953a649ddd9222`, with all eight CI jobs successful. Opus round 2 is confirmed cancelled at 2026-10-28T05:00:34.756Z, with no active run, pending approval or posted verdict. Opus round 3 returned CHANGES for misplaced image/stray-text false passes in the fixed 404 checker; Sol round 3 is still running. The lead is adding public CLI regressions and correcting the checker. Finish M0.6, then release the lock: this originating run has exceeded four hours. No M0.7 worker starts in this run.
+M0.6 final checker correction is pushed to [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), head `cd8e392bcaf9d9e57842a57fe5425c822daf1d8e`. CI is pending on the new head; all eleven local acceptance commands passed (107 tests / 653 assertions, 21 production cases, 23 staged cases + 2 probes, 43 upstream cases). Opus round 3 returned CHANGES on `f3839c4` for misplaced images/text; nine public CLI regressions reproduced the false passes before the fix. Sol round 3 remains running on its pinned `f3839c4`. After its terminal verdict and green CI, apply the runbook's three-round lead resolution using the source/design/real-reference evidence. Finish M0.6, then release this run's lock; do not start M0.7.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | fix | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Prior lead validation: full check 98 tests / 635 assertions, clean lint/typecheck, 21 production cases, 43 upstream cases and 14 focused HTML tests. `ece1069` records seven false passes before the fixed-page shape/URL correction. Opus round 2 is terminal without a verdict; Opus round 3 CHANGES is being fixed; Sol round 3 remains pending. |
+| M0.6 | ci | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `cd8e392bcaf9d9e57842a57fe5425c822daf1d8e`; new CI pending. All eleven commands passed, including 107 tests / 653 assertions and 43 upstream cases. `67b7add` records nine failures before `cd8e392` enforces all element parents/text slots and exact footer text/links. Opus CHANGES fixed; Sol verdict pending. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,7 +20,7 @@ Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
-- PR #6 remains linked. Both round-1 reviews and Sol round 2 are terminal with CHANGES; Opus round 2 is cancelled without a posted verdict. The dedicated lead resumes its pending-review watch after recovery.
+- PR #6 remains linked. Both round-1 reviews and Sol round 2 are terminal with CHANGES; Opus round 2 is cancelled without a posted verdict. The dedicated lead watches the pending final CI/review after recovery.
 
 Lead correction: OPTIONS/405 now advertise implemented methods; D21 enables metadata-only HEAD for embedded assets. The shared corpus checks declared headers and includes a D18 static escape against actual compiled production; ui:verify executes it as well, and the public API policy names it. The admin-specific error page is recorded as pending M4.1. The expanded reference corpus passed before the application change.
 
@@ -56,7 +56,7 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 
 ### Council round 3
 
-Both fresh members were dispatched together on exact head `f3839c4bbf6485760540567285953a649ddd9222` with full task scope, both rounds' findings and objections, D18/D21 decisions, all eleven acceptance commands and browser requirements. No prior or unposted verdict counts as approval of this head.
+Both fresh members were dispatched together on original head `f3839c4bbf6485760540567285953a649ddd9222` with full task scope, both rounds' findings and objections, D18/D21 decisions, all eleven acceptance commands and browser requirements. No prior or unposted verdict counts as approval of this head.
 
 [M0.6 council round 3 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a); claude-opus-5-5, effort: medium. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461218568): misplaced images and visible text outside inspected selectors falsely pass the CLI. All prior findings resolved; all eleven commands and compiled-browser verification passed. Production rendering is correct. Lead fixes the bounded document-shape/text assertion before three-round resolution.
 
@@ -99,6 +99,12 @@ Both fresh members were dispatched together on exact head `f3839c4bbf64857605405
 - The cancelled-child wake returned to the originating dedicated lead. Terminal message/activity reads confirmed `status: cancelled`, `activeRunId: null`, `pendingRequestCount: 0` and no posted verdict. The lock was absent after the independent recovery run released it; this lead acquired it for the same M0.6 continuation.
 - The superseded reviewer reproduced hidden headings in native containers and a base-URL override; these overlap Sol round 2 and the existing fixed-layout allowlist correction. Its form-action probe did not demonstrate script execution, so no such execution is claimed. Its historical export reproduced all ten `f108f7e` regression failures. Its cleanup command was held by automatic approval review for a statically unresolvable removal target and was cancelled; do not repeat or bypass it. Owned browser/server processes had already stopped.
 - All eight CI jobs are still successful on `f3839c4`. Dispatch two fresh round-3 reviews on that head with both rounds' findings, source-first regression evidence and the precise D18/D21/staging decisions. The independent 45-minute automation remains enabled and unbound. After M0.6 merges, release this run's lock and leave M0.7 to a later run.
+
+### Round-3 correction, 2026-10-28
+
+- `67b7add` reproduces nine public CLI false passes before the correction: images in head/after html, sibling/bare/trailing text and a modified second footer link. The complete fixed-document check in `cd8e392` validates each element's parent, all document text, one logo slot, explicit per-target footer text and ordered link targets/labels. It rejects elements/non-whitespace text after body/document close. Production rendering is unchanged.
+- The pinned public templates define the two page shapes. The final real upstream corpus passes all 43 cases, compiled production passes 21, fixture passes 23 + 2 probes, and all eleven acceptance commands passed, including the reference lifecycle smoke and 107 tests / 653 assertions. Focused server/contract tests: 67 / 305 assertions. Logs are in the terminal worker checkout's ignored `upstream/lead-m06-round3/` directory.
+- Await final-head CI and Sol's original-head round-3 verdict, then record the three-round lead resolution in the PR. Do not claim council approval of the corrected head or dispatch a fourth council round merely to repeat the cycle. Unresolved real findings must be fixed before merge. The run is past four hours; release the lock after M0.6 merges.
 
 ## Automation
 
