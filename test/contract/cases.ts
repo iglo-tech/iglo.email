@@ -132,6 +132,11 @@ export const cases: readonly ContractCase[] = freeze([
     ...same("/missing-public-page", wire(404, "text/html; charset=UTF-8", "")),
   },
   { id: "public-style", group: "core", ...same("/public/static/style.css", css) },
+  ...["%73tyle.css", "style%2ecss", "/style.css"].map((spelling, index): ContractCase => ({
+    id: `public-style-equivalent-${index + 1}`,
+    group: "core",
+    ...same(`/public/static/${spelling}`, css),
+  })),
   {
     id: "missing-public-asset",
     group: "core",

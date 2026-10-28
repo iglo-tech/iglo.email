@@ -67,3 +67,23 @@ for (const path of [
   });
   console.log(`PASS GET ${path}: plain-text static 404`);
 }
+for (const path of [
+  "/public/static/%73tyle.css",
+  "/public/static/style%2ecss",
+  "/public/static//style.css",
+  "/admin/static/fonts/Geist%2dVariable.woff2",
+]) {
+  const response = await fetch(origin + path, {
+    headers: { Connection: "close" },
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("content-type"),
+    path.endsWith("woff2") ? "font/woff2" : "text/css; charset=utf-8",
+  );
+  if (path.endsWith("woff2"))
+    assert.equal(new TextDecoder().decode((await response.arrayBuffer()).slice(0, 4)), "wOF2");
+  else assert.ok((await response.text()).includes("box-sizing"));
+  console.log(`PASS GET ${path}: equivalent embedded resource spelling`);
+}

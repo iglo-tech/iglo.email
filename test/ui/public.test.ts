@@ -23,6 +23,31 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
+test.each([
+  "/public/static/%73tyle.css",
+  "/public/static/style%2ecss",
+  "/public/static//style.css",
+  "/admin/static/fonts/Geist%2dVariable.woff2",
+])(
+  "compiled asset lookup accepts canonical spelling %s",
+  async (path) => {
+    await withProduction(executable, new AbortController().signal, async (origin) => {
+      const response = await fetch(origin + path);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe(
+        path.endsWith("woff2") ? "font/woff2" : "text/css; charset=utf-8",
+      );
+      if (path.endsWith("woff2"))
+        expect(new TextDecoder().decode((await response.arrayBuffer()).slice(0, 4))).toBe("wOF2");
+      else expect(await response.text()).toContain("box-sizing");
+      const head = await fetch(origin + path, { method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe("");
+    });
+  },
+  30_000,
+);
+
 test.each(["OPTIONS", "POST", "HEAD"])(
   "embedded assets handle %s with the declared methods",
   async (method) => {

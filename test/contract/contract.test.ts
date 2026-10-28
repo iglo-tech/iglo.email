@@ -334,9 +334,12 @@ describe("normalization at the HTTP boundary", () => {
   });
 });
 
+const public404Page =
+  '<!DOCTYPE html><html><head><title>404 - Not found - iglo.email</title><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><img src="/public/static/logo.svg?v=0123456789" alt="iglo.email"></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a></footer></body></html>';
+
 test("public HTML contract rejects missing, duplicated, incorrect, or unsafe page elements", async () => {
-  const page =
-    '<!DOCTYPE html><html><head><title>404 - Not found - iglo.email</title><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><img src="/public/static/logo.svg?v=0123456789" alt="iglo.email"></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a></footer></body></html>';
+  const page = public404Page;
+
   let body = page;
   const target = server(
     () =>
@@ -372,6 +375,59 @@ test("public HTML contract rejects missing, duplicated, incorrect, or unsafe pag
       expect(result.code).not.toBe(0);
       expect(result.output).toContain("FAIL health-post-html");
     }
+  } finally {
+    await target.close();
+  }
+});
+
+test.each([
+  [
+    "newline executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java\nscript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "tab executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java\tscript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "carriage-return executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java\rscript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  ["hidden heading", public404Page.replace("<h2>", "<h2 hidden>")],
+  ["hidden heading ancestor", public404Page.replace('class="wrap"', 'class="wrap" hidden')],
+  ["styled hidden heading", public404Page.replace("<h2>", '<h2 style="display:none">')],
+])("public HTML contract rejects %s", async (_name, body) => {
+  const target = server(
+    () =>
+      new Response(body, {
+        status: 404,
+        headers: { "content-type": "text/html; charset=UTF-8" },
+      }),
+  );
+  try {
+    const result = await cli([
+      "--mode",
+      "normal",
+      "--target",
+      "production",
+      "--profile",
+      "core",
+      "--base-url",
+      target.origin,
+      "--case",
+      "health-post-html",
+    ]);
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("FAIL health-post-html");
   } finally {
     await target.close();
   }
