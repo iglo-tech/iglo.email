@@ -17,3 +17,9 @@ Other fixed, non-production values used by the tests are:
 The test-only sequence control advances the disposable list allocator before
 creating a list through the real API, to exercise a 64-bit ID above the safe
 JavaScript number range. It does not insert an explicit list identity.
+
+D34 also checks that the individual role-grant JSON boundary rejects the raw
+numeric token 9007199254740993 with 400 and leaves the existing role projection
+unchanged. This is an explicitly disclosed input limit, not a high-ID grant
+success claim. The list itself is then updated/deleted through its exact path;
+an unrelated low-ID list remains readable.

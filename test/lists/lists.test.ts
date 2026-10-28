@@ -122,6 +122,28 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
     const highRead = await request("/api/lists/9007199254740993");
     expect(highRead.status).toBe(200);
     expect(await highRead.text()).toContain('"id":9007199254740993');
+    const grant = await fetch(`${fixture.origin}/api/roles/lists/${role.id}`, {
+      method: "PUT",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: '{"name":"Must not replace grants","lists":[{"id":9007199254740993,"permissions":["list:get"]}]}',
+    });
+    // D34 discloses this pre-existing, fail-closed role-input boundary. It
+    // must not round the supplied numeric token or partially replace grants.
+    expect(grant.status).toBe(400);
+    const afterGrant = (
+      (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
+        data: { id: number; lists: { id: number }[] }[];
+      }
+    ).data.find((item) => item.id === role.id);
+    expect(afterGrant).toEqual(roleProjection);
+    const highUpdate = await request("/api/lists/9007199254740993", "PUT", {
+      name: "updated large identity",
+    });
+    expect(highUpdate.status).toBe(200);
+    expect(await highUpdate.text()).toContain('"id":9007199254740993');
+    expect((await request("/api/lists/9007199254740993", "DELETE")).status).toBe(200);
+    expect((await request("/api/lists/9007199254740993")).status).toBe(400);
+    expect((await request(`/api/lists/${second}`)).status).toBe(200);
   } finally {
     await fixture.close();
   }

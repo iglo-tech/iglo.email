@@ -223,8 +223,8 @@ export async function runListsContract(target: {
       (await request("/api/lists", "POST", { name: "é".repeat(1001) })).status === 400,
       "list-utf8-length",
     );
-    // Pinned PostgreSQL uses int32 identities; SQLite uses int64. The lead must
-    // review this narrow observed difference; D17 only covers int64 overflow.
+    // D34 retains native int64 list identities versus pinned PostgreSQL int32.
+    // D17 remains the separate signed-int64 overflow boundary.
     for (const [path, method, body, action] of [
       ["/api/lists/2147483648", "GET", undefined, "fetching"],
       ["/api/lists/2147483648", "PUT", { name: "out-of-range" }, "updating"],
@@ -243,7 +243,7 @@ export async function runListsContract(target: {
       check(
         response.status === (target.mode === "reference" ? 500 : method === "DELETE" ? 200 : 400) &&
           JSON.stringify(await response.json()) === JSON.stringify(expected),
-        `list-int32-limit-${action}-${path.includes("?") ? "query" : "path"}`,
+        `D34-list-int32-limit-${action}-${path.includes("?") ? "query" : "path"}`,
       );
     }
     check(
