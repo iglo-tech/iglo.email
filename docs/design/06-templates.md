@@ -16,6 +16,8 @@ listmonk uses Go's `html/template` with Sprig functions (`{{ .Subscriber.FirstNa
 
 HTML templates render with `outputEscape: "escape"`, so values are HTML-escaped unless piped through `raw`. Plain-text templates render without escaping.
 
+M0.8 measured the selected library and found qualifications to the sandbox and hard-limit claims above ([evidence](../perf/M0.8-liquidjs.md)): filesystem lookup must be explicitly denied or mapped, `ownPropertyOnly` does not sanitize iteration, `memoryLimit` does not cap all output, and `renderLimit` is cooperative. The report proposes concrete M1.8 boundaries for the lead to decide; no production guarantee is established by this fixture.
+
 ### Data and functions
 
 | listmonk (Go template) | iglo.email (Liquid) |
