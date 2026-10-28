@@ -124,5 +124,7 @@ New, for sends (transactional and sequence messages):
 M1.5 list writes accept JSON and XML through the bounded list decoder. XML
 field names follow the Go model's case-sensitive local names, with repeated
 `Tags` elements; JSON uses Go's case-insensitive field aliases and ordered
-repeated fields. D35's declaration, depth, body and normalized tag limits are
-covered by paired cases; the suite does not claim complete XML parity.
+repeated writable fields. D36 ignores response-only and unknown metadata in
+both formats; those fields cannot assign identity, timestamps or counts. D35's
+declaration, depth, body and normalized tag limits and XML character/reference
+integrity are covered by paired cases; the suite does not claim complete XML parity.
