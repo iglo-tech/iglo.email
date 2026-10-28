@@ -57,6 +57,13 @@ The lead pushed small root fixes at `2489e4e29ab7222ae7f126c151172a65f394ce4a`, 
 
 One substantive Terra max fixer under [M1.6-fix-1](briefs/M1.6-fix-1.md) will address remaining email grammar/simple Unicode casing, finite/Unicode attribute values and ordered resets, integer-slice reuse, bounded multipart/first scalar binding, XML scalar defaults and operation-owned DTO conversion. It must preserve all root commits/tests, reproduce failures reference-first, finish full acceptance and append serial c0955d6-versus-final ext4 FULL/WAL measurements. All earlier workers/reviewers are terminal; no duplicate helper or reviewer starts during implementation.
 
+Decoder/email completion is dispatched: [M1.6: Complete subscriber binding and email fixes](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-fix1-bindings-2489e4e), GPT-6.1 Terra max, implementation role, isolation worktree and settings in target.options, preserving root head 2489e4e on PR #13. It returned running with no pending question/approval; its next instruction is to end the turn and let completion wake this run. [Lead disposition](https://github.com/iglo-tech/iglo.email/pull/13#issuecomment-6477190185). No helper, new PR, review, PR watch, polling or duplicate worker is started during implementation.
+
+- Fixer task ID: `node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-fix1-bindings-2489e4e`.
+- Fixer thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-fix1-bindings-2489e4e`.
+- Initial fixer run: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.6-fix1-bindings-2489e4e:ordinal:1`.
+- Idempotent dispatch: `iglo-email-M1.6-fix1-bindings-2489e4e`.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified during the M1.4 kickoff at 13:08 UTC on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
