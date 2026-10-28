@@ -132,6 +132,19 @@ export async function runSubscriberBindingRevisions(target: {
         "email-post-persisted",
       );
     }
+    for (const [i, local, name] of [
+      [0, "a\u0085b", "A B"],
+      [1, "a\ufeffb", "A\ufeffb"],
+    ] as const) {
+      const item = await create(
+        "subscribers",
+        JSON.stringify({ email: `${local}-${suffix}@example.test` }),
+      );
+      check(
+        item.name.startsWith(`${name}-`) && (await get(item.id)).name === item.name,
+        `fallback-${i}`,
+      );
+    }
     const invalidPost = await request(
       "/api/subscribers",
       "POST",
