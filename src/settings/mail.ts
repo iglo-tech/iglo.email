@@ -9,15 +9,44 @@ export function validFromAddress(input: string): boolean {
   };
   const visible = (c: string) => !!c && ((c >= "!" && c <= "~") || c.codePointAt(0)! >= 128);
   const atext = (c: string) => visible(c) && !'()<>[]:;@\\,"'.includes(c);
-  const decodable = (word: string) => {
+  // Decode syntax before charset conversion, as mime.WordDecoder does. Invalid
+  // encoded words remain literal; only an unsupported charset is fatal.
+  const decodeWord = (word: string): { encoded: boolean; content: string; error: boolean } => {
     const match = /^=\?([^?]+)\?([bBqQ])\?([^?]*)\?=$/.exec(word);
-    if (!match) return true;
-    const encoded = match[3]!;
-    const valid =
-      match[2]!.toLowerCase() === "b"
-        ? /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
-        : !/=(?![0-9A-Fa-f]{2})/.test(encoded);
-    return !valid || ["utf-8", "iso-8859-1", "us-ascii"].includes(match[1]!.toLowerCase());
+    if (!match) return { encoded: false, content: word, error: false };
+    const text = match[3]!;
+    let bytes: Uint8Array;
+    if (match[2]!.toLowerCase() === "b") {
+      const encoded = text.replace(/[\r\n]/g, "");
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+        return { encoded: false, content: word, error: false };
+      bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
+    } else {
+      const values: number[] = [];
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i]!;
+        if (c === "=") {
+          const hex = text.slice(i + 1, i + 3);
+          if (!/^[0-9a-fA-F]{2}$/.test(hex)) return { encoded: false, content: word, error: false };
+          values.push(parseInt(hex, 16));
+          i += 2;
+        } else if (c === "_") values.push(32);
+        else if ((c >= " " && c <= "~") || c === "\r" || c === "\n" || c === "\t")
+          values.push(c.charCodeAt(0));
+        else return { encoded: false, content: word, error: false };
+      }
+      bytes = Uint8Array.from(values);
+    }
+    return {
+      encoded: true,
+      content:
+        match[1]!.toLowerCase() === "iso-8859-1"
+          ? Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")
+          : match[1]!.toLowerCase() === "us-ascii"
+            ? Array.from(bytes, (byte) => String.fromCharCode(byte < 128 ? byte : 0xfffd)).join("")
+            : new TextDecoder().decode(bytes),
+      error: !["utf-8", "iso-8859-1", "us-ascii"].includes(match[1]!.toLowerCase()),
+    };
   };
   const quoted = (allowEmpty = false) => {
     if (input[pos] !== '"') return false;
@@ -46,21 +75,17 @@ export function validFromAddress(input: string): boolean {
   const comment = (display = false) => {
     if (input[pos] !== "(") return false;
     pos++;
-    const start = pos;
+    let content = "";
     let depth = 1;
     while (pos < input.length && depth) {
-      const c = input[pos++]!;
-      if (c === "\\" && pos < input.length) pos++;
+      let c = input[pos++]!;
+      if (c === "\\" && pos < input.length) c = input[pos++]!;
       else if (c === "(") depth++;
       else if (c === ")") depth--;
+      if (depth) content += c;
     }
     return (
-      depth === 0 &&
-      (!display ||
-        input
-          .slice(start, pos - 1)
-          .split(/[ \t]+/)
-          .every(decodable))
+      depth === 0 && (!display || content.split(/[ \t]+/).every((word) => !decodeWord(word).error))
     );
   };
   const cfws = () => {
@@ -110,23 +135,33 @@ export function validFromAddress(input: string): boolean {
       return 1;
     }
     let words = 0;
+    let encodedContent = "";
     if (input[pos] !== "<") {
       while (true) {
         if (words && !cfws()) return -1;
         space();
         const before = pos;
-        const ok = input[pos] === '"' ? quoted(true) : atom(true);
+        const isQuoted = input[pos] === '"';
+        const ok = isQuoted ? quoted(true) : atom(true);
         if (!ok) {
           pos = before;
           break;
         }
-        if (input[before] !== '"' && !decodable(input.slice(before, pos))) {
-          if (!words) return -1;
+        const decoded = isQuoted
+          ? { encoded: false, content: "", error: false }
+          : decodeWord(input.slice(before, pos));
+        if (decoded.error) {
+          if (!words && !encodedContent) return -1;
           break;
         }
-        words++;
+        if (decoded.encoded) encodedContent += decoded.content;
+        else {
+          if (encodedContent) words++;
+          encodedContent = "";
+          words++;
+        }
       }
-      if (!words) return -1;
+      if (!words && !encodedContent) return -1;
     }
     space();
     if (group && input[pos] === ":") {

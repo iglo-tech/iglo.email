@@ -51,3 +51,55 @@ export function goDuration(input: string): number {
   if (!Number.isFinite(result) || result > 9223372036854.775) return NaN;
   return negative ? -result : result;
 }
+
+// Go 1.27.2 time.ParseDuration, in nanoseconds. Keep the signed 64-bit
+// boundary and classify errors before handing milliseconds to the cron helper.
+export function cronDuration(input: string): { nanos: bigint; error: string | null } {
+  const quote = (value: string) => JSON.stringify(value);
+  const fail = (kind: string) => ({ nanos: 0n, error: `time: ${kind} ${quote(input)}` });
+  let rest = input;
+  const negative = rest.startsWith("-");
+  if (/^[+-]/.test(rest)) rest = rest.slice(1);
+  if (rest === "0") return { nanos: 0n, error: null };
+  if (!rest) return fail("invalid duration");
+  const units: Record<string, bigint> = {
+    ns: 1n,
+    us: 1000n,
+    µs: 1000n,
+    μs: 1000n,
+    ms: 1000000n,
+    s: 1000000000n,
+    m: 60000000000n,
+    h: 3600000000000n,
+  };
+  const limit = 9223372036854775808n;
+  let total = 0n;
+  while (rest) {
+    const numeric = /^(\d*)(?:\.(\d*))?/.exec(rest)!;
+    const integer = numeric[1]!;
+    const fraction = numeric[2] ?? "";
+    if ((!integer && !fraction) || (integer && BigInt(integer) > limit))
+      return fail("invalid duration");
+    rest = rest.slice(numeric[0].length);
+    const unit = /^[^\d.]*/u.exec(rest)![0];
+    if (!unit) return fail("missing unit in duration");
+    if (!Object.hasOwn(units, unit)) return fail(`unknown unit ${quote(unit)} in duration`);
+    rest = rest.slice(unit.length);
+    const factor = units[unit]!;
+    let value = BigInt(integer || "0") * factor;
+    if (value > limit) return fail("invalid duration");
+    // Go's leadingFraction retains digits until its uint64 accumulator would overflow.
+    let digits = "";
+    for (const digit of fraction) {
+      const next = digits + digit;
+      if (BigInt(next) > limit) break;
+      digits = next;
+    }
+    if (digits)
+      value += BigInt(Math.trunc(Number(digits) * (Number(factor) / 10 ** digits.length)));
+    total += value;
+    if (value > limit || total > limit) return fail("invalid duration");
+  }
+  if (!negative && total === limit) return fail("invalid duration");
+  return { nanos: negative ? -total : total, error: null };
+}

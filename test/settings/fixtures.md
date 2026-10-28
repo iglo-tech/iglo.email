@@ -23,3 +23,7 @@ and delivery are not tested by these cases.
 
 The round-2 SMTP-name regression uses `🚀` and `--` as distinct synthetic
 server names; their normalized projections are `email--` and `email---`.
+
+Round-2 parser cases use synthetic `example.invalid` addresses, encoded words,
+cron expressions and timezone identifiers. Rejected full writes carry a synthetic
+site-name sentinel and compare the complete masked settings projection.

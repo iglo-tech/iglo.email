@@ -39,10 +39,8 @@ export async function runSettingsCouncilParser(target: {
     next[key] = value;
     if (key === "app.cache_slow_queries_interval") next["app.cache_slow_queries"] = true;
     const response = await request(next);
-    check(
-      response.status === 200 && JSON.stringify(await response.json()) === '{"data":true}',
-      `${label}-status`,
-    );
+    const result = await response.json();
+    check(response.status === 200 && JSON.stringify(result) === '{"data":true}', `${label}-status`);
     const after = await read();
     check(JSON.stringify(after[key]) === JSON.stringify(value), `${label}-stored`);
   }
@@ -95,25 +93,81 @@ export async function runSettingsCouncilParser(target: {
     ["mapped-hex", "a@[::ffff:c000:201]"],
     ["phrase-previous-word", "Good =?x-bad?b?YQ==?= <a@example.invalid>"],
     ["prefixed-ipv6", "a@[IPv6:::1]"],
+    ["malformed-q-unicode", "=?x-bad?q?ż?= <a@example.invalid>"],
+    ["empty-then-valid-phrase", "=?utf-8?b??= Good <a@example.invalid>"],
+    ["comment-supported-escaped", "a@example.invalid (=?utf-8?b?YQ\\==?=)"],
   ])
     await accepted("app.from_email", [address], label!);
   for (const [label, address] of [
     ["raw-ipv6", "a@[::1]"],
     ["ipv4-compatible", "a@[::192.0.2.1]"],
     ["unknown-first-word", "=?x-bad?b?YQ==?= <a@example.invalid>"],
+    ["empty-before-unknown", "=?utf-8?b??= =?x-bad?b?YQ==?= <a@example.invalid>"],
+    ["comment-escaped-base64", "a@example.invalid (=?x-bad?b?YQ\\==?=)"],
+    ["comment-escaped-ending", "a@example.invalid (=?x-bad?b?YQ==?\\=)"],
   ])
     await rejected("app.from_email", [address], `invalid from email address: ${address}`, label!);
   for (const [label, cron] of [
     ["cron-local", "TZ=Local 0 0 * * *"],
+    ["cron-utc", "TZ=UTC 0 0 * * *"],
+    ["cron-gmt", "TZ=GMT 0 0 * * *"],
+    ["cron-warsaw", "TZ=Europe/Warsaw 0 0 * * *"],
+    ["cron-etc-offset", "TZ=Etc/GMT+1 0 0 * * *"],
     ["cron-empty-zone", "TZ= 0 0 * * *"],
     ["cron-nel", "0\u00850\u0085*\u0085*\u0085*"],
     ["cron-large-step", "*/9007199254740992 0 * * *"],
     ["cron-max-step", "*/9223372036854775807 0 * * *"],
     ["cron-last-day-valid", "0 0 L-30 * *"],
     ["cron-nth-weekday-valid", "0 0 * * MON#5"],
+    ["cron-nearest-weekday-valid", "0 0 31W * *"],
+    ["cron-last-weekday-valid", "0 0 * * MONL"],
+    ["cron-duration-valid", "@every 1s"],
   ])
     await accepted("app.cache_slow_queries_interval", cron, label!);
   for (const [label, cron, error] of [
+    ...["utc", "gmt", "europe/warsaw", "+01:00"].map((zone, index) => [
+      `cron-bad-zone-${index}`,
+      `TZ=${zone} 0 0 * * *`,
+      `provided bad location ${zone}: unknown time zone ${zone}`,
+    ]),
+    [
+      "cron-named-occurrence",
+      "0 0 * * MON#mon",
+      'failed to parse int from mon: strconv.Atoi: parsing "mon": invalid syntax',
+    ],
+    ["cron-weekday-last-range", "0 0 * * L-6", "L-6: invalid expression"],
+    ["cron-weekday-near-range", "0 0 32W * *", "32W: value 32 out of valid range [1, 31]"],
+    [
+      "cron-weekday-near-syntax",
+      "0 0 xW * *",
+      'failed to parse int from x: strconv.Atoi: parsing "x": invalid syntax',
+    ],
+    [
+      "cron-last-big",
+      "0 0 L-9007199254740992 * *",
+      "L-9007199254740992: invalid amount of days subtracted",
+    ],
+    ["cron-weekday-near-zero", "0 0 0W * *", "0W: value 0 out of valid range [1, 31]"],
+    [
+      "cron-occurrence-big",
+      "0 0 * * MON#9007199254740992",
+      "MON#9007199254740992: value 9007199254740992 out of valid range [1, 5]",
+    ],
+    [
+      "cron-duration-missing-unit",
+      "@every 1",
+      'failed to parse duration @every 1: time: missing unit in duration "1"',
+    ],
+    [
+      "cron-duration-fraction",
+      "@every 1.5s",
+      "delay must be a multiple of one second but was 1.5s",
+    ],
+    [
+      "cron-duration-unit",
+      "@every 1z",
+      'failed to parse duration @every 1z: time: unknown unit "z" in duration "1z"',
+    ],
     [
       "cron-bom",
       "\ufeff0 0 * * *",
