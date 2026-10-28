@@ -1,5 +1,6 @@
 // Request-local context is separated from the app dependencies in cmd/main.go.
 import type { App } from "@/app";
+import type { Identity } from "@/users/models";
 
 export interface RequestContext {
   readonly app: App;
@@ -7,6 +8,8 @@ export interface RequestContext {
   readonly url: URL;
   // Preserve the default Go/Echo path spelling, without extra parameter unescaping.
   readonly params: Readonly<Record<string, string>>;
+  readonly peerAddress: string;
+  identity?: Identity;
   id?: number | bigint;
 }
 
