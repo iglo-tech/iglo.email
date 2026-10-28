@@ -107,6 +107,37 @@ export async function runListsContract(target: {
         .response.status === 400,
       "json-known-map-type",
     );
+    const reserved = await raw(
+      `{"name":"reserved-${suffix}","constructor":{"x":1},"__proto__":true}`,
+      "application/json",
+    );
+    check(
+      reserved.response.status === 200 && reserved.value.data?.name === `reserved-${suffix}`,
+      "json-unknown-prototype-names",
+    );
+    check(
+      (await raw(`{"name":"bad-${suffix}","created_at":12}`, "application/json")).response
+        .status === 400,
+      "json-known-time-type",
+    );
+    check(
+      (
+        await raw(
+          `<List><Name>bad-${suffix}</Name><SubscriberCount>bad</SubscriberCount></List>`,
+          "application/xml",
+        )
+      ).response.status === 400,
+      "xml-known-integer-type",
+    );
+    check(
+      (
+        await raw(
+          `<List><Name>bad-${suffix}</Name><SubscriberCounts>bad</SubscriberCounts></List>`,
+          "application/xml",
+        )
+      ).response.status === 400,
+      "xml-known-map-type",
+    );
     const namespaced = await raw(
       `<a:List xmlns:a="urn:test"><a:Name>ns-${suffix}</a:Name><a:Tags>007</a:Tags></a:List>`,
       "application/xml",
@@ -242,6 +273,22 @@ export async function runListsContract(target: {
         (x) => x.id === bounded.id,
       ),
       "D35-tag-exact-filter",
+    );
+    const xmlPostLong = await raw(
+      `<List><Name>xml-long-${suffix}</Name><Tags>${longTag}</Tags></List>`,
+      "application/xml",
+    );
+    check(
+      xmlPostLong.response.status === (target.mode === "reference" ? 500 : 400),
+      "D35-xml-tag-post",
+    );
+    const xmlLimit = await raw(
+      `<List><Name>xml-limit-${suffix}</Name><Tags>${limitTag}</Tags></List>`,
+      "application/xml",
+    );
+    check(
+      xmlLimit.response.status === 200 && xmlLimit.value.data?.tags[0] === limitTag,
+      "xml-multibyte-tag-100",
     );
     const xmlLong = await raw(
       `<List><Name>xml-rename-${suffix}</Name><Tags>${longTag}</Tags></List>`,
@@ -579,6 +626,35 @@ export async function runListsContract(target: {
         .status === 403,
       "list-denied-create",
     );
+    check(
+      (
+        await raw(
+          `<List><Name>denied-${suffix}</Name></List>`,
+          "application/xml",
+          "POST",
+          undefined,
+          limitedAuth,
+        )
+      ).response.status === 403,
+      "xml-denied-create",
+    );
+    check(
+      (
+        await raw(
+          `<List><Name>denied-${suffix}</Name></List>`,
+          "application/xml",
+          "PUT",
+          list.id,
+          limitedAuth,
+        )
+      ).response.status === 403,
+      "xml-denied-update",
+    );
+    check(
+      (await raw(`{"Name":"denied-${suffix}"}`, "application/json", "PUT", list.id, limitedAuth))
+        .response.status === 403,
+      "json-alias-denied-update",
+    );
     const visible = await request(
       `/api/lists?query=${suffix}&per_page=all`,
       "GET",
@@ -615,6 +691,18 @@ export async function runListsContract(target: {
       (await request(`/api/lists/${list.id}`, "PUT", { name: list.name }, limitedAuth)).status ===
         200,
       "list-granted-write",
+    );
+    check(
+      (
+        await raw(
+          `<List><Name>${list.name}</Name><Tags>allowed</Tags></List>`,
+          "application/xml",
+          "PUT",
+          list.id,
+          limitedAuth,
+        )
+      ).response.status === 200,
+      "xml-granted-update",
     );
     check(
       (await request(`/api/lists?id=${list.id}&id=${second.id}`, "DELETE", undefined, limitedAuth))
