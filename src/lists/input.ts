@@ -31,6 +31,18 @@ function jsonMembers(body: string): [string, unknown][] {
   if (parsed === null) return [];
   if (typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("object required");
   const result: [string, unknown][] = [];
+  const append = (member: string) => {
+    const parse = JSON.parse as unknown as (
+      text: string,
+      reviver: (key: string, value: unknown, context: { source?: string }) => unknown,
+    ) => unknown;
+    const value = parse(`{${member}}`, (_key, item, context) =>
+      typeof item === "number" && /^-?\d+$/.test(context.source ?? "")
+        ? BigInt(context.source!)
+        : item,
+    ) as Record<string, unknown>;
+    result.push(...Object.entries(value));
+  };
   let start = body.indexOf("{") + 1,
     depth = 0,
     quoted = false,
@@ -47,19 +59,18 @@ function jsonMembers(body: string): [string, unknown][] {
       if (depth) depth--;
       else if (c === "}") {
         const member = body.slice(start, i).trim();
-        if (member)
-          result.push(...Object.entries(JSON.parse(`{${member}}`) as Record<string, unknown>));
+        if (member) append(member);
         break;
       }
     } else if (c === "," && depth === 0) {
-      result.push(
-        ...Object.entries(JSON.parse(`{${body.slice(start, i)}}`) as Record<string, unknown>),
-      );
+      append(body.slice(start, i));
       start = i + 1;
     }
   }
   return result;
 }
+const goInteger = (value: unknown) =>
+  typeof value === "bigint" && value >= -9223372036854775808n && value <= 9223372036854775807n;
 function jsonInput(body: string): ListInput {
   const out = empty();
   let tagStorage: string[] = [];
@@ -72,7 +83,7 @@ function jsonInput(body: string): ListInput {
       if (value === null) continue;
       if (typeof value !== "string") throw new Error("invalid string");
       out[field] = value.toWellFormed();
-    } else if (key.toLowerCase() === "tags") {
+    } else if (normalizedKey === "tags") {
       if (value === null || (Array.isArray(value) && value.length === 0)) {
         out.tags = [];
         tagStorage = [];
@@ -88,21 +99,19 @@ function jsonInput(body: string): ListInput {
           return text;
         });
       }
-    } else if (key.toLowerCase() === "subscriber_statuses") {
+    } else if (normalizedKey === "subscriber_statuses") {
       if (
         value !== null &&
         (typeof value !== "object" ||
           Array.isArray(value) ||
-          Object.values(value).some(
-            (v) => v !== null && (typeof v !== "number" || !Number.isSafeInteger(v)),
-          ))
+          Object.values(value).some((v) => v !== null && !goInteger(v)))
       )
         throw new Error("invalid map");
-    } else if (["uuid", "subscription_status"].includes(key.toLowerCase())) {
+    } else if (["uuid", "subscription_status"].includes(normalizedKey)) {
       if (value !== null && typeof value !== "string") throw new Error("invalid string");
     } else if (
       ["created_at", "updated_at", "subscription_created_at", "subscription_updated_at"].includes(
-        key.toLowerCase(),
+        normalizedKey,
       )
     ) {
       if (
@@ -112,9 +121,8 @@ function jsonInput(body: string): ListInput {
           Number.isNaN(Date.parse(value)))
       )
         throw new Error("invalid time");
-    } else if (["id", "subscriber_count"].includes(key.toLowerCase())) {
-      if (value !== null && (typeof value !== "number" || !Number.isSafeInteger(value)))
-        throw new Error("invalid integer");
+    } else if (["id", "subscriber_count"].includes(normalizedKey)) {
+      if (value !== null && !goInteger(value)) throw new Error("invalid integer");
     }
   }
   return out;
