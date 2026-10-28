@@ -45,10 +45,11 @@ export interface Endpoint {
 export interface ContractCase {
   readonly id: string;
   readonly group: Group;
+  readonly fixtureGroup?: "staged";
   readonly reference?: Endpoint;
   readonly production?: Endpoint;
   readonly fixture?: Endpoint;
-  readonly method?: "GET" | "POST" | "HEAD" | "OPTIONS";
+  readonly method?: "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS";
   readonly requestBody?: string;
   readonly requestContentType?: string;
   readonly auth?: "basic" | "token" | "bad-token";

@@ -91,13 +91,13 @@ export const cases: readonly ContractCase[] = freeze([
   { id: "health", group: "core", ...same("/health", ok) },
   {
     id: "users-no-session",
-    group: "reference-only",
+    group: "core",
     reference: endpoint("/api/users", json(403, '{"message":"invalid session"}')),
     production: endpoint("/api/users", json(403, '{"message":"invalid session"}')),
   },
   {
     id: "profile-no-session",
-    group: "reference-only",
+    group: "core",
     reference: endpoint("/api/profile", json(403, '{"message":"invalid session"}')),
     production: endpoint("/api/profile", json(403, '{"message":"invalid session"}')),
   },
@@ -117,7 +117,7 @@ export const cases: readonly ContractCase[] = freeze([
     ],
   ].map(([id, requestBody, field]): ContractCase => ({
     id: id!,
-    group: "reference-only",
+    group: "core",
     method: "POST",
     auth: "basic",
     requestBody: requestBody!,
@@ -127,7 +127,7 @@ export const cases: readonly ContractCase[] = freeze([
   })),
   {
     id: "users-create-malformed-json",
-    group: "reference-only",
+    group: "core",
     method: "POST",
     auth: "basic",
     requestBody: "{",
@@ -137,25 +137,54 @@ export const cases: readonly ContractCase[] = freeze([
   },
   {
     id: "users-invalid-id",
-    group: "reference-only",
+    group: "core",
     auth: "basic",
     reference: endpoint("/api/users/not-an-id", invalidID),
     production: endpoint("/api/users/not-an-id", invalidID),
   },
-  {
-    id: "production-api-health-unregistered",
-    group: "production-only",
-    production: endpoint("/api/health", notFound),
-  },
+  ...[
+    [
+      "users-update-missing-short-password",
+      '{"username":"missing-user","email":"missing@example.test","password_login":true,"password":"short"}',
+      400,
+      '{"message":"Invalid fields: password"}',
+    ],
+    [
+      "users-update-missing-password",
+      '{"username":"missing-user","email":"missing@example.test","password_login":true}',
+      404,
+      '{"message":"User not found"}',
+    ],
+    [
+      "users-update-missing-valid",
+      '{"username":"missing-user","email":"missing@example.test","password_login":true,"password":"fixture-user-password"}',
+      400,
+      '{"message":"User(s) couldn\'t be updated. There has to be at least one active Super Admin user."}',
+    ],
+  ].map(([id, requestBody, status, body]): ContractCase => ({
+    id: id as string,
+    group: "reference-only",
+    method: "PUT",
+    auth: "basic",
+    requestContentType: "application/json",
+    requestBody: requestBody as string,
+    reference: endpoint("/api/users/123456789", json(status as number, body as string)),
+    production: endpoint("/api/users/123456789", json(status as number, body as string)),
+  })),
   ...(["basic", "token", "bad-token"] as const).map((auth): ContractCase => ({
     id: `protected-health-${auth}`,
-    group: "staged",
+    group: "core",
+    fixtureGroup: "staged",
     auth,
     reference: endpoint(
       "/api/health",
       auth === "bad-token" ? json(403, '{"message":"invalid API credentials"}') : ok,
     ),
     fixture: endpoint(
+      "/api/health",
+      auth === "bad-token" ? json(403, '{"message":"invalid API credentials"}') : ok,
+    ),
+    production: endpoint(
       "/api/health",
       auth === "bad-token" ? json(403, '{"message":"invalid API credentials"}') : ok,
     ),
