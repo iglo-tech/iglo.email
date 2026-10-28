@@ -85,7 +85,8 @@ src/
   bounces/           bounce API, provider webhooks, actions
   tracking/          view pixel, link redirects, analytics queries
   webhooks/          outbound webhook delivery
-  users/             users, roles, API tokens, sessions, TOTP
+  users/             users, API tokens, sessions, authentication and login
+  roles/             role ownership, lookup and permissions
   media/             filesystem provider
   public/            public pages (subscribe, opt-in, unsubscribe, preferences)
   admin/             server-rendered admin views (TSX) and handlers
@@ -128,8 +129,9 @@ public paths render the escaped public HTML 404 through the injected translation
 instance; HEAD returns the same verified status and content type without a body.
 Explicitly built static assets are embedded and served without runtime disk lookup.
 Their methods and missing-path responses follow the pinned reference for paths
-Bun preserves; encoded dot segments still follow D18 normalization. The admin shell
-has only a synthetic compiled fixture until authentication and screens exist.
+Bun preserves; encoded dot segments still follow D18 normalization. Production
+has a functional login form and explicit protected user routes; the full admin
+shell remains a synthetic compiled fixture until its screens exist.
 Unexpected exceptions are logged and receive a safe JSON 500. The JSON helpers use
 upstream envelopes, newline, content type and HTML-character escaping.
 
@@ -174,4 +176,4 @@ Small and justified. v1 runtime dependencies:
 
 Built-in Bun or Web APIs cover the rest: password hashing (`Bun.password`), UUIDs, HMAC and TOTP (Web Crypto), gzip, file serving, and the JSX runtime (in-house, about 100 lines). Admin UI assets are listmonk v7's browser dependencies (Alpine.js, Oat, CodeMirror, Squire, Chart.js), bundled at build time.
 
-Until authentication and M4.1 admin views are ported, unmatched non-static `/admin/*` paths use the public HTML 404. The admin-specific error page remains staged; the shell fixture does not implement production administration. Embedded static assets support metadata-only HEAD under [D21](09-decisions.md#d21-support-head-for-embedded-assets).
+Unmatched non-static `/admin/*` paths use the public HTML 404 while M4.1 views remain pending. The admin-specific error page remains staged; the shell fixture does not implement production administration. Embedded static assets support metadata-only HEAD under [D21](09-decisions.md#d21-support-head-for-embedded-assets).

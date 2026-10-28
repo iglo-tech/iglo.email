@@ -82,7 +82,10 @@ table is historical; the current public-page coverage is described below.
 
 ```sh
 bun test test/contract
+bun test test/users
 bun run contract:normal
+bun run contract:auth
+bun run reference:run -- bun test/contract/auth.ts reference
 bun run contract:fixture
 bun run contract:reference
 bun run server:reference
@@ -94,15 +97,22 @@ corpus or nested service stack. Ordinary tests and the normal/fixture commands
 need no Docker or reference downloads.
 
 The normal production profile builds and starts the compiled executable from an
-unrelated temporary working directory, with an empty PATH and fresh data dir. It
-checks the implemented public health and shared fallback boundaries, including
-that `/api/health` is unregistered. It does not claim production auth or list
-coverage. The fixture profile composes the shared modules with a synthetic auth
-gate and representative helper routes; valid Basic, valid token and invalid
-token requests run there and against upstream. Its generated ID/timestamp probes
-verify normalization only. Reports identify the mode, target, profile, case
-results, D17/D18/D21 and pending production work. M1.3 promotes protected health to
-real production auth; domain owners promote helper cases as their routes land.
+unrelated temporary working directory, with an empty PATH and fresh data dir.
+It bootstraps the synthetic human, logs in through the real form, and creates a
+real API user through the protected user API. The generated credential remains
+in memory and authenticates the promoted Basic, token and invalid-token health
+cases against actual production. `contract:auth` uses the same provisioning and
+the stateful `test/contract/auth.ts` corpus; the explicit `reference:run`
+command above runs that corpus against pinned upstream with invocation-owned
+users and role fixtures. Its D26 and proposed additional differences are
+documented in `test/contract/fixtures.md`. No generated secret is reported.
+
+The separate fixture profile retains its synthetic auth gate and representative
+list/helper routes; generated ID/timestamp probes verify normalization only.
+The labelled `test/users` fixture composes production owners with fake-clock,
+peer and minimal role controls for cases that cannot yet be provisioned through
+production role APIs. Neither fixture is evidence of a production list or role
+management endpoint. Domain owners promote helper cases as their routes land.
 Public HTML 404 semantics and embedded static responses are covered in both
 upstream and compiled production, with explicit per-target site names and
 attribution. Repeat the reference-first observations with

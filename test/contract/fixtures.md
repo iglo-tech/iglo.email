@@ -116,7 +116,7 @@ ported upstream domain endpoint.
 
 M1.3 has promoted the same protected-health cases to real compiled-production
 authentication, removing the fixture-only gap. `contract:normal` now reports
-37 compiled core cases, including user-validation cases; `contract:auth`
+38 compiled core cases, including user-validation cases; `contract:auth`
 and its matching reference invocation exercise the stateful user/auth corpus.
 The empty-list-role and lower-permission normal cases remain labelled fixture
 evidence because role-management endpoints are deferred. Domain workers

@@ -8,8 +8,15 @@ held in memory and are never written to a report.
 ```dotenv
 IGLO_EMAIL_ADMIN_USER=m13-bootstrap-admin
 IGLO_EMAIL_ADMIN_PASSWORD=m13-bootstrap-password
+M13_BROWSER_WRONG_PASSWORD=m13-wrong-password
 ```
 
 The user contract creates uniquely named disposable users with the synthetic
 passwords `m13-contract-password` and `  m13-spaced-password  `, then removes
 only the users created by that invocation.
+
+The labelled loopback owner fixture uses `fixture-admin` /
+`fixture-admin-password` and test accounts with the password
+`fixture-user-password`. Password-change cases use `  fixture-changed-password  `
+and `  fixture-admin-reset-password  ` with the surrounding spaces. The fixture
+never connects to an external service.

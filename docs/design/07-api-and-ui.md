@@ -50,7 +50,7 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
 
 ## Authentication and permissions
 
-- **Admin users:** username and password (hashed with `Bun.password`, argon2id), optional TOTP 2FA, sessions in SQLite, `HttpOnly` + `SameSite=Lax` cookies, and CSRF tokens on every state-changing admin form.
+- **Admin users:** username and password (hashed with `Bun.password`, argon2id), sessions in SQLite, `HttpOnly` + `SameSite=Lax` cookies, and CSRF tokens on state-changing cookie requests. TOTP is deferred to M1.4; marked accounts fail closed until then.
 - **API users:** same model as listmonk (`type = 'api'`, token per user).
 - **Roles:** listmonk's user roles and list roles, with the same permission names. New permissions:
   - `sequences:get`, `sequences:manage`;
@@ -58,6 +58,17 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
   - `sends:get`, `sends:manage`;
   - `webhooks:manage`.
 - **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe) are rate-limited per IP in memory. M1.3 login uses the explicit injected policy and transport peer address under D26; M1.2 supplies persisted configuration later.
+
+M1.3's `GET /admin/login` supplies a pre-login nonce in the form and a host-only
+HttpOnly cookie; `POST /admin/login` requires both. A successful login issues a
+new seven-day session cookie and a readable host-only `csrf` cookie, both with
+`Path=/` and `SameSite=Lax`; HTTPS root URLs add `Secure`. Cookie-authenticated
+unsafe API requests, including logout, send the `csrf` cookie value as
+`X-CSRF-Token`. A supplied foreign `Origin` is rejected. Header-authenticated
+API clients do not need CSRF cookies. The default login limit is 20 POSTs per
+transport peer per minute, with at most 4,096 live peer records. Forwarded IP
+headers are ignored. Invalid explicit Authorization never falls back to a cookie.
+Public `/health` remains public; `/api/health` requires a real identity.
 
 ## Admin UI
 
