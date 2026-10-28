@@ -84,6 +84,72 @@ export async function runSubscribersContract(target: {
       ).status === 400,
       "subscriber-invalid-status",
     );
+    const semantics = await create({
+      email: `semantics-${suffix}@example.test`,
+      attribs: { first: 1, nested: { one: 1, two: 2 } },
+      lists: [list],
+    });
+    let semanticsResponse = await request(`/api/subscribers/${semantics.id}`, "PATCH", {
+      attribs: { nested: { one: 3 } },
+    });
+    let semanticsData = (await semanticsResponse.json()).data;
+    check(
+      semanticsResponse.status === 200 &&
+        semanticsData.attribs.first === 1 &&
+        semanticsData.attribs.nested.one === 3 &&
+        semanticsData.attribs.nested.two === undefined,
+      "subscriber-patch-attribs-shallow-binding",
+    );
+    semanticsResponse = await request(`/api/subscribers/${semantics.id}`, "PATCH", { attribs: {} });
+    semanticsData = (await semanticsResponse.json()).data;
+    check(
+      semanticsResponse.status === 200 && semanticsData.attribs.first === 1,
+      "subscriber-patch-empty-map",
+    );
+    semanticsResponse = await request(`/api/subscribers/${semantics.id}`, "PATCH", {
+      attribs: null,
+      email: null,
+      name: null,
+    });
+    semanticsData = (await semanticsResponse.json()).data;
+    check(
+      semanticsResponse.status === 200 &&
+        Object.keys(semanticsData.attribs).length === 0 &&
+        semanticsData.email === semantics.email &&
+        semanticsData.name === semantics.name,
+      "subscriber-patch-null-fields",
+    );
+    check(
+      (await request(`/api/subscribers/${semantics.id}`, "PUT", {})).status === 400,
+      "subscriber-put-email-required",
+    );
+    semanticsResponse = await request(`/api/subscribers/${semantics.id}`, "PUT", {
+      email: semantics.email,
+    });
+    semanticsData = (await semanticsResponse.json()).data;
+    check(
+      semanticsResponse.status === 200 &&
+        semanticsData.name === semantics.name &&
+        semanticsData.lists.length === 0 &&
+        Object.keys(semanticsData.attribs).length === 0,
+      "subscriber-put-defaults",
+    );
+    for (const selector of ["", "0", "-1", "garbage", "9223372036854775808"]) {
+      check(
+        (await request(`/api/subscribers?id=${selector}`, "DELETE")).status === 400,
+        "subscriber-delete-selector-invalid",
+      );
+    }
+    check(
+      (
+        await request("/api/subscribers/lists", "PUT", {
+          ids: [semantics.id],
+          target_list_ids: [2147483647],
+          action: "add",
+        })
+      ).status === 500,
+      "subscriber-add-missing-list",
+    );
     const before = await get(sub.id);
     check(before.uuid === sub.uuid && before.email === sub.email, "subscriber-read-identity");
     let response = await request(`/api/subscribers/${sub.id}`, "PATCH", {
