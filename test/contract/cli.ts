@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { startContractFixture } from "@/test/contract/fixture";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { runListsContract } from "@/test/contract/lists";
+import { runSubscribersContract } from "@/test/contract/subscribers";
+import { runExternalContract } from "@/test/subscribers/external";
 import { runRolesContract } from "@/test/contract/roles";
 import { runAuthContract } from "@/test/contract/auth";
 import { runContract } from "@/test/contract/runner";
@@ -83,13 +85,20 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
   }
   if (
     operation === "owned" &&
-    (args[1] === "production" || args[1] === "auth" || args[1] === "roles" || args[1] === "lists")
+    (args[1] === "production" ||
+      args[1] === "auth" ||
+      args[1] === "roles" ||
+      args[1] === "lists" ||
+      args[1] === "subscribers")
   ) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
       throw new Error("Invalid owned production arguments");
     if (
-      (args[1] === "auth" || args[1] === "roles" || args[1] === "lists") &&
+      (args[1] === "auth" ||
+        args[1] === "roles" ||
+        args[1] === "lists" ||
+        args[1] === "subscribers") &&
       Object.keys(values).length
     )
       throw new Error("Invalid owned auth arguments");
@@ -97,8 +106,13 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
     const passed = await withProduction(
       resolve(repository, "dist/iglo.email"),
       signal,
-      async (baseUrl, runSignal) => {
+      async (baseUrl, runSignal, restart) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "subscribers") {
+          await runSubscribersContract({ mode: "normal", baseUrl, credentials });
+          await runExternalContract({ baseUrl, credentials, restart });
+          return true;
+        }
         if (args[1] === "lists") {
           await runListsContract({ mode: "normal", baseUrl, credentials });
           return true;
