@@ -119,7 +119,103 @@ async function healthWhenReady(child: ReturnType<typeof start>, port: number) {
   throw new Error("Server did not become ready within five seconds");
 }
 
+async function login(port: number, username: string, password: string) {
+  const base = `http://127.0.0.1:${port}`;
+  const page = await fetch(`${base}/admin/login?next=%2Fapi%2Fprofile`);
+  const html = await page.text();
+  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(html)?.[1];
+  const cookie = page.headers
+    .getSetCookie()
+    .find((item) => item.startsWith("nonce="))
+    ?.split(";", 1)[0];
+  if (!nonce || !cookie) throw new Error("Login form is missing its nonce");
+  return fetch(`${base}/admin/login`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+    body: new URLSearchParams({ username, password, nonce, next: "/api/profile" }),
+  });
+}
+
 describe("compiled executable", () => {
+  test("unprovisioned startup denies login and partial bootstrap pairs fail", async () => {
+    const port = await availablePort();
+    const dataDir = join(temporaryDirectory, "unprovisioned-auth");
+    const child = start(["--port", String(port), "--data-dir", dataDir]);
+    try {
+      expect((await healthWhenReady(child, port)).status).toBe(200);
+      const attempt = await login(port, adminUser, adminPassword);
+      expect(attempt.status).toBe(200);
+      expect(await attempt.text()).toContain("Invalid login or password");
+      expect(attempt.headers.getSetCookie().some((item) => item.startsWith("session="))).toBe(
+        false,
+      );
+      const api = await fetch(`http://127.0.0.1:${port}/api/health`);
+      expect(api.status).toBe(403);
+    } finally {
+      expect(await stop(child, "SIGTERM")).toBe(0);
+    }
+    for (const env of [
+      { IGLO_EMAIL_ADMIN_USER: adminUser },
+      { IGLO_EMAIL_ADMIN_PASSWORD: adminPassword },
+      { IGLO_EMAIL_ADMIN_USER: "", IGLO_EMAIL_ADMIN_PASSWORD: "" },
+    ]) {
+      const result = await runCli(
+        ["--data-dir", join(temporaryDirectory, `partial-${crypto.randomUUID()}`)],
+        env,
+      );
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("requires both");
+      expect(result.stderr).not.toContain(adminPassword);
+    }
+  });
+
+  test("compiled sessions survive restart and existing users ignore bootstrap inputs", async () => {
+    const port = await availablePort();
+    const dataDir = join(temporaryDirectory, "persistent-auth");
+    const args = [
+      "--port",
+      String(port),
+      "--data-dir",
+      dataDir,
+      "--root-url",
+      `https://127.0.0.1:${port}`,
+    ];
+    const first = start(args, {
+      IGLO_EMAIL_ADMIN_USER: adminUser,
+      IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+    });
+    let session = "";
+    try {
+      expect((await healthWhenReady(first, port)).status).toBe(200);
+      const result = await login(port, adminUser, adminPassword);
+      expect(result.status).toBe(302);
+      const cookies = result.headers.getSetCookie();
+      const sessionCookie = cookies.find((item) => item.startsWith("session=")) ?? "";
+      expect(sessionCookie).toContain("Secure");
+      expect(sessionCookie).toContain("HttpOnly");
+      expect(sessionCookie).toContain("SameSite=Lax");
+      session = sessionCookie.split(";", 1)[0] ?? "";
+      expect(session).not.toBe("");
+    } finally {
+      expect(await stop(first, "SIGTERM")).toBe(0);
+    }
+    const second = start(args, { IGLO_EMAIL_ADMIN_USER: "replacement-admin" });
+    try {
+      expect((await healthWhenReady(second, port)).status).toBe(200);
+      const profile = await fetch(`http://127.0.0.1:${port}/api/profile`, {
+        headers: { cookie: session },
+      });
+      expect(profile.status).toBe(200);
+      expect(((await profile.json()) as { data: { username: string } }).data.username).toBe(
+        adminUser,
+      );
+      expect((await login(port, adminUser, adminPassword)).status).toBe(302);
+      expect((await login(port, "replacement-admin", adminPassword)).status).toBe(200);
+    } finally {
+      expect(await stop(second, "SIGTERM")).toBe(0);
+    }
+  });
   test("serves the upstream health response outside the checkout and stops on SIGTERM", async () => {
     const port = await availablePort();
     const child = start(["serve", "--port", String(port)], {
@@ -143,7 +239,7 @@ describe("compiled executable", () => {
         signal: AbortSignal.timeout(1_000),
       });
       expect(unknownPath.status).toBe(404);
-      for (const path of ["/api/not-present", "/api/health", "/api/lang/en"]) {
+      for (const path of ["/api/not-present", "/api/lang/en"]) {
         const apiResponse = await fetch(`http://127.0.0.1:${port}${path}`, {
           signal: AbortSignal.timeout(1_000),
         });
@@ -151,6 +247,9 @@ describe("compiled executable", () => {
         expect(apiResponse.headers.get("content-type")).toBe("application/json");
         expect(await apiResponse.text()).toBe('{"message":"404 unknown endpoint"}\n');
       }
+      const protectedHealth = await fetch(`http://127.0.0.1:${port}/api/health`);
+      expect(protectedHealth.status).toBe(403);
+      expect(await protectedHealth.text()).toBe('{"message":"invalid session"}\n');
     } finally {
       expect(await stop(child, "SIGTERM")).toBe(0);
     }

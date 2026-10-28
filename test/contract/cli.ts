@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { startContractFixture } from "@/test/contract/fixture";
-import { withProduction } from "@/test/contract/owned";
+import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { runAuthContract } from "@/test/contract/auth";
 import { runContract } from "@/test/contract/runner";
 import type { ContractTarget, Credentials, Mode, Profile, TargetName } from "@/test/contract/types";
 
@@ -45,6 +46,14 @@ async function fixtureCredentials(): Promise<Credentials> {
   return { user, token };
 }
 
+async function productionAdmin(): Promise<{ user: string; password: string }> {
+  const text = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
+  const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(text)?.[1];
+  const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(text)?.[1];
+  if (!user || !password) throw new Error("Synthetic production bootstrap credentials are missing");
+  return { user, password };
+}
+
 async function report(target: ContractTarget, caseId?: string): Promise<boolean> {
   const result = await runContract(target, caseId === undefined ? {} : { caseId });
   for (const line of result.lines) process.stdout.write(`${line}\n`);
@@ -70,24 +79,43 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
     if (!(await report(target, values["--case"]))) process.exitCode = 1;
     return;
   }
-  if (operation === "owned" && args[1] === "production") {
+  if (operation === "owned" && (args[1] === "production" || args[1] === "auth")) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
       throw new Error("Invalid owned production arguments");
+    if (args[1] === "auth" && Object.keys(values).length)
+      throw new Error("Invalid owned auth arguments");
+    const admin = await productionAdmin();
     const passed = await withProduction(
       resolve(repository, "dist/iglo.email"),
       signal,
-      (baseUrl, runSignal) =>
-        report(
+      async (baseUrl, runSignal) => {
+        const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "auth") {
+          try {
+            await runAuthContract({ mode: "normal", baseUrl, credentials, admin });
+          } catch (error) {
+            throw new Error(
+              error instanceof Error && /^FAIL [a-zA-Z0-9-]+$/.test(error.message)
+                ? error.message
+                : "Auth contract failed",
+            );
+          }
+          return true;
+        }
+        return report(
           {
             mode: "normal",
             target: "production",
             profile: "core",
             baseUrl,
+            credentials,
             signal: runSignal,
           },
           values["--case"],
-        ),
+        );
+      },
+      admin,
     );
     if (!passed) process.exitCode = 1;
     return;

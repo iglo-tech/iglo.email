@@ -121,7 +121,7 @@ describe("contract runner public boundary", () => {
         "--base-url",
         target.origin,
         "--case",
-        "protected-health-basic",
+        "invalid-id",
       ]);
       expect(result.code).not.toBe(0);
       expect(result.output.toLowerCase()).toContain("unsupported");
