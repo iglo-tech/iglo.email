@@ -257,6 +257,27 @@ async function comparePublic404(
     if (!match) throw new Error(`Invalid versioned ${path}`);
     return match[1]!;
   };
+  // This is the specified default 404 page, not an arbitrary HTML sanitizer.
+  const attributes: Readonly<Record<string, readonly string[]>> = {
+    html: [],
+    head: [],
+    body: [],
+    title: [],
+    h2: [],
+    meta: ["http-equiv", "content", "name"],
+    link: ["href", "rel", "type", "title"],
+    div: ["class"],
+    header: ["class"],
+    footer: ["class"],
+    img: ["src", "alt"],
+    a: ["href", "target", "rel"],
+    script: ["src", "async", "defer"],
+  };
+  const classes: Readonly<Record<string, readonly string[]>> = {
+    div: ["container", "wrap", "logo"],
+    header: ["header"],
+    footer: ["container"],
+  };
   const rewriter = new HTMLRewriter()
     .onDocument({
       doctype(node) {
@@ -266,28 +287,50 @@ async function comparePublic404(
     })
     .on("*", {
       element(element) {
+        if (!Object.hasOwn(attributes, element.tagName)) throw new Error("Unexpected HTML element");
+        if (element.tagName === "h2") count("allHeadings");
         for (const [name, value] of element.attributes) {
-          if (/^on/i.test(name)) throw new Error("Unsafe HTML attribute");
+          if (!attributes[element.tagName]!.includes(name))
+            throw new Error(`Unexpected HTML attribute ${element.tagName}.${name}`);
+          if (
+            name === "class" &&
+            value.split(/\s+/).some((value) => !classes[element.tagName]?.includes(value))
+          )
+            throw new Error("Unexpected HTML class");
           if (name === "href" || name === "src") {
+            // These fixed URLs contain neither character references nor raw
+            // control characters. HTMLRewriter exposes attribute spellings,
+            // not browser-decoded values, so reject unsupported encodings.
+            if (
+              [...value].some(
+                (character) =>
+                  character === "&" ||
+                  character.charCodeAt(0) <= 32 ||
+                  character.charCodeAt(0) === 127,
+              )
+            )
+              throw new Error("Unsupported encoded HTML URL");
             // WHATWG URL parsing removes embedded ASCII tabs/newlines just as
             // a browser does; a literal scheme-prefix regex misses those URLs.
             const url = new URL(value, "http://127.0.0.1/");
             if (url.protocol !== "http:" && url.protocol !== "https:")
               throw new Error("Unsafe HTML URL");
           }
-          if (
-            name === "hidden" ||
-            name === "style" ||
-            (name === "aria-hidden" && value.toLowerCase() === "true")
-          )
-            throw new Error("Unexpected HTML visibility attribute");
         }
-        if (
-          ["iframe", "object", "embed", "svg", "math", "style", "template"].includes(
-            element.tagName,
+        if (element.tagName === "meta") {
+          const kind = element.getAttribute("http-equiv")?.toLowerCase();
+          const name = element.getAttribute("name");
+          const content = element.getAttribute("content");
+          if (
+            !(kind === "content-type" && content?.toLowerCase() === "text/html; charset=utf-8") &&
+            !(name === "description" && content === "") &&
+            !(
+              name === "viewport" &&
+              content === "width=device-width, initial-scale=1, minimum-scale=1"
+            )
           )
-        )
-          throw new Error("Unexpected HTML element");
+            throw new Error("Unexpected public metadata");
+        }
       },
     })
     .on("html", {
@@ -313,7 +356,29 @@ async function comparePublic404(
         title += chunk.text;
       },
     })
-    .on("body h2", {
+    .on("body > .wrap", {
+      element(element) {
+        count("wrap");
+        if (
+          element
+            .getAttribute("class")
+            ?.split(/\s+/)
+            .some((name) => name !== "wrap" && name !== "container")
+        )
+          throw new Error("Unexpected page wrapper class");
+      },
+    })
+    .on("body > .wrap > header", {
+      element() {
+        count("header");
+      },
+    })
+    .on("body > .wrap > header .logo", {
+      element() {
+        count("logo");
+      },
+    })
+    .on("body > .wrap > h2", {
       element() {
         count("heading");
       },
@@ -321,7 +386,7 @@ async function comparePublic404(
         heading += chunk.text;
       },
     })
-    .on(".wrap > div", {
+    .on("body > .wrap > div", {
       element() {
         count("message");
       },
@@ -329,24 +394,44 @@ async function comparePublic404(
         message += chunk.text;
       },
     })
-    .on("head link[rel=stylesheet]", {
+    .on("body link, body script", {
+      element() {
+        throw new Error("Unexpected body asset");
+      },
+    })
+    .on("link", {
       element(element) {
+        const relation = element.getAttribute("rel");
         const href = element.getAttribute("href");
-        if (href?.startsWith("/public/static/style.css")) {
+        if (relation === "icon") {
+          count("icon");
+          iconVersion = version(href, "/public/static/favicon.png");
+        } else if (relation === "stylesheet" && href?.startsWith("/public/static/style.css")) {
           count("style");
           styleVersion = version(href, "/public/static/style.css");
         } else if (
-          !expected.customScript ||
-          !/^\/public\/custom\.css\?v=[a-f0-9]{10}$/.test(href ?? "")
+          relation === "stylesheet" &&
+          expected.customScript &&
+          /^\/public\/custom\.css\?v=[a-f0-9]{10}$/.test(href ?? "")
         ) {
+          count("customStyle");
+        } else if (relation === "alternate" && expected.archiveTitle) {
+          const url = new URL(href ?? "");
+          if (
+            element.getAttribute("type") !== "application/rss+xml" ||
+            element.getAttribute("title") !== expected.archiveTitle ||
+            url.protocol !== "http:" ||
+            url.hostname !== "127.0.0.1" ||
+            !url.port ||
+            url.pathname !== "/archive.xml" ||
+            url.search ||
+            url.hash
+          )
+            throw new Error("Unexpected archive metadata");
+          count("archive");
+        } else {
           throw new Error("Unexpected public stylesheet");
         }
-      },
-    })
-    .on("head link[rel=icon]", {
-      element(element) {
-        count("icon");
-        iconVersion = version(element.getAttribute("href"), "/public/static/favicon.png");
       },
     })
     .on("body img", {
@@ -357,7 +442,7 @@ async function comparePublic404(
         if (element.getAttribute("alt") !== alt) throw new Error("Wrong logo context");
       },
     })
-    .on("footer", {
+    .on("body > footer", {
       element() {
         count("footer");
       },
@@ -388,6 +473,10 @@ async function comparePublic404(
     "body",
     "title",
     "heading",
+    "allHeadings",
+    "wrap",
+    "header",
+    "logo",
     "message",
     "style",
     "icon",
@@ -399,6 +488,11 @@ async function comparePublic404(
   }
   if ((counts.script ?? 0) !== (expected.customScript ? 1 : 0))
     throw new Error("Wrong script count");
+  if (
+    (counts.customStyle ?? 0) !== (expected.customScript ? 1 : 0) ||
+    (counts.archive ?? 0) !== (expected.archiveTitle ? 1 : 0)
+  )
+    throw new Error("Wrong reference-only asset count");
   if (title !== `404 - Not found - ${expected.siteName}` || heading !== "404 - Not found")
     throw new Error("Wrong public 404 title or heading");
   if (

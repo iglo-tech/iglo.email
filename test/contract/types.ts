@@ -26,6 +26,7 @@ export type ExpectedBody =
       readonly attribution: string;
       readonly attributionUrl: string;
       readonly customScript: boolean;
+      readonly archiveTitle: string | null;
     }
   | { readonly kind: "public-css" };
 

@@ -77,3 +77,12 @@ The HTML CLI rejects newline/tab/carriage-return executable URL schemes after
 browser-compatible URL parsing, hidden headings and ancestors, inline visibility
 styles and unrecognized stylesheets. These checks remain specific to the fixed
 public 404 layout; wire and JSON comparisons are unchanged.
+
+The fixed-page HTML contract now allows only the known 404 tags, attributes and
+layout classes, requires the heading directly under the body wrapper, and checks
+stylesheet links in all locations while rejecting body assets and document bases.
+Its fixed URL contexts reject character-reference/control spellings instead of
+treating HTMLRewriter's raw attribute values as browser-decoded strings. The
+reference-only archive RSS title/link is explicitly expected; production does not
+claim archive functionality. Seven additional CLI negatives first passed
+incorrectly, then failed correctly after the shape checks were tightened.

@@ -16,13 +16,20 @@ const html404 = (
   attribution: string,
   attributionUrl: string,
   customScript: boolean,
+  archiveTitle: string | null,
 ): Expectation => ({
   status: 404,
   contentType: "text/html; charset=UTF-8",
-  body: { kind: "public-404", siteName, attribution, attributionUrl, customScript },
+  body: { kind: "public-404", siteName, attribution, attributionUrl, customScript, archiveTitle },
 });
-const referenceHTML = html404("Mailing list", "listmonk", "https://listmonk.app", true);
-const productionHTML = html404("iglo.email", "iglo.email", "https://iglo.email", false);
+const referenceHTML = html404(
+  "Mailing list",
+  "listmonk",
+  "https://listmonk.app",
+  true,
+  "Mailing list archive - Mailing list",
+);
+const productionHTML = html404("iglo.email", "iglo.email", "https://iglo.email", false, null);
 const css: Expectation = {
   status: 200,
   contentType: "text/css; charset=utf-8",

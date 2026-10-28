@@ -88,3 +88,14 @@ passes covering newline/tab/CR executable URLs and hidden/styled headings or
 ancestors. They pass after namespace-confined asset canonicalization and stricter
 404 assertions. Browser-compatible URL parsing rejects schemes that Chromium
 normalizes to executable URLs. The current production shell remains unchanged.
+
+## Fixed-page assertion correction (round 2)
+
+Seven additional public CLI regressions failed against `cbd877d`: entity-encoded
+newline/initial/colon executable URLs, a heading inside a closed disclosure,
+a body stylesheet, a foreign document base and a closed popover ancestor. The
+checker now validates the specified 404 shape and fixed attribute/URL contexts,
+not arbitrary HTML. These are assertion gaps; production page rendering did not
+change. The actual reference was fetched to retain its configured RSS archive
+metadata explicitly, while normal production expects no archive link. Passing
+reference/compiled-production pages were rechecked after the stricter validation.
