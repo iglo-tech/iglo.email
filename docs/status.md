@@ -39,6 +39,11 @@ The sole completion fixer is dispatched: [M1.2: Complete settings and immutable 
 - Initial fixer run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-fix1-complete-5b6c03d:ordinal:1.
 - Idempotent request: iglo-email-M1.2-fix1-complete-5b6c03d.
 
+
+The first completion fixer is terminal, no active run/pending question/approval or child work, at draft PR #14 head 50e7c20e8982246b63b0c6ea63bf32d01548a8d6. It implemented D45 immutable expiry/live policy, Go-style ordered JSON/XML/key binding, From-address and cron parsing, safe false update-check values and additional security/session tests. Reported final full check 165 tests, focused 104, session suite 37, compiled/pinned/smoke and fresh serial ext4 measurements passed for covered cases. No readiness/approval is claimed.
+
+D46 accepts safe atomic rejection of final writable settings NUL strings/map keys instead of a native successful-write difference or upstream database-error 500. The lead fixes this concrete small defect directly with reference-first paired no-write cases. Remaining acceptance is a finite work list: expired-session and legacy restart, specific in-flight authorization variants, and representative JSON/XML/form/key/parser boundary cases—not a demand for an impossible exhaustive proof of all strings. Existing substantive implementation remains usable; normal completion fixes continue on the same PR, without duplicating a writer or stopping the project. No council/watch before those required cases pass.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
@@ -153,3 +158,5 @@ M1.3 cooldown expired at 11:22:23 UTC; automatic Opus continuation completed its
 [D44](design/09-decisions.md#d44-settings-ownership-safe-per-key-updates-and-in-process-activation) records M1.2 bootstrap ownership, safe per-key validation, supported in-process activation and explicit staged SMTP behavior.
 
 [D45](design/09-decisions.md#d45-capture-each-session-lifetime-at-creation) authorizes immutable creation-time session expiry and the narrow owner seam needed for live settings, with legacy/no-revival and cookie consistency acceptance.
+
+[D46](design/09-decisions.md#d46-reject-nul-in-final-writable-settings-values) records safe pre-write NUL validation for the final bound/normalized settings candidate.
