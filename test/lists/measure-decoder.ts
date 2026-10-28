@@ -2,10 +2,13 @@
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 
-const admin = { user: "m15-xml-measure-admin", password: "m15-xml-measure-password" };
+const admin = {
+  user: "m15-xml-measure-admin",
+  password: "m15-xml-measure-password",
+};
 for (let repetition = 1; repetition <= 3; repetition++) {
   await withProduction(
-    resolve("dist/iglo.email"),
+    resolve(process.argv[2] ?? "dist/iglo.email"),
     AbortSignal.timeout(120_000),
     async (origin) => {
       const credentials = await provisionApiUser(origin, admin);

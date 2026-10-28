@@ -43,6 +43,40 @@ export async function runListsContract(target: {
       (await request("/api/lists", "GET", undefined, "")).status === 403,
       "list-unauthenticated",
     );
+    const whitespaceName = `whitespace-${suffix}`;
+    const queryWhitespaceTag = `whitespace-tag-${suffix}`;
+    const whitespaceRow = await create(whitespaceName, {
+      tags: [queryWhitespaceTag],
+    });
+    const bomQuery = new URLSearchParams({
+      query: `\ufeff${whitespaceName}\ufeff`,
+      tag: queryWhitespaceTag,
+    });
+    const bomResults = (await (await request(`/api/lists?${bomQuery}`)).json()).data.results;
+    check(bomResults.length === 0, "query-BOM-is-not-Go-space");
+    check(
+      (await request(`/api/lists?${bomQuery}`, "DELETE")).status === 200 &&
+        (await request(`/api/lists/${whitespaceRow.id}`)).status === 200,
+      "delete-query-BOM-retains-row",
+    );
+    const bomTag = new URLSearchParams({
+      query: whitespaceName,
+      tag: `\ufeff${queryWhitespaceTag}\ufeff`,
+    });
+    check(
+      (await (await request(`/api/lists?${bomTag}`)).json()).data.results.length === 0,
+      "collection-tag-BOM-retained",
+    );
+    const nelQuery = new URLSearchParams({
+      query: `\u0085${whitespaceName}\u0085`,
+      tag: `\u0085${queryWhitespaceTag}\u0085`,
+    });
+    check(
+      (await (await request(`/api/lists?${nelQuery}`)).json()).data.results.some(
+        (row: any) => row.id === whitespaceRow.id,
+      ),
+      "collection-NEL-is-Go-space",
+    );
     // Raw requests retain duplicate JSON keys and XML element order.
     async function raw(
       body: string,
@@ -55,11 +89,17 @@ export async function runListsContract(target: {
         `${target.baseUrl}/api/lists${id === undefined ? "" : `/${id}`}`,
         {
           method,
-          headers: { Authorization: authorization, "Content-Type": contentType },
+          headers: {
+            Authorization: authorization,
+            "Content-Type": contentType,
+          },
           body,
         },
       );
-      const value = (await response.json()) as { data?: Record<string, any>; message?: string };
+      const value = (await response.json()) as {
+        data?: Record<string, any>;
+        message?: string;
+      };
       if (method === "POST" && response.status === 200 && typeof value.data?.id === "number")
         owned.push(value.data.id);
       return { response, value };
@@ -104,11 +144,6 @@ export async function runListsContract(target: {
       clearedTags.response.status === 200 && JSON.stringify(clearedTags.value.data?.tags) === "[]",
       "json-null-slice-reset",
     );
-    check(
-      (await raw(`{"name":"bad-${suffix}","subscriber_statuses":{"x":"bad"}}`, "application/json"))
-        .response.status === 400,
-      "json-known-map-type",
-    );
     const reserved = await raw(
       `{"name":"reserved-${suffix}","constructor":{"x":1},"__proto__":true}`,
       "application/json",
@@ -117,41 +152,137 @@ export async function runListsContract(target: {
       reserved.response.status === 200 && reserved.value.data?.name === `reserved-${suffix}`,
       "json-unknown-prototype-names",
     );
+    // D36 ignores read-only model metadata, even when upstream's discarded
+    // read-model binding rejects it. Exercise create and update independently.
+    const metadata = [
+      [
+        "map-type",
+        '"subscriber_statuses":{"x":"bad"}',
+        "<SubscriberCounts>bad</SubscriberCounts>",
+        false,
+      ],
+      ["time-type", '"created_at":12', "<CreatedAt>bad-date</CreatedAt>", false],
+      [
+        "calendar",
+        '"created_at":"2024-02-30T12:00:00Z"',
+        "<CreatedAt>2024-02-30T12:00:00Z</CreatedAt>",
+        false,
+      ],
+      [
+        "duplicate-map",
+        '"subscriber_statuses":{"x":"bad","x":1}',
+        "<SubscriberCount>9223372036854775808</SubscriberCount>",
+        false,
+      ],
+      ["id-overflow", '"id":9223372036854775808', "<ID>9223372036854775808</ID>", false],
+      ["id-fraction", '"id":1.0', "<ID> </ID>", false],
+      ["id-exponent", '"id":1e0', "<SubscriberID>bad</SubscriberID>", false],
+      [
+        "valid-int64",
+        '"id":9223372036854775807,"subscriber_statuses":{"x":9223372036854775807}',
+        "<ID>9223372036854775807</ID>",
+        true,
+      ],
+      [
+        "comma-time",
+        '"created_at":"2024-02-29T12:00:00,123Z"',
+        "<CreatedAt>2024-02-29T12:00:00,123Z</CreatedAt>",
+        true,
+      ],
+    ] as const;
+    for (const [label, jsonMetadata, xmlMetadata, compatible] of metadata) {
+      for (const xmlBody of [false, true]) {
+        for (const method of ["POST", "PUT"] as const) {
+          const name = `metadata-${label}-${xmlBody}-${method}-${suffix}`;
+          const seed =
+            method === "PUT"
+              ? await create(`seed-${name}`, {
+                  tags: ["keep"],
+                  description: "keep",
+                })
+              : undefined;
+          const before = seed
+            ? (await (await request(`/api/lists/${seed.id}`)).json()).data
+            : undefined;
+          const body = xmlBody
+            ? `<List><Name>${name}</Name><Tags>writable</Tags><Description>writable</Description>${xmlMetadata}</List>`
+            : `{"name":"${name}","tags":["writable"],"description":"writable",${jsonMetadata}}`;
+          const result = await raw(
+            body,
+            xmlBody ? "application/xml" : "application/json",
+            method,
+            seed?.id,
+          );
+          const accepted = compatible || target.mode !== "reference";
+          check(
+            result.response.status === (accepted ? 200 : 400),
+            `D36-${label}-${xmlBody}-${method}`,
+          );
+          if (accepted) {
+            const actual = result.value.data!;
+            check(
+              actual.name === name &&
+                actual.description === "writable" &&
+                JSON.stringify(actual.tags) === '["writable"]',
+              `D36-writable-${label}`,
+            );
+            check(
+              typeof actual.id === "number" &&
+                actual.id !== 9223372036854775808 &&
+                actual.subscriber_count === 0 &&
+                JSON.stringify(actual.subscriber_statuses) === "{}",
+              `D36-generated-counts-${label}`,
+            );
+            check(
+              actual.created_at !== "2024-02-29T12:00:00,123Z" &&
+                actual.created_at !== "2024-02-30T12:00:00Z",
+              `D36-generated-time-${label}`,
+            );
+            if (before)
+              check(
+                actual.id === before.id &&
+                  actual.uuid === before.uuid &&
+                  actual.created_at === before.created_at,
+                `D36-identity-preserved-${label}`,
+              );
+          } else if (before) {
+            const after = (await (await request(`/api/lists/${seed!.id}`)).json()).data;
+            check(
+              JSON.stringify(after) === JSON.stringify(before),
+              `D36-reference-rejected-unchanged-${label}`,
+            );
+          }
+        }
+      }
+    }
+    const snapshotSeed = await create(`snapshot-${suffix}`, {
+      tags: ["snapshot"],
+    });
+    const snapshot = (await (await request(`/api/lists/${snapshotSeed.id}`)).json()).data;
+    const snapshotUpdate = await request(`/api/lists/${snapshotSeed.id}`, "PUT", {
+      ...snapshot,
+      name: `snapshot-update-${suffix}`,
+    });
+    const snapshotActual = (await snapshotUpdate.json()).data;
     check(
-      (await raw(`{"name":"bad-${suffix}","created_at":12}`, "application/json")).response
-        .status === 400,
-      "json-known-time-type",
+      snapshotUpdate.status === 200 &&
+        snapshotActual.id === snapshot.id &&
+        snapshotActual.uuid === snapshot.uuid &&
+        snapshotActual.created_at === snapshot.created_at,
+      "D36-get-snapshot-update",
     );
-    check(
-      (
-        await raw(
-          `<List><Name>bad-${suffix}</Name><SubscriberCount>bad</SubscriberCount></List>`,
-          "application/xml",
-        )
-      ).response.status === 400,
-      "xml-known-integer-type",
-    );
-    check(
-      (
-        await raw(
-          `<List><Name>bad-${suffix}</Name><SubscriberCounts>bad</SubscriberCounts></List>`,
-          "application/xml",
-        )
-      ).response.status === 400,
-      "xml-known-map-type",
-    );
-    const validInt = await raw(
-      `{"name":"ignored-id-${suffix}","id":9223372036854775807,"subscriber_statuses":{"x":9223372036854775807}}`,
+    const metadataOverride = await raw(
+      `{"name":"override-${suffix}","id":-1,"uuid":"forged","created_at":"2000-01-01T00:00:00Z","updated_at":"2000-01-01T00:00:00Z","subscriber_count":99,"subscriber_statuses":{"subscribed":99}}`,
       "application/json",
     );
-    check(validInt.response.status === 200, "json-int64-model-fields");
-    for (const number of ["9223372036854775808", "1.0", "1e0"]) {
-      check(
-        (await raw(`{"name":"invalid-id-${suffix}","id":${number}}`, "application/json")).response
-          .status === 400,
-        `json-invalid-integer-${number}`,
-      );
-    }
+    check(
+      metadataOverride.response.status === 200 &&
+        metadataOverride.value.data!.id > 0 &&
+        metadataOverride.value.data!.uuid !== "forged" &&
+        metadataOverride.value.data!.subscriber_count === 0 &&
+        metadataOverride.value.data!.created_at !== "2000-01-01T00:00:00Z",
+      "D36-metadata-cannot-assign",
+    );
     const folded = await raw(`{"name":"folded-${suffix}","tagſ":["accepted"]}`, "application/json");
     check(
       folded.response.status === 200 && folded.value.data?.tags[0] === "accepted",
@@ -185,6 +316,73 @@ export async function runListsContract(target: {
         JSON.stringify(xml.value.data.tags) === JSON.stringify(["One-Two", "002"]) &&
         xml.value.data.description === " 02 & A x<y",
       "xml-fields-container-text",
+    );
+    for (const digits of [30, 31, 32, 33, 64]) {
+      for (const hex of [false, true]) {
+        const entity = `&#${hex ? "x" : ""}${"0".repeat(digits)}${hex ? "41" : "65"};`;
+        const result = await raw(
+          `<List><Name>longref-${digits}-${hex}-${suffix}</Name><Tags>${entity}</Tags><Description>${entity}</Description></List>`,
+          "application/xml",
+        );
+        check(
+          result.response.status === 200 &&
+            result.value.data?.description === "A" &&
+            JSON.stringify(result.value.data.tags) === '["A"]',
+          `xml-long-numeric-reference-${digits}-${hex}`,
+        );
+      }
+    }
+    const literalReference = "&#0000000000000000000000000000000000000000065;";
+    const cdataReference = await raw(
+      `<List><Name>cdata-reference-${suffix}</Name><Description><![CDATA[${literalReference}]]> &amp;#65; &#38;#65;</Description></List>`,
+      "application/xml",
+    );
+    check(
+      cdataReference.response.status === 200 &&
+        cdataReference.value.data?.description === `${literalReference} &#65; &#65;`,
+      "xml-numeric-reference-one-pass-cdata",
+    );
+    for (const content of [
+      `<Description>a${String.fromCharCode(0)}b</Description>`,
+      `<Description><![CDATA[a${String.fromCharCode(0)}b]]></Description>`,
+      `<Ignored><Nested>${String.fromCharCode(0)}</Nested></Ignored>`,
+      `<Ignored>${String.fromCharCode(1)}</Ignored>`,
+      `<Ignored>${String.fromCharCode(0xfffe)}</Ignored>`,
+    ]) {
+      for (const method of ["POST", "PUT"] as const) {
+        const seed =
+          method === "PUT"
+            ? await create(`xml-keep-${owned.length}-${suffix}`, {
+                tags: ["keep"],
+              })
+            : undefined;
+        const before = seed
+          ? (await (await request(`/api/lists/${seed.id}`)).json()).data
+          : undefined;
+        const result = await raw(
+          `<List><Name>forbidden-${suffix}</Name>${content}</List>`,
+          "application/xml",
+          method,
+          seed?.id,
+        );
+        check(result.response.status === 400, `xml-forbidden-literal-${method}`);
+        if (before)
+          check(
+            JSON.stringify((await (await request(`/api/lists/${seed!.id}`)).json()).data) ===
+              JSON.stringify(before),
+            "xml-forbidden-no-write",
+          );
+      }
+    }
+    const allowedCharacters = await raw(
+      `<List><Name>allowed-xml-${suffix}</Name><Description>\t\n\r${String.fromCodePoint(0x10000, 0x10ffff)}</Description></List>`,
+      "application/xml",
+    );
+    check(
+      allowedCharacters.response.status === 200 &&
+        allowedCharacters.value.data?.description ===
+          `\t\n\n${String.fromCodePoint(0x10000, 0x10ffff)}`,
+      "xml-allowed-character-boundaries",
     );
     const xmlUpdate = await raw(
       `<List><Name>first</Name><Name>updated-${suffix}</Name><Tags><![CDATA[a & b]]></Tags></List>`,
@@ -282,14 +480,20 @@ export async function runListsContract(target: {
     });
     check(JSON.stringify(bounded.tags) === JSON.stringify([limitTag]), "tag-multibyte-100");
     const longUpdate = await raw(
-      JSON.stringify({ name: `renamed-${suffix}`, description: "changed", tags: [longTag] }),
+      JSON.stringify({
+        name: `renamed-${suffix}`,
+        description: "changed",
+        tags: [longTag],
+      }),
       "application/json",
       "PUT",
       bounded.id,
     );
     check(longUpdate.response.status === (target.mode === "reference" ? 200 : 400), "D35-tag-put");
     const boundedRead = (
-      (await (await request(`/api/lists/${bounded.id}`)).json()) as { data: Record<string, any> }
+      (await (await request(`/api/lists/${bounded.id}`)).json()) as {
+        data: Record<string, any>;
+      }
     ).data;
     check(
       target.mode === "reference"
@@ -448,7 +652,9 @@ export async function runListsContract(target: {
     );
     const filtered = await request(`/api/lists?query=${suffix}&status=archived&tag=one&tag=two`);
     const result = (
-      (await filtered.json()) as { data: { results: { id: number }[]; total: number } }
+      (await filtered.json()) as {
+        data: { results: { id: number }[]; total: number };
+      }
     ).data;
     check(
       filtered.status === 200 && result.total === 1 && result.results[0]?.id === second.id,
@@ -456,7 +662,9 @@ export async function runListsContract(target: {
     );
     const emptyMinimal = await request(`/api/lists?minimal=true&status=archived`, "GET");
     const minimalData = (
-      (await emptyMinimal.json()) as { data: { results: Record<string, unknown>[]; total: number } }
+      (await emptyMinimal.json()) as {
+        data: { results: Record<string, unknown>[]; total: number };
+      }
     ).data;
     check(
       minimalData.results.some(
@@ -477,7 +685,12 @@ export async function runListsContract(target: {
       const response = await request(`/api/lists?query=${suffix}&${param}`);
       const pageData = (
         (await response.json()) as {
-          data: { page: number; per_page: number; total: number; results: unknown[] };
+          data: {
+            page: number;
+            per_page: number;
+            total: number;
+            results: unknown[];
+          };
         }
       ).data;
       check(
@@ -501,7 +714,9 @@ export async function runListsContract(target: {
         description: null,
       });
       const replacementData = (
-        (await replacement.json()) as { data: { tags: string[]; description: string } }
+        (await replacement.json()) as {
+          data: { tags: string[]; description: string };
+        }
       ).data;
       check(
         replacement.status === 200 &&
@@ -560,7 +775,9 @@ export async function runListsContract(target: {
       ["padded-optin", "&optin=%20single%20", 400],
       ["padded-status", "&status=%20active%20", 400],
     ] as const) {
-      const preserved = await create(`selector-${label}-${suffix}`, { tags: ["retained"] });
+      const preserved = await create(`selector-${label}-${suffix}`, {
+        tags: ["retained"],
+      });
       const response = await request(
         `/api/lists?query=${encodeURIComponent(preserved.name)}${selector}`,
         "DELETE",
@@ -586,7 +803,10 @@ export async function runListsContract(target: {
     const formAB = await create(`${formPrefix}-ab`, { tags: ["a", "b"] });
     const formDelete = await fetch(`${target.baseUrl}/api/lists`, {
       method: "DELETE",
-      headers: { Authorization: auth, "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        Authorization: auth,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
       body: new URLSearchParams([
         ["query", formPrefix],
         ["all", "true"],
@@ -639,7 +859,9 @@ export async function runListsContract(target: {
     });
     check(limitedResponse.status === 200, "list-create-limited-user");
     const limited = (
-      (await limitedResponse.json()) as { data: { id: number; username: string; password: string } }
+      (await limitedResponse.json()) as {
+        data: { id: number; username: string; password: string };
+      }
     ).data;
     users.push(limited.id);
     const limitedAuth = `Basic ${btoa(`${limited.username}:${limited.password}`)}`;
@@ -697,7 +919,9 @@ export async function runListsContract(target: {
       limitedAuth,
     );
     const visibleData = (
-      (await visible.json()) as { data: { total: number; results: { id: number }[] } }
+      (await visible.json()) as {
+        data: { total: number; results: { id: number }[] };
+      }
     ).data;
     check(
       visibleData.total === 1 &&
@@ -707,7 +931,9 @@ export async function runListsContract(target: {
     );
     const minimalVisible = await request("/api/lists?minimal=true", "GET", undefined, limitedAuth);
     const minimalVisibleData = (
-      (await minimalVisible.json()) as { data: { total: number; results: { id: number }[] } }
+      (await minimalVisible.json()) as {
+        data: { total: number; results: { id: number }[] };
+      }
     ).data;
     check(
       minimalVisibleData.total === 1 && minimalVisibleData.results[0]?.id === list.id,
@@ -749,7 +975,9 @@ export async function runListsContract(target: {
         (await request(`/api/lists/${second.id}`)).status === 200,
       "list-bulk-denied-unchanged",
     );
-    const managedTarget = await create(`m15 managed ${suffix}`, { tags: [`managed-${suffix}`] });
+    const managedTarget = await create(`m15 managed ${suffix}`, {
+      tags: [`managed-${suffix}`],
+    });
     const manageTwo = await request(`/api/roles/lists/${listRole}`, "PUT", {
       name: `m15-list-${suffix}`,
       lists: [
@@ -781,7 +1009,9 @@ export async function runListsContract(target: {
         (await request(`/api/lists/${list.id}`, "DELETE", undefined, limitedAuth)).status === 403,
       "list-revoked-write",
     );
-    const deletionTarget = await create(`m15 ${suffix} Ponies`, { tags: [`m15-${suffix}`] });
+    const deletionTarget = await create(`m15 ${suffix} Ponies`, {
+      tags: [`m15-${suffix}`],
+    });
     const selection = await request(`/api/lists?query=pony&tag=m15-${suffix}`);
     const selected = (
       (await selection.json()) as { data: { results: { id: number }[] } }
@@ -826,7 +1056,9 @@ export async function runListsContract(target: {
       `/api/lists?query=sort-${suffix}&order_by=name&per_page=1&page=2`,
     );
     const pageSortedData = (
-      (await pageSorted.json()) as { data: { total: number; results: { id: number }[] } }
+      (await pageSorted.json()) as {
+        data: { total: number; results: { id: number }[] };
+      }
     ).data;
     check(
       pageSortedData.total === 2 && pageSortedData.results[0]?.id === sortedLast.id,
@@ -856,7 +1088,11 @@ if (import.meta.main) {
       REFERENCE_API_TOKEN: token,
     } = process.env;
     if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
-    await runListsContract({ mode: "reference", baseUrl, credentials: { user, token } });
+    await runListsContract({
+      mode: "reference",
+      baseUrl,
+      credentials: { user, token },
+    });
   } catch (error) {
     process.stderr.write(
       `${error instanceof Error && /^FAIL [a-zA-Z0-9-]+$/.test(error.message) ? error.message : "Lists contract failed"}\n`,
