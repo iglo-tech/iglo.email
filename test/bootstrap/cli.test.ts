@@ -213,6 +213,18 @@ describe("compiled executable", () => {
       } finally {
         expect(await stop(child, "SIGTERM")).toBe(0);
       }
+      if (i === 0) {
+        const seed = startSchemaFixture(dataDir);
+        try {
+          const result = await fetch(seed.origin, {
+            method: "POST",
+            body: JSON.stringify({ action: "persist" }),
+          });
+          expect(result.status).toBe(200);
+        } finally {
+          await seed.close();
+        }
+      }
     }
     const fixture = startSchemaFixture(dataDir);
     try {
@@ -238,6 +250,13 @@ describe("compiled executable", () => {
       });
       expect(result.shapes.subscribers).toContain("external_id");
       expect(result.shapes.sends).toContain("idempotency_key");
+      const search = await fetch(fixture.origin, {
+        method: "POST",
+        body: JSON.stringify({ action: "read-persist" }),
+      });
+      expect(((await search.json()) as { result: string[] }).result).toEqual([
+        "persistent@example.test",
+      ]);
       expect(result.shapes.mat_list_subscriber_stats).toEqual([
         "updated_at",
         "list_id",

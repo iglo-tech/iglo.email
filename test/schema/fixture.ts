@@ -59,7 +59,7 @@ function backupNames(directory: string): string[] {
 function matches(db: Database, query: string): string[] {
   return db
     .query<{ email: string }, [string]>(
-      "SELECT s.email FROM subscribers_fts f JOIN subscribers s ON s.id = f.rowid WHERE subscribers_fts MATCH ? ORDER BY s.email",
+      "SELECT COALESCE(s.email, '<missing:' || f.rowid || '>') AS email FROM subscribers_fts f LEFT JOIN subscribers s ON s.id = f.rowid WHERE subscribers_fts MATCH ? ORDER BY email",
     )
     .all(query)
     .map((row) => row.email);
@@ -76,12 +76,14 @@ export function startSchemaFixture(directory: string) {
       .all()
       .map((row) => row.name);
     const shapes: Record<string, string[]> = {};
+    const counts: Record<string, unknown> = {};
     for (const table of tables) {
       if (found.includes(table)) {
         shapes[table] = db
           .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
           .all()
           .map((row) => row.name);
+        counts[table] = scalar(db, `SELECT count(*) FROM ${table}`);
       }
     }
     return {
@@ -93,44 +95,56 @@ export function startSchemaFixture(directory: string) {
       synchronous: scalar(db, "PRAGMA synchronous"),
       timeout: scalar(db, "PRAGMA busy_timeout"),
       shapes,
+      counts,
+      objects: db
+        .query<{ name: string }, []>(
+          "SELECT name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
       backups: backupNames(directory),
     };
   }
   function seed() {
+    const now = clock.now().toISOString();
     db.run(`
       INSERT INTO subscribers(id,uuid,email,name,external_id,created_at,updated_at) VALUES
-        (1,'subscriber-1','Ana@example.test','Ana','app-1','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z'),
-        (2,'subscriber-2','bob@example.test','Bob',NULL,'2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z'),
-        (3,'subscriber-3','cat@example.test','Cat',NULL,'2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z');
-      INSERT INTO lists(id,uuid,name,type) VALUES (1,'list-1','Test','public');
-      INSERT INTO subscriber_lists(subscriber_id,list_id,status) VALUES (1,1,'confirmed');
-      INSERT INTO templates(id,name,subject,body) VALUES (1,'Receipt','Subject','Body');
-      INSERT INTO campaigns(id,uuid,name,subject,from_email,body,messenger) VALUES (1,'campaign-1','Campaign','Subject','sender@example.test','Body','smtp');
+        (1,'subscriber-1','Ana@example.test','Ana','app-1','${now}','${now}'),
+        (2,'subscriber-2','bob@example.test','Bob',NULL,'${now}','${now}'),
+        (3,'subscriber-3','cat@example.test','Cat',NULL,'${now}','${now}');
+      INSERT INTO lists(id,uuid,name,type,created_at,updated_at) VALUES (1,'list-1','Test','public','${now}','${now}');
+      INSERT INTO subscriber_lists(subscriber_id,list_id,status,created_at,updated_at) VALUES (1,1,'confirmed','${now}','${now}');
+      INSERT INTO templates(id,name,subject,body,created_at,updated_at) VALUES (1,'Receipt','Subject','Body','${now}','${now}');
+      INSERT INTO campaigns(id,uuid,name,subject,from_email,body,messenger,created_at,updated_at) VALUES (1,'campaign-1','Campaign','Subject','sender@example.test','Body','smtp','${now}','${now}');
       INSERT INTO campaign_lists(campaign_id,list_id,list_name) VALUES (1,1,'Test');
-      INSERT INTO media(id,uuid,filename,thumb) VALUES (1,'media-1','file','thumb');
+      INSERT INTO media(id,uuid,filename,thumb,created_at) VALUES (1,'media-1','file','thumb','${now}');
       INSERT INTO campaign_media(campaign_id,media_id,filename) VALUES (1,1,'file');
-      INSERT INTO links(id,uuid,url) VALUES (1,'link-1','https://example.test/');
-      INSERT INTO settings(key,value) VALUES ('number','42'),('bool','false'),('string','"text"'),('null','null');
-      INSERT INTO roles(id,type,name) VALUES (1,'user','admin');
-      INSERT INTO users(id,username,email,name,user_role_id) VALUES (1,'user','user@example.test','User',1);
-      INSERT INTO sessions(id,data) VALUES ('session-1','{}');
-      INSERT INTO events(id,subscriber_id,name,occurred_at,created_at,idempotency_key) VALUES (1,1,'created','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z','event-key');
-      INSERT INTO events(subscriber_id,name,occurred_at,created_at) VALUES (1,'other','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z'),(1,'other','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z');
-      INSERT INTO sequences(id,uuid,name,trigger,exit_on,reentry,list_id) VALUES (1,'sequence-1','Sequence','{"event":"created"}','[]','always',1);
-      INSERT INTO sequence_steps(id,uuid,sequence_id,position,wait,kind,template_id) VALUES (1,'step-1',1,1,'PT0S','transactional',1);
-      INSERT INTO enrollments(id,sequence_id,subscriber_id,trigger_event_id,step_id,status) VALUES (1,1,1,1,1,'active'),(2,1,1,NULL,1,'completed');
-      INSERT INTO sends(id,uuid,source,kind,subscriber_id,to_email,template_id,enrollment_id,step_id,list_id,idempotency_key,status,payload)
-        VALUES (1,'send-1','sequence','transactional',1,'Ana@example.test',1,1,1,1,NULL,'queued','{}'),
-        (2,'send-2','tx','transactional',NULL,'external@example.test',NULL,NULL,NULL,NULL,'tx-key','sent','{}'),
-        (3,'send-3','tx','transactional',NULL,'external2@example.test',NULL,NULL,NULL,NULL,NULL,'skipped','{}');
-      INSERT INTO campaign_views(id,campaign_id,subscriber_id) VALUES (1,1,1);
-      INSERT INTO campaign_views(id,send_id,subscriber_id) VALUES (2,1,1);
-      INSERT INTO link_clicks(id,campaign_id,link_id,subscriber_id) VALUES (1,1,1,1);
-      INSERT INTO link_clicks(id,send_id,link_id,subscriber_id) VALUES (2,1,1,1);
-      INSERT INTO bounces(id,subscriber_id,campaign_id) VALUES (1,1,1);
-      INSERT INTO webhooks(id,url,secret,events,enabled) VALUES (1,'https://receiver.example.test/','test-secret','[]',1);
-      INSERT INTO webhook_deliveries(id,webhook_id,event,payload,status) VALUES (1,1,'send.failed','{}','queued');
-      INSERT INTO mat_list_subscriber_stats(updated_at,list_id,status,subscriber_count) VALUES ('2026-01-01T00:00:00.000Z',0,NULL,3);
+      INSERT INTO links(id,uuid,url,created_at) VALUES (1,'link-1','https://example.test/','${now}');
+      INSERT INTO settings(key,value,updated_at) VALUES ('number','42','${now}'),('bool','false','${now}'),('string','"text"','${now}'),('null','null','${now}');
+      INSERT INTO roles(id,type,name,created_at,updated_at) VALUES (1,'user','admin','${now}','${now}');
+      INSERT INTO users(id,username,email,name,user_role_id,created_at,updated_at) VALUES (1,'user','user@example.test','User',1,'${now}','${now}');
+      INSERT INTO sessions(id,data,created_at) VALUES ('session-1','{}','${now}'),('session-scalar','true','${now}');
+      INSERT INTO events(id,subscriber_id,name,occurred_at,created_at,idempotency_key) VALUES (1,1,'created','${now}','${now}','event-key');
+      INSERT INTO events(subscriber_id,name,occurred_at,created_at) VALUES (1,'other','${now}','${now}'),(1,'other','${now}','${now}');
+      INSERT INTO events(subscriber_id,name,occurred_at,created_at,idempotency_key) VALUES (2,'created','${now}','${now}','event-key');
+      INSERT INTO sequences(id,uuid,name,trigger,exit_on,reentry,list_id,created_at,updated_at) VALUES (1,'sequence-1','Sequence','{"event":"created"}','[]','always',1,'${now}','${now}');
+      INSERT INTO sequence_steps(id,uuid,sequence_id,position,wait,kind,template_id,created_at,updated_at) VALUES (1,'step-1',1,1,'PT0S','transactional',1,'${now}','${now}');
+      INSERT INTO enrollments(id,sequence_id,subscriber_id,trigger_event_id,step_id,status,created_at,updated_at) VALUES (1,1,1,1,1,'active','${now}','${now}'),(2,1,1,NULL,1,'completed','${now}','${now}');
+      INSERT INTO sends(id,uuid,source,kind,subscriber_id,to_email,template_id,enrollment_id,step_id,list_id,idempotency_key,status,payload,created_at)
+        VALUES (1,'send-1','sequence','transactional',1,'Ana@example.test',1,1,1,1,NULL,'queued','{}','${now}'),
+        (2,'send-2','tx','transactional',NULL,'external@example.test',NULL,NULL,NULL,NULL,'tx-key','sent','{}','${now}'),
+        (3,'send-3','tx','transactional',NULL,'external2@example.test',NULL,NULL,NULL,NULL,NULL,'skipped',NULL,'${now}');
+      UPDATE sends SET skip_reason='late' WHERE id=3;
+      UPDATE enrollments SET exit_reason='event:subscription_created' WHERE id=2;
+      INSERT INTO campaign_views(id,campaign_id,subscriber_id,created_at) VALUES (1,1,1,'${now}');
+      INSERT INTO campaign_views(id,send_id,subscriber_id,created_at) VALUES (2,1,1,'${now}');
+      INSERT INTO link_clicks(id,campaign_id,link_id,subscriber_id,created_at) VALUES (1,1,1,1,'${now}');
+      INSERT INTO link_clicks(id,send_id,link_id,subscriber_id,created_at) VALUES (2,1,1,1,'${now}');
+      INSERT INTO bounces(id,subscriber_id,campaign_id,created_at) VALUES (1,1,1,'${now}');
+      INSERT INTO bounces(id,subscriber_id,send_id,created_at) VALUES (2,NULL,2,'${now}');
+      INSERT INTO webhooks(id,url,secret,events,enabled,created_at,updated_at) VALUES (1,'https://receiver.example.test/','test-secret','[]',1,'${now}','${now}');
+      INSERT INTO webhook_deliveries(id,uuid,webhook_id,event,payload,status,created_at,updated_at) VALUES (1,'delivery-1',1,'send.failed','{}','queued','${now}','${now}');
+      INSERT INTO mat_list_subscriber_stats(updated_at,list_id,status,subscriber_count) VALUES ('${now}',0,NULL,3);
     `);
     return {
       subscriberCount: scalar(db, "SELECT count(*) FROM subscribers"),
@@ -206,8 +220,16 @@ export function startSchemaFixture(directory: string) {
       writeTransaction(db, () => {
         db.run("UPDATE subscribers SET name='Transient',email='transient@example.test' WHERE id=1");
         db.run(
-          "INSERT INTO subscribers(uuid,email,name) VALUES ('rollback','rollback@example.test','Rollback')",
+          "INSERT INTO subscribers(uuid,email,name,created_at,updated_at) VALUES (?,?,?,?,?)",
+          [
+            "rollback",
+            "rollback@example.test",
+            "Rollback",
+            clock.now().toISOString(),
+            clock.now().toISOString(),
+          ],
         );
+        db.run("DELETE FROM subscribers WHERE id=2");
         throw new Error("rollback probe");
       });
     } catch {
@@ -215,8 +237,25 @@ export function startSchemaFixture(directory: string) {
     }
     result.rollback = matches(db, "Transient OR Rollback");
     result.afterRollback = matches(db, "Robin");
+    result.rollbackDelete = matches(db, "Bob");
     db.run("DELETE FROM subscribers WHERE id=3");
     result.deleted = matches(db, "Cat");
+    db.run("INSERT INTO subscribers(uuid,email,name,created_at,updated_at) VALUES (?,?,?,?,?)", [
+      "after-delete",
+      "after@example.test",
+      "After",
+      clock.now().toISOString(),
+      clock.now().toISOString(),
+    ]);
+    result.nextSubscriberId = scalar(db, "SELECT id FROM subscribers WHERE uuid='after-delete'");
+    db.run("DELETE FROM subscribers WHERE uuid='after-delete'");
+    db.run("INSERT INTO links(id,uuid,url,created_at) VALUES (9223372036854775807,?,?,?)", [
+      "large",
+      "https://large.example.test/",
+      clock.now().toISOString(),
+    ]);
+    result.largeId = scalar(db, "SELECT id FROM links WHERE uuid='large'");
+    db.run("DELETE FROM links WHERE uuid='large'");
     return result;
   }
   function deletions() {
@@ -224,10 +263,27 @@ export function startSchemaFixture(directory: string) {
     const eventReference = scalar(db, "SELECT trigger_event_id FROM enrollments WHERE id=1");
     db.run("UPDATE sequence_steps SET status='deleted' WHERE id=1");
     const softStep = scalar(db, "SELECT status FROM sequence_steps WHERE id=1");
+    db.run(
+      "INSERT INTO sequence_steps(uuid,sequence_id,position,wait,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+      [
+        "replacement",
+        1,
+        1,
+        "PT0S",
+        "transactional",
+        clock.now().toISOString(),
+        clock.now().toISOString(),
+      ],
+    );
+    const replacementStep = scalar(
+      db,
+      "SELECT count(*) FROM sequence_steps WHERE sequence_id=1 AND position=1",
+    );
     db.run("DELETE FROM subscribers WHERE id=1");
     const result = {
       eventReference,
       softStep,
+      replacementStep,
       events: scalar(db, "SELECT count(*) FROM events WHERE subscriber_id=1"),
       memberships: scalar(db, "SELECT count(*) FROM subscriber_lists WHERE subscriber_id=1"),
       enrollments: scalar(db, "SELECT count(*) FROM enrollments WHERE subscriber_id=1"),
@@ -254,7 +310,7 @@ export function startSchemaFixture(directory: string) {
     };
   }
   function conflict() {
-    db.run("CREATE TABLE subscribers(marker TEXT); INSERT INTO subscribers VALUES ('preserved')");
+    db.run("CREATE TABLE settings(marker TEXT); INSERT INTO settings VALUES ('preserved')");
     return true;
   }
   function backup() {
@@ -266,7 +322,7 @@ export function startSchemaFixture(directory: string) {
     try {
       return {
         version: scalar(saved, "PRAGMA user_version"),
-        marker: scalar(saved, "SELECT marker FROM subscribers"),
+        marker: scalar(saved, "SELECT marker FROM settings"),
         integrity: scalar(saved, "PRAGMA integrity_check"),
       };
     } finally {
@@ -301,17 +357,34 @@ export function startSchemaFixture(directory: string) {
             result = {
               robin: matches(db, "Robin"),
               bob: matches(db, "Bob"),
+              cat: matches(db, "Cat"),
               transient: matches(db, "Transient OR Rollback"),
             };
             break;
           case "delete":
             result = deletions();
             break;
+          case "persist":
+            db.run(
+              "INSERT INTO subscribers(uuid,email,name,created_at,updated_at) VALUES (?,?,?,?,?)",
+              [
+                "persistent",
+                "persistent@example.test",
+                "Persistent",
+                clock.now().toISOString(),
+                clock.now().toISOString(),
+              ],
+            );
+            result = true;
+            break;
+          case "read-persist":
+            result = matches(db, "Persistent");
+            break;
           case "conflict":
             result = conflict();
             break;
           case "marker":
-            result = scalar(db, "SELECT marker FROM subscribers");
+            result = scalar(db, "SELECT marker FROM settings");
             break;
           case "backup":
             result = backup();

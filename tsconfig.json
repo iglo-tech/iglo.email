@@ -11,6 +11,7 @@
     "paths": {
       "@locale/*": ["./i18n/*"],
       "@/test/*": ["./test/*"],
+      "@/migrations/*": ["./migrations/*"],
       "@/*": ["./src/*"],
       "@/assets/*": ["./assets/*"]
     },
