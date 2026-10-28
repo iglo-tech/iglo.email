@@ -70,6 +70,20 @@ test("live session grants, CSRF and in-flight body authorization", async () => {
         headers: { Cookie: session, "Content-Type": "application/json", ...extra },
         body: JSON.stringify({ name: "denied mutation" }),
       });
+    const xmlUpdate = (extra: Record<string, string>) =>
+      fetch(`${f.origin}/api/lists/${list.id}`, {
+        method: "PUT",
+        headers: { Cookie: session, "Content-Type": "application/xml", ...extra },
+        body: `<List><Name>xml session update</Name><Tags>ok</Tags></List>`,
+      });
+    expect((await xmlUpdate({})).status).toBe(403);
+    expect((await xmlUpdate({ "X-CSRF-Token": csrf, Origin: "http://foreign.test" })).status).toBe(
+      403,
+    );
+    expect((await xmlUpdate({ "X-CSRF-Token": csrf, Origin: "http://fixture.test" })).status).toBe(
+      200,
+    );
+    expect((await admin(`/api/lists/${list.id}`)).name).toBe("xml session update");
     expect((await update({})).status).toBe(403);
     expect((await update({ "X-CSRF-Token": csrf, Origin: "http://foreign.test" })).status).toBe(
       403,
@@ -77,7 +91,7 @@ test("live session grants, CSRF and in-flight body authorization", async () => {
     expect(
       (await fetch(`${f.origin}/api/lists/${list.id}`, { headers: { Cookie: session } })).status,
     ).toBe(200);
-    const payload = JSON.stringify({ name: "late mutation" }),
+    const payload = `<List><Name>late mutation</Name></List>`,
       cut = 8;
     const url = new URL(f.origin);
     const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
@@ -92,7 +106,7 @@ test("live session grants, CSRF and in-flight body authorization", async () => {
       socket.once("connect", resolve);
     });
     socket.write(
-      `PUT /api/lists/${list.id} HTTP/1.1\r\nHost: ${url.host}\r\nCookie: ${session}\r\nX-CSRF-Token: ${csrf}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, cut)}`,
+      `PUT /api/lists/${list.id} HTTP/1.1\r\nHost: ${url.host}\r\nCookie: ${session}\r\nX-CSRF-Token: ${csrf}\r\nContent-Type: application/xml\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, cut)}`,
     );
     await admin(`/api/roles/lists/${listRole.id}`, "PUT", { name: "session list role", lists: [] });
     socket.end(payload.slice(cut));
@@ -100,7 +114,7 @@ test("live session grants, CSRF and in-flight body authorization", async () => {
     expect(
       (await fetch(`${f.origin}/api/lists/${list.id}`, { headers: { Cookie: session } })).status,
     ).toBe(403);
-    expect((await admin(`/api/lists/${list.id}`)).name).toBe("session fixture");
+    expect((await admin(`/api/lists/${list.id}`)).name).toBe("xml session update");
   } finally {
     await f.close();
   }

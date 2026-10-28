@@ -33,6 +33,7 @@ if (!built.success) throw new AggregateError(built.logs, "Browser asset build fa
 
 // Bundle project, vendored-source and npm licenses alongside executable assets.
 const packages = [
+  "fast-xml-parser",
   "liquidjs",
   "nodemailer",
   "qrcode",
@@ -73,11 +74,13 @@ for (let index = 0; index < packages.length; index++) {
     .filter((file) => /^(licen[sc]e|copying)([.-].*)?$/i.test(file))
     .sort();
   const license =
-    name === "alpinejs"
-      ? join(root, "assets/licenses/alpinejs-LICENSE.txt")
-      : files[0]
-        ? join(directory, files[0])
-        : undefined;
+    name === "@nodable/entities" && info.version === "3.1.0"
+      ? join(root, "assets/licenses/nodable-entities-3.1.0-MIT.txt")
+      : name === "alpinejs"
+        ? join(root, "assets/licenses/alpinejs-LICENSE.txt")
+        : files[0]
+          ? join(directory, files[0])
+          : undefined;
   if (!license) throw new Error(`Missing license file for ${name}@${info.version}`);
   await cp(license, join(licenseDir, `${name.replaceAll("/", "_")}@${info.version}.txt`));
 }

@@ -1,12 +1,12 @@
 // Adapted from listmonk cmd/lists.go and cmd/handlers.go at 6fcd95f.
-import type { ListFilter, ListInput, ListStore } from "@/lists/store";
+import type { ListFilter, ListStore } from "@/lists/store";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
-import { getID, hasID, strHasLen } from "@/server/validation";
+import { getID, hasID } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
-import { readBody } from "@/users/input";
+import { listInput } from "@/lists/input";
 
 function principal(context: RequestContext) {
   if (!context.identity) throw new Error("Authenticated identity required");
@@ -34,40 +34,6 @@ function validate(context: RequestContext, type: string, optin: string, status: 
   ] as const)
     if (value && !(allowed as readonly string[]).includes(value))
       throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
-}
-async function input(context: RequestContext): Promise<ListInput> {
-  const body = await readBody(context.request);
-  if (
-    body &&
-    context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json"
-  )
-    throw new HttpError(415);
-  let raw: unknown;
-  try {
-    raw = body ? JSON.parse(body) : {};
-  } catch {
-    throw new HttpError(400);
-  }
-  if (raw === null) raw = {};
-  if (typeof raw !== "object" || Array.isArray(raw)) throw new HttpError(400);
-  const data = raw as Record<string, unknown>;
-  const string = (key: string) => {
-    const value = data[key];
-    if (value == null) return "";
-    if (typeof value !== "string") throw new HttpError(400);
-    return value;
-  };
-  const name = string("name"),
-    type = string("type"),
-    optin = string("optin"),
-    status = string("status");
-  const description = data.description == null ? null : string("description");
-  const tags = data.tags ?? [];
-  if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== "string")) throw new HttpError(400);
-  if (!strHasLen(name, 1, 2000))
-    throw new HttpError(400, context.app.i18n.T("globals.messages.invalidName"));
-  validate(context, type, optin, status);
-  return { name, type, optin, status, description, tags };
 }
 function numeric(value: string): number {
   if (!/^[+-]?\d+$/.test(value)) return 0;
@@ -152,14 +118,14 @@ export function registerListRoutes(
     return ok(store.get(id) ?? missing(context));
   };
   const create: Handler = async (context) => {
-    const value = await input(context);
+    const value = await listInput(context);
     auth.revalidate(context, "lists:manage_all");
     return ok(store.create(value));
   };
   const update: Handler = async (context) => {
     const id = BigInt(getID(context));
     permitted(context, roles, "list:manage", [id]);
-    const value = await input(context);
+    const value = await listInput(context);
     auth.revalidate(context);
     permitted(context, roles, "list:manage", [id]);
     return ok(store.update(id, value) ?? missing(context));

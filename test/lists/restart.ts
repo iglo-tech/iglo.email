@@ -8,6 +8,32 @@ test("compiled lists and grants persist across restart", async () => {
     resolve("dist/iglo.email"),
     AbortSignal.timeout(30_000),
     async (origin, _signal, restart) => {
+      for (const notice of [
+        "fast-xml-parser@5.11.2",
+        "@nodable_entities@3.1.0",
+        "fast-xml-builder@1.3.1",
+        "is-unsafe@2.0.2",
+        "path-expression-matcher@1.6.2",
+        "strnum@2.5.1",
+        "xml-naming@0.3.0",
+        "anynum@1.0.1",
+      ]) {
+        const path = `/admin/static/licenses/${notice}.txt`;
+        const response = await fetch(`${origin}${path}`);
+        const text = await response.text();
+        expect(response.status).toBe(200);
+        expect(text).toMatch(/permission is hereby granted/i);
+        expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+        expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+        const head = await fetch(`${origin}${path}`, { method: "HEAD" });
+        expect(head.status).toBe(200);
+        expect(await head.text()).toBe("");
+        expect(head.headers.get("cache-control")).toBe(response.headers.get("cache-control"));
+        const options = await fetch(`${origin}${path}`, { method: "OPTIONS" });
+        expect(options.status).toBe(204);
+        expect(options.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
+      }
+      expect((await fetch(`${origin}/admin/static/licenses/not-a-notice.txt`)).status).toBe(404);
       const credentials = await provisionApiUser(origin, admin);
       const auth = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
       async function req(path: string, method = "GET", body?: unknown, authorization = auth) {

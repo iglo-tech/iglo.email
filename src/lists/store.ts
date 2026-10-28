@@ -39,7 +39,7 @@ export interface ListScope {
   ids: bigint[];
 }
 const normalize = (s: string) => s.trim().replace(/[\t\n\v\f\r ]+/g, " ");
-const tagsFor = (tags: string[]) =>
+export const normalizeTags = (tags: string[]) =>
   tags.map((tag) => normalize(tag).replaceAll(" ", "-")).filter(Boolean);
 
 export function createListStore(
@@ -142,7 +142,7 @@ export function createListStore(
           input.type || "private",
           input.optin || "single",
           input.status || "active",
-          JSON.stringify(tagsFor(input.tags)),
+          JSON.stringify(normalizeTags(input.tags)),
           input.description ?? "",
           now,
           now,
@@ -160,7 +160,7 @@ export function createListStore(
             input.type || old.type,
             input.optin || old.optin,
             input.status || old.status,
-            JSON.stringify(tagsFor(input.tags)),
+            JSON.stringify(normalizeTags(input.tags)),
             input.description ?? old.description,
             clock.now().toISOString(),
             id,

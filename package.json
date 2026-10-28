@@ -36,6 +36,7 @@
     "lists:measure": "bun run build && bun test/lists/measure.ts dist/iglo.email candidate"
   },
   "dependencies": {
+    "fast-xml-parser": "5.11.2",
     "liquidjs": "10.30.0",
     "nodemailer": "10.2.1",
     "qrcode": "1.5.4"

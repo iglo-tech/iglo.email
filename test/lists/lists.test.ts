@@ -85,6 +85,43 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
       data: { results: { id: number; subscriber_statuses: unknown }[] };
     };
     expect(minimal.data.results.find((item) => item.id === first)?.subscriber_statuses).toBeNull();
+    const beforeRejected = ((await (await request(`/api/lists/${first}`)).json()) as { data: any })
+      .data;
+    fixture.clock.advance(1000);
+    for (const [contentType, body] of [
+      [
+        "application/json",
+        JSON.stringify({
+          Name: "should not rename",
+          tags: ["é".repeat(101)],
+          description: "should not change",
+        }),
+      ],
+      [
+        "application/xml",
+        `<List><Name>should not rename</Name><Tags>${"é".repeat(101)}</Tags></List>`,
+      ],
+    ] as const) {
+      const rejected = await fetch(`${fixture.origin}/api/lists/${first}`, {
+        method: "PUT",
+        headers: { Authorization: auth, "Content-Type": contentType },
+        body,
+      });
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toEqual({ message: "Invalid fields: tags" });
+      expect(((await (await request(`/api/lists/${first}`)).json()) as { data: any }).data).toEqual(
+        beforeRejected,
+      );
+      expect(
+        ((await (await request("/fixture/references")).json()) as { data: any }).data.campaigns,
+      ).toEqual([{ list_id: first, list_name: "fixture-count-a" }]);
+      const grants = (
+        (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
+          data: { id: number; lists: { id: number }[] }[];
+        }
+      ).data.find((x) => x.id === role.id);
+      expect(grants?.lists.map((x) => x.id)).toEqual([first, second]);
+    }
     fixture.clock.advance(1000);
     expect((await request(`/api/lists/${first}`, "PUT", { name: "renamed fixture" })).status).toBe(
       200,
