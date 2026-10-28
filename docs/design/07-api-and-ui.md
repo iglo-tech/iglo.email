@@ -44,6 +44,7 @@ Deliberate differences:
 | Overlong list tags | After compatible normalization, reject tags longer than 100 Unicode characters with 400 Invalid fields: tags and no write on POST/PUT | Avoid upstream POST storage-error 500 and PUT silent truncation ([D35](09-decisions.md#d35-list-request-decoding-and-tag-bounds)) |
 | XML list request resources | Keep XML writes, but reject DTD/custom/external entity declarations and nesting beyond 64 levels with safe 400 under the existing body limit | Bound parsing without external resolution or entity expansion (D35) |
 | Read-only list input metadata | Ignore response-only and unknown fields in JSON/XML list writes; validate only the writable fields and the document/resource boundary | Accept list snapshots without incidental Go read-model date/map/int validation; discarded fields cannot assign identity, generated metadata or authority ([D36](09-decisions.md#d36-list-writes-accept-only-writable-fields)) |
+| Subscriber/membership ID width | Signed-64-bit native selectors and ordinary missing results instead of PostgreSQL int32 width errors; missing create/update list IDs retain normal selection semantics | Native SQLite identities must stay exact and usable; paired cases distinguish successful writable changes from upstream errors ([D40](09-decisions.md#d40-native-subscriber-and-membership-selector-width), pending M1.6). D34 role-child JSON limit remains |
 | Subscriber writable input | Ignore read-only/unknown metadata and validate the writable DTO; resolve PATCH omissions at commit time | Avoid incidental model validators and lost concurrent untouched fields ([D38](09-decisions.md#d38-subscriber-scope-writable-input-and-external-identity), pending M1.6) |
 | Single subscriber membership action | The path ID is sufficient; body ids need not repeat it | Remove the catch-all request struct's redundant ID requirement (D38, pending M1.6) |
 | Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
@@ -59,7 +60,8 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
 |---|---|
 | `POST /api/subscriber-events`, `POST /api/subscriber-events/batch` | Record events, upsert subscribers, start and end sequences |
 | `GET /api/subscribers/:id/subscriber-events` | A subscriber's events |
-| `GET/PUT/DELETE /api/subscribers/external/:external_id` | Address a subscriber by the app's ID |
+| `GET/PUT/DELETE /api/subscribers/external/:external_id` | Address a subscriber by a path-safe opaque app ID; dot IDs use the query-selector form (D39) |
+| `GET/PUT/DELETE /api/subscribers/external?external_id=…` | Address every valid opaque app ID, including . and .., with exactly one decoded query selector (D39) |
 | `GET/POST /api/sequences`, `GET/PUT/DELETE /api/sequences/:id`, `PUT /api/sequences/:id/status` | Manage sequences |
 | `GET /api/enrollments`, `GET /api/enrollments/:id`, `POST /api/enrollments` (manual enroll), `DELETE /api/enrollments/:id` (cancel) | Inspect and control enrollments |
 | `GET /api/sends`, `GET /api/sends/:id`, `POST /api/sends/:id/resend` | Send log |
@@ -142,3 +144,8 @@ search/SQL/query-selected bulk/export remain M1.7. Automatic/explicit opt-in
 mail awaits M2.5; M1.6 stores actual membership state without delivery claims.
 D38 defines the normal-only external_id field and GET/PUT/DELETE lookup routes,
 exact nullable identity, safe conflict/no-write and current-scope behavior.
+
+D39 adds a query-selector external route for every D38 opaque ID. Bun-normalized
+dot path segments cannot encode those identities; . and .. remain valid and
+use the query form. Selector values are decoded exactly once, never recursively.
+The path convenience form and query form share permissions and atomic behavior.

@@ -8,7 +8,7 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.6 (subscriber CRUD, external IDs and ID-selected bulk actions) is active at **worker**. M1.5 is merged as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e; its watch is confirmed stopped, all delegates terminal and identifiers archived in docs/reviews/M1.5.md. The original run start remains 2026-10-28T13:08:24.215458+00:00 and is still within about four hours. No duplicate worker exists. [Brief](briefs/M1.6.md).
+M1.6 (subscriber CRUD, external IDs and ID-selected bulk actions) is active at **fix**. M1.5 is merged as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e; its watch is confirmed stopped, all delegates terminal and identifiers archived in docs/reviews/M1.5.md. The original run start remains 2026-10-28T13:08:24.215458+00:00 ; the four-hour boundary has now passed, so finish M1.6 then release the lock without starting another task. No duplicate worker exists. [Brief](briefs/M1.6.md).
 
 The lead read pinned subscriber handlers/core/subscription SQL, importer email/name validation and auth list-scope source. D38 makes the M1.6/M1.7 boundary explicit, stages opt-in delivery until M2.5, defines external identity/writable DTO/PATCH concurrency semantics, and removes the redundant body-ID requirement for path-addressed membership actions. Existing schema, counts/FTS and concrete owner boundaries stay intact; no new dependency, query engine, mail/queue or event/sequence side effect. All paired differences and normal-only new-feature tests must be precise. M1.2 remains eligible outside the critical path; only M1.6 starts now.
 
@@ -18,6 +18,10 @@ The single worker is dispatched: [M1.6: Subscribers and external IDs](t3-thread:
 - Worker thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-worker-20261028T1702`.
 - Initial run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.6-worker-20261028T1702:ordinal:1`.
 - Idempotent dispatch request: `iglo-email-M1.6-worker-20261028T1702`.
+
+The initial worker completed without children, pending question or implementation. It opened draft [PR #13](https://github.com/iglo-tech/iglo.email/pull/13), branch task/M1.6-subscribers, head a5f80fa7f9dfd9993fc1165434624dadc25ef8e1, containing reference-first contracts only. The lead linked it once; no watch/council starts while implementation is absent. Existing/pinned checks reportedly pass, but compiled subscriber acceptance intentionally fails on the unimplemented route and storage measurements are outstanding. Old checkout is clean; no production prototype remains.
+
+D39 resolves opaque . / .. identity without changing D18: retain valid IDs and add an exact query-selector alias for GET/PUT/DELETE, while the path form remains convenient for surviving segments. The lead independently reproduced raw dot normalization and eight successful real query roundtrips. D40 extends native signed64 selector precision to subscriber/membership boundaries with exact differences and unchanged role-child limits. These decisions remove both reported blockers. One sharper implementation retry will complete the same PR, not discard tests or open a new PR. All unrelated authorized work must continue even if a later isolated issue needs lead disposition. No duplicate worker, helper, schema/dependency change or owner approval.
 
 ## Automation
 
@@ -110,6 +114,8 @@ Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one who
 [D37](design/09-decisions.md#d37-strict-streaming-xml-list-input) replaces the XML parser and corrects consumed-document syntax/UTF-8 and first-root boundaries after round 3; both findings sets are accepted under the lead resolution rule.
 
 [D38](design/09-decisions.md#d38-subscriber-scope-writable-input-and-external-identity) defines M1.6 scope/staging and external identity, extends the writable-input boundary and protects concurrent PATCH; one numeric membership route no longer requires a repeated body ID.
+
+[D39](design/09-decisions.md#d39-query-selector-for-every-opaque-external-id) preserves all opaque external IDs through an additive query selector instead of impossible dot path addressing. [D40](design/09-decisions.md#d40-native-subscriber-and-membership-selector-width) extends exact native subscriber/membership selector width with precisely marked PostgreSQL differences.
 
 ## Pause history
 
