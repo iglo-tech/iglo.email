@@ -23,6 +23,10 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 
 Model assignments were set by the owner on 2026-10-27 and updated on 2026-10-28: skip Anthropic models for now and use two GPT-6.1 Sol xhigh council reviewers. This override remains in force until the owner changes it. Lead and Terra worker/fixer/helper assignments stay as listed above. Each council member uses a separate review task and isolated worktree, with settings in target.options.
 
+### MVP platform
+
+Owner override on 2026-10-28: Linux x86-64 only for MVP CI, reference acceptance and release artifacts. Keep the Linux checks and pinned-reference corpus; macOS and Linux arm64 builds and coverage are post-MVP (D42). A macOS queue or failure does not gate MVP work.
+
 ### One task
 
 - **Size:** one upstream area that a single agent can port and test in one session: usually up to about 1,500 upstream Go lines plus their SQL, or one group of admin views.
@@ -96,7 +100,7 @@ Serial, then the spikes in parallel after M0.4.
 | ID | Task | Upstream | Depends on | Acceptance |
 |---|---|---|---|---|
 | M0.1 | Project skeleton: `package.json`, `tsconfig` with `@/` aliases, oxlint, oxfmt, pre-commit hook, CI, Renovate, `bun build --compile`, flags and environment ([D14](09-decisions.md#d14-bootstrap-from-flags-and-environment-everything-else-in-settings)), `serve` with `/health` | `cmd/main.go`, flag handling in `cmd/init.go` | none | Compiled executable serves `/health`; dropped flags (`--install`, `--upgrade`, `--config`) fail with a message naming `01-scope.md`; `AGENTS.md` lists the verification commands |
-| M0.2 | Upstream reference: script that fetches listmonk source at the pinned commit into a git-ignored directory, downloads the v7.0.0-beta.1 release binary, and runs it against a disposable Postgres; Mailpit and a webhook test receiver for tests | release files, `docker-compose.yml` (for settings only) | M0.1 | One command starts and stops the reference listmonk, Mailpit and the receiver on Linux and macOS, removing only what it created |
+| M0.2 | Upstream reference: script that fetches listmonk source at the pinned commit into a git-ignored directory, downloads the v7.0.0-beta.1 release binary, and runs it against a disposable Postgres; Mailpit and a webhook test receiver for tests | release files, `docker-compose.yml` (for settings only) | M0.1 | One command starts and stops the reference listmonk, Mailpit and the receiver on Linux x86-64, removing only what it created; macOS coverage is post-MVP (D42) |
 | M0.3 | Shared contracts: app context, clock, router, middleware chain, envelope and error helpers, i18n message lookup with listmonk's language files | `cmd/handlers.go` (routing, middleware), `cmd/utils.go`, `internal/i18n`, `i18n/en.json` | M0.1 | Error and envelope bodies match upstream for 404, 400 and validation errors |
 | M0.4 | Database layer: connection with WAL and pragmas, `BEGIN IMMEDIATE` transaction helper, migrations runner with `user_version` and pre-migration backup, SQL file loader for named queries, the loop helper | query loading in `cmd/init.go` | M0.1 | Empty database migrates; a failed migration leaves the previous version; named queries load from embedded files; the loop helper claims with a lease under an injected clock |
 | M0.5 | Contract suite harness: run against a base URL in reference and normal mode, normalize IDs and timestamps, mark deliberate differences | none | M0.2, M0.3 | `/health` and ported core cases run against upstream and compiled production; a protected read also runs against upstream and an explicitly labelled normal fixture until M1.3 ports auth ([D20](09-decisions.md#d20-separate-production-and-fixture-contract-coverage-until-auth-is-ported)) |
@@ -169,7 +173,7 @@ Views are ported in the order of the [port plan](08-port-plan.md#milestones). Ea
 |---|---|---|---|---|
 | M6.1 | Performance against the targets | none | M3.2, M5.4 | Numbers in `docs/perf/` meet the [throughput target](02-architecture.md#throughput-target) |
 | M6.2 | `backup` command and operations guide | none | M0.4 | Backup taken under write load restores and opens; the guide covers the open-question defaults |
-| M6.3 | Release workflow: three binaries on `v*` tags | none | M0.1 | A test tag produces working binaries for linux-x64, linux-arm64 and darwin-arm64 |
+| M6.3 | Release workflow: Linux x86-64 executable on `v*` tags (D42) | none | M0.1 | A test tag produces a working linux-x64 executable; Linux arm64 and macOS artifacts are post-MVP |
 | M6.4 | `GET /api/openapi.json` with the new endpoints | `docs/swagger/collections.yaml` | M5.3, M3.4 | Every route in the router is in the document, and the contract suite validates responses against it |
 
 ### After 1.0

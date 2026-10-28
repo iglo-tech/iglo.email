@@ -20,7 +20,7 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 
 - Independent rewrite derived from listmonk **v7.0.0-beta.1** (`6fcd95f`), not an upstream-tracking fork.
 - **AGPL-3.0**, inherited from listmonk.
-- **Bun ≥ 1.4, TypeScript, one compiled executable.** An official Docker image wrapping it follows after 1.0.
+- **Bun ≥ 1.4, TypeScript, one compiled executable.** MVP targets Linux x86-64 only; macOS and Linux arm64 are post-MVP (D42). An official Docker image wrapping it follows after 1.0.
 - **SQLite only** (`bun:sqlite`, WAL), one process.
 - **Durable work is rows in SQLite** processed by in-process loops. No Postgres, Redis, BullMQ or workflow engine.
 - **listmonk's HTTP API is kept** for ported endpoints, so existing SDKs and integrations keep working, except where upstream's design is poor: those are fixed and listed as deliberate differences. New features get new endpoints.

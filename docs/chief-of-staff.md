@@ -38,6 +38,8 @@ Call `orchestrator_capabilities` once per thread before the first `delegate_task
 
 Owner override on 2026-10-28: do not use Anthropic models until the owner changes this instruction. The council is two fresh, independent GPT-6.1 Sol agents at xhigh reasoning, labelled A and B. Dispatch each as a separate review task in its own isolated worktree; neither is the lead or worker. Both must approve the same head.
 
+Owner platform override on 2026-10-28 (D42): MVP CI, reference acceptance and release artifacts target Linux x86-64 only. macOS and Linux arm64 are post-MVP. Keep both Linux jobs and the complete pinned-reference checks; do not dispatch, wait for or rerun macOS jobs as an MVP gate.
+
 The recurring lead schedule is independent and unbound; never bind it to the dedicated thread or any other thread. Keep its existing 45-minute interval and use the lock and status file for recovery. Record delegate task and thread identifiers in `status.md` after dispatch so a later run can recover without the former lead conversation. Do not dispatch an Anthropic worker, helper or reviewer under the current owner override.
 
 ### Worker instructions

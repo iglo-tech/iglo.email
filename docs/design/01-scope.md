@@ -8,6 +8,10 @@
 4. **Tell apps what happened:** outbound webhooks for unsubscribes, blocklisting and bounces, so apps can keep consent in sync.
 5. **One stack:** Bun, TypeScript, SQLite, one executable, shared conventions with other iglo.\* projects.
 
+## MVP platform
+
+The MVP targets Linux x86-64 only. CI, reference acceptance and the first release artifact use that platform. macOS and Linux arm64 coverage and artifacts move to post-MVP ([D42](09-decisions.md#d42-linux-x86-64-only-for-mvp)).
+
 ## Non-goals
 
 - Feature parity with listmonk.
