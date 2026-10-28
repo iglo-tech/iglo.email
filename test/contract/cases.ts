@@ -101,6 +101,13 @@ export const cases: readonly ContractCase[] = freeze([
     reference: endpoint("/api/profile", json(403, '{"message":"invalid session"}')),
     production: endpoint("/api/profile", json(403, '{"message":"invalid session"}')),
   },
+  {
+    id: "logout-no-session",
+    group: "core",
+    method: "POST",
+    reference: endpoint("/api/logout", json(403, '{"message":"invalid session"}')),
+    production: endpoint("/api/logout", json(403, '{"message":"invalid session"}')),
+  },
   ...[
     ["users-create-type", "{}", "type"],
     ["users-create-status", '{"type":"user"}', "status"],
