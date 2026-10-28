@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place; the production migration manifest is empty and most features remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place; the embedded version-1 migration installs the empty v1 schema; domain endpoints and loops remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 

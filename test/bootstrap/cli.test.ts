@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startDbFixture } from "@/test/db/fixture";
+import { startSchemaFixture } from "@/test/schema/fixture";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(15_000);
@@ -202,7 +203,7 @@ describe("compiled executable", () => {
     }
   });
 
-  test("opens the persistent empty production database on standalone restart", async () => {
+  test("opens the persistent version-one production schema on standalone restart", async () => {
     const port = await availablePort();
     const dataDir = join(temporaryDirectory, "persistent-db");
     for (let i = 0; i < 2; i++) {
@@ -212,8 +213,20 @@ describe("compiled executable", () => {
       } finally {
         expect(await stop(child, "SIGTERM")).toBe(0);
       }
+      if (i === 0) {
+        const seed = startSchemaFixture(dataDir);
+        try {
+          const result = await fetch(seed.origin, {
+            method: "POST",
+            body: JSON.stringify({ action: "persist" }),
+          });
+          expect(result.status).toBe(200);
+        } finally {
+          await seed.close();
+        }
+      }
     }
-    const fixture = startDbFixture(dataDir);
+    const fixture = startSchemaFixture(dataDir);
     try {
       const response = await fetch(fixture.origin, {
         method: "POST",
@@ -221,9 +234,35 @@ describe("compiled executable", () => {
         signal: AbortSignal.timeout(3000),
       });
       const { result } = (await response.json()) as {
-        result: { version: string; objects: unknown[]; integrity: string };
+        result: {
+          version: string;
+          shapes: Record<string, string[]>;
+          integrity: string;
+          foreignKeyErrors: unknown[];
+          backups: string[];
+        };
       };
-      expect(result).toMatchObject({ version: "0", objects: [], integrity: "ok" });
+      expect(result).toMatchObject({
+        version: "1",
+        integrity: "ok",
+        foreignKeyErrors: [],
+        backups: [],
+      });
+      expect(result.shapes.subscribers).toContain("external_id");
+      expect(result.shapes.sends).toContain("idempotency_key");
+      const search = await fetch(fixture.origin, {
+        method: "POST",
+        body: JSON.stringify({ action: "read-persist" }),
+      });
+      expect(((await search.json()) as { result: string[] }).result).toEqual([
+        "persistent@example.test",
+      ]);
+      expect(result.shapes.mat_list_subscriber_stats).toEqual([
+        "updated_at",
+        "list_id",
+        "status",
+        "subscriber_count",
+      ]);
     } finally {
       await fixture.close();
     }

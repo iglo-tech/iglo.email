@@ -6,7 +6,7 @@ The starting point is listmonk v7's `schema.sql` and `queries/*.sql`. Tables kee
 
 | Postgres in listmonk | SQLite in iglo.email |
 |---|---|
-| `SERIAL` / `BIGSERIAL` | `INTEGER PRIMARY KEY` (rowid) |
+| `SERIAL` / `BIGSERIAL` | `INTEGER PRIMARY KEY AUTOINCREMENT` (non-reused automatic identities) |
 | `uuid` columns, `pgcrypto` | `TEXT`, generated in app code (`crypto.randomUUID()`) |
 | `ENUM` types (14 of them) | `TEXT` with a `CHECK (col IN (...))` constraint |
 | `JSONB` | `TEXT` holding JSON, with `CHECK (json_valid(col))`. Read with `->`, `->>` and `json_extract` |
@@ -29,6 +29,8 @@ API implementation, and do not establish end-to-end feature acceptance.
 
 Query files stay as named SQL files (`-- name: get-subscriber`), the format listmonk uses. Each owning module supplies only its own embedded text to the loader, prepares it once, binds values, and closes its statements. Duplicate names, empty blocks and invalid SQL fail at preparation. Each block contains one statement; multiple statements, including trigger bodies with statement separators, are unsupported in named query files. Semicolons and marker-like text inside strings and comments remain SQL text. Migration files can contain multiple statements.
 
+Persistent integer identities use SQLite `AUTOINCREMENT` so automatically allocated committed IDs are not reused after deletion. This preserves upstream SERIAL/BIGSERIAL identity assumptions, including retained session user IDs and references stored outside foreign keys. Application owners allocate IDs automatically and never insert a previously used or lower explicit ID; SQLite permits explicit IDs. The subscriber campaign high-water cursor depends on the same rule. SQLite `NOCASE` folds ASCII characters only, not arbitrary Unicode. Application code supplies UUIDs and sortable UTC timestamps; SQL defaults for translated upstream timestamps use UTC ISO-8601 with milliseconds. SQLite does not validate timestamp strings. Detailed foreign-key and retention choices are recorded in [M1.1 schema evidence](../perf/M1.1-schema.md).
+
 ## Segment queries
 
 listmonk lets admins write raw SQL `WHERE` fragments over `subscribers`, for example `subscribers.attribs->>'city' = 'Bengaluru'`. SQLite 3.38+ supports `->` and `->>` with the same meaning, so many existing queries work unchanged. Postgres-specific functions do not, and that breaking change is accepted (documented in the admin UI help text).
@@ -49,6 +51,7 @@ Changes to kept tables:
 |---|---|---|
 | `subscribers` | add `external_id TEXT NULL UNIQUE` | Apps address subscribers by their own user ID instead of email |
 | `campaign_views`, `link_clicks` | add `send_id INTEGER NULL REFERENCES sends(id)`, make `campaign_id` nullable, `CHECK` that exactly one is set | Track opens and clicks of transactional and sequence messages |
+| `bounces` | add nullable `send_id`; permit a nullable `subscriber_id` | A transactional send can target an address without a subscriber, and its bounce must still be recordable |
 | `templates` | `body` holds Liquid instead of Go template syntax | [Templates](06-templates.md) |
 
 ## New tables
@@ -123,14 +126,14 @@ Indexes: `(status, created_at)`, `(subscriber_id, kind, sent_at)` for the freque
 
 `webhooks`: `id`, `url`, `secret`, `events` (JSON array), `enabled`, timestamps.
 
-`webhook_deliveries`: `id`, `webhook_id`, `event`, `payload`, `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error`, `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`.
+`webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload`, `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error`, `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`.
 
 ## Migrations
 
 - Numbered SQL files in `migrations/`, embedded in the executable, applied in order at startup inside one transaction each. The applied version is stored in `PRAGMA user_version`.
 - **The first migration is the full v1 schema**, not a translation of listmonk's migration history.
 - Forward-only. The runner validates a contiguous manifest and rejects databases ahead of the executable. It takes one SQLite-consistent `VACUUM INTO` snapshot before a pending batch on a database with a previous version or user schema; an error prevents migration. It keeps each successful earlier migration if a later one fails. No public backup command exists yet.
-- M0.4's production manifest is empty; version remains 0 and there are no product tables. M1.1 adds `0001_init.sql`. Migration bodies omit transaction commands and PRAGMAs, which the runner and connection own.
+- The production manifest embeds `0001_init.sql` at version 1. The migrated baseline has no seeded application rows; future owners supply settings, roles, users and templates. Migration bodies omit transaction commands and PRAGMAs, which the runner and connection own.
 - Within each file transaction, SQLite parses one complete statement at a time, including trigger bodies and keyword identifiers. Top-level transaction/connection commands, PRAGMAs and EXPLAIN are rejected before preparation; EXPLAIN can otherwise cause PRAGMA preparation side effects. Migration SQL is static with no bound parameters. Each parsed SQL text must match the remaining source prefix before execution; all statements and the version update share the file's transaction.
 - `VACUUM INTO` makes a consistent live snapshot including committed WAL content; it is synchronous, requires free disk space, and cannot run inside a transaction. It rebuilds the database and can change implicit rowids in tables without an explicit `INTEGER PRIMARY KEY`. The runner verifies integrity and version, publishes a unique completed file, and leaves a recognizable partial directory if interrupted. SQLite documents that an interrupted snapshot can be incomplete; it is never published as a completed snapshot. Migrations run at startup under the single-process model: writes by a separate process after the snapshot are not captured. See [SQLite VACUUM](https://www.sqlite.org/lang_vacuum.html) and [backup techniques](https://www.sqlite.org/backup.html).
 

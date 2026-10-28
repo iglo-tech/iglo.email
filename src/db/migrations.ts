@@ -5,14 +5,15 @@ import { join } from "node:path";
 import type { Clock } from "@/clock";
 import { maskSql } from "@/db/sql";
 import { writeTransaction } from "@/db/transaction";
+import initial from "@/migrations/0001_init.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
   readonly sql: string;
 }
 
-// M1.1 supplies version 1, the real v1 schema. No runtime directory discovery.
-export const productionMigrations: readonly Migration[] = [];
+// Version 1 is embedded in the executable; there is no runtime directory discovery.
+export const productionMigrations: readonly Migration[] = [{ version: 1, sql: initial }];
 
 function validateCatalog(catalog: readonly Migration[]): void {
   for (const [index, migration] of catalog.entries()) {
