@@ -79,7 +79,7 @@ export async function runListsContract(target: {
     );
     // Raw requests retain duplicate JSON keys and XML element order.
     async function raw(
-      body: string,
+      body: string | ArrayBuffer,
       contentType: string,
       method: "POST" | "PUT" = "POST",
       id?: number,
@@ -405,6 +405,96 @@ export async function runListsContract(target: {
       (await raw("<List><Name>bad</List>", "application/xml")).response.status === 400,
       "xml-malformed",
     );
+    const xmlSyntaxFailures = [
+      '<List note="bare & broken"><Name>changed</Name></List>',
+      '<List><Name>changed</Name><Ignored note="&broken"/></List>',
+      '<List bad="<"><Name>changed</Name></List>',
+      "<List><!-- bad -- comment --><Name>changed</Name></List>",
+      "<List><Name>changed</Name><Description>bad ]]> text</Description></List>",
+      "<List><Name>changed</Name><Ignored>abc]]>def</Ignored></List>",
+      '<?xml version="1.1"?><List><Name>changed</Name></List>',
+    ];
+    const bytes = (prefix: string, middle: number[], suffix: string) =>
+      new Uint8Array([
+        ...new TextEncoder().encode(prefix),
+        ...middle,
+        ...new TextEncoder().encode(suffix),
+      ]).buffer;
+    const invalidXmlBytes = [
+      bytes("<List><Name>changed</Name><Description>", [255], "</Description></List>"),
+      bytes("<List><Name>changed</Name><Ignored>", [255], "</Ignored></List>"),
+      bytes("<List><Name>changed</Name><Description>", [0xe2, 0x82], "</Description></List>"),
+    ];
+    for (const body of [...xmlSyntaxFailures, ...invalidXmlBytes]) {
+      for (const method of ["POST", "PUT"] as const) {
+        const seed =
+          method === "PUT"
+            ? await create(`syntax-keep-${owned.length}-${suffix}`, {
+                tags: ["kept"],
+                description: "before",
+              })
+            : undefined;
+        const before = seed
+          ? (await (await request(`/api/lists/${seed.id}`)).json()).data
+          : undefined;
+        const result = await raw(body, "application/xml", method, seed?.id);
+        check(result.response.status === 400, `xml-syntax-and-byte-integrity-${method}`);
+        if (before)
+          check(
+            JSON.stringify((await (await request(`/api/lists/${seed!.id}`)).json()).data) ===
+              JSON.stringify(before),
+            "xml-invalid-document-no-write",
+          );
+      }
+    }
+    for (const tail of [
+      "<bad",
+      "&broken",
+      "<!DOCTYPE",
+      String.fromCharCode(0),
+      new Uint8Array([255]).buffer,
+    ]) {
+      for (const method of ["POST", "PUT"] as const) {
+        const name = `first-document-${owned.length}-${method}-${suffix}`;
+        const document = `<List><Name>${name}</Name><Tags>accepted</Tags></List>`;
+        const body =
+          typeof tail === "string"
+            ? document + tail
+            : bytes(document, [...new Uint8Array(tail)], "");
+        const seed =
+          method === "PUT" ? await create(`seed-${name}`, { tags: ["kept"] }) : undefined;
+        const result = await raw(body, "application/xml", method, seed?.id);
+        check(
+          result.response.status === 200 &&
+            result.value.data?.name === name &&
+            JSON.stringify(result.value.data.tags) === '["accepted"]',
+          `xml-ignore-unconsumed-suffix-${method}`,
+        );
+      }
+    }
+    const grammarControls = await raw(
+      `\ufeff<List good="&amp; &lt; &quot; &#65;"><!-- ordinary comment --><Name>grammar-control-${suffix}</Name><Description>escaped ]]&gt; and <![CDATA[]]>ordinary</Description></List>`,
+      "application/xml",
+    );
+    check(
+      grammarControls.response.status === 200 &&
+        grammarControls.value.data?.description === "escaped ]]> and ordinary",
+      "xml-valid-attribute-comment-text-BOM",
+    );
+    for (const method of ["POST", "PUT"] as const) {
+      const name = `json-replacement-${method}-${suffix}`;
+      const seed = method === "PUT" ? await create(`seed-${name}`) : undefined;
+      const result = await raw(
+        bytes(`{"name":"${name}","description":"`, [255], '"}'),
+        "application/json",
+        method,
+        seed?.id,
+      );
+      check(
+        result.response.status === 200 && result.value.data?.description === "\ufffd",
+        `json-compatible-invalid-UTF8-replacement-${method}`,
+      );
+    }
     const safeText = await raw(
       `<List><!-- <!DOCTYPE x> --><Name>safe-${suffix}</Name><Description><![CDATA[<!ENTITY x>]]></Description></List>`,
       "application/xml",
