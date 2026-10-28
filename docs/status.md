@@ -10,7 +10,7 @@ Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54e
 
 Owner clarification on 2026-10-28: the chief of staff manages a continuously progressing agent fleet until the whole applicable project work plan is complete. The former four-hour/task/session stop is removed from the runbook and work plan. Each merge immediately starts the next eligible task; a blocked item does not stop other eligible work. Async delegate/CI turns hand off automatically and are not project completion. Preserve model, isolation, serial-work, review, lock and host limits; technically unavoidable waits remain incomplete work with recovery, not a claim that the goal is done.
 
-M1.2 (settings/defaults/validation and real authenticated configuration) is active at **ci**, after round-2/D47 corrections, in a fresh continuous run started 2026-10-28T20:34:55.959528+00:00. No active lock or open PR existed when acquired; all M1.6 delegates are terminal and PR #13 is merged. M1.2's M1.1/M0.5/M1.3 dependencies are merged and it unblocks M2.1 on the critical path; SMTP cannot start before settings. One worker only, no duplicate. D44 defines the bootstrap/read-only boundary, validated per-key updates, in-process supported policy activation and explicit 501 SMTP-test staging; other behavior remains pinned by default. [Brief](briefs/M1.2.md).
+M1.2 (settings/defaults/validation and real authenticated configuration) is active at **council**, round 3, in a fresh continuous run started 2026-10-28T20:34:55.959528+00:00. No active lock or open PR existed when acquired; all M1.6 delegates are terminal and PR #13 is merged. M1.2's M1.1/M0.5/M1.3 dependencies are merged and it unblocks M2.1 on the critical path; SMTP cannot start before settings. One worker only, no duplicate. D44 defines the bootstrap/read-only boundary, validated per-key updates, in-process supported policy activation and explicit 501 SMTP-test staging; other behavior remains pinned by default. [Brief](briefs/M1.2.md).
 
 The previous run's M1.6-only stop is historical and superseded by this owner instruction. No elapsed-time cutoff applies to this continuous run. Keep advancing through implementation, Linux CI, independent two-Sol council and merge, then immediately start the next eligible task. Record every delegate ID and durable transition here before yielding.
 
@@ -166,6 +166,22 @@ The lead reran final frozen install/assets, JSX/UI 11/104, ui:verify, full check
 PR body is rewritten around the resolved D47 outcome and actual final evidence; draft is removed. Single new-head snapshot confirms OPEN/ready/MERGEABLE exact 05f6479 with four Linux check/reference-linux results in progress, none failed. All delegates terminal and no writer remains. Neutral full-scope round-3 brief is prepared at docs/briefs/M1.2-council-r3.md; no round-3 reviewer dispatched yet. Keep existing watch, end turn without re-watch/polling/duplicates, and dispatch two fresh independent Sol xhigh reviewers once exact-head green. Then drive merge/disposition and immediately start the next eligible task; continuous project objective remains active and recovery unbound.
 
 Automatic approval review rejected the earlier recursive export deletion. Those ignored exports remain retained evidence; the lead did not repeat or bypass it. The owned measurement TMPDIR was emptied and removed. This cleanup restriction does not block the ready implementation or subsequent council.
+
+The older CI notification for 3dbd326 is historical. A current readiness inspection confirms OPEN/ready exact 05f647978436cb4c0d04bca76f87dad253957936 with all four Linux check/reference-linux push/PR results successful. Mergeability was UNKNOWN while GitHub recalculated; it will be rechecked before merge and is not claimed resolved here. Round 3 is now dispatched: two fresh independent GPT-6.1 Sol xhigh reviewers, review role, separate isolated worktrees and settings in target.options. Each reviews full scope, including D47/reference alignment/exact membership and all previous regressions, runs independent acceptance/measurements, and posts one exact-head verdict without reading the other current-round result. No expected verdict or split scope. Both returned running without pending question/approval or child work; all previous delegates are terminal.
+
+[M1.2 council round 3 — Sol A](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r3-a-05f6479).
+- Task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r3-a-05f6479.
+- Thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r3-a-05f6479.
+- Run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-council-r3-a-05f6479:ordinal:1.
+- Idempotent request: iglo-email-M1.2-council-r3-a-05f6479.
+
+[M1.2 council round 3 — Sol B](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r3-b-05f6479).
+- Task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r3-b-05f6479.
+- Thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r3-b-05f6479.
+- Run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-council-r3-b-05f6479:ordinal:1.
+- Idempotent request: iglo-email-M1.2-council-r3-b-05f6479.
+
+Prior round identifiers/verdicts remain in lock history and the recovery ledger. Existing PR watch stays for pending reviews, without relink/re-watch. Both next instructions require ending this turn and resuming on completion, not polling/waiting or duplicates. Preserve the reviewed head until both finish; use same-head approvals or the documented three-round lead disposition with concrete reference/design reasoning, never a blind merge or an invented amended-head approval. After eligible merge immediately brief/dispatch the next eligible task. Continuous project work and independent unbound recovery remain active.
 
 ## Automation
 
