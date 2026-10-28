@@ -46,7 +46,7 @@ const trimTag = (tag: string) =>
     "",
   );
 export const normalizeTags = (tags: string[]) =>
-  tags.map((tag) => trimTag(tag).replace(/[\t\n\v\f\r ]+/g, "-")).filter(Boolean);
+  tags.map((tag) => trimTag(tag).replace(/[\t\n\f\r ]+/g, "-")).filter(Boolean);
 
 export function createListStore(
   db: Database,
