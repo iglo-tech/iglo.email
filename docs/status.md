@@ -8,11 +8,16 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.6 (subscriber CRUD, external IDs and ID-selected bulk actions) is active at **brief**. M1.5 is merged as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e; its watch is confirmed stopped, all delegates terminal and identifiers archived in docs/reviews/M1.5.md. The original run start remains 2026-10-28T13:08:24.215458+00:00 and is still within about four hours. No duplicate worker exists. [Brief](briefs/M1.6.md).
+M1.6 (subscriber CRUD, external IDs and ID-selected bulk actions) is active at **worker**. M1.5 is merged as da66ca0b46dff4ef1638ce63d43d72a68d1bec2e; its watch is confirmed stopped, all delegates terminal and identifiers archived in docs/reviews/M1.5.md. The original run start remains 2026-10-28T13:08:24.215458+00:00 and is still within about four hours. No duplicate worker exists. [Brief](briefs/M1.6.md).
 
 The lead read pinned subscriber handlers/core/subscription SQL, importer email/name validation and auth list-scope source. D38 makes the M1.6/M1.7 boundary explicit, stages opt-in delivery until M2.5, defines external identity/writable DTO/PATCH concurrency semantics, and removes the redundant body-ID requirement for path-addressed membership actions. Existing schema, counts/FTS and concrete owner boundaries stay intact; no new dependency, query engine, mail/queue or event/sequence side effect. All paired differences and normal-only new-feature tests must be precise. M1.2 remains eligible outside the critical path; only M1.6 starts now.
 
-The next action is one isolated GPT-6.1 Terra max worker, with the complete brief and standard worker instructions, after this preparation is pushed. No helper, reviewer or PR watch is started for implementation. Record dispatch IDs and end the turn; never poll. Automation stays enabled and unbound.
+The single worker is dispatched: [M1.6: Subscribers and external IDs](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-worker-20261028T1702), GPT-6.1 Terra at max, implementation role, isolation worktree and settings in target.options. It returned running with no pending question/approval; its next instruction is to end the turn and let completion wake this run. No helper, reviewer, duplicate worker or PR watch is started. Automation stays enabled and unbound. M1.6 started at 17:02 UTC before the about-four-hour boundary; finish this task through merge, then apply the stop rule without resetting the original run start.
+
+- Worker task ID: `node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-worker-20261028T1702`.
+- Worker thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.6-worker-20261028T1702`.
+- Initial run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.6-worker-20261028T1702:ordinal:1`.
+- Idempotent dispatch request: `iglo-email-M1.6-worker-20261028T1702`.
 
 ## Automation
 
