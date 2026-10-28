@@ -11,7 +11,7 @@ interface UserRecord {
   type: string;
   status: string;
   password_login: boolean;
-  password?: string;
+  password: string | null;
   user_role: { id: number; name: string; permissions: string[] };
   list_role: unknown;
 }
@@ -103,6 +103,57 @@ async function user(response: Response): Promise<UserRecord> {
   const value = (await response.json()) as { data?: UserRecord };
   if (!value.data || !Number.isSafeInteger(value.data.id) || value.data.id < 1)
     throw new Error("FAIL user-response-id");
+  const keys = [
+    "avatar",
+    "created_at",
+    "email",
+    "id",
+    "list_role",
+    "loggedin_at",
+    "name",
+    "password",
+    "password_login",
+    "status",
+    "twofa_type",
+    "type",
+    "updated_at",
+    "user_role",
+    "username",
+  ];
+  const entry = value.data as unknown as Record<string, unknown>;
+  if (
+    JSON.stringify(Object.keys(entry).sort()) !== JSON.stringify(keys.sort()) ||
+    typeof entry.username !== "string" ||
+    typeof entry.name !== "string" ||
+    (entry.email !== null && typeof entry.email !== "string") ||
+    (entry.password !== null && typeof entry.password !== "string") ||
+    typeof entry.password_login !== "boolean" ||
+    !["user", "api"].includes(String(entry.type)) ||
+    !["enabled", "disabled"].includes(String(entry.status)) ||
+    entry.avatar !== null ||
+    entry.twofa_type !== "none" ||
+    entry.list_role !== null ||
+    typeof entry.created_at !== "string" ||
+    !Number.isFinite(Date.parse(entry.created_at)) ||
+    typeof entry.updated_at !== "string" ||
+    !Number.isFinite(Date.parse(entry.updated_at)) ||
+    (entry.loggedin_at !== null &&
+      (typeof entry.loggedin_at !== "string" || !Number.isFinite(Date.parse(entry.loggedin_at))))
+  )
+    throw new Error("FAIL user-response-shape");
+  const role = value.data.user_role;
+  if (
+    !role ||
+    JSON.stringify(Object.keys(role).sort()) !== JSON.stringify(["id", "name", "permissions"]) ||
+    role.id !== 1 ||
+    role.name !== "Super Admin" ||
+    !Array.isArray(role.permissions) ||
+    role.permissions.length !== 28 ||
+    new Set(role.permissions).size !== 28 ||
+    !role.permissions.includes("users:get") ||
+    !role.permissions.includes("users:manage")
+  )
+    throw new Error("FAIL user-role-shape");
   return value.data;
 }
 
@@ -253,6 +304,58 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       (await request(target, "/api/health", { auth: apiAuth })).status === 200,
       "users-created-token-auth",
     );
+    const conversionName = `m13-convert-${suffix}`;
+    const conversion = await user(
+      await request(target, "/api/users", {
+        method: "POST",
+        auth: basic,
+        body: { username: conversionName, type: "api", status: "enabled", user_role_id: 1 },
+      }),
+    );
+    created.push(conversion.id);
+    const conversionResponse = await request(target, `/api/users/${conversion.id}`, {
+      method: "PUT",
+      auth: basic,
+      body: {
+        username: conversionName,
+        type: "user",
+        status: "enabled",
+        user_role_id: 1,
+        email: `${conversionName}@example.test`,
+        password_login: true,
+      },
+    });
+    check(
+      conversionResponse.status === (target.mode === "reference" ? 200 : 400),
+      "proposed-api-to-human-password-required",
+    );
+    const convertedHuman = await user(
+      await request(target, `/api/users/${human.id}`, {
+        method: "PUT",
+        auth: basic,
+        body: {
+          username: name,
+          type: "api",
+          status: "enabled",
+          user_role_id: 1,
+          password_login: true,
+        },
+      }),
+    );
+    check(
+      convertedHuman.password_login === (target.mode === "reference"),
+      "proposed-human-to-api-clears-password",
+    );
+    check(
+      (await request(target, "/api/health", { auth: header({ user: name, token: password }) }))
+        .status === 403,
+      "converted-human-password-is-not-api-token",
+    );
+    if (target.mode === "normal")
+      check(
+        (await request(target, "/api/profile", { cookie: spaced.session })).status === 403,
+        "converted-human-session-revoked",
+      );
     const apiUpdated = await user(
       await request(target, `/api/users/${api.id}`, {
         method: "PUT",

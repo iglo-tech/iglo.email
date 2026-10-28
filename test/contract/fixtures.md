@@ -54,6 +54,16 @@ return 403 with an embedded `code=400, message=...` error string. A disabled
 API credential is rejected on the next request. These observations are
 reference evidence only; they are not a claim of compiled-production coverage.
 
+Two additional reference observations need lead review: converting an API
+user to a password-login human without supplying a password succeeds and keeps
+the API-token digest as that user's stored credential; converting a human to an
+API user with `password_login=true` retains the human password hash, although
+the old human password is not accepted as an API token. The shared corpus marks
+the proposed production behavior explicitly: require a new password for the
+first conversion and clear the credential for the second. This prevents one
+credential type from being persisted as another, satisfies the task's Argon2id
+and SHA-256 storage requirements, and does not invent a token-rotation API.
+
 ## Normal fixture credentials and probe data
 
 The test-only auth gate accepts only the following synthetic credentials. It is
