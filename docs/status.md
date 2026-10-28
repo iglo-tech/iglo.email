@@ -2,17 +2,17 @@
 
 Kept by the chief of staff ([runbook](chief-of-staff.md)). Tasks are defined in the [work plan](design/11-work-plan.md).
 
-Updated: 2026-10-27
+Updated: 2026-10-28
 
 ## Active
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 is in council round 1 on [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), exact head `b8797e2316bfb20ad9ef590ef621aa039180c772`. All eight CI jobs passed. Both fresh independent reviewers are running with the full brief, source map and handoff notes; their completions wake this lead. The existing PR watch remains active. Do not poll or start duplicate reviewers.
+M0.6 is in council round 1 on [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), exact head `b8797e2316bfb20ad9ef590ef621aa039180c772`. All eight CI jobs passed. Opus returned CHANGES: missing static OPTIONS/Allow behavior and missing D18 static traversal metadata/production coverage. The lead is correcting these and recording D21 to support metadata-only HEAD. Four public-boundary regressions failed before changes. Sol is still reviewing the original head; its completion wakes this lead. The existing PR watch remains active. Do not poll or start duplicate reviewers.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | council | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 1 | [Brief](briefs/M0.6.md). Head `b8797e2316bfb20ad9ef590ef621aa039180c772`; all eight CI jobs passed. Opus medium and fresh Sol xhigh round-1 verdicts pending. Worker reports 76 tests / 564 assertions, 15 production cases, 23 fixture + 2 probes, 37 upstream cases, smoke and compiled-shell/public-404 browser checks passed. Reference-first commit `c791107`; the lead corrected the stale current-coverage table. |
+| M0.6 | fix | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 1 | [Brief](briefs/M0.6.md). Head `b8797e2316bfb20ad9ef590ef621aa039180c772`; all eight CI jobs passed. Opus CHANGES; lead fixes in progress. Sol original-head verdict pending. Worker reports 76 tests / 564 assertions, 15 production cases, 23 fixture + 2 probes, 37 upstream cases, smoke and compiled-shell/public-404 browser checks passed. Reference-first commit `c791107`; the lead corrected the stale current-coverage table. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -20,13 +20,13 @@ Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
 - Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
-- PR #6 is linked and watched in this lead thread. Both fresh M0.6 round-1 reviewers are running; do not reuse M0.5 approvals.
+- PR #6 is linked and watched in this lead thread. Opus round 1 is terminal; Sol remains running on the original head. No replacement reviewer started.
 
 Handoff notes for council: the existing D18 dot-segment normalization also changes the refusal body for encoded traversal targets that leave the static prefix (upstream plain-text 404 versus normal HTML 404); both refuse the asset. Inspect the exact coverage and metadata against the policy. Production admin/auth remains absent, with the shell verified only by a compiled fixture. The lead documentation-only commit `b8797e2` updates the current coverage table while retaining the historical reference-first baseline.
 
 ### Council round 1
 
-[M0.6 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e); claude-opus-5-5. Verdict pending on `b8797e2316bfb20ad9ef590ef621aa039180c772`.
+[M0.6 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e); claude-opus-5-5. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6456667733): static OPTIONS/Allow and missing D18 static-path marker. All eleven acceptance commands and browser verification passed. Lead also addresses HEAD policy and records admin error-page staging.
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
@@ -76,6 +76,8 @@ Owner correction on 2026-10-27: recurring automation must remain unbound to ever
 [D20](design/09-decisions.md#d20-separate-production-and-fixture-contract-coverage-until-auth-is-ported) (2026-10-27): M0.5 separates compiled production coverage from authenticated-read/helper fixture evidence. M1.3 promotes the protected read to production auth; work-plan acceptance and testing notes now name that temporary staging explicitly.
 
 M0.6 plan clarification (2026-10-27): finish the public HTML 404 deferred by M0.3/M0.5 in the JSX/page-shell task. Verify the admin shell in a compiled fixture until M1/M4 provide protected screens. Copy only v1 browser assets/build dependencies; CAPTCHA and the visual builder stay later-only. The task row and [brief](briefs/M0.6.md) now make those boundaries and the contract/browser acceptance explicit.
+
+D21 (2026-10-28, under implementation/review in PR #6): support HEAD for embedded assets so callers can inspect metadata without downloading resources; advertise HEAD together with GET/OPTIONS. Keep upstream 405 for unsupported methods with a matching Allow header. The decision/API-policy row and precise reference/normal contract markers will accompany the fix.
 
 Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one whole-filesystem `find` to locate Echo source, contrary to `/home/t3-code/AGENTS.md`. It reported the scan finished quickly without a visible effect and was not repeated. The lead recorded the incident without repeating the scan. Worker and council instructions in the runbook now explicitly require named checkout/cache paths or pinned GitHub source inside the worktree, never a broader filesystem search when a dependency is absent.
 
