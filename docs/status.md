@@ -8,11 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 council recovery resumed in the dedicated lead thread. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains at `f3839c4bbf6485760540567285953a649ddd9222`, with all eight CI jobs successful. Opus round 2 is confirmed cancelled at 2026-10-28T05:00:34.756Z, with no active run, pending approval or posted verdict. Both fresh round-3 council reviews are running on that exact head. Finish M0.6, then release the lock: this originating run has exceeded four hours. No M0.7 worker starts in this run.
+M0.6 council recovery resumed in the dedicated lead thread. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains at `f3839c4bbf6485760540567285953a649ddd9222`, with all eight CI jobs successful. Opus round 2 is confirmed cancelled at 2026-10-28T05:00:34.756Z, with no active run, pending approval or posted verdict. Opus round 3 returned CHANGES for misplaced image/stray-text false passes in the fixed 404 checker; Sol round 3 is still running. The lead is adding public CLI regressions and correcting the checker. Finish M0.6, then release the lock: this originating run has exceeded four hours. No M0.7 worker starts in this run.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | council | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Prior lead validation: full check 98 tests / 635 assertions, clean lint/typecheck, 21 production cases, 43 upstream cases and 14 focused HTML tests. `ece1069` records seven false passes before the fixed-page shape/URL correction. Opus round 2 is terminal without a verdict; both fresh round-3 reviews are running. |
+| M0.6 | fix | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed. Prior lead validation: full check 98 tests / 635 assertions, clean lint/typecheck, 21 production cases, 43 upstream cases and 14 focused HTML tests. `ece1069` records seven false passes before the fixed-page shape/URL correction. Opus round 2 is terminal without a verdict; Opus round 3 CHANGES is being fixed; Sol round 3 remains pending. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -58,7 +58,7 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 
 Both fresh members were dispatched together on exact head `f3839c4bbf6485760540567285953a649ddd9222` with full task scope, both rounds' findings and objections, D18/D21 decisions, all eleven acceptance commands and browser requirements. No prior or unposted verdict counts as approval of this head.
 
-[M0.6 council round 3 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a); claude-opus-5-5, effort: medium. Running asynchronously; completion wakes the originating lead.
+[M0.6 council round 3 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a); claude-opus-5-5, effort: medium. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461218568): misplaced images and visible text outside inspected selectors falsely pass the CLI. All prior findings resolved; all eleven commands and compiled-browser verification passed. Production rendering is correct. Lead fixes the bounded document-shape/text assertion before three-round resolution.
 
 - Task ID: node:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
 - Child thread ID: thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
