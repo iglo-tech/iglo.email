@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place. The version-1 migration installs the schema; M1.3 supplies users, real authentication and a functional password-login form; M1.4 adds role administration and TOTP login; M1.5 adds authenticated list CRUD with live counts. Other domain endpoints and loops remain in the design phase. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place. The version-1 migration installs the schema; M1.3 supplies users, real authentication and a functional password-login form; M1.4 adds role administration and TOTP login; M1.5 adds authenticated list CRUD with live counts; M1.6 adds numeric/external subscriber lifecycle and ID-selected bulk actions. Collection/search/export, sending, other domains, background loops and full admin screens remain later tasks. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 
