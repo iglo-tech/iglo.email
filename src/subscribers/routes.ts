@@ -78,7 +78,8 @@ export function registerSubscriberRoutes(
         input.name = (input.email ?? "")
           .split("@")[0]!
           .replaceAll(".", " ")
-          .split(/\s+/)
+          .split(/[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/)
+          .filter(Boolean)
           .map((word) =>
             [...new Intl.Segmenter("und", { granularity: "word" }).segment(word)]
               .map((part) =>
