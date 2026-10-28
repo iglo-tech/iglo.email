@@ -16,7 +16,28 @@ The lead fixed these small findings directly in the completed worker's worktree 
 
 Lead verification passed: extended stateful reference and compiled-auth corpus; `bun run check` (135 tests, 1064 assertions); `ui:verify`; 38 compiled core contracts; 24 staged contracts plus two probes; and 58 upstream core/helper cases. The compiled browser flow with escaped `next` passed wrong-password, nonce, canonical authenticated destination, CSRF/logout and input-safety checks; the browser was closed and server confirmed stopped. The worktree is clean after the push. The PR body records exact corrections, evidence and disclosed limits.
 
-All eight fresh-head CI jobs are successful on `be6095bf7d0e076787576a65f0dd335f82d39351`, verified at 11:50 UTC after the check wake; the PR is open and mergeable. Existing comments are the two handled round-1 findings, with no formal review decision. Capabilities were rechecked after the earlier provider error and still offer the exact requested models/settings. Council round 2 uses fresh Opus medium and Sol xhigh delegates together in isolated worktrees, with [round-2 instructions](briefs/M1.3-council-r2.md), both prior findings and D28. Every reviewer independently runs all acceptance and browser checks; bounded measurements share the lead-owned measurement.lock. No worker/fixer or duplicate round-1 reviewer is running. Dispatch IDs follow after the tool returns. The existing PR linkage/watch stays in place; do not relink/rewatch or poll delegates. After M1.3 merges, this elapsed run must release the lock and end.
+All eight fresh-head CI jobs are successful on `be6095bf7d0e076787576a65f0dd335f82d39351`, verified at 11:50 UTC after the check wake; the PR is open and mergeable. Existing comments are the two handled round-1 findings, with no formal review decision. Capabilities were rechecked after the earlier provider error and still offer the exact requested models/settings. Council round 2 uses fresh Opus medium and Sol xhigh delegates together in isolated worktrees, with [round-2 instructions](briefs/M1.3-council-r2.md), both prior findings and D28. Every reviewer independently runs all acceptance and browser checks; bounded measurements share the lead-owned measurement.lock. No worker/fixer or duplicate round-1 reviewer is running. Both dispatches are running; exact recovery IDs and requested/returned settings are below. The existing PR linkage/watch stays in place; do not relink/rewatch or poll delegates. After M1.3 merges, this elapsed run must release the lock and end.
+
+### Council round 2 recovery
+
+[M1.3 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-opus-be6095b-20261028T1150), dispatched 2026-10-28T11:51:47.896Z with `isolation: "worktree"`, `mode: "async"`, `role: "review"`, `target: {"providerInstanceId":"claudeAgent","model":"claude-opus-5-5","options":{"effort":"medium"}}`.
+
+- Client request ID: `iglo-email-M1.3-council-r2-opus-be6095b-20261028T1150`.
+- Task ID: `node:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-opus-be6095b-20261028T1150`.
+- Child thread ID: `thread:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-opus-be6095b-20261028T1150`.
+- Child run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A423a906d-05dd-4fea-80a6-69824cfebe5c%253Adelegate-task%253Aiglo-email-M1.3-council-r2-opus-be6095b-20261028T1150:ordinal:1`.
+- Returned options: `[{"id":"effort","value":"medium"}]`.
+- State: running at dispatch, no pending question/approval or child runs. Next: completion wakes the lead; end the turn without waiting or polling.
+
+[M1.3 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-sol-be6095b-20261028T1150), dispatched 2026-10-28T11:51:47.896Z with `isolation: "worktree"`, `mode: "async"`, `role: "review"`, `target: {"providerInstanceId":"codex","model":"gpt-6.1-sol","options":{"reasoningEffort":"xhigh"}}`.
+
+- Client request ID: `iglo-email-M1.3-council-r2-sol-be6095b-20261028T1150`.
+- Task ID: `node:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-sol-be6095b-20261028T1150`.
+- Child thread ID: `thread:delegated-task:command%3Amcp%3A423a906d-05dd-4fea-80a6-69824cfebe5c%3Adelegate-task%3Aiglo-email-M1.3-council-r2-sol-be6095b-20261028T1150`.
+- Child run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A423a906d-05dd-4fea-80a6-69824cfebe5c%253Adelegate-task%253Aiglo-email-M1.3-council-r2-sol-be6095b-20261028T1150:ordinal:1`.
+- Returned options: `[{"id":"reasoningEffort","value":"xhigh"},{"id":"serviceTier","value":"default"}]`.
+- State: running at dispatch, no pending question/approval or child runs. Next: completion wakes the lead; end the turn without waiting or polling.
+
 
 ## Automation
 
