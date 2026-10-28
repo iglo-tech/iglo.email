@@ -106,6 +106,30 @@ export async function runSettingsContract(target: {
     ] === "Synthetic settings",
     "key-read",
   );
+  const unknown = await request("/api/settings/unknown.setting", "PUT", "true");
+  check(unknown.status === (target.mode === "reference" ? 200 : 400), "unknown-key-d44");
+  const malformedKey = await request("/api/settings/app.batch_size", "PUT", '"not-an-integer"');
+  check(malformedKey.status === (target.mode === "reference" ? 200 : 400), "invalid-key-d44");
+  const finalGet = await request("/api/settings");
+  check(finalGet.status === (target.mode === "reference" ? 500 : 200), "invalid-key-read-d44");
+  if (target.mode === "normal") {
+    check(
+      ((await finalGet.json()) as { data: Record<string, any> }).data["app.batch_size"] ===
+        snapshot["app.batch_size"],
+      "invalid-key-rollback",
+    );
+    if (target.restart) {
+      await target.restart();
+      const persisted = (
+        (await (await request("/api/settings")).json()) as { data: Record<string, any> }
+      ).data;
+      check(
+        persisted["app.site_name"] === "Synthetic settings" &&
+          persisted.smtp[0].uuid === updated.smtp[0].uuid,
+        "restart-persistence",
+      );
+    }
+  }
 }
 
 if (import.meta.main) {
