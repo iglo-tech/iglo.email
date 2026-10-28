@@ -30,6 +30,15 @@ assets. The Alpine npm package omits its license file, so
 `licenses/alpinejs-LICENSE.txt` is the upstream Alpine v3.15.12 license from
 `https://github.com/alpinejs/alpine/blob/v3.15.12/LICENSE.md`.
 
+The vendored `admin/js/editor-theme.js` separately retains fsegurai's 2025
+copyright. Its complete MIT notice is tracked in
+`licenses/fsegurai-codemirror-themes-MIT.txt`, copied byte-for-byte from
+[codemirror-themes LICENSE at 60a37d7](https://github.com/fsegurai/codemirror-themes/blob/60a37d73bfa803721baadc4a61401de6ba3c116e/LICENSE).
+It is embedded and served at
+`/admin/static/licenses/fsegurai-codemirror-themes-MIT.txt`, independently of
+the npm license collection and the minified browser bundle's comments. A
+compiled-executable HTTP test verifies the copyright, permission and disclaimer.
+
 The Altcha/CAPTCHA package and public build step, visual drag-and-drop email
 builder and its distribution, view-specific domain entrypoints, custom
 appearance and update/restart UI are omitted: they are later, dropped, or owned

@@ -31,7 +31,7 @@ const built = await Bun.build({
 });
 if (!built.success) throw new AggregateError(built.logs, "Browser asset build failed");
 
-// Bundle each dependency's actual license alongside the executable's assets.
+// Bundle project, vendored-source and npm licenses alongside executable assets.
 const packages = [
   "alpinejs",
   "@knadh/oat",
@@ -52,6 +52,10 @@ const seen = new Set<string>();
 const licenseDir = join(admin, "licenses");
 await mkdir(licenseDir, { recursive: true });
 await cp(join(root, "LICENSE"), join(licenseDir, "listmonk-AGPL-3.0.txt"));
+await cp(
+  join(root, "assets/licenses/fsegurai-codemirror-themes-MIT.txt"),
+  join(licenseDir, "fsegurai-codemirror-themes-MIT.txt"),
+);
 for (let index = 0; index < packages.length; index++) {
   const name = packages[index]!;
   if (seen.has(name)) continue;
