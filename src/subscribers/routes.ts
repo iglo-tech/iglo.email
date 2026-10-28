@@ -5,7 +5,7 @@ import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
 import { trimSpace } from "@/lists/store";
-import { sanitizeEmail } from "@/subscribers/email";
+import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
 import { titleWords } from "@/subscribers/unicode-title";
 import {
   subscriberInput,
@@ -21,6 +21,10 @@ export function registerSubscriberRoutes(
   store: SubscriberStore,
   roles: Roles,
   auth: Authentication,
+  domainPolicy: () => {
+    "privacy.domain_allowlist": string[];
+    "privacy.domain_blocklist": string[];
+  } = () => ({ "privacy.domain_allowlist": [], "privacy.domain_blocklist": [] }),
 ) {
   const identity = (c: RequestContext) => {
     if (!c.identity) throw new Error("Identity required");
@@ -69,6 +73,11 @@ export function registerSubscriberRoutes(
   const email = (value: string) => {
     const result = sanitizeEmail(value);
     if (result === undefined) throw new HttpError(400, "Invalid email.");
+    const policy = domainPolicy();
+    if (
+      !allowedDomain(result, policy["privacy.domain_allowlist"], policy["privacy.domain_blocklist"])
+    )
+      throw new HttpError(400, "The e-mail domain is blocklisted.");
     return result;
   };
   const validate = (

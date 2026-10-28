@@ -44,3 +44,26 @@ export function sanitizeEmail(value: string): string | undefined {
   } else if (!atom(domain)) return;
   return address;
 }
+
+// Domain matching adapted from listmonk internal/subimporter/importer.go at 6fcd95f.
+export function allowedDomain(address: string, allow: string[], block: string[]): boolean {
+  const domain = address.split("@")[1];
+  if (domain === undefined) return true;
+  const inList = (items: string[]) => {
+    const values = new Set(items);
+    let wildcards = false;
+    for (const item of items)
+      if (item.includes("*.")) {
+        wildcards = true;
+        values.add(item.startsWith("*.") ? item.slice(2) : item);
+      }
+    if (values.has(domain)) return true;
+    const parts = domain.split(".");
+    if (wildcards && parts.length > 2) {
+      parts[0] = "*";
+      return values.has(parts.join("."));
+    }
+    return false;
+  };
+  return allow.length ? inList(allow) : block.length ? !inList(block) : true;
+}

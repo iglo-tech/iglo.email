@@ -158,3 +158,12 @@ D39 adds a query-selector external route for every D38 opaque ID. Bun-normalized
 dot path segments cannot encode those identities; . and .. remain valid and
 use the query form. Selector values are decoded exactly once, never recursively.
 The path convenience form and query form share permissions and atomic behavior.
+
+The M1.2 draft supplies a persisted settings owner and the authenticated
+settings routes, including the D44 SMTP-test staging boundary. The draft is not
+complete: session duration changes return 501 without a write until sessions
+can retain their original expiry; a changing lookup-wide duration would revive
+expired identities. Full settings binding and validation still need the complete
+pinned reference corpus, including XML/form binding, ordered duplicate aliases,
+Go address parsing and slow-query cron validation. Those gaps are blockers to
+claiming the settings API as fully compatible or ready for M2.1.
