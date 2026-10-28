@@ -94,6 +94,31 @@ export async function runSettingsContract(target: {
     "smtp-normalization",
   );
   check(typeof updated.smtp[0].uuid === "string" && updated.smtp[0].uuid.length > 0, "smtp-uuid");
+  const addressCandidate = structuredClone(updated);
+  addressCandidate["app.from_email"] = ['"Display, Name" <"quoted local"@example.invalid>'];
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(addressCandidate))).status === 200,
+    "quoted-from-address",
+  );
+  check(
+    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+      "app.from_email"
+    ][0] === addressCandidate["app.from_email"][0],
+    "quoted-from-projection",
+  );
+  const cronCandidate = structuredClone(updated);
+  cronCandidate["app.cache_slow_queries"] = true;
+  cronCandidate["app.cache_slow_queries_interval"] = "not a cron";
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 400,
+    "invalid-enabled-cron",
+  );
+  check(
+    (await request("/api/settings/app.check_updates", "PUT", "false")).status === 200,
+    "check-updates-false",
+  );
+  const invalidDuration = await request("/api/settings/security.session_duration", "PUT", '"0s"');
+  check(invalidDuration.status === (target.mode === "reference" ? 200 : 400), "duration-d45");
   const key = await request(
     "/api/settings/app.site_name",
     "PUT",
