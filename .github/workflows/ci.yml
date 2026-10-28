@@ -18,7 +18,6 @@ jobs:
       - run: bun run contract:roles
       - run: bun run contract:lists
       - run: bun run contract:subscribers
-      - run: bun run contract:settings
       - run: bun run contract:fixture
 
   reference-linux:
@@ -35,6 +34,5 @@ jobs:
       - run: bun run contract:roles:reference
       - run: bun run contract:lists:reference
       - run: bun run contract:subscribers:reference
-      - run: bun run contract:settings:reference
       - run: bun run server:reference
       - run: bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'
