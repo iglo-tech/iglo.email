@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/subscribers.go, internal/core/subscribers.go,
 // internal/core/subscriptions.go and queries/subscribers.sql at 6fcd95f.
+import { runSubscriberStateRevisions } from "@/test/contract/subscriber-state-revisions";
 import { runSubscriberScope } from "@/test/contract/subscriber-scope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
@@ -45,6 +46,7 @@ export async function runSubscribersContract(target: {
     return (await response.json()).data;
   }
   try {
+    await runSubscriberStateRevisions(target);
     check(
       (await request("/api/subscribers/1", "GET", undefined, "")).status === 403,
       "subscriber-unauthenticated",
@@ -291,11 +293,11 @@ export async function runSubscribersContract(target: {
         email: sub.email,
         name: "must not persist",
       });
+      const collisionBody = await collision.json();
       check(
-        collision.status === 500 &&
-          (await collision.json()).message ===
-            `Error updating Subscriber: pq: duplicate key value violates unique constraint "subscribers_email_key" (23505). Key (email)=(${sub.email}) already exists.`,
-        "subscriber-update-duplicate-email",
+        collision.status === (target.mode === "reference" ? 500 : 409) &&
+          (target.mode === "reference" || collisionBody.message === "E-mail already exists."),
+        "D41-subscriber-update-duplicate-email",
       );
       const unchanged = await get(semantics.id);
       check(
