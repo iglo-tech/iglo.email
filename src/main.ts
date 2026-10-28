@@ -9,6 +9,8 @@ import { startServer } from "@/server/server";
 import { createRouter } from "@/server/server";
 import { createListStore } from "@/lists/store";
 import { registerListRoutes } from "@/lists/routes";
+import { createSubscriberStore } from "@/subscribers/store";
+import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createListReferences } from "@/lists/references";
@@ -29,6 +31,7 @@ async function main(): Promise<void> {
   const db = openDatabase(bootstrap.config.dataDir);
   let lists: ReturnType<typeof createListReferences> | undefined;
   let listStore: ReturnType<typeof createListStore> | undefined;
+  let subscriberStore: ReturnType<typeof createSubscriberStore> | undefined;
   let counts: ReturnType<typeof createListCounts> | undefined;
   let campaigns: ReturnType<typeof createCampaignListReferences> | undefined;
   let roles: ReturnType<typeof createRoles> | undefined;
@@ -38,6 +41,7 @@ async function main(): Promise<void> {
     lists = createListReferences(db);
     roles = createRoles(db, lists);
     counts = createListCounts(db);
+    subscriberStore = createSubscriberStore(db, clock, lists);
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
@@ -59,6 +63,7 @@ async function main(): Promise<void> {
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
+    registerSubscriberRoutes(router, subscriberStore, roles, auth);
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       const shutdown = () => {
@@ -72,6 +77,7 @@ async function main(): Promise<void> {
   } finally {
     users?.close();
     listStore?.close();
+    subscriberStore?.close();
     campaigns?.close();
     counts?.close();
     roles?.close();

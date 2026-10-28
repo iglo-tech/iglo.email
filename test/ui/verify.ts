@@ -133,6 +133,21 @@ try {
     assert.equal(response.status, 404);
     assert.equal(response.contentType, "text/html; charset=UTF-8");
     assert.match(response.body, /<h2>404 - Not found<\/h2>/);
+    for (const [file, notice] of [
+      ["go-1.27.2-BSD.txt", "Redistribution and use in source and binary forms"],
+      ["unicode-17.0.0-3.0.txt", "UNICODE LICENSE V3"],
+    ]) {
+      const url = `${production}/admin/static/licenses/${file}`;
+      const get = await fetch(url, { signal: controller.signal });
+      const body = await get.text();
+      assert.equal(get.status, 200);
+      assert.ok(body.includes(notice!));
+      const head = await fetch(url, { method: "HEAD", signal: controller.signal });
+      assert.equal(head.status, 200);
+      assert.equal(head.headers.get("content-type"), get.headers.get("content-type"));
+      assert.equal(head.headers.get("content-length"), String(Buffer.byteLength(body)));
+      assert.equal(await head.text(), "");
+    }
     const css = await rawRequest(production, "/public/static/style.css", {
       signal: controller.signal,
     });

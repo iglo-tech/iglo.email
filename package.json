@@ -33,7 +33,9 @@
     "roles:measure": "bun run build && bun test/users/measure-roles.ts",
     "contract:lists": "bun run build && bun test/contract/cli.ts owned lists && bun test ./test/lists/restart.ts",
     "contract:lists:reference": "bun run reference:run -- bun test/contract/lists.ts reference",
-    "lists:measure": "bun run build && bun test/lists/measure.ts dist/iglo.email candidate"
+    "lists:measure": "bun run build && bun test/lists/measure.ts dist/iglo.email candidate",
+    "contract:subscribers": "bun run build && bun test/contract/cli.ts owned subscribers",
+    "contract:subscribers:reference": "bun run reference:run -- bun test/contract/subscribers.ts reference"
   },
   "dependencies": {
     "liquidjs": "10.30.0",

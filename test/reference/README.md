@@ -125,7 +125,7 @@ The separate fixture profile retains its synthetic auth gate and representative
 list/helper routes; generated ID/timestamp probes verify normalization only.
 The labelled `test/users` fixture composes production owners with fake-clock,
 peer and synthetic list controls for cases that cannot yet be provisioned through
-production list APIs. These fixtures are not evidence of production subscriber or campaign endpoints. The shared M1.5 list corpus runs against pinned upstream and the compiled production process, with real generated API credentials. Positive membership counts and campaign snapshots are separately labelled synthetic fixture evidence. Domain owners promote helper cases as their routes land.
+production list APIs. These fixtures are not evidence of production subscriber or campaign endpoints. The shared M1.5 list corpus runs against pinned upstream and the compiled production process, with real generated API credentials. Positive membership counts are also checked through the production subscriber API; campaign snapshots remain separately labelled synthetic fixture evidence. Domain owners promote helper cases as their routes land.
 Public HTML 404 semantics and embedded static responses are covered in both
 upstream and compiled production, with explicit per-target site names and
 attribution. Repeat the reference-first observations with
@@ -219,3 +219,21 @@ invalid consumed bytes fail without decoding the unused suffix. Compiled
 HTTP restart acceptance serves both current notices and confirms the old
 parser/override notice paths are absent. No complete XML/Go parity or parser
 maintenance guarantee is claimed; the dependency is pinned and upstream archived.
+
+## M1.6 subscriber contracts
+
+`bun run contract:subscribers:reference` runs the invocation-owned subscriber
+CRUD/membership and scoped authorization observations against pinned upstream.
+`bun run contract:subscribers` runs the paired compiled-production corpus, D38/D39
+external selectors, live scope and restart cases, and real positive list counts.
+`bun test/subscribers/dot-path-observe.ts` records D18 dot-segment normalization with raw loopback HTTP;
+see [subscriber fixtures](../subscribers/fixtures.md). External-ID cases are
+normal-only and are never attributed to upstream. D40 explicitly records the
+reference's int32 query-width errors and the native signed-64-bit outcomes.
+
+M1.6's shared subscriber binding regressions run against both compiled
+production and the pinned reference. They exercise ordered duplicate members,
+UTF-8/Unicode and numeric attribute boundaries, email normalization, bounded
+forms and XML scalars through HTTP. D38 cases label the reference's validation
+of fields that the relevant normal operation discards. The normal subscriber
+extension also checks the embedded Go standard-library notice.
