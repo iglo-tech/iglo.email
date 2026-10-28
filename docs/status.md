@@ -8,7 +8,7 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 recovery is blocked by T3 delegate ownership. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains open at `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed, independently reconfirmed at 2026-10-28 04:08 UTC. The Opus round-2 reviewer is stalled on a cleanup approval at superseded head `cbd877d`, with no terminal verdict. The independent run acquired the available lock, but `task_cancel` again refused cross-thread cancellation. No cancellation is confirmed and no replacement reviewers or workers were started. See the recovery records and blocker below. Finish M0.6 before another implementation task, then release the lock as previously directed.
+M0.6 recovery is blocked by T3 delegate ownership. [PR #6](https://github.com/iglo-tech/iglo.email/pull/6) remains open at `f3839c4bbf6485760540567285953a649ddd9222`; all eight CI jobs passed, independently reconfirmed at 2026-10-28 04:53 UTC. The Opus round-2 reviewer is stalled on a cleanup approval at superseded head `cbd877d`, with no terminal verdict. The independent run acquired the available lock, but `task_cancel` again refused cross-thread cancellation. No cancellation is confirmed and no replacement reviewers or workers were started. See the recovery records and blocker below. Finish M0.6 before another implementation task, then release the lock as previously directed.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
@@ -74,9 +74,15 @@ Round-2 correction: the checker allows the known 404 tags/attributes/classes, re
 - A single read of the recorded Opus reviewer confirmed the same active run, one pending approval and no update since 00:26:31 UTC. One supported `task_cancel` attempt returned `task_not_found`: the delegate does not belong to this recovery thread. No cancellation is confirmed; no cleanup approval, interrupt, duplicate reviewer or new worker was started. The documented orchestration blocker and round-3 recovery transition remain in effect.
 - Removed the previous recovery run's PR watch. Push this record, release this run's lock and watch only the pending PR review. The existing schedule was reverified with `bindToCurrentThread: false`, returning `boundThreadId: null`, enabled and still at `2700000` ms. No schedule or implementation task was added.
 
+### Independent recovery recheck, 2026-10-28 04:53 UTC
+
+- Recovery run: [iglo.email chief of staff — Sol xhigh](t3-thread://v1/thread:project:33e4dcad-e50e-45f0-bf99-8f120653d39c:d8735e9f-2c3c-4d01-aa9e-3ef031735f4f), GPT-6.1 Sol at xhigh. Synced clean `main` and acquired the absent lock at 04:52:31 UTC. PR #6 is still the only open task PR, unchanged at `f3839c4bbf6485760540567285953a649ddd9222`, mergeable, with all eight CI jobs successful and no new council verdict.
+- One read of the recorded Opus round-2 reviewer confirmed its original active run, one pending approval and no update since 00:26:31 UTC. One supported `task_cancel` returned `task_not_found` because the delegate does not belong to this recovery thread. No cancellation is confirmed. The pending cleanup was not approved or repeated, and no duplicate reviewer or worker was started. The documented orchestration blocker and next transition remain: confirm termination or supported cancellation, then dispatch both fresh round-3 council members on the current head.
+- Removed the previous recovery run's PR watch. Push this record, release this run's lock and watch only the pending PR review. Reverified the existing schedule with `bindToCurrentThread: false`: returned `boundThreadId: null`, enabled, interval `2700000` ms, next run `2026-10-28T05:37:06.302Z`. No new schedule or implementation task was added.
+
 ## Automation
 
-The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Next run: **2026-10-28T04:52:04.067Z** (05:52 Warsaw). Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
+The existing 45-minute chief-of-staff schedule is enabled and independent. Task ID: `scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280`. Reverified on 2026-10-28 with `bindToCurrentThread: false`: `boundThreadId: null`, interval `2700000` ms, enabled. Next run: **2026-10-28T05:37:06.302Z** (06:37 Warsaw). Never bind this automation to a thread. Child completions continue their originating lead run immediately. Independent scheduled runs use the lock and durable status/PR state for recovery without depending on that thread's responsiveness.
 
 ## Done
 
