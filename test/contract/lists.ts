@@ -45,7 +45,7 @@ export async function runListsContract(target: {
     async function raw(
       body: string,
       contentType: string,
-      method = "POST",
+      method: "POST" | "PUT" = "POST",
       id?: number,
       authorization = auth,
     ) {
@@ -137,6 +137,23 @@ export async function runListsContract(target: {
         )
       ).response.status === 400,
       "xml-known-map-type",
+    );
+    const validInt = await raw(
+      `{"name":"ignored-id-${suffix}","id":9223372036854775807,"subscriber_statuses":{"x":9223372036854775807}}`,
+      "application/json",
+    );
+    check(validInt.response.status === 200, "json-int64-model-fields");
+    for (const number of ["9223372036854775808", "1.0", "1e0"]) {
+      check(
+        (await raw(`{"name":"invalid-id-${suffix}","id":${number}}`, "application/json")).response
+          .status === 400,
+        `json-invalid-integer-${number}`,
+      );
+    }
+    const folded = await raw(`{"name":"folded-${suffix}","tagſ":["accepted"]}`, "application/json");
+    check(
+      folded.response.status === 200 && folded.value.data?.tags[0] === "accepted",
+      "json-unicode-simple-fold",
     );
     const namespaced = await raw(
       `<a:List xmlns:a="urn:test"><a:Name>ns-${suffix}</a:Name><a:Tags>007</a:Tags></a:List>`,
