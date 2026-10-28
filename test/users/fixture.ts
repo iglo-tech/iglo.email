@@ -26,9 +26,10 @@ export async function startUserFixture(
   policy: AuthPolicy = defaultAuthPolicy,
   initialize = true,
   liveSettings = false,
+  persisted?: { dataDir: string; clock: TestClock },
 ) {
-  const dataDir = mkdtempSync(join(tmpdir(), "iglo-users-fixture-"));
-  const clock = new TestClock();
+  const dataDir = persisted?.dataDir ?? mkdtempSync(join(tmpdir(), "iglo-users-fixture-"));
+  const clock = persisted?.clock ?? new TestClock();
   const db = openDatabase(dataDir);
   runMigrations(db, dataDir, clock, productionMigrations);
   const lists = createListReferences(db);
@@ -239,21 +240,45 @@ export async function startUserFixture(
     router.route("POST", "/fixture/list-role", () =>
       ok(Number(roles.createListRole("Fixture list role", clock.now().toISOString()))),
     );
+    let bodyRead!: () => void;
+    const bodyEntered = new Promise<void>((resolve) => {
+      bodyRead = resolve;
+    });
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: (request, socket) =>
-        router.handle(
+      fetch: (original, socket) => {
+        let request = original;
+        if (original.headers.has("x-m12-gated-body") && original.body) {
+          const reader = original.body.getReader();
+          const stream = new ReadableStream<Uint8Array>(
+            {
+              async pull(controller) {
+                bodyRead();
+                const result = await reader.read();
+                if (result.done) controller.close();
+                else controller.enqueue(result.value);
+              },
+              cancel: () => reader.cancel(),
+            },
+            { highWaterMark: 0 },
+          );
+          request = new Request(original, { method: original.method, body: stream });
+        }
+        return router.handle(
           app,
           request,
           request.headers.get("x-m13-fixture-peer") ??
             socket.requestIP(request)?.address ??
             "unknown",
-        ),
+        );
+      },
     });
     return {
       admin,
       origin: `http://127.0.0.1:${server.port}`,
+      bodyEntered,
+      persisted: { dataDir, clock },
       // Arrange historical and damaged synthetic records; observations use HTTP.
       arrangeSession(
         cookie: string,
@@ -283,7 +308,7 @@ export async function startUserFixture(
             id,
           );
       },
-      async close() {
+      async close(preserve = false) {
         try {
           release();
           releaseLogin();
@@ -294,7 +319,7 @@ export async function startUserFixture(
           roles.close();
           lists.close();
           db.close(true);
-          rmSync(dataDir, { recursive: true, force: true });
+          if (!preserve) rmSync(dataDir, { recursive: true, force: true });
         }
       },
     };

@@ -107,6 +107,9 @@ function entries(value: unknown): [string, unknown][] {
   if (value && typeof value === "object" && !Array.isArray(value)) return Object.entries(value);
   return fail();
 }
+// All JSON field tags here are ASCII. Go's simple folding also admits long s
+// and Kelvin sign, without multi-character expansions such as ß -> SS.
+const foldField = (value: string) => value.replace(/ſ/g, "s").replace(/K/g, "k").toLowerCase();
 function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
   if (value === null)
     return shape === null ||
@@ -132,7 +135,7 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
     for (const [key, fallback] of Object.entries(shape))
       if (!Object.hasOwn(result, key)) result[key] = zero(fallback);
     for (const [key, entry] of members) {
-      const match = Object.keys(shape).find((name) => name.toLowerCase() === key.toLowerCase());
+      const match = Object.keys(shape).find((name) => foldField(name) === foldField(key));
       if (match) result[match] = bind(entry, shape[match], result[match]);
     }
     return result;
@@ -157,7 +160,7 @@ export function bindFull(value: unknown, root: string): Settings {
     else out[key] = typeof shape === "string" ? "" : typeof shape === "boolean" ? false : 0;
   }
   for (const [key, entry] of value === null ? [] : entries(value)) {
-    const match = Object.keys(shapes).find((name) => name.toLowerCase() === key.toLowerCase());
+    const match = Object.keys(shapes).find((name) => foldField(name) === foldField(key));
     if (match) out[match] = bind(entry, shapes[match], out[match]);
   }
   out["app.root_url"] = root;
@@ -302,7 +305,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   }
   if (next["app.cache_slow_queries"]) {
     const error = cronError(next["app.cache_slow_queries_interval"]);
-    if (error) return fail(`Invalid data.: slow query cron: ${error}`);
+    if (error) return fail(`Invalid data: slow query cron: ${error}`);
   }
   sessionDuration(next["security.session_duration"], now);
   next["app.root_url"] = current["app.root_url"];

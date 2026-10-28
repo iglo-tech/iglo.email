@@ -1,5 +1,7 @@
 // Reference: listmonk cmd/settings.go, models/settings.go and queries/misc.sql at 6fcd95f.
 import { runSettingsNul } from "@/test/contract/settings-nul";
+import { runSettingsBinding } from "@/test/contract/settings-binding";
+import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSettingsContract(target: {
@@ -10,14 +12,18 @@ export async function runSettingsContract(target: {
 }) {
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", body?: string, auth = authorization) =>
-    fetch(`${target.baseUrl}${path}`, {
-      method,
-      headers: {
-        ...(auth ? { Authorization: auth } : {}),
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    settingsFetch(
+      `${target.baseUrl}${path}`,
+      {
+        method,
+        headers: {
+          ...(auth ? { Authorization: auth } : {}),
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body }),
       },
-      ...(body === undefined ? {} : { body }),
-    });
+      target.mode === "reference",
+    );
   function check(condition: unknown, label: string): asserts condition {
     if (!condition) throw new Error(`FAIL settings-${label}`);
   }
@@ -50,22 +56,34 @@ export async function runSettingsContract(target: {
     .data;
   check(JSON.stringify(after) === JSON.stringify(snapshot), "invalid-no-write");
   await runSettingsNul(target);
-  const form = await fetch(`${target.baseUrl}/api/settings`, {
-    method: "PUT",
-    headers: { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" },
-    body: "AppFromEmail=sender%40example.invalid",
-  });
+  await runSettingsBinding(target);
+  const form = await settingsFetch(
+    `${target.baseUrl}/api/settings`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "AppFromEmail=sender%40example.invalid",
+    },
+    target.mode === "reference",
+  );
   check(
     form.status === 400 &&
       JSON.stringify(await form.json()) ===
         JSON.stringify({ message: "at least one `from` address is required" }),
     "form-no-tags",
   );
-  const xml = await fetch(`${target.baseUrl}/api/settings`, {
-    method: "PUT",
-    headers: { Authorization: authorization, "Content-Type": "application/xml" },
-    body: "<Settings><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
-  });
+  const xml = await settingsFetch(
+    `${target.baseUrl}/api/settings`,
+    {
+      method: "PUT",
+      headers: { Authorization: authorization, "Content-Type": "application/xml" },
+      body: "<Settings><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
+    },
+    target.mode === "reference",
+  );
   check(xml.status === 200, "xml-full-write");
   check(
     JSON.stringify(
@@ -257,11 +275,15 @@ export async function runSettingsContract(target: {
     JSON.stringify("Synthetic settings"),
   );
   check(key.status === 200 && JSON.stringify(await key.json()) === '{"data":true}', "key-write");
-  const xmlKey = await fetch(`${target.baseUrl}/api/settings/app.site_name`, {
-    method: "PUT",
-    headers: { Authorization: authorization, "Content-Type": "application/xml" },
-    body: '<value>"XML value"</value>',
-  });
+  const xmlKey = await settingsFetch(
+    `${target.baseUrl}/api/settings/app.site_name`,
+    {
+      method: "PUT",
+      headers: { Authorization: authorization, "Content-Type": "application/xml" },
+      body: '<value>"XML value"</value>',
+    },
+    target.mode === "reference",
+  );
   check(
     xmlKey.status === 200 && JSON.stringify(await xmlKey.json()) === '{"data":true}',
     "key-xml-write",
@@ -272,11 +294,18 @@ export async function runSettingsContract(target: {
     ] === "XML value",
     "key-xml-projection",
   );
-  const formKey = await fetch(`${target.baseUrl}/api/settings/app.site_name`, {
-    method: "PUT",
-    headers: { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" },
-    body: "value=form",
-  });
+  const formKey = await settingsFetch(
+    `${target.baseUrl}/api/settings/app.site_name`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "value=form",
+    },
+    target.mode === "reference",
+  );
   check(
     formKey.status === 400 && JSON.stringify(await formKey.json()) === '{"message":"Bad Request"}',
     "key-form-bad-request",

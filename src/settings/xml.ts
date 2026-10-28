@@ -2,6 +2,7 @@
 import { SaxesParser } from "saxes";
 import { int64, Members, parseStoredJson } from "@/settings/json";
 import { xmlNames } from "@/settings/xml-names";
+import { trimSpace } from "@/lists/store";
 
 type Node = { name: string; text: string; children: Node[] };
 function xmlRoot(body: Buffer): Node {
@@ -15,9 +16,6 @@ function xmlRoot(body: Buffer): Node {
   parser.on("xmldecl", (decl) => {
     if (decl.version !== "1.0" || (decl.encoding && decl.encoding.toLowerCase() !== "utf-8"))
       throw new Error("encoding");
-  });
-  parser.on("doctype", () => {
-    throw new Error("doctype");
   });
   parser.on("opentag", (tag) => {
     if (stack.length >= 64) throw new Error("depth");
@@ -52,21 +50,25 @@ export function xmlValue(body: Buffer): string {
 export function xmlSettings(body: Buffer, shapes: Record<string, unknown>): Members {
   const root = xmlRoot(body);
   function convert(node: Node, shape: any): unknown {
+    const scalar = trimSpace(node.text);
     if (shape === null) {
-      if (!/^[-+]?\d+$/.test(node.text.trim())) throw new Error("invalid integer");
-      const n = Number(node.text.trim());
+      if (!scalar) return 0;
+      if (!/^[-+]?\d+$/.test(scalar)) throw new Error("invalid integer");
+      const n = Number(scalar);
       if (!Number.isSafeInteger(n)) throw new Error("invalid integer");
       return n;
     }
     if (typeof shape === "string") return node.text;
     if (typeof shape === "number") {
-      if (!/^[-+]?\d+$/.test(node.text.trim())) throw new Error("invalid integer");
-      const value = int64(parseStoredJson(BigInt(node.text.trim()).toString()));
+      if (!scalar) return 0;
+      if (!/^[-+]?\d+$/.test(scalar)) throw new Error("invalid integer");
+      const value = int64(parseStoredJson(BigInt(scalar).toString()));
       if (value === null) throw new Error("invalid integer");
       return value;
     }
     if (typeof shape === "boolean") {
-      const value = node.text.trim();
+      const value = scalar;
+      if (!value) return false;
       if (["1", "t", "T", "TRUE", "true", "True"].includes(value)) return true;
       if (["0", "f", "F", "FALSE", "false", "False"].includes(value)) return false;
       throw new Error("invalid boolean");
@@ -92,7 +94,12 @@ export function xmlSettings(body: Buffer, shapes: Record<string, unknown>): Memb
           entries.push([key, values]);
         }
         values.push(convert(child, field[0]));
-      } else entries.push([key, convert(child, field)]);
+      } else if (
+        (key === "default_user_role_id" || key === "default_list_role_id") &&
+        !trimSpace(child.text)
+      )
+        entries.push([key, null]);
+      else entries.push([key, convert(child, field)]);
     }
     return new Members(entries);
   }

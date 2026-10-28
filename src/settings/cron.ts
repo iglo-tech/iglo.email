@@ -2,6 +2,21 @@
 // Copyright Rob Figueiredo; the complete MIT license is embedded with the assets.
 import { goDuration } from "@/settings/duration";
 
+// time.Duration.String formats the parsed duration, rather than its input spelling.
+function durationString(milliseconds: number): string {
+  const sign = milliseconds < 0 ? "-" : "";
+  const n = Math.abs(milliseconds);
+  const decimal = (value: number) => String(Number(value.toFixed(9)));
+  if (n === 0) return "0s";
+  if (n < 0.001) return `${sign}${decimal(n * 1e6)}ns`;
+  if (n < 1) return `${sign}${decimal(n * 1000)}µs`;
+  if (n < 1000) return `${sign}${decimal(n)}ms`;
+  const hours = Math.floor(n / 3600000);
+  const minutes = Math.floor((n % 3600000) / 60000);
+  const seconds = (n % 60000) / 1000;
+  return `${sign}${hours ? `${hours}h` : ""}${hours || minutes ? `${minutes}m` : ""}${decimal(seconds)}s`;
+}
+
 export function cronError(input: string): string | null {
   if (!input) return "empty spec string";
   let spec = input;
@@ -28,8 +43,8 @@ export function cronError(input: string): string | null {
       const n = goDuration(raw);
       if (!Number.isFinite(n) || n > 9223372036854.775)
         return `failed to parse duration ${spec}: time: invalid duration ${JSON.stringify(raw)}`;
-      if (n < 1000) return `delay must be at least one second but was ${raw}`;
-      if (n % 1000) return `delay must be a multiple of one second but was ${raw}`;
+      if (n < 1000) return `delay must be at least one second but was ${durationString(n)}`;
+      if (n % 1000) return `delay must be a multiple of one second but was ${durationString(n)}`;
       return null;
     }
     return `unrecognized descriptor: ${spec}`;

@@ -32,8 +32,11 @@ export function registerSettingsRoutes(
         else if (media === "application/json") body = orderedJson(bytes.toString("utf8"));
         else if (media === "application/xml" || media === "text/xml")
           body = xmlSettings(bytes, shapes);
-        else if (media === "application/x-www-form-urlencoded") body = {};
-        else if (media === "multipart/form-data") {
+        else if (media === "application/x-www-form-urlencoded") {
+          const form = bytes.toString("utf8");
+          if (/%(?![0-9a-fA-F]{2})/.test(form) || form.includes(";")) throw new Error("form");
+          body = {};
+        } else if (media === "multipart/form-data") {
           await new Request("http://fixture.invalid", {
             method: "POST",
             headers: { "content-type": contentType },

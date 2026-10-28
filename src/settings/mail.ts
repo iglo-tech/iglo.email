@@ -87,7 +87,7 @@ export function validFromAddress(input: string): boolean {
       }
       const literal = input.slice(pos + 1, end);
       const valid = literal.startsWith("IPv6:")
-        ? isIP(literal.slice(5)) === 6
+        ? isIP(literal.slice(5)) !== 0
         : isIP(literal) === 4;
       if (!valid) {
         pos = start;

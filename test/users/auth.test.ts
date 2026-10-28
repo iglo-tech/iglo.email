@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { startUserFixture } from "@/test/users/fixture";
 import { defaultAuthPolicy } from "@/users/auth";
+import { createConnection } from "node:net";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 type Session = { cookie: string; csrf: string; headers: string[] };
@@ -174,6 +175,219 @@ test("legacy and malformed session records retain their safe expiry behavior", a
   await call(f, "/fixture/clock", { method: "POST", body: defaultAuthPolicy.sessionDurationMs });
   expect((await call(f, "/api/profile", { session: legacy })).status).toBe(403);
 });
+
+test("fixture owner reopen preserves expired and legacy session boundaries through policy changes", async () => {
+  let f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const legacy = await login(f, f.admin.user, f.admin.password);
+  f.arrangeSession(legacy.cookie, "legacy");
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "2s",
+      })
+    ).status,
+  ).toBe(200);
+  const expired = await login(f, f.admin.user, f.admin.password);
+  await call(f, "/fixture/clock", { method: "POST", body: 2000 });
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  const persisted = f.persisted;
+  await f.close(true);
+  fixtures.pop();
+  f = await startUserFixture(defaultAuthPolicy, false, true, persisted);
+  fixtures.push(f);
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "8d",
+      })
+    ).status,
+  ).toBe(200);
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  const snapshot = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
+    .data;
+  snapshot["security.session_duration"] = "9d";
+  expect(
+    (await call(f, "/api/settings", { method: "PUT", session: admin, body: snapshot })).status,
+  ).toBe(200);
+  const fresh = await login(f, f.admin.user, f.admin.password);
+  for (const header of fresh.headers) expect(header).toContain("Max-Age=777600");
+  await call(f, "/fixture/clock", {
+    method: "POST",
+    body: defaultAuthPolicy.sessionDurationMs - 2001,
+  });
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(200);
+  await call(f, "/fixture/clock", { method: "POST", body: 1 });
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: fresh })).status).toBe(200);
+});
+
+test("settings body held across session expiry rejects after another principal extends policy", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "2s",
+      })
+    ).status,
+  ).toBe(200);
+  const short = await login(f, f.admin.user, f.admin.password);
+  const before = ((await (await call(f, "/api/settings", { session: admin })).json()) as any).data;
+  const candidate = {
+    ...before,
+    "app.site_name": "should not persist",
+    "bounce.sendgrid_key": "should not persist",
+  };
+  const payload = JSON.stringify(candidate);
+  const url = new URL(f.origin);
+  const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+  const output = new Promise<string>((resolve, reject) => {
+    let response = "";
+    socket.on("data", (chunk) => {
+      response += chunk.toString();
+    });
+    socket.on("end", () => resolve(response));
+    socket.on("error", reject);
+  });
+  await new Promise<void>((resolve, reject) => {
+    socket.once("connect", resolve);
+    socket.once("error", reject);
+  });
+  const split = Math.floor(payload.length / 2);
+  socket.write(
+    `PUT /api/settings HTTP/1.1\r\nHost: ${url.host}\r\nCookie: ${short.cookie}\r\nX-CSRF-Token: ${short.csrf}\r\nX-M12-Gated-Body: yes\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, split)}`,
+  );
+  await f.bodyEntered;
+  await call(f, "/fixture/clock", { method: "POST", body: 2000 });
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "8d",
+      })
+    ).status,
+  ).toBe(200);
+  const authorized = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
+    .data;
+  socket.end(payload.slice(split));
+  expect(await output).toContain(" 403 ");
+  expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
+  expect(((await (await call(f, "/api/settings", { session: admin })).json()) as any).data).toEqual(
+    authorized,
+  );
+});
+
+for (const [kind, revoked, full] of [
+  ["token", "role", true],
+  ["token", "user", false],
+  ["human", "role", false],
+  ["human", "user", true],
+] as const) {
+  test(`held settings ${full ? "full" : "key"} body denies ${kind} after ${revoked} revocation`, async () => {
+    const f = await startUserFixture(defaultAuthPolicy, true, true);
+    fixtures.push(f);
+    const admin = await login(f, f.admin.user, f.admin.password);
+    const name = `held-${kind}-${revoked}`;
+    const roleResponse = await call(f, "/api/roles/users", {
+      method: "POST",
+      session: admin,
+      body: { name, permissions: ["settings:manage"] },
+    });
+    expect(roleResponse.status).toBe(200);
+    const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+    const input = {
+      username: name,
+      email: `${name}@example.test`,
+      type: kind === "token" ? "api" : "user",
+      status: "enabled",
+      user_role_id: role,
+      ...(kind === "human" ? { password_login: true, password: "fixture-user-password" } : {}),
+    };
+    const created = await call(f, "/api/users", { method: "POST", session: admin, body: input });
+    expect(created.status).toBe(200);
+    const user = ((await created.json()) as { data: { id: number; password: string } }).data;
+    const human = kind === "human" ? await login(f, name, "fixture-user-password") : undefined;
+    const authorization = human
+      ? `Cookie: ${human.cookie}\r\nX-CSRF-Token: ${human.csrf}\r\n`
+      : `Authorization: token ${name}:${user.password}\r\n`;
+    expect(
+      (
+        await call(f, "/api/settings/bounce.sendgrid_key", {
+          method: "PUT",
+          session: admin,
+          body: "synthetic-secret",
+        })
+      ).status,
+    ).toBe(200);
+    const before = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
+      .data;
+    const payload = full
+      ? JSON.stringify({
+          ...before,
+          "app.site_name": "forbidden",
+          "security.session_duration": "10d",
+          "bounce.sendgrid_key": "different-secret",
+        })
+      : JSON.stringify("forbidden");
+    const url = new URL(f.origin);
+    const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+    const response = new Promise<string>((resolve, reject) => {
+      let output = "";
+      socket.on("data", (chunk) => {
+        output += chunk.toString();
+      });
+      socket.on("end", () => resolve(output));
+      socket.on("error", reject);
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+    const split = Math.floor(payload.length / 2);
+    socket.write(
+      `PUT ${full ? "/api/settings" : "/api/settings/app.site_name"} HTTP/1.1\r\nHost: ${url.host}\r\n${authorization}X-M12-Gated-Body: yes\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, split)}`,
+    );
+    await f.bodyEntered;
+    if (revoked === "role") {
+      expect(
+        (
+          await call(f, `/api/roles/users/${role}`, {
+            method: "PUT",
+            session: admin,
+            body: { name, permissions: [] },
+          })
+        ).status,
+      ).toBe(200);
+    } else {
+      expect(
+        (
+          await call(f, `/api/users/${user.id}`, {
+            method: "PUT",
+            session: admin,
+            body: { ...input, password: "", status: "disabled" },
+          })
+        ).status,
+      ).toBe(200);
+    }
+    socket.end(payload.slice(split));
+    expect(await response).toContain(" 403 ");
+    expect(
+      ((await (await call(f, "/api/settings", { session: admin })).json()) as any).data,
+    ).toEqual(before);
+  });
+}
 
 test("an in-flight login captures the duration in force at session creation", async () => {
   const f = await startUserFixture(defaultAuthPolicy, true, true);
