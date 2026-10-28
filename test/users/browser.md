@@ -35,3 +35,26 @@ Logout without CSRF returned 403 while the profile stayed 200; logout with the
 readable session-bound CSRF cookie returned 200 and the profile then returned 403. The encoded HTML injection probe reported zero injected SVG/script nodes,
 one next field and a nonempty nonce. This checks the login boundary, not the
 deferred dashboard, reset or TOTP screens.
+
+## Council correction verification
+
+The lead repeated the compiled browser flow on 2026-10-28 with fresh synthetic
+data at `http://127.0.0.1:35859`, using the same documented commands and
+`m13-browser` session. The initial open was changed to:
+
+```sh
+agent-browser --session m13-browser open 'http://127.0.0.1:35859/admin/login?next=%2Fapi%2F%2570rofile'
+```
+
+The GET form canonicalized the escaped destination to `/api/profile`. After
+the wrong-password and missing-nonce checks, valid login navigated there and
+returned the bootstrap identity with a null password. Navigation was verified
+with `agent-browser --session m13-browser wait --url '**/api/profile'`; the
+wrong-password response used `wait --text 'Invalid login or password'`.
+Missing-CSRF logout returned 403 with profile still 200; valid-CSRF logout
+returned 200 with profile then 403. The encoded HTML probe still produced zero
+injected SVG/script nodes, one next field and a nonce. The browser was closed,
+the disposable server stopped with Ctrl-C and its loopback health was confirmed
+unreachable. The HTTP common corpus separately submits the escaped destination
+directly on POST, asserts the exact Location header, and follows it with the
+issued session. No generated secret was recorded.

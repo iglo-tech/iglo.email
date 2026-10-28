@@ -23,8 +23,12 @@ function sanitizeNext(value: string): string {
     const url = new URL(text, "http://login.invalid/");
     const decoded = decodeURIComponent(url.pathname);
     if (decoded.includes("..") || unsafeCharacters(decoded)) return "/";
-    const path = posix.normalize(url.pathname);
-    return path.startsWith("/") && !path.startsWith("//") ? path : "/";
+    const path = posix.normalize(decoded);
+    // Clean the decoded path as upstream does, then preserve path delimiters
+    // while escaping segment contents for a single, safe Location interpretation.
+    return path.startsWith("/") && !path.startsWith("//")
+      ? path.split("/").map(encodeURIComponent).join("/")
+      : "/";
   } catch {
     return "/";
   }

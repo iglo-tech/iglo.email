@@ -104,7 +104,9 @@ in memory and authenticates the promoted Basic, token and invalid-token health
 cases against actual production. `contract:auth` uses the same provisioning and
 the stateful `test/contract/auth.ts` corpus; the explicit `reference:run`
 command above runs that corpus against pinned upstream with invocation-owned
-users and role fixtures. Its D26 and proposed additional differences are
+users and role fixtures. The final sole-admin probe restores the invocation-owned
+bootstrap user in a finally block; it is not for a persistent or real server.
+Its D26-D28 differences are
 documented in `test/contract/fixtures.md`. No generated secret is reported.
 
 The separate fixture profile retains its synthetic auth gate and representative
