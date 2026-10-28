@@ -24,8 +24,8 @@ export async function runExternalContract(target: {
     if (!condition) throw new Error(`FAIL ${label}`);
   }
   try {
-    // D38 requires opaque IDs including dot segments; send the original target
-    // over a raw socket so the client does not normalize it before Bun sees it.
+    // D39 preserves dot IDs through the canonical query selector. Bun normalizes
+    // the raw path before routing; it must not accidentally modify either row.
     const dotStatuses: number[] = [];
     for (const dot of [".", ".."]) {
       const created = await request("/api/subscribers", "POST", {
@@ -53,10 +53,17 @@ export async function runExternalContract(target: {
       );
       const wire = await response;
       dotStatuses.push(Number(/^HTTP\/1\.1 (\d+)/.exec(wire)?.[1]));
+      const query = `/api/subscribers/external?external_id=${encodeURIComponent(dot)}`;
+      const found = await request(query);
+      check(found.status === 200 && (await found.json()).data.id === dotData.id, "D39-dot-query");
+      const updated = await request(query, "PUT", { email: dotData.email, name: "dot" });
+      check(updated.status === 200, "D39-dot-query-update");
+      check((await request(query, "DELETE")).status === 200, "D39-dot-query-delete");
+      owned.splice(owned.indexOf(dotData.id), 1);
     }
     check(
-      dotStatuses.every((status) => status === 200),
-      "D38-dot-opaque-lookup",
+      dotStatuses.every((status) => status === 404),
+      "D39-dot-path-normalized",
     );
     const external = ` /é/${suffix} `;
     let response = await request("/api/subscribers", "POST", {

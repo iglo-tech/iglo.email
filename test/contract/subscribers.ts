@@ -147,7 +147,12 @@ export async function runSubscribersContract(target: {
       `{"email":"high-${suffix}@example.test","lists":[9223372036854775807]}`,
       "application/json",
     );
-    check(highID.response.status === 500, "subscriber-json-int64-id-reference-width");
+    check(
+      target.mode === "reference"
+        ? highID.response.status === 500
+        : highID.response.status === 200 && highID.value.data.lists.length === 0,
+      "D40-subscriber-json-int64-id-reference-width",
+    );
     for (const token of ["1.0", "1e0", "9223372036854775808", "-9223372036854775809"]) {
       check(
         (
