@@ -289,14 +289,14 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     // Upstream's database error may contain credential digests; never print its body.
     check(
       noRole.status === (target.mode === "reference" ? 500 : 400),
-      "proposed-invalid-role-safe-error",
+      "d27-invalid-role-safe-error",
     );
     const invalidRoleMessage = ((await noRole.json()) as { message: string }).message;
     check(
       target.mode === "reference"
         ? /\b[a-f0-9]{64}\b/.test(invalidRoleMessage)
         : !/\b[a-f0-9]{64}\b/.test(invalidRoleMessage),
-      "proposed-invalid-role-no-digest-leak",
+      "d27-invalid-role-no-digest-leak",
     );
     const fetched = await user(await request(target, `/api/users/${human.id}`, { auth: basic }));
     check(
@@ -529,7 +529,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     });
     check(
       conversionResponse.status === (target.mode === "reference" ? 200 : 400),
-      "proposed-api-to-human-password-required",
+      "d27-api-to-human-password-required",
     );
     const convertedHuman = await user(
       await request(target, `/api/users/${human.id}`, {
@@ -546,7 +546,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     );
     check(
       convertedHuman.password_login === (target.mode === "reference"),
-      "proposed-human-to-api-clears-password",
+      "d27-human-to-api-clears-password",
     );
     check(
       (await request(target, "/api/health", { auth: header({ user: name, token: password }) }))

@@ -54,21 +54,21 @@ return 403 with an embedded `code=400, message=...` error string. A disabled
 API credential is rejected on the next request. These observations are
 reference evidence only; they are not a claim of compiled-production coverage.
 
-Two additional reference observations need lead review: converting an API
+D27 accepts two additional reference observations: converting an API
 user to a password-login human without supplying a password succeeds and keeps
 the API-token digest as that user's stored credential; converting a human to an
 API user with `password_login=true` retains the human password hash, although
 the old human password is not accepted as an API token. The shared corpus marks
-the proposed production behavior explicitly: require a new password for the
+the approved D27 production behavior explicitly: require a new password for the
 first conversion and clear the credential for the second. This prevents one
 credential type from being persisted as another, satisfies the task's Argon2id
 and SHA-256 storage requirements, and does not invent a token-rotation API.
 
 A create request for an API user with an invalid role returned 500 upstream and
 its database error contained a 64-character SHA-256 credential digest. The
-corpus checks this without printing the error or digest. The proposed normal
+corpus checks this without printing the error or digest. The D27 normal
 result is 400 with a safe invalid-role message and no digest. This narrow error
-change requires lead review. Duplicate usernames separately retain upstream's
+change is recorded in D27. Duplicate usernames separately retain upstream's
 500 error shape without exposing a credential.
 
 The reference run also provisions and removes one invocation-owned empty list
