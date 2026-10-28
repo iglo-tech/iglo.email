@@ -405,6 +405,46 @@ test.each([
   ["hidden heading", public404Page.replace("<h2>", "<h2 hidden>")],
   ["hidden heading ancestor", public404Page.replace('class="wrap"', 'class="wrap" hidden')],
   ["styled hidden heading", public404Page.replace("<h2>", '<h2 style="display:none">')],
+  [
+    "entity newline executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="java&#10;script:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "entity initial executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="&#106;avascript:globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "entity colon executable URL",
+    public404Page.replace(
+      "</footer>",
+      '<a href="javascript&colon;globalThis.contractInjected=true">unsafe</a></footer>',
+    ),
+  ],
+  [
+    "closed disclosure heading",
+    public404Page.replace(
+      "<h2>404 - Not found</h2>",
+      "<details><summary>Closed</summary><h2>404 - Not found</h2></details>",
+    ),
+  ],
+  [
+    "body stylesheet",
+    public404Page.replace(
+      "</body>",
+      '<link rel="stylesheet" href="https://example.invalid/hide.css"></body>',
+    ),
+  ],
+  [
+    "foreign document base",
+    public404Page.replace("</head>", '<base href="https://example.invalid/"></head>'),
+  ],
+  ["closed popover ancestor", public404Page.replace('class="wrap"', 'class="wrap" popover')],
 ])("public HTML contract rejects %s", async (_name, body) => {
   const target = server(
     () =>
