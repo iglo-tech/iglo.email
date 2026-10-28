@@ -139,6 +139,51 @@ describe("owned production lifecycle", () => {
 });
 
 describe("difference metadata and strict transport", () => {
+  test("declared response headers reject missing and incorrect Allow values", async () => {
+    for (const allow of [undefined, "GET", "OPTIONS, GET"]) {
+      const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch() {
+          return new Response(null, {
+            status: 204,
+            headers: allow ? { Allow: allow } : {},
+          });
+        },
+      });
+      try {
+        const report = await runContract(
+          {
+            mode: "normal",
+            target: "production",
+            profile: "core",
+            baseUrl: `http://127.0.0.1:${server.port}`,
+          },
+          {
+            cases: [
+              {
+                id: "synthetic-response-header",
+                group: "core",
+                production: {
+                  path: "/",
+                  expect: {
+                    status: 204,
+                    contentType: null,
+                    headers: { allow: "OPTIONS, GET" },
+                    body: { kind: "wire", value: "" },
+                  },
+                },
+              },
+            ],
+          },
+        );
+        expect(report.passed).toBe(allow === "OPTIONS, GET");
+      } finally {
+        await server.stop(true);
+      }
+    }
+  });
+
   test("rejects unknown, orphaned, missing and duplicate markers before requests", async () => {
     let requests = 0;
     const server = Bun.serve({

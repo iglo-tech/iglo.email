@@ -23,6 +23,34 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
+test.each(["OPTIONS", "POST", "HEAD"])(
+  "embedded assets handle %s with the declared methods",
+  async (method) => {
+    await withProduction(executable, new AbortController().signal, async (origin) => {
+      for (const path of ["/public/static/style.css", "/admin/static/oat.min.css"]) {
+        const response = await fetch(origin + path, { method });
+        if (method === "OPTIONS") {
+          expect(response.status).toBe(204);
+          expect(response.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
+          expect(await response.text()).toBe("");
+        } else if (method === "POST") {
+          expect(response.status).toBe(405);
+          expect(response.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
+        } else {
+          const get = await fetch(origin + path);
+          const body = await get.arrayBuffer();
+          expect(response.status).toBe(200);
+          expect(response.headers.get("content-type")).toBe(get.headers.get("content-type"));
+          expect(response.headers.get("cache-control")).toBe(get.headers.get("cache-control"));
+          expect(response.headers.get("content-length")).toBe(String(body.byteLength));
+          expect(await response.text()).toBe("");
+        }
+      }
+    });
+  },
+  30_000,
+);
+
 test("compiled production serves the public message page and asset boundaries", async () => {
   await withProduction(executable, new AbortController().signal, async (origin) => {
     for (const [method, path] of [
