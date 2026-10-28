@@ -85,6 +85,38 @@ export async function runListsContract(target: {
       ["top-string", '"x"'],
     ] as const)
       check((await raw(body, "application/json")).response.status === 400, `json-${label}`);
+    const repeatedTags = await raw(
+      `{"name":"repeat-${suffix}","tags":["first","second"],"TAGS":[null,"other"]}`,
+      "application/json",
+    );
+    check(
+      repeatedTags.response.status === 200 &&
+        JSON.stringify(repeatedTags.value.data?.tags) === JSON.stringify(["first", "other"]),
+      "json-reused-slice-null",
+    );
+    const clearedTags = await raw(
+      `{"name":"cleared-${suffix}","tags":["first"],"TAGS":null,"tags":[null]}`,
+      "application/json",
+    );
+    check(
+      clearedTags.response.status === 200 && JSON.stringify(clearedTags.value.data?.tags) === "[]",
+      "json-null-slice-reset",
+    );
+    check(
+      (await raw(`{"name":"bad-${suffix}","subscriber_statuses":{"x":"bad"}}`, "application/json"))
+        .response.status === 400,
+      "json-known-map-type",
+    );
+    const namespaced = await raw(
+      `<a:List xmlns:a="urn:test"><a:Name>ns-${suffix}</a:Name><a:Tags>007</a:Tags></a:List>`,
+      "application/xml",
+    );
+    check(
+      namespaced.response.status === 200 &&
+        namespaced.value.data?.name === `ns-${suffix}` &&
+        namespaced.value.data.tags[0] === "007",
+      "xml-local-names",
+    );
     const xml = await raw(
       `<Anything><name>ignored</name><Name>xml-${suffix}</Name><Tags> One Two </Tags><Tags>002</Tags><Tags><Tag>ignored</Tag></Tags><Description> 02 &amp; &#x41; <![CDATA[x<y]]></Description></Anything>`,
       "application/xml",
@@ -146,6 +178,25 @@ export async function runListsContract(target: {
       "application/xml",
     );
     check(external.response.status === 400, "D35-xml-external-entity");
+    const oversized = await raw(
+      `<List><Name>big-${suffix}</Name><Ignored>${"x".repeat(65536)}</Ignored></List>`,
+      "application/xml",
+    );
+    check(
+      oversized.response.status === (target.mode === "reference" ? 200 : 413),
+      "D35-xml-body-limit",
+    );
+    check(
+      (await raw(`<List><Name>bad &unknown;</Name></List>`, "application/xml")).response.status ===
+        400,
+      "xml-unknown-entity",
+    );
+    const deepestSelfClosing = `<List><Name>deep-self-${suffix}</Name>${"<x>".repeat(63)}<x/>${"</x>".repeat(63)}</List>`;
+    const deepSelf = await raw(deepestSelfClosing, "application/xml");
+    check(
+      deepSelf.response.status === (target.mode === "reference" ? 200 : 400),
+      "D35-xml-depth-self-closing",
+    );
     const longTag = "x".repeat(101),
       limitTag = "é".repeat(100);
     const longCreate = await raw(
