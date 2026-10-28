@@ -10,7 +10,7 @@ Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54e
 
 Owner clarification on 2026-10-28: the chief of staff manages a continuously progressing agent fleet until the whole applicable project work plan is complete. The former four-hour/task/session stop is removed from the runbook and work plan. Each merge immediately starts the next eligible task; a blocked item does not stop other eligible work. Async delegate/CI turns hand off automatically and are not project completion. Preserve model, isolation, serial-work, review, lock and host limits; technically unavoidable waits remain incomplete work with recovery, not a claim that the goal is done.
 
-M1.2 (settings/defaults/validation and real authenticated configuration) is active at **ci**, in a fresh continuous run started 2026-10-28T20:34:55.959528+00:00. No active lock or open PR existed when acquired; all M1.6 delegates are terminal and PR #13 is merged. M1.2's M1.1/M0.5/M1.3 dependencies are merged and it unblocks M2.1 on the critical path; SMTP cannot start before settings. One worker only, no duplicate. D44 defines the bootstrap/read-only boundary, validated per-key updates, in-process supported policy activation and explicit 501 SMTP-test staging; other behavior remains pinned by default. [Brief](briefs/M1.2.md).
+M1.2 (settings/defaults/validation and real authenticated configuration) is active at **council**, round 1, in a fresh continuous run started 2026-10-28T20:34:55.959528+00:00. No active lock or open PR existed when acquired; all M1.6 delegates are terminal and PR #13 is merged. M1.2's M1.1/M0.5/M1.3 dependencies are merged and it unblocks M2.1 on the critical path; SMTP cannot start before settings. One worker only, no duplicate. D44 defines the bootstrap/read-only boundary, validated per-key updates, in-process supported policy activation and explicit 501 SMTP-test staging; other behavior remains pinned by default. [Brief](briefs/M1.2.md).
 
 The previous run's M1.6-only stop is historical and superseded by this owner instruction. No elapsed-time cutoff applies to this continuous run. Keep advancing through implementation, Linux CI, independent two-Sol council and merge, then immediately start the next eligible task. Record every delegate ID and durable transition here before yielding.
 
@@ -59,7 +59,21 @@ The finite acceptance fixer completed without active run, pending question/appro
 
 Reported final local acceptance passed: full check 171 tests/2,004 assertions, focused 110/1,343, JSX/UI 11 and compiled UI verification, all compiled/pinned/restart/notices and reference smoke. The lead verified runtime/build inputs equal measured code 44d89c3f804fe62664d972cbabbbd8ecca5b5be8 and actual final executable SHA-256 d2f513c7052285eb227ae8077ba82864e3d7a0e3d50ea6ea4da764023c471341. The report preserves historical drafts and fresh serial ext4 before/final plus separate settings/session costs; no timing/scaling/exclusivity guarantee. These reports do not replace independent council acceptance.
 
-A single handoff inspection confirms OPEN/ready exact c30caf2, four Linux checks in progress, none failed. Neutral full-scope round-1 council instructions are prepared at docs/briefs/M1.2-council-r1.md, not dispatched yet. Watch these pending checks and end turn; on green verify exact head and dispatch two fresh independent Sol xhigh reviewers in separate worktrees. No new link, worker or polling. Continuous fleet management remains active: after merge immediately start the next eligible task.
+Linux CI is green on exact ready head c30caf2a8b7385bba1db2838a173beaf9aa3c34d: both check and reference-linux passed for push and PR events (four successful results). OPEN, ready, MERGEABLE/CLEAN, no prior review comments. Council round 1 is now dispatched to two fresh independent GPT-6.1 Sol xhigh reviewers, each with a separate isolated worktree, review role and settings in target.options. Both returned running, no pending question/approval or child work. Each audits the entire change and runs acceptance under the neutral brief; no expected verdict or scope split.
+
+[M1.2 council round 1 — Sol A](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r1-a-c30caf2).
+- Task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r1-a-c30caf2.
+- Thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r1-a-c30caf2.
+- Run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-council-r1-a-c30caf2:ordinal:1.
+- Idempotent request: iglo-email-M1.2-council-r1-a-c30caf2.
+
+[M1.2 council round 1 — Sol B](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r1-b-c30caf2).
+- Task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r1-b-c30caf2.
+- Thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-council-r1-b-c30caf2.
+- Run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-council-r1-b-c30caf2:ordinal:1.
+- Idempotent request: iglo-email-M1.2-council-r1-b-c30caf2.
+
+The existing PR watch stays active for pending council reviews; no relink or re-watch. Both delegates instruct the lead to end the turn and resume on completion. Do not poll/wait or dispatch duplicates. All implementation delegates are terminal. After both verdicts, drive fixes/review/merge as required and immediately start the next eligible project task. The independent recovery automation remains unbound.
 
 ## Automation
 
