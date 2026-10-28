@@ -206,8 +206,38 @@ export async function runSettingsContract(target: {
   );
   check((await request("/api/settings", "PUT", integerCandidate)).status === 200, "int64-write");
   const integerProjection = await (await request("/api/settings")).text();
-  check(/"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(integerProjection), "int64-exact-projection");
-  check((await request("/api/settings", "PUT", JSON.stringify(updated))).status === 200, "int64-restore");
+  check(
+    /"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(integerProjection),
+    "int64-exact-projection",
+  );
+  if (target.restart) {
+    await target.restart();
+    check(
+      /"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(
+        await (await request("/api/settings")).text(),
+      ),
+      "int64-restart",
+    );
+  }
+  for (const integer of ["9223372036854775807", "-9223372036854775808"]) {
+    const body = integerCandidate.replace("9007199254740993", integer);
+    check(
+      (await request("/api/settings", "PUT", body)).status === 200,
+      `int64-boundary-${integer.startsWith("-") ? "min" : "max"}`,
+    );
+    check(
+      (await (await request("/api/settings")).text()).includes(`"app.batch_size":${integer}`),
+      `int64-boundary-projection-${integer.startsWith("-") ? "min" : "max"}`,
+    );
+  }
+  for (const integer of ["9223372036854775808", "1.0", "1e2"]) {
+    const body = integerCandidate.replace("9007199254740993", integer);
+    check((await request("/api/settings", "PUT", body)).status === 400, `int64-invalid-${integer}`);
+  }
+  check(
+    (await request("/api/settings", "PUT", JSON.stringify(updated))).status === 200,
+    "int64-restore",
+  );
   const key = await request(
     "/api/settings/app.site_name",
     "PUT",
