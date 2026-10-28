@@ -8,109 +8,9 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 awaits final-head CI on [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), head `bc5f4f30388c953dfeb42a378cae04d86408cbe0`. Both round-3 reviews are terminal with CHANGES on `f3839c4`; the lead fixed Opus's misplaced-content checker finding and Sol's missing MIT notice finding. The [three-round lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487) accepts the corrected task once CI passes; no final-head council approval is claimed. Final full check: 108 tests / 659 assertions; compiled UI verification, 21 production cases, 23 fixture cases + 2 probes and 43 upstream cases pass. Rebuilding reproduces 50 assets and the manifest. After green CI, squash-merge, archive the review, update status and release this run's lock; do not start M0.7.
+No active task. M0.6 merged as `986e3edc1cd3a5ce6477b1a7a693e8c8c4df9b63`; all final-head CI jobs passed and every council finding was fixed under the [three-round lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487). The PR watch stopped. [Review and recovery record](reviews/M0.6.md).
 
-| ID | Stage | Branch / PR | Council round | Notes |
-|---|---|---|---|---|
-| M0.6 | ci | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 3 | [Brief](briefs/M0.6.md). Head `bc5f4f30388c953dfeb42a378cae04d86408cbe0`; CI pending. Final check 108 tests / 659 assertions; UI, 21 production, 23 fixture + 2 probes and 43 upstream cases pass. Both round-3 findings fixed. [Lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487) permits merge after exact-head CI. |
-
-
-Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b
-- Terminal worker checkout: `/home/t3-code/.t3/worktrees/iglo.email/t3-4276c4dd`; preserve it for small lead fixes.
-- PR #6 remains linked. Both round-1 reviews and Sol round 2 are terminal with CHANGES; Opus round 2 is cancelled without a posted verdict. The dedicated lead watches the pending final CI/review after recovery.
-
-Lead correction: OPTIONS/405 now advertise implemented methods; D21 enables metadata-only HEAD for embedded assets. The shared corpus checks declared headers and includes a D18 static escape against actual compiled production; ui:verify executes it as well, and the public API policy names it. The admin-specific error page is recorded as pending M4.1. The expanded reference corpus passed before the application change.
-
-Additional Sol corrections: decode asset names once and POSIX-clean them inside the original embedded namespace/manifest. The three equivalent stylesheet spellings now run in the shared corpus; escaped font MIME/WOFF2 is verified by source-first reference observations and compiled HTTP tests. The HTML CLI uses browser URL parsing to catch control-character executable schemes and rejects hidden/styled elements and unexpected stylesheets. All ten added regressions failed first and now pass.
-
-Handoff notes for council: the existing D18 dot-segment normalization also changes the refusal body for encoded traversal targets that leave the static prefix (upstream plain-text 404 versus normal HTML 404); both refuse the asset. Inspect the exact coverage and metadata against the policy. Production admin/auth remains absent, with the shell verified only by a compiled fixture. The lead documentation-only commit `b8797e2` updates the current coverage table while retaining the historical reference-first baseline.
-
-Round-2 correction: the checker allows the known 404 tags/attributes/classes, requires the direct wrapper heading, checks links wherever they occur and rejects body assets/base/native hiding elements. Unsupported character-reference/control URL spellings are refused in the fixed URL contexts. The actual reference enables an RSS archive link, now explicitly represented only in its expectation. Public page rendering did not change. The source-first seven regression failures and passing real pages are recorded in the PR.
-
-### Council round 1
-
-[M0.6 council round 1 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e); claude-opus-5-5. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6456667733): static OPTIONS/Allow and missing D18 static-path marker. All eleven acceptance commands and browser verification passed. Lead also addresses HEAD policy and records admin error-page staging.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Aa6133c7c-ea6b-4cd0-a3c9-9ee1c1eace6e
-
-[M0.6 council round 1 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de); gpt-6.1-sol. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6456715918): escaped/canonical asset spellings, copied HEAD rejection, and HTML false passes for executable URLs and hidden headings. All required acceptance and browser checks passed; tracked files unchanged.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
-
-### Council round 2
-
-[M0.6 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f); claude-opus-5-5. Cancelled at 2026-10-28T05:00:34.756Z on superseded head `cbd877d9488063a46f2e8d9d2be348cde27570d5`; no posted verdict. The terminal read confirmed no active run or pending approval. Its hidden-heading/base-element concerns overlap the fixed-page correction in `f3839c4`; unposted findings are passed to fresh reviewers and are not counted as approval. Its browser/server processes were stopped before the cleanup stall. Historical recovery attempts are retained below.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
-
-[M0.6 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0); gpt-6.1-sol. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6457378141): character-reference URLs and fixed-page structure/visibility gaps. All prior asset/method/D18/D21 findings resolved; all required checks and browser verification passed.
-
-- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
-- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
-
-### Council round 3
-
-Both fresh members were dispatched together on original head `f3839c4bbf6485760540567285953a649ddd9222` with full task scope, both rounds' findings and objections, D18/D21 decisions, all eleven acceptance commands and browser requirements. No prior or unposted verdict counts as approval of this head.
-
-[M0.6 council round 3 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a); claude-opus-5-5, effort: medium. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461218568): misplaced images and visible text outside inspected selectors falsely pass the CLI. All prior findings resolved; all eleven commands and compiled-browser verification passed. Production rendering is correct. Lead fixes the bounded document-shape/text assertion before three-round resolution.
-
-- Task ID: node:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
-- Child thread ID: thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3A82004662-1595-4242-bc4f-493568dfaf6a
-
-[M0.6 council round 3 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c); gpt-6.1-sol, reasoningEffort: xhigh, serviceTier: default. [CHANGES](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461240280): missing fsegurai MIT notice for vendored editor-theme source. Earlier findings resolved; all eleven acceptance commands, historical regressions and standalone/browser checks passed. The lead includes the pinned 2025 notice as a tracked/embedded input and tests its actual HTTP delivery.
-
-- Task ID: node:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c
-- Child thread ID: thread:delegated-task:command%3Amcp%3Adad9247b-7e8c-4897-befc-ca46a3505a2d%3Adelegate-task%3Abffaf797-3c87-41dd-a411-55d3a5a3812c
-
-### Independent recovery, 2026-10-28 02:38 UTC
-
-- Recovery thread: `thread:project:33e4dcad-e50e-45f0-bf99-8f120653d39c:dbb1e78f-bfe2-4f97-89da-2b228f20480b`, GPT-6.1 Sol at xhigh. Synced `/home/t3-code/iglo.email` on `main`; inspected the lock, active PR and recorded delegate before attempting replacement. The previous heartbeat was 2026-10-28T00:46:04.757560+00:00, 112 minutes old when the lock was taken.
-- The reviewer completed its browser checks and stopped its shell, production and hostile-page servers before the stall. Its last command attempted cleanup of its historical export and temporary directories. Automatic approval review held that command for a statically unresolvable `rm` target. No approval was granted, no cleanup was repeated, and no rate limit was observed.
-- `task_cancel` returned `task_not_found`: the recorded task "does not belong to thread" of this independent run. Supplying the original parent thread identifier also failed. The original delegate still reported an active run with one pending approval. A child-thread interrupt, an approval bypass, and starting duplicate reviewers are not valid recovery paths. No new delegate was dispatched.
-- Removed the former lead's PR watch successfully. Record this infrastructure blocker, push the status, release the local lock and watch only for a pending PR review. The 45-minute automation remains unchanged and unbound. A later independent run can inspect durable PR/delegate state without waiting on either lead conversation.
-- Next transition: confirm the superseded-head review is terminal or cancel it through a supported cross-thread control, then dispatch both fresh round-3 council members together on the current green head with the prescribed models/settings and worktree isolation. Record their identifiers after dispatch. Do not count an unposted verdict or a superseded-head approval as approval of `f3839c4`.
-
-### Independent recovery recheck, 2026-10-28 03:22 UTC
-
-- Recovery thread: `thread:project:33e4dcad-e50e-45f0-bf99-8f120653d39c:f8f12b03-a6e7-4135-b0ae-5b945a65600a`, GPT-6.1 Sol at xhigh. Synced clean `main`, found the lock absent and acquired it for M0.6 recovery. PR #6 is still the only open task PR, unchanged and mergeable, with all eight CI jobs successful and no new council verdict.
-- The recorded Opus round-2 delegate still has its original active run, one pending approval and last update at 00:26:31 UTC. One supported `task_cancel` attempt returned `task_not_found` because the delegate does not belong to this independent thread. No cancellation, cleanup approval or replacement dispatch occurred. The cancellation capability remains scoped to the originating thread; do not rely on that thread responding to a recovery request.
-- Retain the documented orchestration blocker and the same next transition: a confirmed terminal result or supported cross-thread cancellation, then both fresh round-3 council reviews on the current green head. No product-code changes or new implementation task are justified while this review remains active. Push this recheck, release the lock and transfer only the pending-review PR watch to this run. The independent schedule remains enabled and unbound at its existing 45-minute interval.
-
-### Independent recovery recheck, 2026-10-28 04:08 UTC
-
-- Recovery thread: `thread:project:33e4dcad-e50e-45f0-bf99-8f120653d39c:ab189850-7daa-46eb-b468-5ff2ef9feb97`, GPT-6.1 Sol at xhigh. Synced clean `main` and acquired the absent lock at 04:07:59 UTC. PR #6 remains the only open task PR, unchanged at `f3839c4bbf6485760540567285953a649ddd9222`, mergeable, with all eight CI jobs successful and only the three previously recorded CHANGES verdicts.
-- A single read of the recorded Opus reviewer confirmed the same active run, one pending approval and no update since 00:26:31 UTC. One supported `task_cancel` attempt returned `task_not_found`: the delegate does not belong to this recovery thread. No cancellation is confirmed; no cleanup approval, interrupt, duplicate reviewer or new worker was started. The documented orchestration blocker and round-3 recovery transition remain in effect.
-- Removed the previous recovery run's PR watch. Push this record, release this run's lock and watch only the pending PR review. The existing schedule was reverified with `bindToCurrentThread: false`, returning `boundThreadId: null`, enabled and still at `2700000` ms. No schedule or implementation task was added.
-
-### Independent recovery recheck, 2026-10-28 04:53 UTC
-
-- Recovery run: [iglo.email chief of staff — Sol xhigh](t3-thread://v1/thread:project:33e4dcad-e50e-45f0-bf99-8f120653d39c:d8735e9f-2c3c-4d01-aa9e-3ef031735f4f), GPT-6.1 Sol at xhigh. Synced clean `main` and acquired the absent lock at 04:52:31 UTC. PR #6 is still the only open task PR, unchanged at `f3839c4bbf6485760540567285953a649ddd9222`, mergeable, with all eight CI jobs successful and no new council verdict.
-- One read of the recorded Opus round-2 reviewer confirmed its original active run, one pending approval and no update since 00:26:31 UTC. One supported `task_cancel` returned `task_not_found` because the delegate does not belong to this recovery thread. No cancellation is confirmed. The pending cleanup was not approved or repeated, and no duplicate reviewer or worker was started. The documented orchestration blocker and next transition remain: confirm termination or supported cancellation, then dispatch both fresh round-3 council members on the current head.
-- Removed the previous recovery run's PR watch. Push this record, release this run's lock and watch only the pending PR review. Reverified the existing schedule with `bindToCurrentThread: false`: returned `boundThreadId: null`, enabled, interval `2700000` ms, next run `2026-10-28T05:37:06.302Z`. No new schedule or implementation task was added.
-
-### Dedicated lead recovery, 2026-10-28 05:00 UTC
-
-- The cancelled-child wake returned to the originating dedicated lead. Terminal message/activity reads confirmed `status: cancelled`, `activeRunId: null`, `pendingRequestCount: 0` and no posted verdict. The lock was absent after the independent recovery run released it; this lead acquired it for the same M0.6 continuation.
-- The superseded reviewer reproduced hidden headings in native containers and a base-URL override; these overlap Sol round 2 and the existing fixed-layout allowlist correction. Its form-action probe did not demonstrate script execution, so no such execution is claimed. Its historical export reproduced all ten `f108f7e` regression failures. Its cleanup command was held by automatic approval review for a statically unresolvable removal target and was cancelled; do not repeat or bypass it. Owned browser/server processes had already stopped.
-- All eight CI jobs are still successful on `f3839c4`. Dispatch two fresh round-3 reviews on that head with both rounds' findings, source-first regression evidence and the precise D18/D21/staging decisions. The independent 45-minute automation remains enabled and unbound. After M0.6 merges, release this run's lock and leave M0.7 to a later run.
-
-### Round-3 correction, 2026-10-28
-
-- `67b7add` reproduces nine public CLI false passes before the correction: images in head/after html, sibling/bare/trailing text and a modified second footer link. The complete fixed-document check in `cd8e392` validates each element's parent, all document text, one logo slot, explicit per-target footer text and ordered link targets/labels. It rejects elements/non-whitespace text after body/document close. Production rendering is unchanged.
-- The pinned public templates define the two page shapes. The final real upstream corpus passes all 43 cases, compiled production passes 21, fixture passes 23 + 2 probes, and all eleven acceptance commands passed, including the reference lifecycle smoke and 107 tests / 653 assertions. Focused server/contract tests: 67 / 305 assertions. Logs are in the terminal worker checkout's ignored `upstream/lead-m06-round3/` directory.
-- Both round-3 verdicts are now terminal. The lead fixed both remaining findings and recorded the three-round resolution below. Await final-head CI; do not claim council approval of the corrected head. Release the lock after M0.6 merges.
-
-### Final notice correction and lead resolution, 2026-10-28
-
-- Sol round 3 reported the absent MIT notice for the vendored editor theme. The original source header names fsegurai, 2025. The lead fetched the complete original notice at `60a37d73bfa803721baadc4a61401de6ba3c116e` (not the later 2026 copyright edit); SHA-256 `05bdafe7f6449073a01c438eda00e030e4122bd30434e9944cbc088c7f5ea0e7`. Provenance is linked in `assets/README.md`.
-- Regression-first `fffdb7d` demonstrates the standalone HTTP notice returning 404. `bc5f4f3` tracks the notice and explicitly copies it into the embedded assets independently of npm license discovery and minified comments. The compiled HTTP test now passes. Final full check: 108 tests / 659 assertions; `ui:verify`, 21 production cases, 23 fixture + 2 probes and 43 real-reference cases passed again. Rebuilding reproduced all 50 assets and the manifest byte-for-byte.
-- [Three-round lead resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487): all findings are accepted and fixed, with pinned source, public regression tests and live upstream evidence as the tiebreaker. No final-head council approval is claimed. Merge exact `bc5f4f30388c953dfeb42a378cae04d86408cbe0` only after CI is green. Preserve D18/D21 differences and explicit admin/auth/domain/macOS limits. Then archive, update main, unwatch PR #6, release the lock and end this run under the four-hour rule.
+Next: **M0.7 — SQLite write-load spike**, with M0.4 already merged. This originating run exceeded four hours; it releases the lock after this status commit and starts no new worker. The next independent scheduled run writes the M0.7 brief and continues. Automation stays enabled and unbound.
 
 ## Automation
 
@@ -120,6 +20,7 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 | ID | PR | Merged | Notes |
 |---|---|---|---|
+| M0.6 | [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 2026-10-28, `986e3edc1cd3a5ce6477b1a7a693e8c8c4df9b63` | Escape-by-default TSX, typed page shells, public HTML 404 and 50 embedded browser assets/notices. All eight final-head CI jobs passed on `bc5f4f30388c953dfeb42a378cae04d86408cbe0`; all findings fixed under the [three-round resolution](https://github.com/iglo-tech/iglo.email/pull/6#issuecomment-6461366487), without claiming final-head council approval. Final check 108 tests / 659 assertions; 21 production, 23 fixture + 2 probes, 43 upstream cases. [Review record](reviews/M0.6.md). |
 | M0.5 | [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 2026-10-27, `11476506671e4f326d1f7100710de051a487a42a` | Shared contract corpus, scoped normalization and D17/D18; explicit production versus fixture staging (D20). [Opus](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6456090407) and [Sol](https://github.com/iglo-tech/iglo.email/pull/5#issuecomment-6456132407) approved exact head `095f8c0421abf70ac11808a236029f1213218864` in round 2; all eight CI jobs passed. 72 tests, 8 production cases, 23 fixture + 2 probe cases, 31 upstream cases. [Review record](reviews/M0.5.md). |
 | M0.4 | [#4](https://github.com/iglo-tech/iglo.email/pull/4) | 2026-10-27, `a988c62d8bbf854a98ad2e750773b76cce3f323f` | SQLite primitives, migrations/snapshots, named SQL and cooperative loop lifecycle. [Opus](https://github.com/iglo-tech/iglo.email/pull/4#issuecomment-6455376123) and [Sol](https://github.com/iglo-tech/iglo.email/pull/4#issuecomment-6455414436) approved exact head `47d3149e9af51ff2615fe836375090b3e7614f1d` in round 2; all eight CI jobs passed. Acceptance: 49 tests / 381 assertions, 28 upstream cases, eight smoke stages and corrected ext4 measurements. Production stays at version 0. [Review record](reviews/M0.4.md), [measurements](perf/M0.4-database.md). |
 | M0.3 | [#3](https://github.com/iglo-tech/iglo.email/pull/3) | 2026-10-27, `cb41fd6f29a07415541fcb95101ba84e64231ad6` | Shared HTTP/app/clock/i18n contracts. Both final CI runs passed all four job types. Three council rounds ended with matching URI findings; the lead fixed both and merged under the [three-round resolution](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6454296622), supplemented by the [reference readiness repair](https://github.com/iglo-tech/iglo.email/pull/3#issuecomment-6454452814). No final-head council approval is claimed. Final local checks: 27 tests / 237 assertions, 28 upstream cases and eight smoke stages. [Review record](reviews/M0.3.md). |
@@ -128,12 +29,12 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 
 ## Follow-ups
 
-- M0.6/public-page work must finish the explicitly deferred public HTML 404 fallback (including `POST /health`). Update the two route-backed D18 contract fixture expectations when that fallback changes; retain the exact-target discrimination and upstream assertions. It remains a temporary staging gap; API error bodies are complete for the current scope.
+- M0.6 completed the public HTML 404 (including `POST /health`) and updated both route-backed D18 fixture expectations without weakening raw-target discrimination. The reusable admin shell is fixture-only; production admin/auth remains later work, and the admin-specific error page is pending M4.1.
 - M1.3 must promote the D20 protected-read cases to actual production authentication; M1.5/domain owners promote helper cases. M0.5 now carries D17/D18. Native macOS binary preparation passes CI; full native macOS Docker lifecycle remains unverified.
 
 ## Blocked
 
-None. The M0.6 orchestration blocker cleared when the superseded Opus round-2 delegate became terminal. Council review remains required.
+None. The M0.6 orchestration blocker cleared on terminal cancellation, and the task is merged. Its recovery history is archived in the review record.
 
 ## For owner review
 
@@ -153,7 +54,7 @@ Owner correction on 2026-10-27: recurring automation must remain unbound to ever
 
 M0.6 plan clarification (2026-10-27): finish the public HTML 404 deferred by M0.3/M0.5 in the JSX/page-shell task. Verify the admin shell in a compiled fixture until M1/M4 provide protected screens. Copy only v1 browser assets/build dependencies; CAPTCHA and the visual builder stay later-only. The task row and [brief](briefs/M0.6.md) now make those boundaries and the contract/browser acceptance explicit.
 
-D21 (2026-10-28, implemented and awaiting review in PR #6): support HEAD for embedded assets so callers can inspect metadata without downloading resources; advertise HEAD together with GET/OPTIONS. Keep upstream 405 for unsupported methods with a matching Allow header. The decision/API-policy row and precise reference/normal contract markers are included in `eef7472`.
+[D21](design/09-decisions.md#d21-support-head-for-embedded-assets) (2026-10-28, merged in PR #6): support HEAD for embedded assets so callers can inspect metadata without downloading resources; advertise HEAD together with GET/OPTIONS. Keep upstream 405 for unsupported methods with a matching Allow header. The decision/API-policy row and precise reference/normal contract markers are merged; the [review record](reviews/M0.6.md) preserves the evidence.
 
 Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one whole-filesystem `find` to locate Echo source, contrary to `/home/t3-code/AGENTS.md`. It reported the scan finished quickly without a visible effect and was not repeated. The lead recorded the incident without repeating the scan. Worker and council instructions in the runbook now explicitly require named checkout/cache paths or pinned GitHub source inside the worktree, never a broader filesystem search when a dependency is absent.
 
