@@ -129,7 +129,13 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
     const members = entries(value);
     const result: Record<string, unknown> = previous ? cloneJson(previous) : {};
     if (Object.hasOwn(shape, "*")) {
-      for (const [key, entry] of members) result[key] = bind(entry, shape["*"]);
+      for (const [key, entry] of members)
+        Object.defineProperty(result, key, {
+          value: bind(entry, shape["*"]),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       return result;
     }
     for (const [key, fallback] of Object.entries(shape))
@@ -179,7 +185,7 @@ export function bindKey(current: Settings, key: string, value: unknown): Setting
   return out;
 }
 function preserve(item: Settings, old: Settings[]) {
-  const previous = old.find((v) => v.uuid === item.uuid);
+  const previous = old.findLast((v) => v.uuid === item.uuid);
   if (!item.uuid) item.uuid = crypto.randomUUID();
   if (!item.password && previous) item.password = previous.password;
   if (!item.password) delete item.password;
@@ -192,7 +198,8 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     const value = trimSpace(raw ?? "");
     if (!value) continue;
     if ([...value].length > 2000) return fail("`from` address cannot exceed 2000 characters");
-    const tpl = value.includes("{{") && value.includes("}}");
+    const opening = value.indexOf("{{");
+    const tpl = opening >= 0 && value.includes("}}", opening + 2);
     if (tpl && !addresses.length)
       return fail("default (first) `from` address cannot contain template expressions");
     if (!tpl) {
