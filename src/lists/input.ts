@@ -32,15 +32,7 @@ function jsonMembers(body: string): [string, unknown][] {
   if (typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("object required");
   const result: [string, unknown][] = [];
   const append = (member: string) => {
-    const parse = JSON.parse as unknown as (
-      text: string,
-      reviver: (key: string, value: unknown, context: { source?: string }) => unknown,
-    ) => unknown;
-    const value = parse(`{${member}}`, (_key, item, context) =>
-      typeof item === "number" && /^-?\d+$/.test(context.source ?? "")
-        ? BigInt(context.source!)
-        : item,
-    ) as Record<string, unknown>;
+    const value = JSON.parse(`{${member}}`) as Record<string, unknown>;
     result.push(...Object.entries(value));
   };
   let start = body.indexOf("{") + 1,
@@ -69,8 +61,6 @@ function jsonMembers(body: string): [string, unknown][] {
   }
   return result;
 }
-const goInteger = (value: unknown) =>
-  typeof value === "bigint" && value >= -9223372036854775808n && value <= 9223372036854775807n;
 function jsonInput(body: string): ListInput {
   const out = empty();
   let tagStorage: string[] = [];
@@ -99,36 +89,21 @@ function jsonInput(body: string): ListInput {
           return text;
         });
       }
-    } else if (normalizedKey === "subscriber_statuses") {
-      if (
-        value !== null &&
-        (typeof value !== "object" ||
-          Array.isArray(value) ||
-          Object.values(value).some((v) => v !== null && !goInteger(v)))
-      )
-        throw new Error("invalid map");
-    } else if (["uuid", "subscription_status"].includes(normalizedKey)) {
-      if (value !== null && typeof value !== "string") throw new Error("invalid string");
-    } else if (
-      ["created_at", "updated_at", "subscription_created_at", "subscription_updated_at"].includes(
-        normalizedKey,
-      )
-    ) {
-      if (
-        value !== null &&
-        (typeof value !== "string" ||
-          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
-          Number.isNaN(Date.parse(value)))
-      )
-        throw new Error("invalid time");
-    } else if (["id", "subscriber_count"].includes(normalizedKey)) {
-      if (value !== null && !goInteger(value)) throw new Error("invalid integer");
     }
+    // D36: response-only and unknown fields cannot assign metadata. Ignore
+    // their values rather than validating discarded read-model internals.
   }
   return out;
 }
 
 type XmlNode = Record<string, unknown>;
+const xmlCharacter = (n: number) =>
+  n === 9 ||
+  n === 10 ||
+  n === 13 ||
+  (n >= 32 && n <= 0xd7ff) ||
+  (n >= 0xe000 && n <= 0xfffd) ||
+  (n >= 0x10000 && n <= 0x10ffff);
 function xmlInput(body: string): ListInput {
   // Reject declarations before the parser can register or expand them. Skip
   // comments, CDATA and processing instructions, where this text is literal.
@@ -144,17 +119,7 @@ function xmlInput(body: string): ListInput {
     if (!/^#(?:[0-9]+|x[0-9a-fA-F]+)$/.test(ref)) throw new Error("entity");
     const n =
       ref[1] === "x" ? Number.parseInt(ref.slice(2), 16) : Number.parseInt(ref.slice(1), 10);
-    if (
-      !(
-        n === 9 ||
-        n === 10 ||
-        n === 13 ||
-        (n >= 32 && n <= 0xd7ff) ||
-        (n >= 0xe000 && n <= 0xfffd) ||
-        (n >= 0x10000 && n <= 0x10ffff)
-      )
-    )
-      throw new Error("character reference");
+    if (!xmlCharacter(n)) throw new Error("character reference");
   }
   const parser = new XMLParser({
     preserveOrder: true,
@@ -171,7 +136,18 @@ function xmlInput(body: string): ListInput {
       return true;
     },
   });
-  const xml = body.replace(/\r\n?/g, "\n");
+  // The dependency bounds its reference scan. Canonicalize validated numeric
+  // references so legal leading zeroes cannot turn decoded text into literals.
+  // Comments, CDATA and instructions remain literal and are never rewritten.
+  const xml = body
+    .replace(
+      /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|&#(?:[0-9]+|x[0-9a-fA-F]+);/g,
+      (part) =>
+        part.startsWith("&#")
+          ? `&#${part[2] === "x" ? Number.parseInt(part.slice(3, -1), 16) : Number.parseInt(part.slice(2, -1), 10)};`
+          : part,
+    )
+    .replace(/\r\n?/g, "\n");
   let nodes: XmlNode[];
   if (XMLValidator.validate(xml) === true) nodes = parser.parse(xml) as XmlNode[];
   else {
@@ -188,6 +164,14 @@ function xmlInput(body: string): ListInput {
   }
   const root = nodes.find((node) => Object.keys(node).some((key) => !key.startsWith("?")));
   if (!root) throw new Error("root");
+  const metadata = (root as Record<PropertyKey, unknown>)[
+    XMLParser.getMetaDataSymbol() as symbol
+  ] as { endIndex?: number } | undefined;
+  if (!metadata?.endIndex) throw new Error("root offset");
+  // Validate the consumed document, including ignored elements and CDATA. Like
+  // encoding/xml.Decode, leave bytes after the complete first root unconsumed.
+  for (const char of xml.slice(0, metadata.endIndex))
+    if (!xmlCharacter(char.codePointAt(0)!)) throw new Error("XML character");
   const children = Object.values(root)[0] as XmlNode[];
   const out = empty();
   const xmlFields: Record<string, StringField> = {
@@ -206,13 +190,6 @@ function xmlInput(body: string): ListInput {
     const field = Object.hasOwn(xmlFields, name) ? xmlFields[name] : undefined;
     if (field) out[field] = text;
     else if (name === "Tags") out.tags.push(text);
-    else if (name === "SubscriberCounts") throw new Error("invalid map");
-    else if (
-      ["ID", "SubscriberCount", "SubscriberID", "Total"].includes(name) &&
-      text.trim() &&
-      !/^[+-]?\d+$/.test(text.trim())
-    )
-      throw new Error("invalid integer");
   }
   return out;
 }

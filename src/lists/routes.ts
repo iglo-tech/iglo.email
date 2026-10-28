@@ -1,5 +1,5 @@
 // Adapted from listmonk cmd/lists.go and cmd/handlers.go at 6fcd95f.
-import type { ListFilter, ListStore } from "@/lists/store";
+import { trimSpace, type ListFilter, type ListStore } from "@/lists/store";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -41,12 +41,7 @@ function numeric(value: string): number {
   return Number.isSafeInteger(n) ? n : 0;
 }
 function first(params: URLSearchParams, key: string): string {
-  return (
-    params
-      .getAll(key)
-      .map((value) => value.trim())
-      .find(Boolean) ?? ""
-  );
+  return params.getAll(key).map(trimSpace).find(Boolean) ?? "";
 }
 function filter(
   context: RequestContext,
@@ -58,16 +53,11 @@ function filter(
   // collection makeQuery trims fields and discards empty tag values.
   const field = (key: string) => (deletion ? (params.get(key) ?? "") : first(params, key));
   const result = {
-    query: field("query").trim(),
+    query: trimSpace(field("query")),
     type: field("type"),
     optin: field("optin"),
     status: field("status") || defaultStatus,
-    tags: deletion
-      ? params.getAll("tag")
-      : params
-          .getAll("tag")
-          .map((v) => v.trim())
-          .filter(Boolean),
+    tags: deletion ? params.getAll("tag") : params.getAll("tag").map(trimSpace).filter(Boolean),
   };
   validate(context, result.type, result.optin, result.status);
   return result;
