@@ -8,11 +8,11 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M0.6 corrections are pushed to [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), new head `cbd877d9488063a46f2e8d9d2be348cde27570d5`; fresh CI is pending. Both round-1 reviewers returned CHANGES on original head `b8797e2`, and all findings are addressed: static method/Allow and HEAD policy (D21), marked production static traversal (D18), equivalent asset spellings and stricter HTML assertions. Wait for new-head CI, then start both fresh council reviewers for round 2. The existing PR watch remains active; no delegate is running and no replacement review has started.
+M0.6 is in council round 2 on [PR #6](https://github.com/iglo-tech/iglo.email/pull/6), exact head `cbd877d9488063a46f2e8d9d2be348cde27570d5`. All eight CI jobs passed on that current head (the wake named an older head, which was checked before proceeding). Both fresh independent reviewers are running with all prior findings, the lead D21 decision and regression-first evidence. Their completions wake this lead. The existing PR watch remains active; do not poll or start duplicate reviewers.
 
 | ID | Stage | Branch / PR | Council round | Notes |
 |---|---|---|---|---|
-| M0.6 | ci | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 1 | [Brief](briefs/M0.6.md). Head `cbd877d9488063a46f2e8d9d2be348cde27570d5`; new CI pending. Lead validation: 91 tests / 621 assertions, 21 production cases, 23 fixture + 2 probes (prior method correction), 43 upstream cases, ui:verify and focused regressions passed. Four failures preceded `82f0784`/`eef7472`; ten more preceded `f108f7e`/`cbd877d`. Both round-1 reviews are terminal; round 2 awaits CI. |
+| M0.6 | council | task/M0.6-jsx-assets; [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 2 | [Brief](briefs/M0.6.md). Head `cbd877d9488063a46f2e8d9d2be348cde27570d5`; all eight CI jobs passed. Lead validation: 91 tests / 621 assertions, 21 production cases, 23 fixture + 2 probes (prior method correction), 43 upstream cases, ui:verify and focused regressions passed. Four failures preceded `82f0784`/`eef7472`; ten more preceded `f108f7e`/`cbd877d`. Both round-1 reviews are terminal with CHANGES; fresh round-2 Opus/Sol verdicts are pending on the corrected head. |
 
 
 Completed worker: [M0.6: JSX runtime, page shell and asset build — Terra max](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ad81d45af-5150-461a-a3bf-c4ec2f759c0b); codex / gpt-6.1-terra, reasoningEffort: max.
@@ -39,6 +39,18 @@ Handoff notes for council: the existing D18 dot-segment normalization also chang
 
 - Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
 - Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ae6b34983-56ae-4a69-b11c-10cb255493de
+
+### Council round 2
+
+[M0.6 council round 2 — Opus medium](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f); claude-opus-5-5. Verdict pending on `cbd877d9488063a46f2e8d9d2be348cde27570d5`.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Af8540c88-b7c8-458d-8657-d7146788715f
+
+[M0.6 council round 2 — Sol xhigh](t3-thread://v1/thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0); gpt-6.1-sol. Verdict pending on `cbd877d9488063a46f2e8d9d2be348cde27570d5`.
+
+- Task ID: node:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
+- Child thread ID: thread:delegated-task:command%3Amcp%3Aeff75b40-7854-49a4-9910-63ce004c3467%3Adelegate-task%3Ac9907848-05e4-40e2-8d11-df5dc2b1f5c0
 
 ## Automation
 
