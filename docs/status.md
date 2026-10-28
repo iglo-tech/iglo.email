@@ -8,11 +8,18 @@ Updated: 2026-10-28
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol at xhigh reasoning.
 
-M1.5 (lists CRUD, tags, opt-in types and counts) is active at **brief**. M1.4 is merged and all prior delegates are terminal with its watch stopped. The same run retains its 2026-10-28T13:08:24.215458+00:00 start, so it remains within four hours. M1.5 is the next eligible critical-path task under the work plan. The named task branch prefix is absent; no duplicate worker is started. [Brief](briefs/M1.5.md).
+M1.5 (lists CRUD, tags, opt-in types and counts) is active at **fix**. M1.4 is merged and all prior delegates are terminal with its watch stopped. The same run retains its 2026-10-28T13:08:24.215458+00:00 start, so it remains within four hours. M1.5 is the next eligible critical-path task under the work plan. The initial worker has completed; no duplicate worker is started. [Brief](briefs/M1.5.md).
 
 D33 extends the literal name-query policy to list reads/query-deletes, permits explicit description clearing while retaining omission/null behavior, and authorizes narrow subscriber count/campaign-reference owners to preserve table ownership before their full APIs exist. The worker must verify exact paired reference cases first and distinguish fixture-only positive counts/references from actual compiled list acceptance. No settings, subscriber/campaign CRUD, admin screens, sending or loops are included.
 
-Expected branch task/M1.5-lists; worker dispatch pending. Exactly one isolated GPT-6.1 Terra max worker is authorized, with no helper. Council round 0, no PR or watch yet; both future council reviewers are fresh Sol xhigh, with no Anthropic use. Record task/thread identifiers after dispatch and end the turn without waiting or polling. Automation remains unchanged and unbound.
+The worker completed with no pending child work and opened [PR #12](https://github.com/iglo-tech/iglo.email/pull/12), branch task/M1.5-lists, head 3279f5cf4ff8daf7d0624865bd0beb687de0a83c. It reports the full local check, compiled/pinned corpora, live count/reference fixtures, list restart, contract promotion and sequential ext4 FULL/WAL measurements passed. No council review has started. At 14:56 UTC CI had two passing macOS jobs and six queued/running; no failure. The PR is linked, with no watch yet while the lead completes the small policy/coverage disposition.
+
+D34 accepts native signed-64-bit list ID behavior instead of PostgreSQL int32 storage failures, while explicitly disclosing the existing safe-integer role-child JSON input limit. The lead will mark the policy accepted in the PR, label the existing paired cases D34 and add an HTTP rejection/no-write control for individual grants above the safe range. No runtime/SQL change or new delegate is needed. Council round 0; later reviewers are two fresh independent Sol xhigh agents, no Anthropic. [Review record](reviews/M1.5.md). Automation remains unchanged and unbound; original run start 13:08:24 UTC.
+
+- Worker task ID: `node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.5-worker-20261028T1431`.
+- Worker thread ID: `thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.5-worker-20261028T1431`.
+- Initial worker run ID: `run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.5-worker-20261028T1431:ordinal:1`.
+- Idempotent dispatch request: `iglo-email-M1.5-worker-20261028T1431`.
 
 ## Automation
 
@@ -35,6 +42,8 @@ The existing 45-minute chief-of-staff schedule is enabled and independent. Task 
 | M0.1 | [#1](https://github.com/iglo-tech/iglo.email/pull/1) | 2026-10-27, `7dffb86e0cc1169815c5a7611516c05018ee9b30` | Project skeleton. Both CI checks passed; [Opus](https://github.com/iglo-tech/iglo.email/pull/1#issuecomment-6450451709) and [Sol](https://github.com/iglo-tech/iglo.email/pull/1#issuecomment-6450467491) approved exact head `56935d1148bdce063dd4e9d5a0e752bd126c3468` in round 1. Both independently passed acceptance (8 tests, 97 assertions). Live reference comparison follows in M0.2/M0.5. |
 
 ## Follow-ups
+
+- D34/shared identity boundary: role-child numeric JSON input rejects list IDs above 9007199254740991 before mutation. Native list path/query/projection supports signed 64-bit; individual high-ID role grants do not yet. A small later shared-contract task must preserve exact numeric JSON input and role/user projections with public regression tests; do not infer full API-wide width support or round a rejected ID.
 
 - User/session owner: expired sessions are denied but their SQLite rows are not pruned yet. Opus identified this as a low-impact retention follow-up, not a round-1 blocker. Add clock-governed bounded cleanup in future auth maintenance; do not claim current storage retention is bounded.
 - [D25](design/09-decisions.md#d25-v1-storage-identities-and-references): future domain writers allocate persistent integer IDs automatically and never insert old/lower IDs explicitly. M1.3 verifies session identity through deletion/replacement and concurrency tests, and M1.6/M3.2 preserve subscriber high-water assumptions. Bounce/retention owners implement the documented nullable references without treating SQL cascades as complete domain workflows.
@@ -92,6 +101,8 @@ Host-rule incident (2026-10-27): the Opus round 2 reviewer self-reported one who
 [D32](design/09-decisions.md#d32-require-explicit-user-role-permission-replacement) (2026-10-28, after M1.4 round 1): reject omitted/null user-role permission replacement with a safe 400, preserve explicit [] and restore the distinct compatible null/omitted list-child clearing contract. Both council findings are accepted; no owner approval is needed.
 
 [D33](design/09-decisions.md#d33-list-name-search-explicit-description-clearing-and-owner-boundaries) (2026-10-28, before M1.5): normalized literal list-name reads/query-deletes use one predicate; explicit empty description can clear old text; live count and campaign snapshot foundations stay in their table owners. Reference-first evidence and staged-to-production promotion are required in the [brief](briefs/M1.5.md).
+
+[D34](design/09-decisions.md#d34-native-list-identity-width-and-the-separate-role-input-limit) (2026-10-28, M1.5 worker handoff): accept signed-64-bit native list identities and ordinary missing/deletion behavior instead of PostgreSQL int32 storage-error 500. Document exact JSON projection and the distinct safely rejected high-ID role-input limitation; no unimplemented granular grant support is claimed.
 
 ## Pause history
 
