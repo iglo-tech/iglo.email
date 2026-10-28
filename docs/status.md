@@ -94,6 +94,13 @@ The lead fixed the three small groups directly and pushed 1513a765b8692aa9f443c2
 
 PR #14 is draft while the remaining trusted-URL, Go From-address and enabled cron parser defects are repaired. [The finite round-1 parser fix brief](briefs/M1.2-fix-r1-parsers.md) combines both full verdicts and authorizes only the owned corrections, public reference-first regressions, final acceptance and fresh serial ext4 evidence. These are default-contract bug fixes, not a new deliberate difference. One fresh Terra max fixer will continue the existing branch in an isolated worktree; all prior delegates are terminal. No duplicate writer, helper, new PR, owner approval or premature merge. Keep the existing PR watch; do not relink/re-watch/poll. After corrected-head CI and fresh independent council, merge and immediately advance the next eligible task.
 
+The sole round-1 parser fixer is dispatched: [M1.2: Fix trusted URL, mail and cron compatibility](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix-r1-parsers-1513a76), GPT-6.1 Terra at max reasoning, implementation role, isolated worktree and settings in target.options, from PR #14 head 1513a76. It returned running with no pending question/approval or child work. Both council reviewers and all prior implementation delegates are terminal; no duplicate writer/helper exists. Its next instruction is to end this turn and resume on completion. No polling, waiting, re-watch or premature council. Corrected-head acceptance/CI and fresh two-Sol round 2 follow, then merge and immediate next-task handoff.
+
+- Fixer task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix-r1-parsers-1513a76.
+- Fixer thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M1.2-fix-r1-parsers-1513a76.
+- Fixer run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M1.2-fix-r1-parsers-1513a76:ordinal:1.
+- Idempotent request: iglo-email-M1.2-fix-r1-parsers-1513a76.
+
 ## Automation
 
 The existing 45-minute chief-of-staff schedule remains enabled and independent: scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280. Reverified after M1.6 merge with enabled true, boundThreadId null and interval 2700000 ms. Never bind it to any thread. Independent scheduled runs recover from the lock, durable status/PR state and archived delegate identifiers without depending on a former conversation being responsive.
