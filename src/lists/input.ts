@@ -1,11 +1,11 @@
 // Adapted from listmonk cmd/lists.go, models/lists.go and Echo v5.4.0 binding at 6fcd95f.
-import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { SaxesParser } from "saxes";
 import type { ListInput } from "@/lists/store";
 import { normalizeTags } from "@/lists/store";
 import type { RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import { strHasLen } from "@/server/validation";
-import { readBody } from "@/users/input";
+import { readBodyBytes } from "@/users/input";
 
 const empty = (): ListInput => ({
   name: "",
@@ -96,111 +96,81 @@ function jsonInput(body: string): ListInput {
   return out;
 }
 
-type XmlNode = Record<string, unknown>;
-const xmlCharacter = (n: number) =>
-  n === 9 ||
-  n === 10 ||
-  n === 13 ||
-  (n >= 32 && n <= 0xd7ff) ||
-  (n >= 0xe000 && n <= 0xfffd) ||
-  (n >= 0x10000 && n <= 0x10ffff);
-function xmlInput(body: string): ListInput {
-  // Reject declarations before the parser can register or expand them. Skip
-  // comments, CDATA and processing instructions, where this text is literal.
-  const markup = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!/g;
-  const safe = body.replace(markup, (part) => {
-    if (part === "<!") throw new Error("declaration");
-    return "";
-  });
-  // FXP validates syntax but leaves unknown references intact; Go rejects them.
-  for (const match of safe.matchAll(/&([^;\s<&]*);/g)) {
-    const ref = match[1]!;
-    if (/^(amp|lt|gt|apos|quot)$/.test(ref)) continue;
-    if (!/^#(?:[0-9]+|x[0-9a-fA-F]+)$/.test(ref)) throw new Error("entity");
-    const n =
-      ref[1] === "x" ? Number.parseInt(ref.slice(2), 16) : Number.parseInt(ref.slice(1), 10);
-    if (!xmlCharacter(n)) throw new Error("character reference");
-  }
-  const parser = new XMLParser({
-    preserveOrder: true,
-    captureMetaData: true,
-    removeNSPrefix: true,
-    parseTagValue: false,
-    trimValues: false,
-    ignorePiTags: true,
-    htmlEntities: true,
-    maxNestedTags: 64,
-    jPath: false,
-    updateTag: (_name, path) => {
-      if (typeof path === "string" || path.getDepth() > 64) throw new Error("depth");
-      return true;
-    },
-  });
-  // The dependency bounds its reference scan. Canonicalize validated numeric
-  // references so legal leading zeroes cannot turn decoded text into literals.
-  // Comments, CDATA and instructions remain literal and are never rewritten.
-  const xml = body
-    .replace(
-      /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|&#(?:[0-9]+|x[0-9a-fA-F]+);/g,
-      (part) =>
-        part.startsWith("&#")
-          ? `&#${part[2] === "x" ? Number.parseInt(part.slice(3, -1), 16) : Number.parseInt(part.slice(2, -1), 10)};`
-          : part,
-    )
-    .replace(/\r\n?/g, "\n");
-  let nodes: XmlNode[];
-  if (XMLValidator.validate(xml) === true) nodes = parser.parse(xml) as XmlNode[];
-  else {
-    // encoding/xml.Decode consumes only the first document. Use FXP's node
-    // offsets, then validate that complete first element before mapping it.
-    const parsed = parser.parse(xml) as XmlNode[];
-    const first = parsed[0];
-    const metadata = (first as Record<PropertyKey, unknown> | undefined)?.[
-      XMLParser.getMetaDataSymbol() as symbol
-    ] as { endIndex?: number } | undefined;
-    if (!metadata?.endIndex || XMLValidator.validate(xml.slice(0, metadata.endIndex)) !== true)
-      throw new Error("invalid xml");
-    nodes = [first!];
-  }
-  const root = nodes.find((node) => Object.keys(node).some((key) => !key.startsWith("?")));
-  if (!root) throw new Error("root");
-  const metadata = (root as Record<PropertyKey, unknown>)[
-    XMLParser.getMetaDataSymbol() as symbol
-  ] as { endIndex?: number } | undefined;
-  if (!metadata?.endIndex) throw new Error("root offset");
-  // Validate the consumed document, including ignored elements and CDATA. Like
-  // encoding/xml.Decode, leave bytes after the complete first root unconsumed.
-  for (const char of xml.slice(0, metadata.endIndex))
-    if (!xmlCharacter(char.codePointAt(0)!)) throw new Error("XML character");
-  const children = Object.values(root)[0] as XmlNode[];
+// Go's XML decoder consumes one root. Feeding at ASCII > byte boundaries
+// permits fatal UTF-8 decoding without touching bytes after the closing root.
+function xmlInput(body: Buffer): ListInput {
   const out = empty();
-  const xmlFields: Record<string, StringField> = {
+  const fields: Record<string, StringField> = {
     Name: "name",
     Type: "type",
     Optin: "optin",
     Status: "status",
     Description: "description",
   };
-  for (const node of children) {
-    const [name, value] = Object.entries(node)[0] ?? [];
-    if (!name || !Array.isArray(value)) continue;
-    const text = (value as XmlNode[])
-      .map((child) => (typeof child["#text"] === "string" ? child["#text"] : ""))
-      .join("");
-    const field = Object.hasOwn(xmlFields, name) ? xmlFields[name] : undefined;
-    if (field) out[field] = text;
-    else if (name === "Tags") out.tags.push(text);
+  let depth = 0,
+    complete = false,
+    field: StringField | "tags" | undefined,
+    text = "";
+  const parser = new SaxesParser({ xmlns: false, defaultXMLVersion: "1.0", forceXMLVersion: true });
+  parser.on("error", (error) => {
+    throw error;
+  });
+  parser.on("xmldecl", (declaration) => {
+    if (
+      declaration.version !== "1.0" ||
+      (declaration.encoding && declaration.encoding.toLowerCase() !== "utf-8")
+    )
+      throw new Error("unsupported XML declaration");
+  });
+  // Saxes neither registers DTD entities nor resolves external declarations.
+  parser.on("doctype", () => {
+    throw new Error("declaration");
+  });
+  parser.on("opentagstart", () => {
+    if (depth >= 64) throw new Error("depth");
+  });
+  parser.on("opentag", (tag) => {
+    depth++;
+    if (depth === 2) {
+      const local = tag.name.slice(tag.name.indexOf(":") + 1);
+      field = local === "Tags" ? "tags" : Object.hasOwn(fields, local) ? fields[local] : undefined;
+      text = "";
+    }
+  });
+  const characters = (value: string) => {
+    if (depth === 2 && field) text += value;
+  };
+  parser.on("text", characters);
+  parser.on("cdata", characters);
+  parser.on("closetag", () => {
+    if (depth === 2 && field) {
+      if (field === "tags") out.tags.push(text);
+      else out[field] = text;
+      field = undefined;
+    }
+    if (--depth === 0) complete = true;
+  });
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== 62) continue;
+    parser.write(decoder.decode(body.subarray(start, i + 1), { stream: true }));
+    if (complete) return out;
+    start = i + 1;
   }
+  parser.write(decoder.decode(body.subarray(start)));
+  parser.close();
+  if (!complete) throw new Error("root required");
   return out;
 }
 
 export async function listInput(context: RequestContext): Promise<ListInput> {
-  const body = await readBody(context.request);
+  const body = await readBodyBytes(context.request);
   const type = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
   let value: ListInput;
   try {
-    if (!body) value = empty();
-    else if (type === "application/json") value = jsonInput(body);
+    if (!body.length) value = empty();
+    else if (type === "application/json") value = jsonInput(body.toString("utf8"));
     else if (type === "application/xml" || type === "text/xml") value = xmlInput(body);
     else throw new HttpError(415);
   } catch (error) {

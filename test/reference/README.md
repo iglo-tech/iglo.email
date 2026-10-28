@@ -194,13 +194,28 @@ safe 400/no-write tag boundary. Compiled `contract:lists` also checks the XML
 parser's complete locked notice closure through HTTP after starting from a
 detached working directory. These cases do not assert complete XML parity.
 
-The parser and its locked declared closure are MIT: `fast-xml-parser@5.11.2`,
-`@nodable/entities@3.1.0`, `fast-xml-builder@1.3.1`, `is-unsafe@2.0.2`,
-`path-expression-matcher@1.6.2`, `strnum@2.5.1`, `xml-naming@0.3.0` and
-`anynum@1.0.1`. The `@nodable/entities` package omits its license file from its
-published directory; the exact v3.1.0 upstream source license at commit
-`b89ecb0d419969e2989b74c5304bc9b66931727e` is bundled as the pinned override.
-The installed FXP source uses `DocTypeReader` and an entity decoder; declarations
-are rejected before either registration or expansion, and the element callback
-checks depth even on self-closing nodes. Parser exceptions are converted to safe
-HTTP errors. No external entity resolver is registered.
+D36 covers ignored response-only metadata independently of writable fields,
+including create/update outcomes, generated identity/timestamp/count protection
+and GET snapshots. D37 corrects malformed consumed XML (ignored attributes,
+comments and text included), invalid consumed UTF-8 and first-root suffix
+handling. The paired corpus uses bytes for invalid-encoding cases and preserves
+JSON replacement decoding. Complete first roots followed by incomplete or
+invalid-byte unused suffixes remain accepted; body-size limits still apply to
+the whole request.
+
+The current parser is saxes 6.0.0 (ISC) with xmlchars 2.2.0 (MIT), replacing
+fast-xml-parser and its closure. The published saxes directory omits LICENSE;
+the complete source notice from registry gitHead
+211fa0ebec9b628affc09219199639887174bfc3 is bundled as a version-specific
+override. A committed Bun patch corrects only its TypeScript 6 declaration
+constraints and optional-property types; runtime JavaScript is unchanged and
+strict checking remains enabled. Frozen installs reproduce that patch.
+
+The event parser supplies XML syntax, character/reference and comment handling.
+The application counts depth on opening events, rejects DTD (no registration,
+expansion or external resolver), maps direct writable text/CDATA and stops after
+the first complete root. Fatal UTF-8 decoding at ASCII > boundaries ensures
+invalid consumed bytes fail without decoding the unused suffix. Compiled
+HTTP restart acceptance serves both current notices and confirms the old
+parser/override notice paths are absent. No complete XML/Go parity or parser
+maintenance guarantee is claimed; the dependency is pinned and upstream archived.

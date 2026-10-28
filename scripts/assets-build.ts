@@ -33,7 +33,7 @@ if (!built.success) throw new AggregateError(built.logs, "Browser asset build fa
 
 // Bundle project, vendored-source and npm licenses alongside executable assets.
 const packages = [
-  "fast-xml-parser",
+  "saxes",
   "liquidjs",
   "nodemailer",
   "qrcode",
@@ -74,8 +74,8 @@ for (let index = 0; index < packages.length; index++) {
     .filter((file) => /^(licen[sc]e|copying)([.-].*)?$/i.test(file))
     .sort();
   const license =
-    name === "@nodable/entities" && info.version === "3.1.0"
-      ? join(root, "assets/licenses/nodable-entities-3.1.0-MIT.txt")
+    name === "saxes" && info.version === "6.0.0"
+      ? join(root, "assets/licenses/saxes-6.0.0-ISC.txt")
       : name === "alpinejs"
         ? join(root, "assets/licenses/alpinejs-LICENSE.txt")
         : files[0]
