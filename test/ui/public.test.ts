@@ -80,8 +80,8 @@ test("compiled production serves the public message page and asset boundaries", 
       expect(asset.contentType).toBe("text/css; charset=utf-8");
       expect(asset.body.length).toBeGreaterThan(100);
       expect(await rawRequest(origin, path, { method: "HEAD" })).toEqual({
-        status: 405,
-        contentType: null,
+        status: 200,
+        contentType: "text/css; charset=utf-8",
         body: "",
       });
       expect(await rawRequest(origin, path, { method: "POST" })).toEqual({

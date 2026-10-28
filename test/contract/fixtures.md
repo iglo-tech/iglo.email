@@ -40,8 +40,8 @@ ported upstream domain endpoint.
 
 | Mode and profile         | Executed coverage                                                                                                                                                   | Pending production coverage                                                                               |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `reference/upstream/all` | 37 pinned-upstream cases, including protected reads, public HTML 404 and asset boundaries, validation and D17/D18                                                   | Auth and list endpoints remain unported; public HTML 404 and embedded assets now have production coverage |
-| `normal/production/core` | 15 compiled-production cases: `/health`, public HTML 404 and embedded assets, API fallback/method boundaries, malformed URI handling and unregistered `/api/health` | Protected health/auth (M1.3), domain validation/list CRUD (M1.5)                                          |
+| `reference/upstream/all` | 40 pinned-upstream cases, including protected reads, public HTML 404 and asset boundaries, validation and D17/D18/D21                                               | Auth and list endpoints remain unported; public HTML 404 and embedded assets now have production coverage |
+| `normal/production/core` | 18 compiled-production cases: `/health`, public HTML 404 and embedded assets, API fallback/method boundaries, malformed URI handling and unregistered `/api/health` | Protected health/auth (M1.3), domain validation/list CRUD (M1.5)                                          |
 | `normal/fixture/staged`  | Synthetic auth gate and representative shared helpers, including the normal sides of D17/D18                                                                        | The corresponding production endpoints and auth                                                           |
 | `normal/fixture/probe`   | Synthetic generated ID, relationship and timestamp normalization                                                                                                    | These probes do not represent upstream ports                                                              |
 
@@ -53,3 +53,15 @@ message, local assets and attribution with explicit per-target branding. The
 route-backed D18 helper cases assert the actual HTML fallback after Bun removes
 encoded dot segments; the upstream invalid-ID expectations remain intact. The
 reference-first baseline above records M0.5 history, not current coverage.
+
+M0.6's method correction records D21: static HEAD resolves the same embedded
+resource as GET and returns its metadata without bytes; OPTIONS and rejected
+methods advertise `OPTIONS, GET, HEAD`. The source-first reference still asserts
+upstream's HEAD 405 and `OPTIONS, GET` advertisement. Declared response headers
+are compared explicitly, including missing or incorrect Allow values.
+
+The core D18 `public-static-dot-escape` case sends the exact encoded target to
+both upstream and actual compiled production. It requires upstream's plain-text
+404 and the normal public HTML 404, and a synthetic plain-text normal response
+fails. Unmatched non-static admin paths still use the public error page until
+M4.1 supplies the authenticated admin error view.

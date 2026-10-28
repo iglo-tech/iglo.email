@@ -34,7 +34,7 @@ for (const path of ["/public/static/style.css", "/admin/static/oat.min.css"]) {
   assert.equal(get.contentType, "text/css; charset=utf-8");
   assert.ok(get.body.length > 100);
   for (const method of ["HEAD", "POST", "OPTIONS"]) {
-    const response = await fetch(origin + path, {
+    const response: Response = await fetch(origin + path, {
       method,
       headers: { Connection: "close" },
       signal: AbortSignal.timeout(5000),

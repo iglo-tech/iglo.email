@@ -12,7 +12,9 @@ used. Run `bun run reference:run -- bun test/ui/reference-observe.ts` to repeat.
 - `HEAD /missing-public-page`: 404, the same HTML content type, empty body.
 - `GET /public/static/style.css` and `GET /admin/static/oat.min.css`: 200,
   `text/css; charset=utf-8`, nonempty CSS. HEAD on each returns 405, no content
-  type and an empty body. POST returns 405 and the JSON method error.
+  type and an empty body. POST returns 405 and the JSON method error. A later
+  reference-first correction also verifies OPTIONS 204 and `Allow: OPTIONS, GET`
+  on HEAD, POST and OPTIONS for both public and admin stylesheets.
 - Missing static files, the public static directory, and
   `/public/static/%2e%2e/style.css` return plain-text 404, not a directory
   listing or successful page. For the same traversal request, compiled
@@ -56,3 +58,21 @@ production page showed the expected title, visible 404 heading, local CSS and
 logo, and attribution. No console or page errors were reported. External footer
 links were not followed; no authentication, domain screens or later admin
 workflows were claimed. The browser session and both owned processes were closed.
+
+## Method and traversal correction (2026-10-28)
+
+The lead reproduced all reference observations before changing the application.
+The normal static server now supports HEAD with the GET resource's status, MIME,
+cache metadata and content length, without a body (D21). OPTIONS returns 204;
+OPTIONS and rejected methods advertise `OPTIONS, GET, HEAD`. The corpus preserves
+upstream's original HEAD/Allow behavior as the explicit reference expectation.
+Four public-boundary regressions failed on the earlier implementation: OPTIONS,
+missing POST Allow, rejected HEAD and an ignored expected response header. They
+pass after the method handler and header comparisons are corrected.
+
+The encoded traversal case is now D18-marked in the common core corpus and is
+executed against the real compiled production executable by both contract:normal
+and ui:verify. It requires the normal HTML refusal and rejects a synthetic server
+returning the reference plain-text body. The API-policy row names this static
+path. Admin-specific error views remain pending M4.1; no production admin route
+or authentication is claimed.

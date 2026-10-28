@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { command, spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
 import { withProduction } from "@/test/contract/owned";
+import { runContract } from "@/test/contract/runner";
 import { rawRequest } from "@/test/server/raw-request";
 
 const root = resolve(import.meta.dir, "../..");
@@ -89,7 +90,7 @@ try {
     if (path.endsWith("oat.min.css")) assert.ok(response.body.includes("@layer"));
     if (path.endsWith("/style.css")) assert.ok(response.body.includes("@font-face"));
     if (path.endsWith("logo.svg")) assert.ok(response.body.includes("<svg"));
-    assert.deepEqual(await get(path, "HEAD"), { status: 405, contentType: null, body: "" });
+    assert.deepEqual(await get(path, "HEAD"), { status: 200, contentType, body: "" });
     if (path.endsWith(".js")) {
       for (const match of response.body.matchAll(
         /(?:from|import)\s*["'](\.\.?\/[^"']+\.js)["']/g,
@@ -115,6 +116,17 @@ try {
   assert.equal((await get("/admin/static/no-such-file.css")).status, 404);
   assert.equal((await get("/admin/static/%2e%2e/style.css")).status, 404);
   await withProduction(productionPath, controller.signal, async (production) => {
+    const traversal = await runContract(
+      {
+        mode: "normal",
+        target: "production",
+        profile: "core",
+        baseUrl: production,
+        signal: controller.signal,
+      },
+      { caseId: "public-static-dot-escape" },
+    );
+    assert.ok(traversal.passed, traversal.lines.join("\n"));
     const response = await rawRequest(production, "/missing-public-page", {
       signal: controller.signal,
     });
