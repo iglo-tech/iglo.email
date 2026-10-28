@@ -75,9 +75,14 @@ export function registerSubscriberRoutes(
       throw new HttpError(400, "Invalid email.");
     return result;
   };
-  const validate = (input: SubscriberInput, creating: boolean, patch: boolean) => {
+  const validate = (
+    c: RequestContext,
+    input: SubscriberInput,
+    creating: boolean,
+    patch: boolean,
+  ) => {
     if (input.status && !["enabled", "disabled", "blocklisted"].includes(input.status))
-      throw new HttpError(400, "Invalid status");
+      throw new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", "status"));
     if (creating && Buffer.byteLength(input.email ?? "") > 1000)
       throw new HttpError(400, "Invalid email.");
     if (creating || !patch || input.email !== undefined) input.email = email(input.email ?? "");
@@ -133,7 +138,7 @@ export function registerSubscriberRoutes(
     };
   const create: Handler = async (c) => {
     const input = await subscriberInput(c);
-    validate(input, true, false);
+    validate(c, input, true, false);
     auth.revalidate(c, "subscribers:manage");
     return store.transaction(() => {
       listPermission(c, input.lists);
@@ -153,7 +158,7 @@ export function registerSubscriberRoutes(
       allowed(c, [id], "manage");
       required(c, id, external);
       const input = await subscriberInput(c);
-      validate(input, false, patch);
+      validate(c, input, false, patch);
       auth.revalidate(c, "subscribers:manage");
       return store.transaction(() => {
         if (externalKey !== undefined && store.external(externalKey)?.id !== id)

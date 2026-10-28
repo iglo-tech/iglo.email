@@ -206,6 +206,17 @@ export async function runSubscriberScope(target: {
         (await request(alias, "PUT", { email: visible.email }, { Cookie: session })).status === 403,
         "D39-session-external-csrf",
       );
+      check(
+        (
+          await request(
+            alias,
+            "PUT",
+            { email: visible.email },
+            { ...sessionHeaders, Origin: "https://invalid.example.test" },
+          )
+        ).status === 403,
+        "D39-session-external-origin",
+      );
       if (target.restart) {
         await target.restart();
         check(
@@ -251,6 +262,44 @@ export async function runSubscriberScope(target: {
         (await request(`/api/subscribers/${visible.id}`, "GET", undefined, limited)).status === 403,
         "subscriber-scope-token-revoked",
       );
+      row = (await (await request(`/api/subscribers/${visible.id}`)).json()).data;
+      // Restore the live grant, begin a query-alias write, and revoke it while
+      // the request body is incomplete.
+      check(
+        (
+          await request(`/api/roles/lists/${listRole.id}`, "PUT", {
+            name: `subscriber-list-role-${suffix}`,
+            lists: [{ id: accessible.id, permissions: ["list:get", "list:manage"] }],
+          })
+        ).status === 200,
+        "D39-query-grant-restore",
+      );
+      const aliasBody = JSON.stringify({ email: visible.email, name: "late alias" });
+      const aliasSocket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+      const aliasResult = new Promise<string>((resolve, reject) => {
+        let output = "";
+        aliasSocket.on("data", (part) => (output += part.toString()));
+        aliasSocket.on("end", () => resolve(output));
+        aliasSocket.on("error", reject);
+      });
+      await new Promise<void>((resolve, reject) => {
+        aliasSocket.once("error", reject);
+        aliasSocket.once("connect", resolve);
+      });
+      aliasSocket.write(
+        `PUT /api/subscribers/external?external_id=${encodeURIComponent(`visible-${suffix}`)} HTTP/1.1\r\nHost: ${url.host}\r\nCookie: ${session}\r\nX-CSRF-Token: ${csrf}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(aliasBody)}\r\nConnection: close\r\n\r\n${aliasBody.slice(0, 4)}`,
+      );
+      check(
+        (
+          await request(`/api/roles/lists/${listRole.id}`, "PUT", {
+            name: `subscriber-list-role-${suffix}`,
+            lists: [],
+          })
+        ).status === 200,
+        "D39-query-revoke",
+      );
+      aliasSocket.end(aliasBody.slice(4));
+      check((await aliasResult).includes(" 403 "), "D39-query-inflight-revoked");
       row = (await (await request(`/api/subscribers/${visible.id}`)).json()).data;
       check(row.name === "scope update", "subscriber-scope-revocation-no-write");
       check(

@@ -84,13 +84,12 @@ export async function runSubscribersContract(target: {
       (await request("/api/subscribers", "POST", { email: "invalid" })).status === 400,
       "subscriber-invalid-email",
     );
+    const badStatus = await request("/api/subscribers", "POST", {
+      email: `bad-${suffix}@example.test`,
+      status: "unknown",
+    });
     check(
-      (
-        await request("/api/subscribers", "POST", {
-          email: `bad-${suffix}@example.test`,
-          status: "unknown",
-        })
-      ).status === 400,
+      badStatus.status === 400 && (await badStatus.json()).message === "Invalid fields: status",
       "subscriber-invalid-status",
     );
     async function raw(body: string | ArrayBuffer, contentType: string) {
