@@ -420,3 +420,56 @@ test("manual resend rechecks the blocklist for unlinked recipients", async () =>
   expect(f.sink.messages).toHaveLength(0);
   expect(f.count()).toBe(1);
 });
+
+test("an idempotent retry replays after its template or subscriber changes", async () => {
+  const f = await open();
+  const retry = async (body: object, mutate: () => Promise<number>) => {
+    const first = await f.tx(body);
+    expect(first.status).toBe(200);
+    expect(first.body.data.sends[0].status).toBe("sent");
+    const sent = f.sink.messages.length;
+    const rows = f.count();
+    expect(await mutate()).toBe(200);
+    const again = await f.tx(body);
+    expect(again.status).toBe(200);
+    expect(again.body.data.sends).toEqual(first.body.data.sends);
+    expect(f.sink.messages).toHaveLength(sent);
+    expect(f.count()).toBe(rows);
+    // A different request under the same key is still a conflict.
+    expect((await f.tx({ ...body, data: { other: true } })).status).toBe(409);
+  };
+  const deleted = await f.template("<p>x</p>");
+  await retry(
+    { subscriber_email: "a@example.test", template_id: deleted, idempotency_key: "t-del" },
+    async () => (await f.json(`/api/templates/${deleted}`, "DELETE")).status,
+  );
+  const template = await f.template("<p>x</p>");
+  const person = await f.subscriber("gone@example.test");
+  await retry(
+    { subscriber_id: person, template_id: template, idempotency_key: "s-del" },
+    async () => (await f.json(`/api/subscribers/${person}`, "DELETE")).status,
+  );
+  const changed = await f.template("<p>x</p>", "Hello");
+  await retry(
+    {
+      subscriber_email: "c@example.test",
+      template_id: changed,
+      data: { nl: "\n" },
+      idempotency_key: "t-change",
+    },
+    async () =>
+      (
+        await f.json(`/api/templates/${changed}`, "PUT", {
+          name: "fixture",
+          type: "tx",
+          subject: "{{ data.nl }}",
+          body: "<p>x</p>",
+        })
+      ).status,
+  );
+  // The changed template really no longer renders for a new request.
+  expect(
+    (await f.tx({ subscriber_email: "c@example.test", template_id: changed, data: { nl: "\n" } }))
+      .status,
+  ).toBe(400);
+});

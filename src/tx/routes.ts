@@ -100,16 +100,7 @@ export function registerTxRoutes(
       const kind = m.kind || "transactional";
       if (kind !== "transactional" && kind !== "marketing") throw invalid("kind");
       if (kind === "marketing" ? m.listId <= 0n : m.listId !== 0n) throw invalid("list_id");
-      if (kind === "marketing" && !deps.lists.subscriberMetadata(m.listId))
-        throw new HttpError(400, t.Ts("globals.messages.notFound", "name", `list ${m.listId}`));
       if (Buffer.byteLength(m.idempotencyKey) > MAX_KEY_BYTES) throw invalid("idempotency_key");
-
-      const template = m.templateId > 0n ? deps.templates.get(m.templateId) : null;
-      if (!template || template.type !== "tx")
-        throw new HttpError(
-          400,
-          t.Ts("globals.messages.notFound", "name", `template ${m.templateId}`),
-        );
 
       // Headers: textproto.MIMEHeader.Add per set, then the messenger uses each first value.
       const headers: Record<string, string> = Object.create(null);
@@ -137,6 +128,29 @@ export function registerTxRoutes(
           Buffer.byteLength(a.contentType) > 2048
         )
           throw invalid("file");
+
+      // A retry replays its first result before consulting mutable lists, templates or
+      // subscribers, so later edits to them cannot turn it into an error.
+      const idempotency = m.idempotencyKey
+        ? {
+            key: m.idempotencyKey,
+            fingerprint: fingerprint(m, requestedFrom, mode, emails, ids, headers),
+          }
+        : null;
+      const authorize = () => deps.auth.revalidate(context, "tx:send");
+      if (idempotency) {
+        const previous = deps.sends.replayRequest({ idempotency, authorize });
+        if (previous) return ok({ sends: previous.sends });
+      }
+
+      if (kind === "marketing" && !deps.lists.subscriberMetadata(m.listId))
+        throw new HttpError(400, t.Ts("globals.messages.notFound", "name", `list ${m.listId}`));
+      const template = m.templateId > 0n ? deps.templates.get(m.templateId) : null;
+      if (!template || template.type !== "tx")
+        throw new HttpError(
+          400,
+          t.Ts("globals.messages.notFound", "name", `template ${m.templateId}`),
+        );
 
       // Resolve every recipient before rendering or writing anything.
       const recipients: Array<{ row: SubscriberRow | null; email: string }> = [];
@@ -231,13 +245,8 @@ export function registerTxRoutes(
       try {
         result = deps.sends.enqueueRequest({
           sends: requested,
-          idempotency: m.idempotencyKey
-            ? {
-                key: m.idempotencyKey,
-                fingerprint: fingerprint(m, requestedFrom, mode, emails, ids, headers),
-              }
-            : null,
-          authorize: () => deps.auth.revalidate(context, "tx:send"),
+          idempotency,
+          authorize,
         });
       } catch (error) {
         if (error instanceof HttpError) throw error;

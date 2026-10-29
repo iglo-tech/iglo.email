@@ -377,9 +377,25 @@ export function createSends(options: {
     if (result.queued.length) wake();
     return result;
   }
+  /**
+   * Return an existing idempotent request's rows, or null when the key is unused.
+   * Lets a producer replay before consulting mutable templates or subscribers;
+   * enqueueRequest repeats the lookup atomically for concurrent first requests.
+   */
+  function replayRequest(input: {
+    idempotency: { key: string; fingerprint: string };
+    authorize?: () => void;
+  }): { ids: bigint[]; sends: SendSummary[] } | null {
+    return writeTransaction(db, () => {
+      input.authorize?.();
+      const previous = replay(keyPrefix(input.idempotency.key), input.idempotency.fingerprint);
+      return previous ? { ids: previous.map((row) => row.id), sends: previous.map(summary) } : null;
+    });
+  }
   return {
     enqueue,
     enqueueRequest,
+    replayRequest,
     summary(id: bigint) {
       const row = getPublic(id);
       return row ? summary(row) : null;
