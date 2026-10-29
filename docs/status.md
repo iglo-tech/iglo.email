@@ -9,7 +9,7 @@ Updated: 2026-10-29
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol xhigh. The continuous run still starts at 2026-10-28T20:34:55.959528+00:00; there is no elapsed/task/session cutoff. Only the completed whole applicable work plan ends the project goal. Async dispatch/check turns resume automatically; no polling, duplicate workers or owner approval for routine work.
 
-The continuous run owns **M2.1, new-head CI before council round 2**, on [PR #15](https://github.com/iglo-tech/iglo.email/pull/15), branch task/M2.1-messaging, exact head dd8d6a6ca4bc7a7aec9958fbb9603f4094fc8580. The implementation worker, acceptance fixer and both round-1 reviewers are terminal and read. No delegate or pending approval/question remains. The PR is ready and the four new-head Linux check/reference jobs were in progress at the single post-push inspection. Existing PR link/watch persists; never relink, rewatch or list it.
+The continuous run owns **M2.1, council round 2**, on [PR #15](https://github.com/iglo-tech/iglo.email/pull/15), branch task/M2.1-messaging, exact head dd8d6a6ca4bc7a7aec9958fbb9603f4094fc8580. The implementation worker, acceptance fixer and both round-1 reviewers are terminal and read. Two fresh round-2 reviewers are now running; no implementation writer or pending approval/question remains. The PR is ready and all four new-head Linux check/reference jobs passed. Existing PR link/watch persists; never relink, rewatch or list it.
 
 Both round-1 reviewers requested changes on c8c35aa: [A](https://github.com/iglo-tech/iglo.email/pull/15#issuecomment-6485212284), [B](https://github.com/iglo-tech/iglo.email/pull/15#issuecomment-6485255999). The lead handled the small fixes directly in the clean inactive task worktree; no duplicate worker/helper was dispatched. [D51](design/09-decisions.md#d51-require-configured-smtp-authentication-and-expose-partial-acceptance) requires advertised configured PLAIN/LOGIN/CRAM and successful authentication before MAIL/DATA, with no credential transmission for an unadvertised selected mechanism. The supported nodemailer forceAuth/customAuth seam enforces this without private connection inspection. Native partial acceptance keeps accepted/rejected subsets and never replays accepted recipients; the protected test now returns explicit safe 500 SMTP test was accepted for some recipients only. instead of success. Exact capability and intake differences are declared and paired, not normalized away.
 
@@ -17,7 +17,23 @@ New shared AUTH-all3 and Cc/Bcc contracts passed pinned reference before impleme
 
 The refreshed [performance report](https://github.com/iglo-tech/iglo.email/blob/dd8d6a6ca4bc7a7aec9958fbb9603f4094fc8580/docs/perf/M2.1-messaging.md) describes runtime d7bfa50092df6e9f6fe05e4fc07c543d54b3070e, executable SHA-256 32c0fe84e4c558d53d6334f91d2410620f32b67b4389f1399528d83e0c4690a3. Three serial 1,000-message control/production-owner pairs,35 protected test requests and three serial common HTTP/settings repetitions per exact M1.2 control/final candidate passed on ext4 FULL/WAL; IDs/counts/signatures and cleanup matched. Owner repetition2 was slower; no provider, delivery, universal speed or SMTP AUTH-latency claim. Only the report changed after the measured runtime commit.
 
-Next: yield to the existing pending-check watch. On green exact-head CI, dispatch two fresh independent GPT-6.1 Sol xhigh reviewers A/B, each in a supplied isolated worktree with settings in target.options, using the complete [round-2 brief](briefs/M2.1-council-r2.md). Full scope and independent local acceptance; run local commands serially. Do not reuse old reviewers, poll/wait, duplicate work, merge prematurely or run macOS/ARM gates. Combine both verdicts, resolve findings, merge and immediately advance the next eligible task. All terminal delegate identifiers and transition history are retained in [M2.1 recovery](reviews/M2.1.md) and the lock; unbound recovery and continuous run remain in force.
+Next: end the turn for reviewer completion. Each fresh independent GPT-6.1 Sol xhigh reviewer A/B uses a supplied isolated worktree, settings in target.options and the complete [round-2 brief](briefs/M2.1-council-r2.md). Full scope and independent local acceptance; run local commands serially. Do not reuse old reviewers, poll/wait, duplicate work, merge prematurely or run macOS/ARM gates. Combine both verdicts, resolve findings, merge and immediately advance the next eligible task. All terminal delegate identifiers and transition history are retained in [M2.1 recovery](reviews/M2.1.md) and the lock; unbound recovery and continuous run remain in force.
+
+Fresh round-2 reviewers are dispatched on exact head dd8d6a6ca4bc7a7aec9958fbb9603f4094fc8580, each GPT-6.1 Sol xhigh, role:review, isolation:worktree, settings in target.options. Both returned running, without pending question, approval or child work. Their next instruction is to end the turn and resume on completion; no polling/waiting, duplicate review or implementation change before both verdicts.
+
+[M2.1 council round 2 — Sol A](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-council-r2-a-dd8d6a6)
+
+- Task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-council-r2-a-dd8d6a6.
+- Thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-council-r2-a-dd8d6a6.
+- Run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M2.1-council-r2-a-dd8d6a6:ordinal:1.
+- Idempotent request: iglo-email-M2.1-council-r2-a-dd8d6a6.
+
+[M2.1 council round 2 — Sol B](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-council-r2-b-dd8d6a6)
+
+- Task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-council-r2-b-dd8d6a6.
+- Thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-council-r2-b-dd8d6a6.
+- Run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M2.1-council-r2-b-dd8d6a6:ordinal:1.
+- Idempotent request: iglo-email-M2.1-council-r2-b-dd8d6a6.
 
 ## Automation
 
@@ -57,7 +73,7 @@ Owner update: healthy redundant check-in threads auto-settle themselves through 
 
 ## Blocked
 
-No active external block or cooldown. M2.1 round-1 fixes and final acceptance are complete; ready PR #15 awaits new-head Linux CI and fresh council round 2. Task completion never stops the continuous fleet, and a genuine item-level block must not stop other eligible work.
+No active external block or cooldown. M2.1 new-head Linux CI passed; fresh independent council round 2 is running. Task completion never stops the continuous fleet, and a genuine item-level block must not stop other eligible work.
 
 ## For owner review
 
