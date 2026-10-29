@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.4 sequence scheduler, branch task/M5.4-scheduler, [brief](briefs/M5.4.md). One Opus medium worker dispatched; no reviewer active. Last critical-path task; then M5.5/M5.6 and the remaining M2/M3/M4 tasks.
-Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge.
+M5.4 sequence scheduler, [PR #25](https://github.com/iglo-tech/iglo.email/pull/25), head 797ca11. Worker done; Sol xhigh round-1 review running. Last critical-path task.
+Next: lead disposition of round 1, merge, then the next eligible work-plan task.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -54,7 +54,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
-- Outbox send throughput: 50 msg/s not sustained even without events (one message at a time, two commits each); events at 100/s slow sending further ([M5.1 perf](https://github.com/iglo-tech/iglo.email/pull/20)). Owner: messaging, M3.2/M6.1 (D22).
+- Outbox send throughput: 50 msg/s not sustained even without events (one message at a time, two commits each); events at 100/s slow sending further ([M5.1 perf](https://github.com/iglo-tech/iglo.email/pull/20)). Owner: messaging, M3.2/M6.1 (D22). The outbox claim query sorts all queued rows per claim; delivery falls from ~370/s to ~150/s while a 10k sequence burst is queued ([M5.4 perf](https://github.com/iglo-tech/iglo.email/pull/25)). A `(status, id)` index or a split query is the likely fix.
 - M5.1 perf: record source/executable hashes for each measured variant.
 - M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
