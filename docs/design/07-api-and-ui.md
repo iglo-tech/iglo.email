@@ -204,8 +204,8 @@ safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
 authentication/cookie and settings behavior remains governed by existing policy.
 D50 adds native-only optional SMTP dkim:{domain_name,key_selector,private_key}.
 GET masks the key; empty key retains by UUID, null clears, invalid candidates
-fail atomically. The compiled test-only caller verifies signing, retained credentials, restart and
-clearing. Full and per-key invalid candidates roll back, including nested shape,
+fail atomically. The Bun and compiled test-only callers verify signing, retained credentials,
+restart and clearing. Full and per-key invalid candidates roll back, including nested shape,
 key type, strength and size failures. The owner uses absolute 60-second send,
 10-second test and five-second shutdown deadlines; forced active cancellation is
 ambiguous and queued work that never started is locally rejected. These are

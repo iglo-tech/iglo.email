@@ -262,9 +262,9 @@ rejection with safe native 400/no write versus reference 500/no write. The corpu
 is representative rather than an exhaustive proof of parser compatibility.
 The M2.1 candidate adds `bun run contract:messaging:reference` for the pinned
 SMTP-test response and Mailpit message, and `bun run contract:messaging` for
-compiled production, D49 admission and D50 settings. A separately compiled
-caller reads the real settings owner and checks authentication and RSA signatures
-before and after restart/retention and null clearing. `bun run messaging:fixture`
+compiled production, D49 admission and D50 settings. A test-only caller runs in Bun and as a compiled executable, reads the real
+settings owner and checks authentication and RSA signatures before and after
+restart/retention and null clearing. `bun run messaging:fixture`
 checks production message composition through owned Mailpit; `messaging:faults`,
 `messaging:auth` and `messaging:tls` exercise the owned relay and local TLS
 Mailpit. `bun run messaging:corpus` drives plain, Unicode HTML/alternate,

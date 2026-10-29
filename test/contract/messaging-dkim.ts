@@ -58,28 +58,34 @@ export async function runDKIMSettings(target: {
       dkim: { domain_name: "fixture.example.test", key_selector: "m08", private_key: privateKey },
     };
     const send = async (suffix: string, signed: boolean, verificationKey = publicKey) => {
-      const subject = `${marker} ${suffix}`;
-      const child = spawn(resolve("dist/messaging-stored-caller"), [], {
-        env: { PATH: "", M21_DATA_DIR: target.dataDir, M21_SUBJECT: subject },
-        stdio: "ignore",
-      });
-      const code = await new Promise<number | null>((done, reject) => {
-        child.once("error", reject);
-        child.once("exit", (value) => done(value));
-      });
-      assert.equal(code, 0);
-      const found = (await mailpit.list()).filter((entry) => entry.Subject === subject);
-      assert.equal(found.length, 1);
-      const raw = await mailpit.raw(found[0]!.ID);
-      assert.equal(verifyFixtureDkim(raw, createPublicKey(verificationKey)), signed);
-      if (signed)
-        assert.equal(
-          verifyFixtureDkim(
-            raw.replace("retained settings fixture", "tampered settings fixture"),
-            createPublicKey(verificationKey),
-          ),
-          false,
+      for (const mode of ["bun", "compiled"] as const) {
+        const subject = `${marker} ${suffix} ${mode}`;
+        const child = spawn(
+          mode === "bun" ? process.execPath : resolve("dist/messaging-stored-caller"),
+          mode === "bun" ? [resolve("test/messaging/stored-caller.ts")] : [],
+          {
+            env: { PATH: "", M21_DATA_DIR: target.dataDir, M21_SUBJECT: subject },
+            stdio: "ignore",
+          },
         );
+        const code = await new Promise<number | null>((done, reject) => {
+          child.once("error", reject);
+          child.once("exit", (value) => done(value));
+        });
+        assert.equal(code, 0);
+        const found = (await mailpit.list()).filter((entry) => entry.Subject === subject);
+        assert.equal(found.length, 1);
+        const raw = await mailpit.raw(found[0]!.ID);
+        assert.equal(verifyFixtureDkim(raw, createPublicKey(verificationKey)), signed);
+        if (signed)
+          assert.equal(
+            verifyFixtureDkim(
+              raw.replace("retained settings fixture", "tampered settings fixture"),
+              createPublicKey(verificationKey),
+            ),
+            false,
+          );
+      }
     };
     assert.equal((await request("/api/settings/smtp", "PUT", servers)).status, 200);
     await send("initial", true);
@@ -216,7 +222,7 @@ export async function runDKIMSettings(target: {
     retainingLast.dkim.private_key = "";
     assert.equal((await request("/api/settings/smtp", "PUT", [retainingLast])).status, 200);
     await send("last-duplicate", true, other.publicKey);
-    assert.equal(relay.authenticated(), 4);
+    assert.equal(relay.authenticated(), 8);
   } finally {
     await relay.close();
     await mailpit.removeOwned();
