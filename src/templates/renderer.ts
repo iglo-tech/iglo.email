@@ -11,7 +11,8 @@ import {
 } from "liquidjs";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
-import { copyTemplateData, type TemplateData } from "@/templates/data";
+import { parseTemplateData, type TemplateData } from "@/templates/data";
+import { renderMarkdown } from "@/templates/markdown";
 
 const SOURCE_LIMIT = 64 * 1024;
 const OUTPUT_LIMIT = 1024 * 1024;
@@ -74,9 +75,13 @@ function scalar(value: unknown): string {
 function url(value: unknown): string {
   const text = scalar(value);
   if (!text) return "";
-  const parsed = new URL(text);
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Invalid URL");
-  return text;
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Invalid URL");
+    return text;
+  } catch {
+    throw new Error("Invalid URL");
+  }
 }
 function checkSource(value: string, limit: number) {
   if (typeof value !== "string" || byteLength(value) > limit || value.includes("\0"))
@@ -86,8 +91,8 @@ export interface RenderRequest {
   body: string;
   layout?: string;
   subject?: string;
-  mode: "html" | "plain";
-  data: unknown;
+  mode: "html" | "plain" | "markdown";
+  data: string;
   transactional?: boolean;
 }
 
@@ -346,12 +351,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
   type Compiled = { body: Template[]; subject: Template[]; layout?: Template[] };
   function runMessage(
     request: RenderRequest,
+    data: { [key: string]: TemplateData },
     compiled?: Compiled,
   ): { body: string; subject: string } {
-    const copied = copyTemplateData(request.data);
-    if (!copied || typeof copied !== "object" || Array.isArray(copied))
-      throw new Error("Invalid template data");
-    const data = copied as { [key: string]: TemplateData };
+    if (request.mode !== "html" && request.mode !== "plain" && request.mode !== "markdown")
+      throw new Error("Invalid render mode");
     for (const key of [
       "unsubscribe_url",
       "manage_url",
@@ -424,10 +428,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
       return out.buffer;
     };
     const subject = run(request.subject ?? "", false, SUBJECT_LIMIT, compiled?.subject);
-    let body = run(request.body, request.mode === "html", OUTPUT_LIMIT, compiled?.body);
+    let body = run(request.body, request.mode !== "plain", OUTPUT_LIMIT, compiled?.body);
+    if (request.mode === "markdown") body = renderMarkdown(body, b);
     if (request.layout !== undefined) {
       data.content = body;
-      body = run(request.layout, request.mode === "html", OUTPUT_LIMIT, compiled?.layout);
+      body = run(request.layout, request.mode !== "plain", OUTPUT_LIMIT, compiled?.layout);
     }
     return { body, subject };
   }
@@ -436,7 +441,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     if (active >= 4) throw new RenderCapacityError();
     active++;
     try {
-      return runMessage(request);
+      return runMessage(request, parseTemplateData(request.data));
     } finally {
       active--;
     }
@@ -445,15 +450,17 @@ export function createRenderer(clock: Clock, translation: Translation) {
     if (active >= 4) throw new RenderCapacityError();
     active++;
     try {
-      const snapshot = { ...request, data: copyTemplateData(request.data) };
+      const data = parseTemplateData(request.data);
+      const snapshot = { ...request };
       await Promise.resolve();
-      return runMessage(snapshot);
+      return runMessage(snapshot, data);
     } finally {
       active--;
     }
   }
   function compile(input: Omit<RenderRequest, "data">) {
-    if (input.mode !== "html" && input.mode !== "plain") throw new Error("Invalid render mode");
+    if (input.mode !== "html" && input.mode !== "plain" && input.mode !== "markdown")
+      throw new Error("Invalid render mode");
     // Strings and mode are captured once; neither a caller mutation nor a same-clock
     // database update can change this snapshot. There is no instance-wide cache.
     const snapshot = {
@@ -464,29 +471,29 @@ export function createRenderer(clock: Clock, translation: Translation) {
       ...(input.transactional === undefined ? {} : { transactional: input.transactional }),
     };
     const compiled: Compiled = {
-      body: parse(snapshot.body, snapshot.mode === "html"),
+      body: parse(snapshot.body, snapshot.mode !== "plain"),
       subject: parse(snapshot.subject ?? "", false, SUBJECT_LIMIT),
       ...(snapshot.layout === undefined
         ? {}
-        : { layout: parse(snapshot.layout, snapshot.mode === "html") }),
+        : { layout: parse(snapshot.layout, snapshot.mode !== "plain") }),
     };
     return Object.freeze({
-      renderSync(data: unknown) {
+      renderSync(data: string) {
         if (active >= 4) throw new RenderCapacityError();
         active++;
         try {
-          return runMessage({ ...snapshot, data }, compiled);
+          return runMessage({ ...snapshot, data }, parseTemplateData(data), compiled);
         } finally {
           active--;
         }
       },
-      async render(data: unknown) {
+      async render(data: string) {
         if (active >= 4) throw new RenderCapacityError();
         active++;
         try {
-          const clean = copyTemplateData(data);
+          const clean = parseTemplateData(data);
           await Promise.resolve();
-          return runMessage({ ...snapshot, data: clean }, compiled);
+          return runMessage({ ...snapshot, data }, clean, compiled);
         } finally {
           active--;
         }

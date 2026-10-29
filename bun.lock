@@ -6,6 +6,7 @@
       "name": "iglo.email",
       "dependencies": {
         "liquidjs": "10.30.0",
+        "marked": "15.0.12",
         "nodemailer": "10.2.1",
         "qrcode": "1.5.4",
         "saxes": "6.0.0",
@@ -35,6 +36,7 @@
     },
   },
   "patchedDependencies": {
+    "marked@15.0.12": "patches/marked@15.0.12.patch",
     "liquidjs@10.30.0": "patches/liquidjs@10.30.0.patch",
     "saxes@6.0.0": "patches/saxes@6.0.0.patch",
   },
@@ -206,6 +208,8 @@
     "liquidjs": ["liquidjs@10.30.0", "", { "dependencies": { "commander": "^10.0.0" }, "bin": { "liquid": "bin/liquid.js", "liquidjs": "bin/liquid.js" } }, "sha512-Fw4wA+8CZsJkaeLEIlPE3AoponfjEZhj7FQvYNcAEcg7jNRik7mEMoaco382FBdrYlykVf6w4vClPNctz2OYjg=="],
 
     "locate-path": ["locate-path@5.0.0", "", { "dependencies": { "p-locate": "^4.1.0" } }, "sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g=="],
+
+    "marked": ["marked@15.0.12", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA=="],
 
     "nodemailer": ["nodemailer@10.2.1", "", {}, "sha512-ZrDNsPFoDMwefNs7sJwrYiEJ/CG4ClJWDZv05iNJsEBWa8GRDry1QJHTJxsuTAY9eDDKjX4k+q3SxslXJOao7w=="],
 

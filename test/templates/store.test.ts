@@ -320,3 +320,170 @@ test("concurrent omitted-field updates and default/delete retain valid state", a
     await f.close();
   }
 }, 30000);
+
+test("preview reports real renderer admission exhaustion and recovers after failures", async () => {
+  const f = await startTemplateFixture({ saturateFirstPreview: true });
+  try {
+    const credential = await provisionApiUser(f.origin, f.admin);
+    const authorization = `Basic ${btoa(`${credential.user}:${credential.token}`)}`;
+    const preview = (body: string) =>
+      fetch(`${f.origin}/api/templates/preview`, {
+        method: "POST",
+        headers: { authorization, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ template_type: "tx", body }),
+      });
+    expect((await preview("held")).status).toBe(429);
+    expect(await (await preview("available")).text()).toBe("available");
+    expect((await preview('{% include "denied" %}')).status).toBe(400);
+    expect(await (await preview("recovered")).text()).toBe("recovered");
+  } finally {
+    await f.close();
+  }
+}, 30000);
+
+for (const change of ["role", "disabled", "deleted"] as const)
+  test(`preview revalidates ${change} after a held real render`, async () => {
+    const f = await startTemplateFixture({ holdPreview: true });
+    try {
+      const admin = await provisionApiUser(f.origin, f.admin);
+      const authorization = `Basic ${btoa(`${admin.user}:${admin.token}`)}`;
+      const request = (path: string, method = "GET", body?: unknown) =>
+        fetch(`${f.origin}${path}`, {
+          method,
+          headers: {
+            authorization,
+            ...(body === undefined ? {} : { "content-type": "application/json" }),
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+      const name = `render-held-${crypto.randomUUID()}`;
+      const role = (
+        await (
+          await request("/api/roles/users", "POST", { name, permissions: ["templates:get"] })
+        ).json()
+      ).data;
+      const user = (
+        await (
+          await request("/api/users", "POST", {
+            username: name,
+            type: "api",
+            status: "enabled",
+            user_role_id: role.id,
+          })
+        ).json()
+      ).data;
+      const heldAuth = `Basic ${btoa(`${name}:${user.password}`)}`;
+      const pending = fetch(`${f.origin}/api/templates/1/preview`, {
+        headers: { authorization: heldAuth },
+      });
+      await f.previewHeld;
+      const revoked =
+        change === "role"
+          ? await request(`/api/roles/users/${role.id}`, "PUT", { name, permissions: [] })
+          : change === "deleted"
+            ? await request(`/api/users/${user.id}`, "DELETE")
+            : await request(`/api/users/${user.id}`, "PUT", {
+                username: name,
+                type: "api",
+                status: "disabled",
+                user_role_id: role.id,
+              });
+      expect(revoked.status).toBe(200);
+      f.releasePreview();
+      const response = await pending;
+      expect(response.status).toBe(403);
+      expect(await response.text()).not.toContain("<html");
+    } finally {
+      f.releasePreview();
+      await f.close();
+    }
+  }, 30000);
+
+test("preview revalidates a logged-out session after a held real render", async () => {
+  const f = await startTemplateFixture({ holdPreview: true });
+  try {
+    const page = await fetch(`${f.origin}/admin/login`);
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())![1]!;
+    const nonceCookie = page.headers
+      .getSetCookie()
+      .find((x) => x.startsWith("nonce="))!
+      .split(";", 1)[0]!;
+    const login = await fetch(`${f.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({ username: f.admin.user, password: f.admin.password, nonce }),
+    });
+    expect(login.status).toBe(302);
+    const cookies = login.headers.getSetCookie();
+    const session = cookies.find((x) => x.startsWith("session="))!.split(";", 1)[0]!;
+    const csrf = cookies.find((x) => x.startsWith("csrf="))!.split(";", 1)[0]!;
+    const cookie = `${session}; ${csrf}`;
+    const pending = fetch(`${f.origin}/api/templates/1/preview`, { headers: { cookie } });
+    await f.previewHeld;
+    const logout = await fetch(`${f.origin}/api/logout`, {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrf.slice(5) },
+    });
+    expect(logout.status).toBe(200);
+    f.releasePreview();
+    expect((await pending).status).toBe(403);
+  } finally {
+    f.releasePreview();
+    await f.close();
+  }
+}, 30000);
+
+test("omission preserves writable fields and explicit valid empty values clear them", async () => {
+  const f = await startTemplateFixture();
+  try {
+    const credential = await provisionApiUser(f.origin, f.admin);
+    const authorization = `Basic ${btoa(`${credential.user}:${credential.token}`)}`;
+    const request = (path: string, method = "GET", body?: unknown) =>
+      fetch(`${f.origin}${path}`, {
+        method,
+        headers: {
+          authorization,
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const created = (
+      await (
+        await request("/api/templates", "POST", {
+          name: "clearable",
+          type: "tx",
+          subject: "s",
+          body: "body",
+          body_source: "source",
+        })
+      ).json()
+    ).data;
+    expect(
+      (await request(`/api/templates/${created.id}`, "PUT", { name: "retained" })).status,
+    ).toBe(200);
+    let row = (await (await request(`/api/templates/${created.id}`)).json()).data;
+    expect([row.name, row.subject, row.body, row.body_source]).toEqual([
+      "retained",
+      "s",
+      "body",
+      "source",
+    ]);
+    expect(
+      (await request(`/api/templates/${created.id}`, "PUT", { body: "", body_source: "" })).status,
+    ).toBe(200);
+    row = (await (await request(`/api/templates/${created.id}`)).json()).data;
+    expect([row.name, row.subject, row.body ?? "", row.body_source]).toEqual([
+      "retained",
+      "s",
+      "",
+      "",
+    ]);
+    expect((await request(`/api/templates/${created.id}`, "PUT", { subject: "" })).status).toBe(
+      400,
+    );
+    expect((await (await request(`/api/templates/${created.id}`)).json()).data.subject).toBe("s");
+  } finally {
+    await f.close();
+  }
+}, 30000);

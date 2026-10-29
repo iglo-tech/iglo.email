@@ -8,7 +8,13 @@ import { initialTemplates, systemTemplates } from "@/templates/builtins";
 
 function caller() {
   const renderer = createRenderer(createRealClock(), createTranslation());
-  return async (body: string, data: unknown, mode: "html" | "plain" = "html", layout?: string) => {
+  return async (
+    body: string,
+    data: unknown,
+    mode: "html" | "plain" | "markdown" = "html",
+    layout?: string,
+    raw = false,
+  ) => {
     const server = Bun.serve({
       port: 0,
       hostname: "127.0.0.1",
@@ -18,7 +24,7 @@ function caller() {
             (
               await renderer.render({
                 body,
-                data,
+                data: raw ? (data as string) : JSON.stringify(data),
                 mode,
                 ...(layout === undefined ? {} : { layout }),
               })
@@ -62,7 +68,7 @@ describe("bounded Liquid caller", () => {
         return "secret";
       },
     });
-    expect((await call("{{ x }}", input)).status).toBe(400);
+    expect((await call("{{ x }}", input, "html", undefined, true)).status).toBe(400);
     expect(invoked).toBe(false);
     const hidden = Object.defineProperty({}, "hidden", {
       get() {
@@ -70,7 +76,7 @@ describe("bounded Liquid caller", () => {
         return "secret";
       },
     });
-    expect((await call("hello", hidden)).status).toBe(400);
+    expect((await call("hello", hidden, "html", undefined, true)).status).toBe(400);
     expect(invoked).toBe(false);
     let trapped = false;
     const proxy = new Proxy(
@@ -82,12 +88,12 @@ describe("bounded Liquid caller", () => {
         },
       },
     );
-    expect((await call("hello", proxy)).status).toBe(400);
+    expect((await call("hello", proxy, "html", undefined, true)).status).toBe(400);
     expect(trapped).toBe(false);
 
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;
-    expect((await call("{{ self }}", cycle)).status).toBe(400);
+    expect((await call("{{ self }}", cycle, "html", undefined, true)).status).toBe(400);
   });
   test("nested captures, ranges, lookup and output are bounded", async () => {
     const call = caller();
@@ -120,23 +126,124 @@ test("UTF-8 bounds and explicit raw output", async () => {
   );
 });
 
-test("plain data rejects callable, class, non-finite and magic properties", async () => {
+test("serialized data rejects magic names and non-finite numbers", async () => {
   const call = caller();
-  for (const value of [
-    () => "called",
-    new Date(),
-    NaN,
-    Infinity,
-    JSON.parse('{"constructor":"canary"}'),
-  ]) {
-    expect((await call("{{ x }}", { x: value })).status).toBe(400);
+  for (const value of ['{"x":{"constructor":"canary"}}', '{"x":1e400}', "[]", "null"]) {
+    expect((await call("{{ x }}", value, "html", undefined, true)).status).toBe(400);
   }
-  const array: unknown[] = [];
-  array.length = 2;
-  array[1] = "own";
-  expect(await (await call("{% for x in xs %}{{ x }}{% endfor %}", { xs: array })).text()).toBe(
-    "own",
+  expect(
+    await (await call("{% for x in xs %}{{ x }}{% endfor %}", { xs: [null, "own"] })).text(),
+  ).toBe("own");
+});
+
+test("all entry points reject non-string contexts without observing them", async () => {
+  const renderer = createRenderer(createRealClock(), createTranslation());
+  const snapshot = renderer.compile({ body: "ok", mode: "plain" });
+  let touched = 0;
+  const proxy = new Proxy(
+    {},
+    {
+      get() {
+        touched++;
+        throw Error("read");
+      },
+      ownKeys() {
+        touched++;
+        throw Error("enumerated");
+      },
+      getPrototypeOf() {
+        touched++;
+        throw Error("prototype");
+      },
+    },
   );
+  const fields: Record<PropertyKey, unknown> = {};
+  for (let i = 0; i < 1100; i++) Object.defineProperty(fields, `hidden${i}`, { value: i });
+  Object.defineProperty(fields, "enumerable", {
+    enumerable: true,
+    get() {
+      touched++;
+      throw Error("getter");
+    },
+  });
+  fields[Symbol("symbol")] = 1;
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  const enumerable = Object.fromEntries(Array.from({ length: 1100 }, (_, i) => [`key${i}`, i]));
+  const executable = {
+    toJSON() {
+      touched++;
+      return {};
+    },
+    valueOf() {
+      touched++;
+      return {};
+    },
+    [Symbol.iterator]() {
+      touched++;
+      throw Error("iterator");
+    },
+  };
+  class CallerValue {
+    value = "class";
+  }
+  const values: unknown[] = [
+    proxy,
+    fields,
+    enumerable,
+    executable,
+    new CallerValue(),
+    cyclic,
+    new Date(),
+    () => {
+      touched++;
+    },
+    Symbol("x"),
+    [],
+    null,
+    123,
+  ];
+  for (const value of values) {
+    const data = value as string;
+    expect(() => renderer.renderSync({ body: "ok", mode: "plain", data })).toThrow();
+    expect(() => snapshot.renderSync(data)).toThrow();
+    await expect(renderer.render({ body: "ok", mode: "plain", data })).rejects.toThrow();
+    await expect(snapshot.render(data)).rejects.toThrow();
+  }
+  expect(touched).toBe(0);
+});
+
+test("serialized input is bounded before decoding and still checks nested limits", async () => {
+  const renderer = createRenderer(createRealClock(), createTranslation());
+  const render = (data: string) => renderer.renderSync({ body: "ok", mode: "plain", data });
+  const chunk = "é".repeat(32768);
+  const value = { a: chunk, b: chunk, c: chunk, d: "" };
+  value.d =
+    "é".repeat(Math.floor((256 * 1024 - Buffer.byteLength(JSON.stringify(value))) / 2)) + "x";
+  const exact = JSON.stringify(value);
+  expect(Buffer.byteLength(exact)).toBe(256 * 1024);
+  expect(render(exact).body).toBe("ok");
+  expect(() => render(exact + " ")).toThrow();
+  expect(() => render(JSON.stringify({ a: Array(1025).fill(null) }))).toThrow();
+  expect(() =>
+    render(
+      JSON.stringify({
+        a: {
+          __proto__: null,
+          ...Object.fromEntries(Array.from({ length: 1025 }, (_, n) => [`k${n}`, n])),
+        },
+      }),
+    ),
+  ).toThrow();
+  expect(() => render('{"a":1e400}')).toThrow();
+  expect(() => render('{"private-data-canary')).toThrow("Invalid template data");
+  expect(() => render('{"a":{"__proto__":0}}')).toThrow();
+  let nested: unknown = null;
+  for (let i = 0; i < 17; i++) nested = [nested];
+  expect(() => render(JSON.stringify({ nested }))).toThrow();
+  expect(() =>
+    render(JSON.stringify({ a: Array.from({ length: 10 }, () => Array(1024).fill(0)) })),
+  ).toThrow();
 });
 
 test("range rejects unsafe integer endpoints and unsupported capabilities", async () => {
@@ -154,6 +261,7 @@ test("range rejects unsafe integer endpoints and unsupported capabilities", asyn
     expect((await call(`{% render '${name}' %}`, {})).status).toBe(400);
   }
   expect((await call("{{ x | replace: 'a', 'b' }}", { x: "a" })).status).toBe(400);
+  expect((await call("{% include path %}", { path: "http://127.0.0.1:1/trap" })).status).toBe(400);
 });
 
 test("built-ins render synthetic semantic content and clock stays instance-owned", async () => {
@@ -189,7 +297,7 @@ test("built-ins render synthetic semantic content and clock stays instance-owned
             await renderer.render({
               body: '{{ "now" | date: "%Y-%m-%d %H:%M:%S" }}',
               mode: "plain",
-              data: fixture,
+              data: JSON.stringify(fixture),
             })
           ).body,
         );
@@ -197,12 +305,12 @@ test("built-ins render synthetic semantic content and clock stays instance-owned
         const item = initialTemplates[Number(path.slice("/initial/".length))]!;
         const result = await renderer.render(
           item.type === "campaign"
-            ? { body: "<p>Hi</p>", layout: item.body, mode: "html", data: fixture }
+            ? { body: "<p>Hi</p>", layout: item.body, mode: "html", data: JSON.stringify(fixture) }
             : {
                 body: item.body,
                 subject: item.subject,
                 mode: "html",
-                data: fixture,
+                data: JSON.stringify(fixture),
                 transactional: true,
               },
         );
@@ -210,7 +318,13 @@ test("built-ins render synthetic semantic content and clock stays instance-owned
       }
       const name = path.slice(1) as keyof typeof systemTemplates;
       return new Response(
-        (await renderer.render({ body: systemTemplates[name], mode: "html", data: fixture })).body,
+        (
+          await renderer.render({
+            body: systemTemplates[name],
+            mode: "html",
+            data: JSON.stringify(fixture),
+          })
+        ).body,
       );
     },
   });
@@ -251,7 +365,7 @@ test("admission releases after success and error and is instance scoped", async 
     port: 0,
     hostname: "127.0.0.1",
     fetch: async () => {
-      const input = { body: "hello", data: {}, mode: "plain" as const };
+      const input = { body: "hello", data: "{}", mode: "plain" as const };
       const results = await Promise.allSettled([
         first.render(input),
         first.render(input),
@@ -295,7 +409,7 @@ test("compiled snapshots retain their source and sanitize data for every caller"
     port: 0,
     hostname: "127.0.0.1",
     fetch: async (request) => {
-      const data = await request.json();
+      const data = await request.text();
       return new Response((await compiled.render(data)).body);
     },
   });
@@ -366,11 +480,14 @@ test("asynchronous render captures source and caller data before yielding", asyn
     port: 0,
     hostname: "127.0.0.1",
     fetch: async () => {
-      const data = { name: "first" };
-      const input = { body: "{{ name }}", data, mode: "plain" as const };
+      const input = {
+        body: "{{ name }}",
+        data: JSON.stringify({ name: "first" }),
+        mode: "plain" as const,
+      };
       const pending = renderer.render(input);
       input.body = "changed";
-      data.name = "second";
+      input.data = JSON.stringify({ name: "second" });
       return new Response((await pending).body);
     },
   });
@@ -381,26 +498,21 @@ test("asynchronous render captures source and caller data before yielding", asyn
   }
 });
 
-test("inherited sparse-array indices are omitted without evaluating their getters", async () => {
+test("inherited and sparse objects are rejected without inspection", async () => {
   const call = caller();
   let invoked = false;
   const prototype = Object.create(Array.prototype);
   Object.defineProperty(prototype, "0", {
     get() {
       invoked = true;
-      return "inherited-canary";
+      return "canary";
     },
   });
   const input: unknown[] = [];
   input.length = 2;
-  input[1] = "own";
   Object.setPrototypeOf(input, prototype);
-  const response = await call("{% for item in items %}{{ item }}{% endfor %}", { items: input });
-  expect(response.status).toBe(200);
-  expect(await response.text()).toBe("own");
+  expect((await call("hello", input, "html", undefined, true)).status).toBe(400);
   expect(invoked).toBe(false);
-  class TaggedArray extends Array<string> {}
-  expect((await call("{{ items }}", { items: new TaggedArray("x") })).status).toBe(400);
 });
 
 test("iterating large objects charges conversion even when limit is zero", async () => {
@@ -433,7 +545,7 @@ test("encoded context and rendered subject use UTF-8 byte boundaries", async () 
               body: "",
               subject: "{{ value }}",
               mode: "plain",
-              data: { value },
+              data: JSON.stringify({ value }),
             })
           ).subject,
         );
@@ -477,7 +589,7 @@ test("independent renderers keep translation and clock state separate", async ()
       const request = {
         body: '{{ "fixture" | t }} {{ "now" | date: "%Y-%m-%d" }}',
         mode: "plain" as const,
-        data: {},
+        data: "{}",
       };
       const values = await Promise.all([first.render(request), second.render(request)]);
       return Response.json(values.map((value) => value.body));
@@ -510,5 +622,83 @@ test("captures share one cumulative emission budget", async () => {
   const call = caller();
   const capture =
     "{% capture x %}{% for n in (1..16) %}{{ value | raw }}{% endfor %}{% endcapture %}";
+  expect((await call(capture.repeat(4), { value: "x".repeat(65536) }, "plain")).status).toBe(200);
+  expect((await call(capture.repeat(4) + "x", { value: "x".repeat(65536) }, "plain")).status).toBe(
+    400,
+  );
   expect((await call(capture.repeat(5), { value: "x".repeat(65536) }, "plain")).status).toBe(400);
+});
+
+test("Markdown runs after Liquid and composes once through a layout", async () => {
+  const call = caller();
+  const response = await call(
+    "# Hello {{ name }}\n\n[link]({{ link }})\n\n- one\n- **two**",
+    { name: "A & B", link: "https://example.invalid/?a=1&b=2" },
+    "markdown",
+    "<main>{{ content | raw }}</main>",
+  );
+  expect(response.status).toBe(200);
+  const body = await response.text();
+  expect(body).toContain("<main><h1>Hello A &amp; B</h1>");
+  expect(body).toContain('href="https://example.invalid/?a=1&amp;b=2"');
+  expect(body).toContain("<strong>two</strong>");
+  expect(body.endsWith("</main>")).toBe(true);
+  expect(
+    await (await call("| A | B |\n|---|---|\n| one | two |", {}, "markdown")).text(),
+  ).toContain("<table>");
+  expect(
+    await (await call("<b>{{ name | raw }}</b>", { name: "<i>raw</i>" }, "markdown")).text(),
+  ).toContain("<b><i>raw</i></b>");
+});
+
+test("Markdown charges repeated reference URLs, images, tables and nested output", async () => {
+  const call = caller();
+  const reference = `[ref]: https://example.invalid/${"x".repeat(40000)}\n\n`;
+  expect((await call(reference + "[x][ref] ".repeat(40), {}, "markdown")).status).toBe(400);
+  expect((await call(reference + "![x][ref] ".repeat(40), {}, "markdown")).status).toBe(400);
+  const table =
+    "| " +
+    "h | ".repeat(100) +
+    "\n| " +
+    "--- | ".repeat(100) +
+    "\n" +
+    ("| " + "v | ".repeat(100) + "\n").repeat(120);
+  expect((await call(table, {}, "markdown")).status).toBe(400);
+  const wide = "|" + "h|".repeat(10001) + "\n|" + "- |".repeat(10001) + "\n";
+  expect((await call(wide, {}, "markdown")).status).toBe(400);
+  expect((await call("> x\n".repeat(10001), {}, "markdown")).status).toBe(400);
+  expect(
+    (
+      await call(
+        "{% capture x %}{{ value }}{% endcapture %}# {{ x | raw }}",
+        { value: "x".repeat(1000) },
+        "markdown",
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await call(
+        "{% for i in (1..17) %}{{ value | raw }}{% endfor %}",
+        { value: "x".repeat(65536) },
+        "markdown",
+      )
+    ).status,
+  ).toBe(400);
+});
+
+test("Markdown stage accepts the exact UTF-8 output bound and rejects one byte past", async () => {
+  const call = caller();
+  const body = "<div>{% for i in (1..15) %}{{ x | raw }}{% endfor %}{{ y | raw }}</div>";
+  const data = { x: "a".repeat(65536), y: "a".repeat(65525) };
+  const exact = await call(body, data, "markdown");
+  expect(exact.status).toBe(200);
+  expect(Buffer.byteLength(await exact.text())).toBe(1024 * 1024);
+  expect((await call(body, { ...data, y: data.y + "a" }, "markdown")).status).toBe(400);
+});
+
+test("nested rendering respects the depth limit", async () => {
+  const call = caller();
+  const nested = "{% if true %}".repeat(33) + "x" + "{% endif %}".repeat(33);
+  expect((await call(nested, {}, "plain")).status).toBe(400);
 });

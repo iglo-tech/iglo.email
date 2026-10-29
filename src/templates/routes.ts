@@ -81,7 +81,7 @@ function guarded(handler: Handler): Handler {
     }
   };
 }
-const data = {
+const data = JSON.stringify({
   subscriber: {
     name: "John Doe",
     first_name: "John",
@@ -105,7 +105,7 @@ const data = {
   optin_url: "",
   message_url: "",
   archive_url: "",
-};
+});
 const sampleBody = "<p>Hi there</p><p>Lorem ipsum dolor sit amet.</p>";
 function html(body: string) {
   return new Response(body, {

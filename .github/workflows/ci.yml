@@ -13,7 +13,13 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun run ui:verify
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Configure and probe isolated fixture on disposable runner
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor.
+          # This applies only to this disposable GitHub-hosted test runner.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --unshare-user --ro-bind / / --proc /proc --dev /dev /usr/bin/true
       - run: bun run templates:compiled
       - run: bun run contract:templates
       - run: bun run contract:normal
@@ -34,7 +40,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Configure and probe isolated fixture on disposable runner
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor.
+          # This applies only to this disposable GitHub-hosted test runner.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --unshare-user --ro-bind / / --proc /proc --dev /dev /usr/bin/true
       - run: bun run templates:compiled
       - run: bun run reference:prepare
       - run: bun run reference:smoke

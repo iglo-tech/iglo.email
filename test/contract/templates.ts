@@ -308,6 +308,15 @@ export async function runTemplatesContract(target: {
       });
     check((await raw("{", "application/json")).status === 400, "malformed-json");
     check(
+      (await raw("<Template><Name>unterminated", "application/xml")).status === 400,
+      "malformed-xml",
+    );
+    check(
+      (await raw('{"name": 12, "type": "tx", "subject": "s", "body": "b"}', "application/json"))
+        .status === 400,
+      "json-wrong-field-type",
+    );
+    check(
       (await raw("Name=Form&Type=tx&Subject=Hello&Body=test", "application/x-www-form-urlencoded"))
         .status === 400,
       "form-no-tags",

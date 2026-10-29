@@ -51,13 +51,13 @@ function run(kind: "control" | "owner", count: number, rep: number) {
     const start = performance.now();
     const input = data(i);
     const output = own
-      ? own.renderSync(input)
+      ? own.renderSync(JSON.stringify(input))
       : {
           body: control.renderCompiled(html, compiled!.body, input),
           subject: String(plain.renderSync(compiled!.subject, input)),
         };
     const plainOutput = ownPlain
-      ? ownPlain.renderSync(input).body
+      ? ownPlain.renderSync(JSON.stringify(input)).body
       : String(plain.renderSync(compiled!.plainBody, input));
     renderMs += performance.now() - start;
     assert.ok(

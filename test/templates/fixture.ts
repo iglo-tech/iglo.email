@@ -20,7 +20,9 @@ import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 
-export async function startTemplateFixture() {
+export async function startTemplateFixture(
+  options: { saturateFirstPreview?: boolean; holdPreview?: boolean } = {},
+) {
   const dataDir = mkdtempSync(join(tmpdir(), "iglo-template-fixture-"));
   const db = openDatabase(dataDir),
     clock = new TestClock();
@@ -60,7 +62,38 @@ export async function startTemplateFixture() {
     });
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
-    registerTemplateRoutes(router, templates, renderer, auth);
+    let saturate = options.saturateFirstPreview === true;
+    let previewEntered!: () => void;
+    let releasePreview!: () => void;
+    const previewHeld = new Promise<void>((resolve) => {
+      previewEntered = resolve;
+    });
+    const previewRelease = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    const previewRenderer = {
+      ...renderer,
+      render(request: Parameters<typeof renderer.render>[0]) {
+        if (!saturate) {
+          const rendered = renderer.render(request);
+          if (!options.holdPreview) return rendered;
+          return (async () => {
+            const result = await rendered;
+            previewEntered();
+            await previewRelease;
+            return result;
+          })();
+        }
+        saturate = false;
+        // All four real admissions are entered synchronously before their awaited
+        // continuation can run. The route makes the fifth real admission.
+        const held = Array.from({ length: 4 }, () => renderer.render(request));
+        const fifth = renderer.render(request);
+        void Promise.allSettled(held);
+        return fifth;
+      },
+    };
+    registerTemplateRoutes(router, templates, previewRenderer, auth);
     router.route("POST", "/fixture/campaign", async ({ request }) => {
       const { template } = (await request.json()) as { template: string };
       db.query(
@@ -157,6 +190,8 @@ export async function startTemplateFixture() {
       origin: `http://127.0.0.1:${server.port}`,
       admin,
       bodyEntered,
+      previewHeld,
+      releasePreview,
       async close() {
         await server.stop(true);
         templates.close();

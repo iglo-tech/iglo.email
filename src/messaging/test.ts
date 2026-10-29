@@ -10,6 +10,7 @@ import { validateDKIM } from "@/settings/dkim";
 
 function safeLogo(value: string): string {
   if (!value) return "";
+  if (Buffer.byteLength(value, "utf8") > 64 * 1024) throw new Error("Template data limit exceeded");
   try {
     const parsed = new URL(value);
     return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : "";
@@ -142,7 +143,7 @@ export function createSMTPTest(
         html = renderer.renderSync({
           body: systemTemplates.smtpTest,
           mode: "html",
-          data: { logo_url: safeLogo(current["app.logo_url"]) },
+          data: JSON.stringify({ logo_url: safeLogo(current["app.logo_url"]) }),
         }).body;
       } catch {
         throw new HttpError(500, "SMTP test failed.");

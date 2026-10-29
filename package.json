@@ -56,6 +56,7 @@
   },
   "dependencies": {
     "liquidjs": "10.30.0",
+    "marked": "15.0.12",
     "nodemailer": "10.2.1",
     "qrcode": "1.5.4",
     "saxes": "6.0.0"
@@ -88,6 +89,7 @@
   "packageManager": "bun@1.4.4",
   "patchedDependencies": {
     "saxes@6.0.0": "patches/saxes@6.0.0.patch",
-    "liquidjs@10.30.0": "patches/liquidjs@10.30.0.patch"
+    "liquidjs@10.30.0": "patches/liquidjs@10.30.0.patch",
+    "marked@15.0.12": "patches/marked@15.0.12.patch"
   }
 }

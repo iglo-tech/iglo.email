@@ -172,6 +172,23 @@ isolated Linux bubblewrap fixture with a local canary and network trap. These
 are initial gates, not evidence that the full M1.8 security and performance
 acceptance has passed.
 
+Coverage map (finite cases, not universal parser spellings or interleavings):
+
+| Boundary | Evidence |
+|---|---|
+| Source-first CRUD, projections, defaults, search and preview | shared `test/contract/templates.ts`, paired upstream and compiled profiles with named D54 differences |
+| References, high IDs, reinitialization and diagnostics | `test/templates/store.test.ts` test-only campaign owner and production template routes |
+| Authority and concurrency | template auth contract and held-body role/user/session tests; omitted-field updates, default/delete race, held-render revocation and real four-admission HTTP 429/recovery |
+| Data and rendering | `test/templates/render.test.ts` covers serialized input boundaries, object rejection without traps, Liquid subset, budgets, escaped/raw composition, clock/translation isolation, built-ins and Markdown reference expansion |
+| Compiled renderer and capability traps | `test/templates/compiled-fixture.ts` exercises the same production renderer, data admission, Markdown and file/loopback traps under `compiled-check.ts` |
+| Browser and SMTP | authenticated stored/posted preview browser check and protected SMTP diagnostic corpus; actual hosted isolation remains a CI result |
+
+The isolated fixture uses bubblewrap on Linux and is never silently skipped.
+The two disposable GitHub Ubuntu runners explicitly disable their AppArmor
+unprivileged-user-namespace restriction and probe bubblewrap before the gate.
+That runner-only setup does not change application behavior or establish local
+isolation on hosts with different namespace policy.
+
 ## Webhook receiver
 
 - `POST $WEBHOOK_URL` captures request headers and the original body and returns

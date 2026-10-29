@@ -7,17 +7,15 @@ There are two kinds of templates:
 
 ## User-authored templates: Liquid
 
-> M1.8 implementation in progress: the template API, Liquid renderer and
-> converted SMTP diagnostic are present on the task branch, but the full D23 /
-> D54 acceptance matrix and measurements have not passed. Markdown emission,
-> a complete descriptor/cost audit, and the remaining compiled and authorization
-> regression matrix are outstanding. Do not treat this branch as a completed
-> rendering safety boundary until those are finished.
+> M1.8 provides the template API, renderer and converted SMTP diagnostic on
+> this task branch. Local D23/D54/D55 acceptance and measurements have been
+> run. Hosted exact-head CI and independent review remain pending; this branch
+> is not yet accepted.
 
 
 listmonk uses Go's `html/template` with Sprig functions (`{{ .Subscriber.FirstName }}`, `{{ UnsubscribeURL }}`). A TypeScript port needs an engine of its own. iglo.email uses **Liquid**, through [LiquidJS](https://liquidjs.com):
 
-- **Its capabilities are explicit:** M1.8 supplies sanitized plain data, dense arrays, reviewed filters and an allowlisted in-memory template resolver. `ownPropertyOnly` additionally restricts property lookup; it does not sanitize inherited array iteration. No filesystem or URL fallback is allowed ([D23](09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application)).
+- **Its capabilities are explicit:** M1.8 supplies bounded serialized JSON, dense arrays, reviewed filters and an allowlisted in-memory template resolver. `ownPropertyOnly` additionally restricts property lookup; it does not sanitize inherited array iteration. No filesystem or URL fallback is allowed ([D23](09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application)).
 - **Resource bounds are enforced by the application:** finite input/filter budgets and byte-counted output emission must complement the engine limits. `parseLimit` counts UTF-16 units, `renderLimit` is cooperative, and `memoryLimit` accounts selected operations without capping all output or heap use. M1.8 must implement and test those bounds before production use (D23). [D54](09-decisions.md#d54-template-ownership-safe-updates-and-bounded-liquid-rendering) sets the finite input/output/work budgets, safe store/preview semantics and authorized dependency seams. The supported tag/filter/resolver subset is documented rather than assuming every Liquid extension is safe.
 - **It is familiar:** Shopify, Jekyll and many email tools use it, so most people writing email templates have seen it.
 - **No reimplementation:** reimplementing Go template semantics in TypeScript to keep old templates working is not worth it. There are no existing iglo.email templates to keep compatible.
@@ -34,23 +32,17 @@ M0.8 measured the selected library and found the precise library-limit semantics
 | Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`; other filters are rejected. These filters accept scalar inputs; `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution |
 | Dates | `now` and `today` use the injected clock; supported format directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%` in UTC. Other date strings must be a date or UTC ISO timestamp |
 | Lookup | No user partial lookup. Converted system templates are embedded and selected by the owning application, not by user-supplied paths or names |
-| Data | Plain data copied with descriptor checks; 256 KiB encoded, depth 16, 10,000 nodes, 1,024 entries, and 64 KiB per string. A review of the bound on own-property enumeration remains open |
+| Data | Primitive JSON strings are limited to 256 KiB UTF-8 before parsing and copied to owned dense arrays and null-prototype records; depth 16, 10,000 nodes, 1,024 entries, and 64 KiB per string |
 | Render | Source 64 KiB body/layout and 2 KiB subject; 1 MiB output per body/layout and 2 KiB subject; shared 4 MiB emission/intermediate budget, 10,000 work, depth 32 and 1,024 per range. Work includes expression tokens, property lookup, collection conversion and comparison size. Four admitted renders per instance. A caller can hold a compiled immutable snapshot; there is no retained cache |
-| Markdown | Not yet implemented. The planned `marked` integration must bound expansion before accumulation |
+| Markdown | Liquid with HTML escaping, then local `marked` 15.0.12, then the optional HTML layout. The lexer shares the message work/byte/depth budget through the pinned patch; a conservative token reservation counts repeated reference URLs, escaping, nested parser output and prefixes before parsing. Conservative estimates can reject messages below the nominal byte limits |
 | Tracking and URLs | `track_link` accepts HTTP(S) and returns it unchanged, `track_view` is empty, and explicit URL fields are checked. These do not implement tracking or other delivery workflows |
 
-The data copier currently enumerates own property names before it can reject
-more than 1,024 non-enumerable properties. For example, a caller can pass a
-plain object with many non-enumerable data properties: `Object.getOwnPropertyNames`
-materializes its full key list before the check. Getters are not invoked, but
-this does not prove the required pre-copy bound. The caller boundary needs a
-bounded representation or another reviewed way to inspect those descriptors
-before this can be accepted.
-
-The emitter, subset, data copy and patches require the remaining D54 safety
-matrix before they are treated as an accepted boundary. The time limit remains
+The emitter, subset, JSON boundary and patches await hosted checks and
+independent review before they are treated as an accepted boundary. The time limit remains
 cooperative, and raw author HTML is not sanitized. Preview CSP protects its
 sandboxed browser context; it is not a guarantee about HTML used elsewhere.
+Marked does not sanitize raw HTML or arbitrary author-provided URLs.
+
 [D55](09-decisions.md#d55-bound-serialized-template-context-before-reflection-and-preserve-sandbox-ci)
 refines D54's renderer entry: untrusted context is a primitive, byte-bounded
 JSON string checked before parse/reflection. Arbitrary JavaScript objects are
