@@ -17,6 +17,7 @@ import { createUserStore } from "@/users/store";
 import { createEmailer } from "@/messaging/email";
 import { startOutbox } from "@/messaging/outbox";
 import { createServer } from "node:net";
+import { createHash } from "node:crypto";
 import { createSends } from "@/messaging/sends";
 import { registerSendRoutes } from "@/messaging/routes";
 
@@ -83,6 +84,11 @@ async function fixture() {
     journal,
     call,
     subscribers,
+    roles,
+    users,
+    router,
+    app,
+    session,
     clock,
     db,
     close() {
@@ -387,6 +393,114 @@ test("owned enqueue wakes an idle outbox without advancing its polling clock", a
     expect(JSON.parse((await f.call(`/api/sends/${entry.id}`)).text).data.status).toBe("failed");
   } finally {
     await outbox.stop();
+    await emailer.close();
+    f.close();
+  }
+});
+
+test("permissions and live authority are rechecked after the resend body is drained", async () => {
+  const f = await fixture();
+  const emailer = createEmailer({
+    clock: f.clock,
+    settings: () => ({ smtp: [], rootUrl: "http://fixture.test" }),
+  });
+  try {
+    const original = f.journal.enqueue({ source: "tx", kind: "transactional", message: message() });
+    const outbox = startOutbox({
+      db: f.db,
+      clock: f.clock,
+      sends: f.journal,
+      emailer,
+      logger: { error: () => {} },
+    });
+    await outbox.stop();
+    const role = f.roles.mutate(
+      "user",
+      null,
+      "send-fixture",
+      ["sends:get", "sends:manage"],
+      [],
+      f.clock.now().toISOString(),
+    )!;
+    const token = "synthetic-send-token";
+    f.users.create({
+      username: "send-fixture",
+      email: "fixture@example.test",
+      name: "Fixture",
+      type: "api",
+      status: "enabled",
+      passwordLogin: false,
+      password: createHash("sha256").update(token).digest("hex"),
+      userRoleId: role,
+      listRoleId: null,
+    });
+    const header = `token send-fixture:${token}`;
+    const headers = { authorization: header, "content-type": "application/json" };
+    const request = (path: string, init: RequestInit) =>
+      f.router.handle(f.app, new Request(`http://fixture.test${path}`, init));
+    expect((await request("/api/sends", { headers })).status).toBe(200);
+    expect(
+      (
+        await request("/api/sends", {
+          headers: { authorization: "token invalid:invalid", cookie: `session=${f.session.id}` },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(`/api/sends/${original.id}/resend`, {
+          method: "POST",
+          headers: {
+            cookie: `session=${f.session.id}`,
+            origin: "http://other.test",
+            "x-csrf-token": f.session.csrf,
+          },
+          body: "",
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(`/api/sends/${original.id}/resend`, {
+          method: "POST",
+          headers: { cookie: `session=${f.session.id}` },
+          body: "",
+        })
+      ).status,
+    ).toBe(403);
+    let entered!: () => void, release!: () => void;
+    const read = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (first) {
+          first = false;
+          controller.enqueue(new TextEncoder().encode("{"));
+          entered();
+        } else {
+          await gate;
+          controller.enqueue(new TextEncoder().encode("}"));
+          controller.close();
+        }
+      },
+    });
+    const pending = request(`/api/sends/${original.id}/resend`, { method: "POST", headers, body });
+    await read;
+    f.roles.mutate("user", role, "send-fixture", ["sends:get"], [], f.clock.now().toISOString());
+    release();
+    expect((await pending).status).toBe(403);
+    const collection = JSON.parse((await f.call("/api/sends")).text).data;
+    expect(collection.total).toBe(1);
+    expect(
+      (await request(`/api/sends/${original.id}/resend`, { method: "POST", headers, body: "{}" }))
+        .status,
+    ).toBe(403);
+  } finally {
     await emailer.close();
     f.close();
   }

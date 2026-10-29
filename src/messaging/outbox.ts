@@ -16,6 +16,11 @@ export function startOutbox(options: {
   options.sends.recover();
   let deadline: AbortController | undefined;
   let stopped = false;
+  let failTimer!: (error: Error) => void;
+  const timerFailure = new Promise<never>((_resolve, reject) => {
+    failTimer = reject;
+  });
+  void timerFailure.catch(() => {});
   const arm = () => {
     deadline?.abort();
     deadline = undefined;
@@ -31,7 +36,13 @@ export function startOutbox(options: {
           loop.wake();
         }
       },
-      () => {},
+      () => {
+        if (!controller.signal.aborted) {
+          options.logger.error(new Error("Outbox deadline failed"));
+          failTimer(new Error("Outbox deadline failed"));
+          void loop.stop();
+        }
+      },
     );
   };
   const loop = startLoop({
@@ -55,8 +66,10 @@ export function startOutbox(options: {
     arm();
   });
   arm();
+  const done = Promise.race([loop.done, timerFailure]);
+  void done.catch(() => {});
   return {
-    done: loop.done,
+    done,
     stop() {
       stopped = true;
       deadline?.abort();
