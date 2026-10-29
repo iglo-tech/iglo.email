@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.4 unsubscribe and frequency cap, [draft PR #19](https://github.com/iglo-tech/iglo.email/pull/19), head d983dd0. Round-1 fixes pushed (migration 0003); Sol round-2 fix-only review running. Lead accepted the renderer tracking seam.
-Next: lead disposition of round 2, merge, then M2.6.
+M5.1 subscriber events API, branch task/M5.1-events, [brief](briefs/M5.1.md). One Opus medium worker dispatched; no reviewer active. Critical path to M5.4: M5.1, M1.7, M5.2, M5.3. M2.6 and M2.5 are off the critical path.
+Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge, then M1.7.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -24,6 +24,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task | PR                                                     | Merge   | Result                     |
 | ---- | ------------------------------------------------------ | ------- | -------------------------- |
+| M2.4 | [#19](https://github.com/iglo-tech/iglo.email/pull/19) | 5368d30 | Unsubscribe/cap/tracking   |
 | M2.3 | [#18](https://github.com/iglo-tech/iglo.email/pull/18) | 7a56cb7 | Transactional API          |
 | M1.8 | [#17](https://github.com/iglo-tech/iglo.email/pull/17) | 17eaf1c | Templates/bounded Liquid   |
 | M2.2 | [#16](https://github.com/iglo-tech/iglo.email/pull/16) | 4328bf0 | Durable journal/outbox     |
