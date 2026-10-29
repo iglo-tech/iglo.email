@@ -1,8 +1,9 @@
 # Worked example test data
 
 Generated per run; no real addresses or credentials. Subscribers are
-`<name>-<run id>@worked.example.test`, all created on the single opt-in list "Product news"
-(status `unconfirmed`, which grants marketing permission on a single opt-in list).
+`<name>-<run id>@worked.example.test`, all but n1 created on the single opt-in list "Product
+news" (status `unconfirmed`, which grants marketing permission on a single opt-in list). n1 is
+created by its event with no list membership.
 Credentials: admin `worked-admin` / `worked-example-admin-password` (fixture only), plus an
 API user created through the login at start.
 
@@ -37,8 +38,10 @@ API user created through the login at start.
 | k1  | `order_paid` gift #2, `download_finished`, monthly summary                                                                 | Second pack, then Your month deferred by the cap          |                     |
 | u1  | `order_paid` gift #2, `subscription_canceled`, `subscription_past_due`; unsubscribes by the email's link (page, then form) | Second pack, One question, Payment failed, second notice  | Win-back            |
 | u2  | same; unsubscribes by RFC 8058 one-click from `List-Unsubscribe`                                                           | same as u1                                                | Win-back            |
-| r1  | `subscription_past_due`; the process stops when step 2 is due                                                              | Payment failed, second notice (once, after restart)       |                     |
+| n1  | `subscription_canceled`, no list membership                                                                                | One question (Cancellation exits: unsubscribed)           | Win-back            |
+| r1  | `subscription_past_due`; Payment failed paused, the process stops when step 2 is due                                       | Payment failed, second notice (once, after resume)        |                     |
+| w1  | `subscription_created` just before the stop                                                                                | Welcome, Did the setup work? (after restart)              |                     |
 | e1  | `subscription_past_due` before the edit                                                                                    | Payment failed, final notice (new template, old due time) | second notice       |
 | e4  | `subscription_past_due` after the edit                                                                                     | Payment failed, final notice after the new 40 s           | second notice       |
-| d1  | `subscription_created` before Did the setup work? is deleted                                                               | Welcome, Tips                                             | Did the setup work? |
-| d2  | `subscription_created` after the delete                                                                                    | Welcome, Tips                                             | Did the setup work? |
+| d1  | `subscription_created` before Did the setup work? is deleted                                                               | Welcome, Tips (at the deleted step's due time)            | Did the setup work? |
+| d2  | `subscription_created` after the delete                                                                                    | Welcome, Tips (after its full 40 s)                       | Did the setup work? |

@@ -19,6 +19,9 @@ const CAP = "PT30S";
 const CAP_MS = 30_000;
 /** One scheduler interval (15 s) plus margin: the longest a due step legitimately waits. */
 const TICK_MS = 20_000;
+/** The step added after the deleted one waits longer than TICK_MS, so waiting again shows. */
+const TIPS_WAIT = "PT40S";
+const TIPS_WAIT_MS = 40_000;
 
 const subjects = {
   credits: "Credits ready",
@@ -227,6 +230,16 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
     expected.push([email(name), subjects[key]]);
     return found;
   };
+  /** Wait until the enrollment is no longer active, and return it. */
+  const waitForEnd = async (id: number, timeoutMs = 60_000) => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const current = await enrollment(id);
+      if (current.status !== "active") return current;
+      check(Date.now() < deadline, `enrollment ${id} still active`);
+      await Bun.sleep(250);
+    }
+  };
   const waitForStatus = async (id: number, status: string, timeoutMs = 60_000) => {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
@@ -255,6 +268,7 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
     "u1",
     "u2",
     "r1",
+    "w1",
   ];
   for (const name of names) await person(name, name.startsWith("p") ? "prepaid" : "subscription");
 
@@ -319,6 +333,15 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
   );
   for (const name of ["c1", "c2", "c3", "c4"]) await receive(name, "question");
   await receive("c3", "welcome");
+
+  // 4b. Send-time consent: n1 is created by the event with no list membership. The
+  // transactional step goes out; the marketing win-back finds no permission on the list.
+  const n1 = await event("n1", "subscription_canceled");
+  subscribers.set("n1", n1.subscriber_id);
+  check((await membership("n1")) === undefined, "n1 has no membership in the marketing list");
+  const n1cancel = startedIn(n1, cancellation)!;
+  check(n1cancel, "a subscriber without list permission is still enrolled");
+  await receive("n1", "question");
 
   // 5a. Frequency cap: k1 gets Second pack, then Your month is deferred.
   await event("k1", "order_paid", { product: "gift", order_number: 2 });
@@ -394,25 +417,50 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
   }
   log("unsubscribe: link form and one-click both exited the list-tied enrollments");
 
-  // 6. Restart: stop while enrollments wait and r1's step 2 is due but not yet run.
+  // 6. Restart. The barrier is a pause through the API, not the 15-second tick: Payment failed
+  // is paused before r1's step 2 is due, so that step is due and unsent when the process stops,
+  // and w1's Welcome step 2 is still waiting.
   const r1 = startedIn(await event("r1", "subscription_past_due"), payment)!;
   await receive("r1", "failed");
+  await ok(`/api/sequences/${payment.id}/status`, "PUT", { status: "paused" });
+  let resumedAt: number;
   {
     const waiting = await enrollment(r1);
     const due = Date.parse(waiting.due_at);
-    while (Date.now() <= due + 50) await Bun.sleep(20);
-    const now = await enrollment(r1);
+    check(due > Date.now(), "Payment failed paused before r1's step 2 is due");
+    while (Date.now() <= due + 1000) await Bun.sleep(100);
+    const w1 = startedIn(await event("w1", "subscription_created"), welcome)!;
+    await receive("w1", "welcome");
+    const r1now = await enrollment(r1);
     check(
-      now.status === "active" && now.step_id === waiting.step_id,
-      "r1's step 2 is due and not yet run when the process stops",
+      r1now.status === "active" &&
+        r1now.step_id === waiting.step_id &&
+        r1now.due_at === waiting.due_at,
+      "r1's step 2 is due and not run while the sequence is paused",
+    );
+    const w1now = await enrollment(w1);
+    check(
+      w1now.status === "active" && Date.parse(w1now.due_at) > Date.now(),
+      "w1's step 2 is still waiting when the process stops",
     );
     const active = (await ok("/api/enrollments?status=active&per_page=100")).total;
     await production.stop();
-    log(`stopped with ${active} active enrollments, r1 step 2 due`);
+    check(
+      mail.find(email("r1"), subjects.failed2).length === 0,
+      "r1's due step 2 was not sent before the stop",
+    );
+    log(`stopped with ${active} active enrollments, r1 step 2 due, w1 step 2 waiting`);
     // Down long enough for every 10-second wait to pass.
     await Bun.sleep((WAIT_SECONDS + 2) * 1000);
     await production.start();
-    log("restarted");
+    check(
+      (await enrollment(r1)).status === "active" &&
+        mail.find(email("r1"), subjects.failed2).length === 0,
+      "r1's step 2 still unsent after the restart while paused",
+    );
+    resumedAt = Date.now();
+    await ok(`/api/sequences/${payment.id}/status`, "PUT", { status: "active" });
+    log("restarted and resumed Payment failed");
   }
 
   // Waited steps: each arrives once, whether it ran before the stop or after the restart.
@@ -422,7 +470,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
   await receive("f2", "failed2", 2 * TICK_MS);
   await receive("c2", "winback", 2 * TICK_MS);
   await receive("c4", "winback", 2 * TICK_MS);
-  await receive("r1", "failed2", 2 * TICK_MS);
+  const r1mail = await receive("r1", "failed2", 2 * TICK_MS);
+  check(r1mail.at >= resumedAt, "r1's due step 2 arrived after the restart and resume");
+  await receive("w1", "setup", 2 * TICK_MS);
   for (const name of ["u1", "u2"]) await receive(name, "failed2", 2 * TICK_MS);
   const kMonthMail = await receive("k1", "month", 60_000 + 2 * TICK_MS);
   check(
@@ -442,6 +492,13 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
   {
     const c1 = (await enrollmentsOf("c1")).find((e) => e.sequence_id === cancellation.id);
     check(c1 && c1.status !== "active", "c1: Cancellation finished without the win-back");
+  }
+  {
+    const row = await waitForEnd(n1cancel);
+    check(
+      row.status === "exited" && row.exit_reason === "unsubscribed",
+      `n1: Cancellation exited as unsubscribed at the marketing step (got ${row.status}/${row.exit_reason})`,
+    );
   }
   {
     const row = await waitForStatus(startedIn(m2, monthly)!, "exited");
@@ -473,7 +530,7 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
   const welcomeNow = await ok(`/api/sequences/${welcome.id}`);
   const withoutSetup = await ok(`/api/sequences/${welcome.id}`, "PUT", {
     ...welcomeNow,
-    steps: [welcomeNow.steps[0], tx("tips", "PT5S")],
+    steps: [welcomeNow.steps[0], tx("tips", TIPS_WAIT)],
   });
   check(withoutSetup.steps.length === 2, "Did the setup work? deleted, Tips added");
   const e1after = await enrollment(e1);
@@ -485,6 +542,7 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
   const e4waiting = await enrollment(e4);
   const d2 = startedIn(await event("d2", "subscription_created"), welcome)!;
   await receive("d2", "welcome");
+  const d2waiting = await enrollment(d2);
 
   // e1 gets the new template at its old due time; e4 waits the new 40 seconds.
   const e1mail = await receive("e1", "failedFinal", 2 * TICK_MS);
@@ -496,13 +554,19 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
     Date.parse(e4waiting.due_at) - Date.parse(e4waiting.updated_at) >= 39_000,
     "e4's step 2 is scheduled with the new 40-second wait",
   );
-  // d1 waited on the deleted step: it moves on to Tips at the deleted step's due time.
+  // d1 waited on the deleted step: it gets Tips at the deleted step's due time, without waiting
+  // Tips' 40 seconds again. d2 reaches Tips normally and waits its full 40 seconds.
   const d1tips = await receive("d1", "tips", 2 * TICK_MS);
   check(
     d1tips.at < Date.parse(d1before.due_at) + TICK_MS,
     "d1 skipped the deleted step without waiting again",
   );
-  await receive("d2", "tips", 2 * TICK_MS);
+  check(
+    Date.parse(d2waiting.due_at) - Date.parse(d2waiting.updated_at) >= TIPS_WAIT_MS - 1000,
+    "d2's Tips is scheduled with its full 40-second wait",
+  );
+  const d2tips = await receive("d2", "tips", TIPS_WAIT_MS + 2 * TICK_MS);
+  check(d2tips.at >= Date.parse(d2waiting.due_at), "d2's Tips not before its full wait");
   const e4mail = await receive("e4", "failedFinal", 40_000 + 2 * TICK_MS);
   check(e4mail.at >= Date.parse(e4waiting.due_at), "e4's step 2 not before its new due time");
   for (const id of [e1, e4, d1, d2]) await waitForStatus(id, "completed");
@@ -528,6 +592,7 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
     [email("m2"), subjects.month],
     [email("f1"), subjects.failed2],
     [email("c1"), subjects.winback],
+    [email("n1"), subjects.winback],
     [email("c3"), subjects.winback],
     [email("u1"), subjects.winback],
     [email("u2"), subjects.winback],
