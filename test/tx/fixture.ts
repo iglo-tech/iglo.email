@@ -213,6 +213,7 @@ export async function txFixture(
     template,
     subscriber,
     sends,
+    emailer,
     marketing,
     get outbox() {
       return outbox;

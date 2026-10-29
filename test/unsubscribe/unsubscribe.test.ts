@@ -294,6 +294,79 @@ test("failed marketing does not count; resend respects the cap and rechecks cons
   expect(f.sink.messages).toHaveLength(1);
 });
 
+test("marketing has one SMTP recipient: request copies are 400, server copies are not applied", async () => {
+  let reject = false;
+  const f = await open({
+    reject: () => reject,
+    emailHeaders: [{ Cc: "server-cc@example.test", Bcc: "server-bcc@example.test" }],
+  });
+  f.marketing.minInterval = "";
+  const { template, list } = await setup(f);
+  const news = await list("news");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news] });
+  await f.subscriber("bob@example.test", "Bob", { lists: [news] });
+  // Request copies on a marketing send are rejected atomically: no rows, no SMTP.
+  for (const headers of [
+    [{ Cc: "eve@example.test" }],
+    [{ bcc: "bob@example.test" }],
+    [{ "X-Tag": "a" }, { cC: "eve@example.test" }],
+  ]) {
+    const response = await f.tx({
+      subscriber_id: ada,
+      template_id: template,
+      kind: "marketing",
+      list_id: news,
+      headers,
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("headers");
+  }
+  expect(f.count()).toBe(0);
+  expect(f.sink.messages).toHaveLength(0);
+
+  // Synchronous dispatch: server Cc/Bcc are not applied to marketing.
+  expect(status(await marketing(f, ada, template, news, "sync"))).toEqual(["sent"]);
+  // Outbox loop (async).
+  const queued = await f.tx({
+    subscriber_id: ada,
+    template_id: template,
+    kind: "marketing",
+    list_id: news,
+    async: true,
+  });
+  for (let i = 0; i < 50 && f.sink.messages.length < 2; i++) {
+    // The loop's post-item pause runs on the injected clock.
+    f.clock.advance(0);
+    await Bun.sleep(20);
+  }
+  expect((await row(f, queued)).status).toBe("sent");
+  // Manual resend.
+  reject = true;
+  const failed = await marketing(f, ada, template, news, "resend");
+  expect(status(failed)).toEqual(["failed"]);
+  reject = false;
+  const resend = await f.json(`/api/sends/${failed.body.data.sends[0].id}/resend`, "POST");
+  expect(resend.status).toBe(200);
+  for (let i = 0; i < 50 && f.sink.messages.length < 3; i++) {
+    // The loop's post-item pause runs on the injected clock.
+    f.clock.advance(0);
+    await Bun.sleep(20);
+  }
+  expect(f.sink.messages).toHaveLength(3);
+  for (const message of f.sink.messages) {
+    expect(message.to).toEqual(["ada@example.test"]);
+    expect(decoded(message.data).header("Cc")).toBeNull();
+  }
+
+  // Transactional sends keep the server copies.
+  expect(status(await f.tx({ subscriber_id: ada, template_id: template }))).toEqual(["sent"]);
+  expect(f.sink.messages[3]!.to).toEqual([
+    "ada@example.test",
+    "server-cc@example.test",
+    "server-bcc@example.test",
+  ]);
+});
+
 test("one-click POST and the page form unsubscribe the send's list without login", async () => {
   const events: unknown[] = [];
   const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });

@@ -117,6 +117,10 @@ export function registerTxRoutes(
           if (!Object.hasOwn(headers, key)) headers[key] = value;
           if (Object.keys(headers).length > MAX_HEADERS) throw invalid("headers");
         }
+      // A marketing send has one SMTP recipient, the admitted subscriber: copies would
+      // bypass consent, the frequency cap and the scoped unsubscribe link.
+      if (kind === "marketing" && (Object.hasOwn(headers, "Cc") || Object.hasOwn(headers, "Bcc")))
+        throw invalid("headers");
       if (
         typeof m.fromEmail !== "string" ||
         /[\r\n\0]/.test(m.fromEmail) ||
