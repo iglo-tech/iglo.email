@@ -396,6 +396,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
         igloBudgetCollection: (value: unknown) => void;
         igloBudgetFilter: (name: string, count: number) => void;
         igloBudgetForloop: (name: string) => void;
+        igloBudgetForArguments: (args: Record<string, unknown>) => void;
+        igloBudgetForValues: (args: Record<string, unknown>) => void;
       };
       bounded.igloBudgetStep = () => {
         b.step();
@@ -411,6 +413,33 @@ export function createRenderer(clock: Clock, translation: Translation) {
           (name === "t" && count % 2 !== 0)
         )
           throw new Error("Invalid filter arguments");
+      };
+      bounded.igloBudgetForArguments = (args) => {
+        let count = 0;
+        // The pinned parser admits at most these three distinct names. Reserve
+        // runtime hash construction, validation and literal/flag evaluation
+        // before Hash.render creates an object/key list or evaluates values.
+        for (const key in args) {
+          if (
+            !Object.hasOwn(args, key) ||
+            (key !== "offset" && key !== "limit" && key !== "reversed") ||
+            ++count > 3
+          )
+            throw new Error("Invalid for arguments");
+        }
+        b.step(1 + count * 2);
+      };
+      bounded.igloBudgetForValues = (args) => {
+        for (const key in args) {
+          const value = args[key];
+          if (typeof value === "string") b.step(Math.ceil(byteLength(value) / 1024));
+          else if (
+            value != null &&
+            typeof value !== "boolean" &&
+            !(typeof value === "number" && Number.isFinite(value))
+          )
+            throw new Error("Invalid for argument value");
+        }
       };
       bounded.igloBudgetForloop = (name) => {
         const bytes = byteLength(name);

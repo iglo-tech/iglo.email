@@ -4,6 +4,7 @@ import {
   budgetBypassBodies,
   loopMetadataBody,
   loopMetadataOutput,
+  loopModifierControls,
 } from "@/test/templates/budget-cases";
 
 type Row = {
@@ -179,6 +180,20 @@ export async function runTemplatesContract(target: {
         control.status === 200 && (await control.text()) === loopMetadataOutput,
         "D54-loop-metadata",
       );
+      for (const control of loopModifierControls) {
+        const response = await fetch(`${target.baseUrl}/api/templates/preview`, {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({ template_type: "tx", body: control.body }),
+        });
+        check(
+          response.status === 200 && (await response.text()) === control.output,
+          "D54-loop-modifiers",
+        );
+      }
     }
     const multipart = new FormData();
     multipart.set("template_type", "campaign");

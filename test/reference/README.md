@@ -376,3 +376,11 @@ actual compiled production preview corpus. Long loop records and both invalid
 large arity and valid-arity cumulative argument work are rejected; reviewed
 loop metadata and ordinary filters remain positive controls. This includes
 implicit loop-record conversion as well as direct helper property access.
+
+
+M1.8 round2 adds `for` named/flag and valid cumulative modifier-work cases to
+those three boundaries, with ordinary offset/limit/reversed/continue controls.
+Unknown names reject before runtime hash allocation/evaluation; accepted
+arguments reserve work and array/object counts reject before implicit coercion.
+A bounded large-context coercion regression also runs through source HTTP and
+the isolated compiled renderer (production previews supply synthetic context).

@@ -10,6 +10,8 @@ import {
   budgetBypassBodies,
   loopMetadataBody,
   loopMetadataOutput,
+  loopModifierControls,
+  modifierCoercionCase,
 } from "@/test/templates/budget-cases";
 
 const renderer = createRenderer(createRealClock(), createTranslation());
@@ -59,6 +61,19 @@ try {
   });
   assert.equal(loopControl.status, 200);
   assert.equal(await loopControl.text(), loopMetadataOutput);
+  const coercion = await fetch(fixture.url, {
+    method: "POST",
+    body: JSON.stringify(modifierCoercionCase),
+  });
+  assert.equal(coercion.status, 400);
+  for (const control of loopModifierControls) {
+    const response = await fetch(fixture.url, {
+      method: "POST",
+      body: JSON.stringify({ body: control.body, data: {} }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), control.output);
+  }
   let touched = 0;
   const proxy = new Proxy(
     {},

@@ -51,7 +51,7 @@ bounded fields. Bounded decoded data is copied into dense/null-prototype values
 with the same depth/node/string/entry rules. This is an internal renderer
 interface, not a changed CRUD/preview HTTP envelope or completed acceptance.
 
-### Loop metadata and filter arguments
+### Loop metadata and arguments
 
 Only the reviewed `forloop.index`, `index0`, `rindex`, `rindex0`, `first`,
 `last` and `length` properties are exposed. Helper methods such as `valueOf`
@@ -65,6 +65,19 @@ every evaluated argument consumes work. `raw`, `upcase`, `strip` and
 `track_link` accept no extra arguments; `default` and `date` accept at most
 one. `t` accepts zero to eight arguments in name/value pairs. This applies to
 literal arguments too; ignored extra arguments do not provide free work.
+
+The `for` tag admits only `offset`, `limit` and `reversed`. Unknown names,
+including magic property names, reject while parsing rather than entering the
+runtime hash. Duplicate supported names retain Liquid's final-value behavior.
+Each nonempty loop reserves shared work for its bounded hash construction,
+validation and every accepted argument before the library allocates its runtime
+object/key list or evaluates values. Literal and flag forms are charged too;
+ordinary modifiers and `offset:continue` retain their supported behavior.
+Modifier values are finite scalars or missing/null; arrays and objects reject
+before implicit slice-count coercion can allocate an uncharged joined string.
+String values also consume work proportional to their UTF-8 byte length.
+An unset `offset:continue` register starts at zero, preserving first-use behavior
+without relying on implicit conversion of an empty object.
 
 ### Data and functions
 
