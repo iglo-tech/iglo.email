@@ -21,12 +21,19 @@ import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
 
 /**
- * Effects of a completed unsubscribe, called inside its write transaction. M5 cancels
- * active enrollments in sequences tied to `listIds` (exit_reason `unsubscribed`) and
- * M2.6 queues `subscriber.unsubscribed` / `subscriber.blocklisted` webhooks here.
+ * Effects of an unsubscribe request, called inside its write transaction on every POST,
+ * including repeats. `listId` is the requested send's list; `listIds` are the memberships
+ * whose status changed. M5 cancels active enrollments in sequences tied to `listId` and
+ * `listIds` (exit_reason `unsubscribed`) and M2.6 queues `subscriber.unsubscribed` /
+ * `subscriber.blocklisted` webhooks here.
  */
 export interface UnsubscribeEffects {
-  unsubscribed(event: { subscriberId: bigint; listIds: bigint[]; blocklisted: boolean }): void;
+  unsubscribed(event: {
+    subscriberId: bigint;
+    listId: bigint;
+    listIds: bigint[];
+    blocklisted: boolean;
+  }): void;
 }
 const noEffects: UnsubscribeEffects = { unsubscribed() {} };
 
@@ -210,7 +217,12 @@ export function registerUnsubscribeRoutes(
         found.send.list_id,
         blocklist,
       );
-      effects.unsubscribed({ subscriberId: found.subscriber.id, listIds, blocklisted: blocklist });
+      effects.unsubscribed({
+        subscriberId: found.subscriber.id,
+        listId: found.send.list_id,
+        listIds,
+        blocklisted: blocklist,
+      });
       return true;
     });
     if (!done) return notFound(t);
@@ -233,7 +245,11 @@ export function registerUnsubscribeRoutes(
     }
     return new Response(Uint8Array.from(pixel), {
       status: 200,
-      headers: { "Content-Type": "image/png", "Cache-Control": "no-cache", ...noIndex },
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "no-cache",
+        ...noIndex,
+      },
     });
   });
 
@@ -255,6 +271,9 @@ export function registerUnsubscribeRoutes(
         link.id,
         settings.individualTracking ? send.subscriber_id : null,
       );
-    return new Response(null, { status: 307, headers: { Location: link.url, ...noIndex } });
+    return new Response(null, {
+      status: 307,
+      headers: { Location: link.url, ...noIndex },
+    });
   });
 }

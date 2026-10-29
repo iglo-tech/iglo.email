@@ -438,11 +438,21 @@ test("one-click POST and the page form unsubscribe the send's list without login
   expect(await membership(f, ada, other)).toBe("unconfirmed");
   expect((await f.json(`/api/subscribers/${ada}`)).body.data.status).toBe("enabled");
   expect(events).toEqual([
-    { subscriberId: BigInt(ada), listIds: [BigInt(news)], blocklisted: false },
+    {
+      subscriberId: BigInt(ada),
+      listId: BigInt(news),
+      listIds: [BigInt(news)],
+      blocklisted: false,
+    },
   ]);
-  // Repeating is harmless and reports no newly changed list.
+  // Repeating is harmless and reports no newly changed list, but still names the requested one.
   expect((await f.request(path, { method: "POST" })).status).toBe(200);
-  expect(events[1]).toEqual({ subscriberId: BigInt(ada), listIds: [], blocklisted: false });
+  expect(events[1]).toEqual({
+    subscriberId: BigInt(ada),
+    listId: BigInt(news),
+    listIds: [],
+    blocklisted: false,
+  });
   // The next marketing send to that list is skipped.
   f.clock.advance(8 * day);
   expect(await row(f, await marketing(f, ada, template, news, "2"))).toMatchObject({

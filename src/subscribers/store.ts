@@ -51,6 +51,20 @@ const nameFromEmail = (email: string) =>
     .filter(Boolean)
     .map(titleWords)
     .join(" ");
+/**
+ * Consent effects of subscriber writes, called inside the caller's write transaction
+ * (docs/design/04-sending.md#unsubscribe). M5.3 ends the affected sequence enrollments.
+ */
+export interface SubscriberEffects {
+  /** The subscribers are now blocklisted. */
+  blocklisted(ids: bigint[]): void;
+  /** The subscribers' memberships of `listIds` are now unsubscribed. */
+  unsubscribed(ids: bigint[], listIds: bigint[]): void;
+}
+export const noSubscriberEffects: SubscriberEffects = {
+  blocklisted() {},
+  unsubscribed() {},
+};
 export interface Scope {
   all: boolean;
   ids: bigint[];
@@ -59,7 +73,12 @@ const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER)
     ? Number(id)
     : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(id.toString());
-export function createSubscriberStore(db: Database, clock: Clock, lists: ListReferences) {
+export function createSubscriberStore(
+  db: Database,
+  clock: Clock,
+  lists: ListReferences,
+  effects: SubscriberEffects = noSubscriberEffects,
+) {
   const q = prepareNamedQueries(db, [{ name: "subscribers/store", sql }]);
   const get = (id: bigint) => q.get("subscriber-by-id").get(id) as Row | null;
   const memberships = (id: bigint) => q.get("subscriber-memberships").all(id) as Membership[];
@@ -181,7 +200,10 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
           ? JSON.parse(row.attribs)
           : input.attribs === null
             ? {}
-            : { ...(input.attribsReset ? {} : JSON.parse(row.attribs)), ...input.attribs }
+            : {
+                ...(input.attribsReset ? {} : JSON.parse(row.attribs)),
+                ...input.attribs,
+              }
         : (input.attribs ?? {});
       if (input.external_id != null) {
         const existing = external(input.external_id);
@@ -207,10 +229,11 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
             input.preconfirm_subscriptions ?? false,
             now,
           );
-        return get(row.id)!;
       } catch (error) {
         return conflict(error);
       }
+      if (status === "blocklisted") effects.blocklisted([row.id]);
+      return get(row.id)!;
     },
     remove(ids: bigint[]) {
       for (const id of ids) q.get("subscriber-delete").run(id);
@@ -221,6 +244,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
         q.get("subscriber-blocklist").run(now, id);
         q.get("membership-blocklist").run(now, id);
       }
+      effects.blocklisted(ids);
     },
     action(ids: bigint[], listIDs: bigint[], action: string, status: string) {
       const now = clock.now().toISOString();
@@ -231,9 +255,14 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
             if (!existing)
               q.get("membership-insert").run(id, list, status || "unconfirmed", now, now);
             else if (status) q.get("membership-status").run(status, id, list);
+            if (status === "unsubscribed") effects.unsubscribed([id], [list]);
           } else if (action === "remove") q.get("membership-delete").run(id, list);
-          else if (action === "unsubscribe" && existing)
-            q.get("membership-update").run("unsubscribed", now, id, list);
+          else if (action === "unsubscribe") {
+            if (existing) q.get("membership-update").run("unsubscribed", now, id, list);
+            // An absent membership stays absent, but the consent action still ends the
+            // list's enrollments.
+            effects.unsubscribed([id], [list]);
+          }
         }
     },
     /** Event lookup: by `external_id`, then by `email`. Read-only; the caller holds the write. */

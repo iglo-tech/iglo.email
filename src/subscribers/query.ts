@@ -14,6 +14,7 @@ import {
   type SubscriberFilter,
 } from "@/subscribers/query-filter";
 import type { QueryRunner, RunnerError } from "@/subscribers/query-runner";
+import { noSubscriberEffects, type SubscriberEffects } from "@/subscribers/store";
 import querySql from "@/subscribers/query.sql" with { type: "text" };
 import exportSql from "@/subscribers/export.sql" with { type: "text" };
 
@@ -39,8 +40,11 @@ export function createSubscriberQuery(options: {
   runner: QueryRunner;
   /** Large selections admitted at once (default LARGE_SELECTIONS). */
   largeSelections?: number;
+  /** Consent effects of bulk blocklisting and unsubscribing. */
+  effects?: SubscriberEffects;
 }) {
   const { db, readonly, clock, runner } = options;
+  const effects = options.effects ?? noSubscriberEffects;
   const largeLimit = options.largeSelections ?? LARGE_SELECTIONS;
   let large = 0;
   const writes = prepareNamedQueries(db, [{ name: "subscribers/query", sql: querySql }]);
@@ -155,12 +159,23 @@ export function createSubscriberQuery(options: {
       const now = clock.now().toISOString();
       writes.get("blocklist-by-ids").run(now, json(ids));
       writes.get("blocklist-memberships-by-ids").run(now, json(ids));
+      effects.blocklisted(ids);
     },
     addLists(ids: bigint[], lists: bigint[], status: string) {
       const now = clock.now().toISOString();
       writes
         .get("add-memberships-by-ids")
         .run(status || "unconfirmed", now, now, json(ids), json(lists));
+      // Existing memberships keep their status; only those now unsubscribed end enrollments.
+      if (status !== "unsubscribed") return;
+      const pairs = writes.get("unsubscribed-memberships-by-ids").all(json(ids), json(lists)) as {
+        subscriber_id: bigint;
+        list_id: bigint;
+      }[];
+      const byList = new Map<bigint, bigint[]>();
+      for (const { subscriber_id, list_id } of pairs)
+        byList.set(list_id, [...(byList.get(list_id) ?? []), subscriber_id]);
+      for (const [list, subscribers] of byList) effects.unsubscribed(subscribers, [list]);
     },
     removeLists(ids: bigint[], lists: bigint[]) {
       writes.get("delete-memberships-by-ids").run(json(ids), json(lists));
@@ -169,6 +184,7 @@ export function createSubscriberQuery(options: {
       writes
         .get("unsubscribe-memberships-by-ids")
         .run(clock.now().toISOString(), json(ids), json(lists));
+      effects.unsubscribed(ids, lists);
     },
     close() {
       writes.close();

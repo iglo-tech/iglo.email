@@ -1,6 +1,8 @@
 -- Native subscriber event store (docs/design/03-data-model.md#events); no upstream source.
 -- name: event-by-key
-SELECT id, subscriber_id FROM events WHERE subscriber_id = ? AND idempotency_key = ?;
+SELECT id, subscriber_id, enrollments FROM events WHERE subscriber_id = ? AND idempotency_key = ?;
+-- name: event-enrollments
+UPDATE events SET enrollments = ? WHERE id = ?;
 -- name: event-insert
 INSERT INTO events (subscriber_id, name, data, occurred_at, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?) RETURNING id;
 -- name: events-by-subscriber
