@@ -11,17 +11,19 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 | Owner | the project owner | Sets direction. Is not asked for approvals: agents merge and decide on their own, and log decisions for later review |
 | Lead (chief of staff) | a scheduled agent run, every 45 minutes ([runbook](../chief-of-staff.md)) | Keeps this plan and [`docs/status.md`](../status.md) current, writes task briefs, starts workers and the council, merges, decides design questions |
 | Worker | one agent per task | Does one task in its own branch and worktree, opens one PR |
-| Council | two fresh, independent GPT-6.1 Sol agents at xhigh reasoning (reviewers A and B), never the lead or worker | Reviews each finished PR independently against listmonk's source and these docs. A PR merges only when both approve the same commit |
+| Council | two fresh independent reviewers A/B under the quota policy below, never the lead or worker | Reviews each finished PR independently against listmonk's source and these docs. A PR merges only when both approve the same commit |
 
 ### Models
 
-| Work | Model |
-|---|---|
-| Lead | GPT-6.1 Sol, xhigh reasoning (extra high) |
-| All workers, fixers and helpers, including core, security- and delivery-critical code, mechanical tasks and bulk work | GPT-6.1 Terra, max reasoning |
-| Council | Two fresh, independent GPT-6.1 Sol agents, each at xhigh reasoning (extra high), labelled A and B |
+| Work | Default | Authorized fallback at OpenAI <=1% remaining |
+|---|---|---|
+| Lead | GPT-6.1 Sol, xhigh | Claude Opus5.5, xhigh |
+| Every worker, fixer or helper | GPT-6.1 Terra, max | Claude Opus5.5, max |
+| Each of two fresh independent council members A/B | GPT-6.1 Sol, xhigh | Claude Opus5.5, medium |
 
-Model assignments were set by the owner on 2026-10-27 and updated on 2026-10-28: skip Anthropic models for now and use two GPT-6.1 Sol xhigh council reviewers. This override remains in force until the owner changes it. Lead and Terra worker/fixer/helper assignments stay as listed above. Each council member uses a separate review task and isolated worktree, with settings in target.options.
+Owner update2026-10-29: monitor OpenAI quota and switch to Anthropic at **1% remaining**, retaining OpenAI above that threshold. This condition supersedes the2026-10-28 unconditional Anthropic ban. Model/effort/provider availability was verified through orchestrator capabilities. Follow the [quota preflight and handoff](../chief-of-staff.md#quota-preflight-and-provider-handoff) at each owning wake and before every dispatch. An unavailable reading is unknown; preserve real samples/provider state locally, do not invent usage or publish account usage. Existing running delegates finish or return a safe checkpoint before replacement; no duplicate worker, partial-review approval or bypass of either provider's cooldown.
+
+Defaults and fallback preserve isolation worktree and settings in target.options. Council independence and two same-head approvals (or the existing documented three-round disposition) still apply; actual model/effort goes in every verdict/recovery record. Quota monitoring never polls running delegates. Keep the enabled recovery schedule unbound at45 minutes.
 
 ### MVP platform
 
@@ -54,7 +56,7 @@ Measurements: <docs/perf/... if the task changes sending, scheduling or storage>
 ### Rules for workers
 
 - Follow `AGENTS.md`. listmonk v7.0.0-beta.1 is the reference for ported behavior; read its source in the upstream checkout (`/home/t3-code/upstream/listmonk` until M0.2 adds the fetch script), never from memory.
-- Do the task yourself. If the lead explicitly authorizes helpers for bulk mechanical work, they use GPT-6.1 Terra at max reasoning; keep the judgment calls yourself.
+- Do the task yourself. If the lead explicitly authorizes helpers for bulk mechanical work, they use the quota-selected worker model/effort above; keep the judgment calls yourself.
 - For ported endpoints, write the contract tests first and run them against the upstream reference, then port the code. For new features, write the tests from the design docs first. Each ported file names its upstream source file in a header comment.
 - Do not copy listmonk behavior blindly. If an upstream behavior looks like a poor design decision (for example a requirement that serves upstream's internals rather than the caller), propose a fix in the PR with the reason. If upstream and the design disagree, or a test can only pass with a deliberate API difference, document the blocked portion and a concrete proposal in the PR, then continue independent authorized work. Do not abandon the whole assignment or wait for owner approval. The lead decides; an accepted fix is listed in `07-api-and-ui.md` and logged for owner review.
 - No new runtime dependency, no change to a decision record, no change to another task's module without the lead.
@@ -83,7 +85,7 @@ These are created in M0 and change only through a small task of their own, becau
 
 Owner clarification on 2026-10-28: the lead manages a continuous fleet until the applicable project work plan is complete. There is no four-hour, conversation, session or per-task stop. After each merge/status push, immediately start the next eligible task; task completion is a handoff. Preserve one task at a time and independent council review. Async delegate/CI turns yield for their completion, without polling or idling until the next timer. A blocked item must not stop other eligible work; a technically unavoidable wait/cooldown remains an incomplete project with durable automatic recovery, never a completion claim.
 
-Correct first time over fast. One task at a time, end to end; the next one starts after the previous one is merged. At most three agents run at once (the worker, or the two council members), plus short lead-run helpers. If an agent hits a usage or rate limit, the lead records a one-hour cooldown for that affected capacity instead of retrying or duplicating it; continue useful authorized work through available capacity, with no unasked model substitution. Parallel tasks are considered only after M1 is merged, and still at most two workers.
+Correct first time over fast. One task at a time, end to end; the next one starts after the previous one is merged. At most three agents run at once (the worker, or the two council members), plus short lead-run helpers. If an agent hits a usage or rate limit, the lead records a one-hour cooldown for that affected capacity instead of retrying or duplicating it; continue useful authorized work through available capacity, with model substitution only under the owner-authorized1%-remaining fallback. Parallel tasks are considered only after M1 is merged, and still at most two workers.
 
 ### Hard limits
 
