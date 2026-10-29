@@ -53,11 +53,10 @@ async function peer(hold = false) {
     ready = resolve;
   });
   const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
+  const accept = (socket: Socket) => {
     count++;
     if (count === 4) ready();
     sockets.add(socket);
-    socket.on("error", () => {});
     socket.once("close", () => sockets.delete(socket));
     if (hold) return;
     socket.write("220 fixture ESMTP\r\n");
@@ -83,6 +82,20 @@ async function peer(hold = false) {
         else socket.write("250 ok\r\n");
       }
     });
+  };
+  const server = createServer((socket) => {
+    socket.on("error", () => {});
+    // The host's dev runtime probes every new loopback port with HTTP and TLS. An SMTP client
+    // speaks only after the greeting, so a connection that writes first is a probe, not a send.
+    const timer = setTimeout(() => {
+      socket.off("data", probe);
+      accept(socket);
+    }, 50);
+    const probe = () => {
+      clearTimeout(timer);
+      socket.destroy();
+    };
+    socket.once("data", probe);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const addr = server.address();
