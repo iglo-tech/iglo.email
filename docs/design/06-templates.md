@@ -51,6 +51,13 @@ The emitter, subset, data copy and patches require the remaining D54 safety
 matrix before they are treated as an accepted boundary. The time limit remains
 cooperative, and raw author HTML is not sanitized. Preview CSP protects its
 sandboxed browser context; it is not a guarantee about HTML used elsewhere.
+[D55](09-decisions.md#d55-bound-serialized-template-context-before-reflection-and-preserve-sandbox-ci)
+refines D54's renderer entry: untrusted context is a primitive, byte-bounded
+JSON string checked before parse/reflection. Arbitrary JavaScript objects are
+rejected without enumeration/coercion/getters; trusted callers compose explicit
+bounded fields. Bounded decoded data is copied into dense/null-prototype values
+with the same depth/node/string/entry rules. This is an internal renderer
+interface, not a changed CRUD/preview HTTP envelope or completed acceptance.
 
 ### Data and functions
 
