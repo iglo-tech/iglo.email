@@ -160,3 +160,47 @@ D39 adds a query-selector external route for every D38 opaque ID. Bun-normalized
 dot path segments cannot encode those identities; . and .. remain valid and
 use the query form. Selector values are decoded exactly once, never recursively.
 The path convenience form and query form share permissions and atomic behavior.
+
+M1.2 supplies persisted settings and authenticated routes, including
+the D44 SMTP-test staging boundary. Newly issued sessions capture their expiry;
+legacy sessions retain the original seven-day policy. Subscriber mutations use
+the current domain policy. `app.lang` is retained as configuration, but the
+current runtime translation remains English; changing it does not hot-switch the
+language. Later-owner settings do not implement their engines.
+
+D47 pins native cron location validation to the complete case-sensitive
+identifier set in Go 1.27.2's IANA 2026c archive, plus Go's empty/UTC/Local
+special names. Valid aliases such as US/Eastern work without a production
+timezone file. Names outside that set, including host-only extensions, return
+the safe unknown-location error with no write. The reference runner supplies
+the same checksum-pinned archive through ZONEINFO to make named-zone cases
+reproducible; the earlier unaligned host lacked US/Eastern and rejected it.
+This does not add a cron or timezone-offset engine.
+
+D48 binds repeated settings arrays using their current logical elements.
+Shrinking discards the truncated tail; later growth starts new elements from
+field zero values rather than resurrecting Go decoder backing-array contents.
+The paired SMTP cases show native 400/no-write when the only enabled server was
+discarded, versus reference 200 with that server retained. When the first server
+is enabled, both accept, but native's newly grown second element stays zero-valued.
+This prevents removed configuration from reappearing through allocation history;
+ordinary ordered prefix merging and null/empty rules remain unchanged.
+
+Settings JSON strings follow Go's per-invalid-byte UTF-8 replacement decoding.
+Under D44, this same typed decoding applies to recognized per-key candidates:
+native accepts structurally valid repaired strings, while pinned raw per-key
+bytes reach PostgreSQL and return 500/no-write. The common corpus explicitly
+pairs both outcomes and complete reference rollback; valid UTF-8, malformed JSON
+syntax, field-shape rejection and XML's existing strict boundary are preserved.
+
+Shared compiled and reference corpora exercise binding, safe error envelopes,
+numeric ranges, supported document and per-key types, address and cron cases.
+This finite coverage is representative; reproduced unlisted differences must
+still be corrected. Secret retention is visible through masked projections
+until M2.1 verifies actual authentication and delivery with Mailpit.
+
+D46 rejects NUL in final normalized writable settings strings and map keys
+atomically with native HTTP 400 `Invalid data.` and no write; pinned PostgreSQL
+returns HTTP 500 with no write. Ignored, overwritten and legitimately normalized
+input retains its documented behavior. This settings-specific decision is
+separate from subscriber D43 and requires no pending policy disposition.

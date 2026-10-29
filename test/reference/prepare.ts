@@ -134,13 +134,12 @@ async function prepareSource(signal?: AbortSignal) {
   await verifySource(signal);
 }
 
-async function prepareBinary(
-  name: string,
+async function prepareArchive(
   archiveName: string,
   url: string,
   expected: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ path: string; bytes: Uint8Array }> {
   const archivePath = join(cache, archiveName);
   if (!(await exists(archivePath))) {
     const response = await fetch(url, {
@@ -162,6 +161,17 @@ async function prepareBinary(
   const archive = await regularFile(archivePath);
   if (hash(archive) !== expected)
     throw new Error(`Cached archive checksum mismatch: ${archivePath}`);
+  return { path: archivePath, bytes: archive };
+}
+
+async function prepareBinary(
+  name: string,
+  archiveName: string,
+  url: string,
+  expected: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { bytes: archive } = await prepareArchive(archiveName, url, expected, signal);
   const files = await new Bun.Archive(archive).files();
   const entries = [...files.entries()].filter(([path]) => path === name || path === `./${name}`);
   if (entries.length !== 1) throw new Error(`Expected one ${name} executable in ${archiveName}`);
@@ -204,6 +214,12 @@ export async function prepare(signal?: AbortSignal) {
     mailHash,
     signal,
   );
+  const { path: zoneinfo } = await prepareArchive(
+    "go1.27.2-zoneinfo.zip",
+    "https://raw.githubusercontent.com/golang/go/go1.27.2/lib/time/zoneinfo.zip",
+    "b2d18a7c8fa8142097a48c99609fb3c92db5ee98bc740294e57eab8ae9f94779",
+    signal,
+  );
   for (const [binary, args, expectedVersion] of [
     [listmonk, ["--version"], "v7.0.0-beta.1"],
     [mailpit, ["version", "--no-release-check"], "1.32.0"],
@@ -219,7 +235,7 @@ export async function prepare(signal?: AbortSignal) {
     console.log(`${binary === listmonk ? "listmonk" : "Mailpit"}: ${version}`);
   }
   console.log(`listmonk source: ${sourceCommit}`);
-  return { listmonk, mailpit, source };
+  return { listmonk, mailpit, source, zoneinfo };
 }
 
 if (import.meta.main) {

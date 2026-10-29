@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { startUserFixture } from "@/test/users/fixture";
 import { defaultAuthPolicy } from "@/users/auth";
+import { createConnection } from "node:net";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 type Session = { cookie: string; csrf: string; headers: string[] };
@@ -105,6 +106,311 @@ test("session cookies rotate on login and expire according to the injected clock
   expect((await call(f, "/api/profile", { session: second })).status).toBe(200);
   await call(f, "/fixture/clock", { method: "POST", body: 1 });
   expect((await call(f, "/api/profile", { session: second })).status).toBe(403);
+});
+
+test("settings capture new session lifetimes without reviving retained sessions", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const old = await login(f, f.admin.user, f.admin.password);
+  const change = (value: string) =>
+    call(f, "/api/settings/security.session_duration", {
+      method: "PUT",
+      session: old,
+      body: value,
+    });
+  expect((await change("2s")).status).toBe(200);
+  const short = await login(f, f.admin.user, f.admin.password);
+  for (const header of short.headers) expect(header).toContain("Max-Age=2");
+  await call(f, "/fixture/clock", { method: "POST", body: 2000 });
+  expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: old })).status).toBe(200);
+  expect((await change("8d")).status).toBe(200);
+  const longer = await login(f, f.admin.user, f.admin.password);
+  for (const header of longer.headers) expect(header).toContain("Max-Age=691200");
+  expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
+  for (const value of ["0s", "1ms", "invalid", "999999999999999999d"]) {
+    expect((await change(value)).status).toBe(400);
+    expect(
+      ((await (await call(f, "/api/settings", { session: old })).json()) as any).data[
+        "security.session_duration"
+      ],
+    ).toBe("8d");
+  }
+  await call(f, "/fixture/clock", {
+    method: "POST",
+    body: defaultAuthPolicy.sessionDurationMs - 2000,
+  });
+  expect((await call(f, "/api/profile", { session: old })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: longer })).status).toBe(200);
+});
+
+test("legacy and malformed session records retain their safe expiry behavior", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const legacy = await login(f, f.admin.user, f.admin.password);
+  const invalid = await login(f, f.admin.user, f.admin.password);
+  const overflow = await login(f, f.admin.user, f.admin.password);
+  const beforeCreated = await login(f, f.admin.user, f.admin.password);
+  const future = await login(f, f.admin.user, f.admin.password);
+  f.arrangeSession(legacy.cookie, "legacy");
+  f.arrangeSession(invalid.cookie, "invalid");
+  f.arrangeSession(overflow.cookie, "overflow");
+  f.arrangeSession(beforeCreated.cookie, "before-created");
+  f.arrangeSession(future.cookie, "future-created");
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "8d",
+      })
+    ).status,
+  ).toBe(200);
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(200);
+  expect((await call(f, "/api/profile", { session: invalid })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: overflow })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: beforeCreated })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: future })).status).toBe(403);
+  await call(f, "/fixture/clock", { method: "POST", body: defaultAuthPolicy.sessionDurationMs });
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(403);
+});
+
+test("fixture owner reopen preserves expired and legacy session boundaries through policy changes", async () => {
+  let f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  const legacy = await login(f, f.admin.user, f.admin.password);
+  f.arrangeSession(legacy.cookie, "legacy");
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "2s",
+      })
+    ).status,
+  ).toBe(200);
+  const expired = await login(f, f.admin.user, f.admin.password);
+  await call(f, "/fixture/clock", { method: "POST", body: 2000 });
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  const persisted = f.persisted;
+  await f.close(true);
+  fixtures.pop();
+  f = await startUserFixture(defaultAuthPolicy, false, true, persisted);
+  fixtures.push(f);
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "8d",
+      })
+    ).status,
+  ).toBe(200);
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  const snapshot = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
+    .data;
+  snapshot["security.session_duration"] = "9d";
+  expect(
+    (await call(f, "/api/settings", { method: "PUT", session: admin, body: snapshot })).status,
+  ).toBe(200);
+  const fresh = await login(f, f.admin.user, f.admin.password);
+  for (const header of fresh.headers) expect(header).toContain("Max-Age=777600");
+  await call(f, "/fixture/clock", {
+    method: "POST",
+    body: defaultAuthPolicy.sessionDurationMs - 2001,
+  });
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(200);
+  await call(f, "/fixture/clock", { method: "POST", body: 1 });
+  expect((await call(f, "/api/profile", { session: legacy })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: fresh })).status).toBe(200);
+});
+
+test("settings body held across session expiry rejects after another principal extends policy", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "2s",
+      })
+    ).status,
+  ).toBe(200);
+  const short = await login(f, f.admin.user, f.admin.password);
+  const before = ((await (await call(f, "/api/settings", { session: admin })).json()) as any).data;
+  const candidate = {
+    ...before,
+    "app.site_name": "should not persist",
+    "bounce.sendgrid_key": "should not persist",
+  };
+  const payload = JSON.stringify(candidate);
+  const url = new URL(f.origin);
+  const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+  const output = new Promise<string>((resolve, reject) => {
+    let response = "";
+    socket.on("data", (chunk) => {
+      response += chunk.toString();
+    });
+    socket.on("end", () => resolve(response));
+    socket.on("error", reject);
+  });
+  await new Promise<void>((resolve, reject) => {
+    socket.once("connect", resolve);
+    socket.once("error", reject);
+  });
+  const split = Math.floor(payload.length / 2);
+  socket.write(
+    `PUT /api/settings HTTP/1.1\r\nHost: ${url.host}\r\nCookie: ${short.cookie}\r\nX-CSRF-Token: ${short.csrf}\r\nX-M12-Gated-Body: yes\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, split)}`,
+  );
+  await f.bodyEntered;
+  await call(f, "/fixture/clock", { method: "POST", body: 2000 });
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "8d",
+      })
+    ).status,
+  ).toBe(200);
+  const authorized = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
+    .data;
+  socket.end(payload.slice(split));
+  expect(await output).toContain(" 403 ");
+  expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
+  expect(((await (await call(f, "/api/settings", { session: admin })).json()) as any).data).toEqual(
+    authorized,
+  );
+});
+
+for (const [kind, revoked, full] of [
+  ["token", "role", true],
+  ["token", "user", false],
+  ["human", "role", false],
+  ["human", "user", true],
+] as const) {
+  test(`held settings ${full ? "full" : "key"} body denies ${kind} after ${revoked} revocation`, async () => {
+    const f = await startUserFixture(defaultAuthPolicy, true, true);
+    fixtures.push(f);
+    const admin = await login(f, f.admin.user, f.admin.password);
+    const name = `held-${kind}-${revoked}`;
+    const roleResponse = await call(f, "/api/roles/users", {
+      method: "POST",
+      session: admin,
+      body: { name, permissions: ["settings:manage"] },
+    });
+    expect(roleResponse.status).toBe(200);
+    const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+    const input = {
+      username: name,
+      email: `${name}@example.test`,
+      type: kind === "token" ? "api" : "user",
+      status: "enabled",
+      user_role_id: role,
+      ...(kind === "human" ? { password_login: true, password: "fixture-user-password" } : {}),
+    };
+    const created = await call(f, "/api/users", { method: "POST", session: admin, body: input });
+    expect(created.status).toBe(200);
+    const user = ((await created.json()) as { data: { id: number; password: string } }).data;
+    const human = kind === "human" ? await login(f, name, "fixture-user-password") : undefined;
+    const authorization = human
+      ? `Cookie: ${human.cookie}\r\nX-CSRF-Token: ${human.csrf}\r\n`
+      : `Authorization: token ${name}:${user.password}\r\n`;
+    expect(
+      (
+        await call(f, "/api/settings/bounce.sendgrid_key", {
+          method: "PUT",
+          session: admin,
+          body: "synthetic-secret",
+        })
+      ).status,
+    ).toBe(200);
+    const before = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
+      .data;
+    const payload = full
+      ? JSON.stringify({
+          ...before,
+          "app.site_name": "forbidden",
+          "security.session_duration": "10d",
+          "bounce.sendgrid_key": "different-secret",
+        })
+      : JSON.stringify("forbidden");
+    const url = new URL(f.origin);
+    const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
+    const response = new Promise<string>((resolve, reject) => {
+      let output = "";
+      socket.on("data", (chunk) => {
+        output += chunk.toString();
+      });
+      socket.on("end", () => resolve(output));
+      socket.on("error", reject);
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+    const split = Math.floor(payload.length / 2);
+    socket.write(
+      `PUT ${full ? "/api/settings" : "/api/settings/app.site_name"} HTTP/1.1\r\nHost: ${url.host}\r\n${authorization}X-M12-Gated-Body: yes\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\nConnection: close\r\n\r\n${payload.slice(0, split)}`,
+    );
+    await f.bodyEntered;
+    if (revoked === "role") {
+      expect(
+        (
+          await call(f, `/api/roles/users/${role}`, {
+            method: "PUT",
+            session: admin,
+            body: { name, permissions: [] },
+          })
+        ).status,
+      ).toBe(200);
+    } else {
+      expect(
+        (
+          await call(f, `/api/users/${user.id}`, {
+            method: "PUT",
+            session: admin,
+            body: { ...input, password: "", status: "disabled" },
+          })
+        ).status,
+      ).toBe(200);
+    }
+    socket.end(payload.slice(split));
+    expect(await response).toContain(" 403 ");
+    expect(
+      ((await (await call(f, "/api/settings", { session: admin })).json()) as any).data,
+    ).toEqual(before);
+  });
+}
+
+test("an in-flight login captures the duration in force at session creation", async () => {
+  const f = await startUserFixture(defaultAuthPolicy, true, true);
+  fixtures.push(f);
+  const admin = await login(f, f.admin.user, f.admin.password);
+  await call(f, "/fixture/gate-login", { method: "POST" });
+  const pending = login(f, f.admin.user, f.admin.password);
+  expect((await call(f, "/fixture/login-entered")).status).toBe(200);
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: admin,
+        body: "3s",
+      })
+    ).status,
+  ).toBe(200);
+  await call(f, "/fixture/login-release", { method: "POST" });
+  const created = await pending;
+  for (const header of created.headers) expect(header).toContain("Max-Age=3");
+  await call(f, "/fixture/clock", { method: "POST", body: 3000 });
+  expect((await call(f, "/api/profile", { session: created })).status).toBe(403);
+  expect((await call(f, "/api/profile", { session: admin })).status).toBe(200);
 });
 
 test("profile and admin password changes, disable and delete revoke the right sessions", async () => {
@@ -450,7 +756,8 @@ test("a TOTP-marked user cannot bypass the deferred second factor or use a human
 });
 
 test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime, attempts and revocation", async () => {
-  const f = await fixture({ ...defaultAuthPolicy, loginAttempts: 100 });
+  const f = await startUserFixture({ ...defaultAuthPolicy, loginAttempts: 100 }, true, true);
+  fixtures.push(f);
   const first = await login(f, f.admin.user, f.admin.password);
   const other = await login(f, f.admin.user, f.admin.password);
   const profile = await call(f, "/api/profile", { session: first });
@@ -566,16 +873,34 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
       .some((v) => v.startsWith("session=")),
   ).toBe(true);
   const valid = await challenge();
+  expect(
+    (
+      await call(f, "/api/settings/security.session_duration", {
+        method: "PUT",
+        session: first,
+        body: "3s",
+      })
+    ).status,
+  ).toBe(200);
   const verified = await verify(valid, "751330");
   expect(verified.status).toBe(302);
   expect(verified.headers.get("location")).toBe("/api/profile");
   expect(verified.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(true);
+  for (const header of verified.headers.getSetCookie()) expect(header).toContain("Max-Age=3");
+  const factorCookie = verified.headers
+    .getSetCookie()
+    .filter((v) => v.startsWith("session=") || v.startsWith("csrf="))
+    .map((v) => v.split(";", 1)[0])
+    .join("; ");
+  const factorSession = { cookie: factorCookie, csrf: "", headers: [] };
+  expect((await call(f, "/api/profile", { session: factorSession })).status).toBe(200);
   expect((await verify(valid, "652348")).status).toBe(302);
   const attempts = await challenge();
   for (let i = 0; i < 5; i++) expect((await verify(attempts, "bad")).status).toBe(200);
   expect((await verify(attempts, "652348")).status).toBe(302);
   const expired = await challenge();
   await call(f, "/fixture/clock", { method: "POST", body: 300_000 });
+  expect((await call(f, "/api/profile", { session: factorSession })).status).toBe(403);
   expect((await verify(expired, "652348")).status).toBe(302);
   const revoked = await challenge();
   expect(

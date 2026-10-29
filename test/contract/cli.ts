@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { startContractFixture } from "@/test/contract/fixture";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { runSettingsLive } from "@/test/settings/live";
+import { runSettingsContract } from "@/test/contract/settings";
 import { runListsContract } from "@/test/contract/lists";
 import { runSubscribersContract } from "@/test/contract/subscribers";
 import { runSubscriberScope } from "@/test/contract/subscriber-scope";
@@ -90,7 +92,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "auth" ||
       args[1] === "roles" ||
       args[1] === "lists" ||
-      args[1] === "subscribers")
+      args[1] === "subscribers" ||
+      args[1] === "settings")
   ) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
@@ -99,7 +102,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       (args[1] === "auth" ||
         args[1] === "roles" ||
         args[1] === "lists" ||
-        args[1] === "subscribers") &&
+        args[1] === "subscribers" ||
+        args[1] === "settings") &&
       Object.keys(values).length
     )
       throw new Error("Invalid owned auth arguments");
@@ -109,6 +113,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       signal,
       async (baseUrl, runSignal, restart) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "settings") {
+          await runSettingsContract({ mode: "normal", baseUrl, credentials, restart });
+          await runSettingsLive({ baseUrl, credentials, admin, restart });
+          return true;
+        }
         if (args[1] === "subscribers") {
           await runSubscribersContract({ mode: "normal", baseUrl, credentials });
           await runExternalContract({ baseUrl, credentials, restart });

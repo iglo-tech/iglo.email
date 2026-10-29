@@ -19,6 +19,9 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
+import { createSettings } from "@/settings/store";
+import { sessionDuration } from "@/settings/duration";
+import { registerSettingsRoutes } from "@/settings/routes";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -36,22 +39,26 @@ async function main(): Promise<void> {
   let campaigns: ReturnType<typeof createCampaignListReferences> | undefined;
   let roles: ReturnType<typeof createRoles> | undefined;
   let users: ReturnType<typeof createUserStore> | undefined;
+  let settings: ReturnType<typeof createSettings> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
     roles = createRoles(db, lists);
+    settings = createSettings(db, clock, bootstrap.config.rootUrl, roles);
     counts = createListCounts(db);
     subscriberStore = createSubscriberStore(db, clock, lists);
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
-    const auth = await createAuthentication(
-      users,
-      roles,
-      clock,
-      bootstrap.config.rootUrl,
-      defaultAuthPolicy,
-    );
+    const auth = await createAuthentication(users, roles, clock, bootstrap.config.rootUrl, {
+      ...defaultAuthPolicy,
+      get sessionDurationMs() {
+        return sessionDuration(
+          settings!.read()["security.session_duration"],
+          clock.now().getTime(),
+        );
+      },
+    });
     await bootstrapAdmin(users, auth, bootstrap.config.initialAdmin);
     const app = createApp({
       bootstrap: bootstrap.config,
@@ -63,7 +70,14 @@ async function main(): Promise<void> {
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
-    registerSubscriberRoutes(router, subscriberStore, roles, auth);
+    registerSubscriberRoutes(router, subscriberStore, roles, auth, () => {
+      const current = settings!.read();
+      return {
+        "privacy.domain_allowlist": current["privacy.domain_allowlist"],
+        "privacy.domain_blocklist": current["privacy.domain_blocklist"],
+      };
+    });
+    registerSettingsRoutes(router, settings, auth);
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       const shutdown = () => {
@@ -75,6 +89,7 @@ async function main(): Promise<void> {
       process.once("SIGINT", shutdown);
     });
   } finally {
+    settings?.close();
     users?.close();
     listStore?.close();
     subscriberStore?.close();

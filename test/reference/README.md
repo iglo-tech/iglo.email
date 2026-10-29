@@ -24,6 +24,14 @@ without overwriting it. To repair one, inspect and remove only the offending
 entry in the ignored `upstream/reference/` directory, then prepare again.
 The source lives in `.listmonk-source` so Bun's ordinary test discovery does not
 run the upstream Playwright specs.
+Under D47, preparation also checksum-caches Go 1.27.2's `lib/time/zoneinfo.zip`
+(IANA 2026c, SHA-256
+`b2d18a7c8fa8142097a48c99609fb3c92db5ee98bc740294e57eab8ae9f94779`).
+The runner passes its absolute path as `ZONEINFO` to the unchanged listmonk
+process. Named-zone comparisons use the same pinned identifiers as native
+validation, including `US/Eastern`, rather than depending on which aliases
+the host installed. Go retains its system fallback for names absent from the
+archive; this does not establish parity for arbitrary host extensions.
 MVP acceptance targets Linux x86-64 only (D42). The Linux Docker lifecycle
 is exercised locally and in CI. The harness retains Linux/macOS x64 and arm64
 binary selection, but macOS and Linux arm64 preparation, lifecycle verification
@@ -237,3 +245,21 @@ UTF-8/Unicode and numeric attribute boundaries, email normalization, bounded
 forms and XML scalars through HTTP. D38 cases label the reference's validation
 of fields that the relevant normal operation discards. The normal subscriber
 extension also checks the embedded Go standard-library notice.
+
+### M1.2 settings
+
+`bun run contract:settings:reference` runs the shared settings corpus against
+a disposable pinned instance. `bun run contract:settings` runs that corpus
+against compiled production, plus restart, domain policy, authorization, CSRF,
+origin, and in-flight checks. D44's unknown and malformed per-key writes are
+paired explicitly. Session-duration writes update the policy for newly created
+sessions under D45; each issued session retains its saved expiry, and legacy
+sessions retain their creation time plus seven days. Expired sessions cannot be
+revived by increasing the policy. Injected-clock expiry and legacy cases reopen
+fixture owners and their database; a separate compiled test exercises an actual
+process restart with a retained valid session. D46 covers final writable NUL
+rejection with safe native 400/no write versus reference 500/no write. The corpus
+is representative rather than an exhaustive proof of parser compatibility.
+The SMTP test route remains guarded 501 until M2.1. Masked-secret checks do not
+prove a future SMTP delivery uses the original secret; M2.1 verifies that with
+Mailpit.

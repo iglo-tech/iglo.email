@@ -18,15 +18,24 @@ import { createUserHandlers } from "@/users/handlers";
 import { createFactorHandlers } from "@/users/factor";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
+import { createSettings } from "@/settings/store";
+import { registerSettingsRoutes } from "@/settings/routes";
+import { sessionDuration } from "@/settings/duration";
 
-export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, initialize = true) {
-  const dataDir = mkdtempSync(join(tmpdir(), "iglo-users-fixture-"));
-  const clock = new TestClock();
+export async function startUserFixture(
+  policy: AuthPolicy = defaultAuthPolicy,
+  initialize = true,
+  liveSettings = false,
+  persisted?: { dataDir: string; clock: TestClock },
+) {
+  const dataDir = persisted?.dataDir ?? mkdtempSync(join(tmpdir(), "iglo-users-fixture-"));
+  const clock = persisted?.clock ?? new TestClock();
   const db = openDatabase(dataDir);
   runMigrations(db, dataDir, clock, productionMigrations);
   const lists = createListReferences(db);
   const roles = createRoles(db, lists);
   const users = createUserStore(db, clock, roles);
+  const settings = createSettings(db, clock, "http://fixture.test", roles);
   try {
     let loginGate = false;
     let announceLogin!: () => void;
@@ -42,7 +51,17 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
       roles,
       clock,
       "http://fixture.test",
-      policy,
+      liveSettings
+        ? {
+            ...policy,
+            get sessionDurationMs() {
+              return sessionDuration(
+                settings.read()["security.session_duration"],
+                clock.now().getTime(),
+              );
+            },
+          }
+        : policy,
       async () => {
         if (loginGate) {
           loginGate = false;
@@ -68,6 +87,7 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
     });
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
+    registerSettingsRoutes(router, settings, auth);
     let announce!: () => void;
     let release!: () => void;
     const entered = new Promise<void>((resolve) => {
@@ -220,37 +240,92 @@ export async function startUserFixture(policy: AuthPolicy = defaultAuthPolicy, i
     router.route("POST", "/fixture/list-role", () =>
       ok(Number(roles.createListRole("Fixture list role", clock.now().toISOString()))),
     );
+    let bodyRead!: () => void;
+    const bodyEntered = new Promise<void>((resolve) => {
+      bodyRead = resolve;
+    });
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: (request, socket) =>
-        router.handle(
+      fetch: (original, socket) => {
+        let request = original;
+        if (original.headers.has("x-m12-gated-body") && original.body) {
+          const reader = original.body.getReader();
+          const stream = new ReadableStream<Uint8Array>(
+            {
+              async pull(controller) {
+                bodyRead();
+                const result = await reader.read();
+                if (result.done) controller.close();
+                else controller.enqueue(result.value);
+              },
+              cancel: () => reader.cancel(),
+            },
+            { highWaterMark: 0 },
+          );
+          request = new Request(original, { method: original.method, body: stream });
+        }
+        return router.handle(
           app,
           request,
           request.headers.get("x-m13-fixture-peer") ??
             socket.requestIP(request)?.address ??
             "unknown",
-        ),
+        );
+      },
     });
     return {
       admin,
       origin: `http://127.0.0.1:${server.port}`,
-      async close() {
+      bodyEntered,
+      persisted: { dataDir, clock },
+      // Arrange historical and damaged synthetic records; observations use HTTP.
+      arrangeSession(
+        cookie: string,
+        expiry: "legacy" | "invalid" | "overflow" | "before-created" | "future-created",
+      ) {
+        const id = /(?:^|;\s*)session=([^;]+)/.exec(cookie)?.[1];
+        if (!id) throw new Error("Missing synthetic session");
+        if (expiry === "legacy")
+          db.query("UPDATE sessions SET data = json_remove(data, '$.expires_at') WHERE id = ?").run(
+            id,
+          );
+        else if (expiry === "invalid")
+          db.query(
+            "UPDATE sessions SET data = json_set(data, '$.expires_at', 'invalid') WHERE id = ?",
+          ).run(id);
+        else if (expiry === "overflow")
+          db.query(
+            "UPDATE sessions SET data = json_set(data, '$.expires_at', 8640000000000001) WHERE id = ?",
+          ).run(id);
+        else if (expiry === "before-created")
+          db.query("UPDATE sessions SET data = json_set(data, '$.expires_at', 0) WHERE id = ?").run(
+            id,
+          );
+        else
+          db.query("UPDATE sessions SET created_at = ? WHERE id = ?").run(
+            new Date(clock.now().getTime() + 1000).toISOString(),
+            id,
+          );
+      },
+      async close(preserve = false) {
         try {
           release();
           releaseLogin();
           await server.stop(true);
         } finally {
           users.close();
+          settings.close();
           roles.close();
           lists.close();
           db.close(true);
-          rmSync(dataDir, { recursive: true, force: true });
+          if (!preserve) rmSync(dataDir, { recursive: true, force: true });
         }
       },
     };
   } catch (error) {
     users.close();
+    settings.close();
     roles.close();
     lists.close();
     db.close(true);

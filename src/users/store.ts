@@ -28,6 +28,7 @@ interface SessionRow {
 export interface SessionData {
   user_id: string;
   csrf: string;
+  expires_at: number;
 }
 
 export function createUserStore(db: Database, clock: Clock, roles: Roles) {
@@ -210,7 +211,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       if (result) for (const id of ids) onMutation(id);
       return result;
     },
-    createSession(user: UserRow, id: string, csrf: string): boolean {
+    createSession(user: UserRow, id: string, csrf: string, duration: number): boolean {
       return writeTransaction(db, () => {
         const current = byId(user.id);
         if (
@@ -225,22 +226,29 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         )
           return false;
         const time = now();
+        const created = Date.parse(time);
+        const expires = created + duration;
+        if (
+          !Number.isFinite(duration) ||
+          duration <= 0 ||
+          !Number.isSafeInteger(expires) ||
+          expires <= created ||
+          expires > 8640000000000000
+        )
+          return false;
         queries
           .get("create-session")
-          .run(id, JSON.stringify({ user_id: String(user.id), csrf }), time);
+          .run(id, JSON.stringify({ user_id: String(user.id), csrf, expires_at: expires }), time);
         queries.get("update-login").run(time, user.id);
         return true;
       });
     },
-    session(id: string, duration: number): { user: UserRow; csrf: string } | null {
+    session(id: string): { user: UserRow; csrf: string } | null {
       const row = queries.get("get-session").get(id) as SessionRow | null;
       if (!row) return null;
       const time = Date.parse(row.created_at);
-      if (
-        !Number.isFinite(time) ||
-        time > clock.now().getTime() ||
-        time + duration <= clock.now().getTime()
-      )
+      const currentTime = clock.now().getTime();
+      if (!Number.isFinite(time) || !Number.isFinite(currentTime) || time > currentTime)
         return null;
       let data: unknown;
       try {
@@ -250,6 +258,17 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       }
       if (!data || typeof data !== "object") return null;
       const record = data as Partial<SessionData>;
+      const expires = Object.hasOwn(record, "expires_at")
+        ? record.expires_at
+        : time + 7 * 24 * 60 * 60 * 1000;
+      if (
+        typeof expires !== "number" ||
+        !Number.isSafeInteger(expires) ||
+        expires > 8640000000000000 ||
+        expires <= time ||
+        expires <= currentTime
+      )
+        return null;
       if (
         typeof record.user_id !== "string" ||
         !/^[1-9]\d*$/.test(record.user_id) ||
