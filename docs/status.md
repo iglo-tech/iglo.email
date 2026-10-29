@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.1 subscriber events API, [draft PR #20](https://github.com/iglo-tech/iglo.email/pull/20), head 72cc1f4. Round 1: 2 agreed findings fixed by the lead; Sol round-2 fix-only review running.
-Next: lead disposition of round 2, merge, then M1.7.
+M5.1 subscriber events API, [draft PR #20](https://github.com/iglo-tech/iglo.email/pull/20), head 5035270. Round 2: savepoint-cleanup finding fixed by the lead; Sol round-3 (last) fix-only review running.
+Next: round 3 is final; lead decides any remaining disagreement, merges, then M1.7.
 Worker thread: thread:delegated-task:command%3Amcp%3A88f9dd6a-58af-4b4f-a599-958b77b6dac0%3Adelegate-task%3Aiglo-email-M5.1-worker-1 (run 1 failed 11:32Z with its lead; run 2 active since 12:40Z). Parent lead 250035dd last run failed, so the recovery run must collect the result.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate task/thread IDs and next action.
 
