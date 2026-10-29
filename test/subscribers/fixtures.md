@@ -32,3 +32,15 @@ precedence, multipart fields, XML scalars and operation-owned inputs. D38
 paired controls mark reference rejection of a discarded single-path `ids` or
 remove-action `status` member versus the normal action and its stored state.
 The production extension checks the embedded Go BSD notice.
+
+## M1.7 query, search, export and query-selected actions
+
+`subscriber-query.ts` (contract) creates two invocation-owned lists, three
+subscribers whose e-mail and name carry one random token (`q` + 12 hex digits),
+and API users/roles for the reader, list-scoped and timeout cases; every
+returned ID is deleted in cleanup, including subscribers removed by the bulk
+cases. `query.test.ts` and `measure-query.ts` use `fixture.ts`: a temporary data
+directory with the bootstrap admin `fixture-admin` / `fixture-admin-password`
+and synthetic `example.test` addresses, removed on close. The 100,000-row
+measurement inserts `userN@exampleK.test` rows directly and deletes them through
+the API. No mail is sent.

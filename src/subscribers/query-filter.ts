@@ -91,7 +91,9 @@ export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args:
   const lists = filter.lists ?? [];
   // As upstream, subscriber_lists is always joined but only matches when a list or
   // subscription status filter is given, so fragments may reference its columns.
-  let join = ` LEFT JOIN subscriber_lists ON (${lists.length > 0 || status !== "" ? "1" : "0"} AND subscriber_lists.subscriber_id = subscribers.id`;
+  // list_id is NOT NULL, so the unfiltered join matches nothing while still using the index.
+  let join = " LEFT JOIN subscriber_lists ON (subscriber_lists.subscriber_id = subscribers.id";
+  if (!lists.length && !status) join += " AND subscriber_lists.list_id IS NULL";
   if (status) {
     join += " AND subscriber_lists.status = ?";
     args.push(status);

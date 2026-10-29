@@ -4,7 +4,7 @@
 // interrupt or progress handler and terminating a Worker does not stop a running SQLite step
 // (docs/perf/M1.7-query.md), so the time limit kills the process.
 import { Database } from "bun:sqlite";
-import { writeSync } from "node:fs";
+import { readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { prepareChecked, QueryError, type Arg } from "@/subscribers/query-filter";
 
@@ -19,8 +19,6 @@ interface Request {
 }
 /** The command line that makes the executable run the child instead of the server. */
 export const childArgument = "__subscriber-query";
-// SQLite's own allocations in the child; a fragment such as zeroblob(1e9) fails instead.
-const heapLimit = 128 * 1024 * 1024;
 
 /** A connection that cannot write: opened read-only and with writes refused by query_only. */
 export function openReadOnly(path: string): Database {
@@ -45,7 +43,6 @@ export async function runQueryChild(): Promise<void> {
   try {
     const request = JSON.parse(await Bun.stdin.text()) as Request;
     db = openReadOnly(request.path);
-    db.run(`PRAGMA hard_heap_limit = ${heapLimit}`);
     // One read transaction: every statement sees the same snapshot.
     db.run("BEGIN");
     for (const [index, statement] of request.statements.entries()) {
@@ -87,6 +84,11 @@ export interface RunnerOptions {
   timeoutMs: number;
   /** Children running at once; further requests wait. */
   concurrency: number;
+  /**
+   * Resident memory a child may use. bun:sqlite ignores PRAGMA hard_heap_limit, so the parent
+   * samples /proc and kills a child above the limit.
+   */
+  memoryBytes?: number;
   command?: string[];
 }
 
@@ -119,6 +121,7 @@ export function createQueryRunner(options: RunnerOptions) {
   async function* run(statements: Statement[]): AsyncGenerator<[number, bigint[]]> {
     await acquire();
     let child: Bun.Subprocess<"pipe", "pipe", "ignore"> | undefined;
+    let watchdog: Timer | undefined;
     try {
       child = Bun.spawn(command, {
         stdin: "pipe",
@@ -127,6 +130,20 @@ export function createQueryRunner(options: RunnerOptions) {
         env: { PATH: process.env.PATH ?? "" },
       });
       children.add(child);
+      let overMemory = false;
+      const limit = options.memoryBytes ?? 256 * 1024 * 1024;
+      const pid = child.pid;
+      watchdog = setInterval(() => {
+        try {
+          const pages = Number(readFileSync(`/proc/${pid}/statm`, "utf8").split(" ")[1]);
+          if (pages * 4096 > limit) {
+            overMemory = true;
+            child?.kill("SIGKILL");
+          }
+        } catch {
+          /* exited, or no /proc */
+        }
+      }, 20);
       child.stdin.write(
         JSON.stringify({
           path: options.path,
@@ -156,7 +173,11 @@ export function createQueryRunner(options: RunnerOptions) {
         clearTimeout(timer);
         spent += performance.now() - started;
         if (chunk === "timeout") throw new RunnerError("timeout", "query timed out");
-        if (chunk.done) throw new RunnerError("execution", "query process ended unexpectedly");
+        if (chunk.done)
+          throw new RunnerError(
+            "execution",
+            overMemory ? "query exceeded the memory limit" : "query process ended unexpectedly",
+          );
         pending += decoder.decode(chunk.value, { stream: true });
         const lines = pending.split("\n");
         pending = lines.pop()!;
@@ -178,6 +199,7 @@ export function createQueryRunner(options: RunnerOptions) {
         if (batch.length) yield [index, batch];
       }
     } finally {
+      clearInterval(watchdog);
       if (child) {
         child.kill("SIGKILL");
         await child.exited;

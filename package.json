@@ -36,6 +36,7 @@
     "lists:measure": "bun run build && bun test/lists/measure.ts dist/iglo.email candidate",
     "contract:subscribers": "bun run build && bun test/contract/cli.ts owned subscribers",
     "contract:subscribers:reference": "bun run reference:run -- bun test/contract/subscribers.ts reference",
+    "subscribers:query:measure": "bun run build && bun test/subscribers/measure-query.ts 100000",
     "contract:settings": "bun run build && bun test/contract/cli.ts owned settings",
     "contract:settings:reference": "bun run reference:run -- bun test/contract/settings.ts reference",
     "contract:messaging": "bun run build && bun build --compile test/messaging/stored-caller.ts --outfile dist/messaging-stored-caller && bun run reference:run -- bun test/contract/cli.ts owned messaging",

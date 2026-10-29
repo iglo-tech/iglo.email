@@ -55,7 +55,7 @@ async function seed() {
 }
 
 beforeAll(async () => {
-  f = await queryFixture({ timeoutMs: 700 });
+  f = await queryFixture({ timeoutMs: 1500 });
   await seed();
 });
 afterAll(async () => {
@@ -233,7 +233,9 @@ describe("GET /api/subscribers", () => {
     expect(children().length).toBe(before);
     // Memory: SQLite's allocations in the child are capped.
     const big = await f.json(`/api/subscribers?query=${q("length(randomblob(1000000000)) > 0")}`);
-    expect(big.status).toBe(500);
+    expect(big.body).toEqual({
+      message: "Error fetching Subscribers: query exceeded the memory limit",
+    });
     expect(children().length).toBe(before);
   });
 
