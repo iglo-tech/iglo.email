@@ -234,3 +234,76 @@ test("a temporary implicit TLS connection is physically closed at its deadline",
     await new Promise<void>((resolve) => listener.close(() => resolve()));
   }
 });
+
+test("shutdown bounds an idle connection whose peer keeps its half open", async () => {
+  const clock = new TestClock();
+  let ended!: () => void;
+  const peerEnded = new Promise<void>((resolve) => {
+    ended = resolve;
+  });
+  const sockets = new Set<Socket>();
+  const listener = createServer({ allowHalfOpen: true }, (socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.once("end", ended);
+    socket.once("close", () => sockets.delete(socket));
+    socket.write("220 fixture\r\n");
+    let buffer = "",
+      data = false;
+    socket.on("data", (part) => {
+      buffer += part.toString();
+      for (;;) {
+        const end = buffer.indexOf("\r\n");
+        if (end < 0) break;
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        if (data) {
+          if (line === ".") {
+            data = false;
+            socket.write("250 queued\r\n");
+          }
+        } else if (/^EHLO/.test(line)) socket.write("250 fixture\r\n");
+        else if (/^DATA/.test(line)) {
+          data = true;
+          socket.write("354 send\r\n");
+        } else socket.write("250 ok\r\n");
+      }
+    });
+  });
+  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const address = listener.address();
+  if (!address || typeof address === "string") throw new Error("missing address");
+  const config: SMTPServer = {
+    name: "",
+    enabled: true,
+    exclude_from_default: false,
+    host: "127.0.0.1",
+    port: address.port,
+    hello_hostname: "",
+    max_conns: 1,
+    idle_timeout: "30s",
+    wait_timeout: "2s",
+    auth_protocol: "none",
+    username: "",
+    tls_type: "none",
+    tls_skip_verify: false,
+    email_headers: [],
+    from_addresses: [],
+  };
+  const emailer = createEmailer({
+    settings: () => ({ smtp: [config], rootUrl: "https://example.test" }),
+    clock,
+  });
+  try {
+    expect((await emailer.push(message).result).status).toBe("accepted");
+    // Let the public transport finish returning the successful connection to its pool.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const close = emailer.close();
+    await peerEnded;
+    clock.advance(5000);
+    await close;
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => listener.close(() => resolve()));
+  }
+});
