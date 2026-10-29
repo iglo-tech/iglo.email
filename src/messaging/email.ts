@@ -56,6 +56,7 @@ export interface Dispatch {
   result: Promise<Outcome>;
 }
 
+type SocketState = { stopped: boolean; waiting: Array<() => void>; onClose: () => void };
 type Transport = ReturnType<typeof makeTransport>;
 type Pool = {
   key: string;
@@ -64,7 +65,7 @@ type Pool = {
   limit: number;
   operations: Set<Operation>;
   sockets: Set<Socket>;
-  socketState: { stopped: boolean };
+  socketState: SocketState;
   retired: boolean;
   stopped: boolean;
   done: Promise<void>;
@@ -104,7 +105,7 @@ function makeTransport(
   s: SMTPServer,
   test: boolean,
   sockets: Set<Socket>,
-  socketState: { stopped: boolean },
+  socketState: SocketState,
 ) {
   const wait = test ? 2000 : duration(s.wait_timeout, 5000);
   const method = s.auth_protocol === "cram" ? "CRAM-MD5" : s.auth_protocol.toUpperCase();
@@ -116,39 +117,50 @@ function makeTransport(
       _options: unknown,
       callback: (error: Error | null, socket: false | { connection: Socket }) => void,
     ) {
-      if (socketState.stopped) {
-        callback(new Error("Transport closed"), false);
-        return;
-      }
-      const socket = createConnection({ host: s.host, port: s.port });
-      sockets.add(socket);
-      let pending = true;
-      const fail = (error: NodeJS.ErrnoException) => {
-        if (!pending) return;
-        pending = false;
-        socket.destroy();
-        callback(
-          Object.assign(error, {
-            command: "CONN",
-            originalCode: error.code,
-            ownerConnectRefused: error.code === "ECONNREFUSED",
-          }),
-          false,
-        );
+      const connect = () => {
+        if (socketState.stopped) {
+          callback(new Error("Transport closed"), false);
+          return;
+        }
+        // A pool resource may be replaced before its previous TCP socket has
+        // completed closing. Count the sockets themselves, including teardown.
+        if (sockets.size >= (test ? 1 : s.max_conns)) {
+          socketState.waiting.push(connect);
+          return;
+        }
+        const socket = createConnection({ host: s.host, port: s.port });
+        sockets.add(socket);
+        let pending = true;
+        const fail = (error: NodeJS.ErrnoException) => {
+          if (!pending) return;
+          pending = false;
+          socket.destroy();
+          callback(
+            Object.assign(error, {
+              command: "CONN",
+              originalCode: error.code,
+              ownerConnectRefused: error.code === "ECONNREFUSED",
+            }),
+            false,
+          );
+        };
+        socket.once("error", fail);
+        socket.once("close", () => {
+          sockets.delete(socket);
+          if (pending) fail(new Error("Connection closed"));
+          socketState.waiting.shift()?.();
+          socketState.onClose();
+        });
+        socket.setTimeout(wait, () => fail(new Error("Connection timed out")));
+        socket.once("connect", () => {
+          if (!pending) return;
+          pending = false;
+          socket.setTimeout(0);
+          socket.removeListener("error", fail);
+          callback(null, { connection: socket });
+        });
       };
-      socket.once("error", fail);
-      socket.once("close", () => {
-        sockets.delete(socket);
-        if (pending) fail(new Error("Connection closed"));
-      });
-      socket.setTimeout(wait, () => fail(new Error("Connection timed out")));
-      socket.once("connect", () => {
-        if (!pending) return;
-        pending = false;
-        socket.setTimeout(0);
-        socket.removeListener("error", fail);
-        callback(null, { connection: socket });
-      });
+      connect();
     },
     host: s.host,
     port: s.port,
@@ -281,10 +293,14 @@ export function createEmailer(options: {
   let closed = false;
   let closing: Promise<void> | undefined;
   function finishPool(pool: Pool) {
-    if (pool.retired && pool.operations.size === 0 && !pool.stopped) {
+    if (!pool.retired || pool.operations.size !== 0) return;
+    if (!pool.stopped) {
       pool.stopped = true;
       pool.socketState.stopped = true;
+      for (const resume of pool.socketState.waiting.splice(0)) resume();
       pool.transport.close();
+    }
+    if (pool.sockets.size === 0) {
       retired.delete(pool);
       pool.resolve();
     }
@@ -301,6 +317,7 @@ export function createEmailer(options: {
     // Stop the library queue before destroying sockets; no work is resubmitted.
     pool.stopped = true;
     pool.socketState.stopped = true;
+    for (const resume of pool.socketState.waiting.splice(0)) resume();
     pool.transport.close();
     for (const socket of pool.sockets) socket.destroy();
     for (const operation of [...pool.operations]) operation.cancel();
@@ -320,8 +337,8 @@ export function createEmailer(options: {
       resolve = finish;
     });
     const sockets = new Set<Socket>();
-    const socketState = { stopped: false };
-    return {
+    const socketState: SocketState = { stopped: false, waiting: [], onClose: () => {} };
+    const pool: Pool = {
       key,
       sockets,
       socketState,
@@ -334,6 +351,8 @@ export function createEmailer(options: {
       done,
       resolve,
     };
+    socketState.onClose = () => finishPool(pool);
+    return pool;
   }
   function reconcile(servers: SMTPServer[]) {
     const keys = new Set(servers.map((s) => JSON.stringify(s)));
