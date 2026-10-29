@@ -89,6 +89,34 @@ describe("sharp S search", () => {
   });
 });
 
+describe("Greek iota subscript search", () => {
+  let f: QueryFixture;
+  beforeAll(async () => {
+    f = await queryFixture();
+    expect(
+      (
+        await f.json("/api/subscribers", "POST", {
+          email: "iota-s@example.test",
+          name: "\u1F8C\u03B4\u03B7\u03C2",
+        })
+      ).status,
+    ).toBe(200);
+  });
+  afterAll(async () => {
+    await f.close();
+  });
+
+  test("ᾄ matches the single capital ᾌ in the list, export and bulk actions", async () => {
+    const search = "\u1F84\u03B4\u03B7\u03C2";
+    expect(emails((await f.json(`/api/subscribers?search=${q(search)}`)).body)).toEqual(["iota"]);
+    const csv = await (await get(f, `/api/subscribers/export?search=${q(search)}`)).text();
+    expect(csv).toContain("iota-s@example.test");
+    expect((await f.json("/api/subscribers/query/blocklist", "PUT", { search })).status).toBe(200);
+    const all = await f.json("/api/subscribers?per_page=all");
+    expect(all.body.data.results[0].status).toBe("blocklisted");
+  });
+});
+
 describe("raw-query allow-list", () => {
   let f: QueryFixture;
   beforeAll(async () => {

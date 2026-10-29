@@ -78,15 +78,29 @@ const hasToken = (value: string) => /[\p{L}\p{N}\p{Co}]/u.test(value);
  * each character matches itself and its single-character lower and upper case forms, with no
  * accent folding or normalization, so `José` does not match `Jose`.
  */
-// JavaScript uppercases these to several characters; the reference database's single-character
-// case mapping uses the precomposed capital instead (ß ↔ ẞ).
-const singleUpper: Record<string, string> = { "\u00DF": "\u1E9E" };
+// JavaScript's full uppercase mapping turns some characters into several (ß → SS, ᾄ → ἌΙ).
+// The reference database maps them to one precomposed character instead (ß → ẞ, ᾄ → ᾌ):
+// the single character whose lowercase is the original. Built once on first use.
+let singleUpperTable: Map<string, string> | undefined;
+function singleUpper(char: string): string | undefined {
+  if (!singleUpperTable) {
+    singleUpperTable = new Map();
+    for (let code = 0x80; code <= 0x1ffff; code++) {
+      if (code >= 0xd800 && code <= 0xdfff) continue;
+      const candidate = String.fromCodePoint(code);
+      const lower = candidate.toLowerCase();
+      if (lower !== candidate && [...lower].length === 1 && [...lower.toUpperCase()].length > 1)
+        singleUpperTable.set(lower, candidate);
+    }
+  }
+  return singleUpperTable.get(char);
+}
 
 export function caseInsensitiveGlob(search: string): string {
   let pattern = "*";
   for (const char of search) {
     const variants = new Set([char, simpleLower(char)]);
-    const upper = singleUpper[char] ?? char.toUpperCase();
+    const upper = singleUpper(char) ?? char.toUpperCase();
     if ([...upper].length === 1) variants.add(upper);
     if (variants.size > 1) pattern += `[${[...variants].join("")}]`;
     else pattern += "*?[".includes(char) ? `[${char}]` : char;
