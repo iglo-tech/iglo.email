@@ -119,14 +119,16 @@ One row per individual message that is not part of a campaign: transactional API
 | `idempotency_key` | TEXT NULL UNIQUE | For tx API calls |
 | `status` | TEXT CHECK IN (`queued`, `sending`, `sent`, `failed`, `skipped`, `unknown`) | `unknown`: the process died while sending; never retried automatically |
 | `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced` |
-| `smtp_message_id` | TEXT NULL | `Message-ID` assigned at send |
+| `smtp_message_id` | TEXT NULL | Stable `Message-ID` assigned before enqueue commit |
 | `error` | TEXT NULL | |
-| `payload` | TEXT JSON | Template data, kept for the outbox; cleared after send if configured |
+| `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes |
 | `attempts` | INTEGER NOT NULL DEFAULT 0 | |
-| `claimed_until` | TEXT NULL | Outbox lease |
+| `claimed_until` | TEXT NULL | Outbox lease; expiry does not authorize replay |
+| `next_attempt_at` | TEXT NULL | Proven transient transactional retry deadline |
+| `retry_of` | INTEGER NULL → sends | Unique manual resend parent, cleared if parent is deleted |
 | `created_at`, `sent_at` | TEXT | |
 
-Indexes: `(status, created_at)`, `(subscriber_id, kind, sent_at)` for the frequency cap.
+Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the future frequency cap.
 
 ### `webhooks`, `webhook_deliveries`
 

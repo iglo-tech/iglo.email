@@ -19,6 +19,7 @@ export interface LoopOptions<T> {
 export interface RunningLoop {
   readonly done: Promise<void>;
   stop(): Promise<void>;
+  wake(): void;
 }
 
 export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
@@ -37,6 +38,10 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
   const stopFromSignal = () => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) stopFromSignal();
   else options.signal?.addEventListener("abort", stopFromSignal, { once: true });
+  let idle: AbortController | undefined;
+  let wakeable = false;
+  let wakeInterrupted = false;
+  let notified = false;
   const run = async () => {
     try {
       while (!controller.signal.aborted) {
@@ -60,9 +65,25 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
         // Yield through the injected clock after every bounded batch for I/O and stop delivery.
         if (!controller.signal.aborted) {
           try {
-            await options.clock.sleep(items.length ? 0 : options.intervalMs, controller.signal);
+            if (!items.length && notified) {
+              notified = false;
+              continue;
+            }
+            idle = new AbortController();
+            wakeInterrupted = false;
+            wakeable = items.length === 0;
+            const abortIdle = () => idle?.abort();
+            controller.signal.addEventListener("abort", abortIdle, { once: true });
+            try {
+              await options.clock.sleep(items.length ? 0 : options.intervalMs, idle.signal);
+            } finally {
+              controller.signal.removeEventListener("abort", abortIdle);
+              idle = undefined;
+              wakeable = false;
+            }
           } catch (error) {
-            if (!controller.signal.aborted) throw error;
+            if (!controller.signal.aborted && !wakeInterrupted) throw error;
+            notified = false;
           }
         }
       }
@@ -82,6 +103,13 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
   void done.catch(() => undefined);
   return {
     done,
+    wake() {
+      notified = true;
+      if (wakeable) {
+        wakeInterrupted = true;
+        idle?.abort();
+      }
+    },
     stop() {
       controller.abort();
       return done;

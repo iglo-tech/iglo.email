@@ -6,14 +6,18 @@ import type { Clock } from "@/clock";
 import { maskSql } from "@/db/sql";
 import { writeTransaction } from "@/db/transaction";
 import initial from "@/migrations/0001_init.sql" with { type: "text" };
+import outbox from "@/migrations/0002_outbox.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
   readonly sql: string;
 }
 
-// Version 1 is embedded in the executable; there is no runtime directory discovery.
-export const productionMigrations: readonly Migration[] = [{ version: 1, sql: initial }];
+// Migrations are embedded in the executable; there is no runtime directory discovery.
+export const productionMigrations: readonly Migration[] = [
+  { version: 1, sql: initial },
+  { version: 2, sql: outbox },
+];
 
 function validateCatalog(catalog: readonly Migration[]): void {
   for (const [index, migration] of catalog.entries()) {

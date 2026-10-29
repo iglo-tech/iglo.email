@@ -21,7 +21,7 @@ starts. Forced cancellation closes owned work and remains ambiguous unless
 non-acceptance was independently established. HTTP drainage must not postpone
 the messaging shutdown deadline. Injected-clock connection and queue tests,
 and a compiled-process held SMTP-test shutdown, exercise these bounds. The
-owner does not implement the durable outbox or a retry engine.
+transport itself does not implement the durable outbox or a retry engine.
 
 D51 requires configured authentication to be advertised and complete before
 MAIL/DATA. An accepted owner outcome can include rejected recipients: native
@@ -98,7 +98,9 @@ replays automatically. Startup sending rows become unknown, never queued.
 Manual resend of a failed/unknown row creates one new retry_of child; repeated
 requests return that child. It is an intentional new send, potentially duplicating
 an earlier unknown acceptance. Journal payloads and transport secrets are never
-returned by its HTTP routes. Existing sends:get and sends:manage grants are global
+returned by its HTTP routes, and collection/detail reads fetch only public
+metadata. Attachment media types must be syntactically valid before enqueue.
+Existing sends:get and sends:manage grants are global
 journal grants, independently of list roles and tx:send.
 
 Until M2.4 supplies consent, cap and unsubscribe policy, production marketing

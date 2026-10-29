@@ -299,3 +299,45 @@ and native actual-domain bucket each receive one message with a valid envelope
 Return-Path. Other routing controls still agree. The shared SMTP corpus also
 checks password-first LOGIN challenges and unknown-challenge rejection without
 a credential reply; the relay distinguishes AUTH cancellation from credentials.
+
+## M2.2 native send evidence
+
+`bun run contract:sends` checks the empty journal in compiled production and
+runs the separately labelled owner fixture for projection, enqueue bounds,
+resend lineage, TCP refusal/backoff, wake and subscriber admission. It is not
+an upstream parity corpus. `bun run sends:crash` compiles a test-only producer,
+then uses the invocation-owned Mailpit and loopback relays for SIGKILL barriers
+before claim, after claim, during DATA, after sink acceptance before final ACK,
+after ACK before journal commit, and after journal commit. Its injected marketing
+policy exercises mechanics only; production marketing remains unavailable until
+M2.4. `bun run sends:proofs` exercises explicit temporary/permanent AUTH and
+all-recipient RCPT responses plus partial acceptance through the same compiled
+fixture and its invocation-owned relay. These finite cases do not establish
+final delivery or exactly-once sending.
+Manual resend of unknown can duplicate a prior uncertain delivery.
+
+The expanded `sends:proofs` gate also kills and restarts the injected-clock
+producer between each retry, checks mixed 4xx/5xx recipient refusal, DATA and
+final-ACK losses, fixture-authorized marketing refusal, and held authority
+revocations followed by a positive SMTP control delivery. The six crash
+barriers additionally cover both transactional and fixture-authorized marketing
+mechanics where material. No fixture policy grants production marketing.
+`bun run sends:production` seeds disposable databases with the test-only owner,
+then runs the real compiled server with persisted SMTP settings. It covers
+queued and interrupted recovery, terminal restart, immutable binary and large
+payload delivery, an idle stop, a held SMTP socket and queued remainder during
+shutdown, and isolation between two actual instances. The fixture controls and
+historical arrangements are never in the production executable. Mailpit and
+relays are invocation-owned; outcomes establish SMTP intake, not final delivery.
+
+| D53 boundary | Observable evidence |
+|---|---|
+| Prepared bytes, limits, identities and safe reads | `test/sends/journal.test.ts`; `sends:production` Mailpit byte and Message-ID cases |
+| Claims, recovery and no replay | `sends:crash` compiled fixture barriers; `sends:production` actual executable reopen |
+| SMTP proof and retry persistence | `sends:proofs` owned relays and injected-clock process kills; existing M2.1 SMTP gates |
+| Resend, authorization and live eligibility | Native journal HTTP tests; `sends:proofs` held revocations with control intake |
+| Shutdown and isolation | `sends:production`, plus M2.1 messaging deadline gates |
+| Forward migration and common behavior | `test/sends/migration.ts`, compiled contract profiles, pinned upstream corpora |
+
+The bounded SMTP outcomes are not an exhaustive equivalence or interleaving
+proof. Production still has no enqueue endpoint and no marketing policy.

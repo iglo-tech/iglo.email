@@ -302,7 +302,7 @@ describe("compiled executable", () => {
     }
   });
 
-  test("opens the persistent version-one production schema on standalone restart", async () => {
+  test("opens the persistent version-two production schema on standalone restart", async () => {
     const port = await availablePort();
     const dataDir = join(temporaryDirectory, "persistent-db");
     for (let i = 0; i < 2; i++) {
@@ -342,7 +342,7 @@ describe("compiled executable", () => {
         };
       };
       expect(result).toMatchObject({
-        version: "1",
+        version: "2",
         integrity: "ok",
         foreignKeyErrors: [],
         backups: [],
