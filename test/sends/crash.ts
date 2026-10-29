@@ -112,18 +112,20 @@ async function dataBarrier() {
   };
 }
 try {
-  for (const [scenario, mode] of [
-    ["queued", ""],
-    ["claimed", "before-smtp"],
-    ["acknowledged", "after-ack"],
-    ["committed", "normal"],
+  for (const [scenario, mode, kind] of [
+    ["queued", "", "transactional"],
+    ["claimed", "before-smtp", "transactional"],
+    ["acknowledged", "after-ack", "transactional"],
+    ["committed", "normal", "transactional"],
+    ["marketing-claimed", "before-smtp", "marketing"],
+    ["marketing-acknowledged", "after-ack", "marketing"],
   ] as const) {
     const dataDir = join(directory, scenario);
     let process = await launch(dataDir);
     const entry = await process.call(
       "/fixture/enqueue",
       "POST",
-      JSON.stringify({ subject: `${marker} ${scenario}`, kind: "transactional" }),
+      JSON.stringify({ subject: `${marker} ${scenario}`, kind }),
       { "content-type": "application/json" },
     );
     if (mode) {
@@ -142,25 +144,30 @@ try {
     );
     assert.equal(row.smtp_message_id, entry.smtp_message_id);
     const messages = (await mailpit.list()).filter((m) => m.Subject === `${marker} ${scenario}`);
-    assert.equal(messages.length, scenario === "claimed" ? 0 : 1, scenario);
+    assert.equal(messages.length, scenario.endsWith("claimed") ? 0 : 1, scenario);
     if (messages.length)
       assert.equal(
         messages[0]!.MessageID.replace(/[<>]/g, ""),
         entry.smtp_message_id.replace(/[<>]/g, ""),
       );
     await kill(process.child);
-    globalThis.process.stdout.write(`PASS compiled fixture ${scenario}\n`);
+    globalThis.process.stdout.write(`PASS compiled ${kind} fixture ${scenario}\n`);
   }
-  for (const scenario of ["during-data", "lost-final"] as const) {
+  for (const [scenario, kind] of [
+    ["during-data", "marketing"],
+    ["lost-final", "marketing"],
+    ["during-data", "transactional"],
+    ["lost-final", "transactional"],
+  ] as const) {
     const relay =
       scenario === "during-data" ? await dataBarrier() : await faultRelay(sink, "hold-final");
     try {
-      const dataDir = join(directory, scenario);
+      const dataDir = join(directory, `${kind}-${scenario}`);
       let worker = await launch(dataDir, relay.port);
       const entry = await worker.call(
         "/fixture/enqueue",
         "POST",
-        JSON.stringify({ subject: `${marker} ${scenario}`, kind: "marketing" }),
+        JSON.stringify({ subject: `${marker} ${kind}-${scenario}`, kind }),
         { "content-type": "application/json" },
       );
       await worker.call("/fixture/start", "POST", "normal");
@@ -171,7 +178,9 @@ try {
       await worker.call("/fixture/start", "POST", "normal");
       const row = await worker.get(entry.id);
       assert.equal(row.status, "unknown", scenario);
-      const messages = (await mailpit.list()).filter((m) => m.Subject === `${marker} ${scenario}`);
+      const messages = (await mailpit.list()).filter(
+        (m) => m.Subject === `${marker} ${kind}-${scenario}`,
+      );
       assert.equal(messages.length, scenario === "lost-final" ? 1 : 0, scenario);
       if (messages.length)
         assert.equal(
@@ -179,7 +188,7 @@ try {
           entry.smtp_message_id.replace(/[<>]/g, ""),
         );
       await kill(worker.child);
-      globalThis.process.stdout.write(`PASS compiled marketing fixture ${scenario}\n`);
+      globalThis.process.stdout.write(`PASS compiled ${kind} fixture ${scenario}\n`);
     } finally {
       await relay.close().catch(() => {});
     }

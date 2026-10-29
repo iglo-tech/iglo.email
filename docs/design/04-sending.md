@@ -98,7 +98,9 @@ replays automatically. Startup sending rows become unknown, never queued.
 Manual resend of a failed/unknown row creates one new retry_of child; repeated
 requests return that child. It is an intentional new send, potentially duplicating
 an earlier unknown acceptance. Journal payloads and transport secrets are never
-returned by its HTTP routes. Existing sends:get and sends:manage grants are global
+returned by its HTTP routes, and collection/detail reads fetch only public
+metadata. Attachment media types must be syntactically valid before enqueue.
+Existing sends:get and sends:manage grants are global
 journal grants, independently of list roles and tx:send.
 
 Until M2.4 supplies consent, cap and unsubscribe policy, production marketing

@@ -42,6 +42,7 @@ jobs:
       - run: bun run contract:messaging:reference
       - run: bun run sends:crash
       - run: bun run sends:proofs
+      - run: bun run sends:production
       - run: bun run messaging:faults
       - run: bun run messaging:auth
       - run: bun run messaging:tls
