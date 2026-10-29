@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M1.7 subscriber query/search/segments/export, branch task/M1.7-query, [brief](briefs/M1.7.md). One Opus medium worker dispatched; no reviewer active. Critical path to M5.4: M1.7, M5.2, M5.3.
-Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge, then M5.2.
+M1.7 subscriber query/search/segments/export, [PR #21](https://github.com/iglo-tech/iglo.email/pull/21), head 155d979. Worker done; Sol xhigh round-1 review running. Critical path to M5.4: M1.7, M5.2, M5.3.
+Next: lead disposition of round 1, merge, then M5.2.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
