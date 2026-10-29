@@ -88,8 +88,13 @@ export async function schedulerFixture() {
     defaultAuthPolicy,
   );
   await bootstrapAdmin(users, auth, admin);
-  const session = await auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  // Tests advance the clock by days; a fresh session replaces one that expired.
+  const login = async () => {
+    const session = await auth.login(admin.user, admin.password);
+    if (!session || !("id" in session)) throw new Error("fixture login failed");
+    return { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
+  };
+  let sessionHeaders = await login();
   const renderer = createRenderer(clock, app.i18n);
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences, app.logger);
@@ -168,6 +173,7 @@ export async function schedulerFixture() {
     conditions,
     settings: () => ({ fromEmail: "Fixture <noreply@fixture.test>", marketing }),
   });
+  enrollments.onDue(() => scheduler.wake());
 
   const router = createRouter();
   registerUserRoutes(router, users, roles, auth);
@@ -186,10 +192,17 @@ export async function schedulerFixture() {
   registerEventRoutes(router, events, auth);
   registerSequenceRoutes(router, { sequences, enrollments, subscribers, roles, auth });
 
-  const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
     router.handle(app, new Request(`http://fixture.test${path}`, init));
   const json = async (path: string, method = "GET", body?: unknown) => {
+    let result = await call(path, method, body);
+    if (result.status === 403 && result.body?.message === "invalid session") {
+      sessionHeaders = await login();
+      result = await call(path, method, body);
+    }
+    return result;
+  };
+  const call = async (path: string, method: string, body?: unknown) => {
     const response = await request(path, {
       method,
       headers: {
@@ -260,10 +273,11 @@ export async function schedulerFixture() {
   };
   const enrollment = async (id: number) =>
     (await json(`/api/enrollments/${id}`)).body.data as Record<string, any>;
-  const sendLog = async (query = "") =>
-    ((await json(`/api/sends?per_page=100${query}`)).body.data.results as Record<string, any>[])
-      .slice()
-      .reverse();
+  const sendLog = async (query = "") => {
+    const r = await json(`/api/sends?per_page=100${query}`);
+    if (r.status !== 200) throw new Error(`send log ${r.status} ${JSON.stringify(r.body)}`);
+    return (r.body.data.results as Record<string, any>[]).slice().reverse();
+  };
   return {
     app,
     db,
