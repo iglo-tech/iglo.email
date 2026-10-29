@@ -19,6 +19,8 @@ import type { Authentication } from "@/users/auth";
 const PERMISSION = "subscriber_events:create";
 /** Concurrent batch bodies being read and parsed, bounding request memory. */
 const MAX_BATCHES_IN_FLIGHT = 4;
+/** Single-event requests admitted until their commit settles; excess requests get 429. */
+export const MAX_SINGLES_IN_FLIGHT = 1000;
 
 export function registerEventRoutes(router: Router, store: EventStore, auth: Authentication) {
   const invalid = (c: RequestContext, field: string) =>
@@ -36,14 +38,23 @@ export function registerEventRoutes(router: Router, store: EventStore, auth: Aut
     const { status: _status, ...data } = r as Extract<EventResult, { status: 200 }>;
     return ok(data);
   };
+  let singles = 0;
   router.route(
     "POST",
     "/api/subscriber-events",
     async (c) => {
       const receivedAt = c.app.clock.now();
-      const input = item(c, parseJson(c.request, await readBounded(c.request, SINGLE_BODY_BYTES)));
-      if (input instanceof HttpError) throw input;
-      return respond(await store.submit(input, receivedAt, () => auth.revalidate(c, PERMISSION)));
+      // Reserve before reading the body so overload is shed instead of buffered.
+      if (singles >= MAX_SINGLES_IN_FLIGHT) throw new HttpError(429, "Too many requests");
+      singles++;
+      try {
+        const body = await readBounded(c.request, SINGLE_BODY_BYTES);
+        const input = item(c, parseJson(c.request, body));
+        if (input instanceof HttpError) throw input;
+        return respond(await store.submit(input, receivedAt, () => auth.revalidate(c, PERMISSION)));
+      } finally {
+        singles--;
+      }
     },
     auth.middleware(PERMISSION),
   );

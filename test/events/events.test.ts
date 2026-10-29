@@ -2,6 +2,7 @@
 // POST /api/subscriber-events(/batch), the subscriber API and the event owner's reads.
 import { afterEach, expect, test } from "bun:test";
 import type { RecordedEvent } from "@/events/store";
+import { MAX_SINGLES_IN_FLIGHT } from "@/events/routes";
 import { eventsFixture, type EventsFixture } from "@/test/events/fixture";
 
 const fixtures: EventsFixture[] = [];
@@ -499,4 +500,59 @@ test("concurrent single events share commits but keep independent results", asyn
   expect(f.count("subscribers")).toBe(4);
   expect(f.count("events")).toBe(4);
   expect(f.errors).toHaveLength(1);
+});
+
+test("a shared COMMIT failure fails every grouped request once, without replay", async () => {
+  let poisonCalls = 0;
+  const f = await open({
+    exitThenTrigger: (e) => {
+      if (e.name === "poison") {
+        poisonCalls++;
+        // A deferred foreign-key violation passes the savepoint and fails only at COMMIT.
+        f.db.run("PRAGMA defer_foreign_keys = ON");
+        f.db.run(
+          "INSERT INTO events (subscriber_id, name, data, occurred_at, created_at) VALUES (999999999, 'orphan', '{}', ?, ?)",
+          [e.occurredAt, e.receivedAt],
+        );
+      }
+      return { started: [], ended: [] };
+    },
+  });
+  const results = await Promise.all([
+    f.post(event({ email: "c1@example.com" })),
+    f.post(event({ email: "c2@example.com" }, { name: "poison" })),
+    f.post(event({ email: "c3@example.com" })),
+  ]);
+  expect(results.map((r) => r.status)).toEqual([500, 500, 500]);
+  expect(poisonCalls).toBe(1);
+  expect(f.count("subscribers")).toBe(0);
+  expect(f.count("events")).toBe(0);
+  // The store recovers for later requests.
+  expect((await f.post(event({ email: "after@example.com" }))).status).toBe(200);
+});
+
+test("single-event admission is bounded and recovers after saturation", async () => {
+  const f = await open();
+  const held: Array<ReadableStreamDefaultController<Uint8Array>> = [];
+  const pending = Array.from({ length: MAX_SINGLES_IN_FLIGHT }, () =>
+    f.postStream(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          held.push(controller);
+        },
+      }),
+    ),
+  );
+  for (let i = 0; i < 200 && held.length < MAX_SINGLES_IN_FLIGHT; i++) await Bun.sleep(5);
+  await Bun.sleep(50);
+  const shed = await f.post(event({ email: "over@example.com" }));
+  expect(shed.status).toBe(429);
+  const body = new TextEncoder().encode(JSON.stringify(event({ email: "held@example.com" })));
+  for (const controller of held) {
+    controller.enqueue(body);
+    controller.close();
+  }
+  const statuses = (await Promise.all(pending)).map((r) => r.status);
+  expect(statuses.filter((status) => status !== 200 && status !== 409)).toEqual([]);
+  expect((await f.post(event({ email: "recovered@example.com" }))).status).toBe(200);
 });

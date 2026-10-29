@@ -112,6 +112,17 @@ export async function eventsFixture(
   const api = await apiUser("events-api", ["subscriber_events:create"]);
   const post = (body: unknown, headers: Record<string, string> = api) =>
     json("/api/subscriber-events", "POST", body, headers);
+  /** A single-event POST whose body arrives through a caller-controlled stream. */
+  const postStream = async (body: ReadableStream<Uint8Array>) => {
+    const response = await request("/api/subscriber-events", {
+      method: "POST",
+      headers: { ...api, "content-type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    await response.text();
+    return { status: response.status };
+  };
   const batch = (body: unknown, headers: Record<string, string> = api) =>
     json("/api/subscriber-events/batch", "POST", body, headers);
   const subscriber = async (id: number) => (await json(`/api/subscribers/${id}`)).body?.data;
@@ -140,6 +151,7 @@ export async function eventsFixture(
     json,
     apiUser,
     post,
+    postStream,
     batch,
     subscriber,
     count,

@@ -132,31 +132,35 @@ export function createEventStore(
   }
   const queue: Pending[] = [];
   let scheduled = false;
-  const group = (entries: Pending[]) =>
-    writeTransaction(db, () => entries.map((e) => item(e.input, e.at, e.authorize)));
+  type Outcome = { result: EventResult } | { failure: unknown };
   function flush() {
     scheduled = false;
     const entries = queue.splice(0, MAX_GROUP);
     if (queue.length) schedule();
-    let results: EventResult[];
+    let outcomes: Outcome[];
     try {
-      results = group(entries);
+      // item() has already rolled back its own savepoint when it throws, so an unexpected
+      // error fails only that member and the others still commit.
+      outcomes = writeTransaction(db, () =>
+        entries.map((e): Outcome => {
+          try {
+            return { result: item(e.input, e.at, e.authorize) };
+          } catch (failure) {
+            return { failure };
+          }
+        }),
+      );
     } catch (error) {
-      // Nothing committed. Isolate the failing request so it cannot fail the others.
-      if (entries.length === 1) {
-        entries[0]!.reject(error);
-        return;
-      }
-      for (const entry of entries) {
-        try {
-          entry.resolve(group([entry])[0]!);
-        } catch (failure) {
-          entry.reject(failure);
-        }
-      }
+      // A shared BEGIN/COMMIT failure: nothing committed. Fail every member once and
+      // leave any retry to the caller; never replay their callbacks (D19).
+      for (const entry of entries) entry.reject(error);
       return;
     }
-    entries.forEach((entry, i) => entry.resolve(results[i]!));
+    entries.forEach((entry, i) => {
+      const outcome = outcomes[i]!;
+      if ("result" in outcome) entry.resolve(outcome.result);
+      else entry.reject(outcome.failure);
+    });
   }
   function schedule() {
     if (scheduled) return;
