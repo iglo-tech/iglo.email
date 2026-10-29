@@ -15,7 +15,14 @@ The candidate implements SMTP selection/pools, MIME, pre-dispatch IDs, conservat
 
 D49 is clarified for owner review: absolute operation deadlines are 60 seconds ordinary / 10 seconds test; shutdown immediately stops admission and drains for at most five seconds, then cancels owned work. Start that bound before awaiting HTTP drainage. Deadline/forced-close uncertainty remains ambiguous, with no automatic resend or remote-cancellation guarantee. The lead authorizes the existing narrow main/settings/messaging seams; no new dependency, auth-store/schema, outbox/TX/template implementation or helper.
 
-Next: dispatch exactly one fresh GPT-6.1 Terra max fixer in a supplied isolated worktree on the existing PR branch, with settings in target.options; persist its returned IDs below and yield for completion. Finish acceptance before council/watch. Then Linux CI and two fresh independent Sol xhigh reviewers, merge, and immediately advance the next eligible task. Full terminal-worker and subsequent dispatch identifiers remain in [M2.1 recovery](reviews/M2.1.md) and the lock; no duplicate workers or polling.
+Next: the sole Terra max fixer below completes the pushed finite brief on the existing branch. Finish acceptance before council/watch. Then Linux CI and two fresh independent Sol xhigh reviewers, merge, and immediately advance the next eligible task. Full terminal-worker and active-fixer identifiers remain in [M2.1 recovery](reviews/M2.1.md) and the lock; no duplicate workers or polling.
+
+The sole fresh fixer is dispatched: [M2.1: Complete bounded shutdown and SMTP acceptance](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-fix1-acceptance-7702279), GPT-6.1 Terra max, implementation role, isolation:worktree, target.options reasoningEffort:max. It returned running with no pending question/approval or child work. Its next instruction is to end the turn and resume on completion; never poll/wait or start a duplicate. The prior worker is terminal. PR #15 stays draft, linked and unwatched until concrete acceptance is complete.
+
+- Fixer task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-fix1-acceptance-7702279.
+- Fixer thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-fix1-acceptance-7702279.
+- Fixer run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M2.1-fix1-acceptance-7702279:ordinal:1.
+- Idempotent request: iglo-email-M2.1-fix1-acceptance-7702279.
 
 ## Automation
 
@@ -55,7 +62,7 @@ Owner update: healthy redundant check-in threads auto-settle themselves through 
 
 ## Blocked
 
-No active external block or cooldown. M2.1 has concrete unfinished implementation/acceptance work on draft PR #15; one isolated fixer will continue it. Task completion never stops the continuous fleet, and a genuine item-level block must not stop other eligible work.
+No active external block or cooldown. M2.1 has concrete unfinished implementation/acceptance work on draft PR #15; the sole isolated fixer is continuing it. Task completion never stops the continuous fleet, and a genuine item-level block must not stop other eligible work.
 
 ## For owner review
 
