@@ -28,6 +28,8 @@ const segment = new RegExp(`^[\\p{L}\\p{N}_-]{1,${limits.segmentLength}}$`, "u")
 
 /** A dotted path of letters, digits, `_` and `-` segments. */
 export function validPath(path: string): boolean {
+  // At most two UTF-16 units per character; checked before anything is split.
+  if (path.length > limits.pathSegments * (2 * limits.segmentLength + 1) - 1) return false;
   const parts = path.split(".");
   return parts.length <= limits.pathSegments && parts.every((part) => segment.test(part));
 }

@@ -32,6 +32,17 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const bytes = (value: string) => Buffer.byteLength(value);
 
+/** Own enumerable keys of `value`, or undefined beyond `max`; never lists a wider object. */
+function boundedKeys(value: object, max: number): string[] | undefined {
+  const keys: string[] = [];
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) continue;
+    if (keys.length === max) return undefined;
+    keys.push(key);
+  }
+  return keys;
+}
+
 const unsafeNumber =
   "number must be a safe integer (within ±9007199254740991) or a finite fraction";
 
@@ -77,13 +88,13 @@ export function validate(
     if (depth > limits.depth) return void fail(field, "nesting is too deep");
     if (++nodes > limits.nodes) return void fail(field, "too many conditions");
     if (!isObject(value)) return void fail(field, "must be a condition object");
-    const keys = Object.keys(value);
     const present = kinds.filter((kind) => Object.hasOwn(value, kind));
     if (present.length !== 1)
       return void fail(field, "must have exactly one of all, any, not, event, attr, list or sql");
     const kind = present[0]!;
-    for (const key of keys)
-      if (!fieldsOf[kind].includes(key))
+    // Stops at the first unknown key, so a wide object is never walked further.
+    for (const key in value)
+      if (Object.hasOwn(value, key) && !fieldsOf[kind].includes(key))
         return void fail(safeKey.test(key) ? `${field}.${key}` : field, "unknown field");
 
     if (kind === "all" || kind === "any") {
@@ -198,13 +209,14 @@ export function validate(
     }
     const where = value.where;
     if (where !== undefined) {
-      const entries = isObject(where) ? Object.entries(where) : [];
-      if (!entries.length || entries.length > limits.whereFields) {
+      const keys = isObject(where) ? boundedKeys(where, limits.whereFields) : [];
+      if (!keys?.length) {
         fail(`${field}.where`, `must be an object of 1 to ${limits.whereFields} data fields`);
         valid = false;
       } else {
         const copy: Record<string, Scalar> = {};
-        for (const [key, v] of entries) {
+        for (const key of keys) {
+          const v = (where as Record<string, unknown>)[key];
           if (!key.startsWith("data.") || !validPath(key.slice(5))) {
             fail(`${field}.where`, "fields must be data.* paths");
             valid = false;
@@ -219,13 +231,14 @@ export function validate(
     }
     const count = value.count;
     if (count !== undefined) {
-      const entries = isObject(count) ? Object.entries(count) : [];
-      if (!entries.length) {
+      const keys = isObject(count) ? boundedKeys(count, 3) : [];
+      if (!keys?.length) {
         fail(`${field}.count`, "must be an object with gte, lte or eq");
         valid = false;
       } else {
         const copy: Record<string, number> = {};
-        for (const [key, n] of entries) {
+        for (const key of keys) {
+          const n = (count as Record<string, unknown>)[key];
           if (!["gte", "lte", "eq"].includes(key)) {
             fail(
               safeKey.test(key) ? `${field}.count.${key}` : `${field}.count`,

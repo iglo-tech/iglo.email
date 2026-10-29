@@ -290,6 +290,56 @@ describe("hostile input stays bounded", () => {
     ok({ all: Array.from({ length: 7 }, () => ({ all: Array(8).fill(leaf) })) });
   });
 
+  test("huge paths are refused by length before they are split", () => {
+    const path = ".".repeat(4_000_000);
+    const where = { [`data.${path}`]: 1 };
+    const started = performance.now();
+    for (let i = 0; i < 10; i++) {
+      expect(fields({ attr: path, op: "exists" })).toEqual(["condition.attr"]);
+      expect(fields({ event: "e", where })).toEqual(["condition.where"]);
+    }
+    // Splitting these paths took over a second; the length check takes microseconds.
+    expect(performance.now() - started).toBeLessThan(100);
+    const longest = Array(limits.pathSegments).fill("ż".repeat(limits.segmentLength)).join(".");
+    ok({ attr: longest, op: "exists" });
+    ok({ event: "e", where: { [`data.${longest}`]: 1 } });
+  });
+
+  test("wide objects are counted with a bounded walk, not materialized", () => {
+    // A proxy reports each property it is asked about; Object.keys or Object.entries would
+    // ask about every one of its 100,000 keys.
+    const wide = (base: Record<string, unknown>, prefix: string) => {
+      const values = new Map<string | symbol, unknown>(Object.entries(base));
+      for (let i = 0; i < 100_000; i++) values.set(`${prefix}${i}`, 1);
+      const keys = [...values.keys()];
+      const seen = { count: 0 };
+      const proxy = new Proxy(base, {
+        ownKeys: () => keys,
+        getOwnPropertyDescriptor: (_target, key) => {
+          seen.count++;
+          return values.has(key)
+            ? { value: values.get(key), enumerable: true, configurable: true, writable: true }
+            : undefined;
+        },
+        has: (_target, key) => values.has(key),
+        get: (_target, key) => values.get(key),
+      });
+      return { proxy, seen };
+    };
+    const node = wide({ attr: "a", op: "exists" }, "extra");
+    const nodeFields = fields(node.proxy);
+    expect(node.seen.count).toBeLessThan(50);
+    expect(nodeFields).toEqual(["condition.extra0"]);
+    const where = wide({}, "data.k");
+    const whereFields = fields({ event: "e", where: where.proxy });
+    expect(where.seen.count).toBeLessThan(50);
+    expect(whereFields).toEqual(["condition.where"]);
+    const count = wide({}, "gte");
+    const countFields = fields({ event: "e", count: count.proxy });
+    expect(count.seen.count).toBeLessThan(50);
+    expect(countFields).toEqual(["condition.count"]);
+  });
+
   test("errors are capped and never echo input", () => {
     const bad = { any: Array.from({ length: 60 }, () => ({ attr: "a", op: "<script>" })) };
     const result = errors(bad);
