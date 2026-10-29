@@ -18,6 +18,10 @@ export interface RecordedEvent {
   id: bigint;
   subscriberId: bigint;
   name: string;
+  /** The event's `data` object as stored JSON text. */
+  data: string;
+  /** The subscriber's status after the upsert. */
+  subscriberStatus: string;
   occurredAt: string;
   receivedAt: string;
   /** False for events older than TRIGGER_WINDOW_MS when received. */
@@ -33,7 +37,7 @@ export interface Enrollments {
  * sequences it triggers (only when `triggerEligible`). Returns the enrollments it changed.
  */
 export type ExitThenTrigger = (event: RecordedEvent) => Enrollments;
-/** Sequences do not exist until M5.3, so no event starts or ends an enrollment yet. */
+/** No sequences: no event starts or ends an enrollment. */
 export const noSequences: ExitThenTrigger = () => ({ started: [], ended: [] });
 
 export const triggerEligible = (occurredAt: string, receivedAt: string) =>
@@ -57,10 +61,19 @@ export type EventResult =
     }
   | { status: number; message: string };
 
+const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON;
 const numberID = (id: bigint) =>
-  id <= BigInt(Number.MAX_SAFE_INTEGER)
-    ? Number(id)
-    : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(id.toString());
+  id <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(id) : rawJSON(id.toString());
+
+/** Stored enrollment changes, keeping integers beyond 2^53 exact. */
+function storedEnrollments(text: string | null): Enrollments {
+  if (text === null) return { started: [], ended: [] };
+  return JSON.parse(text, (_key, value, context?: { source?: string }) =>
+    typeof value === "number" && !Number.isSafeInteger(value) && context?.source
+      ? rawJSON(context.source)
+      : value,
+  ) as Enrollments;
+}
 
 /** Savepoint cleanup failed: no member of the group may be reported individually. */
 class TransactionLost extends Error {
@@ -86,12 +99,16 @@ export function createEventStore(
   function record(input: EventInput, receivedAt: string): EventResult {
     const found = subscribers.resolveForEvent(input.subscriber);
     if (found && input.idempotencyKey !== undefined) {
-      const previous = q.get("event-by-key").get(found.id, input.idempotencyKey) as Pick<
-        EventRow,
-        "id" | "subscriber_id"
-      > | null;
-      // M5.3 must replay the enrollments the first request changed, not recompute them.
-      if (previous) return result(previous.id, previous.subscriber_id, { started: [], ended: [] });
+      const previous = q.get("event-by-key").get(found.id, input.idempotencyKey) as
+        | (Pick<EventRow, "id" | "subscriber_id"> & { enrollments: string | null })
+        | null;
+      // Replay what the first request started and ended; never recompute it.
+      if (previous)
+        return result(
+          previous.id,
+          previous.subscriber_id,
+          storedEnrollments(previous.enrollments),
+        );
     }
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
     const occurredAt = input.occurredAt ?? receivedAt;
@@ -109,10 +126,17 @@ export function createEventStore(
       id: inserted.id,
       subscriberId: subscriber.id,
       name: input.name,
+      data: input.data,
+      subscriberStatus: subscriber.status,
       occurredAt,
       receivedAt,
       triggerEligible: triggerEligible(occurredAt, receivedAt),
     });
+    if (
+      input.idempotencyKey !== undefined &&
+      (enrollments.started.length || enrollments.ended.length)
+    )
+      q.get("event-enrollments").run(JSON.stringify(enrollments), inserted.id);
     return result(inserted.id, subscriber.id, enrollments);
   }
   /** One item in its own savepoint: a rejection rolls back only this item's writes. */
