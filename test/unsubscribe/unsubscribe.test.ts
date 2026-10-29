@@ -367,6 +367,38 @@ test("marketing has one SMTP recipient: request copies are 400, server copies ar
   ]);
 });
 
+test("a delayed marketing send recovered as unknown counts from its attempt", async () => {
+  const f = await open();
+  const { template, list } = await setup(f);
+  const news = await list("news");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news] });
+  // Queued on Jan 2 while the outbox is down.
+  await f.stopOutbox();
+  const queued = await f.tx({
+    subscriber_id: ada,
+    template_id: template,
+    kind: "marketing",
+    list_id: news,
+    async: true,
+  });
+  expect(status(queued)).toEqual(["queued"]);
+  // Delivered on Jan 10; the process dies after SMTP acceptance, before the outcome commit.
+  f.clock.advance(8 * day);
+  const now = f.clock.now();
+  const [claimed] = f.sends.claim(now, new Date(now.getTime() + 60_000));
+  const message = f.sends.admit(claimed!)!;
+  expect((await f.emailer.push(message, { copies: false }).result).status).toBe("accepted");
+  // Restart: recovery marks the row unknown.
+  f.restartOutbox();
+  expect(await row(f, queued)).toMatchObject({ status: "unknown", sent_at: null });
+  // A fresh marketing call at the same instant is inside P7D of the attempt.
+  expect(await row(f, await marketing(f, ada, template, news, "2"))).toMatchObject({
+    status: "skipped",
+    skip_reason: "frequency_cap",
+  });
+  expect(f.sink.messages).toHaveLength(1);
+});
+
 test("one-click POST and the page form unsubscribe the send's list without login", async () => {
   const events: unknown[] = [];
   const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });

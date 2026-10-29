@@ -53,7 +53,7 @@ function initialize(mode: "empty" | "v1", repetition: number) {
   runMigrations(db, directory, clock, catalog);
   const migrated = performance.now();
   integrity(db);
-  assert.equal(scalar(db, "PRAGMA user_version"), mode === "v1" ? 2n : 0n);
+  assert.equal(scalar(db, "PRAGMA user_version"), mode === "v1" ? 3n : 0n);
   const tableCount = scalar(
     db,
     "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'",

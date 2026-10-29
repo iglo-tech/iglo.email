@@ -199,6 +199,8 @@ export function createSends(options: {
    * `lineage` excludes a row and its retry_of ancestors (one intended message).
    * `pending` also counts queued rows, which reserve the cap at enqueue; at dispatch
    * only rows already sending or sent count, so two queued rows cannot skip each other.
+   * An `unknown` row counts from its latest attempt (`attempted_at`, committed with the
+   * claim before SMTP), so a delayed send recovered after a crash still uses the cap.
    * Campaign sends (M3) must add their deliveries to this count.
    */
   function marketing(
@@ -221,7 +223,7 @@ export function createSends(options: {
          SELECT id FROM sends
          WHERE subscriber_id = ?2 AND kind = 'marketing' AND id NOT IN (SELECT id FROM chain)
            AND (status = 'sending' OR (?4 AND status = 'queued')
-             OR (status IN ('sent', 'unknown') AND coalesce(sent_at, created_at) > ?3))
+             OR (status IN ('sent', 'unknown') AND coalesce(sent_at, attempted_at, created_at) > ?3))
          LIMIT 1`,
       )
       .get(scope.lineage ?? 0n, subscriberId, start.toISOString(), scope.pending ? 1 : 0);
@@ -453,7 +455,7 @@ export function createSends(options: {
     claimQueued(id: bigint, time: Date, lease: Date): Row | null {
       return writeTransaction(db, () => {
         const changed = db.run(
-          "UPDATE sends SET status='sending', attempts=attempts+1, claimed_until=?, next_attempt_at=NULL WHERE id=? AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)",
+          "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?3, claimed_until=?1, next_attempt_at=NULL WHERE id=?2 AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?3)",
           [lease.toISOString(), id, time.toISOString()],
         );
         return changed.changes ? get(id) : null;
@@ -542,8 +544,8 @@ export function createSends(options: {
         .get(time.toISOString());
       if (!row) return [];
       db.run(
-        "UPDATE sends SET status='sending', attempts=attempts+1, claimed_until=?, next_attempt_at=NULL WHERE id=?",
-        [lease.toISOString(), row.id],
+        "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?, claimed_until=?, next_attempt_at=NULL WHERE id=?",
+        [time.toISOString(), lease.toISOString(), row.id],
       );
       return [get(row.id)!];
     },

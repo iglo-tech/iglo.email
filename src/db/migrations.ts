@@ -7,6 +7,7 @@ import { maskSql } from "@/db/sql";
 import { writeTransaction } from "@/db/transaction";
 import initial from "@/migrations/0001_init.sql" with { type: "text" };
 import outbox from "@/migrations/0002_outbox.sql" with { type: "text" };
+import sendAttempts from "@/migrations/0003_send_attempts.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -17,6 +18,7 @@ export interface Migration {
 export const productionMigrations: readonly Migration[] = [
   { version: 1, sql: initial },
   { version: 2, sql: outbox },
+  { version: 3, sql: sendAttempts },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

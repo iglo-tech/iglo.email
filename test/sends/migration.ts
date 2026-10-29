@@ -39,7 +39,7 @@ await withProduction(
       { encoding: "utf8", timeout: 10000 },
     );
     assert.notEqual(old.status, 0);
-    assert.match(old.stderr, /Database version 2 is ahead/);
+    assert.match(old.stderr, /Database version 3 is ahead/);
     await restart();
     assert.equal((await fetch(`${origin}/api/settings`, { headers })).status, 200);
     assert.equal(
