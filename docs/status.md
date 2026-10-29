@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.4 unsubscribe and frequency cap, [draft PR #19](https://github.com/iglo-tech/iglo.email/pull/19), head d5647b2. Worker done; Sol xhigh round-1 review running. Lead accepted the renderer tracking seam.
-Next: lead disposition of round 1, merge, then M2.6.
+M2.4 unsubscribe and frequency cap, [draft PR #19](https://github.com/iglo-tech/iglo.email/pull/19), head d5647b2. Round 1: CHANGES (2 agreed P1); one Opus fixer running. Lead accepted the renderer tracking seam.
+Next: Sol round-2 fix-only review, merge, then M2.6.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
