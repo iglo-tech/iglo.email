@@ -18,6 +18,7 @@ const keys = generateKeyPairSync("rsa", {
   publicKeyEncoding: { type: "spki", format: "pem" },
 });
 const sockets = new Set<Socket>();
+const relayClosed = new Map<number, Promise<void>>();
 let connects = 0,
   live = 0,
   peak = 0;
@@ -27,6 +28,8 @@ const proxy = createServer((client) => {
   live++;
   peak = Math.max(peak, live);
   const upstream = createConnection({ host: sink.host, port: sink.port });
+  if (client.remotePort)
+    relayClosed.set(client.remotePort, new Promise<void>((done) => client.once("close", done)));
   sockets.add(client);
   sockets.add(upstream);
   client.on("error", () => {});
@@ -108,7 +111,21 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
               assert.deepEqual(result.accepted, [`user${i}@example.test`]);
               accepted++;
             } else {
+              let socketClosed: Promise<void> | undefined;
+              let localPort: number | undefined;
               const transport = nodemailer.createTransport({
+                getSocket(
+                  _options: unknown,
+                  callback: (error: Error | null, result: false | { connection: Socket }) => void,
+                ) {
+                  const socket = createConnection({ host: config.host, port: config.port });
+                  socketClosed = new Promise<void>((done) => socket.once("close", done));
+                  socket.once("error", (error) => callback(error, false));
+                  socket.once("connect", () => {
+                    localPort = socket.localPort;
+                    callback(null, { connection: socket });
+                  });
+                },
                 host: config.host,
                 port: config.port,
                 secure: false,
@@ -137,6 +154,11 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
                 accepted++;
               } finally {
                 transport.close();
+                await socketClosed;
+                if (localPort) {
+                  await relayClosed.get(localPort);
+                  relayClosed.delete(localPort);
+                }
               }
             }
             latency.push(performance.now() - begin);
@@ -179,6 +201,8 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
       }
     }
     assert.equal((await mailpit.list()).length, 0);
+    assert.ok(peak <= 4);
+    relayClosed.clear();
     console.log(
       JSON.stringify({
         mode,
