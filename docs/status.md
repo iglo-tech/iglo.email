@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M1.7 subscriber query/search/segments/export, [PR #21](https://github.com/iglo-tech/iglo.email/pull/21), head 155d979. Round 1: CHANGES (3 P1, one narrowed by the lead); one Opus fixer running. Critical path to M5.4: M1.7, M5.2, M5.3.
-Next: Sol round-2 fix-only review, merge, then M5.2.
+M1.7 subscriber query/search/segments/export, [PR #21](https://github.com/iglo-tech/iglo.email/pull/21), head 7b6d48d. Round-1 fixes pushed; Sol round-2 fix-only review running. Critical path to M5.4: M1.7, M5.2, M5.3.
+Next: lead disposition of round 2, merge, then M5.2.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -54,4 +54,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Flaky test/contract/contract.test.ts stray extra request on a fresh port (seen on M1.8 and M2.4 branches); likely the same localhost-port isolation cause as route-auth.
 - Outbox send throughput: 50 msg/s not sustained even without events (one message at a time, two commits each); events at 100/s slow sending further ([M5.1 perf](https://github.com/iglo-tech/iglo.email/pull/20)). Owner: messaging, M3.2/M6.1 (D22).
 - M5.1 perf: record source/executable hashes for each measured variant.
+- M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
