@@ -6,7 +6,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 M5.1 subscriber events API, branch task/M5.1-events, [brief](briefs/M5.1.md). One Opus medium worker dispatched; no reviewer active. Critical path to M5.4: M5.1, M1.7, M5.2, M5.3. M2.6 and M2.5 are off the critical path.
 Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge, then M1.7.
-Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
+Worker thread: thread:delegated-task:command%3Amcp%3A88f9dd6a-58af-4b4f-a599-958b77b6dac0%3Adelegate-task%3Aiglo-email-M5.1-worker-1 (run 1 failed 11:32Z with its lead; run 2 active since 12:40Z). Parent lead 250035dd last run failed, so the recovery run must collect the result.
+Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate task/thread IDs and next action.
 
 ## Owner decisions
 
