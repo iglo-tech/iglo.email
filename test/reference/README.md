@@ -299,3 +299,19 @@ and native actual-domain bucket each receive one message with a valid envelope
 Return-Path. Other routing controls still agree. The shared SMTP corpus also
 checks password-first LOGIN challenges and unknown-challenge rejection without
 a credential reply; the relay distinguishes AUTH cancellation from credentials.
+
+## M2.2 native send evidence
+
+`bun run contract:sends` checks the empty journal in compiled production and
+runs the separately labelled owner fixture for projection, enqueue bounds,
+resend lineage, TCP refusal/backoff, wake and subscriber admission. It is not
+an upstream parity corpus. `bun run sends:crash` compiles a test-only producer,
+then uses the invocation-owned Mailpit and loopback relays for SIGKILL barriers
+before claim, after claim, during DATA, after sink acceptance before final ACK,
+after ACK before journal commit, and after journal commit. Its injected marketing
+policy exercises mechanics only; production marketing remains unavailable until
+M2.4. `bun run sends:proofs` exercises explicit temporary/permanent AUTH and
+all-recipient RCPT responses plus partial acceptance through the same compiled
+fixture and its invocation-owned relay. These finite cases do not establish
+final delivery or exactly-once sending.
+Manual resend of unknown can duplicate a prior uncertain delivery.

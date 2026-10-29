@@ -44,6 +44,9 @@
     "messaging:faults": "bun run reference:run -- bun test/messaging/failures.ts",
     "messaging:auth": "bun run reference:run -- bun test/messaging/auth.ts",
     "messaging:tls": "bun run reference:run -- bun test/messaging/tls.ts",
+    "contract:sends": "bun run build && bun test/contract/sends.ts && bun test test/sends",
+    "sends:proofs": "bun build --compile test/sends/producer.ts --outfile dist/sends-producer && bun run reference:run -- bun test/sends/proofs.ts",
+    "sends:crash": "bun build --compile test/sends/producer.ts --outfile dist/sends-producer && bun run reference:run -- bun test/sends/crash.ts",
     "messaging:routing": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && bun run reference:run -- bun test/messaging/routing.ts",
     "messaging:corpus": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && M21_CORPUS_HEADERS=1 bun run reference:run -- bun test/messaging/corpus.ts"
   },

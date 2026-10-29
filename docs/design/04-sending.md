@@ -21,7 +21,7 @@ starts. Forced cancellation closes owned work and remains ambiguous unless
 non-acceptance was independently established. HTTP drainage must not postpone
 the messaging shutdown deadline. Injected-clock connection and queue tests,
 and a compiled-process held SMTP-test shutdown, exercise these bounds. The
-owner does not implement the durable outbox or a retry engine.
+transport itself does not implement the durable outbox or a retry engine.
 
 D51 requires configured authentication to be advertised and complete before
 MAIL/DATA. An accepted owner outcome can include rejected recipients: native

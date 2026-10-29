@@ -24,6 +24,9 @@ import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
+import { createSends } from "@/messaging/sends";
+import { startOutbox } from "@/messaging/outbox";
+import { registerSendRoutes } from "@/messaging/routes";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -43,6 +46,8 @@ async function main(): Promise<void> {
   let users: ReturnType<typeof createUserStore> | undefined;
   let settings: ReturnType<typeof createSettings> | undefined;
   let emailer: ReturnType<typeof createEmailer> | undefined;
+  let sends: ReturnType<typeof createSends> | undefined;
+  let outbox: ReturnType<typeof startOutbox> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -88,19 +93,48 @@ async function main(): Promise<void> {
       },
     });
     registerSettingsRoutes(router, settings, auth, createSMTPTest(settings, emailer, app.i18n));
+    sends = createSends({
+      db,
+      clock,
+      subscribers: subscriberStore,
+      rootUrl: () => settings!.read()["app.root_url"],
+    });
+    registerSendRoutes(router, sends, auth);
+    outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
-      const shutdown = () => {
-        process.off("SIGTERM", shutdown);
-        process.off("SIGINT", shutdown);
+      let closing = false;
+      const shutdown = (failure?: unknown) => {
+        if (closing) return;
+        closing = true;
+        process.off("SIGTERM", onSignal);
+        process.off("SIGINT", onSignal);
+        const outboxStop = outbox!.stop();
         const messagingClose = emailer!.close();
-        Promise.all([messagingClose, server.stop()]).then(() => resolve(), reject);
+        const httpStop = server.stop();
+        Promise.allSettled([outboxStop, messagingClose, httpStop]).then((results) => {
+          const error = failure ?? results.find((result) => result.status === "rejected");
+          if (error)
+            reject(
+              error instanceof Error
+                ? error
+                : error && typeof error === "object" && "reason" in error
+                  ? error.reason
+                  : new Error("Outbox stopped"),
+            );
+          else resolve();
+        });
       };
-      process.once("SIGTERM", shutdown);
-      process.once("SIGINT", shutdown);
+      const onSignal = () => shutdown();
+      process.once("SIGTERM", onSignal);
+      process.once("SIGINT", onSignal);
+      void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
     });
   } finally {
+    const stopped = outbox?.stop();
     await emailer?.close();
+    await stopped?.catch(() => {});
+    sends?.close();
     settings?.close();
     users?.close();
     listStore?.close();

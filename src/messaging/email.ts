@@ -53,6 +53,7 @@ export type Outcome = {
   stage: "local" | "setup" | "recipients" | "smtp-complete" | "unknown";
   accepted: string[];
   rejected: string[];
+  retry?: "transient";
 };
 export interface Dispatch {
   messageId: string;
@@ -505,6 +506,14 @@ export function createEmailer(options: {
                 stage: "setup",
                 accepted: [],
                 rejected: [],
+                ...(e.ownerConnectRefused ||
+                (e.command?.startsWith("AUTH ") &&
+                  e.responseCode &&
+                  e.responseCode >= 400 &&
+                  e.responseCode < 500 &&
+                  /^4\d{2}[ -]/.test(e.response ?? ""))
+                  ? { retry: "transient" as const }
+                  : {}),
               });
             } else if (
               e.command === "RCPT TO" &&
@@ -527,6 +536,9 @@ export function createEmailer(options: {
                 stage: "recipients",
                 accepted: [],
                 rejected,
+                ...(e.rejectedErrors.some((r) => r.responseCode! < 500)
+                  ? { retry: "transient" as const }
+                  : {}),
               });
             } else {
               complete({
