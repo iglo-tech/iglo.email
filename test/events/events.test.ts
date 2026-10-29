@@ -556,3 +556,39 @@ test("single-event admission is bounded and recovers after saturation", async ()
   expect(statuses.filter((status) => status !== 200 && status !== 409)).toEqual([]);
   expect((await f.post(event({ email: "recovered@example.com" }))).status).toBe(200);
 });
+
+test("a lost transaction or failed savepoint cleanup aborts the whole group", async () => {
+  let mode: "rollback" | "released" | undefined;
+  const f = await open({
+    exitThenTrigger: (e) => {
+      if (e.name === "lose" && mode === "released") {
+        // ROLLBACK TO then fails while the outer transaction stays active.
+        f.db.run("RELEASE event_item");
+        throw new Error("sequence failure");
+      }
+      return { started: [], ended: [] };
+    },
+  });
+  // SQLite may roll back the whole transaction after an error inside it.
+  f.db.run(
+    "CREATE TEMP TRIGGER lose_transaction BEFORE INSERT ON events WHEN NEW.name = 'lose' AND (SELECT count(*) FROM temp.lose_mode) > 0 BEGIN SELECT RAISE(ROLLBACK, 'lost'); END",
+  );
+  for (const current of ["rollback", "released"] as const) {
+    mode = current;
+    f.db.run("CREATE TEMP TABLE IF NOT EXISTS lose_mode (x)");
+    f.db.run("DELETE FROM temp.lose_mode");
+    if (current === "rollback") f.db.run("INSERT INTO temp.lose_mode VALUES (1)");
+    const results = await Promise.all([
+      f.post(event({ email: `${current}1@example.com` })),
+      f.post(event({ email: `${current}2@example.com` }, { name: "lose" })),
+      f.post(event({ email: `${current}3@example.com` })),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([500, 500, 500]);
+    expect(f.count("subscribers")).toBe(0);
+    expect(f.count("events")).toBe(0);
+    expect(f.db.inTransaction).toBe(false);
+  }
+  mode = undefined;
+  f.db.run("DELETE FROM temp.lose_mode");
+  expect((await f.post(event({ email: "after-lost@example.com" }))).status).toBe(200);
+});

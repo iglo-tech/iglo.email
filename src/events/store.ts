@@ -62,6 +62,13 @@ const numberID = (id: bigint) =>
     ? Number(id)
     : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(id.toString());
 
+/** Savepoint cleanup failed: no member of the group may be reported individually. */
+class TransactionLost extends Error {
+  constructor(cause: unknown) {
+    super("Event transaction lost", { cause });
+  }
+}
+
 export function createEventStore(
   db: Database,
   subscribers: SubscriberStore,
@@ -117,8 +124,14 @@ export function createEventStore(
       db.run("RELEASE event_item");
       return recorded;
     } catch (error) {
-      db.run("ROLLBACK TO event_item");
-      db.run("RELEASE event_item");
+      try {
+        db.run("ROLLBACK TO event_item");
+        db.run("RELEASE event_item");
+      } catch (cleanup) {
+        // The savepoint or the transaction itself is gone, so this item's writes cannot be
+        // isolated. Abort the whole transaction rather than report a partial outcome.
+        throw new TransactionLost(cleanup);
+      }
       if (error instanceof HttpError) return { status: error.status, message: error.message };
       throw error;
     }
@@ -146,6 +159,7 @@ export function createEventStore(
           try {
             return { result: item(e.input, e.at, e.authorize) };
           } catch (failure) {
+            if (failure instanceof TransactionLost || !db.inTransaction) throw failure;
             return { failure };
           }
         }),
