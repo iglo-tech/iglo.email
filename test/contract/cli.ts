@@ -13,6 +13,7 @@ import { runSettingsLive } from "@/test/settings/live";
 import { runSettingsContract } from "@/test/contract/settings";
 import { runListsContract } from "@/test/contract/lists";
 import { runSubscribersContract } from "@/test/contract/subscribers";
+import { runSubscriberQuery } from "@/test/contract/subscriber-query";
 import { runSubscriberScope } from "@/test/contract/subscriber-scope";
 import { runExternalContract } from "@/test/subscribers/external";
 import { runRolesContract } from "@/test/contract/roles";
@@ -164,6 +165,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
           await runSubscribersContract({ mode: "normal", baseUrl, credentials });
           await runExternalContract({ baseUrl, credentials, restart });
           await runSubscriberScope({ mode: "normal", baseUrl, credentials, restart });
+          await runSubscriberQuery({ mode: "normal", baseUrl, credentials });
           return true;
         }
         if (args[1] === "lists") {

@@ -4,6 +4,7 @@ import { runSubscriberCouncilRevisions } from "@/test/contract/subscriber-counci
 import { runSubscriberBindingRevisions } from "@/test/contract/subscriber-binding-revisions";
 import { runSubscriberStateRevisions } from "@/test/contract/subscriber-state-revisions";
 import { runSubscriberScope } from "@/test/contract/subscriber-scope";
+import { runSubscriberQuery } from "@/test/contract/subscriber-query";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSubscribersContract(target: {
@@ -565,6 +566,7 @@ if (import.meta.main) {
     if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
     await runSubscribersContract({ mode: "reference", baseUrl, credentials: { user, token } });
     await runSubscriberScope({ mode: "reference", baseUrl, credentials: { user, token } });
+    await runSubscriberQuery({ mode: "reference", baseUrl, credentials: { user, token } });
   } catch (error) {
     process.stderr.write(
       `${error instanceof Error && /^FAIL [a-zA-Z0-9-]+$/.test(error.message) ? error.message : "Subscribers contract failed"}\n`,
