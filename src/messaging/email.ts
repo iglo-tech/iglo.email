@@ -367,6 +367,7 @@ export function createEmailer(options: {
     message: Message,
     rootUrl: string,
     temporary = false,
+    startedAt = options.clock.now().getTime(),
   ): Dispatch {
     const serverId = suppliedId(server, message);
     let domain = "localhost";
@@ -392,6 +393,8 @@ export function createEmailer(options: {
     } catch {
       return local();
     }
+    const remaining = (temporary ? 10000 : 60000) - (options.clock.now().getTime() - startedAt);
+    if (remaining <= 0) return local();
     let pool: Pool;
     if (temporary) pool = createPool("", server, true);
     else {
@@ -510,7 +513,7 @@ export function createEmailer(options: {
       },
     };
     pool.operations.add(operation);
-    void options.clock.sleep(temporary ? 10000 : 60000, timer.signal).then(
+    void options.clock.sleep(remaining, timer.signal).then(
       () => {
         if (settled) return;
         if (operation.started) cancelPool(pool);
@@ -522,7 +525,8 @@ export function createEmailer(options: {
     return { messageId, result };
   }
   function push(message: Message): Dispatch {
-    if (closed) return dispatch(undefined, message, "");
+    const startedAt = options.clock.now().getTime();
+    if (closed) return dispatch(undefined, message, "", false, startedAt);
     const current = options.settings();
     const servers = structuredClone(current.smtp).filter((s) => s.enabled);
     reconcile(servers);
@@ -538,12 +542,14 @@ export function createEmailer(options: {
       bucket = exact.length ? exact : domains.length ? domains : bucket;
     }
     const index = bucket.length ? selection(bucket.length) : -1;
-    return dispatch(bucket[index], message, current.rootUrl);
+    return dispatch(bucket[index], message, current.rootUrl, false, startedAt);
   }
   return {
     push,
-    test: (server: SMTPServer, message: Message, rootUrl: string) =>
-      dispatch(structuredClone(server), message, rootUrl, true),
+    test: (server: SMTPServer, message: Message, rootUrl: string) => {
+      const startedAt = options.clock.now().getTime();
+      return dispatch(structuredClone(server), message, rootUrl, true, startedAt);
+    },
     close() {
       if (closing) return closing;
       closed = true;
