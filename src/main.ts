@@ -24,13 +24,14 @@ import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
-import { createSends } from "@/messaging/sends";
+import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
 import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
+import { registerTxRoutes } from "@/tx/routes";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
         const current = settings!.read();
         return { smtp: current.smtp, rootUrl: current["app.root_url"] };
       },
+      copyAllowed: (address) => !addressBlocklisted(subscriberStore!, address),
     });
     registerSettingsRoutes(
       router,
@@ -117,6 +119,24 @@ async function main(): Promise<void> {
     });
     registerSendRoutes(router, sends, auth);
     outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+    registerTxRoutes(router, {
+      auth,
+      sends,
+      outbox,
+      subscribers: subscriberStore,
+      templates,
+      renderer,
+      lists,
+      policy: () => {
+        const current = settings!.read();
+        return {
+          // listmonk getDefaultFromEmail: the first configured address.
+          fromEmail: current["app.from_email"][0] ?? "",
+          domainAllowlist: current["privacy.domain_allowlist"],
+          domainBlocklist: current["privacy.domain_blocklist"],
+        };
+      },
+    });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       let closing = false;

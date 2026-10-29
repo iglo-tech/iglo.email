@@ -3,6 +3,8 @@
 SELECT * FROM subscribers WHERE id = ?;
 -- name: subscriber-by-external
 SELECT * FROM subscribers WHERE external_id = ?;
+-- name: subscriber-by-email
+SELECT * FROM subscribers WHERE email = ?;
 -- name: subscriber-memberships
 SELECT * FROM subscriber_lists WHERE subscriber_id = ? ORDER BY created_at, list_id;
 -- name: subscriber-insert

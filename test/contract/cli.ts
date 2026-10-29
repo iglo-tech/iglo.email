@@ -1,4 +1,5 @@
 import { runTemplatesContract } from "@/test/contract/templates";
+import { runTxContract } from "@/test/contract/tx";
 import { runTemplateAuthorization } from "@/test/templates/auth-contract";
 import { runDKIMSettings } from "@/test/contract/messaging-dkim";
 import { runMessagingContract } from "@/test/contract/messaging";
@@ -99,7 +100,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "subscribers" ||
       args[1] === "settings" ||
       args[1] === "messaging" ||
-      args[1] === "templates")
+      args[1] === "templates" ||
+      args[1] === "tx")
   ) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
@@ -111,7 +113,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "subscribers" ||
         args[1] === "settings" ||
         args[1] === "messaging" ||
-        args[1] === "templates") &&
+        args[1] === "templates" ||
+        args[1] === "tx") &&
       Object.keys(values).length
     )
       throw new Error("Invalid owned auth arguments");
@@ -121,6 +124,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       signal,
       async (baseUrl, runSignal, restart, dataDir) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "tx") {
+          await runTxContract({ mode: "normal", baseUrl, credentials, restart });
+          process.stdout.write("PASS tx production contract\n");
+          return true;
+        }
         if (args[1] === "templates") {
           await runTemplatesContract({ mode: "normal", baseUrl, credentials, restart });
           await runTemplateAuthorization(baseUrl, credentials, admin);

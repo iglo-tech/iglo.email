@@ -70,15 +70,51 @@ export function startOutbox(options: {
     arm();
   });
   arm();
+  const inflight = new Set<Promise<void>>();
   const done = Promise.race([loop.done, timerFailure]);
   void done.catch(() => {});
   return {
     done,
-    stop() {
+    /**
+     * Send specific just-committed queued rows now and resolve after their outcomes
+     * are journaled. Call synchronously after the enqueue commit so the loop cannot
+     * claim them first; a row it did claim is left to the loop. Retry deadlines and
+     * unclaimed rows stay with the loop.
+     */
+    dispatch(ids: bigint[]): Promise<void> {
+      if (stopped) return Promise.resolve();
+      const now = options.clock.now();
+      const lease = new Date(now.getTime() + 60000);
+      const work: Promise<void>[] = [];
+      for (const id of ids) {
+        const row = options.sends.claimQueued(id, now, lease);
+        if (!row) continue;
+        const message = options.sends.admit(row);
+        if (!message) continue;
+        work.push(
+          options.emailer.push(message).result.then((outcome) => {
+            options.sends.finish(row, outcome);
+            arm();
+          }),
+        );
+      }
+      const all = Promise.all(work).then(
+        () => {},
+        () => options.logger.error(new Error("Outbox dispatch failed")),
+      );
+      inflight.add(all);
+      void all.finally(() => inflight.delete(all));
+      return all;
+    },
+    async stop() {
       stopped = true;
       deadline?.abort();
       options.sends.onWake(() => {});
-      return loop.stop();
+      try {
+        await loop.stop();
+      } finally {
+        await Promise.allSettled(inflight);
+      }
     },
   };
 }
