@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.4 sequence scheduler, [PR #25](https://github.com/iglo-tech/iglo.email/pull/25), head 797ca11. Worker done; Sol xhigh round-1 review running. Last critical-path task.
-Next: lead disposition of round 1, merge, then the next eligible work-plan task.
+M5.4 sequence scheduler, [PR #25](https://github.com/iglo-tech/iglo.email/pull/25), head 797ca11. Round 1: CHANGES (2 P1, 2 P2, all agreed); one Opus fixer running. Last critical-path task.
+Next: Sol round-2 fix-only review, merge, then the next eligible work-plan task.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
