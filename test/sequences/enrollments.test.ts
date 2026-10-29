@@ -538,6 +538,99 @@ test("a repeated public unsubscribe exits enrollments started after the first on
   ]);
 });
 
+test("admin add-as-unsubscribed and unsubscribe without a membership exit those lists only", async () => {
+  const f = await open();
+  const tx = await f.template();
+  const news = await f.list("news");
+  const promo = await f.list("promo");
+  const marketing = (list: number) =>
+    sequence(f, {
+      trigger: { event: "go" },
+      list_id: list,
+      steps: [{ wait: "P1D", kind: "marketing", template_id: tx }],
+    });
+  const onNews = await marketing(news);
+  const onPromo = await marketing(promo);
+  // Events enroll subscribers without any list membership.
+  const start = async (email: string) =>
+    (await f.event({ subscriber: { email }, name: "go" })).body.data
+      .subscriber_id as number;
+  const states = async (id: number) =>
+    Object.fromEntries(
+      (await enrollments(f, `?subscriber_id=${id}`)).map((e) => [
+        e.sequence_id,
+        `${e.status}:${e.exit_reason}`,
+      ]),
+    );
+  const membership = async (id: number, list: number) =>
+    ((await f.json(`/api/subscribers/${id}`)).body.data.lists as any[]).find(
+      (l) => l.id === list,
+    )?.subscription_status;
+  const cases: {
+    email: string;
+    route: "ids" | "query";
+    body: object;
+    status?: string;
+  }[] = [
+    {
+      email: "a1@example.test",
+      route: "ids",
+      body: { action: "add", status: "unsubscribed" },
+      status: "unsubscribed",
+    },
+    {
+      email: "a2@example.test",
+      route: "query",
+      body: { action: "add", status: "unsubscribed" },
+      status: "unsubscribed",
+    },
+    { email: "a3@example.test", route: "ids", body: { action: "unsubscribe" } },
+    {
+      email: "a4@example.test",
+      route: "query",
+      body: { action: "unsubscribe" },
+    },
+  ];
+  for (const c of cases) {
+    const id = await start(c.email);
+    const response =
+      c.route === "ids"
+        ? await f.json("/api/subscribers/lists", "PUT", {
+            ids: [id],
+            target_list_ids: [news],
+            ...c.body,
+          })
+        : await f.json("/api/subscribers/query/lists", "PUT", {
+            query: `subscribers.email = '${c.email}'`,
+            target_list_ids: [news],
+            ...c.body,
+          });
+    expect(response.status).toBe(200);
+    expect(await membership(id, news)).toBe(c.status);
+    expect(await states(id)).toEqual({
+      [onNews.id]: "exited:unsubscribed",
+      [onPromo.id]: "active:null",
+    });
+  }
+  // Adding an unconfirmed membership is not a consent change.
+  const kept = await start("a5@example.test");
+  await f.json("/api/subscribers/lists", "PUT", {
+    ids: [kept],
+    target_list_ids: [news],
+    action: "add",
+  });
+  await f.json("/api/subscribers/query/lists", "PUT", {
+    query: "subscribers.email = 'a5@example.test'",
+    target_list_ids: [promo],
+    action: "add",
+    status: "confirmed",
+  });
+  expect(await states(kept)).toEqual({
+    [onNews.id]: "active:null",
+    [onPromo.id]: "active:null",
+  });
+});
+
 test("manual enroll respects reentry unless forced; cancel ends with manual", async () => {
   const f = await open();
   const never = await sequence(f, { reentry: "never" });
