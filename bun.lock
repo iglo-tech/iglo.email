@@ -35,6 +35,7 @@
     },
   },
   "patchedDependencies": {
+    "liquidjs@10.30.0": "patches/liquidjs@10.30.0.patch",
     "saxes@6.0.0": "patches/saxes@6.0.0.patch",
   },
   "packages": {

@@ -27,6 +27,10 @@ import { createSMTPTest } from "@/messaging/test";
 import { createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
+import { createCampaignTemplateReferences } from "@/campaigns/template-references";
+import { createTemplateStore } from "@/templates/store";
+import { createRenderer } from "@/templates/renderer";
+import { registerTemplateRoutes } from "@/templates/routes";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -47,6 +51,8 @@ async function main(): Promise<void> {
   let settings: ReturnType<typeof createSettings> | undefined;
   let emailer: ReturnType<typeof createEmailer> | undefined;
   let sends: ReturnType<typeof createSends> | undefined;
+  let templateReferences: ReturnType<typeof createCampaignTemplateReferences> | undefined;
+  let templates: ReturnType<typeof createTemplateStore> | undefined;
   let outbox: ReturnType<typeof startOutbox> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
@@ -75,7 +81,12 @@ async function main(): Promise<void> {
       logger: createErrorLogger(),
       i18n: createTranslation(),
     });
+    const renderer = createRenderer(clock, app.i18n);
+    templateReferences = createCampaignTemplateReferences(db);
+    templates = createTemplateStore(db, clock, renderer, templateReferences, app.logger);
+    templates.initialize();
     const router = createRouter();
+    registerTemplateRoutes(router, templates, renderer, auth);
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
     registerSubscriberRoutes(router, subscriberStore, roles, auth, () => {
@@ -92,7 +103,12 @@ async function main(): Promise<void> {
         return { smtp: current.smtp, rootUrl: current["app.root_url"] };
       },
     });
-    registerSettingsRoutes(router, settings, auth, createSMTPTest(settings, emailer, app.i18n));
+    registerSettingsRoutes(
+      router,
+      settings,
+      auth,
+      createSMTPTest(settings, emailer, app.i18n, renderer),
+    );
     sends = createSends({
       db,
       clock,
@@ -135,6 +151,8 @@ async function main(): Promise<void> {
     await emailer?.close();
     await stopped?.catch(() => {});
     sends?.close();
+    templates?.close();
+    templateReferences?.close();
     settings?.close();
     users?.close();
     listStore?.close();

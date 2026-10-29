@@ -1,0 +1,90 @@
+diff --git a/dist/liquid.node.js b/dist/liquid.node.js
+index 2fe297b510bb2a7918969b072ef5d14fa723ae13..cdb28d60f5c31516a5a21bb971bc212bd582e1e1 100644
+--- a/dist/liquid.node.js
++++ b/dist/liquid.node.js
+@@ -1324,6 +1324,7 @@ class Expression {
+         assert(ctx, 'unable to evaluate: context not defined');
+         const operands = [];
+         for (const token of this.postfix) {
++            if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+             if (isOperatorToken(token)) {
+                 const r = operands.pop();
+                 let result;
+@@ -1385,6 +1386,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
+ function* evalPropertyAccessToken(token, ctx, lenient) {
+     const props = [];
+     for (const prop of token.props) {
++        if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+         props.push((yield evalTokenValue(prop, ctx, false)));
+     }
+     try {
+@@ -1408,7 +1410,12 @@ function evalQuotedToken(token) {
+ function* evalRangeToken(token, ctx) {
+     const low = (yield evalTokenValue(token.lhs, ctx));
+     const high = (yield evalTokenValue(token.rhs, ctx));
+-    ctx.memoryLimit.use(high - low + 1);
++    // Bound generated ranges before allocation and reject numbers whose increment can stall.
++    if (!Number.isSafeInteger(+low) || !Number.isSafeInteger(+high) || +high - +low + 1 > 1024)
++        throw new Error('range limit exceeded');
++    const size = Math.max(0, +high - +low + 1);
++    if (ctx.igloBudgetRange) ctx.igloBudgetRange(size);
++    ctx.memoryLimit.use(size);
+     return range(+low, +high + 1);
+ }
+ function* toPostfix(tokens) {
+@@ -4144,7 +4151,9 @@ class ForTag extends Tag {
+     }
+     *render(ctx, emitter) {
+         const r = this.liquid.renderer;
+-        let collection = toEnumerable(yield evalToken(this.collection, ctx));
++        const collectionValue = yield evalToken(this.collection, ctx);
++        if (ctx.igloBudgetCollection) ctx.igloBudgetCollection(collectionValue);
++        let collection = toEnumerable(collectionValue);
+         if (!collection.length) {
+             yield r.renderTemplates(this.elseTemplates, ctx, emitter);
+             return;
+diff --git a/dist/liquid.node.mjs b/dist/liquid.node.mjs
+index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..4e1d942dda9c87b6557a4fc5db87d100b2e0e7d4 100644
+--- a/dist/liquid.node.mjs
++++ b/dist/liquid.node.mjs
+@@ -1364,6 +1364,7 @@ class Expression {
+         assert(ctx, 'unable to evaluate: context not defined');
+         const operands = [];
+         for (const token of this.postfix) {
++            if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+             if (isOperatorToken(token)) {
+                 const r = operands.pop();
+                 let result;
+@@ -1425,6 +1426,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
+ function* evalPropertyAccessToken(token, ctx, lenient) {
+     const props = [];
+     for (const prop of token.props) {
++        if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+         props.push((yield evalTokenValue(prop, ctx, false)));
+     }
+     try {
+@@ -1448,7 +1450,12 @@ function evalQuotedToken(token) {
+ function* evalRangeToken(token, ctx) {
+     const low = (yield evalTokenValue(token.lhs, ctx));
+     const high = (yield evalTokenValue(token.rhs, ctx));
+-    ctx.memoryLimit.use(high - low + 1);
++    // Bound generated ranges before allocation and reject numbers whose increment can stall.
++    if (!Number.isSafeInteger(+low) || !Number.isSafeInteger(+high) || +high - +low + 1 > 1024)
++        throw new Error('range limit exceeded');
++    const size = Math.max(0, +high - +low + 1);
++    if (ctx.igloBudgetRange) ctx.igloBudgetRange(size);
++    ctx.memoryLimit.use(size);
+     return range(+low, +high + 1);
+ }
+ function* toPostfix(tokens) {
+@@ -4168,7 +4175,9 @@ class ForTag extends Tag {
+     }
+     *render(ctx, emitter) {
+         const r = this.liquid.renderer;
+-        let collection = toEnumerable(yield evalToken(this.collection, ctx));
++        const collectionValue = yield evalToken(this.collection, ctx);
++        if (ctx.igloBudgetCollection) ctx.igloBudgetCollection(collectionValue);
++        let collection = toEnumerable(collectionValue);
+         if (!collection.length) {
+             yield r.renderTemplates(this.elseTemplates, ctx, emitter);
+             return;

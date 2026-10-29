@@ -7,6 +7,14 @@ There are two kinds of templates:
 
 ## User-authored templates: Liquid
 
+> M1.8 implementation in progress: the template API, Liquid renderer and
+> converted SMTP diagnostic are present on the task branch, but the full D23 /
+> D54 acceptance matrix and measurements have not passed. Markdown emission,
+> a complete descriptor/cost audit, and the remaining compiled and authorization
+> regression matrix are outstanding. Do not treat this branch as a completed
+> rendering safety boundary until those are finished.
+
+
 listmonk uses Go's `html/template` with Sprig functions (`{{ .Subscriber.FirstName }}`, `{{ UnsubscribeURL }}`). A TypeScript port needs an engine of its own. iglo.email uses **Liquid**, through [LiquidJS](https://liquidjs.com):
 
 - **Its capabilities are explicit:** M1.8 supplies sanitized plain data, dense arrays, reviewed filters and an allowlisted in-memory template resolver. `ownPropertyOnly` additionally restricts property lookup; it does not sanitize inherited array iteration. No filesystem or URL fallback is allowed ([D23](09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application)).
@@ -17,6 +25,32 @@ listmonk uses Go's `html/template` with Sprig functions (`{{ .Subscriber.FirstNa
 HTML templates render with `outputEscape: "escape"`, so values are HTML-escaped unless piped through `raw`. Plain-text templates render without escaping.
 
 M0.8 measured the selected library and found the precise library-limit semantics and capability boundaries ([evidence](../perf/M0.8-liquidjs.md)): filesystem lookup must be explicitly denied or mapped, `ownPropertyOnly` does not sanitize iteration, `memoryLimit` does not cap all output, and `renderLimit` is cooperative. D23 sets the required M1.8 boundaries; the fixture does not itself implement the production guarantee.
+
+### Current M1.8 branch subset (acceptance pending)
+
+| Capability | Current behavior |
+|---|---|
+| Tags | `if`, `unless`, `for`, `assign`, `capture`, `comment`, `raw`, `break`, `continue`; other tags, including user `include`, `render` and `layout`, are rejected |
+| Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`; other filters are rejected. These filters accept scalar inputs; `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution |
+| Dates | `now` and `today` use the injected clock; supported format directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%` in UTC. Other date strings must be a date or UTC ISO timestamp |
+| Lookup | No user partial lookup. Converted system templates are embedded and selected by the owning application, not by user-supplied paths or names |
+| Data | Plain data copied with descriptor checks; 256 KiB encoded, depth 16, 10,000 nodes, 1,024 entries, and 64 KiB per string. A review of the bound on own-property enumeration remains open |
+| Render | Source 64 KiB body/layout and 2 KiB subject; 1 MiB output per body/layout and 2 KiB subject; shared 4 MiB emission/intermediate budget, 10,000 work, depth 32 and 1,024 per range. Work includes expression tokens, property lookup, collection conversion and comparison size. Four admitted renders per instance. A caller can hold a compiled immutable snapshot; there is no retained cache |
+| Markdown | Not yet implemented. The planned `marked` integration must bound expansion before accumulation |
+| Tracking and URLs | `track_link` accepts HTTP(S) and returns it unchanged, `track_view` is empty, and explicit URL fields are checked. These do not implement tracking or other delivery workflows |
+
+The data copier currently enumerates own property names before it can reject
+more than 1,024 non-enumerable properties. For example, a caller can pass a
+plain object with many non-enumerable data properties: `Object.getOwnPropertyNames`
+materializes its full key list before the check. Getters are not invoked, but
+this does not prove the required pre-copy bound. The caller boundary needs a
+bounded representation or another reviewed way to inspect those descriptors
+before this can be accepted.
+
+The emitter, subset, data copy and patches require the remaining D54 safety
+matrix before they are treated as an accepted boundary. The time limit remains
+cooperative, and raw author HTML is not sanitized. Preview CSP protects its
+sandboxed browser context; it is not a guarantee about HTML used elsewhere.
 
 ### Data and functions
 

@@ -161,6 +161,17 @@ Only numeric HTTP loopback origins with an explicit port are accepted. `--case`
 selects a known supported case; requesting an unported production case fails
 before an HTTP request. Credentials must never appear in a URL or command line.
 
+## Template corpus (M1.8 in progress)
+
+`bun run contract:templates:reference` runs the source-first template cases
+against the pinned upstream; `bun run contract:templates` runs the same shared
+corpus against the compiled production task branch. Liquid and Go samples are
+separate, and the D54 differences are labelled in the cases. The test-only
+`bun test/templates/compiled-check.ts` builds the production renderer into an
+isolated Linux bubblewrap fixture with a local canary and network trap. These
+are initial gates, not evidence that the full M1.8 security and performance
+acceptance has passed.
+
 ## Webhook receiver
 
 - `POST $WEBHOOK_URL` captures request headers and the original body and returns
