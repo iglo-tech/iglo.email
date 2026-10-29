@@ -161,7 +161,7 @@ export function createEventStore(
   function schedule() {
     if (scheduled) return;
     scheduled = true;
-    setTimeout(flush, 20);
+    setImmediate(flush);
   }
   return {
     /**
