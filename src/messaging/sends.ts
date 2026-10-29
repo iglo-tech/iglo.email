@@ -5,6 +5,10 @@ import { writeTransaction } from "@/db/transaction";
 import type { Message, Outcome } from "@/messaging/email";
 import { decodePayload, encodePayload } from "@/messaging/payload";
 import type { SubscriberStore } from "@/subscribers/store";
+import { sanitizeEmail } from "@/subscribers/email";
+import { simpleLower } from "@/subscribers/unicode-lower";
+import { trimSpace } from "@/lists/store";
+import { parseAddress } from "@/settings/mail";
 import { HttpError } from "@/server/response";
 import { createHash } from "node:crypto";
 
@@ -122,6 +126,40 @@ export function createSends(options: {
     }
     return `<${uuid}@${host}>`;
   };
+  /** Current blocklist status of whoever owns this normalized address. */
+  const blocklisted = (email: string) =>
+    subscribers.byEmail(sanitizeEmail(email) ?? simpleLower(trimSpace(email)))?.status ===
+    "blocklisted";
+  /**
+   * Drop blocklisted Cc/Bcc mailboxes. The emailer derives extra envelope recipients
+   * from these headers by splitting on commas, so filtering the same parts here covers
+   * every effective recipient. Unparseable parts are kept for the emailer to reject.
+   */
+  function withoutBlockedCopies(message: Message): { message: Message; removed: number } {
+    if (!message.headers) return { message, removed: 0 };
+    let removed = 0;
+    const keep = (value: string) =>
+      value
+        .split(",")
+        .filter((part) => {
+          const address = parseAddress(trimSpace(part));
+          if (address === undefined || !blocklisted(address)) return true;
+          removed++;
+          return false;
+        })
+        .join(",");
+    const headers: Record<string, string | string[]> = {};
+    for (const [name, value] of Object.entries(message.headers)) {
+      const lower = name.toLowerCase();
+      headers[name] =
+        lower !== "cc" && lower !== "bcc"
+          ? value
+          : Array.isArray(value)
+            ? value.map(keep)
+            : keep(value);
+    }
+    return removed ? { message: { ...message, headers }, removed } : { message, removed };
+  }
   function eligibility(row: Row, subscriberUuid: string | null): string | null {
     if (subscriberUuid !== null) {
       if (row.subscriber_id === null) return "subscriber_unavailable";
@@ -130,6 +168,8 @@ export function createSends(options: {
         return "subscriber_unavailable";
       if (subscriber.status === "blocklisted") return "subscriber_blocklisted";
     } else if (row.subscriber_id !== null) return "subscriber_unavailable";
+    // Unlinked rows (external mode, unknown-at-enqueue addresses) are rechecked by address.
+    if (blocklisted(row.to_email)) return "subscriber_blocklisted";
     if (
       row.kind === "marketing" &&
       (!options.marketingPolicy ||
@@ -296,8 +336,7 @@ export function createSends(options: {
           if (!current || current.uuid !== subscriberUuid || current.email !== to)
             throw new HttpError(409, "Subscriber changed. Retry the request.");
           if (current.status === "blocklisted") skip = "subscriber_blocklisted";
-        } else if (subscribers.byEmail(to)?.status === "blocklisted")
-          skip = "subscriber_blocklisted";
+        } else if (blocklisted(to)) skip = "subscriber_blocklisted";
         if (
           !skip &&
           send.kind === "marketing" &&
@@ -439,7 +478,13 @@ export function createSends(options: {
         );
         return null;
       }
-      return { ...payload.message, messageId: row.smtp_message_id };
+      // A delivered row records only how many copy recipients were dropped.
+      const { message, removed } = withoutBlockedCopies(payload.message);
+      db.run("UPDATE sends SET skip_reason=? WHERE id=? AND status='sending'", [
+        removed ? `copies_blocklisted:${removed}` : null,
+        row.id,
+      ]);
+      return { ...message, messageId: row.smtp_message_id };
     },
     finish(row: Row, outcome: Outcome) {
       const at = now();

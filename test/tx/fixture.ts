@@ -104,7 +104,7 @@ export async function txFixture(
     }),
   });
   const sends = createSends({ db, clock, subscribers, rootUrl: () => "http://fixture.test" });
-  const outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+  let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
   const router = createRouter();
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
@@ -114,7 +114,7 @@ export async function txFixture(
   registerTxRoutes(router, {
     auth,
     sends,
-    outbox,
+    outbox: { dispatch: (ids: bigint[]) => outbox.dispatch(ids) },
     subscribers,
     templates,
     renderer,
@@ -175,7 +175,15 @@ export async function txFixture(
     template,
     subscriber,
     sends,
-    outbox,
+    get outbox() {
+      return outbox;
+    },
+    /** Stop delivery so queued rows stay queued, as during downtime. */
+    stopOutbox: () => outbox.stop(),
+    /** A fresh outbox over the same journal, as after a process restart. */
+    restartOutbox() {
+      outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+    },
     count: () => Number((db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n),
     async close() {
       const stopped = outbox.stop();

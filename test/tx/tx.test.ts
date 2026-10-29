@@ -319,3 +319,104 @@ test("a credential revoked while the body is held writes and sends nothing", asy
   expect(f.count()).toBe(0);
   expect(f.sink.messages).toHaveLength(0);
 });
+
+async function settle(f: TxFixture, done: () => boolean) {
+  for (let i = 0; i < 200 && !done(); i++) {
+    f.clock.advance(0);
+    await Bun.sleep(5);
+  }
+}
+
+test("blocklisted Cc and Bcc addresses are removed from the envelope and headers", async () => {
+  const f = await open();
+  const template = await f.template("<p>x</p>");
+  await f.subscriber("blocked@example.test", "Blocked", { status: "blocklisted" });
+  const cc = await f.tx({
+    subscriber_email: "ok@example.test",
+    template_id: template,
+    headers: [{ Cc: "Blocked <BLOCKED@example.test>, copy@example.test" }],
+  });
+  expect(cc.status).toBe(200);
+  expect(cc.body.data.sends[0].status).toBe("sent");
+  const bcc = await f.tx({
+    subscriber_email: "ok2@example.test",
+    template_id: template,
+    headers: [{ bcc: "blocked@example.test" }],
+  });
+  expect(bcc.body.data.sends[0].status).toBe("sent");
+  expect(f.sink.messages.map((m) => m.to)).toEqual([
+    ["ok@example.test", "copy@example.test"],
+    ["ok2@example.test"],
+  ]);
+  expect(f.sink.messages[0]!.data).toMatch(/^Cc: copy@example\.test$/m);
+  for (const m of f.sink.messages) expect(m.data.toLowerCase()).not.toContain("blocked@");
+  for (const response of [cc, bcc]) {
+    const row = (await f.json(`/api/sends/${response.body.data.sends[0].id}`)).body.data;
+    // A safe count, never the removed address.
+    expect(row.skip_reason).toBe("copies_blocklisted:1");
+    expect(JSON.stringify(row)).not.toContain("blocked@");
+  }
+  // A blocklisted primary recipient is still skipped as a whole.
+  const primary = await f.tx({
+    subscriber_email: "blocked@example.test",
+    template_id: template,
+    headers: [{ Cc: "copy@example.test" }],
+  });
+  expect(primary.body.data.sends[0].status).toBe("skipped");
+  expect(f.sink.messages).toHaveLength(2);
+});
+
+test("queued unlinked recipients and copies blocklisted later are skipped after restart", async () => {
+  const f = await open();
+  const template = await f.template("<p>x</p>");
+  const later = await f.subscriber("later@example.test");
+  const copy = await f.subscriber("late-copy@example.test");
+  await f.stopOutbox();
+  const response = await f.tx({
+    subscriber_mode: "external",
+    subscriber_emails: ["first@example.test", "later@example.test"],
+    template_id: template,
+    headers: [{ Bcc: "late-copy@example.test" }],
+    async: true,
+  });
+  expect(response.body.data.sends.map((s: { status: string }) => s.status)).toEqual([
+    "queued",
+    "queued",
+  ]);
+  for (const id of [later, copy])
+    expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT", {})).status).toBe(200);
+  f.restartOutbox();
+  const [first, second] = response.body.data.sends as { id: number }[];
+  const status = async (id: number) => (await f.json(`/api/sends/${id}`)).body.data;
+  await settle(f, () => f.sink.messages.length > 0);
+  await settle(f, () => false);
+  expect(await status(first!.id)).toMatchObject({
+    status: "sent",
+    skip_reason: "copies_blocklisted:1",
+  });
+  expect(await status(second!.id)).toMatchObject({
+    status: "skipped",
+    skip_reason: "subscriber_blocklisted",
+  });
+  expect(f.sink.messages.map((m) => m.to)).toEqual([["first@example.test"]]);
+});
+
+test("manual resend rechecks the blocklist for unlinked recipients", async () => {
+  let rejecting = true;
+  const f = await open({ reject: () => rejecting });
+  const template = await f.template("<p>x</p>");
+  const id = await f.subscriber("stranger@example.test");
+  const response = await f.tx({
+    subscriber_mode: "external",
+    subscriber_email: "stranger@example.test",
+    template_id: template,
+  });
+  const row = response.body.data.sends[0];
+  expect(row.status).toBe("failed");
+  expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT", {})).status).toBe(200);
+  rejecting = false;
+  expect((await f.json(`/api/sends/${row.id}/resend`, "POST")).status).toBe(409);
+  await settle(f, () => false);
+  expect(f.sink.messages).toHaveLength(0);
+  expect(f.count()).toBe(1);
+});
