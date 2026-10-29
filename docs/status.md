@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.6 worked example end to end, [PR #26](https://github.com/iglo-tech/iglo.email/pull/26), head ad38077. Harness fixes pushed (both mutations now caught); Sol round-2 fix-only review running.
-Next: lead disposition of round 2, merge, then M3.1 campaigns API, toward M3.2 and M6.1.
+M3.1 campaigns API, branch task/M3.1-campaigns, [brief](briefs/M3.1.md). One Opus medium worker dispatched; no reviewer active. Path to M6.1: M3.1, M3.2.
+Next: on worker handback, Sol xhigh round 1, lead disposition, merge, then M3.2.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
