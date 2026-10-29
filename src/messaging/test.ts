@@ -171,6 +171,8 @@ export function createSMTPTest(
       const outcome = await send.result;
       if (outcome.status === "ambiguous") throw new HttpError(500, "SMTP test outcome is unknown.");
       if (outcome.status !== "accepted") throw new HttpError(500, "SMTP test failed.");
+      if (outcome.rejected.length)
+        throw new HttpError(500, "SMTP test was accepted for some recipients only.");
     } finally {
       active--;
     }

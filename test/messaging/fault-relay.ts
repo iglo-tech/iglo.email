@@ -15,10 +15,11 @@ export type Fault =
 export async function faultRelay(
   sink: ReferenceMailpit,
   fault: Fault,
-  credentials?: { user: string; password: string },
+  credentials?: { user: string; password: string; authMethods?: string[] },
 ) {
   let connections = 0;
   let authenticated = 0;
+  let authAttempts = 0;
   const greetings: string[] = [];
   let firstReady!: () => void;
   const first = new Promise<void>((resolve) => {
@@ -81,6 +82,7 @@ export async function faultRelay(
         if (end < 0) break;
         const line = fromClient.slice(0, end);
         fromClient = fromClient.slice(end + 2);
+        if (/^AUTH /i.test(line)) authAttempts++;
         if (fault === "auth" && authState) {
           const decoded = Buffer.from(line, "base64").toString("utf8");
           if (authState === "plain") {
@@ -183,7 +185,9 @@ export async function faultRelay(
           }
         }
         if (fault === "auth" && ehlo && line.startsWith("250 ")) {
-          client.write("250-AUTH PLAIN LOGIN CRAM-MD5\r\n");
+          client.write(
+            `250-AUTH ${(credentials?.authMethods ?? ["PLAIN", "LOGIN", "CRAM-MD5"]).join(" ")}\r\n`,
+          );
           ehlo = false;
         }
         client.write(`${line}\r\n`, "latin1");
@@ -205,6 +209,7 @@ export async function faultRelay(
     release: releaseHeld,
     connections: () => connections,
     authenticated: () => authenticated,
+    authAttempts: () => authAttempts,
     greetings: () => [...greetings],
     async close() {
       for (const socket of sockets) socket.destroy();

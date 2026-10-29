@@ -46,6 +46,30 @@ try {
         contentType: "plain" as const,
         body: Buffer.from("authenticated fixture"),
       };
+      current = [{ ...server, port: sink.port }];
+      const missing = await emailer.push({ ...message, subject: `${marker} ${protocol} absent` })
+        .result;
+      assert.equal(missing.status, "proven-not-accepted");
+      assert.equal(missing.stage, "setup");
+      assert.deepEqual(missing.accepted, []);
+      const unsupported = await faultRelay(sink, "auth", {
+        ...credentials,
+        authMethods: [protocol === "plain" ? "LOGIN" : "PLAIN"],
+      });
+      try {
+        current = [{ ...server, port: unsupported.port }];
+        const guarded = await emailer.push({
+          ...message,
+          subject: `${marker} ${protocol} unsupported`,
+        }).result;
+        assert.equal(guarded.status, "proven-not-accepted");
+        assert.equal(guarded.stage, "setup");
+        assert.equal(unsupported.authAttempts(), 0);
+        assert.equal(unsupported.authenticated(), 0);
+      } finally {
+        await unsupported.close();
+      }
+      current = [server];
       assert.equal((await emailer.push(message).result).status, "accepted");
       current = [{ ...server, password: "synthetic-wrong" }];
       const rejected = await emailer.push({ ...message, subject: `${marker} ${protocol} rejected` })

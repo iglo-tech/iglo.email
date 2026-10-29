@@ -57,6 +57,91 @@ export async function runMessagingContract(target: {
     [recipient],
   );
   assert.match(captured.HTML, /Test connection/);
+  // Source-first AUTH regression: configured authentication cannot become a send without login.
+  for (const protocol of ["plain", "login", "cram"]) {
+    const to = `${protocol}-${recipient}`;
+    const failed = await request(
+      JSON.stringify({
+        email: to,
+        host: sink.host,
+        port: sink.port,
+        auth_protocol: protocol,
+        username: "m21-fixture-user",
+        password: "m21-fixture-password",
+        tls_type: "none",
+      }),
+    );
+    assert.equal(failed.status, 500);
+    if (target.mode === "normal")
+      assert.deepEqual(await failed.json(), { message: "SMTP test failed." });
+    const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
+    const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+      messages: unknown[];
+    };
+    assert.equal(intake.messages.length, 0);
+    // D51 also refuses an unadvertised selected method, even if the peer would accept it.
+    const relay = await faultRelay(sink, "auth", {
+      user: "m21-fixture-user",
+      password: "m21-fixture-password",
+      authMethods: [protocol === "plain" ? "LOGIN" : "PLAIN"],
+    });
+    try {
+      const to = `unsupported-${protocol}-${recipient}`;
+      const unsupported = await request(
+        JSON.stringify({
+          email: to,
+          host: sink.host,
+          port: relay.port,
+          auth_protocol: protocol,
+          username: "m21-fixture-user",
+          password: "m21-fixture-password",
+          tls_type: "none",
+        }),
+      );
+      assert.equal(unsupported.status, target.mode === "normal" ? 500 : 200);
+      if (target.mode === "normal")
+        assert.deepEqual(await unsupported.json(), { message: "SMTP test failed." });
+      const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
+      const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+        messages: unknown[];
+      };
+      assert.equal(intake.messages.length, target.mode === "normal" ? 0 : 1);
+      assert.equal(relay.authAttempts(), target.mode === "normal" ? 0 : 1);
+      assert.equal(relay.authenticated(), target.mode === "normal" ? 0 : 1);
+    } finally {
+      await relay.close();
+    }
+  }
+  // D51 explicitly pairs upstream's before-DATA abort with native partial acceptance.
+  for (const header of ["Cc", "Bcc"]) {
+    const relay = await faultRelay(sink, "partial-rcpt");
+    const to = `${header.toLowerCase()}-${recipient}`;
+    try {
+      const partial = await request(
+        JSON.stringify({
+          email: to,
+          host: sink.host,
+          port: relay.port,
+          auth_protocol: "none",
+          tls_type: "none",
+          email_headers: [{ [header]: "rejected@example.test" }],
+        }),
+      );
+      assert.equal(partial.status, 500);
+      if (target.mode === "normal")
+        assert.deepEqual(await partial.json(), {
+          message: "SMTP test was accepted for some recipients only.",
+        });
+      const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
+      const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+        messages: unknown[];
+      };
+      assert.equal(intake.messages.length, target.mode === "normal" ? 1 : 0);
+      assert.equal(relay.connections(), 1);
+    } finally {
+      await relay.close();
+    }
+  }
   if (target.mode === "normal") {
     const malformed = await request("{");
     assert.equal(malformed.status, 400);

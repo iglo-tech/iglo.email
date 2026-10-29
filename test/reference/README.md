@@ -277,3 +277,11 @@ deadlines. A compiled process is stopped while a test response is held after
 Mailpit accepts DATA. TLS probes include process-local CA trust and hostname
 mismatch in STARTTLS and implicit modes. These are finite fixture observations,
 not provider or final-delivery evidence; the TX endpoint itself is not ported.
+
+The D51 regression corpus pairs missing AUTH for configured PLAIN/LOGIN/CRAM
+(500 and no message in either mode) and partial Cc/Bcc rejection (native safe
+partial-acceptance 500 with one intake, pinned 500 with no DATA/intake). The
+owner's partial accepted/rejected result never authorizes replay. Native also
+rejects an unadvertised selected mechanism without transmitting credentials;
+the paired AUTH relay verifies native500/no AUTH/no intake versus reference
+200/authentication/one intake when it would accept that unadvertised method.

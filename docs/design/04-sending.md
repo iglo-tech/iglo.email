@@ -23,6 +23,12 @@ the messaging shutdown deadline. Injected-clock connection and queue tests,
 and a compiled-process held SMTP-test shutdown, exercise these bounds. The
 owner does not implement the durable outbox or a retry engine.
 
+D51 requires configured authentication to be advertised and complete before
+MAIL/DATA. An accepted owner outcome can include rejected recipients: native
+delivers once to the accepted subset, without replay. The protected test
+reports partial acceptance explicitly with a safe 500, rather than claiming
+every recipient succeeded or that nothing was sent.
+
 ## Campaigns
 
 Ported from listmonk's `internal/manager`:

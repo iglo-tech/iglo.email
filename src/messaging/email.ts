@@ -4,6 +4,7 @@ import { createConnection, isIP, type Socket } from "node:net";
 import addressParser from "nodemailer/lib/addressparser";
 import type { Clock } from "@/clock";
 import { goDuration } from "@/settings/duration";
+import { requiredAuth } from "@/messaging/auth";
 
 export interface SMTPServer {
   uuid?: string;
@@ -173,7 +174,7 @@ function makeTransport(
       ...(isIP(s.host) ? {} : { servername: s.host }),
     },
     ...(["plain", "login", "cram"].includes(s.auth_protocol)
-      ? { auth: { user: s.username, pass: s.password ?? "" }, authMethod: method }
+      ? { auth: { user: s.username, pass: s.password ?? "" }, ...requiredAuth(method) }
       : {}),
     maxConnections: test ? 1 : s.max_conns,
     maxMessages: 100,
@@ -449,6 +450,7 @@ export function createEmailer(options: {
             const e = error as {
               command?: string;
               ownerConnectRefused?: boolean;
+              ownerAuthNotAccepted?: boolean;
               response?: string;
               responseCode?: number;
               rejected?: unknown[];
@@ -465,6 +467,7 @@ export function createEmailer(options: {
               [];
             if (
               e.ownerConnectRefused ||
+              e.ownerAuthNotAccepted ||
               (e.command?.startsWith("AUTH ") &&
                 e.responseCode &&
                 e.responseCode >= 400 &&

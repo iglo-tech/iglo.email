@@ -204,7 +204,10 @@ safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
 authentication/cookie and settings behavior remains governed by existing policy.
 D51 requires configured PLAIN/LOGIN/CRAM to be advertised and successfully
 authenticated before MAIL/DATA, with no unauthenticated fallback or secret
-transmission to a peer that does not advertise the selected mechanism.
+transmission to a peer that does not advertise the selected mechanism. A
+noncompliant peer that would accept the unadvertised method gets native
+500/no AUTH/no intake versus reference200/authenticated/one intake; this
+strict capability difference is paired explicitly for all three mechanisms.
 Native keeps partial recipient acceptance and exposes both subsets to its
 caller instead of aborting before DATA as upstream does. The protected test
 returns safe 500 SMTP test was accepted for some recipients only. for that
