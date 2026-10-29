@@ -60,7 +60,9 @@ export async function runSequencesContract(target: {
     reentry: "after_exit",
     list_id: list.body.data.id,
     steps: [
-      { wait: "PT0S", kind: "transactional", template_id: template.body.data.id },
+      // Not due during the contract: the M5.4 scheduler runs due steps immediately, and this
+      // contract checks enrollment state, not sending (test/scheduler covers that).
+      { wait: "PT1H", kind: "transactional", template_id: template.body.data.id },
       {
         wait: "P3D",
         kind: "marketing",
