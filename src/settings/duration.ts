@@ -103,3 +103,27 @@ export function cronDuration(input: string): { nanos: bigint; error: string | nu
   if (!negative && total === limit) return fail("invalid duration");
   return { nanos: negative ? -total : total, error: null };
 }
+
+// Native marketing.min_interval: an ISO 8601 duration such as P7D, PT12H or P1M.
+// Calendar parts are subtracted in UTC; fractions and negative values are rejected.
+const iso =
+  /^P(?=\d|T\d)(?:(\d{1,4})Y)?(?:(\d{1,5})M)?(?:(\d{1,5})W)?(?:(\d{1,6})D)?(?:T(?=\d)(?:(\d{1,7})H)?(?:(\d{1,9})M)?(?:(\d{1,10})S)?)?$/;
+/** The earliest instant still inside the interval ending at `now`; null when "" disables it. */
+export function intervalStart(input: string, now: Date): Date | null | undefined {
+  if (input === "") return null;
+  const m = iso.exec(input);
+  if (!m) return undefined;
+  const [y, mo, w, d, h, mi, s] = m.slice(1).map((v) => Number(v ?? 0)) as number[];
+  const at = new Date(now.getTime());
+  // Calendar months clamp to the target month's last day (31 March - P1M = 28 February).
+  const year = at.getUTCFullYear() - y!,
+    month = at.getUTCMonth() - mo!;
+  const days = new Date(0);
+  days.setUTCFullYear(year, month + 1, 0);
+  at.setUTCFullYear(year, month, Math.min(at.getUTCDate(), days.getUTCDate()));
+  at.setUTCDate(at.getUTCDate() - w! * 7 - d!);
+  const time = at.getTime() - ((h! * 60 + mi!) * 60 + s!) * 1000;
+  // Bound to dates JavaScript and ISO strings represent (year 0 onwards).
+  if (!Number.isFinite(time) || time < -62167219200000) return undefined;
+  return new Date(time);
+}

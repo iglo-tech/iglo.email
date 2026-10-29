@@ -32,6 +32,8 @@ export const defaults = {
   "privacy.domain_blocklist": [],
   "privacy.domain_allowlist": [],
   "privacy.record_optin_ip": false,
+  // Native: minimum ISO 8601 interval between marketing sends to one subscriber.
+  "marketing.min_interval": "P7D",
   "security.captcha": {
     altcha: {
       enabled: false,

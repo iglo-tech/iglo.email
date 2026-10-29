@@ -32,6 +32,9 @@ import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { registerTxRoutes } from "@/tx/routes";
+import { createMarketingPolicy, marketingSettings } from "@/unsubscribe/policy";
+import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
+import { createTracking } from "@/unsubscribe/tracking";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -55,6 +58,7 @@ async function main(): Promise<void> {
   let templateReferences: ReturnType<typeof createCampaignTemplateReferences> | undefined;
   let templates: ReturnType<typeof createTemplateStore> | undefined;
   let outbox: ReturnType<typeof startOutbox> | undefined;
+  let tracking: ReturnType<typeof createTracking> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -111,12 +115,19 @@ async function main(): Promise<void> {
       auth,
       createSMTPTest(settings, emailer, app.i18n, renderer),
     );
+    const marketing = () => marketingSettings(settings!.read());
     sends = createSends({
       db,
       clock,
       subscribers: subscriberStore,
       rootUrl: () => settings!.read()["app.root_url"],
+      marketingPolicy: createMarketingPolicy({
+        subscribers: subscriberStore,
+        lists,
+        settings: marketing,
+      }),
     });
+    tracking = createTracking(db, clock);
     registerSendRoutes(router, sends, auth);
     outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
     registerTxRoutes(router, {
@@ -136,6 +147,14 @@ async function main(): Promise<void> {
           domainBlocklist: current["privacy.domain_blocklist"],
         };
       },
+      marketing: { settings: marketing, tracking },
+    });
+    registerUnsubscribeRoutes(router, {
+      db,
+      sends,
+      subscribers: subscriberStore,
+      tracking,
+      settings: marketing,
     });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
@@ -171,6 +190,7 @@ async function main(): Promise<void> {
     await emailer?.close();
     await stopped?.catch(() => {});
     sends?.close();
+    tracking?.close();
     templates?.close();
     templateReferences?.close();
     settings?.close();

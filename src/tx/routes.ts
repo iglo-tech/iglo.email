@@ -1,6 +1,7 @@
 // Transactional API adapted from listmonk cmd/tx.go (SendTxMessage, validateTxMessage)
 // and models/messages.go (TxMessage.Render) at 6fcd95f. Recipient rules, idempotency,
-// async and the response body follow docs/design/04-sending.md and D58.
+// async and the response body follow docs/design/04-sending.md; marketing unsubscribe
+// links, headers and tracking come from src/unsubscribe (M2.4).
 import { createHash } from "node:crypto";
 import type { Message } from "@/messaging/email";
 import type { RequestedSend, Sends } from "@/messaging/sends";
@@ -15,6 +16,9 @@ import type { TemplateStore } from "@/templates/store";
 import { RenderCapacityError, type TemplateRenderer } from "@/templates/renderer";
 import type { Authentication } from "@/users/auth";
 import { readTxMessage, TxInputError, type TxMessage } from "@/tx/input";
+import { messageLinks } from "@/unsubscribe/message";
+import type { MarketingSettings } from "@/unsubscribe/policy";
+import type { Tracking } from "@/unsubscribe/tracking";
 
 const MAX_RECIPIENTS = 100;
 /** Aggregate prepared bytes for one request; each payload is also bounded by messaging. */
@@ -73,6 +77,7 @@ export function registerTxRoutes(
     renderer: TemplateRenderer;
     lists: ListReferences;
     policy: () => TxPolicy;
+    marketing: { settings: () => MarketingSettings; tracking: Tracking };
   },
 ) {
   router.route(
@@ -177,7 +182,8 @@ export function registerTxRoutes(
         }
 
       // Render. listmonk renders the template body, then a templated subject/alt body.
-      const transactional = { mode: "html" as const, transactional: true };
+      const marketing = kind === "marketing";
+      const transactional = { mode: "html" as const, transactional: !marketing };
       let body: ReturnType<TemplateRenderer["compile"]>;
       let alt: ReturnType<TemplateRenderer["compile"]> | null = null;
       const renderError = () =>
@@ -189,20 +195,31 @@ export function registerTxRoutes(
           subject: m.subject || template.subject,
         });
         if (m.altBody && /\{\{|\{%/.test(m.altBody))
-          alt = deps.renderer.compile({ body: m.altBody, mode: "plain", transactional: true });
+          alt = deps.renderer.compile({
+            body: m.altBody,
+            mode: "plain",
+            transactional: !marketing,
+          });
       } catch {
         throw renderError();
       }
       const contentType = m.contentType === "plain" ? "plain" : "html";
       const requested: RequestedSend[] = [];
+      const links = messageLinks(deps.marketing.settings(), deps.marketing.tracking);
       let total = 0;
       for (const recipient of recipients) {
-        const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}}`;
+        // The send UUID is fixed before rendering so its URLs can carry it.
+        const uuid = crypto.randomUUID();
+        const prepared = links({ uuid, kind, subscriberUuid: recipient.row?.uuid ?? null });
+        const unsubscribe = marketing
+          ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
+          : "";
+        const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}}`;
         let rendered: { body: string; subject: string };
         let altBody = m.altBody;
         try {
-          rendered = body.renderSync(data);
-          if (alt) altBody = alt.renderSync(data).body;
+          rendered = body.renderSync(data, prepared.tracking);
+          if (alt) altBody = alt.renderSync(data, prepared.tracking).body;
         } catch (error) {
           if (error instanceof RenderCapacityError)
             throw new HttpError(429, "Too many template renders in progress.");
@@ -216,7 +233,8 @@ export function registerTxRoutes(
           contentType,
           body: Buffer.from(rendered.body),
           ...(altBody ? { altBody: Buffer.from(altBody) } : {}),
-          headers,
+          // The generated List-Unsubscribe pair replaces caller values of the same name.
+          headers: { ...headers, ...prepared.headers },
           attachments: m.attachments.map((a) => ({
             name: a.name,
             content: a.content,
@@ -230,6 +248,7 @@ export function registerTxRoutes(
         if (total > MAX_REQUEST_BYTES) throw new HttpError(413);
         requested.push({
           send: {
+            uuid,
             source: "tx",
             kind,
             message,

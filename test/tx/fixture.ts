@@ -31,6 +31,9 @@ import { registerTxRoutes, type TxPolicy } from "@/tx/routes";
 import type { Clock } from "@/clock";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
+import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
+import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
+import { createTracking } from "@/unsubscribe/tracking";
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
@@ -40,6 +43,8 @@ export async function txFixture(
     policy?: Partial<TxPolicy>;
     clock?: Clock;
     emailHeaders?: Record<string, string>[];
+    marketing?: Partial<MarketingSettings>;
+    effects?: UnsubscribeEffects;
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -109,7 +114,25 @@ export async function txFixture(
     }),
     copyAllowed: (address) => !addressBlocklisted(subscribers, address),
   });
-  const sends = createSends({ db, clock, subscribers, rootUrl: () => "http://fixture.test" });
+  // Production marketing settings defaults (settings/defaults.ts), mutable per test.
+  const marketing: MarketingSettings = {
+    rootUrl: "http://fixture.test",
+    siteName: "Fixture list",
+    minInterval: "P7D",
+    unsubscribeHeader: true,
+    allowBlocklist: true,
+    individualTracking: false,
+    disableTracking: false,
+    ...options.marketing,
+  };
+  const sends = createSends({
+    db,
+    clock,
+    subscribers,
+    rootUrl: () => "http://fixture.test",
+    marketingPolicy: createMarketingPolicy({ subscribers, lists, settings: () => marketing }),
+  });
+  const tracking = createTracking(db, clock);
   let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
   const router = createRouter();
   registerUserRoutes(router, users, roles, auth);
@@ -131,6 +154,15 @@ export async function txFixture(
       domainBlocklist: [],
       ...options.policy,
     }),
+    marketing: { settings: () => marketing, tracking },
+  });
+  registerUnsubscribeRoutes(router, {
+    db,
+    sends,
+    subscribers,
+    tracking,
+    settings: () => marketing,
+    ...(options.effects ? { effects: options.effects } : {}),
   });
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
@@ -181,6 +213,7 @@ export async function txFixture(
     template,
     subscriber,
     sends,
+    marketing,
     get outbox() {
       return outbox;
     },
@@ -196,6 +229,7 @@ export async function txFixture(
       await emailer.close();
       await stopped;
       sends.close();
+      tracking.close();
       templates.close();
       templateReferences.close();
       users.close();

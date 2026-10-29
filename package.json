@@ -54,6 +54,8 @@
     "contract:templates:reference": "bun run reference:run -- bun test/contract/templates.ts reference",
     "contract:tx": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned tx",
     "contract:tx:reference": "bun run reference:run -- bun test/contract/tx.ts reference",
+    "unsubscribe:measure": "bun test/unsubscribe/measure.ts",
+    "contract:unsubscribe": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned unsubscribe",
     "tx:measure": "bun test/tx/measure.ts",
     "templates:compiled": "bun test/templates/compiled-check.ts"
   },

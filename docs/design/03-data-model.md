@@ -118,7 +118,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `list_id` | INTEGER NULL → lists | Unsubscribe scope for marketing sends |
 | `idempotency_key` | TEXT NULL UNIQUE | For tx API calls |
 | `status` | TEXT CHECK IN (`queued`, `sending`, `sent`, `failed`, `skipped`, `unknown`) | `unknown`: the process died while sending; never retried automatically |
-| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced` |
+| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable` |
 | `smtp_message_id` | TEXT NULL | Stable `Message-ID` assigned before enqueue commit |
 | `error` | TEXT NULL | |
 | `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes |
@@ -128,7 +128,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `retry_of` | INTEGER NULL → sends | Unique manual resend parent, cleared if parent is deleted |
 | `created_at`, `sent_at` | TEXT | |
 
-Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the future frequency cap.
+Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the frequency cap (M2.4).
 
 ### `webhooks`, `webhook_deliveries`
 

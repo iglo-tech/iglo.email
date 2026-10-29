@@ -24,6 +24,19 @@ export interface PreparedSend {
   stepId?: bigint | null;
   listId?: bigint | null;
   idempotencyKey?: string | null;
+  /** Send UUID chosen by the producer, so rendered unsubscribe and tracking URLs can carry it. */
+  uuid?: string;
+}
+/**
+ * Marketing consent and frequency-cap policy (M2.4, src/unsubscribe/policy.ts).
+ * The journal applies it at enqueue, outbox admission and manual resend, and counts
+ * its own earlier marketing rows for the cap.
+ */
+export interface MarketingPolicy {
+  /** A safe skip reason when the subscriber has no marketing consent for the list, else null. */
+  consent(row: { subscriberId: bigint | null; listId: bigint | null }): string | null;
+  /** Start of the cap window ending at `now`, or null when the cap is disabled. */
+  capStart(now: Date): Date | null;
 }
 interface PublicRow {
   id: bigint;
@@ -114,7 +127,7 @@ export function createSends(options: {
   clock: Clock;
   subscribers: SubscriberStore;
   rootUrl: () => string;
-  marketingPolicy?: (row: { subscriberId: bigint | null; listId: bigint | null }) => boolean;
+  marketingPolicy?: MarketingPolicy;
 }) {
   const { db, clock, subscribers } = options;
   let wake = () => {};
@@ -174,13 +187,45 @@ export function createSends(options: {
     } else if (row.subscriber_id !== null) return "subscriber_unavailable";
     // Unlinked rows (external mode, unknown-at-enqueue addresses) are rechecked by address.
     if (blocklisted(row.to_email)) return "subscriber_blocklisted";
-    if (
-      row.kind === "marketing" &&
-      (!options.marketingPolicy ||
-        !options.marketingPolicy({ subscriberId: row.subscriber_id, listId: row.list_id }))
-    )
-      return "policy_unavailable";
+    if (row.kind === "marketing")
+      return marketing(row.subscriber_id, row.list_id, { lineage: row.id, pending: false });
     return null;
+  }
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  /**
+   * Marketing admission: consent, then the frequency cap over this journal's earlier
+   * marketing rows to the subscriber. Callers hold the write transaction (or, in the
+   * outbox, the single synchronous connection), so concurrent requests cannot both pass.
+   * `lineage` excludes a row and its retry_of ancestors (one intended message).
+   * `pending` also counts queued rows, which reserve the cap at enqueue; at dispatch
+   * only rows already sending or sent count, so two queued rows cannot skip each other.
+   * Campaign sends (M3) must add their deliveries to this count.
+   */
+  function marketing(
+    subscriberId: bigint | null,
+    listId: bigint | null,
+    scope: { lineage: bigint | null; pending: boolean },
+  ): string | null {
+    const policy = options.marketingPolicy;
+    if (!policy) return "policy_unavailable";
+    const reason = policy.consent({ subscriberId, listId });
+    if (reason) return reason;
+    const start = policy.capStart(clock.now());
+    if (start === null || subscriberId === null) return null;
+    const hit = db
+      .query<{ id: bigint }, [bigint, bigint, string, number]>(
+        `WITH RECURSIVE chain(id, parent) AS (
+           SELECT id, retry_of FROM sends WHERE id = ?1
+           UNION ALL SELECT s.id, s.retry_of FROM sends s JOIN chain c ON s.id = c.parent
+         )
+         SELECT id FROM sends
+         WHERE subscriber_id = ?2 AND kind = 'marketing' AND id NOT IN (SELECT id FROM chain)
+           AND (status = 'sending' OR (?4 AND status = 'queued')
+             OR (status IN ('sent', 'unknown') AND coalesce(sent_at, created_at) > ?3))
+         LIMIT 1`,
+      )
+      .get(scope.lineage ?? 0n, subscriberId, start.toISOString(), scope.pending ? 1 : 0);
+    return hit ? "frequency_cap" : null;
   }
   function enqueue(input: PreparedSend) {
     if (
@@ -315,6 +360,11 @@ export function createSends(options: {
         throw new Error("Invalid prepared send");
       if ((send.subscriberId == null) !== (subscriberUuid === null))
         throw new Error("Invalid prepared send");
+      if (
+        send.uuid !== undefined &&
+        (typeof send.uuid !== "string" || !uuidPattern.test(send.uuid))
+      )
+        throw new Error("Invalid prepared send");
       return { send, subscriberUuid, payload: encodePayload(send.message, subscriberUuid) };
     });
     const result = writeTransaction(db, () => {
@@ -341,17 +391,12 @@ export function createSends(options: {
             throw new HttpError(409, "Subscriber changed. Retry the request.");
           if (current.status === "blocklisted") skip = "subscriber_blocklisted";
         } else if (blocklisted(to)) skip = "subscriber_blocklisted";
-        if (
-          !skip &&
-          send.kind === "marketing" &&
-          (!options.marketingPolicy ||
-            !options.marketingPolicy({
-              subscriberId: send.subscriberId ?? null,
-              listId: send.listId ?? null,
-            }))
-        )
-          skip = "policy_unavailable";
-        const uuid = crypto.randomUUID();
+        if (!skip && send.kind === "marketing")
+          skip = marketing(send.subscriberId ?? null, send.listId ?? null, {
+            lineage: null,
+            pending: true,
+          });
+        const uuid = send.uuid ?? crypto.randomUUID();
         const row = db
           .query<{ id: bigint }, any[]>(
             `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
@@ -415,6 +460,30 @@ export function createSends(options: {
       });
     },
     resend,
+    /** Public identity of a send for the unsubscribe and tracking pages. */
+    byUuid(uuid: string) {
+      return db
+        .query<
+          Pick<PublicRow, "id" | "uuid" | "kind" | "subscriber_id" | "list_id" | "status">,
+          [string]
+        >("SELECT id, uuid, kind, subscriber_id, list_id, status FROM sends WHERE uuid = ?")
+        .get(uuid);
+    },
+    /**
+     * Whether the prepared HTML or plain body of a send contains `text`. Tracked-link
+     * redirects use it so only links rendered into that message can redirect.
+     */
+    bodyIncludes(id: bigint, text: string): boolean {
+      const row = db
+        .query<{ body: string | null; alt: string | null }, [bigint]>(
+          "SELECT json_extract(payload, '$.message.body') AS body, json_extract(payload, '$.message.altBody') AS alt FROM sends WHERE id = ? AND json_valid(payload)",
+        )
+        .get(id);
+      if (!row) return false;
+      return [row.body, row.alt].some(
+        (value) => typeof value === "string" && Buffer.from(value, "base64").includes(text),
+      );
+    },
     get(id: bigint) {
       const row = getPublic(id);
       return row ? project(row) : null;
