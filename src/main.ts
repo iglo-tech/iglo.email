@@ -11,6 +11,14 @@ import { createListStore } from "@/lists/store";
 import { registerListRoutes } from "@/lists/routes";
 import { createSubscriberStore } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
+import { createSubscriberQuery } from "@/subscribers/query";
+import { registerSubscriberQueryRoutes } from "@/subscribers/query-routes";
+import {
+  childArgument,
+  createQueryRunner,
+  openReadOnly,
+  runQueryChild,
+} from "@/subscribers/query-runner";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createListReferences } from "@/lists/references";
@@ -41,6 +49,8 @@ import { registerEventRoutes } from "@/events/routes";
 import { startEventRetention } from "@/events/retention";
 
 async function main(): Promise<void> {
+  // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
+  if (process.argv[2] === childArgument) return runQueryChild();
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
     process.stdout.write(helpText);
@@ -53,6 +63,9 @@ async function main(): Promise<void> {
   let listStore: ReturnType<typeof createListStore> | undefined;
   let subscriberStore: ReturnType<typeof createSubscriberStore> | undefined;
   let counts: ReturnType<typeof createListCounts> | undefined;
+  let readonly: ReturnType<typeof openReadOnly> | undefined;
+  let queryRunner: ReturnType<typeof createQueryRunner> | undefined;
+  let subscriberQuery: ReturnType<typeof createSubscriberQuery> | undefined;
   let campaigns: ReturnType<typeof createCampaignListReferences> | undefined;
   let roles: ReturnType<typeof createRoles> | undefined;
   let users: ReturnType<typeof createUserStore> | undefined;
@@ -72,6 +85,9 @@ async function main(): Promise<void> {
     settings = createSettings(db, clock, bootstrap.config.rootUrl, roles);
     counts = createListCounts(db);
     subscriberStore = createSubscriberStore(db, clock, lists);
+    readonly = openReadOnly(db.filename);
+    queryRunner = createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 });
+    subscriberQuery = createSubscriberQuery({ db, readonly, clock, runner: queryRunner });
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
@@ -107,6 +123,7 @@ async function main(): Promise<void> {
         "privacy.domain_blocklist": current["privacy.domain_blocklist"],
       };
     });
+    registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
     emailer = createEmailer({
       clock,
       settings: () => {
@@ -211,6 +228,7 @@ async function main(): Promise<void> {
     const stopped = outbox?.stop();
     const purging = retention?.stop();
     await emailer?.close();
+    await queryRunner?.close();
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
     events?.close();
@@ -221,6 +239,8 @@ async function main(): Promise<void> {
     settings?.close();
     users?.close();
     listStore?.close();
+    subscriberQuery?.close();
+    readonly?.close();
     subscriberStore?.close();
     campaigns?.close();
     counts?.close();
