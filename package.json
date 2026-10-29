@@ -58,6 +58,8 @@
     "unsubscribe:measure": "bun test/unsubscribe/measure.ts",
     "contract:unsubscribe": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned unsubscribe",
     "tx:measure": "bun test/tx/measure.ts",
+    "scheduler:crash": "bun run build && bun build --compile test/scheduler/crash-entry.ts --outfile dist/scheduler-crash && bun test/scheduler/crash.ts",
+    "scheduler:measure": "bun test/scheduler/measure.ts",
     "contract:events": "bun run build && bun test/contract/cli.ts owned events",
     "contract:sequences": "bun run build && bun test/contract/cli.ts owned sequences",
     "events:measure": "bun run build && bun test/events/measure.ts",
