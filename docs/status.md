@@ -4,10 +4,9 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.1 subscriber events API, [draft PR #20](https://github.com/iglo-tech/iglo.email/pull/20), head 5035270. Round 2: savepoint-cleanup finding fixed by the lead; Sol round-3 (last) fix-only review running.
-Next: round 3 is final; lead decides any remaining disagreement, merges, then M1.7.
-Worker thread: thread:delegated-task:command%3Amcp%3A88f9dd6a-58af-4b4f-a599-958b77b6dac0%3Adelegate-task%3Aiglo-email-M5.1-worker-1 (run 1 failed 11:32Z with its lead; run 2 active since 12:40Z). Parent lead 250035dd last run failed, so the recovery run must collect the result.
-Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate task/thread IDs and next action.
+M1.7 subscriber query/search/segments/export, branch task/M1.7-query, [brief](briefs/M1.7.md). One Opus medium worker dispatched; no reviewer active. Critical path to M5.4: M1.7, M5.2, M5.3.
+Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge, then M5.2.
+Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
 
@@ -25,6 +24,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task | PR                                                     | Merge   | Result                     |
 | ---- | ------------------------------------------------------ | ------- | -------------------------- |
+| M5.1 | [#20](https://github.com/iglo-tech/iglo.email/pull/20) | 4232631 | Subscriber events API      |
 | M2.4 | [#19](https://github.com/iglo-tech/iglo.email/pull/19) | 5368d30 | Unsubscribe/cap/tracking   |
 | M2.3 | [#18](https://github.com/iglo-tech/iglo.email/pull/18) | 7a56cb7 | Transactional API          |
 | M1.8 | [#17](https://github.com/iglo-tech/iglo.email/pull/17) | 17eaf1c | Templates/bounded Liquid   |
@@ -53,4 +53,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Flaky test/messaging/route-auth.test.ts "held SMTP body … before a connection": the sink saw stray connections in ~3/5 isolated runs, with or without M1.8 ([#17](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6492720721)).
 - Flaky test/contract/contract.test.ts stray extra request on a fresh port (seen on M1.8 and M2.4 branches); likely the same localhost-port isolation cause as route-auth.
 - Outbox send throughput: 50 msg/s not sustained even without events (one message at a time, two commits each); events at 100/s slow sending further ([M5.1 perf](https://github.com/iglo-tech/iglo.email/pull/20)). Owner: messaging, M3.2/M6.1 (D22).
+- M5.1 perf: record source/executable hashes for each measured variant.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
