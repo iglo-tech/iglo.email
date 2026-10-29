@@ -9,7 +9,7 @@ Updated: 2026-10-29
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol xhigh. The continuous run still starts at 2026-10-28T20:34:55.959528+00:00; there is no elapsed/task/session cutoff. Only the completed whole applicable work plan ends the project goal. Async dispatch/check turns resume automatically; no polling, duplicate workers or owner approval for routine work.
 
-The continuous run owns **M1.8, corrected-head Linux CI before fresh council round2**, [draft PR #17](https://github.com/iglo-tech/iglo.email/pull/17), branch task/M1.8-templates, headd75b6d7f892236fb3cf8a3fd2d33e3c8d4270dda. Original worker/fixer and both round1 reviewers are terminal/read, no active delegate or writer. Round1 on426f6e3: [A CHANGES](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6489545744), [B APPROVE](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6489506405); those verdicts do not approve this changed head. Existing PR link/watch persists, do not relink/rewatch/poll. Post-push snapshot one check SUCCESS and three Linux jobs IN_PROGRESS; draft until green.
+The continuous run owns **M1.8, fresh independent council round2**, [PR #17](https://github.com/iglo-tech/iglo.email/pull/17), branch task/M1.8-templates, head d75b6d7f892236fb3cf8a3fd2d33e3c8d4270dda. All four exact-head Linux push/PR job results passed; marked ready. Both fresh Sol xhigh reviewers are running in separate isolated worktrees with no writer. Original worker/fixer and both round1 reviewers are terminal/read; prior verdicts remain historical and do not approve this changed head. Existing PR link/watch persists; do not relink, rewatch or poll.
 
 Lead accepted/fixed both findings directly in the inactive fixer checkout, no new worker. Reviewed loop-property access is finite; implicit Drop serialization reserves a conservative escaping/work bound before allocation. Filter arity is checked before argv/evaluation and each evaluated argument charged, including literals. Four old200 regressions now reject400 through source HTTP, isolated compiled renderer and actual production previews; ordinary metadata/filter positive controls remain. Small pinned Liquid patch only, no new runtime service/version/policy or broader workflow.
 
@@ -17,7 +17,17 @@ Final full check243/2451 and33 other serial gates passed first invocation, inclu
 
 [Final correction report](https://github.com/iglo-tech/iglo.email/blob/d75b6d7f892236fb3cf8a3fd2d33e3c8d4270dda/docs/perf/M1.8-templates.md): runtime5faeab49edef61137df2ea41d7cde8e7635eff22, binary1ff080b44981189efaf7f5393635fb4d7aeb26913a315204a03d98f6007a712e, fresh test-excluded archive frozen install/build matched. Report-only commit follows code. Exact M2.2/M2.1 controls unchanged; final serial renderer/context/Markdown/ext4 FULL-WAL common HTTP/restart/template and owned SMTP-logo samples passed, shared digest/bytes matched, raw records retained and older fix1 metrics labelled. No hard heap/CPU, throughput, exclusive-host or delivery guarantee.
 
-[Neutral full-scope round2 brief](briefs/M1.8-council-r2.md) is pushed for two fresh independent Sol xhigh reviewers. Next: end turn for existing current-head CI watch. On green inspect exact current head, mark ready and dispatch A/B with target.options xhigh and isolation worktree, persist IDs/end turn. On actual CI failure inspect logs/fix first. No reused review, polling, duplicate or routine owner approval. All round1 IDs/history archived in lock/recovery, continuous run and unbound schedule unchanged.
+[Neutral full-scope round2 brief](briefs/M1.8-council-r2.md) dispatched with GPT-6.1 Sol, target.options.reasoningEffort xhigh, isolation worktree, mode async. Returned A/B states running, no pending question/approval or child runs. Do not read/poll running threads or start duplicates; completion wakes this coordinator. Full returned recovery objects are in lock.council and the [review ledger](reviews/M1.8.md).
+
+Reviewer A: <t3-thread://v2/20866be5-08f2-4a7d-9c87-2a5e154f63af/thread:delegated-task:command%3Amcp%3A75844b77-98e3-4d3e-bedd-c272e408bedc%3Adelegate-task%3Aiglo-email-M1.8-council-r2-a-d75b6d7>
+
+Task: node:delegated-task:command%3Amcp%3A75844b77-98e3-4d3e-bedd-c272e408bedc%3Adelegate-task%3Aiglo-email-M1.8-council-r2-a-d75b6d7; thread: thread:delegated-task:command%3Amcp%3A75844b77-98e3-4d3e-bedd-c272e408bedc%3Adelegate-task%3Aiglo-email-M1.8-council-r2-a-d75b6d7; run: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A75844b77-98e3-4d3e-bedd-c272e408bedc%253Adelegate-task%253Aiglo-email-M1.8-council-r2-a-d75b6d7:ordinal:1.
+
+Reviewer B: <t3-thread://v2/20866be5-08f2-4a7d-9c87-2a5e154f63af/thread:delegated-task:command%3Amcp%3A75844b77-98e3-4d3e-bedd-c272e408bedc%3Adelegate-task%3Aiglo-email-M1.8-council-r2-b-d75b6d7>
+
+Task: node:delegated-task:command%3Amcp%3A75844b77-98e3-4d3e-bedd-c272e408bedc%3Adelegate-task%3Aiglo-email-M1.8-council-r2-b-d75b6d7; thread: thread:delegated-task:command%3Amcp%3A75844b77-98e3-4d3e-bedd-c272e408bedc%3Adelegate-task%3Aiglo-email-M1.8-council-r2-b-d75b6d7; run: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A75844b77-98e3-4d3e-bedd-c272e408bedc%253Adelegate-task%253Aiglo-email-M1.8-council-r2-b-d75b6d7:ordinal:1.
+
+Next: on each terminal completion read the completed child and persist its verdict/evidence while leaving the other reviewer running. After both results, fix concrete findings or verify both approvals of this exact head and current Linux CI before merging. Then unwatch17, record/push the merge and immediately brief/dispatch M2.3; no task/session cutoff, reused review, polling, duplicate or owner approval. Continuous run and unbound schedule unchanged.
 
 ## Automation
 
@@ -59,7 +69,7 @@ Owner update: healthy redundant check-in threads auto-settle themselves through 
 
 ## Blocked
 
-No active external block or cooldown. M2.2 is merged; M1.8 round1 gaps are corrected and local gates/measurements passed; current-head Linux CI precedes fresh round2 council. Task completion never stops the continuous fleet, and a genuine item-level block must not stop other eligible work.
+No active external block or cooldown. M2.2 is merged; M1.8 round1 gaps are corrected and local gates/measurements passed; exact-head Linux CI is green and fresh round2 A/B are running. Task completion never stops the continuous fleet, and a genuine item-level block must not stop other eligible work.
 
 - Reference harness/M6 acceptance: reviewers repeatedly saw one generic initial contract:settings:reference failure followed by passing isolated-corpus and exact-command reruns. Cause is unproven; add safe case context and investigate reproducibility before final stability acceptance, without treating it as an established native defect. Final lead runs passed.
 
