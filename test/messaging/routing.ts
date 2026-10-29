@@ -50,7 +50,7 @@ const servers: SMTPServer[] = [
     ...common,
     uuid: "review-exact",
     name: "email-review-exact",
-    from_addresses: ["sender@route.test", "i@route.test"],
+    from_addresses: ["sender@route.test", "i@route.test", "x@route.test"],
     email_headers: [{ "X-Review-Route": "exact" }],
   },
   {
@@ -98,6 +98,7 @@ try {
     ["quoted-bare", '"sender"@route.test'],
     ["unicode", "İ@route.test"],
     ["domain", "other@route.test"],
+    ["quoted-at", 'Sender <"sender@x"@route.test>'],
   ] as const) {
     const response = await request("/api/templates", {
       name: `${marker} ${label}`,
@@ -112,6 +113,7 @@ try {
       subscriber_emails: ["recipient@example.test"],
       template_id: template.id,
       from_email: from,
+      headers: [{ "Return-Path": "bounce@example.test" }],
       content_type: "plain",
       subject: `${marker} reference ${label}`,
     });
@@ -127,6 +129,7 @@ try {
             from,
             to: ["recipient@example.test"],
             subject: `${marker} native ${label}`,
+            headers: { "Return-Path": "bounce@example.test" },
             contentType: "plain",
             body: "Routing fixture",
           }),
@@ -139,7 +142,12 @@ try {
       });
       assert.equal(code, 0);
       const native = await received(`${marker} native ${label}`);
-      assert.equal(native, reference, `route mismatch for ${label}`);
+      // D52: use the actual domain instead of the suffix after a quoted local @.
+      assert.equal(
+        native,
+        label === "quoted-at" ? "domain" : reference,
+        `route mismatch for ${label}`,
+      );
     }
     assert.equal((await request(`/api/templates/${template.id}`, undefined, "DELETE")).status, 200);
   }

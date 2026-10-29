@@ -293,3 +293,9 @@ unencrypted non-localhost-named owned peer, recipient-list rejection and a
 quoted-display-name positive control. Null header maps are exercised through
 both the HTTP diagnostic and persisted settings/restart/signing callers. The
 trusted TLS clients authenticate with PLAIN after STARTTLS/implicit TLS.
+
+D52 adds the explicit quoted-local @ case: the pinned first-separator bucket
+and native actual-domain bucket each receive one message with a valid envelope
+Return-Path. Other routing controls still agree. The shared SMTP corpus also
+checks password-first LOGIN challenges and unknown-challenge rejection without
+a credential reply; the relay distinguishes AUTH cancellation from credentials.

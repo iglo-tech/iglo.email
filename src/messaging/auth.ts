@@ -31,10 +31,18 @@ export function requiredAuth(method: string, plainTransportAllowed: boolean) {
             }
             case "LOGIN": {
               response = await context.sendCommand("AUTH LOGIN");
-              if (response.status !== 334) throw new Error("Authentication rejected");
-              response = await context.sendCommand(Buffer.from(user).toString("base64"));
-              if (response.status !== 334) throw new Error("Authentication rejected");
-              response = await context.sendCommand(Buffer.from(pass).toString("base64"));
+              while (response.status === 334) {
+                const encoded = response.text.replace(/[\r\n]/g, "");
+                if (
+                  !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+                )
+                  throw new Error("Invalid authentication challenge");
+                const prompt = Buffer.from(encoded, "base64").toString("utf8");
+                const credential =
+                  prompt === "Username:" ? user : prompt === "Password:" ? pass : undefined;
+                if (credential === undefined) throw new Error("Unknown authentication challenge");
+                response = await context.sendCommand(Buffer.from(credential).toString("base64"));
+              }
               break;
             }
             case "CRAM-MD5": {

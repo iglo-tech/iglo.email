@@ -15,12 +15,13 @@ export type Fault =
 export async function faultRelay(
   sink: ReferenceMailpit,
   fault: Fault,
-  credentials?: { user: string; password: string; authMethods?: string[] },
+  credentials?: { user: string; password: string; authMethods?: string[]; loginPrompts?: string[] },
   listenHost = "127.0.0.1",
 ) {
   let connections = 0;
   let authenticated = 0;
   let authAttempts = 0;
+  let loginReplies = 0;
   const greetings: string[] = [];
   let firstReady!: () => void;
   const first = new Promise<void>((resolve) => {
@@ -67,7 +68,12 @@ export async function faultRelay(
       finalPending = false;
     let ehlo = false,
       authState = "",
-      authUser = "";
+      authUser = "",
+      authPassword = "",
+      loginIndex = 0;
+    const loginPrompts = credentials?.loginPrompts ?? ["Username:", "Password:"];
+    const prompt = () =>
+      client.write(`334 ${Buffer.from(loginPrompts[loginIndex]!).toString("base64")}\r\n`);
     const challenge = "<synthetic-m21@example.test>";
     const check = (user: string, password: string) => {
       if (user === credentials?.user && password === credentials.password) {
@@ -85,16 +91,23 @@ export async function faultRelay(
         fromClient = fromClient.slice(end + 2);
         if (/^AUTH /i.test(line)) authAttempts++;
         if (fault === "auth" && authState) {
+          if (line === "*") {
+            authState = "";
+            client.write("501 5.7.0 authentication cancelled\r\n");
+            continue;
+          }
           const decoded = Buffer.from(line, "base64").toString("utf8");
           if (authState === "plain") {
             const parts = decoded.split("\0");
             check(parts[1] ?? "", parts[2] ?? "");
-          } else if (authState === "login-user") {
-            authUser = decoded;
-            authState = "login-password";
-            client.write("334 UGFzc3dvcmQ6\r\n");
-          } else if (authState === "login-password") check(authUser, decoded);
-          else if (authState === "cram") {
+          } else if (authState === "login") {
+            loginReplies++;
+            if (loginPrompts[loginIndex] === "Username:") authUser = decoded;
+            if (loginPrompts[loginIndex] === "Password:") authPassword = decoded;
+            loginIndex++;
+            if (loginIndex < loginPrompts.length) prompt();
+            else check(authUser, authPassword);
+          } else if (authState === "cram") {
             const expected = createHmac("md5", credentials?.password ?? "")
               .update(challenge)
               .digest("hex");
@@ -113,8 +126,8 @@ export async function faultRelay(
               check(parts[1] ?? "", parts[2] ?? "");
             } else client.write("334 \r\n");
           } else if (method?.toUpperCase() === "LOGIN") {
-            authState = "login-user";
-            client.write("334 VXNlcm5hbWU6\r\n");
+            authState = "login";
+            prompt();
           } else if (method?.toUpperCase() === "CRAM-MD5") {
             authState = "cram";
             client.write(`334 ${Buffer.from(challenge).toString("base64")}\r\n`);
@@ -211,6 +224,7 @@ export async function faultRelay(
     connections: () => connections,
     authenticated: () => authenticated,
     authAttempts: () => authAttempts,
+    loginReplies: () => loginReplies,
     greetings: () => [...greetings],
     async close() {
       for (const socket of sockets) socket.destroy();

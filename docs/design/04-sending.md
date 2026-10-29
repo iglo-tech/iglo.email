@@ -29,6 +29,11 @@ delivers once to the accepted subset, without replay. The protected test
 reports partial acceptance explicitly with a safe 500, rather than claiming
 every recipient succeeded or that nothing was sent.
 
+D52 keeps exact full-address matching first, then uses the actual mailbox
+domain even when a quoted local part contains @. This deliberately corrects
+upstream's first-separator bucket selection; paired coverage names both providers.
+LOGIN remains challenge-driven for the pinned supported prompt names.
+
 ## Campaigns
 
 Ported from listmonk's `internal/manager`:

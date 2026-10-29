@@ -211,8 +211,9 @@ strict capability difference is paired explicitly for all three mechanisms.
 PLAIN also preserves Go's TLS-or-exact-localhost guard before transmitting
 credentials. Each To entry remains one parsed mailbox, not an address list;
 invalid entries fail without SMTP and use the safe diagnostic 500. Exact
-routing uses Go-compatible quoted-local parsing/simple Unicode casing, and
-accepted null header-map entries behave as empty maps. These are compatible
+routing uses Go-compatible quoted-local parsing/simple Unicode casing; D52
+defines the actual-domain exception for a quoted local @. Accepted null
+header-map entries behave as empty maps. The other listed items are compatible
 corrections, not newly permitted sending behavior.
 Native keeps partial recipient acceptance and exposes both subsets to its
 caller instead of aborting before DATA as upstream does. The protected test

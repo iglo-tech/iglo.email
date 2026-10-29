@@ -150,6 +150,43 @@ export async function runMessagingContract(target: {
   } finally {
     await plainRelay.close();
   }
+  for (const prompts of [["Password:", "Username:"], ["Unknown:"]]) {
+    const reverse = prompts.length === 2;
+    const to = `${reverse ? "reverse" : "unknown"}-${recipient}`;
+    const relay = await faultRelay(sink, "auth", {
+      user: "m21-fixture-user",
+      password: "m21-fixture-password",
+      loginPrompts: prompts,
+    });
+    try {
+      const response = await request(
+        JSON.stringify({
+          email: to,
+          host: sink.host,
+          port: relay.port,
+          auth_protocol: "login",
+          username: "m21-fixture-user",
+          password: "m21-fixture-password",
+          tls_type: "none",
+        }),
+      );
+      assert.equal(response.status, reverse ? 200 : 500);
+      if (target.mode === "normal")
+        assert.deepEqual(
+          await response.json(),
+          reverse ? { data: [] } : { message: "SMTP test failed." },
+        );
+      assert.equal(relay.authenticated(), reverse ? 1 : 0);
+      assert.equal(relay.loginReplies(), reverse ? 2 : 0);
+      const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
+      const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+        messages: unknown[];
+      };
+      assert.equal(intake.messages.length, reverse ? 1 : 0);
+    } finally {
+      await relay.close();
+    }
+  }
   // Source-first AUTH regression: configured authentication cannot become a send without login.
   for (const protocol of ["plain", "login", "cram"]) {
     const to = `${protocol}-${recipient}`;
