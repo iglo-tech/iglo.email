@@ -443,10 +443,171 @@ export function createSends(options: {
       return previous ? { ids: previous.map((row) => row.id), sends: previous.map(summary) } : null;
     });
   }
+  /**
+   * Earliest instant at which the frequency cap admits another marketing send to the
+   * subscriber, from the latest row the cap counts (a queued or sending row counts from its
+   * creation or attempt, so the answer is a lower bound until it is sent). At least `floor`.
+   */
+  function capFreeAt(subscriberId: bigint, floor: Date): Date {
+    const policy = options.marketingPolicy;
+    const latest = db
+      .query<{ at: string | null }, [bigint]>(
+        `SELECT max(coalesce(sent_at, attempted_at, created_at)) AS at FROM sends
+         WHERE subscriber_id = ? AND kind = 'marketing' AND status IN ('queued', 'sending', 'sent', 'unknown')`,
+      )
+      .get(subscriberId)?.at;
+    const last = latest ? Date.parse(latest) : NaN;
+    if (!policy || !Number.isFinite(last)) return floor;
+    // capStart is monotonic in its argument: find the first instant whose window starts at or
+    // after the last counted send. A window is at most about 10,000 years plus a few days.
+    const admits = (t: number) => {
+      const start = policy.capStart(new Date(t));
+      return start === null || start.getTime() >= last;
+    };
+    let low = Math.max(floor.getTime(), last);
+    if (admits(low)) return new Date(low);
+    let high = low + 86_400_000;
+    while (!admits(high)) {
+      if (high - low > 4e14) return new Date(high);
+      high = low + (high - low) * 2;
+    }
+    while (high - low > 1) {
+      const mid = Math.floor((low + high) / 2);
+      if (admits(mid)) high = mid;
+      else low = mid;
+    }
+    return new Date(high);
+  }
+  /** Validated payload of a sequence send, encoded before its write transaction. */
+  type PreparedSequenceSend = { send: PreparedSend; subscriberUuid: string; payload: string };
+  /**
+   * Insert a sequence step's send, keyed by the unique `(enrollment_id, step_id)`: a queued
+   * prepared message, or a skipped record with a safe reason and no payload. The caller
+   * holds the write transaction (with the enrollment's advance) and has checked
+   * `sequenceAdmission` for a queued send. Call `notify` after the commit.
+   */
+  function recordSequence(
+    input:
+      | { prepared: PreparedSequenceSend }
+      | {
+          skip: string;
+          kind: SendKind;
+          subscriberId: bigint;
+          toEmail: string;
+          templateId: bigint | null;
+          enrollmentId: bigint;
+          stepId: bigint;
+          listId: bigint | null;
+        },
+  ): bigint {
+    if (!db.inTransaction)
+      throw new Error("Sequence sends are written in the caller's transaction");
+    const row =
+      "prepared" in input
+        ? {
+            uuid: input.prepared.send.uuid ?? crypto.randomUUID(),
+            kind: input.prepared.send.kind,
+            subscriberId: input.prepared.send.subscriberId ?? null,
+            to: input.prepared.send.message.to[0]!,
+            templateId: input.prepared.send.templateId ?? null,
+            enrollmentId: input.prepared.send.enrollmentId ?? null,
+            stepId: input.prepared.send.stepId ?? null,
+            listId: input.prepared.send.listId ?? null,
+            status: "queued",
+            skip: null,
+            payload: input.prepared.payload,
+          }
+        : {
+            uuid: crypto.randomUUID(),
+            kind: input.kind,
+            subscriberId: input.subscriberId,
+            to: input.toEmail,
+            templateId: input.templateId,
+            enrollmentId: input.enrollmentId,
+            stepId: input.stepId,
+            listId: input.listId,
+            status: "skipped",
+            skip: input.skip,
+            payload: null,
+          };
+    if (row.enrollmentId === null || row.stepId === null) throw new Error("Invalid prepared send");
+    return db
+      .query<{ id: bigint }, any[]>(
+        `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, 'sequence', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      )
+      .get(
+        row.uuid,
+        row.kind,
+        row.subscriberId,
+        row.to,
+        row.templateId,
+        row.enrollmentId,
+        row.stepId,
+        row.listId,
+        row.status,
+        row.skip,
+        messageId(row.uuid),
+        row.payload,
+        now(),
+      )!.id;
+  }
   return {
     enqueue,
     enqueueRequest,
     replayRequest,
+    /** The send recorded for a sequence step of an enrollment, if any. */
+    sequenceSend(enrollmentId: bigint, stepId: bigint) {
+      return db
+        .query<{ id: bigint; status: string }, [bigint, bigint]>(
+          "SELECT id, status FROM sends WHERE enrollment_id = ? AND step_id = ?",
+        )
+        .get(enrollmentId, stepId);
+    },
+    /**
+     * Marketing consent and frequency cap for a new marketing send, the same admission as
+     * enqueue (queued rows reserve the cap): a consent skip reason, `frequency_cap`, or null.
+     */
+    marketingReason(subscriberId: bigint, listId: bigint | null): string | null {
+      return marketing(subscriberId, listId, { lineage: null, pending: true });
+    },
+    capFreeAt,
+    /**
+     * Validate and encode a sequence send before its write transaction; throws for a
+     * message the journal cannot store.
+     */
+    prepareSequence(send: PreparedSend, subscriberUuid: string): PreparedSequenceSend {
+      if (
+        send.source !== "sequence" ||
+        !["transactional", "marketing"].includes(send.kind) ||
+        send.subscriberId == null ||
+        send.enrollmentId == null ||
+        send.stepId == null ||
+        (send.uuid !== undefined && !uuidPattern.test(send.uuid))
+      )
+        throw new Error("Invalid prepared send");
+      return { send, subscriberUuid, payload: encodePayload(send.message, subscriberUuid) };
+    },
+    /**
+     * Admission of a prepared sequence send inside the caller's write transaction, as
+     * enqueueRequest checks a linked recipient: the same current subscriber and address,
+     * not blocklisted, then marketing consent and the cap. A reason, or null to queue it.
+     */
+    sequenceAdmission(prepared: PreparedSequenceSend): string | null {
+      const { send, subscriberUuid } = prepared;
+      const current = subscribers.get(send.subscriberId!);
+      if (!current || current.uuid !== subscriberUuid || current.email !== send.message.to[0])
+        return "subscriber_unavailable";
+      if (current.status === "blocklisted" || blocklisted(current.email))
+        return "subscriber_blocklisted";
+      if (send.kind === "marketing")
+        return marketing(send.subscriberId!, send.listId ?? null, { lineage: null, pending: true });
+      return null;
+    },
+    recordSequence,
+    /** Wake the outbox after a committed sequence send. */
+    notify() {
+      wake();
+    },
     summary(id: bigint) {
       const row = getPublic(id);
       return row ? summary(row) : null;

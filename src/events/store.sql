@@ -5,6 +5,8 @@ SELECT id, subscriber_id, enrollments FROM events WHERE subscriber_id = ? AND id
 UPDATE events SET enrollments = ? WHERE id = ?;
 -- name: event-insert
 INSERT INTO events (subscriber_id, name, data, occurred_at, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?) RETURNING id;
+-- name: event-by-id
+SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE id = ?;
 -- name: events-by-subscriber
 SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? ORDER BY id LIMIT ?;
 -- name: events-purge

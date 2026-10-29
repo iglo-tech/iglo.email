@@ -117,13 +117,30 @@ export function createSequenceStore(
     if (to === "archived" && from !== "archived") deps.enrollments.archive(id);
   }
   function writeSteps(id: bigint, input: DefinitionInput, now: string) {
-    const existing = new Set((q.get("step-ids").all(id) as { id: bigint }[]).map((r) => r.id));
+    type Position = { id: bigint; position: bigint };
+    const active = q.get("step-positions").all(id) as Position[];
+    const existing = new Set(active.map((r) => r.id));
     for (const [i, s] of input.steps.entries())
       if (s.id !== null && !existing.has(s.id))
         throw new SequenceConflict(`steps.${i}.id`, "is not an active step of this sequence");
-    const kept = new Set(input.steps.flatMap((s) => (s.id === null ? [] : [s.id])));
+    const placed = new Map(input.steps.flatMap((s, i) => (s.id === null ? [] : [[s.id, i]])));
+    // A deleted step's position is a cursor: the position of the step that follows it. An
+    // enrollment waiting on it continues after its nearest kept predecessor, wherever that now
+    // sits, so the cursor stays right across any number of later saves.
+    const cursor = (position: bigint) => {
+      let before: Position | undefined;
+      for (const r of active)
+        if (placed.has(r.id) && r.position < position && (!before || r.position > before.position))
+          before = r;
+      return before ? placed.get(before.id)! + 1 : 0;
+    };
+    const removed = active.filter((r) => !placed.has(r.id));
+    const cursors = [...(q.get("pending-deleted-steps").all(id) as Position[]), ...removed].map(
+      (r) => [r.id, cursor(r.position)] as const,
+    );
     // Removed steps are never hard-deleted: enrollments and sends may point at them.
-    for (const old of existing) if (!kept.has(old)) q.get("step-delete-soft").run(now, old);
+    for (const old of removed) q.get("step-delete-soft").run(now, old.id);
+    for (const [step, position] of cursors) q.get("step-cursor").run(position, step);
     q.get("steps-park").run(id);
     for (const [position, s] of input.steps.entries()) {
       const values = [

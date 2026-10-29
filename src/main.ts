@@ -50,6 +50,8 @@ import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
 import { startEventRetention } from "@/events/retention";
+import { createConditionEvaluator } from "@/conditions/evaluate";
+import { startScheduler } from "@/scheduler/scheduler";
 
 async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
@@ -83,6 +85,8 @@ async function main(): Promise<void> {
   let retention: ReturnType<typeof startEventRetention> | undefined;
   let enrollments: ReturnType<typeof createEnrollments> | undefined;
   let sequences: ReturnType<typeof createSequenceStore> | undefined;
+  let conditions: ReturnType<typeof createConditionEvaluator> | undefined;
+  let scheduler: ReturnType<typeof startScheduler> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -221,6 +225,25 @@ async function main(): Promise<void> {
       auth,
     });
     retention = startEventRetention({ db, clock, logger: app.logger, events });
+    conditions = createConditionEvaluator({ readonly, runner: queryRunner });
+    scheduler = startScheduler({
+      db,
+      clock,
+      logger: app.logger,
+      enrollments,
+      sends,
+      subscribers: subscriberStore,
+      templates,
+      events,
+      renderer,
+      tracking,
+      conditions,
+      settings: () => {
+        const current = settings!.read();
+        return { fromEmail: current["app.from_email"][0] ?? "", marketing: marketing() };
+      },
+    });
+    enrollments.onDue(() => scheduler!.wake());
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       let closing = false;
@@ -229,36 +252,48 @@ async function main(): Promise<void> {
         closing = true;
         process.off("SIGTERM", onSignal);
         process.off("SIGINT", onSignal);
+        // Stop sequence claims first; the outbox then finishes what was already queued.
+        const schedulerStop = scheduler!.stop();
         const outboxStop = outbox!.stop();
         const retentionStop = retention!.stop();
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
-        Promise.allSettled([outboxStop, retentionStop, messagingClose, httpStop]).then(
-          (results) => {
-            const error = failure ?? results.find((result) => result.status === "rejected");
-            if (error)
-              reject(
-                error instanceof Error
-                  ? error
-                  : error && typeof error === "object" && "reason" in error
-                    ? error.reason
-                    : new Error("Outbox stopped"),
-              );
-            else resolve();
-          },
-        );
+        Promise.allSettled([
+          schedulerStop,
+          outboxStop,
+          retentionStop,
+          messagingClose,
+          httpStop,
+        ]).then((results) => {
+          const error = failure ?? results.find((result) => result.status === "rejected");
+          if (error)
+            reject(
+              error instanceof Error
+                ? error
+                : error && typeof error === "object" && "reason" in error
+                  ? error.reason
+                  : new Error("Outbox stopped"),
+            );
+          else resolve();
+        });
       };
       const onSignal = () => shutdown();
       process.once("SIGTERM", onSignal);
       process.once("SIGINT", onSignal);
       void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
       void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
+      void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
     });
   } finally {
+    enrollments?.onDue(() => {});
+    const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
     const purging = retention?.stop();
+    // A decision awaiting a condition finishes before the runner and connections close.
+    await scheduling?.catch(() => {});
     await emailer?.close();
     await queryRunner?.close();
+    conditions?.close();
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
     sequences?.close();

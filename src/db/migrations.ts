@@ -9,6 +9,7 @@ import initial from "@/migrations/0001_init.sql" with { type: "text" };
 import outbox from "@/migrations/0002_outbox.sql" with { type: "text" };
 import sendAttempts from "@/migrations/0003_send_attempts.sql" with { type: "text" };
 import sequences from "@/migrations/0004_sequences.sql" with { type: "text" };
+import schedulerRetry from "@/migrations/0005_scheduler_retry.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -21,6 +22,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 2, sql: outbox },
   { version: 3, sql: sendAttempts },
   { version: 4, sql: sequences },
+  { version: 5, sql: schedulerRetry },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

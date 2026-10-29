@@ -13,8 +13,14 @@ INSERT INTO sequences (uuid, name, status, trigger, exit_on, reentry, list_id, c
 UPDATE sequences SET name = ?, status = ?, trigger = ?, exit_on = ?, reentry = ?, list_id = ?, updated_at = ? WHERE id = ?;
 -- name: sequence-status
 UPDATE sequences SET status = ?, updated_at = ? WHERE id = ?;
--- name: step-ids
-SELECT id FROM sequence_steps WHERE sequence_id = ? AND status = 'active';
+-- name: step-positions
+SELECT id, position FROM sequence_steps WHERE sequence_id = ? AND status = 'active';
+-- name: pending-deleted-steps
+-- Deleted steps that active enrollments still wait on, with their cursor positions.
+SELECT id, position FROM sequence_steps WHERE sequence_id = ?1 AND status = 'deleted'
+  AND id IN (SELECT step_id FROM enrollments WHERE sequence_id = ?1 AND status = 'active');
+-- name: step-cursor
+UPDATE sequence_steps SET position = ? WHERE id = ? AND status = 'deleted';
 -- name: step-delete-soft
 UPDATE sequence_steps SET status = 'deleted', updated_at = ? WHERE id = ?;
 -- name: steps-park

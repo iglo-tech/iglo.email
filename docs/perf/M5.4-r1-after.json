@@ -1,0 +1,76 @@
+{
+  "bun": "1.4.4",
+  "enrollments": 10000,
+  "sendLoad": 2000,
+  "repetitions": 3,
+  "results": {
+    "transactional": [
+      {
+        "seconds": 2.63,
+        "perSecond": 3796.77,
+        "peakRssMiB": 89
+      },
+      {
+        "seconds": 2.72,
+        "perSecond": 3681.78,
+        "peakRssMiB": 122
+      },
+      {
+        "seconds": 2.57,
+        "perSecond": 3896.72,
+        "peakRssMiB": 122
+      }
+    ],
+    "marketing": [
+      {
+        "seconds": 3.1,
+        "perSecond": 3229.29,
+        "peakRssMiB": 93
+      },
+      {
+        "seconds": 3.37,
+        "perSecond": 2969.69,
+        "peakRssMiB": 116
+      },
+      {
+        "seconds": 2.9,
+        "perSecond": 3445.81,
+        "peakRssMiB": 129
+      }
+    ],
+    "sendLoadAlone": [
+      {
+        "seconds": 5.76,
+        "perSecond": 347.42,
+        "schedulerCompletedMeanwhile": 0
+      },
+      {
+        "seconds": 5.36,
+        "perSecond": 373.45,
+        "schedulerCompletedMeanwhile": 0
+      },
+      {
+        "seconds": 5.27,
+        "perSecond": 379.23,
+        "schedulerCompletedMeanwhile": 0
+      }
+    ],
+    "sendLoadWithScheduler": [
+      {
+        "seconds": 13.3,
+        "perSecond": 150.41,
+        "schedulerCompletedMeanwhile": 10000
+      },
+      {
+        "seconds": 13.24,
+        "perSecond": 151.09,
+        "schedulerCompletedMeanwhile": 10000
+      },
+      {
+        "seconds": 13.4,
+        "perSecond": 149.28,
+        "schedulerCompletedMeanwhile": 10000
+      }
+    ]
+  }
+}

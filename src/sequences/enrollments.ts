@@ -70,6 +70,40 @@ function after(from: string, wait: string): string {
   return new Date(Date.parse(from) + ms).toISOString();
 }
 
+/** A claimed enrollment with its current sequence and step definition (M5.4 scheduler). */
+export interface SchedulerContext {
+  id: bigint;
+  sequence_id: bigint;
+  subscriber_id: bigint;
+  trigger_event_id: bigint | null;
+  step_id: bigint;
+  due_at: string;
+  status: string;
+  claimed_until: string | null;
+  created_at: string;
+  updated_at: string;
+  sequence_name: string;
+  sequence_status: string;
+  list_id: bigint | null;
+  step_uuid: string;
+  position: bigint;
+  kind: "marketing" | "transactional";
+  template_id: bigint | null;
+  subject: string | null;
+  condition: string | null;
+  on_false: "skip" | "exit";
+  cap_policy: "defer" | "skip";
+  max_late: string | null;
+  step_status: "active" | "deleted";
+  step_updated_at: string;
+}
+/** The step a claim decided on; scheduler writes apply only while this claim still holds. */
+export interface Claim {
+  id: bigint;
+  lease: string;
+  step: Pick<SchedulerContext, "sequence_id" | "step_id" | "position" | "step_status" | "due_at">;
+}
+
 export type EnrollOutcome =
   | { enrollment: EnrollmentRow }
   | {
@@ -79,6 +113,7 @@ export type EnrollOutcome =
 export function createEnrollments(db: Database, clock: Clock) {
   const q = prepareNamedQueries(db, [{ name: "sequences/enrollments", sql }]);
   const byId = (id: bigint) => q.get("enrollment-by-id").get(id) as EnrollmentRow | null;
+  let due = () => {};
 
   // Trigger filters run on the write connection inside the event transaction, so they see the
   // event and the subscriber upsert it just made. They hold no raw `sql` (refused at save).
@@ -150,21 +185,17 @@ export function createEnrollments(db: Database, clock: Clock) {
     from: string,
     now: string,
   ): bigint {
-    return (
+    const dueAt = after(from, first.wait);
+    const id = (
       q
         .get("enrollment-insert")
-        .get(
-          sequenceId,
-          subscriberId,
-          triggerEventId,
-          first.id,
-          after(from, first.wait),
-          now,
-          now,
-        ) as {
+        .get(sequenceId, subscriberId, triggerEventId, first.id, dueAt, now, now) as {
         id: bigint;
       }
     ).id;
+    // The scheduler claims in its own transaction, after the caller's commit.
+    if (dueAt <= now) due();
+    return id;
   }
   const end = (id: bigint, status: string, reason: string, now: string) =>
     q.get("enrollment-end").run(status, reason, now, now, id).changes === 1;
@@ -333,11 +364,83 @@ export function createEnrollments(db: Database, clock: Clock) {
       if (!end(id, "canceled", "manual", at())) return "inactive";
       return byId(id)!;
     },
+    /**
+     * Scheduler claim (05-sequences.md#scheduler): lease up to `limit` due enrollments of
+     * active or archived sequences. The loop helper holds the write transaction.
+     */
+    claimDue(now: Date, lease: Date, limit: number): bigint[] {
+      // In claim order (RETURNING has none), so a retry claimed with due work runs after it.
+      return (
+        q.get("claim-due").all(lease.toISOString(), now.toISOString(), limit) as {
+          id: bigint;
+          run_at: string;
+        }[]
+      )
+        .sort((a, b) =>
+          a.run_at !== b.run_at ? (a.run_at < b.run_at ? -1 : 1) : a.id < b.id ? -1 : 1,
+        )
+        .map((row) => row.id);
+    },
+    /** A claimed enrollment with its current sequence and step definition. */
+    schedulerContext(id: bigint): SchedulerContext | null {
+      return q.get("scheduler-context").get(id) as SchedulerContext | null;
+    },
+    /** Whether the claim still holds: active, same lease, same step. The caller holds the write. */
+    owns(claim: Claim): boolean {
+      return q.get("claimed").get(claim.id, claim.lease, claim.step.step_id) !== null;
+    },
+    /**
+     * Move a claimed enrollment past its step: to the next active step, due `now + wait`, or
+     * `completed` when none is left. A deleted step is passed without waiting again (the
+     * current due time is kept) and does not count as a step that ran, so `updated_at`, which
+     * conditions read as the last step time, changes only when a step ran. The caller holds
+     * the write and has checked `owns`.
+     */
+    advance(claim: Claim, now: Date): "advanced" | "completed" {
+      const { step } = claim;
+      const deleted = step.step_status === "deleted";
+      const next = (
+        deleted
+          ? q.get("next-after-deleted").get(step.sequence_id, step.position)
+          : q.get("next-after-active").get(step.sequence_id, step.position)
+      ) as { id: bigint; wait: string } | null;
+      const at = now.toISOString();
+      if (!next) {
+        q.get("claimed-complete").run(at, at, claim.id, claim.lease);
+        return "completed";
+      }
+      const dueAt = deleted ? step.due_at : after(at, next.wait);
+      // A deleted step keeps the previous step time; claimed-advance sets updated_at.
+      const updated = deleted ? (byId(claim.id)?.updated_at ?? at) : at;
+      q.get("claimed-advance").run(next.id, dueAt, updated, claim.id, claim.lease);
+      return "advanced";
+    },
+    /** End a claimed enrollment. The caller holds the write and has checked `owns`. */
+    endClaimed(claim: Claim, status: "canceled" | "exited", reason: string, now: Date) {
+      const at = now.toISOString();
+      q.get("claimed-end").run(status, reason, at, at, claim.id, claim.lease);
+    },
+    /** Move a claimed enrollment's due time (frequency cap `defer`) and release it. */
+    defer(claim: Claim, dueAt: Date) {
+      q.get("claimed-defer").run(dueAt.toISOString(), claim.id, claim.lease);
+    },
+    /**
+     * Release a claimed enrollment, claimable again at `retryAt` (a bounded backoff) or at once
+     * (null). Its `due_at`, which `max_late` measures from, is kept.
+     */
+    release(claim: Pick<Claim, "id" | "lease">, retryAt: Date | null) {
+      q.get("claimed-release").run(retryAt?.toISOString() ?? null, claim.id, claim.lease);
+    },
+    /** Called after an enrollment due now is created, inside the creating transaction. */
+    onDue(fn: () => void) {
+      due = fn;
+    },
     /** Exit every active enrollment of an archived sequence. The caller holds the write. */
     archive(sequenceId: bigint) {
       q.get("exit-by-sequence").run(at(), at(), sequenceId);
     },
     close() {
+      due = () => {};
       for (const filter of filters.values()) filter.statement.finalize();
       filters.clear();
       for (const s of listStatements.values()) {
