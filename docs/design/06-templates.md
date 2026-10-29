@@ -18,6 +18,14 @@ HTML templates render with `outputEscape: "escape"`, so values are HTML-escaped 
 
 M0.8 measured the selected library and found the precise library-limit semantics and capability boundaries ([evidence](../perf/M0.8-liquidjs.md)): filesystem lookup must be explicitly denied or mapped, `ownPropertyOnly` does not sanitize iteration, `memoryLimit` does not cap all output, and `renderLimit` is cooperative. D23 sets the required M1.8 boundaries; the fixture does not itself implement the production guarantee.
 
+[D55](09-decisions.md#d55-bound-serialized-template-context-before-reflection-and-preserve-sandbox-ci)
+refines D54's renderer entry: untrusted context is a primitive, byte-bounded
+JSON string checked before parse/reflection. Arbitrary JavaScript objects are
+rejected without enumeration/coercion/getters; trusted callers compose explicit
+bounded fields. Bounded decoded data is copied into dense/null-prototype values
+with the same depth/node/string/entry rules. This is an internal renderer
+interface, not a changed CRUD/preview HTTP envelope or completed acceptance.
+
 ### Data and functions
 
 | listmonk (Go template) | iglo.email (Liquid) |
