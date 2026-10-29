@@ -24,7 +24,7 @@ import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
-import { createSends } from "@/messaging/sends";
+import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
@@ -103,6 +103,7 @@ async function main(): Promise<void> {
         const current = settings!.read();
         return { smtp: current.smtp, rootUrl: current["app.root_url"] };
       },
+      copyAllowed: (address) => !addressBlocklisted(subscriberStore!, address),
     });
     registerSettingsRoutes(
       router,

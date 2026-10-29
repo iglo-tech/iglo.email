@@ -102,6 +102,13 @@ function project(row: PublicRow) {
     sent_at: row.sent_at,
   };
 }
+/** Current blocklist status of whoever owns this normalized address. */
+export function addressBlocklisted(subscribers: SubscriberStore, email: string) {
+  return (
+    subscribers.byEmail(sanitizeEmail(email) ?? simpleLower(trimSpace(email)))?.status ===
+    "blocklisted"
+  );
+}
 export function createSends(options: {
   db: Database;
   clock: Clock;
@@ -126,10 +133,7 @@ export function createSends(options: {
     }
     return `<${uuid}@${host}>`;
   };
-  /** Current blocklist status of whoever owns this normalized address. */
-  const blocklisted = (email: string) =>
-    subscribers.byEmail(sanitizeEmail(email) ?? simpleLower(trimSpace(email)))?.status ===
-    "blocklisted";
+  const blocklisted = (email: string) => addressBlocklisted(subscribers, email);
   /**
    * Drop blocklisted Cc/Bcc mailboxes. The emailer derives extra envelope recipients
    * from these headers by splitting on commas, so filtering the same parts here covers

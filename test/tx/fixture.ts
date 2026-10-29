@@ -21,7 +21,7 @@ import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
 import { createEmailer } from "@/messaging/email";
-import { createSends } from "@/messaging/sends";
+import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createTemplateStore } from "@/templates/store";
@@ -35,7 +35,12 @@ import { startSink } from "@/test/tx/sink";
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
 export async function txFixture(
-  options: { reject?: () => boolean; policy?: Partial<TxPolicy>; clock?: Clock } = {},
+  options: {
+    reject?: () => boolean;
+    policy?: Partial<TxPolicy>;
+    clock?: Clock;
+    emailHeaders?: Record<string, string>[];
+  } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
   const directory = mkdtempSync(join(tmpdir(), "iglo-tx-"));
@@ -97,11 +102,12 @@ export async function txFixture(
           username: "",
           tls_type: "none",
           tls_skip_verify: false,
-          email_headers: [],
+          email_headers: options.emailHeaders ?? [],
           from_addresses: [],
         },
       ],
     }),
+    copyAllowed: (address) => !addressBlocklisted(subscribers, address),
   });
   const sends = createSends({ db, clock, subscribers, rootUrl: () => "http://fixture.test" });
   let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });

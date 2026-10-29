@@ -327,6 +327,23 @@ async function settle(f: TxFixture, done: () => boolean) {
   }
 }
 
+test("blocklisted Cc and Bcc from SMTP settings headers are removed too", async () => {
+  const f = await open({
+    emailHeaders: [
+      { Cc: "Blocked <BLOCKED@example.test>, archive@example.test" },
+      { Bcc: "blocked@example.test" },
+    ],
+  });
+  const template = await f.template("<p>x</p>");
+  await f.subscriber("blocked@example.test", "Blocked", { status: "blocklisted" });
+  const response = await f.tx({ subscriber_email: "ok@example.test", template_id: template });
+  expect(response.status).toBe(200);
+  expect(response.body.data.sends[0].status).toBe("sent");
+  expect(f.sink.messages.map((m) => m.to)).toEqual([["ok@example.test", "archive@example.test"]]);
+  expect(f.sink.messages[0]!.data).toMatch(/^Cc: archive@example\.test$/m);
+  expect(f.sink.messages[0]!.data.toLowerCase()).not.toContain("blocked@");
+});
+
 test("blocklisted Cc and Bcc addresses are removed from the envelope and headers", async () => {
   const f = await open();
   const template = await f.template("<p>x</p>");

@@ -213,7 +213,13 @@ function bareAddress(value: string): string {
   const parsed = parseAddress(trimSpace(value));
   return parsed === undefined ? "" : simpleLower(parsed);
 }
-function build(s: SMTPServer, input: Message, id: string, now: Date) {
+function build(
+  s: SMTPServer,
+  input: Message,
+  id: string,
+  now: Date,
+  copyAllowed: (address: string) => boolean,
+) {
   const headers = new Map<string, { name: string; value: string }>();
   const add = (name: string, raw: string | string[]) => {
     const value = Array.isArray(raw) ? (raw[0] ?? "") : raw;
@@ -229,9 +235,18 @@ function build(s: SMTPServer, input: Message, id: string, now: Date) {
     throw new Error("Invalid address or subject");
   const returnPath = headers.get("return-path")?.value;
   headers.delete("return-path");
-  const cc = headers.get("cc")?.value;
+  // Filter copies after merging server settings, so configured Cc/Bcc obey the same policy.
+  const copies = (value: string | undefined) =>
+    value
+      ?.split(",")
+      .filter((part) => {
+        const address = parseAddress(trimSpace(part));
+        return address === undefined || copyAllowed(address);
+      })
+      .join(",");
+  const cc = copies(headers.get("cc")?.value);
   headers.delete("cc");
-  const bcc = headers.get("bcc")?.value;
+  const bcc = copies(headers.get("bcc")?.value);
   headers.delete("bcc");
   headers.delete("message-id");
   const from = headers.get("from")?.value ?? input.from;
@@ -312,11 +327,14 @@ export function createEmailer(options: {
   clock: Clock;
   select?: (count: number) => number;
   id?: () => string;
+  /** Delivery policy for Cc/Bcc mailboxes, applied to message and server headers. */
+  copyAllowed?: (address: string) => boolean;
 }) {
   const pools = new Map<string, Pool>();
   const retired = new Set<Pool>();
   const selection = options.select ?? ((n: number) => Math.floor(Math.random() * n));
   const id = options.id ?? (() => crypto.randomUUID());
+  const copyAllowed = options.copyAllowed ?? (() => true);
   let closed = false;
   let closing: Promise<void> | undefined;
   function finishPool(pool: Pool) {
@@ -416,7 +434,7 @@ export function createEmailer(options: {
       return local();
     let data: ReturnType<typeof build>;
     try {
-      data = build(server, message, messageId, options.clock.now());
+      data = build(server, message, messageId, options.clock.now(), copyAllowed);
     } catch {
       return local();
     }
