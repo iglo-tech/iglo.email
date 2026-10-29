@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M1.7 subscriber query/search/segments/export, [PR #21](https://github.com/iglo-tech/iglo.email/pull/21), head 7b6d48d. Round-1 fixes pushed; Sol round-2 fix-only review running. Critical path to M5.4: M1.7, M5.2, M5.3.
-Next: lead disposition of round 2, merge, then M5.2.
+M1.7 subscriber query/search/segments/export, [PR #21](https://github.com/iglo-tech/iglo.email/pull/21), head b644c1e. Round 2: sharp-S search fixed by the lead; Sol round-3 (last) fix-only review running. Critical path to M5.4: M1.7, M5.2, M5.3.
+Next: round 3 is final; lead decides any remaining disagreement, merges, then M5.2.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
