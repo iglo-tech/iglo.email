@@ -81,8 +81,8 @@ def normalize(raw):
         if not isinstance(bucket, dict):
             continue
         limit_id = bucket.get("limitId") or key
-        # The generic Codex pool governs the Sol/Terra fleet. Keep unrelated
-        # model buckets visible, but do not switch because an unused pool is low.
+        # The generic Codex pool governs the Sol reviewer. Keep unrelated
+        # model buckets visible, but do not defer review because an unused pool is low.
         relevant = limit_id in ("codex", "default")
         for name in ("primary", "secondary"):
             value = bucket.get(name)
@@ -108,7 +108,7 @@ def normalize(raw):
         "available": remaining is not None,
         "windows": windows,
         "minimumRemainingPercent": remaining,
-        "switchToAnthropic": remaining <= 1 if remaining is not None else None,
+        "reviewQuotaLow": remaining <= 1 if remaining is not None else None,
     }
 
 

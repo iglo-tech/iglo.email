@@ -11,19 +11,23 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 | Owner | the project owner | Sets direction. Is not asked for approvals: agents merge and decide on their own, and log decisions for later review |
 | Lead (chief of staff) | a scheduled agent run, every 45 minutes ([runbook](../chief-of-staff.md)) | Keeps this plan and [`docs/status.md`](../status.md) current, writes task briefs, starts workers and the council, merges, decides design questions |
 | Worker | one agent per task | Does one task in its own branch and worktree, opens one PR |
-| Council | two fresh independent reviewers A/B under the quota policy below, never the lead or worker | Reviews each finished PR independently against listmonk's source and these docs. A PR merges only when both approve the same commit |
+| Council | Opus lead plus one independent GPT-6.1 Sol xhigh reviewer | Lead dispositions every finding; one deep round followed by fix-only re-reviews; local acceptance governs merge |
 
-### Models
+### Models and owner operating policy
 
-| Work | Default | Authorized fallback at OpenAI <=1% remaining |
-|---|---|---|
-| Lead | GPT-6.1 Sol, xhigh | Claude Opus5.5, xhigh |
-| Every worker, fixer or helper | GPT-6.1 Terra, max | Claude Opus5.5, max |
-| Each of two fresh independent council members A/B | GPT-6.1 Sol, xhigh | Claude Opus5.5, medium |
+Owner direction2026-10-29, [D56](09-decisions.md#d56-owner-directed-models-review-and-local-verification), supersedes the earlier two-reviewer, Terra and conditional Anthropic-fallback policies.
 
-Owner update2026-10-29: monitor OpenAI quota and switch to Anthropic at **1% remaining**, retaining OpenAI above that threshold. This condition supersedes the2026-10-28 unconditional Anthropic ban. Model/effort/provider availability was verified through orchestrator capabilities. Follow the [quota preflight and handoff](../chief-of-staff.md#quota-preflight-and-provider-handoff) at each owning wake and before every dispatch. An unavailable reading is unknown; preserve real samples/provider state locally, do not invent usage or publish account usage. Existing running delegates finish or return a safe checkpoint before replacement; no duplicate worker, partial-review approval or bypass of either provider's cooldown.
+| Work | Model and target.options |
+|---|---|
+| Lead, worker, fixer and normal helper | Claude Opus5.5, `{effort:"medium"}`, provider claudeAgent |
+| Pure bulk mechanical work only | Claude Haiku5.5, `{effort:"medium"}`, provider claudeAgent |
+| One independent reviewer | GPT-6.1 Sol, `{reasoningEffort:"xhigh"}`, provider codex |
 
-Defaults and fallback preserve isolation worktree and settings in target.options. Council independence and two same-head approvals (or the existing documented three-round disposition) still apply; actual model/effort goes in every verdict/recovery record. Quota monitoring never polls running delegates. Keep the enabled recovery schedule unbound at45 minutes.
+Use isolation worktree for delegates. At most one implementation worker/fixer and one reviewer; helpers consume the implementation slot. All full local checks and acceptance run on this host **one role at a time, serially and in the foreground**, before that agent ends its turn. CI runs only through workflow_dispatch and is not a merge gate. Existing M1.8 reviewer B may finish; new dispatches use this policy, with no second reviewer or Terra work.
+
+[D57](09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): match upstream results for realistic clients; port logic only when those results depend on it and otherwise use native platform APIs. Safe exotic-input error differences are hardening backlog. Never relax formats, auth, permissions, atomicity or actual security; blockers name a realistic client/request and concrete failure.
+
+Keep status short and details/dispositions in PRs. Preserve continuous task handoff, the unbound45-minute recovery schedule and host limits. Scheduler API has no per-task model field; the Opus project/lead selection and prompt are maintained, without claiming a separately pinned schedule model.
 
 ### MVP platform
 
@@ -35,7 +39,7 @@ Owner override on 2026-10-28: Linux x86-64 only for MVP CI, reference acceptance
 - **Branch and worktree:** `task/<id>-<slug>`, created from the current `main`. One PR per task.
 - **Write scope:** the task names the modules it owns. A worker changes only those, plus new tests. A change to a module another task owns, or to a shared contract (below), goes back to the lead. Until 1.0, a task may edit `migrations/0001_init.sql` for the tables its module owns ([Data model](03-data-model.md#migrations)).
 - **Decisions:** design questions are decided by the lead, never left waiting. Each one is recorded in [Decisions](09-decisions.md) as "decided by agents, for owner review" and listed in `docs/status.md`. [Open questions](10-open-questions.md) keep their defaults until the owner answers.
-- **Done:** the acceptance check in the brief passes in CI, the design docs that the task touches still match the code, and the PR description lists what was ported (upstream file → iglo.email file) and anything left out with a reason.
+- **Done:** the acceptance check in the brief passes locally in the foreground, the design docs that the task touches still match the code, and the PR description lists what was ported (upstream file → iglo.email file) and anything left out with a reason.
 
 ### Task brief
 
@@ -55,8 +59,8 @@ Measurements: <docs/perf/... if the task changes sending, scheduling or storage>
 
 ### Rules for workers
 
-- Follow `AGENTS.md`. listmonk v7.0.0-beta.1 is the reference for ported behavior; read its source in the upstream checkout (`/home/t3-code/upstream/listmonk` until M0.2 adds the fetch script), never from memory.
-- Do the task yourself. If the lead explicitly authorizes helpers for bulk mechanical work, they use the quota-selected worker model/effort above; keep the judgment calls yourself.
+- Follow `AGENTS.md`. listmonk v7.0.0-beta.1 is the reference for realistic client results (D57); read its source in the upstream checkout (`/home/t3-code/upstream/listmonk` until M0.2 adds the fetch script), never from memory.
+- Do the task yourself. If the lead explicitly authorizes helpers for bulk mechanical work, they use Haiku medium for pure mechanical work or Opus medium otherwise, within the existing agent slots; keep the judgment calls yourself.
 - For ported endpoints, write the contract tests first and run them against the upstream reference, then port the code. For new features, write the tests from the design docs first. Each ported file names its upstream source file in a header comment.
 - Do not copy listmonk behavior blindly. If an upstream behavior looks like a poor design decision (for example a requirement that serves upstream's internals rather than the caller), propose a fix in the PR with the reason. If upstream and the design disagree, or a test can only pass with a deliberate API difference, document the blocked portion and a concrete proposal in the PR, then continue independent authorized work. Do not abandon the whole assignment or wait for owner approval. The lead decides; an accepted fix is listed in `07-api-and-ui.md` and logged for owner review.
 - No new runtime dependency, no change to a decision record, no change to another task's module without the lead.
@@ -75,17 +79,15 @@ These are created in M0 and change only through a small task of their own, becau
 
 ### Review and merge
 
-1. The worker finishes when its PR is open, CI is green and its acceptance check passes.
-2. **Council:** both council members review the PR independently. Each checks the diff next to the upstream files it ports and against these docs and `AGENTS.md`: behavior matches upstream or a listed deliberate difference with a sound reason, no poor upstream design copied without a note, marketing sends stay at-most-once, no network call inside a transaction, tests through public boundaries only, the task's scope respected. Each posts one PR comment with a verdict, `APPROVE` or `CHANGES`, for the exact head commit and identifies itself as reviewer A or B. Neither reads the other reviewer's current-round findings before posting its own.
-3. **Fix loop:** on `CHANGES`, the lead fixes small findings itself and sends larger ones to a fixer agent on the same branch. Then both members review the new head again. A PR merges only when both approve the same commit.
-4. **Deadlock:** after three rounds without agreement, the lead decides. Upstream's behavior (the contract suite in reference mode) and the design docs are the tiebreaker, and the reasoning goes in the PR.
-5. The lead squash-merges, deletes the branch and updates `docs/status.md`. `main` stays green.
+1. Worker finishes full local check/acceptance in the foreground and opens/updates the task PR with its exact head and evidence. No CI wait.
+2. One Sol xhigh reviewer plus the Opus lead form the council. Round1 deeply checks realistic client results, data formats, auth/permissions, safety, scope and tests; later rounds check fixes and touched code only. Reviewer completes the full local check and acceptance after the worker/fixer releases verification capacity.
+3. Lead reads every finding. Fix agreed small issues yourself; give one Opus medium fixer all agreed findings of the round. Answer disagreements in the PR with reasoning. Safe exotic-input response differences go to hardening backlog, not a blocked merge; actual security/data failures remain defects. A blocker names its realistic client/request and concrete failure.
+4. After three rounds without agreement the lead decides and writes reasoning in the PR. Otherwise merge when reviewer approves the head or both agree remaining findings are backlog, and final local acceptance passed. CI is manual and not a gate.
+5. Squash-merge/delete branch, pull main, push one-line-per-task status and immediately dispatch the next eligible critical-path task. Never report project completion merely because one assignment/PR ended.
 
 ### Pace
 
-Owner clarification on 2026-10-28: the lead manages a continuous fleet until the applicable project work plan is complete. There is no four-hour, conversation, session or per-task stop. After each merge/status push, immediately start the next eligible task; task completion is a handoff. Preserve one task at a time and independent council review. Async delegate/CI turns yield for their completion, without polling or idling until the next timer. A blocked item must not stop other eligible work; a technically unavoidable wait/cooldown remains an incomplete project with durable automatic recovery, never a completion claim.
-
-Correct first time over fast. One task at a time, end to end; the next one starts after the previous one is merged. At most three agents run at once (the worker, or the two council members), plus short lead-run helpers. If an agent hits a usage or rate limit, the lead records a one-hour cooldown for that affected capacity instead of retrying or duplicating it; continue useful authorized work through available capacity, with model substitution only under the owner-authorized1%-remaining fallback. Parallel tasks are considered only after M1 is merged, and still at most two workers.
+One task at a time, no elapsed/session/task cutoff. At most two task agents under the model/slot rules above, and no overlapping local verification. Keep each full check/acceptance in the foreground; end the lead turn after async delegation and follow returned next without polling. Preserve provider/resource cooldowns; use other eligible authorized work when safely possible. A blocked item is not project completion. Token limits are the constraint: read relevant sections only, batch a round's fixes, use fix-only re-reviews and keep status concise. Full model/verification/merge rules are in the [runbook](../chief-of-staff.md).
 
 ### Hard limits
 

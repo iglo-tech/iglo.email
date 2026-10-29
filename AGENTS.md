@@ -30,7 +30,7 @@ The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecyc
 - No process-global state. Modules receive the database, settings and clock they use. Every loop takes an injected clock.
 - A module owns its tables and SQL. Other modules call its functions instead of querying its tables.
 - Network calls (SMTP, webhooks) never run inside a database transaction.
-- Keep listmonk's HTTP API contract for ported endpoints by default (`docs/design/07-api-and-ui.md`). Do not copy upstream behavior that comes from a poor design decision: fix it, list it there as a deliberate difference with its reason, and mark it in the contract suite. A difference needs a concrete benefit, not a matter of taste.
+- Match listmonk results for realistic SDK, browser/dashboard and ordinary HTTP requests (D57); port implementation logic only where the result depends on it. Use native Bun/Web APIs elsewhere. Safe malformed/custom-input error differences are backlog; never relax formats, auth/permissions, atomicity or bounded-memory/security guarantees. Keep listmonk's HTTP API contract for ported endpoints by default (`docs/design/07-api-and-ui.md`). Do not copy upstream behavior that comes from a poor design decision: fix it, list it there as a deliberate difference with its reason, and mark it in the contract suite. A difference needs a concrete benefit, not a matter of taste.
 - Marketing sends are at-most-once. Never add an automatic retry that could send a marketing email twice.
 - Add a runtime dependency only when the design lists it or a decision record justifies it.
 - Do not restore upstream community files (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue or PR templates, funding files).
@@ -51,6 +51,8 @@ The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecyc
 The port is split into tasks in `docs/design/11-work-plan.md`. A task's worker follows its brief and the worker rules there, and changes only the modules the task owns. The chief of staff follows `docs/chief-of-staff.md` and keeps `docs/status.md` current. Agents decide and merge without the owner; decisions are logged for later review.
 
 ## Verification
+
+D56 owner policy: lead/implementation use Opus5.5 medium (Haiku medium only for mechanical bulk work), with one Sol xhigh reviewer. Run full local checks and acceptance on this host serially, one role at a time, in the foreground before ending that agent turn. CI is manual-only and not a merge gate. See `docs/chief-of-staff.md`.
 
 Run the local checks with:
 
