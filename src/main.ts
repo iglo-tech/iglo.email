@@ -130,7 +130,7 @@ async function main(): Promise<void> {
     });
     const renderer = createRenderer(clock, app.i18n);
     templateReferences = createCampaignTemplateReferences(db);
-    templates = createTemplateStore(db, clock, renderer, templateReferences, app.logger);
+    templates = createTemplateStore(db, clock, renderer, templateReferences);
     templates.initialize();
     const router = createRouter();
     registerTemplateRoutes(router, templates, renderer, auth);

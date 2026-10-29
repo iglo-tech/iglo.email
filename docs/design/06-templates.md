@@ -103,7 +103,7 @@ without relying on implicit conversion of an empty object.
 | `{{ Safe "<b>…</b>" }}` | `{{ "<b>…</b>" \| raw }}` |
 | Sprig (`default`, `upper`, `trim`, …) | Liquid standard filters (`default`, `upcase`, `strip`, …) |
 
-`unsubscribe_url` in a transactional send renders an empty string and logs a warning at save time. A transactional email has nothing to unsubscribe from.
+`unsubscribe_url` in a transactional send renders an empty string: a transactional email has nothing to unsubscribe from. Saving a `tx` template that references it logs nothing, because the same `tx` template also serves marketing sends (`POST /api/tx` with `kind: "marketing"`, sequence marketing steps), where it is filled in; the send kind, not the template, decides.
 
 ### Layouts
 

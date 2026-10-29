@@ -64,7 +64,8 @@
     "contract:sequences": "bun run build && bun test/contract/cli.ts owned sequences",
     "events:measure": "bun run build && bun test/events/measure.ts",
     "sequences:measure": "bun run build && bun test/sequences/measure.ts",
-    "templates:compiled": "bun test/templates/compiled-check.ts"
+    "templates:compiled": "bun test/templates/compiled-check.ts",
+    "worked-example": "bun run build && bun test/worked-example/run.ts"
   },
   "dependencies": {
     "liquidjs": "10.30.0",

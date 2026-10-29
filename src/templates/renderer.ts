@@ -379,14 +379,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
     if (campaign && !hasContent(compiled)) throw new TemplateSourceError("slot");
   }
-  function refersToUnsubscribe(body: string, subject: string): boolean {
-    return (
-      htmlEngine.globalVariablesSync(parse(body, true)).includes("unsubscribe_url") ||
-      plainEngine
-        .globalVariablesSync(parse(subject, false, SUBJECT_LIMIT))
-        .includes("unsubscribe_url")
-    );
-  }
   let active = 0;
   type Compiled = { body: Template[]; subject: Template[]; layout?: Template[] };
   function runMessage(
@@ -610,6 +602,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
       },
     });
   }
-  return { validate, refersToUnsubscribe, compile, render, renderSync };
+  return { validate, compile, render, renderSync };
 }
 export type TemplateRenderer = ReturnType<typeof createRenderer>;

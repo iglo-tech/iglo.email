@@ -86,7 +86,7 @@ export async function txFixture(
   if (!session || !("id" in session)) throw new Error("fixture login failed");
   const renderer = createRenderer(clock, app.i18n);
   const templateReferences = createCampaignTemplateReferences(db);
-  const templates = createTemplateStore(db, clock, renderer, templateReferences, app.logger);
+  const templates = createTemplateStore(db, clock, renderer, templateReferences);
   templates.initialize();
   const emailer = createEmailer({
     clock,

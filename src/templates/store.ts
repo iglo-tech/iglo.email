@@ -1,7 +1,6 @@
 // Adapted from listmonk internal/core/templates.go and queries/templates.sql at 6fcd95f.
 import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
-import type { ErrorLogger } from "@/app";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import type { CampaignTemplateReferences } from "@/campaigns/template-references";
@@ -50,7 +49,6 @@ export function createTemplateStore(
   clock: Clock,
   renderer: TemplateRenderer,
   references: CampaignTemplateReferences,
-  logger: ErrorLogger,
 ) {
   const q = prepareNamedQueries(db, [{ name: "templates/store", sql }]);
   const byId = (id: bigint) => q.get("template-by-id").get(id) as TemplateRow | null;
@@ -117,14 +115,6 @@ export function createTemplateStore(
         insert({ ...value, body_source: null }, value.isDefault);
     });
   }
-  function warn(row: TemplateRow) {
-    try {
-      if (row.type === "tx" && renderer.refersToUnsubscribe(row.body, row.subject))
-        logger.error("Transactional template references unsubscribe_url; it will be empty.");
-    } catch {
-      // A diagnostic must never turn a committed write into an apparent failure.
-    }
-  }
   function create(input: WritableTemplate) {
     const result = writeTransaction(db, () => {
       const value = { ...input, subject: input.type === "campaign" ? "" : input.subject };
@@ -132,7 +122,6 @@ export function createTemplateStore(
       const id = insert(value);
       return byId(id)!;
     });
-    warn(result);
     return result;
   }
   function update(id: bigint, input: TemplatePatch) {
@@ -159,7 +148,6 @@ export function createTemplateStore(
       );
       return byId(id)!;
     });
-    warn(result);
     return result;
   }
   function setDefault(id: bigint) {

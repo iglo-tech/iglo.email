@@ -54,7 +54,7 @@ export function startRuntime(options: {
   const runner = createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 });
   const renderer = createRenderer(clock, createTranslation());
   const templateReferences = createCampaignTemplateReferences(db);
-  const templates = createTemplateStore(db, clock, renderer, templateReferences, logger);
+  const templates = createTemplateStore(db, clock, renderer, templateReferences);
   templates.initialize();
   const marketing: MarketingSettings = {
     rootUrl: "http://scheduler.test",
