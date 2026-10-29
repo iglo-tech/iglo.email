@@ -43,5 +43,6 @@ jobs:
       - run: bun run messaging:auth
       - run: bun run messaging:tls
       - run: bun run messaging:corpus
+      - run: bun run messaging:routing
       - run: bun run server:reference
       - run: bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'

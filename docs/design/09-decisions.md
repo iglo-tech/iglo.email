@@ -453,6 +453,19 @@ Decided by agents on 2026-10-29, for owner review, before M2.1.
 
 Decided by agents on 2026-10-29, for owner review, after M2.1 council round 1.
 
+Round-2 compatibility clarification: advertised AUTH does not waive Go's PLAIN
+transport guard. PLAIN requires TLS or the exact server name localhost,
+127.0.0.1 or ::1; refuse other unencrypted names before sending credentials,
+including the owned 127.0.0.2 regression peer. Required implicit TLS/STARTTLS
+must complete before authentication. Preserve single-mailbox input per To
+element and per upstream-split Cc/Bcc element; a recipient list in one element
+fails locally with no SMTP effect and the safe SMTP-test 500. Go-compatible
+quoted-local parsing and simple Unicode casing choose routing buckets. Saved
+null header-map elements mean empty maps, matching their accepted settings
+shape. These correct compatibility/security defects, not additional policy
+exceptions; the additive parsed-address owner API preserves existing settings
+validation behavior.
+
 - **Authentication evidence:** both independent reviewers reproduced plain/login/cram configuration becoming unauthenticated delivery when the peer does not advertise AUTH. Nodemailer's pool skips login unless allowsAuth or forceAuth is true; pinned smtppool rejects missing AUTH before sending. Merely supplying credentials is not enforcement. Require the explicitly configured mechanism to be advertised and authentication to finish successfully before MAIL/DATA. No automatic mechanism selection or unauthenticated fallback. Use the supported forceAuth/customAuth boundary to enforce the selected mechanism without private connection inspection. Reject absent/unsupported advertised mechanisms before sending credentials; this also deliberately rejects a noncompliant peer that would accept an unadvertised mechanism, rather than disclosing a configured secret to it. Keep empty/none explicitly unauthenticated. Owner-authentication failures before MAIL are proven non-acceptance; interrupted/uncertain observations keep D24's conservative classification. Protected tests use safe 500 SMTP test failed., never raw capability/auth/provider text. Pair missing AUTH in all three modes against reference with zero message intake and retain successful and wrong-password cases.
 - **Partial-recipient evidence:** pinned smtppool aborts before DATA on any rejected RCPT. Nodemailer continues with accepted recipients; the native owner exposes accepted and rejected subsets after the final successful SMTP response. An accepted To and rejected Cc produced reference500/zero intake versus native200/one intake in the protected test, without a declared difference.
 - **Decision/benefit:** retain native per-recipient SMTP acceptance instead of letting one invalid address prevent delivery to other accepted recipients. The owner returns status accepted with its accepted/rejected subsets; that status means some SMTP acceptance, not acceptance of every recipient or final delivery. Never replay accepted recipients, automatically retry rejected recipients, or turn partial acceptance into proven non-acceptance. D12/D24 and later caller-owned durable policy remain unchanged. If the protected diagnostic has any rejected recipients after partial acceptance, return safe HTTP 500 with SMTP test was accepted for some recipients only. instead of 200/data:[]. This makes the diagnostic truthful without exposing addresses/provider text or implying nothing was sent. It does not undo delivery or authorize retry. Full acceptance retains 200/data:[]; all-recipient rejection and ambiguous outcomes retain D49's errors. Pair accepted To with rejected Cc and Bcc: native500/partial-message/one intake, reference500/before-DATA/zero intake, one attempt each. Existing owner subset/no-duplicate fault tests remain mandatory. No retry engine, schema, dependency or new endpoint.

@@ -285,3 +285,11 @@ owner's partial accepted/rejected result never authorizes replay. Native also
 rejects an unadvertised selected mechanism without transmitting credentials;
 the paired AUTH relay verifies native500/no AUTH/no intake versus reference
 200/authentication/one intake when it would accept that unadvertised method.
+
+`bun run messaging:routing` pairs exact/domain selection for ordinary,
+quoted-local and Unicode From spellings through the pinned TX driver and a
+compiled owner caller. The shared HTTP corpus covers PLAIN refusal on an
+unencrypted non-localhost-named owned peer, recipient-list rejection and a
+quoted-display-name positive control. Null header maps are exercised through
+both the HTTP diagnostic and persisted settings/restart/signing callers. The
+trusted TLS clients authenticate with PLAIN after STARTTLS/implicit TLS.

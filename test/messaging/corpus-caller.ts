@@ -45,8 +45,14 @@ if (message.inline)
     },
   ];
 const emailer = createEmailer({
-  settings: () => ({ smtp: [server], rootUrl: "https://example.test" }),
+  settings: () => ({
+    smtp: process.env.M21_SERVERS
+      ? (JSON.parse(process.env.M21_SERVERS) as SMTPServer[])
+      : [server],
+    rootUrl: "https://example.test",
+  }),
   clock: createRealClock(),
+  select: () => 0,
 });
 try {
   assert.equal((await emailer.push(message).result).status, "accepted");

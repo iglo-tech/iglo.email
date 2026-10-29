@@ -1,10 +1,12 @@
 // SMTP messenger adapted from listmonk internal/messenger/email/email.go and models/messages.go at 6fcd95f.
 import nodemailer from "nodemailer";
 import { createConnection, isIP, type Socket } from "node:net";
-import addressParser from "nodemailer/lib/addressparser";
 import type { Clock } from "@/clock";
 import { goDuration } from "@/settings/duration";
 import { requiredAuth } from "@/messaging/auth";
+import { parseAddress } from "@/settings/mail";
+import { simpleLower } from "@/subscribers/unicode-lower";
+import { trimSpace } from "@/lists/store";
 
 export interface SMTPServer {
   uuid?: string;
@@ -22,7 +24,7 @@ export interface SMTPServer {
   password?: string;
   tls_type: string;
   tls_skip_verify: boolean;
-  email_headers: Array<Record<string, string>> | null;
+  email_headers: Array<Record<string, string> | null> | null;
   from_addresses: string[] | null;
   dkim?: { domain_name: string; key_selector: string; private_key: string } | null;
 }
@@ -174,7 +176,15 @@ function makeTransport(
       ...(isIP(s.host) ? {} : { servername: s.host }),
     },
     ...(["plain", "login", "cram"].includes(s.auth_protocol)
-      ? { auth: { user: s.username, pass: s.password ?? "" }, ...requiredAuth(method) }
+      ? {
+          auth: { user: s.username, pass: s.password ?? "" },
+          ...requiredAuth(
+            method,
+            s.tls_type === "TLS" ||
+              s.tls_type === "STARTTLS" ||
+              ["localhost", "127.0.0.1", "::1"].includes(s.host),
+          ),
+        }
       : {}),
     maxConnections: test ? 1 : s.max_conns,
     maxMessages: 100,
@@ -199,8 +209,8 @@ function makeTransport(
 const safeValue = (value: string) => !/[\r\n\0]/.test(value);
 const headerName = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 function bareAddress(value: string): string {
-  const parsed = addressParser(value, { flatten: true });
-  return parsed.length === 1 && "address" in parsed[0]! ? parsed[0]!.address.toLowerCase() : "";
+  const parsed = parseAddress(trimSpace(value));
+  return parsed === undefined ? "" : simpleLower(parsed);
 }
 function build(s: SMTPServer, input: Message, id: string, now: Date) {
   const headers = new Map<string, { name: string; value: string }>();
@@ -211,7 +221,8 @@ function build(s: SMTPServer, input: Message, id: string, now: Date) {
     const lower = name.toLowerCase();
     headers.set(lower, { name, value });
   };
-  for (const group of s.email_headers ?? []) for (const [k, v] of Object.entries(group)) add(k, v);
+  for (const group of s.email_headers ?? [])
+    for (const [k, v] of Object.entries(group ?? {})) add(k, v);
   for (const [k, v] of Object.entries(input.headers ?? {})) add(k, v);
   if (!safeValue(input.from) || !safeValue(input.subject) || input.to.some((v) => !safeValue(v)))
     throw new Error("Invalid address or subject");
@@ -249,6 +260,22 @@ function build(s: SMTPServer, input: Message, id: string, now: Date) {
     };
   });
   const customHeaders = Array.from(headers.values(), ({ name: key, value }) => ({ key, value }));
+  const one = (value: string) => {
+    const address = parseAddress(value);
+    if (address === undefined) throw new Error("Invalid mailbox");
+    return { address };
+  };
+  // Nodemailer 10 supports explicit address objects here. The separately pinned
+  // @types/nodemailer 8 envelope type omits them. Keep this adapter at the SDK
+  // boundary so an already parsed mailbox cannot be expanded as an address list.
+  const envelope = {
+    from: one(returnPath || input.from),
+    to: [
+      ...input.to.map(one),
+      ...(cc ? cc.split(",").map((value) => one(trimSpace(value))) : []),
+      ...(bcc ? bcc.split(",").map((value) => one(trimSpace(value))) : []),
+    ],
+  } as unknown as { from: string; to: string[] };
   return {
     from,
     to,
@@ -257,10 +284,7 @@ function build(s: SMTPServer, input: Message, id: string, now: Date) {
     date,
     ...(cc ? { cc } : {}),
     ...(bcc ? { bcc } : {}),
-    envelope: {
-      from: returnPath || input.from,
-      to: [...input.to, ...(cc ? [cc] : []), ...(bcc ? [bcc] : [])],
-    },
+    envelope,
     ...(input.contentType === "plain"
       ? { text: Buffer.from(input.body) }
       : {
@@ -276,7 +300,8 @@ function build(s: SMTPServer, input: Message, id: string, now: Date) {
 function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
   let result: string | undefined;
   for (const group of s?.email_headers ?? [])
-    for (const [k, v] of Object.entries(group)) if (k.toLowerCase() === "message-id") result = v;
+    for (const [k, v] of Object.entries(group ?? {}))
+      if (k.toLowerCase() === "message-id") result = v;
   for (const [k, v] of Object.entries(m.headers ?? {}))
     if (k.toLowerCase() === "message-id") result = Array.isArray(v) ? v[0] : v;
   return m.messageId || result || undefined;
@@ -539,9 +564,15 @@ export function createEmailer(options: {
         : servers.filter((s) => !s.exclude_from_default);
     if (!message.messenger || message.messenger === "email") {
       const from = bareAddress(message.from);
-      const exact = bucket.filter((s) => (s.from_addresses ?? []).includes(from));
+      const exact = bucket.filter((s) =>
+        (s.from_addresses ?? []).some((value) => simpleLower(trimSpace(value)) === from),
+      );
       const domain = from.split("@").at(-1);
-      const domains = bucket.filter((s) => domain && (s.from_addresses ?? []).includes(domain));
+      const domains = bucket.filter(
+        (s) =>
+          domain &&
+          (s.from_addresses ?? []).some((value) => simpleLower(trimSpace(value)) === domain),
+      );
       bucket = exact.length ? exact : domains.length ? domains : bucket;
     }
     const index = bucket.length ? selection(bucket.length) : -1;

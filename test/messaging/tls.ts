@@ -51,6 +51,7 @@ try {
         "--disable-version-check",
         "--smtp-disable-rdns",
         "--quiet",
+        "--smtp-auth-accept-any",
         "--smtp-tls-cert",
         cert,
         "--smtp-tls-key",

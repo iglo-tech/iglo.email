@@ -16,6 +16,7 @@ export async function faultRelay(
   sink: ReferenceMailpit,
   fault: Fault,
   credentials?: { user: string; password: string; authMethods?: string[] },
+  listenHost = "127.0.0.1",
 ) {
   let connections = 0;
   let authenticated = 0;
@@ -196,7 +197,7 @@ export async function faultRelay(
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, listenHost, resolve);
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Relay failed to listen");

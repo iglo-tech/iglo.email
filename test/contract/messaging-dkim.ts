@@ -55,6 +55,7 @@ export async function runDKIMSettings(target: {
       password: credentials.password,
       tls_type: "none",
       max_conns: 1,
+      email_headers: [null],
       dkim: { domain_name: "fixture.example.test", key_selector: "m08", private_key: privateKey },
     };
     const send = async (suffix: string, signed: boolean, verificationKey = publicKey) => {
@@ -90,6 +91,7 @@ export async function runDKIMSettings(target: {
     assert.equal((await request("/api/settings/smtp", "PUT", servers)).status, 200);
     await send("initial", true);
     const saved = await read();
+    assert.deepEqual(saved.smtp[0].email_headers, [null]);
     assert.match(saved.smtp[0].dkim.private_key, /^•+$/u);
     assert.notEqual(saved.smtp[0].dkim.private_key, privateKey);
     const retaining = structuredClone(saved.smtp);

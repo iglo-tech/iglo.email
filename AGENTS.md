@@ -79,4 +79,9 @@ bun run contract:roles:reference
 
 Changes to sending, scheduling or storage must include before/after measurements, stored under `docs/perf/`.
 
+Place archived control source beneath an owned test-excluded cache such as
+`node_modules/.cache/`, not an ordinary git-ignored source directory: Bun's
+test discovery can still traverse the latter and run the control's tests too.
+Preserve source/executable hashes and use an archive, not another worktree.
+
 The development reference requires Git, Docker and access to the pinned GitHub releases and Postgres image. Run `bun run reference:prepare`, `bun run reference:smoke`, or `bun run reference:run -- <command> [args...]`. These are separate from `bun run check`.

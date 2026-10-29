@@ -1,15 +1,22 @@
 // Configured authentication follows listmonk internal/messenger/email/email.go and
 // smtppool/v2 v2.2.1; exchanges use nodemailer 10.2.1's public customAuth API.
+// The PLAIN transport guard follows Go 1.27.2 net/smtp/auth.go; its BSD notice
+// is embedded in assets/licenses/go-1.27.2-BSD.txt.
 import { createHmac } from "node:crypto";
 import type SMTPConnection from "nodemailer/lib/smtp-connection";
 
-export function requiredAuth(method: string) {
+export function requiredAuth(method: string, plainTransportAllowed: boolean) {
   return {
     forceAuth: true,
     authMethod: method,
     customAuth: {
       [method]: async (context: SMTPConnection.CustomAuthenticationContext) => {
         try {
+          // Go smtp.PlainAuth.Start refuses non-localhost plaintext transport,
+          // regardless of the advertised mechanism. TLS modes require a completed
+          // TLS handshake in the transport before this callback is invoked.
+          if (method === "PLAIN" && !plainTransportAllowed)
+            throw new Error("Unencrypted authentication");
           // forceAuth prevents the pool skipping login; this guard prevents sending
           // credentials to a peer that did not advertise the configured mechanism.
           if (!context.authMethods.includes(method)) throw new Error("Unsupported authentication");

@@ -57,6 +57,99 @@ export async function runMessagingContract(target: {
     [recipient],
   );
   assert.match(captured.HTML, /Test connection/);
+  for (const email of [`one-${recipient}, two-${recipient}`, "invalid-local-only"]) {
+    const invalid = await request(
+      JSON.stringify({
+        email,
+        host: sink.host,
+        port: sink.port,
+        auth_protocol: "none",
+        tls_type: "none",
+      }),
+    );
+    assert.equal(invalid.status, 500);
+    if (target.mode === "normal")
+      assert.deepEqual(await invalid.json(), { message: "SMTP test failed." });
+    const query = new URLSearchParams({ query: `to:one-${recipient}`, limit: "100" });
+    assert.equal(
+      (
+        (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+          messages: unknown[];
+        }
+      ).messages.length,
+      0,
+    );
+  }
+  const nullHeaders = await request(
+    JSON.stringify({
+      email: `null-${recipient}`,
+      host: sink.host,
+      port: sink.port,
+      auth_protocol: "none",
+      tls_type: "none",
+      email_headers: [null],
+    }),
+  );
+  assert.equal(nullHeaders.status, 200);
+  const quoted = await request(
+    JSON.stringify({
+      email: `"One, Named" <quoted-${recipient}>`,
+      host: sink.host,
+      port: sink.port,
+      auth_protocol: "none",
+      tls_type: "none",
+    }),
+  );
+  assert.equal(quoted.status, 200);
+  const quotedQuery = new URLSearchParams({ query: `to:quoted-${recipient}`, limit: "100" });
+  const quotedIntake = (await (await fetch(`${sink.api}/api/v1/search?${quotedQuery}`)).json()) as {
+    messages: Array<{ ID: string }>;
+  };
+  assert.equal(quotedIntake.messages.length, 1);
+  const quotedMessage = (await (
+    await fetch(`${sink.api}/api/v1/message/${quotedIntake.messages[0]!.ID}`)
+  ).json()) as { To: Array<{ Address: string }> };
+  assert.deepEqual(
+    quotedMessage.To.map((value) => value.Address),
+    [`quoted-${recipient}`],
+  );
+  const plainRelay = await faultRelay(
+    sink,
+    "auth",
+    {
+      user: "m21-fixture-user",
+      password: "m21-fixture-password",
+    },
+    "127.0.0.2",
+  );
+  try {
+    const insecure = await request(
+      JSON.stringify({
+        email: `insecure-${recipient}`,
+        host: "127.0.0.2",
+        port: plainRelay.port,
+        auth_protocol: "plain",
+        username: "m21-fixture-user",
+        password: "m21-fixture-password",
+        tls_type: "none",
+      }),
+    );
+    assert.equal(insecure.status, 500);
+    if (target.mode === "normal")
+      assert.deepEqual(await insecure.json(), { message: "SMTP test failed." });
+    assert.equal(plainRelay.authAttempts(), 0);
+    const query = new URLSearchParams({ query: `to:insecure-${recipient}`, limit: "100" });
+    assert.equal(
+      (
+        (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+          messages: unknown[];
+        }
+      ).messages.length,
+      0,
+    );
+  } finally {
+    await plainRelay.close();
+  }
   // Source-first AUTH regression: configured authentication cannot become a send without login.
   for (const protocol of ["plain", "login", "cram"]) {
     const to = `${protocol}-${recipient}`;

@@ -97,10 +97,10 @@ function parse(value: unknown): { server: SMTPServer; email: string } {
     (!Array.isArray(item.email_headers) ||
       item.email_headers.some(
         (h) =>
-          !h ||
-          typeof h !== "object" ||
-          Array.isArray(h) ||
-          Object.values(h).some((v) => typeof v !== "string"),
+          h !== null &&
+          (typeof h !== "object" ||
+            Array.isArray(h) ||
+            Object.values(h).some((v) => typeof v !== "string")),
       ))
   )
     throw new HttpError(400, "Invalid data.");
@@ -121,7 +121,8 @@ function parse(value: unknown): { server: SMTPServer; email: string } {
     password: String(item.password ?? ""),
     tls_type: String(item.tls_type ?? ""),
     tls_skip_verify: item.tls_skip_verify === true,
-    email_headers: (item.email_headers as Array<Record<string, string>> | null | undefined) ?? [],
+    email_headers:
+      (item.email_headers as Array<Record<string, string> | null> | null | undefined) ?? [],
     from_addresses: [],
   };
   if (item.dkim !== undefined && item.dkim !== null) {
@@ -136,7 +137,7 @@ function parse(value: unknown): { server: SMTPServer; email: string } {
     }
   }
   for (const header of server.email_headers ?? []) {
-    for (const [name, value] of Object.entries(header)) {
+    for (const [name, value] of Object.entries(header ?? {})) {
       if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name) || /[\r\n\0]/.test(value))
         throw new HttpError(400, "Invalid SMTP configuration.");
     }

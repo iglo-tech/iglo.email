@@ -208,6 +208,12 @@ transmission to a peer that does not advertise the selected mechanism. A
 noncompliant peer that would accept the unadvertised method gets native
 500/no AUTH/no intake versus reference200/authenticated/one intake; this
 strict capability difference is paired explicitly for all three mechanisms.
+PLAIN also preserves Go's TLS-or-exact-localhost guard before transmitting
+credentials. Each To entry remains one parsed mailbox, not an address list;
+invalid entries fail without SMTP and use the safe diagnostic 500. Exact
+routing uses Go-compatible quoted-local parsing/simple Unicode casing, and
+accepted null header-map entries behave as empty maps. These are compatible
+corrections, not newly permitted sending behavior.
 Native keeps partial recipient acceptance and exposes both subsets to its
 caller instead of aborting before DATA as upstream does. The protected test
 returns safe 500 SMTP test was accepted for some recipients only. for that
