@@ -10,6 +10,11 @@ const safe = (s: unknown, max: number): s is string =>
 const address = (s: unknown): s is string => safe(s, 2048) && parseAddress(s) !== undefined;
 const bytes = (value: unknown, max: number): value is Uint8Array =>
   value instanceof Uint8Array && value.byteLength <= max;
+const mediaType = (value: unknown): value is string =>
+  safe(value, 2048) &&
+  /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+\s*=\s*(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|"[^"\r\n\0]*"))*$/.test(
+    value,
+  );
 const invalid = (): never => {
   throw new Error("Invalid prepared message");
 };
@@ -61,7 +66,7 @@ export function encodePayload(message: Message, subscriberUuid: string | null): 
       !a.name ||
       !bytes(a.content, maxAttachments) ||
       (a.cid !== undefined && !safe(a.cid, 2048)) ||
-      (a.contentType !== undefined && !safe(a.contentType, 2048)) ||
+      (a.contentType !== undefined && !mediaType(a.contentType)) ||
       (a.inline !== undefined && typeof a.inline !== "boolean") ||
       (a.disposition !== undefined && !["inline", "attachment"].includes(a.disposition))
     )
