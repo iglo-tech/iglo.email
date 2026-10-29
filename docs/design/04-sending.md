@@ -14,6 +14,12 @@ bounded temporary transports. D50 supplies optional native SMTP DKIM settings
 with masked key retention/null-clear and validated RSA configuration. The M2.1 candidate implements these paths; its outstanding acceptance work is
 recorded in the draft PR and performance note.
 
+The D49 owner deadlines are absolute: 60 seconds from ordinary dispatch,
+10 seconds for a temporary SMTP test, and five seconds to drain after shutdown
+starts. Forced cancellation closes owned work and remains ambiguous unless
+non-acceptance was independently established. HTTP drainage must not postpone
+the messaging shutdown deadline. These remain M2.1 acceptance requirements.
+
 ## Campaigns
 
 Ported from listmonk's `internal/manager`:
