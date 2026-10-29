@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.6 worked example end to end, [PR #26](https://github.com/iglo-tech/iglo.email/pull/26), head b298832. Worker done (40 emails exactly once, twice); Sol xhigh round-1 review running.
-Next: lead disposition of round 1, merge, then M3.1 campaigns API, toward M3.2 and M6.1.
+M5.6 worked example end to end, [PR #26](https://github.com/iglo-tech/iglo.email/pull/26), head b298832. Round 1: CHANGES (3 agreed harness gaps); one Opus fixer running.
+Next: Sol round-2 fix-only review, merge, then M3.1 campaigns API, toward M3.2 and M6.1.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
