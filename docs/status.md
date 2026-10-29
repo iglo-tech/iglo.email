@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.3 transactional API, [draft PR #18](https://github.com/iglo-tech/iglo.email/pull/18), head 7c306d7. Round 2: settings Cc/Bcc fixed by lead, payload-retention finding disputed; Sol round-3 fix-only review running.
-Next: round 3 is final; lead decides any remaining disagreement, merges, then M2.4.
+M2.4 unsubscribe and frequency cap, branch task/M2.4-unsubscribe, [brief](briefs/M2.4.md). One Opus medium worker dispatched; no reviewer active.
+Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge, then M2.6.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -22,25 +22,26 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Done
 
-| Task | PR | Merge | Result |
-|---|---|---|---|
-| M1.8 | [#17](https://github.com/iglo-tech/iglo.email/pull/17) | 17eaf1c | Templates/bounded Liquid |
-| M2.2 | [#16](https://github.com/iglo-tech/iglo.email/pull/16) | 4328bf0 | Durable journal/outbox |
-| M2.1 | [#15](https://github.com/iglo-tech/iglo.email/pull/15) | 542bf92 | SMTP/outcomes |
-| M1.2 | [#14](https://github.com/iglo-tech/iglo.email/pull/14) | 043973d | Settings/session lifetime |
-| M1.6 | [#13](https://github.com/iglo-tech/iglo.email/pull/13) | 7764c13 | Subscribers/external IDs |
-| M1.5 | [#12](https://github.com/iglo-tech/iglo.email/pull/12) | da66ca0 | Lists CRUD/counts |
-| M1.4 | [#11](https://github.com/iglo-tech/iglo.email/pull/11) | b60a0e8 | Roles/TOTP |
-| M1.3 | [#10](https://github.com/iglo-tech/iglo.email/pull/10) | 76122c0 | Users/authentication |
-| M1.1 | [#9](https://github.com/iglo-tech/iglo.email/pull/9) | 34a246f | v1 schema |
-| M0.8 | [#8](https://github.com/iglo-tech/iglo.email/pull/8) | 5c048d1 | SMTP/Liquid spikes |
-| M0.7 | [#7](https://github.com/iglo-tech/iglo.email/pull/7) | 8a0b3bf | SQLite load spike |
-| M0.6 | [#6](https://github.com/iglo-tech/iglo.email/pull/6) | 986e3ed | JSX/page shell/assets |
-| M0.5 | [#5](https://github.com/iglo-tech/iglo.email/pull/5) | 1147650 | Contract suite |
-| M0.4 | [#4](https://github.com/iglo-tech/iglo.email/pull/4) | a988c62 | SQLite and loop primitives |
-| M0.3 | [#3](https://github.com/iglo-tech/iglo.email/pull/3) | cb41fd6 | HTTP/app contracts |
-| M0.2 | [#2](https://github.com/iglo-tech/iglo.email/pull/2) | 2946b45 | Pinned reference harness |
-| M0.1 | [#1](https://github.com/iglo-tech/iglo.email/pull/1) | 7dffb86 | Skeleton |
+| Task | PR                                                     | Merge   | Result                     |
+| ---- | ------------------------------------------------------ | ------- | -------------------------- |
+| M2.3 | [#18](https://github.com/iglo-tech/iglo.email/pull/18) | 7a56cb7 | Transactional API          |
+| M1.8 | [#17](https://github.com/iglo-tech/iglo.email/pull/17) | 17eaf1c | Templates/bounded Liquid   |
+| M2.2 | [#16](https://github.com/iglo-tech/iglo.email/pull/16) | 4328bf0 | Durable journal/outbox     |
+| M2.1 | [#15](https://github.com/iglo-tech/iglo.email/pull/15) | 542bf92 | SMTP/outcomes              |
+| M1.2 | [#14](https://github.com/iglo-tech/iglo.email/pull/14) | 043973d | Settings/session lifetime  |
+| M1.6 | [#13](https://github.com/iglo-tech/iglo.email/pull/13) | 7764c13 | Subscribers/external IDs   |
+| M1.5 | [#12](https://github.com/iglo-tech/iglo.email/pull/12) | da66ca0 | Lists CRUD/counts          |
+| M1.4 | [#11](https://github.com/iglo-tech/iglo.email/pull/11) | b60a0e8 | Roles/TOTP                 |
+| M1.3 | [#10](https://github.com/iglo-tech/iglo.email/pull/10) | 76122c0 | Users/authentication       |
+| M1.1 | [#9](https://github.com/iglo-tech/iglo.email/pull/9)   | 34a246f | v1 schema                  |
+| M0.8 | [#8](https://github.com/iglo-tech/iglo.email/pull/8)   | 5c048d1 | SMTP/Liquid spikes         |
+| M0.7 | [#7](https://github.com/iglo-tech/iglo.email/pull/7)   | 8a0b3bf | SQLite load spike          |
+| M0.6 | [#6](https://github.com/iglo-tech/iglo.email/pull/6)   | 986e3ed | JSX/page shell/assets      |
+| M0.5 | [#5](https://github.com/iglo-tech/iglo.email/pull/5)   | 1147650 | Contract suite             |
+| M0.4 | [#4](https://github.com/iglo-tech/iglo.email/pull/4)   | a988c62 | SQLite and loop primitives |
+| M0.3 | [#3](https://github.com/iglo-tech/iglo.email/pull/3)   | cb41fd6 | HTTP/app contracts         |
+| M0.2 | [#2](https://github.com/iglo-tech/iglo.email/pull/2)   | 2946b45 | Pinned reference harness   |
+| M0.1 | [#1](https://github.com/iglo-tech/iglo.email/pull/1)   | 7dffb86 | Skeleton                   |
 
 ## Hardening backlog
 
