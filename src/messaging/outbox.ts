@@ -38,7 +38,11 @@ export function startOutbox(options: {
       },
       () => {
         if (!controller.signal.aborted) {
-          options.logger.error(new Error("Outbox deadline failed"));
+          try {
+            options.logger.error(new Error("Outbox deadline failed"));
+          } catch {
+            /* Preserve deadline failure. */
+          }
           failTimer(new Error("Outbox deadline failed"));
           void loop.stop();
         }
