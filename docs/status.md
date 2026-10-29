@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.3 transactional API, branch task/M2.3-tx, [brief](briefs/M2.3.md). One Opus medium worker dispatched; no reviewer active.
-Next: on worker handback, run one Sol xhigh deep round 1, lead disposition, merge.
+M2.3 transactional API, [draft PR #18](https://github.com/iglo-tech/iglo.email/pull/18), head 8e7934b. Worker done; Sol xhigh round-1 review running.
+Next: lead disposition of round-1 findings, merge, then M2.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
