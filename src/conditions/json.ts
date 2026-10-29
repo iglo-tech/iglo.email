@@ -8,6 +8,9 @@
 // - A string value equals only JSON text with the same characters; a number only a JSON number
 //   with the same numeric value (`5` equals `5.0`); a boolean only the same JSON boolean.
 //   Nothing is coerced: `"5"` never equals `5`, and `true` never equals `1`.
+// - A condition's numbers are safe integers (within ±(2^53 − 1)) or finite fractions; validation
+//   refuses others, which JSON parsing has already rounded. Stored numbers of any size compare
+//   with them exactly, as SQLite compares int64 and double values.
 // - Ordering (`gt`, `gte`, `lt`, `lte`) compares numbers numerically and text by UTF-8 bytes
 //   (code point order). It is false when the field is missing or of another type.
 // - `ne` is the negation of `eq`, so it holds for a missing field or a field of another type.

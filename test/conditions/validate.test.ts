@@ -218,6 +218,49 @@ describe("rejected shapes", () => {
   });
 });
 
+describe("numbers are exactly comparable", () => {
+  const unsafe = 1000000000000000100;
+  const message = "number must be a safe integer (within ±9007199254740991) or a finite fraction";
+  const refused = (condition: unknown, field: string) =>
+    expect(validate(condition, { canUseSql: false })).toEqual({
+      ok: false,
+      errors: [{ field, message }],
+    });
+
+  test("integers beyond the safe range are refused in every comparison", () => {
+    for (const op of ["eq", "ne", "lt", "lte", "gt", "gte"])
+      refused({ attr: "invoice_id", op, value: unsafe }, "condition.value");
+    refused({ attr: "n", op: "eq", value: -unsafe }, "condition.value");
+    refused({ attr: "n", op: "eq", value: 2 ** 53 }, "condition.value");
+    refused({ attr: "n", op: "gt", value: 1e300 }, "condition.value");
+    refused({ attr: "invoice_id", op: "in", value: [1, unsafe] }, "condition.value.1");
+    refused(
+      { event: "invoice_paid", where: { "data.invoice_id": unsafe } },
+      "condition.where.data.invoice_id",
+    );
+    refused({ not: { attr: "n", op: "eq", value: unsafe } }, "condition.not.value");
+  });
+
+  test("safe integers, their edges, zero, negatives and fractions are accepted", () => {
+    for (const value of [
+      Number.MAX_SAFE_INTEGER,
+      Number.MIN_SAFE_INTEGER,
+      0,
+      -0,
+      -1,
+      0.1,
+      -1.5,
+      1e-300,
+      123456789.125,
+      4503599627370495.5,
+    ]) {
+      ok({ attr: "n", op: "eq", value });
+      ok({ attr: "n", op: "in", value: [value] });
+      ok({ event: "e", where: { "data.n": value } });
+    }
+  });
+});
+
 describe("hostile input stays bounded", () => {
   test("deep nesting is refused at the depth limit without recursing further", () => {
     let deep: unknown = { attr: "a", op: "exists" };

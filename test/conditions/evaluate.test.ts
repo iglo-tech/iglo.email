@@ -201,6 +201,72 @@ describe("attribute comparisons and type rules", () => {
   });
 });
 
+describe("large numbers", () => {
+  let big: ModelSubscriber;
+  // Stored as written: SQLite keeps the exact int64, beyond what a JavaScript number holds.
+  const unsafe = 1000000000000000100;
+  beforeAll(() => {
+    big = f.addSubscriber({
+      attribsJSON:
+        '{"invoice_id":1000000000000000100,"edge":9007199254740991,"low":-9007199254740991,"over":9007199254740993,"zero":0,"frac":0.25}',
+    });
+    f.db
+      .query(
+        "INSERT INTO events (subscriber_id, name, data, occurred_at, created_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        big.id,
+        "invoice_paid",
+        '{"invoice_id":1000000000000000100,"edge":9007199254740991}',
+        at(-1 * day),
+        at(-1 * day),
+      );
+  });
+
+  test("conditions comparing integers beyond the safe range are refused, not mis-evaluated", async () => {
+    const invalid = { kind: "invalid", message: expect.stringContaining("safe integer") };
+    for (const condition of [
+      { attr: "invoice_id", op: "eq", value: unsafe },
+      { attr: "invoice_id", op: "ne", value: unsafe },
+      { attr: "invoice_id", op: "lt", value: unsafe },
+      { attr: "invoice_id", op: "gte", value: unsafe },
+      { attr: "invoice_id", op: "in", value: [unsafe] },
+      { event: "invoice_paid", where: { "data.invoice_id": unsafe } },
+    ])
+      expect([condition, await f.evaluator.evaluate(condition, context(big))]).toEqual([
+        condition,
+        { ok: false, error: invalid },
+      ]);
+  });
+
+  test("safe edge integers compare exactly with stored attributes and event data", async () => {
+    const max = Number.MAX_SAFE_INTEGER;
+    const cases: [unknown, boolean][] = [
+      [{ attr: "edge", op: "eq", value: max }, true],
+      [{ attr: "edge", op: "ne", value: max }, false],
+      [{ attr: "edge", op: "eq", value: max - 1 }, false],
+      [{ attr: "edge", op: "gte", value: max }, true],
+      [{ attr: "edge", op: "gt", value: max - 1 }, true],
+      [{ attr: "edge", op: "lt", value: max }, false],
+      [{ attr: "edge", op: "in", value: [1, max] }, true],
+      [{ attr: "low", op: "eq", value: -max }, true],
+      [{ attr: "low", op: "lt", value: -max + 1 }, true],
+      // Stored integers beyond the safe range still order against safe comparands.
+      [{ attr: "over", op: "gt", value: max }, true],
+      [{ attr: "over", op: "eq", value: max }, false],
+      [{ attr: "invoice_id", op: "gt", value: max }, true],
+      [{ attr: "invoice_id", op: "lte", value: max }, false],
+      [{ attr: "zero", op: "eq", value: -0 }, true],
+      [{ attr: "frac", op: "eq", value: 0.25 }, true],
+      [{ attr: "frac", op: "lt", value: 0.5 }, true],
+      [{ event: "invoice_paid", where: { "data.edge": max } }, true],
+      [{ event: "invoice_paid", where: { "data.edge": max - 1 } }, false],
+    ];
+    for (const [condition, expected] of cases)
+      expect([condition, await value(condition, context(big))]).toEqual([condition, expected]);
+  });
+});
+
 describe("event predicates", () => {
   const cases: [string, unknown, boolean][] = [
     ["any time", { event: "download_finished" }, true],

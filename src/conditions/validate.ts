@@ -32,6 +32,9 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const bytes = (value: string) => Buffer.byteLength(value);
 
+const unsafeNumber =
+  "number must be a safe integer (within ±9007199254740991) or a finite fraction";
+
 class Stop extends Error {}
 
 export function validate(
@@ -54,6 +57,13 @@ export function validate(
     }
     if (typeof value === "number") {
       if (!Number.isFinite(value)) return void fail(field, "number must be finite");
+      // SQLite keeps JSON integers as exact int64; a JavaScript number past 2^53 is already
+      // rounded, so it could differ from the stored value it was meant to equal.
+      if (
+        (Number.isInteger(value) && !Number.isSafeInteger(value)) ||
+        Number(String(value)) !== value
+      )
+        return void fail(field, unsafeNumber);
       return value;
     }
     if (typeof value === "boolean") {
