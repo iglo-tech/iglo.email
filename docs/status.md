@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.2 sequence conditions, [PR #22](https://github.com/iglo-tech/iglo.email/pull/22), head 959100c. Round-1 fixes pushed; Sol round-2 fix-only review running. Critical path to M5.4: M5.2, M5.3.
-Next: lead disposition of round 2, merge, then M5.3.
+M5.3 sequences and enrollments, branch task/M5.3-sequences, [brief](briefs/M5.3.md). One Opus medium worker dispatched; no reviewer active. Critical path: M5.3, then M5.4.
+Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge, then M5.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -24,6 +24,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task | PR                                                     | Merge   | Result                         |
 | ---- | ------------------------------------------------------ | ------- | ------------------------------ |
+| M5.2 | [#22](https://github.com/iglo-tech/iglo.email/pull/22) | 8b328c8 | Sequence conditions            |
 | M1.7 | [#21](https://github.com/iglo-tech/iglo.email/pull/21) | 0d40045 | Subscriber query/search/export |
 | M5.1 | [#20](https://github.com/iglo-tech/iglo.email/pull/20) | 4232631 | Subscriber events API          |
 | M2.4 | [#19](https://github.com/iglo-tech/iglo.email/pull/19) | 5368d30 | Unsubscribe/cap/tracking       |
