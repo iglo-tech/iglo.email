@@ -2,6 +2,8 @@
 
 ## API compatibility policy
 
+Owner policy [D57](09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): compatibility means matching results for realistic clients, not reproducing upstream implementation. Safe malformed/custom transport error differences are hardening backlog; formats, authentication, permissions, atomicity and actual security remain mandatory. A blocking review finding names the realistic client/request and concrete failure. Existing deliberate differences and safety checks remain.
+
 The listmonk HTTP API is worth keeping where it is sound: there are SDKs, an n8n node and scripts written against it. Compatibility is the default, not a goal in itself. When listmonk's behavior comes from a poor design decision and makes the API awkward or wrong for its callers, iglo.email fixes it in the port instead of copying it. Each such fix is a deliberate difference: listed below with its reason, and marked in the contract suite.
 
 For every **ported** endpoint, unless a difference below says otherwise, iglo.email keeps:

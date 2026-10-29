@@ -1,103 +1,65 @@
 # Chief of staff runbook
 
-The lead role from the [work plan](design/11-work-plan.md). Day-to-day implementation coordination belongs in the dedicated top-level chief-of-staff thread linked in [`status.md`](status.md). The automation runs independently every 45 minutes and must remain unbound to any thread (`bindToCurrentThread: false`, returned `boundThreadId: null`), so a stuck conversation cannot prevent recovery. Each run starts with no memory: this file, the work plan, [`status.md`](status.md), the lock and GitHub are the durable state. The owner is away and is never asked anything; decide, log, continue.
+Operate in `/home/t3-code/iglo.email` on `main`. Owner decisions [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification) and [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening) replace the earlier model, council and CI policies.
 
-## Continuous fleet objective
+## Continuous work and recovery
 
-Owner instruction on 2026-10-28: manage the agent fleet continuously toward the whole project. The fleet must not become idle just because an assignment, PR, council round, conversation or arbitrary time budget ended. Keep one authorized task moving through implementation, checks, independent review and merge; immediately hand off to the next eligible task. Preserve the existing model, isolation, serial-work, lock, CI and host limits.
+Keep one task moving through implementation, local verification, review and merge. After every merge, update/push concise status and immediately dispatch the next eligible critical-path task. No elapsed-time, session or task-count cutoff. Only a completed applicable work plan ends the goal. If one item is blocked, safely record it and continue other eligible authorized work when no writer is active. Respect genuine capacity/provider cooldowns; never duplicate work.
 
-Ending a turn after async dispatch or a PR watch is an orchestration handoff, not stopping work. Record all IDs and the next action before yielding; delegate/check completion resumes the next transition immediately. The unbound 45-minute schedule recovers stalled work; it is not a deliberate delay between tasks. Never poll/wait for running delegates, start duplicates, or bypass genuine rate/resource limits.
+The existing enabled45-minute recovery schedule stays **unbound** (`boundThreadId:null`). It recovers from `docs/status.md`, GitHub and `~/.local/state/iglo-email-cos/lock.json`, never from a responsive conversation. The lock retains the continuous run start, heartbeat, active branch/head/stage, all delegate IDs, verdicts and next action.
 
-If a task is blocked, finish its independent authorized work and move to another eligible task when its state is safe and no writer is running. A single blocked item must not stop the whole fleet. If all remaining work is blocked or allowed execution capacity is unavailable, persist each concrete blocker, retain the project as incomplete and let the earliest legitimate completion/recovery/cooldown resume it. Do useful authorized lead work while other capacity is unavailable. Only an entirely completed work plan may be reported as project completion.
+1. `git pull --ff-only`; read only relevant AGENTS/design/task/status sections.
+2. On your own child/PR wake resume the recorded stage and refresh heartbeat. Another owner with heartbeat <90min owns the task: do not alter its lock, worktree or delegates. Recover an expired/orphaned lock from recorded IDs and GitHub before replacing anything.
+3. Read an actually completed child with `t3_thread_read` before discussing its result. Never poll/read/wait a running delegate. Follow its returned `next`, persist identifiers and end the turn after async dispatch.
+4. Keep `status.md` short: active task/next action, one line per merged task, owner-decision links and concise blockers/backlog. Details and lead dispositions live in the PR; historical review ledgers remain evidence, not required reading on every wake.
 
-## Each run
+A redundant healthy check-in auto-settles only itself via `t3_thread_organize` action settle (omit threadId). It must own no child, PR watch or implementation/recovery duty. Leave the actual owner and its state untouched. A coordinator awaiting its own work or a recovery transition never qualifies.
 
-1. **Sync.** Work in `/home/t3-code/iglo.email` on `main`: `git pull --ff-only`. Read `AGENTS.md`, `docs/design/11-work-plan.md`, `docs/status.md` and this file.
-2. **Lock.** The lock file is `~/.local/state/iglo-email-cos/lock.json`: `{ "run": "<ISO start time>", "heartbeat": "<ISO time>", "task": "<id>", "stage": "<stage>" }`.
-   - On a child-completion or PR-check/review wake for the task this thread is already driving, resume its recorded stage and refresh its heartbeat. Do not mistake your own continuation for a competing run.
-   - If another run owns a heartbeat less than 90 minutes old, inspect the durable task/phase and available GitHub progress without polling its running delegates. If this is only a healthy redundant check-in, follow **Healthy check-in auto-settlement** below. Do not modify its lock, task state or repository. A required recovery/action or uncertain ownership does not qualify for automatic settlement.
-   - Otherwise take the lock: write your own start time and heartbeat. Update the heartbeat after every stage change. An independent run recovers from the recorded task, branch, PR and delegate identifiers; it does not wait for the dedicated thread to respond. Check the recorded worker and GitHub state before replacing work, and never start a duplicate worker.
-3. **Capacity and recovery.** Respect recorded cooldowns for the affected agent/provider/resource. Continue other eligible authorized work through available capacity; a blocked item is not a reason to stop the fleet. Yield for scheduled recovery only if all remaining work is genuinely blocked or required capacity is unavailable, keeping the project explicitly incomplete. Never treat a task completion or elapsed time as a pause.
-4. **Continue or start.** If `status.md` has an active task, continue it at its stage (the PR and its comments show where it is). Otherwise pick the next task from the work plan whose dependencies are all merged, following the critical path first. Start only one task at a time.
-5. **Drive the task** through the stages below in this run. After starting an agent, end your turn: its completion wakes this run. Never wait with `sleep`, loops, watchers or polling.
-6. **Continue after every merge.** Update `status.md`, commit it to `main` (`status: <id> merged`) and push. Immediately select, brief and dispatch the next eligible task. A task/PR completion is a fleet handoff, never completion of the project goal. There is no elapsed-run, four-hour, task-count or session cutoff. Keep the lock and advance it to the next task; do not release it merely because one task merged or wait for the next timer. Stop project work only when the entire applicable work plan is complete or the owner explicitly changes the goal. If work is temporarily impossible, record the actual block/cooldown and recovery action without declaring the goal complete.
+## Models and capacity
 
-## Healthy check-in auto-settlement
+For new dispatches, use `delegate_task`, isolation worktree, role and settings in `target.options`. Refresh capabilities only after an orchestration error or owner provider change.
 
-Owner instruction on 2026-10-28: a redundant check-in that only establishes that another agent is already driving healthy work must settle itself automatically, without asking the owner.
+| Role | Target |
+|---|---|
+| Lead, worker, fixer, normal helper | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"medium"}}` |
+| Pure bulk mechanical work only | `{providerInstanceId:"claudeAgent",model:"claude-haiku-5-5",options:{effort:"medium"}}` |
+| Single independent reviewer | `{providerInstanceId:"codex",model:"gpt-6.1-sol",options:{reasoningEffort:"xhigh"}}` |
 
-- Qualify using the other owner's valid lock, matching durable active-task/delegate identifiers and available progress evidence. A fresh heartbeat with contradictory or missing task evidence is not enough. Do not poll a running delegate or wait for it to prove health.
-- This check-in must own no outstanding worker/reviewer/helper, pending child completion, PR watch or implementation/CI/review/merge/recovery responsibility. The actual fleet lead waiting for its own delegate or checks is an active coordinator, not a redundant observer.
-- Leave the active owner's lock, heartbeat, status, worktree, delegates and watches untouched. Do not dispatch replacement work or make a repository/status commit just to record a healthy check-in. Its one-line final outcome is the record: another owner is driving, no intervention was needed.
-- Before ending that check-in turn, call `t3_thread_organize` with `{"action":"settle"}`, omitting `threadId` so it applies only to the current redundant check-in. Settlement applies at successful turn end; a failed turn or queued message can keep the thread active. Do not archive/delete threads, cancel work, settle the active lead/worker/reviewer, or mark the project goal complete.
-- Do not auto-settle when there is an expired/orphaned/mismatched lock, a failure/block requiring action, uncertain ownership, a pending transition this thread must drive, or work the thread still owns. Follow the normal lock/recovery rules and keep the required coordination active. If the settle tool fails or is unavailable, report that outcome rather than claiming settlement or substituting archive/delete.
+No Terra work, OpenAI implementation/lead work, second Sol reviewer or Claude review of Claude work. The lead and **one** Sol reviewer form the council. Existing dispatched work stays on its branch; let the legacy M1.8 reviewer B finish and collect its result. No replacement or extra reviewer for that transition.
+
+At most two task agents: an implementation worker/fixer and the reviewer. Helpers consume the implementation slot; no fan-out. Prefer sequential stages. **Only one role runs full checks/acceptance on this host at a time**, including the lead. Record the verification owner in the lock; release it only after the owned commands/processes finish. Every agent completes checks in the foreground before ending its turn. Async delegate dispatch remains allowed; background test processes surviving a turn do not.
+
+The lead/project default is Opus medium. `t3_thread_configure` can set the current lead's model for subsequent turns. The scheduler tool has no per-task model field: keep its prompt aligned, preserve the unbound schedule, and report this limitation rather than claim a pinned scheduler model.
+
+The earlier1%-remaining whole-fleet provider fallback is superseded. The quota helper may report remaining OpenAI review capacity; it cannot authorize Claude reviewers or OpenAI workers. If Sol quota is unavailable, record the reset/cooldown and continue only independent authorized Opus work; no review substitution or approval inferred from an unfinished run. Provider failures receive the existing documented60-minute cooldown, not a retry loop. Keep account quota samples local.
 
 ## Stages
 
-| Stage | What the lead does |
+| Stage | Action |
 |---|---|
-| `brief` | Write the brief from the work plan's template into `docs/briefs/<id>.md`: exact upstream files at v7.0.0-beta.1 (read them in `/home/t3-code/upstream/listmonk`), owned paths and tables, acceptance commands. Record the task as active in `status.md`, commit and push |
-| `worker` | Start the worker with `delegate_task`, `isolation: "worktree"`, model from the work plan's model table. The brief is its whole context, followed by the worker instructions below |
-| `ci` | When the worker reports its PR, check `gh pr checks`. If CI fails, send the failure to a fixer (same model as the worker, `isolation: "worktree"`, on the same branch) or fix a small issue yourself |
-| `council` | Start both council members at once, each with its own `delegate_task`, `isolation: "worktree"`, `role: "review"`, the council instructions below, the PR URL and head commit, and nothing about your own opinion |
-| `fix` | If either member asks for changes: fix small findings yourself on the branch, or start a fixer with the findings from both. Then go back to `council` for the new head. Count rounds in `status.md` |
-| `merge` | Both members approved the same head commit and CI is green: `gh pr merge --squash --delete-branch`, then `git pull --ff-only` |
+| brief | Name the realistic client flows, pinned upstream sources, owned modules/tables, acceptance commands and any sending/storage measurements. Push the brief and short status. |
+| worker | One Opus medium worker does the implementation in its prepared isolated checkout. No shell-created worktree; fetch the intended base/head inside that checkout. |
+| verify | Worker/fixer runs `bun run check` and the brief's acceptance tests serially on this host, in the foreground. Record failures, justified reruns and exact head. CI is optional manual evidence, never a merge gate or a reason to wait. |
+| review | Round1: one fresh Sol xhigh deep review. Later rounds: a fresh delegate verifies the fixes and touched code only. Give later reviewers the complete prior findings and lead dispositions, not another whole-PR audit request. Reviewer runs full local check and acceptance serially after the implementation role is finished. |
+| fix | Read every finding. Agree: fix small issues yourself, or give one Opus medium fixer all agreed findings of the round. Disagree: answer in the PR with concrete reasoning. Safely handled exotic response differences go to hardening backlog. Run affected tests, then full check/acceptance once on final code. |
+| merge | Lead and reviewer agree: reviewer approves the current head, or both agree remaining items are backlog; local final-head verification passed. After three rounds without agreement the lead decides and writes reasons in the PR. Never waive actual safety/auth/format defects. Squash-merge/delete remote branch, pull main, push concise status and immediately start the next eligible task. |
 
-After three council rounds without agreement, decide yourself: upstream's behavior (the contract suite in reference mode) and the design docs are the tiebreaker. Write the reasoning in a PR comment, then merge or make the change.
+Do not repeat unchanged control builds or timing series without a concrete concern; verify their recorded hashes. Source/dependency/build changes require appropriate fresh evidence. Record actual local verification, not automatic-CI success claims. If branch protection unexpectedly requires CI, resolve/report that concrete repository setting; do not invent a passing check.
 
-## Agents
+Use PR watches only while an external check/review is genuinely pending. Never watch for unfinished implementation or wait on manual CI. Reuse existing links/watches; unwatch after collection/merge or handback. No sleep, polling loops, gh --watch or replacement recovery timer.
 
-Call `orchestrator_capabilities` once per thread before the first `delegate_task`, and again only after an error or an owner-requested provider change. Pass the model settings in `target.options`.
+## Worker brief suffix
 
-| Agent | `target` |
-|---|---|
-| Sol lead and both independent council members (A and B) | `{ "providerInstanceId": "codex", "model": "gpt-6.1-sol", "options": { "reasoningEffort": "xhigh" } }` |
-| Terra worker, fixer or helper | `{ "providerInstanceId": "codex", "model": "gpt-6.1-terra", "options": { "reasoningEffort": "max" } }` |
+You are a worker on iglo.email. Do this task yourself. Read relevant AGENTS/task/design sections and pinned listmonk v7.0.0-beta.1 sources at `/home/t3-code/upstream/listmonk` (6fcd95f), never port from memory. Match observable results for real SDK, browser/dashboard and ordinary HTTP clients; use Bun/Web APIs where those results match. Malformed/custom input must remain safe, atomic, permission-correct and memory-bounded; exact error parity is backlog, not a merge gate (D57). Never relax stored/wire formats, authentication, authorization or actual security.
 
-Owner override on 2026-10-28: do not use Anthropic models until the owner changes this instruction. The council is two fresh, independent GPT-6.1 Sol agents at xhigh reasoning, labelled A and B. Dispatch each as a separate review task in its own isolated worktree; neither is the lead or worker. Both must approve the same head.
+Change only authorized modules/seams. Work in the supplied checkout/branch and open or update the task's existing PR; no extra checkout. No helper unless explicitly authorized; Haiku medium only for pure bulk mechanical work. Complete `bun run check` and acceptance commands on this host serially, foreground, before ending. Retain first failures and explain reruns. No CI wait, PR watch or merge. Last line: PR <URL>, head <SHA>, local checks <state>.
 
-Owner platform override on 2026-10-28 (D42): MVP CI, reference acceptance and release artifacts target Linux x86-64 only. macOS and Linux arm64 are post-MVP. Keep both Linux jobs and the complete pinned-reference checks; do not dispatch, wait for or rerun macOS jobs as an MVP gate.
+## Reviewer brief suffix
 
-The recurring lead schedule is independent and unbound; never bind it to the dedicated thread or any other thread. Keep its existing 45-minute interval and use the lock and status file for recovery. Record delegate task and thread identifiers in `status.md` after dispatch so a later run can recover without the former lead conversation. Do not dispatch an Anthropic worker, helper or reviewer under the current owner override.
+You are the one GPT-6.1 Sol xhigh reviewer; the Opus lead and you form the council. Review only, no code/format/push/helper. PR <URL>, head <SHA>, task <id>, round <n>. Check out that exact head in your supplied worktree. Read relevant AGENTS, D56/D57, task brief and pinned upstream sources. Round1 is deep; later rounds cover earlier findings, fixes and touched code only. Run full local check and acceptance serially, foreground, after the implementation role releases host verification.
 
-### Worker instructions
+A blocker names file/line, a realistic client and request, and concrete wrong result or safety failure. Safe malformed/hand-crafted input with a different exact error goes under Backlog. Crashes, partial writes, auth/permission bypass, invalid data-format acceptance and unbounded memory remain defects even for hostile input. Do not request cosmetic changes. Post one comment starting `COUNCIL GPT-6.1 Sol VERDICT: APPROVE <SHA>` or `... CHANGES <SHA>`, with blockers then backlog and actual validation limits. Last line: PR <URL>, head <SHA>, local checks <state>.
 
-Append to every worker and fixer brief:
+## Host and scope limits
 
-```text
-You are a worker on iglo.email (https://github.com/iglo-tech/iglo.email). Do the task yourself.
-- Read AGENTS.md and the docs named in the brief first. Follow the "Rules for workers" in docs/design/11-work-plan.md.
-- Upstream listmonk v7.0.0-beta.1 source: /home/t3-code/upstream/listmonk (read only). Read it; never port from memory.
-- Locate dependency source using the named checkout, a known cache path or a pinned GitHub source fetched inside your worktree. Never run find or du across the filesystem, /home/t3-code or all of .t3 to locate a dependency. If a named local path is absent, use the pinned source instead of widening the scan.
-- Do not start subagents unless this task explicitly authorizes helpers. Any authorized helper uses GPT-6.1 Terra at max reasoning.
-- Work on branch task/<id>-<slug> from origin/main. Commit with short messages. Push and open one PR titled "<id>: <title>" against main. The PR body maps each upstream file to its iglo.email file and lists anything left out, with a reason.
-- Run the acceptance commands and the full local check before you finish. Do not merge. Do not watch the PR.
-- Never touch production data, real credentials, real SMTP servers or webhook endpoints, or anything outside this repository and your worktree.
-- Last line of your reply: PR <full URL>, head <SHA>, checks and reviews <state>.
-```
-
-### Council instructions
-
-```text
-You are one member of a two-member review council for iglo.email (https://github.com/iglo-tech/iglo.email). Review only; do not change code or push.
-PR: <URL>, head commit <SHA>, task <id> from docs/design/11-work-plan.md.
-Reviewer: <A or B>, a fresh GPT-6.1 Sol agent at xhigh reasoning. Review independently; do not read the other reviewer's current-round verdict or findings before posting your own.
-- Check out the PR head in your worktree (gh pr checkout <number>). Read AGENTS.md, docs/design/11-work-plan.md (the task row and the worker rules) and the design docs the change touches.
-- Read /home/t3-code/AGENTS.md before tooling. Locate dependency source only through named local paths or a pinned GitHub source fetched inside your worktree. Never run find or du across the filesystem, /home/t3-code or all of .t3; an absent cache is a reason to fetch the exact source, not to widen the scan.
-- Compare the change with the upstream listmonk v7.0.0-beta.1 files it ports, in /home/t3-code/upstream/listmonk. Ported endpoints keep listmonk's API contract except for differences listed in docs/design/07-api-and-ui.md. Flag both an unlisted difference and an upstream behavior copied blindly where it is clearly a poor design (for example a requirement that serves upstream's internals rather than the caller). New features must match the design docs.
-- Check: correctness, marketing sends stay at-most-once, no network call inside a transaction, every loop uses the injected clock, permissions on every route, scope respected, tests through public boundaries only, acceptance check really passes (run it), design docs still match the code.
-- Report only real problems, each with file, line and the concrete failure. Do not ask for optional style changes.
-- Post exactly one PR comment, starting with the first line
-  COUNCIL <your model> VERDICT: APPROVE <SHA>
-  or
-  COUNCIL <your model> VERDICT: CHANGES <SHA>
-  followed by Reviewer: <A or B> and the findings. Then reply with the same verdict line and reviewer label.
-```
-
-## Rules
-
-- **No owner input.** Every question is decided by the lead. Design decisions go into `docs/design/09-decisions.md` marked "Decided by agents on <date>, for owner review" and are listed in `status.md`. Open questions keep their defaults.
-- **Pace and capacity.** One task at a time, at most three agents at once under the existing model/isolation limits. A usage/rate-limit failure gets a documented 60-minute cooldown for the affected execution capacity; do not retry it in a loop, substitute models or start a duplicate. Continue authorized work that does not need that unavailable capacity, including other eligible work after safely recording a blocked task. Record a project-wide "Paused until" only when no remaining work can make progress under the actual shared limit; keep the goal incomplete and recovery scheduled.
-- **Failures.** A worker that ends without a usable PR gets one retry with a sharper brief. After that, mark the task blocked in `status.md` with the reason and move to the next task whose dependencies are met.
-- **Hard limits** from the work plan always apply: no production data, no real credentials, no external services beyond those listed, nothing destructive outside the repository, and the host rules in `/home/t3-code/AGENTS.md`.
-- **Plan changes.** The lead may change the work plan, this runbook and design docs when a spike or upstream behavior requires it. Commit those changes to `main` with a clear message and note them in `status.md`.
+Linux x86-64 only for MVP. Read `/home/t3-code/AGENTS.md`; no broad scans, Docker accounting/prune, protected worktree/cache/export cleanup or VM policy changes. Locate sources through named paths or exact pinned source fetched within the owned worktree. Tests use only disposable data and owned loopback Mailpit/webhook receivers; no real credentials or production data. New temporary artifacts get an owned lifecycle; preserve compact logs/hashes and never clean another run's evidence. Keep SQLite/module ownership, injected clocks, no network inside transactions and at-most-once marketing unchanged.
