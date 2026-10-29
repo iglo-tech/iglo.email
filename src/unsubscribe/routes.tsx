@@ -21,16 +21,24 @@ import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
 
 /**
- * Effects of a completed unsubscribe, called inside its write transaction. M5 cancels
- * active enrollments in sequences tied to `listIds` (exit_reason `unsubscribed`) and
- * M2.6 queues `subscriber.unsubscribed` / `subscriber.blocklisted` webhooks here.
+ * Effects of an unsubscribe request, called inside its write transaction on every POST,
+ * including repeats. `listId` is the requested send's list; `listIds` are the memberships
+ * whose status changed. M5 cancels active enrollments in sequences tied to `listId` and
+ * `listIds` (exit_reason `unsubscribed`) and M2.6 queues `subscriber.unsubscribed` /
+ * `subscriber.blocklisted` webhooks here.
  */
 export interface UnsubscribeEffects {
-  unsubscribed(event: { subscriberId: bigint; listIds: bigint[]; blocklisted: boolean }): void;
+  unsubscribed(event: {
+    subscriberId: bigint;
+    listId: bigint;
+    listIds: bigint[];
+    blocklisted: boolean;
+  }): void;
 }
 const noEffects: UnsubscribeEffects = { unsubscribed() {} };
 
-const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const uuidPattern =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const noIndex = { "X-Robots-Tag": "noindex" };
 
 /** Go image/png encoding of a transparent 1x1 RGBA image, as listmonk's pixelPNG. */
@@ -66,9 +74,15 @@ function parseBool(value: unknown): boolean | undefined {
 }
 
 /** Bounded form body: browsers and RFC 8058 senders post url-encoded or multipart forms. */
-async function readForm(request: Request): Promise<{ blocklist: boolean; manage: boolean }> {
+async function readForm(
+  request: Request,
+): Promise<{ blocklist: boolean; manage: boolean }> {
   const bytes = await readBodyBytes(request);
-  const media = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  const media = request.headers
+    .get("content-type")
+    ?.split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
   let get: (name: string) => unknown = () => undefined;
   if (bytes.length) {
     if (media === "application/x-www-form-urlencoded") {
@@ -82,11 +96,16 @@ async function readForm(request: Request): Promise<{ blocklist: boolean; manage:
       }).formData();
       get = (name) => {
         const value = form.get(name);
-        return value === null ? undefined : typeof value === "string" ? value : null;
+        return value === null
+          ? undefined
+          : typeof value === "string"
+            ? value
+            : null;
       };
     } else if (media === "application/json") {
       const value = JSON.parse(bytes.toString("utf8")) as unknown;
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("body");
+      if (!value || typeof value !== "object" || Array.isArray(value))
+        throw new Error("body");
       get = (name) => (value as Record<string, unknown>)[name];
     } else throw new Error("media");
   }
@@ -115,7 +134,12 @@ export function registerUnsubscribeRoutes(
     title: string,
     message: string,
     headers: Record<string, string> = {},
-  ) => publicMessage(i18n, { status, title, message, siteName: deps.settings().siteName }, headers);
+  ) =>
+    publicMessage(
+      i18n,
+      { status, title, message, siteName: deps.settings().siteName },
+      headers,
+    );
   const invalidUUID = (context: RequestContext, ...names: string[]) =>
     names.some((name) => !uuidPattern.test(context.params[name] ?? ""))
       ? page(
@@ -128,14 +152,26 @@ export function registerUnsubscribeRoutes(
   /** The marketing send and its current subscriber, only when both UUIDs belong together. */
   const target = (sendUuid: string, subscriberUuid: string) => {
     const send = deps.sends.byUuid(sendUuid.toLowerCase());
-    if (!send || send.kind !== "marketing" || send.list_id === null || send.subscriber_id === null)
+    if (
+      !send ||
+      send.kind !== "marketing" ||
+      send.list_id === null ||
+      send.subscriber_id === null
+    )
       return null;
     const subscriber = deps.subscribers.get(send.subscriber_id);
-    if (!subscriber || subscriber.uuid !== subscriberUuid.toLowerCase()) return null;
+    if (!subscriber || subscriber.uuid !== subscriberUuid.toLowerCase())
+      return null;
     return { send: { ...send, list_id: send.list_id }, subscriber };
   };
   const notFound = (i18n: Translation, headers: Record<string, string> = {}) =>
-    page(i18n, 404, i18n.T("globals.terms.notFound"), i18n.T("public.errorFetchingEmail"), headers);
+    page(
+      i18n,
+      404,
+      i18n.T("globals.terms.notFound"),
+      i18n.T("public.errorFetchingEmail"),
+      headers,
+    );
 
   router.route("GET", "/m/:sendUUID/unsubscribe/:subUUID", (context) => {
     const t = context.app.i18n;
@@ -144,7 +180,13 @@ export function registerUnsubscribeRoutes(
     const found = target(context.params.sendUUID!, context.params.subUUID!);
     if (!found) return notFound(t, noIndex);
     if (found.subscriber.status === "blocklisted")
-      return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
+      return page(
+        t,
+        200,
+        t.T("public.noSubTitle"),
+        t.T("public.blocklisted"),
+        noIndex,
+      );
     const settings = deps.settings();
     const title = t.T("public.unsubscribeTitle");
     const body = render(
@@ -163,8 +205,15 @@ export function registerUnsubscribeRoutes(
                 <>
                   <hr />
                   <p class="small">
-                    <input id="privacy-blocklist" type="checkbox" name="blocklist" value="true" />{" "}
-                    <label for="privacy-blocklist">{t.T("public.unsubFull")}</label>
+                    <input
+                      id="privacy-blocklist"
+                      type="checkbox"
+                      name="blocklist"
+                      value="true"
+                    />{" "}
+                    <label for="privacy-blocklist">
+                      {t.T("public.unsubFull")}
+                    </label>
                   </p>
                 </>
               ) : null}
@@ -189,18 +238,29 @@ export function registerUnsubscribeRoutes(
     const t = context.app.i18n;
     const bad = invalidUUID(context, "sendUUID", "subUUID");
     if (bad) return bad;
-    if (!target(context.params.sendUUID!, context.params.subUUID!)) return notFound(t);
+    if (!target(context.params.sendUUID!, context.params.subUUID!))
+      return notFound(t);
     let form: { blocklist: boolean; manage: boolean };
     try {
       form = await readForm(context.request);
     } catch (error) {
       if (error instanceof HttpError) throw error;
-      return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
+      return page(
+        t,
+        400,
+        t.T("globals.terms.error"),
+        t.T("globals.messages.invalidData"),
+      );
     }
     const blocklist = deps.settings().allowBlocklist && form.blocklist;
     // Preference management (manage=true) is the M2.5 preferences page.
     if (form.manage && !blocklist)
-      return page(t, 400, t.T("globals.terms.error"), t.T("public.invalidFeature"));
+      return page(
+        t,
+        400,
+        t.T("globals.terms.error"),
+        t.T("public.invalidFeature"),
+      );
     const done = writeTransaction(deps.db, () => {
       // Re-read inside the write so a concurrent identity change cannot be unsubscribed.
       const found = target(context.params.sendUUID!, context.params.subUUID!);
@@ -210,11 +270,21 @@ export function registerUnsubscribeRoutes(
         found.send.list_id,
         blocklist,
       );
-      effects.unsubscribed({ subscriberId: found.subscriber.id, listIds, blocklisted: blocklist });
+      effects.unsubscribed({
+        subscriberId: found.subscriber.id,
+        listId: found.send.list_id,
+        listIds,
+        blocklisted: blocklist,
+      });
       return true;
     });
     if (!done) return notFound(t);
-    return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
+    return page(
+      t,
+      200,
+      t.T("globals.terms.unsubscribed"),
+      t.T("public.unsubbedInfo"),
+    );
   });
 
   router.route("GET", "/m/:sendUUID/px.png", (context) => {
@@ -225,7 +295,10 @@ export function registerUnsubscribeRoutes(
       const send = deps.sends.byUuid(context.params.sendUUID!.toLowerCase());
       if (send)
         try {
-          deps.tracking.view(send.id, settings.individualTracking ? send.subscriber_id : null);
+          deps.tracking.view(
+            send.id,
+            settings.individualTracking ? send.subscriber_id : null,
+          );
         } catch (error) {
           // listmonk always answers with the pixel and logs a registration failure.
           context.app.logger.error(error);
@@ -233,7 +306,11 @@ export function registerUnsubscribeRoutes(
     }
     return new Response(Uint8Array.from(pixel), {
       status: 200,
-      headers: { "Content-Type": "image/png", "Cache-Control": "no-cache", ...noIndex },
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "no-cache",
+        ...noIndex,
+      },
     });
   });
 
@@ -246,8 +323,18 @@ export function registerUnsubscribeRoutes(
     const send = deps.sends.byUuid(sendUuid);
     const link = send ? deps.tracking.get(linkUuid) : null;
     // No open redirect: the link must have been rendered into this send's message.
-    if (!send || !link || !deps.sends.bodyIncludes(send.id, linkPath(sendUuid, linkUuid)))
-      return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidLink"), noIndex);
+    if (
+      !send ||
+      !link ||
+      !deps.sends.bodyIncludes(send.id, linkPath(sendUuid, linkUuid))
+    )
+      return page(
+        t,
+        400,
+        t.T("globals.terms.error"),
+        t.T("globals.messages.invalidLink"),
+        noIndex,
+      );
     const settings = deps.settings();
     if (!settings.disableTracking)
       deps.tracking.click(
@@ -255,6 +342,9 @@ export function registerUnsubscribeRoutes(
         link.id,
         settings.individualTracking ? send.subscriber_id : null,
       );
-    return new Response(null, { status: 307, headers: { Location: link.url, ...noIndex } });
+    return new Response(null, {
+      status: 307,
+      headers: { Location: link.url, ...noIndex },
+    });
   });
 }
