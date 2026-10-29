@@ -79,6 +79,19 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
 | `GET/POST /api/webhooks`, `PUT/DELETE /api/webhooks/:id`, `GET /api/webhooks/:id/deliveries` | Outbound webhooks |
 | `POST /webhooks/bounce/mailgun` | Mailgun bounce webhook |
 
+M2.2's native send journal follows [D53](09-decisions.md#d53-durable-outbox-boundaries-and-native-send-log-contract):
+`GET /api/sends` returns data containing results/total/page/per_page with bounded
+id-descending pagination and exact status/kind/source/subscriber_id/list_id
+filters; detail returns one safe projection. The explicit sends:get grant reads
+the global journal, and sends:manage authorizes manual resend with current
+Origin/CSRF/credential checks. Bodies, headers, attachments, payload, idempotency
+keys and provider diagnostics are never projected. Manual resend accepts empty
+input or JSON {}, creates at most one new child of a failed/unknown row, and
+repeated requests return the existing child. Other statuses or unavailable
+payload/policy return 409; missing individual rows return 404. This is a native
+design contract, not a ported upstream send-log endpoint. Marketing production
+sending remains staged until M2.4's full policy.
+
 `GET /api/events` keeps its listmonk meaning (the admin's live log stream). That is why subscriber events use a different path.
 
 ## Authentication and permissions

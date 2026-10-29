@@ -82,6 +82,31 @@ Async transactional sends and all sequence sends go through the `sends` table:
 3. On success: `sent`, with `sent_at`. On proven permanent non-acceptance: `failed`. Only transactional messages with proven non-acceptance may return to `queued` with backoff, up to 5 attempts. Marketing messages are never retried automatically; ambiguous acceptance becomes `unknown` ([D24](09-decisions.md#d24-disable-library-requeues-and-classify-smtp-outcomes-before-retry)).
 4. A row found in `sending` after a restart becomes `unknown` and is **not retried**. For marketing, a duplicate is worse than a missed email. An admin can resend it from the send log.
 
+### M2.2 durable boundary and staged callers
+
+[D53](09-decisions.md#d53-durable-outbox-boundaries-and-native-send-log-contract)
+defines the native send-log schema/API, safe projections, proof-based retry
+schedule and idempotent manual-resend lineage. Messaging owns prepared payloads
+and journal SQL. M2.3 supplies the tx producer/rendering later; M5 supplies
+sequence producers. M2.2 exercises production ownership through a separately
+compiled test-only producer, with no extra production route or flag.
+
+Every queued send has its stable Message-ID before commit. Retry is limited
+to positively proven transient non-acceptance, five attempts total with
+1/2/4/8-second backoff; neither marketing, partial acceptance nor uncertainty
+replays automatically. Startup sending rows become unknown, never queued.
+Manual resend of a failed/unknown row creates one new retry_of child; repeated
+requests return that child. It is an intentional new send, potentially duplicating
+an earlier unknown acceptance. Journal payloads and transport secrets are never
+returned by its HTTP routes. Existing sends:get and sends:manage grants are global
+journal grants, independently of list roles and tx:send.
+
+Until M2.4 supplies consent, cap and unsubscribe policy, production marketing
+outbox/resend stays closed. An explicitly injected fixture policy exercises
+marketing at-most-once mechanics without claiming that later policy exists.
+M2.3 must preserve this staging until M2.4. Transactional linked subscribers
+are rechecked before sending, including blocklist and identity replacement.
+
 ## Unsubscribe
 
 - **Campaigns:** as in listmonk. `unsubscribe_url` in templates, plus `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers (RFC 8058) when `privacy.unsubscribe_header` is on.
