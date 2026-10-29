@@ -222,3 +222,12 @@ atomically with native HTTP 400 `Invalid data.` and no write; pinned PostgreSQL
 returns HTTP 500 with no write. Ignored, overwritten and legitimately normalized
 input retains its documented behavior. This settings-specific decision is
 separate from subscriber D43 and requires no pending policy disposition.
+
+D52 explicitly corrects SMTP domain routing for a quoted local part containing
+@. After exact full-address matching, native uses the actual final domain;
+pinned getPool uses the first @ of the unquoted address. With From
+Sender <"sender@x"@route.test>, no full match, valid Return-Path and mappings
+x@route.test / route.test, pinned selects x@route.test while native selects
+route.test, one accepted message each. This prevents local-part contents
+from steering mail to an unrelated configured provider bucket. The paired
+routing corpus marks this exact difference; ordinary controls remain compatible.
