@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.4 sequence scheduler, [PR #25](https://github.com/iglo-tech/iglo.email/pull/25), head e03bc7d. Round-1 fixes pushed (migration 5); Sol round-2 fix-only review running. Last critical-path task.
-Next: lead disposition of round 2, merge, then the next eligible work-plan task.
+M5.6 worked example end to end, branch task/M5.6-worked-example, [brief](briefs/M5.6.md). One Opus medium worker dispatched; no reviewer active. Critical path (to M5.4) complete.
+Next: on worker handback, Sol xhigh round 1, lead disposition, merge. Then M3.1 campaigns API, toward M3.2 and M6.1.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -24,6 +24,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M5.4         | [#25](https://github.com/iglo-tech/iglo.email/pull/25) | b934fb2 | Sequence scheduler                                        |
 | Test hygiene | [#24](https://github.com/iglo-tech/iglo.email/pull/24) | a74c4c9 | Ignore host loopback port probes (lead-merged, test-only) |
 | M5.3         | [#23](https://github.com/iglo-tech/iglo.email/pull/23) | 8bd33f6 | Sequences and enrollments                                 |
 | M5.2         | [#22](https://github.com/iglo-tech/iglo.email/pull/22) | 8b328c8 | Sequence conditions                                       |
