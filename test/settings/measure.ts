@@ -31,6 +31,18 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         }
         return mean(samples);
       };
+      const health = await measure(50, 5, async () => {
+        await request("/health");
+      });
+      const lists = await measure(50, 5, async () => {
+        await request("/api/lists");
+      });
+      const subscriber = await request("/api/subscribers", "POST", {
+        email: "measure@example.test",
+      });
+      const subscribers = await measure(50, 5, async () => {
+        await request(`/api/subscribers/${subscriber.id}`);
+      });
       const get = await measure(50, 5, async () => {
         await request("/api/settings");
       });
@@ -89,7 +101,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         await response.arrayBuffer();
       });
       process.stdout.write(
-        `${JSON.stringify({ repetition, get, full, key, restartMs, sessionLogin, sessionRead })}\n`,
+        `${JSON.stringify({ repetition, health, lists, subscribers, get, full, key, restartMs, sessionLogin, sessionRead })}\n`,
       );
     },
     admin,

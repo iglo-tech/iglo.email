@@ -2,8 +2,9 @@
 // The complete BSD notice is embedded from assets/licenses/go-1.27.2-BSD.txt.
 import { isIP } from "node:net";
 
-export function validFromAddress(input: string): boolean {
+export function parseAddress(input: string): string | undefined {
   let pos = 0;
+  let mailbox: string | undefined;
   const space = () => {
     while (input[pos] === " " || input[pos] === "\t") pos++;
   };
@@ -101,11 +102,14 @@ export function validFromAddress(input: string): boolean {
   const spec = () => {
     const start = pos;
     space();
+    const localStart = pos;
     if (!(input[pos] === '"' ? quoted() : atom(false)) || input[pos++] !== "@") {
       pos = start;
       return false;
     }
+    const localEnd = pos - 1;
     space();
+    const domainStart = pos;
     if (input[pos] === "[") {
       const end = input.indexOf("]", pos + 1);
       if (end < 0) {
@@ -127,6 +131,11 @@ export function validFromAddress(input: string): boolean {
       pos = start;
       return false;
     }
+    const rawLocal = input.slice(localStart, localEnd);
+    const local = rawLocal.startsWith('"')
+      ? rawLocal.slice(1, -1).replace(/\\([\s\S])/g, "$1")
+      : rawLocal;
+    mailbox = `${local}@${input.slice(domainStart, pos)}`;
     return true;
   };
   const address = (group: boolean): number => {
@@ -189,5 +198,9 @@ export function validFromAddress(input: string): boolean {
     return 1;
   };
   const count = address(true);
-  return count === 1 && cfws() && pos === input.length;
+  return count === 1 && cfws() && pos === input.length ? mailbox : undefined;
+}
+
+export function validFromAddress(input: string): boolean {
+  return parseAddress(input) !== undefined;
 }

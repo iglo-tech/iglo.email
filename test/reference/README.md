@@ -260,6 +260,42 @@ fixture owners and their database; a separate compiled test exercises an actual
 process restart with a retained valid session. D46 covers final writable NUL
 rejection with safe native 400/no write versus reference 500/no write. The corpus
 is representative rather than an exhaustive proof of parser compatibility.
-The SMTP test route remains guarded 501 until M2.1. Masked-secret checks do not
-prove a future SMTP delivery uses the original secret; M2.1 verifies that with
-Mailpit.
+The M2.1 candidate adds `bun run contract:messaging:reference` for the pinned
+SMTP-test response and Mailpit message, and `bun run contract:messaging` for
+compiled production, D49 admission and D50 settings. A test-only caller runs in Bun and as a compiled executable, reads the real
+settings owner and checks authentication and RSA signatures before and after
+restart/retention and null clearing. `bun run messaging:fixture`
+checks production message composition through owned Mailpit; `messaging:faults`,
+`messaging:auth` and `messaging:tls` exercise the owned relay and local TLS
+Mailpit. `bun run messaging:corpus` drives plain, Unicode HTML/alternate,
+binary and inline attachments, and server/message headers through the pinned
+TX/template API first and then a separately compiled production-owner caller.
+The reference harness creates its invocation-owned filesystem upload directory
+and opts into synthetic SMTP headers for this corpus only. SMTP tests also cover
+body-held revocation, CSRF, origin, API credentials, capacity and absolute
+deadlines. A compiled process is stopped while a test response is held after
+Mailpit accepts DATA. TLS probes include process-local CA trust and hostname
+mismatch in STARTTLS and implicit modes. These are finite fixture observations,
+not provider or final-delivery evidence; the TX endpoint itself is not ported.
+
+The D51 regression corpus pairs missing AUTH for configured PLAIN/LOGIN/CRAM
+(500 and no message in either mode) and partial Cc/Bcc rejection (native safe
+partial-acceptance 500 with one intake, pinned 500 with no DATA/intake). The
+owner's partial accepted/rejected result never authorizes replay. Native also
+rejects an unadvertised selected mechanism without transmitting credentials;
+the paired AUTH relay verifies native500/no AUTH/no intake versus reference
+200/authentication/one intake when it would accept that unadvertised method.
+
+`bun run messaging:routing` pairs exact/domain selection for ordinary,
+quoted-local and Unicode From spellings through the pinned TX driver and a
+compiled owner caller. The shared HTTP corpus covers PLAIN refusal on an
+unencrypted non-localhost-named owned peer, recipient-list rejection and a
+quoted-display-name positive control. Null header maps are exercised through
+both the HTTP diagnostic and persisted settings/restart/signing callers. The
+trusted TLS clients authenticate with PLAIN after STARTTLS/implicit TLS.
+
+D52 adds the explicit quoted-local @ case: the pinned first-separator bucket
+and native actual-domain bucket each receive one message with a valid envelope
+Return-Path. Other routing controls still agree. The shared SMTP corpus also
+checks password-first LOGIN challenges and unknown-challenge rejection without
+a credential reply; the relay distinguishes AUTH cancellation from credentials.

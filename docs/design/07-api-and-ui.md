@@ -55,7 +55,7 @@ Deliberate differences:
 | Settings bootstrap root URL | GET projects the effective bootstrap root; full snapshot PUT ignores this read-only field and per-key mutation returns safe 400/no write | Preserve flag/environment ownership and authentication/public-link consistency (D14/[D44](09-decisions.md#d44-settings-ownership-safe-per-key-updates-and-in-process-activation)) |
 | Per-key settings updates | Recognized writable keys receive full-candidate typed/invariant validation; unknown/read-only or invalid values fail safely without mutation | Avoid upstream raw per-key writes corrupting later reads or bypassing full-PUT validation (D44) |
 | Settings application | Supported policy changes take effect in-process; successful update envelope remains data:true | Avoid upstream delayed SIGHUP/request interruption; later-owner settings do not claim an implemented sender/loop (D44) |
-| Settings SMTP test before M2.1 | Authenticated, authorized mutation returns explicit 501; no connection/send/queue | M1.2 stores configuration; M2.1 owns delivery. No fake success (D44) |
+| Settings SMTP test | Authorized sends return data:[] on SMTP acceptance, safe error categories on failure, and 429 at capacity | Avoid upstream process-wide logs and provider diagnostics in this protected endpoint (D49) |
 | Dropped update-check setting | Native app.check_updates stays false/no-op and cannot be enabled | GitHub update polling is dropped in scope; no external update process is installed (D44) |
 | Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
 | `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
@@ -162,7 +162,7 @@ use the query form. Selector values are decoded exactly once, never recursively.
 The path convenience form and query form share permissions and atomic behavior.
 
 M1.2 supplies persisted settings and authenticated routes, including
-the D44 SMTP-test staging boundary. Newly issued sessions capture their expiry;
+the D44 settings boundary; M2.1 activates the SMTP test under D49. Newly issued sessions capture their expiry;
 legacy sessions retain the original seven-day policy. Subscriber mutations use
 the current domain policy. `app.lang` is retained as configuration, but the
 current runtime translation remains English; changing it does not hot-switch the
@@ -196,8 +196,7 @@ syntax, field-shape rejection and XML's existing strict boundary are preserved.
 Shared compiled and reference corpora exercise binding, safe error envelopes,
 numeric ranges, supported document and per-key types, address and cron cases.
 This finite coverage is representative; reproduced unlisted differences must
-still be corrected. Secret retention is visible through masked projections
-until M2.1 verifies actual authentication and delivery with Mailpit.
+still be corrected. A compiled test-only caller exercises the unmasked settings owner through local authenticated SMTP and Mailpit, including retention after restart.
 
 M2.1 activates the SMTP test under D49: real authorized send, bounded admission,
 safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
@@ -205,7 +204,17 @@ safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
 authentication/cookie and settings behavior remains governed by existing policy.
 D51 requires configured PLAIN/LOGIN/CRAM to be advertised and successfully
 authenticated before MAIL/DATA, with no unauthenticated fallback or secret
-transmission to a peer that does not advertise the selected mechanism.
+transmission to a peer that does not advertise the selected mechanism. A
+noncompliant peer that would accept the unadvertised method gets native
+500/no AUTH/no intake versus reference200/authenticated/one intake; this
+strict capability difference is paired explicitly for all three mechanisms.
+PLAIN also preserves Go's TLS-or-exact-localhost guard before transmitting
+credentials. Each To entry remains one parsed mailbox, not an address list;
+invalid entries fail without SMTP and use the safe diagnostic 500. Exact
+routing uses Go-compatible quoted-local parsing/simple Unicode casing; D52
+defines the actual-domain exception for a quoted local @. Accepted null
+header-map entries behave as empty maps. The other listed items are compatible
+corrections, not newly permitted sending behavior.
 Native keeps partial recipient acceptance and exposes both subsets to its
 caller instead of aborting before DATA as upstream does. The protected test
 returns safe 500 SMTP test was accepted for some recipients only. for that
@@ -214,8 +223,12 @@ this is not proof that nothing was sent or permission to retry. Full
 acceptance remains 200/data:[] and D24 forbids automatic replay.
 D50 adds native-only optional SMTP dkim:{domain_name,key_selector,private_key}.
 GET masks the key; empty key retains by UUID, null clears, invalid candidates
-fail atomically. Runtime activation and effect evidence belong to M2.1; this
-decision entry does not claim the worker implementation already exists.
+fail atomically. The Bun and compiled test-only callers verify signing, retained credentials,
+restart and clearing. Full and per-key invalid candidates roll back, including nested shape,
+key type, strength and size failures. The owner uses absolute 60-second send,
+10-second test and five-second shutdown deadlines; forced active cancellation is
+ambiguous and queued work that never started is locally rejected. These are
+SMTP observations, not a final-delivery or durable-outbox guarantee.
 
 D46 rejects NUL in final normalized writable settings strings and map keys
 atomically with native HTTP 400 `Invalid data.` and no write; pinned PostgreSQL

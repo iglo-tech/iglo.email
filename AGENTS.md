@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place. The version-1 migration installs the schema; M1.3 supplies users, real authentication and a functional password-login form; M1.4 adds role administration and TOTP login; M1.5 adds authenticated list CRUD with live counts; M1.6 adds numeric/external subscriber lifecycle and ID-selected bulk actions. M1.2 adds persisted validated settings, creation-time session expiry and live subscriber domain policy; the guarded SMTP test remains HTTP 501 until M2.1. Collection/search/export, sending, other domains, background loops and full admin screens remain later tasks. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place. The version-1 migration installs the schema; M1.3 supplies users, real authentication and a functional password-login form; M1.4 adds role administration and TOTP login; M1.5 adds authenticated list CRUD with live counts; M1.6 adds numeric/external subscriber lifecycle and ID-selected bulk actions. M1.2 adds persisted validated settings, creation-time session expiry and live subscriber domain policy. M2.1 adds SMTP pools, message composition and outcomes, DKIM and real protected SMTP diagnostics. Collection/search/export, durable sending/outbox, other domains, background loops and full admin screens remain later tasks. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 
@@ -78,5 +78,10 @@ bun run contract:roles:reference
 `bun test test/db test/loops` covers the database and loop contracts with synthetic fixture-owned stores. `bun run db:measure` repeats the bounded native-versus-helper storage workload; `bun run auth:measure` repeats the opt-in auth measurements. Neither is a CI threshold.
 
 Changes to sending, scheduling or storage must include before/after measurements, stored under `docs/perf/`.
+
+Place archived control source beneath an owned test-excluded cache such as
+`node_modules/.cache/`, not an ordinary git-ignored source directory: Bun's
+test discovery can still traverse the latter and run the control's tests too.
+Preserve source/executable hashes and use an archive, not another worktree.
 
 The development reference requires Git, Docker and access to the pinned GitHub releases and Postgres image. Run `bun run reference:prepare`, `bun run reference:smoke`, or `bun run reference:run -- <command> [args...]`. These are separate from `bun run check`.

@@ -109,7 +109,7 @@ export async function runSettingsContract(target: {
   if (target.mode === "reference") {
     check(smtpTest.status === 400, "smtp-test-reference-missing-email");
   } else {
-    check(smtpTest.status === 501, "smtp-test-staged");
+    check(smtpTest.status === 400, "smtp-test-missing-email");
   }
   const candidate = structuredClone(snapshot);
   candidate["app.from_email"] = [

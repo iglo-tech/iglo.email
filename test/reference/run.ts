@@ -226,6 +226,8 @@ async function run(args: string[]): Promise<number> {
     await mkdir(join(cache, "runs"), { recursive: true, mode: 0o700 });
     await mkdir(directory, { mode: 0o700 });
     ownsDirectory = true;
+    // The pinned filesystem media driver expects its upload directory to exist.
+    await mkdir(join(directory, "uploads"), { mode: 0o700 });
     receiver = startReceiver();
     const [httpPort, smtpPort, referencePort] = await availablePorts(3);
     if (!httpPort || !smtpPort || !referencePort) throw new Error("Could not allocate ports");
@@ -373,6 +375,9 @@ async function run(args: string[]): Promise<number> {
         username: "",
         password: "",
         tls_type: "none",
+        ...(process.env.M21_CORPUS_HEADERS === "1"
+          ? { email_headers: [{ "X-Fixture": "server-default", "X-Server": "server-only" }] }
+          : {}),
       },
     ];
     // Update individual keys: the full settings response masks unrelated
