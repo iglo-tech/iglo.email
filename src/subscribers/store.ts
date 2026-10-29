@@ -70,6 +70,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
     }),
   });
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
+  const byEmail = (email: string) => q.get("subscriber-by-email").get(email) as Row | null;
   const conflict = (error: unknown): never => {
     if (error instanceof Error && error.message.includes("subscribers.external_id"))
       throw new HttpError(409, "External ID already exists");
@@ -110,6 +111,7 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
   return {
     get,
     external,
+    byEmail,
     memberships,
     project,
     transaction(fn: () => Response): Response {

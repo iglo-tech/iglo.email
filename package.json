@@ -52,6 +52,9 @@
     "messaging:corpus": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && M21_CORPUS_HEADERS=1 bun run reference:run -- bun test/messaging/corpus.ts",
     "contract:templates": "bun run build && bun test/contract/cli.ts owned templates",
     "contract:templates:reference": "bun run reference:run -- bun test/contract/templates.ts reference",
+    "contract:tx": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned tx",
+    "contract:tx:reference": "bun run reference:run -- bun test/contract/tx.ts reference",
+    "tx:measure": "bun test/tx/measure.ts",
     "templates:compiled": "bun test/templates/compiled-check.ts"
   },
   "dependencies": {

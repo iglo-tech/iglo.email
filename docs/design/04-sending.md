@@ -73,6 +73,8 @@ Rules:
 - **Marketing sends require permission:** this is consent, not bookkeeping, so it stays. The recipient must be an existing subscriber whose membership of `list_id` is `confirmed`, or `unconfirmed` on a single opt-in list. Otherwise the send is recorded as `skipped` with a reason and the API returns it with `status: "skipped"`. Marketing sends also count toward and respect the frequency cap.
 - Every send is a row in `sends`, whatever its outcome.
 
+M2.3 implements this endpoint in `src/tx`. JSON and listmonk's multipart form (`data` plus `file` parts) are accepted with `tx:send`. A synchronous call commits `queued` rows and then has the outbox owner claim and send exactly those rows before responding, so the outcome is journaled first; a proven transient rejection leaves the row `queued` for the outbox retry schedule. An `idempotency_key` is stored, hashed, as `tx:<sha256>:<request fingerprint>:<index>` in the existing unique `sends.idempotency_key` column, so a multi-recipient request needs no schema change. `kind: "marketing"` requires an existing `list_id` and is journaled `skipped` (`policy_unavailable`) until M2.4 ([D58](09-decisions.md#d58-stage-marketing-transactional-sends-until-m24)). Differences are listed in [API and admin UI](07-api-and-ui.md#api-compatibility-policy); measurements are in [M2.3](../perf/M2.3-tx.md).
+
 ## Outbox
 
 Async transactional sends and all sequence sends go through the `sends` table:

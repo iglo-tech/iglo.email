@@ -6,6 +6,7 @@ import type { Message, Outcome } from "@/messaging/email";
 import { decodePayload, encodePayload } from "@/messaging/payload";
 import type { SubscriberStore } from "@/subscribers/store";
 import { HttpError } from "@/server/response";
+import { createHash } from "node:crypto";
 
 export type SendSource = "tx" | "sequence";
 export type SendKind = "transactional" | "marketing";
@@ -40,6 +41,18 @@ interface PublicRow {
   next_attempt_at: string | null;
   created_at: string;
   sent_at: string | null;
+}
+/** One recipient of a producer request; the journal decides queued or skipped. */
+export interface RequestedSend {
+  send: PreparedSend;
+  /** Captured with the prepared payload; a different current subscriber aborts the request. */
+  subscriberUuid: string | null;
+}
+export interface SendSummary {
+  id: number | object;
+  uuid: string;
+  status: string;
+  smtp_message_id: string;
 }
 interface Row extends PublicRow {
   payload: string | null;
@@ -201,8 +214,147 @@ export function createSends(options: {
     wake();
     return result;
   }
+  const summary = (row: PublicRow): SendSummary => ({
+    id: jsonID(row.id)!,
+    uuid: row.uuid,
+    status: row.status,
+    smtp_message_id: row.smtp_message_id,
+  });
+  // Idempotency rows store `tx:<sha256(key)>:<fingerprint>:<index>` in the existing
+  // unique column, so one request with several recipients keeps one key and the
+  // request fingerprint without a schema change. The raw key is never stored.
+  const keyPrefix = (key: string) => `tx:${createHash("sha256").update(key).digest("hex")}:`;
+  function replay(prefix: string, fingerprint: string): PublicRow[] | null {
+    const rows = db
+      .query<PublicRow & { idempotency_key: string }, [string, string]>(
+        `SELECT ${publicColumns}, idempotency_key FROM sends WHERE idempotency_key >= ? AND idempotency_key < ?`,
+      )
+      .all(prefix, `${prefix.slice(0, -1)};`);
+    if (!rows.length) return null;
+    const indexed = rows.map((row) => {
+      const rest = row.idempotency_key.slice(prefix.length);
+      const at = rest.lastIndexOf(":");
+      return { row, fingerprint: rest.slice(0, at), index: Number(rest.slice(at + 1)) };
+    });
+    if (indexed.some((item) => item.fingerprint !== fingerprint))
+      throw new HttpError(409, "Idempotency key was already used with a different request.");
+    return indexed.sort((a, b) => a.index - b.index).map((item) => item.row);
+  }
+  /**
+   * Journal every recipient of one producer request atomically. Linked identities and
+   * blocklist status are rechecked in the write; blocklisted addresses and marketing
+   * without an injected policy are skipped and never queued. A repeated idempotency
+   * key returns the first rows and inserts nothing.
+   */
+  function enqueueRequest(input: {
+    sends: RequestedSend[];
+    idempotency?: { key: string; fingerprint: string } | null;
+    authorize?: () => void;
+  }): { replayed: boolean; ids: bigint[]; sends: SendSummary[]; queued: bigint[] } {
+    if (!Array.isArray(input.sends) || !input.sends.length || input.sends.length > 1000)
+      throw new Error("Invalid prepared send");
+    const fingerprint = input.idempotency?.fingerprint;
+    if (
+      input.idempotency &&
+      (typeof input.idempotency.key !== "string" ||
+        !input.idempotency.key ||
+        typeof fingerprint !== "string" ||
+        !/^[0-9a-f]{64}$/.test(fingerprint))
+    )
+      throw new Error("Invalid prepared send");
+    const prepared = input.sends.map(({ send, subscriberUuid }) => {
+      if (
+        !send ||
+        !["tx", "sequence"].includes(send.source) ||
+        !["transactional", "marketing"].includes(send.kind)
+      )
+        throw new Error("Invalid prepared send");
+      if ((send.subscriberId == null) !== (subscriberUuid === null))
+        throw new Error("Invalid prepared send");
+      return { send, subscriberUuid, payload: encodePayload(send.message, subscriberUuid) };
+    });
+    const result = writeTransaction(db, () => {
+      input.authorize?.();
+      const prefix = input.idempotency ? keyPrefix(input.idempotency.key) : null;
+      if (prefix) {
+        const previous = replay(prefix, fingerprint!);
+        if (previous)
+          return {
+            replayed: true,
+            ids: previous.map((row) => row.id),
+            sends: previous.map(summary),
+            queued: [],
+          };
+      }
+      const rows: PublicRow[] = [];
+      const queued: bigint[] = [];
+      prepared.forEach(({ send, subscriberUuid, payload }, index) => {
+        const to = send.message.to[0]!;
+        let skip: string | null = null;
+        if (send.subscriberId != null) {
+          const current = subscribers.get(send.subscriberId);
+          if (!current || current.uuid !== subscriberUuid || current.email !== to)
+            throw new HttpError(409, "Subscriber changed. Retry the request.");
+          if (current.status === "blocklisted") skip = "subscriber_blocklisted";
+        } else if (subscribers.byEmail(to)?.status === "blocklisted")
+          skip = "subscriber_blocklisted";
+        if (
+          !skip &&
+          send.kind === "marketing" &&
+          (!options.marketingPolicy ||
+            !options.marketingPolicy({
+              subscriberId: send.subscriberId ?? null,
+              listId: send.listId ?? null,
+            }))
+        )
+          skip = "policy_unavailable";
+        const uuid = crypto.randomUUID();
+        const row = db
+          .query<{ id: bigint }, any[]>(
+            `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+          )
+          .get(
+            uuid,
+            send.source,
+            send.kind,
+            send.subscriberId ?? null,
+            to,
+            send.templateId ?? null,
+            send.enrollmentId ?? null,
+            send.stepId ?? null,
+            send.listId ?? null,
+            prefix ? `${prefix}${fingerprint}:${index}` : null,
+            skip ? "skipped" : "queued",
+            skip,
+            messageId(uuid),
+            skip ? null : payload,
+            now(),
+          )!;
+        if (!skip) queued.push(row.id);
+        rows.push(getPublic(row.id)!);
+      });
+      return { replayed: false, ids: rows.map((row) => row.id), sends: rows.map(summary), queued };
+    });
+    if (result.queued.length) wake();
+    return result;
+  }
   return {
     enqueue,
+    enqueueRequest,
+    summary(id: bigint) {
+      const row = getPublic(id);
+      return row ? summary(row) : null;
+    },
+    /** Claim one specific queued row for an awaited producer dispatch. */
+    claimQueued(id: bigint, time: Date, lease: Date): Row | null {
+      return writeTransaction(db, () => {
+        const changed = db.run(
+          "UPDATE sends SET status='sending', attempts=attempts+1, claimed_until=?, next_attempt_at=NULL WHERE id=? AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)",
+          [lease.toISOString(), id, time.toISOString()],
+        );
+        return changed.changes ? get(id) : null;
+      });
+    },
     resend,
     get(id: bigint) {
       const row = getPublic(id);

@@ -31,6 +31,7 @@ import { createCampaignTemplateReferences } from "@/campaigns/template-reference
 import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
+import { registerTxRoutes } from "@/tx/routes";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -117,6 +118,24 @@ async function main(): Promise<void> {
     });
     registerSendRoutes(router, sends, auth);
     outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+    registerTxRoutes(router, {
+      auth,
+      sends,
+      outbox,
+      subscribers: subscriberStore,
+      templates,
+      renderer,
+      lists,
+      policy: () => {
+        const current = settings!.read();
+        return {
+          // listmonk getDefaultFromEmail: the first configured address.
+          fromEmail: current["app.from_email"][0] ?? "",
+          domainAllowlist: current["privacy.domain_allowlist"],
+          domainBlocklist: current["privacy.domain_blocklist"],
+        };
+      },
+    });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       let closing = false;

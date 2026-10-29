@@ -384,3 +384,10 @@ Unknown names reject before runtime hash allocation/evaluation; accepted
 arguments reserve work and array/object counts reject before implicit coercion.
 A bounded large-context coercion regression also runs through source HTTP and
 the isolated compiled renderer (production previews supply synthetic context).
+
+M2.3 adds `bun run contract:tx:reference` (pinned upstream `POST /api/tx`
+results observed in Mailpit) and `bun run contract:tx`, which runs the same
+corpus against compiled production with its declared differences, async,
+idempotency (including across restart), D58 marketing staging and atomicity.
+In-process behavior, limits and authorization are in `bun test test/tx`;
+`bun run tx:measure` records docs/perf/M2.3-tx.md.
