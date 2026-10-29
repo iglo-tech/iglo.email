@@ -37,8 +37,11 @@ for (let repetition = 1; repetition <= 3; repetition++) {
       const lists = await measure(50, 5, async () => {
         await request("/api/lists");
       });
+      const subscriber = await request("/api/subscribers", "POST", {
+        email: "measure@example.test",
+      });
       const subscribers = await measure(50, 5, async () => {
-        await request("/api/subscribers");
+        await request(`/api/subscribers/${subscriber.id}`);
       });
       const get = await measure(50, 5, async () => {
         await request("/api/settings");
