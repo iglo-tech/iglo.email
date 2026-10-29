@@ -156,6 +156,18 @@ Guarantees:
 - **Restart-safe:** all state is in `enrollments` and `sends`. Nothing waits in memory.
 - **Edits apply to the next step:** because the scheduler reads the current definition when a step is due, changing a template, a wait or a condition affects everyone who has not reached that step. The new `wait` applies to steps scheduled after the change; already scheduled `due_at` values are kept. The admin UI offers "reschedule active enrollments" for when that is not wanted.
 
+M5.4 implements this in `src/scheduler/scheduler.ts`, with enrollment SQL in `src/sequences/enrollments.ts` and send rows and marketing admission in `src/messaging/sends.ts` ([measurements and crash evidence](../perf/M5.4-scheduler.md)):
+
+- The claim skips enrollments of `paused` and `draft` sequences, so a large paused sequence cannot fill every batch; one paused after its claim is released. Writes apply only while the claim (lease and step) still holds, so an enrollment exited by an event during a decision is left alone.
+- A send already recorded for the current step is checked first and only advanced past. The send insert and the advance commit in one transaction, re-checking identity, blocklist, consent and the cap (queued rows count) inside it.
+- A step whose template is missing or not `tx` (deleted templates set `template_id` to null) records a `skipped` send with `skip_reason = 'template_unavailable'`, logs one attention message and advances. A rendering failure records `skipped` with `render_failed`, logs, and advances. A full renderer (capacity shared with the HTTP producers) retries in 15 seconds.
+- A condition error (timeout, memory limit, execution) keeps the claim for a backoff equal to how late the step already is, between 1 minute and 1 hour, logs an attention message without personal data, and never sends. `max_late` still applies on later passes.
+- `defer` sets `due_at` to the first instant whose cap window starts at or after the subscriber's latest counted marketing send (queued and sending rows count from their creation or attempt), at least 1 minute ahead.
+- A deleted current step advances to the step that took its position when it was removed (its old position minus the steps removed before it in the same save), keeping its due time.
+- Template data adds `subscriber.id`, `step.uuid`, `step.position` and `step.kind`; steps have no name. `trigger` is null for manual enrollments or once retention purged the event. `manage_url` is the marketing unsubscribe URL with `?manage=true` (listmonk's form; the M2.5 preferences page serves it) and empty for transactional steps.
+- Conditions get `triggerAt` from the trigger event (the enrollment start when there is none), `enrolledAt` from the enrollment, and `lastStepAt` from the enrollment's `updated_at`, which the scheduler changes only when a step ran (not for claims, deferrals or deleted steps).
+- A subscriber who no longer exists cancels the enrollment with `subscriber_deleted` (normally the cascade already removed it).
+
 ## Admin UI
 
 - Sequence list with counts: active, completed, exited enrollments; sent, skipped, opened, clicked per step.

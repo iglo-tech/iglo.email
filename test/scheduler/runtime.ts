@@ -161,6 +161,7 @@ export function seed(
   enrollments: ReturnType<typeof createEnrollments>,
   count: number,
   steps: { wait: string; kind: "transactional" | "marketing" }[],
+  prefix = "s",
 ) {
   return writeTransaction(db, () => {
     const list = db
@@ -192,7 +193,11 @@ export function seed(
       "INSERT INTO subscriber_lists(subscriber_id, list_id, status) VALUES (?, ?, 'confirmed')",
     );
     for (let i = 0; i < count; i++) {
-      const id = subscriber.get(crypto.randomUUID(), `s${i}@scheduler.test`, `Subscriber ${i}`)!.id;
+      const id = subscriber.get(
+        crypto.randomUUID(),
+        `${prefix}${i}@scheduler.test`,
+        `Subscriber ${i}`,
+      )!.id;
       member.run(id, list);
       const outcome = enrollments.enroll(sequence, id, false);
       if (!("enrollment" in outcome)) throw new Error(outcome.error);

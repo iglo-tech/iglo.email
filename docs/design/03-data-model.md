@@ -99,7 +99,7 @@ Steps are never hard-deleted while enrollments point at them; deleting sets `sta
 | `step_id` | INTEGER NULL → sequence_steps | Next step to run. NULL when finished |
 | `due_at` | TEXT NULL | When `step_id` should run |
 | `status` | TEXT CHECK IN (`active`, `completed`, `exited`, `canceled`) | |
-| `exit_reason` | TEXT NULL | `condition`, `event:<name>`, `unsubscribed`, `blocklisted`, `manual`, `sequence_archived` |
+| `exit_reason` | TEXT NULL | `condition`, `event:<name>`, `unsubscribed`, `blocklisted`, `manual`, `sequence_archived`, `subscriber_deleted` (M5.4) |
 | `claimed_until` | TEXT NULL | Scheduler lease |
 | `created_at`, `updated_at`, `finished_at` | TEXT | |
 
@@ -122,7 +122,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `list_id` | INTEGER NULL → lists | Unsubscribe scope for marketing sends |
 | `idempotency_key` | TEXT NULL UNIQUE | For tx API calls |
 | `status` | TEXT CHECK IN (`queued`, `sending`, `sent`, `failed`, `skipped`, `unknown`) | `unknown`: the process died while sending; never retried automatically |
-| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable` |
+| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed` |
 | `smtp_message_id` | TEXT NULL | Stable `Message-ID` assigned before enqueue commit |
 | `error` | TEXT NULL | |
 | `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes |
