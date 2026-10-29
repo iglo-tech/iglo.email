@@ -7,7 +7,7 @@ import {
   loopMetadataBody,
   loopMetadataOutput,
   loopModifierControls,
-  modifierCoercionCase,
+  coercionCases,
 } from "@/test/templates/budget-cases";
 
 test("loop conversions and filter/for arguments obey the message budget", async () => {
@@ -32,15 +32,17 @@ test("loop conversions and filter/for arguments obey the message budget", async 
       const response = await fetch(server.url, { method: "POST", body });
       expect(response.status).toBe(400);
     }
-    const coercion = await fetch(server.url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        body: modifierCoercionCase.body,
-        data: JSON.stringify(modifierCoercionCase.data),
-      }),
-    });
-    expect(coercion.status).toBe(400);
+    for (const coercionCase of coercionCases) {
+      const coercion = await fetch(server.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          body: coercionCase.body,
+          data: JSON.stringify(coercionCase.data),
+        }),
+      });
+      expect(coercion.status).toBe(400);
+    }
     const positive = await fetch(server.url, { method: "POST", body: loopMetadataBody });
     expect(positive.status).toBe(200);
     expect(await positive.text()).toBe(loopMetadataOutput);

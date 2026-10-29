@@ -23,10 +23,17 @@ export const budgetBypassBodies = [
     (name) => `{% assign values = (1..4) %}{% for i in (1..1) ${name}:values %}x{% endfor %}`,
   ),
 ];
-export const modifierCoercionCase = {
-  body: "{% for outer in (1..40) %}{% for inner in (1..1) offset:values %}x{% endfor %}{% endfor %}",
-  data: { values: Array(900).fill("1".repeat(200)) },
-};
+// Implicit array-to-string conversions must stay within the shared intermediate budget.
+export const coercionCases = [
+  {
+    body: "{% for outer in (1..40) %}{% for inner in (1..1) offset:values %}x{% endfor %}{% endfor %}",
+    data: { values: Array(900).fill("1".repeat(200)) },
+  },
+  ...[">", "<", ">=", "<="].map((operator) => ({
+    body: `{% for outer in (1..40) %}{% if values ${operator} 0 %}x{% endif %}{% endfor %}`,
+    data: { values: Array(3).fill("1".repeat(60000)) },
+  })),
+];
 export const loopModifierControls = [
   {
     body: "{% for i in (1..4) offset:continue limit:2 %}{{ i }}{% endfor %}",
@@ -51,6 +58,14 @@ export const loopModifierControls = [
   {
     body: "{% for i in (1..4) limit:1 limit:2 reversed:false %}{{ i }}{% endfor %}",
     output: "21",
+  },
+  {
+    body: "{% for i in (1..6) offset:'1' limit:2 %}{{ i }}{% endfor %}/{% for i in (1..6) offset:continue limit:2 %}{{ i }}{% endfor %}",
+    output: "23/45",
+  },
+  {
+    body: "{% assign a = (1..2) %}{% if a > '0' %}y{% endif %}{% if a < '0' %}n{% endif %}",
+    output: "y",
   },
 ];
 export const loopMetadataBody =

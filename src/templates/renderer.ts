@@ -134,12 +134,26 @@ export function createRenderer(clock: Clock, translation: Translation) {
       }
       return cost;
     };
+    // JavaScript's relational operators join arrays into one string before
+    // comparing. Reserve a conservative size for that string first.
+    const joinedBytes = (value: unknown): number => {
+      if (typeof value === "string") return byteLength(value);
+      if (Array.isArray(value)) {
+        let bytes = Math.max(0, value.length - 1);
+        for (const item of value) bytes += joinedBytes(item);
+        return bytes;
+      }
+      return value == null ? 0 : 32;
+    };
     for (const name of ["==", "!=", ">", "<", ">=", "<=", "contains"] as const) {
       const original = operators[name] as (left: unknown, right: unknown, ctx: Context) => unknown;
       operators[name] = function* (left: unknown, right: unknown, ctx: Context) {
         const b = budget(ctx);
         chargeComparison(left, b);
         const rightCost = chargeComparison(right, b);
+        if (name !== "==" && name !== "!=" && name !== "contains")
+          for (const operand of [left, right])
+            if (Array.isArray(operand)) b.charge(joinedBytes(operand));
         if (name === "contains" && Array.isArray(left) && left.length > 1)
           b.step((left.length - 1) * rightCost);
         return yield original(left, right, ctx);
@@ -432,8 +446,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
       bounded.igloBudgetForValues = (args) => {
         for (const key in args) {
           const value = args[key];
-          if (typeof value === "string") b.step(Math.ceil(byteLength(value) / 1024));
-          else if (
+          if (typeof value === "string") {
+            b.step(Math.ceil(byteLength(value) / 1024));
+            // Store numeric slice bounds so offset:continue adds, not concatenates.
+            if (key === "offset" || key === "limit") args[key] = Number(value) || 0;
+          } else if (
             value != null &&
             typeof value !== "boolean" &&
             !(typeof value === "number" && Number.isFinite(value))

@@ -11,7 +11,7 @@ import {
   loopMetadataBody,
   loopMetadataOutput,
   loopModifierControls,
-  modifierCoercionCase,
+  coercionCases,
 } from "@/test/templates/budget-cases";
 
 const renderer = createRenderer(createRealClock(), createTranslation());
@@ -61,11 +61,13 @@ try {
   });
   assert.equal(loopControl.status, 200);
   assert.equal(await loopControl.text(), loopMetadataOutput);
-  const coercion = await fetch(fixture.url, {
-    method: "POST",
-    body: JSON.stringify(modifierCoercionCase),
-  });
-  assert.equal(coercion.status, 400);
+  for (const coercionCase of coercionCases) {
+    const coercion = await fetch(fixture.url, {
+      method: "POST",
+      body: JSON.stringify(coercionCase),
+    });
+    assert.equal(coercion.status, 400, "array coercion budget");
+  }
   for (const control of loopModifierControls) {
     const response = await fetch(fixture.url, {
       method: "POST",
