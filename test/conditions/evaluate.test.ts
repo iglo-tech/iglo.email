@@ -224,19 +224,21 @@ describe("large numbers", () => {
   });
 
   test("conditions comparing integers beyond the safe range are refused, not mis-evaluated", async () => {
-    const invalid = { kind: "invalid", message: expect.stringContaining("safe integer") };
-    for (const condition of [
+    const conditions: unknown[] = [
       { attr: "invoice_id", op: "eq", value: unsafe },
       { attr: "invoice_id", op: "ne", value: unsafe },
       { attr: "invoice_id", op: "lt", value: unsafe },
       { attr: "invoice_id", op: "gte", value: unsafe },
       { attr: "invoice_id", op: "in", value: [unsafe] },
       { event: "invoice_paid", where: { "data.invoice_id": unsafe } },
-    ])
-      expect([condition, await f.evaluator.evaluate(condition, context(big))]).toEqual([
+    ];
+    for (const condition of conditions) {
+      const result: unknown = await f.evaluator.evaluate(condition, context(big));
+      expect([condition, result]).toEqual([
         condition,
-        { ok: false, error: invalid },
+        { ok: false, error: { kind: "invalid", message: expect.stringContaining("safe integer") } },
       ]);
+    }
   });
 
   test("safe edge integers compare exactly with stored attributes and event data", async () => {
