@@ -28,6 +28,11 @@ interface Types {
 const MANAGE: Types = { get: false, manage: true },
   ANY: Types = { get: true, manage: true };
 const NONE = [-1n];
+/** Pages above this many rows count as large selections. */
+const LARGE_PAGE = 1000;
+const throwTooMany = (): never => {
+  throw new HttpError(429, "Too many large subscriber selections in progress.");
+};
 const max = 9223372036854775807n,
   min = -9223372036854775808n;
 
@@ -200,6 +205,8 @@ export function registerSubscriberQueryRoutes(
   // Upstream returns 400 when preparing a query fails and 500 when running it fails.
   const fetching = (c: RequestContext, error: unknown): never => {
     if (error instanceof HttpError) throw error;
+    if (error instanceof RunnerError && error.kind === "busy")
+      throw new HttpError(429, "Too many subscriber queries in progress.");
     if (error instanceof RunnerError && error.kind === "query") throw preparing(c, error.message);
     throw new HttpError(
       500,
@@ -248,6 +255,9 @@ export function registerSubscriberQueryRoutes(
     if (params.get("per_page") === "all") perPage = -1;
     perPage = perPage < 0 ? 0 : perPage < 1 ? 20 : perPage;
     const page = Math.max(1, atoi(params.get("page")));
+    // per_page=all, negative and oversized pages hold every selected ID until streamed.
+    let release = () => {};
+    if (perPage === 0 || perPage > LARGE_PAGE) release = query.admitLarge() ?? throwTooMany();
     let result: { total: number; ids: bigint[] };
     try {
       result = await query.page(
@@ -258,6 +268,7 @@ export function registerSubscriberQueryRoutes(
         perPage,
       );
     } catch (error) {
+      release();
       return fetching(c, error);
     }
     const scope = maskScope(i);
@@ -269,10 +280,12 @@ export function registerSubscriberQueryRoutes(
       page,
     }).slice(1);
     // As upstream: no matches is [], a page past the end is null.
-    if (!result.total || !result.ids.length)
+    if (!result.total || !result.ids.length) {
+      release();
       return new Response(`{"data":{"results":${result.total ? "null" : "[]"},${tail}}\n`, {
         headers: { "Content-Type": "application/json" },
       });
+    }
     // Stream large pages (per_page=all) in bounded batches of projected rows.
     let next = 0;
     const text = new TextEncoder();
@@ -281,6 +294,7 @@ export function registerSubscriberQueryRoutes(
         if (next >= result.ids.length) {
           controller.enqueue(text.encode(`],${tail}}\n`));
           controller.close();
+          release();
           return;
         }
         const parts: string[] = [];
@@ -292,6 +306,7 @@ export function registerSubscriberQueryRoutes(
         next += 200;
         controller.enqueue(text.encode(prefix + parts.join(",")));
       },
+      cancel: release,
     });
     return new Response(body, { headers: { "Content-Type": "application/json" } });
   };
@@ -303,15 +318,33 @@ export function registerSubscriberQueryRoutes(
     if (!only) throw new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
     sqlPermission(c, filter.fragment);
     validate(c, filter);
-    const batches = query.ids(filter, only);
+    const admitted = query.admitLarge() ?? throwTooMany();
+    let output: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const finish = () => {
+      admitted();
+      void batches.return(undefined);
+    };
+    // A raw query that times out while the reader is paused ends the response at once.
+    const batches = query.ids(filter, only, (error) => {
+      try {
+        output?.error(error);
+      } catch {
+        /* already closed */
+      }
+      if (output) finish();
+    });
     try {
       await batches.next();
     } catch (error) {
+      finish();
       return fetching(c, error);
     }
     const text = new TextEncoder();
     let started = false;
     const csv = new ReadableStream<Uint8Array>({
+      start(controller) {
+        output = controller;
+      },
       async pull(controller) {
         if (!started) {
           started = true;
@@ -322,6 +355,7 @@ export function registerSubscriberQueryRoutes(
           const item = await batches.next();
           if (item.done) {
             controller.close();
+            finish();
             return;
           }
           const rows = query.exportRows(item.value);
@@ -329,11 +363,10 @@ export function registerSubscriberQueryRoutes(
         } catch (error) {
           // Headers are sent: end the stream with an error, as upstream stops writing.
           controller.error(error);
+          finish();
         }
       },
-      async cancel() {
-        await batches.return(undefined);
-      },
+      cancel: finish,
     });
     const gzip = (c.request.headers.get("accept-encoding") ?? "").includes("gzip");
     return new Response(
@@ -394,6 +427,8 @@ export function registerSubscriberQueryRoutes(
       // As upstream's core: a failed selection or write is the operation's error.
       const failed = (e: unknown): never => {
         if (e instanceof HttpError) throw e;
+        if (e instanceof RunnerError && e.kind === "busy")
+          throw new HttpError(429, "Too many subscriber queries in progress.");
         const error = e instanceof Error ? e.message : "unknown error",
           name = "{globals.terms.subscribers}";
         throw new HttpError(
@@ -406,26 +441,32 @@ export function registerSubscriberQueryRoutes(
         );
       };
       validate(c, select(identity(c)));
-      let candidates: bigint[] | null = null;
-      if (fragment) {
-        candidates = [];
+      // A raw selection holds its candidate IDs until the write transaction ends.
+      const release = fragment ? (query.admitLarge() ?? throwTooMany()) : () => {};
+      try {
+        let candidates: bigint[] | null = null;
+        if (fragment) {
+          candidates = [];
+          try {
+            for await (const ids of query.ids(select(identity(c)))) candidates.push(...ids);
+          } catch (e) {
+            return failed(e);
+          }
+          // The selection awaited a child process: confirm the caller still holds every grant.
+          auth.revalidate(c, "subscribers:manage");
+          sqlPermission(c, fragment);
+        }
         try {
-          for await (const ids of query.ids(select(identity(c)))) candidates.push(...ids);
+          query.transaction(() => {
+            const i = identity(c);
+            const targets = filterLists(i, MANAGE, input.target_list_ids);
+            query.apply(select(i), candidates, (ids) => act(input, ids, targets));
+          });
         } catch (e) {
           return failed(e);
         }
-        // The selection awaited a child process: confirm the caller still holds every grant.
-        auth.revalidate(c, "subscribers:manage");
-        sqlPermission(c, fragment);
-      }
-      try {
-        query.transaction(() => {
-          const i = identity(c);
-          const targets = filterLists(i, MANAGE, input.target_list_ids);
-          query.apply(select(i), candidates, (ids) => act(input, ids, targets));
-        });
-      } catch (e) {
-        return failed(e);
+      } finally {
+        release();
       }
       return ok(true);
     };

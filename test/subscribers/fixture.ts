@@ -26,7 +26,9 @@ import { createUserStore } from "@/users/store";
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
-export async function queryFixture(options: { timeoutMs?: number } = {}) {
+export async function queryFixture(
+  options: { timeoutMs?: number; admissionMs?: number; command?: string[] } = {},
+) {
   const directory = mkdtempSync(join(tmpdir(), "iglo-query-"));
   const clock = new TestClock();
   const errors: unknown[] = [];
@@ -57,6 +59,8 @@ export async function queryFixture(options: { timeoutMs?: number } = {}) {
       path: db.filename,
       timeoutMs: options.timeoutMs ?? 10_000,
       concurrency: 2,
+      ...(options.admissionMs === undefined ? {} : { admissionMs: options.admissionMs }),
+      ...(options.command === undefined ? {} : { command: options.command }),
     }),
     query = createSubscriberQuery({ db, readonly, clock, runner });
   const auth = await createAuthentication(

@@ -70,7 +70,7 @@ export async function runQueryChild(): Promise<void> {
 
 export class RunnerError extends Error {
   constructor(
-    readonly kind: "query" | "execution" | "timeout",
+    readonly kind: "query" | "execution" | "timeout" | "busy",
     message: string,
   ) {
     super(message);
@@ -80,10 +80,12 @@ export class RunnerError extends Error {
 export interface RunnerOptions {
   /** Database file opened read-only by each child. */
   path: string;
-  /** Total time a request may wait for SQLite work before the child is killed. */
+  /** Wall-clock time a child may live, however fast its output is consumed. */
   timeoutMs: number;
-  /** Children running at once; further requests wait. */
+  /** Children running at once. */
   concurrency: number;
+  /** How long a request waits for a free child slot before it is refused as busy. */
+  admissionMs?: number;
   /**
    * Resident memory a child may use. bun:sqlite ignores PRAGMA hard_heap_limit, so the parent
    * samples /proc and kills a child above the limit.
@@ -101,27 +103,53 @@ function defaultCommand(): string[] {
 
 export function createQueryRunner(options: RunnerOptions) {
   const command = options.command ?? defaultCommand();
+  const admissionMs = options.admissionMs ?? 1000;
   let active = 0;
   const waiting: (() => void)[] = [];
   const children = new Set<Bun.Subprocess>();
-  const acquire = async () => {
-    if (active >= options.concurrency) await new Promise<void>((resolve) => waiting.push(resolve));
-    else active++;
-  };
   const release = () => {
     const next = waiting.shift();
     if (next) next();
     else active--;
   };
+  /** Take a child slot, waiting at most admissionMs; returns its idempotent release. */
+  const acquire = async (): Promise<() => void> => {
+    if (active < options.concurrency) active++;
+    else {
+      let timer: Timer | undefined;
+      const admitted = await new Promise<boolean>((resolve) => {
+        const wake = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+        waiting.push(wake);
+        timer = setTimeout(() => {
+          waiting.splice(waiting.indexOf(wake), 1);
+          resolve(false);
+        }, admissionMs);
+      });
+      if (!admitted) throw new RunnerError("busy", "too many queries in progress");
+    }
+    let held = true;
+    return () => {
+      if (held) release();
+      held = false;
+    };
+  };
   /**
    * Run statements in one read-only snapshot and yield `[statement index, values]` batches.
-   * The time limit counts only time spent waiting for the child, so a slow HTTP reader of a
-   * streamed export does not consume it; the child blocks on its full pipe meanwhile.
+   * The parent drains the child's output as it arrives, so the child never waits for a slow
+   * HTTP reader and the time limit is wall-clock time over the child's whole life: at the limit
+   * the child is killed whether or not anyone is consuming, and `onError` is told at once so a
+   * streaming response can end. The slot is released when the child exits, which also happens
+   * at the limit and when the consumer stops early.
    */
-  async function* run(statements: Statement[]): AsyncGenerator<[number, bigint[]]> {
-    await acquire();
-    let child: Bun.Subprocess<"pipe", "pipe", "ignore"> | undefined;
-    let watchdog: Timer | undefined;
+  async function* run(
+    statements: Statement[],
+    onError?: (error: RunnerError) => void,
+  ): AsyncGenerator<[number, bigint[]]> {
+    const releaseSlot = await acquire();
+    let child: Bun.Subprocess<"pipe", "pipe", "ignore">;
     try {
       child = Bun.spawn(command, {
         stdin: "pipe",
@@ -129,21 +157,52 @@ export function createQueryRunner(options: RunnerOptions) {
         stderr: "ignore",
         env: { PATH: process.env.PATH ?? "" },
       });
-      children.add(child);
-      let overMemory = false;
-      const limit = options.memoryBytes ?? 256 * 1024 * 1024;
-      const pid = child.pid;
-      watchdog = setInterval(() => {
-        try {
-          const pages = Number(readFileSync(`/proc/${pid}/statm`, "utf8").split(" ")[1]);
-          if (pages * 4096 > limit) {
-            overMemory = true;
-            child?.kill("SIGKILL");
-          }
-        } catch {
-          /* exited, or no /proc */
+    } catch (error) {
+      releaseSlot();
+      throw error;
+    }
+    children.add(child);
+    const ready: [number, bigint[]][] = [];
+    let failure: RunnerError | undefined,
+      finished = false,
+      closed = false,
+      overMemory = false,
+      wake: (() => void) | undefined;
+    const notify = () => {
+      wake?.();
+      wake = undefined;
+    };
+    const fail = (error: RunnerError) => {
+      if (failure || finished) return;
+      failure = error;
+      child.kill("SIGKILL");
+      if (!closed) onError?.(error);
+      notify();
+    };
+    const deadline = setTimeout(
+      () => fail(new RunnerError("timeout", "query timed out")),
+      options.timeoutMs,
+    );
+    const limit = options.memoryBytes ?? 256 * 1024 * 1024;
+    const pid = child.pid;
+    const watchdog = setInterval(() => {
+      try {
+        const pages = Number(readFileSync(`/proc/${pid}/statm`, "utf8").split(" ")[1]);
+        if (pages * 4096 > limit) {
+          overMemory = true;
+          child.kill("SIGKILL");
         }
-      }, 20);
+      } catch {
+        /* exited, or no /proc */
+      }
+    }, 20);
+    const exited = child.exited.then(() => {
+      clearTimeout(deadline);
+      clearInterval(watchdog);
+      children.delete(child);
+      releaseSlot();
+    });
+    const pump = async () => {
       child.stdin.write(
         JSON.stringify({
           path: options.path,
@@ -156,56 +215,63 @@ export function createQueryRunner(options: RunnerOptions) {
       await child.stdin.end();
       const reader = child.stdout.getReader();
       const decoder = new TextDecoder();
-      let spent = 0,
-        pending = "",
-        index = -1,
-        done = false;
-      while (!done) {
-        const remaining = options.timeoutMs - spent;
-        const started = performance.now();
-        let timer: Timer | undefined;
-        const chunk = await Promise.race([
-          reader.read(),
-          new Promise<"timeout">((resolve) => {
-            timer = setTimeout(() => resolve("timeout"), Math.max(0, remaining));
-          }),
-        ]);
-        clearTimeout(timer);
-        spent += performance.now() - started;
-        if (chunk === "timeout") throw new RunnerError("timeout", "query timed out");
-        if (chunk.done)
-          throw new RunnerError(
-            "execution",
-            overMemory ? "query exceeded the memory limit" : "query process ended unexpectedly",
+      let pending = "",
+        index = -1;
+      while (!failure && !finished) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          fail(
+            new RunnerError(
+              "execution",
+              overMemory ? "query exceeded the memory limit" : "query process ended unexpectedly",
+            ),
           );
+          return;
+        }
         pending += decoder.decode(chunk.value, { stream: true });
         const lines = pending.split("\n");
         pending = lines.pop()!;
         let batch: bigint[] = [];
         for (const line of lines) {
           if (line[0] === "R") {
-            if (index >= 0) yield [index, batch];
+            if (index >= 0 && batch.length) ready.push([index, batch]);
             batch = [];
             index = Number(line.slice(1));
-            yield [index, []];
-          } else if (line === "OK") done = true;
-          else if (line[0] === "E")
-            throw new RunnerError(
-              line[1] === "Q" ? "query" : "execution",
-              JSON.parse(line.slice(2)) as string,
+            ready.push([index, []]);
+          } else if (line === "OK") {
+            if (batch.length) ready.push([index, batch]);
+            batch = [];
+            finished = true;
+            clearTimeout(deadline);
+          } else if (line[0] === "E") {
+            fail(
+              new RunnerError(
+                line[1] === "Q" ? "query" : "execution",
+                JSON.parse(line.slice(2)) as string,
+              ),
             );
-          else batch.push(BigInt(line));
+            return;
+          } else batch.push(BigInt(line));
         }
-        if (batch.length) yield [index, batch];
+        if (batch.length) ready.push([index, batch]);
+        notify();
+      }
+    };
+    pump().catch((error: unknown) =>
+      fail(new RunnerError("execution", error instanceof Error ? error.message : "query failed")),
+    );
+    try {
+      while (true) {
+        if (failure) throw failure;
+        const item = ready.shift();
+        if (item) yield item;
+        else if (finished) return;
+        else await new Promise<void>((resolve) => (wake = resolve));
       }
     } finally {
-      clearInterval(watchdog);
-      if (child) {
-        child.kill("SIGKILL");
-        await child.exited;
-        children.delete(child);
-      }
-      release();
+      closed = true;
+      child.kill("SIGKILL");
+      await exited;
     }
   }
   return {

@@ -13,12 +13,19 @@ import {
   type Arg,
   type SubscriberFilter,
 } from "@/subscribers/query-filter";
-import type { QueryRunner } from "@/subscribers/query-runner";
+import type { QueryRunner, RunnerError } from "@/subscribers/query-runner";
 import querySql from "@/subscribers/query.sql" with { type: "text" };
 import exportSql from "@/subscribers/export.sql" with { type: "text" };
 
 /** IDs per statement and per streamed batch: bounds memory and statement size. */
 export const BATCH = 500;
+/**
+ * Large selections (`per_page=all` or oversized pages, exports and raw-SQL bulk actions) hold
+ * their matching IDs, about 40 bytes each, in the parent while they run. Two at once keeps the
+ * worst case at twice one full selection (docs/perf/M1.7-query.md) and matches the raw-query
+ * child pool; these are rare admin operations, so excess requests are refused with 429.
+ */
+export const LARGE_SELECTIONS = 2;
 
 const json = (ids: bigint[]) => `[${ids.join(",")}]`;
 
@@ -30,13 +37,27 @@ export function createSubscriberQuery(options: {
   clock: Clock;
   /** Runs statements that embed a raw fragment in a time-limited child process. */
   runner: QueryRunner;
+  /** Large selections admitted at once (default LARGE_SELECTIONS). */
+  largeSelections?: number;
 }) {
   const { db, readonly, clock, runner } = options;
+  const largeLimit = options.largeSelections ?? LARGE_SELECTIONS;
+  let large = 0;
   const writes = prepareNamedQueries(db, [{ name: "subscribers/query", sql: querySql }]);
   const reads = prepareNamedQueries(readonly, [{ name: "subscribers/export", sql: exportSql }]);
   const column = (connection: Database, sql: string, args: Arg[]) =>
     (connection.query(sql).values(...args) as unknown[][]).map((row) => row[0] as bigint);
   return {
+    /** Admit one large selection; returns its idempotent release, or undefined when full. */
+    admitLarge(): (() => void) | undefined {
+      if (large >= largeLimit) return undefined;
+      large++;
+      let held = true;
+      return () => {
+        if (held) large--;
+        held = false;
+      };
+    },
     /** The total and one page of IDs, from one snapshot. */
     async page(
       filter: SubscriberFilter,
@@ -54,7 +75,10 @@ export function createSubscriberQuery(options: {
       readonly.run("BEGIN");
       try {
         const total = Number(column(readonly, count.sql, count.args)[0] ?? 0n);
-        return { total, ids: total ? column(readonly, page.sql, page.args) : [] };
+        return {
+          total,
+          ids: total ? column(readonly, page.sql, page.args) : [],
+        };
       } finally {
         readonly.run("COMMIT");
       }
@@ -62,8 +86,13 @@ export function createSubscriberQuery(options: {
     /**
      * Matching IDs in ascending batches. With a fragment the first item is yielded once the
      * child has validated the statement, so errors surface before a response starts.
+     * `onError` reports a raw query that failed or timed out while nobody was consuming.
      */
-    async *ids(filter: SubscriberFilter, only: bigint[] = []): AsyncGenerator<bigint[]> {
+    async *ids(
+      filter: SubscriberFilter,
+      only: bigint[] = [],
+      onError?: (error: RunnerError) => void,
+    ): AsyncGenerator<bigint[]> {
       if (filter.fragment) {
         // As upstream's export, a COUNT() over the same snapshot runs first, so a failing
         // or timed-out query is reported before any row is streamed.
@@ -72,7 +101,7 @@ export function createSubscriberQuery(options: {
           { sql: `SELECT COUNT(*) FROM (${select.sql})`, args: select.args },
           select,
         ];
-        for await (const [index, values] of runner.run(statements)) {
+        for await (const [index, values] of runner.run(statements, onError)) {
           if (index === 0) continue;
           for (let i = 0; i < values.length || i === 0; i += BATCH)
             yield values.slice(i, i + BATCH);
