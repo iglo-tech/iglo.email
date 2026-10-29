@@ -542,3 +542,10 @@ Decided by the owner on2026-10-29; refines the default compatibility policy in07
 - **Exotic input:** malformed or hand-crafted requests must fail safely with no crash, partial/corrupted data, permission/security bypass or unbounded memory. A different exact error/status for an otherwise safely rejected exotic request is hardening backlog, not a merge blocker. Keep the data format and decoder safety intact; this does not authorize accepting invalid data or broadening authority.
 - **Blocking findings:** name the realistic client and request, file/line and concrete failure. Hostile-input crashes, partial writes, bypasses and unbounded memory remain actual safety defects; safe error-text mismatch alone does not. Lead explains each agreement/disagreement and backlog disposition in the PR. Existing template/send/auth safety guarantees remain and must be assessed honestly, not weakened by relabelling unsafe behavior as backlog.
 - **Consequence:** existing implementations and explicit difference markers stay unless a concrete change is warranted. Future contracts separate real-client result equivalence and hostile-input safety; do not port Go internals merely to reproduce an irrelevant malformed-input diagnostic.
+
+## D58. Stage marketing transactional sends until M2.4
+
+Decided by agents on 2026-10-29, for owner review.
+
+- **Decision:** M2.3 implements `POST /api/tx` fully for `kind: "transactional"` (default). `kind: "marketing"` is validated and journaled, but M2.3 records it as `skipped` with a safe reason until M2.4 provides consent, frequency-cap and unsubscribe policy. It never reaches SMTP before then. Marketing still needs a valid `list_id`.
+- **Why:** consent and unsubscribe are mandatory for marketing (04-sending). Sending marketing mail without them, even briefly, is worse than a documented staged skip. The response shape and journal row are already final, so M2.4 changes only the admission result.

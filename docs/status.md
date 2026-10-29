@@ -1,29 +1,30 @@
 # Status
 
-Updated2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
-M1.8 templates, [draft PR #17](https://github.com/iglo-tech/iglo.email/pull/17), branch task/M1.8-templates; reviewed head0f6e0cda73028da6471d0377022e85b56a7e7672. Existing branch remains; no replacement worker.
-Legacy round3 [A](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6491414641) and [B](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6492035073) are terminal/read CHANGES. No active delegate or test process. A reports comparison coercion plus numeric-string continuation; B reproduces comparison accounting. Local full checks passed; B's initial settings-reference failure and passing diagnostic rerun remain cause-unknown.
-Next: Opus medium lead dispositions every finding under D56/D57, fixes agreed small defects and verifies locally/serially/foreground. Three rounds already elapsed; record lead reasoning in PR before merge. CI is not a gate. After merge immediately dispatch M2.3.
-Recovery: ~/.local/state/iglo-email-cos/lock.json retains all delegate IDs, heads, historical evidence and next action; never depend on a former conversation. Detailed evidence remains in PRs/historical records.
+M2.3 transactional API, branch task/M2.3-tx, [brief](briefs/M2.3.md). One Opus medium worker dispatched; no reviewer active.
+Next: on worker handback, run one Sol xhigh deep round 1, lead disposition, merge.
+Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
 
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one Sol xhigh reviewer; lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
+[D58](design/09-decisions.md#d58-stage-marketing-transactional-sends-until-m24) (agents, for owner review): tx marketing sends are journaled as skipped until M2.4.
 
 ## Automation and capacity
 
 Existing enabled45-minute schedule scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280 stays unbound. Continuous run starts2026-10-28T20:34:55.959528+00:00; no task/session cutoff.
-Project default is Opus5.5 medium; this lead's next-turn selection is being updated. Scheduler API has no per-task model selector; prompt/default can be aligned, separately pinned scheduler model cannot be claimed.
+Project default is Opus5.5 medium; Scheduler API has no per-task model selector; prompt/default can be aligned, separately pinned scheduler model cannot be claimed.
 Host disk/memory are constrained; no protected cache/worktree/export cleanup or VM policy changes. One role verifies at a time. Healthy redundant check-ins settle only themselves.
 
 ## Done
 
 | Task | PR | Merge | Result |
 |---|---|---|---|
+| M1.8 | [#17](https://github.com/iglo-tech/iglo.email/pull/17) | 17eaf1c | Templates/bounded Liquid |
 | M2.2 | [#16](https://github.com/iglo-tech/iglo.email/pull/16) | 4328bf0 | Durable journal/outbox |
 | M2.1 | [#15](https://github.com/iglo-tech/iglo.email/pull/15) | 542bf92 | SMTP/outcomes |
 | M1.2 | [#14](https://github.com/iglo-tech/iglo.email/pull/14) | 043973d | Settings/session lifetime |
@@ -46,4 +47,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
+- Flaky test/messaging/route-auth.test.ts "held SMTP body … before a connection": the sink saw stray connections in ~3/5 isolated runs, with or without M1.8 ([#17](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6492720721)).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
