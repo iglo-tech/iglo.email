@@ -6,6 +6,7 @@ import { statSync } from "node:fs";
 import { compile } from "@/conditions/compile";
 import type { Condition } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
+import { fragmentSlot } from "@/subscribers/query-filter";
 import { conditionsFixture } from "@/test/conditions/fixture";
 
 const subscribers = Number(process.argv[2] ?? 100_000);
@@ -104,7 +105,13 @@ try {
     const compiled = compile(valid);
     const plan = (
       f.readonly
-        .query(`EXPLAIN QUERY PLAN ${compiled.sql}`)
+        // The plan of the statement as the read-only child composes it.
+        .query(
+          `EXPLAIN QUERY PLAN ${compiled.fragments.reduce(
+            (sql, fragment) => sql.replace(fragmentSlot, () => fragment),
+            compiled.sql,
+          )}`,
+        )
         .all(
           ...compiled.params.map((p) =>
             typeof p === "object" ? (p.slot === "after" ? "" : 1) : p,
