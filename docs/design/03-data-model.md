@@ -76,6 +76,7 @@ Changes to kept tables:
 | `occurred_at` | TEXT NOT NULL | Sent by the app, defaults to receive time |
 | `created_at` | TEXT NOT NULL | |
 | `idempotency_key` | TEXT NULL | Unique per subscriber when set |
+| `enrollments` | TEXT NULL | JSON `{started, ended}` the first request with a key changed, replayed for a repeated key (M5.3) |
 
 Indexes: `(subscriber_id, name, occurred_at)`, unique `(subscriber_id, idempotency_key)`. Retention: configurable, default 400 days, purged by maintenance.
 
@@ -102,7 +103,7 @@ Steps are never hard-deleted while enrollments point at them; deleting sets `sta
 | `claimed_until` | TEXT NULL | Scheduler lease |
 | `created_at`, `updated_at`, `finished_at` | TEXT | |
 
-Indexes: `(status, due_at)` for the scheduler, `(subscriber_id, sequence_id)`.
+Indexes: `(status, due_at)` for the scheduler, `(subscriber_id, sequence_id)`, `(sequence_id, status)`, and unique `(subscriber_id, sequence_id) WHERE status = 'active'`: at most one active enrollment per subscriber and sequence. Active sequences are indexed by `trigger.event`.
 
 ### `sends`
 

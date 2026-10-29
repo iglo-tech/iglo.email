@@ -37,7 +37,7 @@ A sequence is a list of steps that starts when a subscriber does something (an e
 - A repeated `idempotency_key` for the same subscriber returns the first result and changes nothing.
 - `occurred_at` defaults to the receive time. Events older than 7 days are stored but do not start sequences (prevents a backfill from sending old onboarding mail).
 - `POST /api/subscriber-events/batch` accepts up to 500 events.
-- Response: the event ID, the subscriber ID, and the enrollments it started or ended.
+- Response: the event ID, the subscriber ID, and the enrollments it started (`{id, sequence_id}`) or ended (`{id, sequence_id, exit_reason}`). A repeated key replays the first request's lists.
 
 Processing, in one transaction:
 
@@ -73,7 +73,7 @@ Steps 2 and 3 run in that order, so an event that both exits and triggers the sa
 | Field | Meaning |
 |---|---|
 | `trigger.event` | Event name that starts the sequence |
-| `trigger.where` | Optional predicate on the triggering event and the subscriber (same language as conditions) |
+| `trigger.where` | Optional predicate on the triggering event and the subscriber: either an object of `data.*` equalities on the triggering event (`{"data.product": "prepaid"}`), or a condition (same language as conditions) evaluated for the subscriber after the event's upsert, inside the event transaction. `sql` is refused here: the read-only child cannot see the uncommitted event |
 | `exit_on` | Event names that end an active enrollment |
 | `reentry` | `never`: once per subscriber ever. `after_exit`: again after the previous enrollment finished. `always`: every matching event starts a new enrollment, and a running one is replaced |
 | `list_id` | Marketing permission list for the marketing steps. Required if any step is `marketing` |
@@ -84,7 +84,7 @@ Steps 2 and 3 run in that order, so an event that both exits and triggers the sa
 | `steps[].cap_policy` | `defer` (default) or `skip`, when the frequency cap blocks a marketing step |
 | `steps[].max_late` | If the step runs later than `due_at + max_late` (server down, sequence paused), skip it instead of sending something stale. Default: no limit for transactional, `P2D` for marketing |
 
-Sequences are managed in the admin UI and through `GET/POST/PUT/DELETE /api/sequences`. Definitions are versioned only by `updated_at`; the admin UI shows a warning with the number of active enrollments before saving changes.
+Sequences are managed in the admin UI and through `GET/POST/PUT/DELETE /api/sequences` and `PUT /api/sequences/:id/status`. Steps keep their IDs across edits (send the step `id`); omitted steps become `deleted`. A step's template must be a transactional template (steps have no body of their own yet). Archiving exits active enrollments (`sequence_archived`); a sequence with enrollments cannot be deleted. Blocklisted subscribers are never enrolled. `POST /api/enrollments` enrolls manually (`force: true` ignores reentry; a forced or `always` enroll replaces a running enrollment as `canceled`/`manual`); `DELETE /api/enrollments/:id` cancels (`canceled`, `manual`). Definitions are versioned only by `updated_at`; the admin UI shows a warning with the number of active enrollments before saving changes.
 
 ## Conditions
 
