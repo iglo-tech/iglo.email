@@ -43,7 +43,7 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
   const created = await f.json("/api/sequences", "POST", definition);
   expect(created.status).toBe(200);
   const seq = created.body.data;
-  expect(seq).toMatchObject({
+  expect(structuredClone(seq)).toMatchObject({
     id: expect.any(Number),
     uuid: expect.stringMatching(/^[0-9a-f-]{36}$/),
     name: "Prepaid onboarding",
@@ -56,7 +56,7 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
     updated_at: now,
     active_enrollments: 0,
   });
-  expect(seq.steps).toEqual([
+  expect(structuredClone(seq.steps)).toEqual([
     {
       id: expect.any(Number),
       uuid: expect.any(String),
@@ -92,7 +92,12 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
   const listed = await f.json("/api/sequences");
   expect(listed.status).toBe(200);
   const { steps: _steps, ...summary } = seq;
-  expect(listed.body.data).toEqual({ results: [summary], total: 1, page: 1, per_page: 20 });
+  expect(listed.body.data).toEqual({
+    results: [summary],
+    total: 1,
+    page: 1,
+    per_page: 20,
+  });
 
   // Reorder, edit one step, drop one, add one: kept steps keep IDs, the dropped one is deleted.
   f.clock.advance(1000);
@@ -101,8 +106,19 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
     ...definition,
     name: "Renamed",
     steps: [
-      { id: second.id, wait: "P1D", kind: "marketing", template_id: tx, max_late: null },
-      { wait: "PT1H", kind: "transactional", template_id: tx, subject: "Override" },
+      {
+        id: second.id,
+        wait: "P1D",
+        kind: "marketing",
+        template_id: tx,
+        max_late: null,
+      },
+      {
+        wait: "PT1H",
+        kind: "transactional",
+        template_id: tx,
+        subject: "Override",
+      },
     ],
   });
   expect(updated.status).toBe(200);
@@ -129,7 +145,14 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
   const other = (await f.json("/api/sequences", "POST", definition)).body.data;
   const foreign = await f.json(`/api/sequences/${seq.id}`, "PUT", {
     ...definition,
-    steps: [{ id: other.steps[0].id, wait: "PT0S", kind: "transactional", template_id: tx }],
+    steps: [
+      {
+        id: other.steps[0].id,
+        wait: "PT0S",
+        kind: "transactional",
+        template_id: tx,
+      },
+    ],
   });
   expect(foreign.status).toBe(400);
   expect((await f.json(`/api/sequences/${seq.id}`)).body.data).toEqual(updated.body.data);
@@ -146,7 +169,10 @@ test("every definition field is validated and a rejection writes nothing", async
   const { tx, news, definition } = await base(f);
   const campaign = await f.template("campaign");
   const step = definition.steps[0]!;
-  const withStep = (extra: object) => ({ ...definition, steps: [{ ...step, ...extra }] });
+  const withStep = (extra: object) => ({
+    ...definition,
+    steps: [{ ...step, ...extra }],
+  });
   const deep = (n: number): object => (n ? { not: deep(n - 1) } : { attr: "a", op: "exists" });
   const cases: Array<[string, unknown]> = [
     ["no name", { ...definition, name: "" }],
@@ -165,13 +191,25 @@ test("every definition field is validated and a rejection writes nothing", async
     ["where empty", { ...definition, trigger: { event: "a", where: {} } }],
     ["where value", { ...definition, trigger: { event: "a", where: { "data.x": [1] } } }],
     ["where unsafe", { ...definition, trigger: { event: "a", where: { "data.x": 2 ** 53 } } }],
-    ["where mixed", { ...definition, trigger: { event: "a", where: { "data.x": 1, attr: "p" } } }],
+    [
+      "where mixed",
+      {
+        ...definition,
+        trigger: { event: "a", where: { "data.x": 1, attr: "p" } },
+      },
+    ],
     ["where condition", { ...definition, trigger: { event: "a", where: { attr: "p", op: "x" } } }],
     ["where deep", { ...definition, trigger: { event: "a", where: deep(12) } }],
     ["where sql", { ...definition, trigger: { event: "a", where: { sql: "1=1" } } }],
     [
       "where nested sql",
-      { ...definition, trigger: { event: "a", where: { any: [{ attr: "a", op: "exists" }, { sql: "1=1" }] } } },
+      {
+        ...definition,
+        trigger: {
+          event: "a",
+          where: { any: [{ attr: "a", op: "exists" }, { sql: "1=1" }] },
+        },
+      },
     ],
     ["exit_on type", { ...definition, exit_on: "subscription_created" }],
     ["exit_on item", { ...definition, exit_on: [""] }],
@@ -247,7 +285,10 @@ test("every definition field is validated and a rejection writes nothing", async
   // Condition-language trigger filters are accepted.
   const where = await f.json("/api/sequences", "POST", {
     ...definition,
-    trigger: { event: "a", where: { all: [{ attr: "plan", op: "eq", value: "pro" }] } },
+    trigger: {
+      event: "a",
+      where: { all: [{ attr: "plan", op: "eq", value: "pro" }] },
+    },
   });
   expect(where.status).toBe(200);
 });
@@ -347,23 +388,29 @@ test("status changes, activation checks, archive and delete rules", async () => 
     expect(r.status).toBe(200);
     expect(r.body.data.status).toBe(next);
   }
-  expect((await f.json("/api/sequences/999/status", "PUT", { status: "active" })).status).toBe(
-    404,
-  );
+  expect((await f.json("/api/sequences/999/status", "PUT", { status: "active" })).status).toBe(404);
   expect((await f.json("/api/sequences/abc")).status).toBe(400);
   expect((await f.json("/api/sequences/99999999999999999999")).status).toBe(400);
   // An empty draft can be saved but not activated.
   const empty = (await f.json("/api/sequences", "POST", { ...definition, steps: [] })).body.data;
   expect(empty.steps).toEqual([]);
   expect(
-    (await f.json(`/api/sequences/${empty.id}/status`, "PUT", { status: "active" })).status,
+    (
+      await f.json(`/api/sequences/${empty.id}/status`, "PUT", {
+        status: "active",
+      })
+    ).status,
   ).toBe(400);
   // A sequence with enrollments cannot be deleted; archive it instead.
   await status({ status: "active" });
   const subscriber = await f.subscriber("one@example.test");
   expect(
-    (await f.json("/api/enrollments", "POST", { sequence_id: seq.id, subscriber_id: subscriber }))
-      .status,
+    (
+      await f.json("/api/enrollments", "POST", {
+        sequence_id: seq.id,
+        subscriber_id: subscriber,
+      })
+    ).status,
   ).toBe(200);
   expect((await f.json(`/api/sequences/${seq.id}`, "DELETE")).status).toBe(409);
   const list = await f.json("/api/sequences?status=active");

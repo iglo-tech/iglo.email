@@ -46,7 +46,9 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
   const seq = await sequence(f);
   const draft = await sequence(f, {}, "draft");
   const paused = await sequence(f, {}, "active");
-  await f.json(`/api/sequences/${paused.id}/status`, "PUT", { status: "paused" });
+  await f.json(`/api/sequences/${paused.id}/status`, "PUT", {
+    status: "paused",
+  });
   const occurred = new Date(f.clock.now().getTime() - 2 * day).toISOString();
   const r = await f.event(paid("ana@example.test", { occurred_at: occurred }));
   expect(r.status).toBe(200);
@@ -57,7 +59,7 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
     ended: [],
   });
   const now = f.clock.now().toISOString();
-  expect(enrollment).toEqual({
+  expect(structuredClone(enrollment)).toEqual({
     id: expect.any(Number),
     sequence_id: seq.id,
     subscriber_id: r.body.data.subscriber_id,
@@ -73,11 +75,13 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
   expect((await f.json(`/api/enrollments/${enrollment!.id}`)).body.data).toEqual(enrollment);
   expect(draft.id).not.toBe(seq.id);
   // Other event names and events older than 7 days start nothing.
-  expect((await f.event({ ...paid("bo@example.test"), name: "other" })).body.data.enrollments)
-    .toEqual({ started: [], ended: [] });
+  expect(
+    (await f.event({ ...paid("bo@example.test"), name: "other" })).body.data.enrollments,
+  ).toEqual({ started: [], ended: [] });
   const old = new Date(f.clock.now().getTime() - 7 * day - 1).toISOString();
-  expect((await f.event(paid("cy@example.test", { occurred_at: old }))).body.data.enrollments)
-    .toEqual({ started: [], ended: [] });
+  expect(
+    (await f.event(paid("cy@example.test", { occurred_at: old }))).body.data.enrollments,
+  ).toEqual({ started: [], ended: [] });
   // Batch events trigger the same way.
   const batch = await f.json("/api/subscriber-events/batch", "POST", {
     events: [paid("d1@example.test"), paid("d2@example.test")],
@@ -91,7 +95,10 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
 test("trigger.where filters on event data and the subscriber after the event's upsert", async () => {
   const f = await open();
   const data = await sequence(f, {
-    trigger: { event: "order_paid", where: { "data.product": "prepaid", "data.n": 2 } },
+    trigger: {
+      event: "order_paid",
+      where: { "data.product": "prepaid", "data.n": 2 },
+    },
   });
   const attr = await sequence(f, {
     trigger: {
@@ -105,9 +112,11 @@ test("trigger.where filters on event data and the subscriber after the event's u
     },
   });
   const started = async (body: object) =>
-    ((await f.event(body)).body.data.enrollments.started as { sequence_id: number }[]).map(
-      (s) => s.sequence_id,
-    );
+    (
+      (await f.event(body)).body.data.enrollments.started as {
+        sequence_id: number;
+      }[]
+    ).map((s) => s.sequence_id);
   expect(await started(paid("a@example.test", { data: { product: "prepaid", n: 2 } }))).toEqual([
     data.id,
   ]);
@@ -119,20 +128,28 @@ test("trigger.where filters on event data and the subscriber after the event's u
   expect(
     await started({
       ...paid("e@example.test"),
-      subscriber: { email: "e@example.test", attribs: { plan: "subscription" } },
+      subscriber: {
+        email: "e@example.test",
+        attribs: { plan: "subscription" },
+      },
     }),
   ).toEqual([]);
   expect(
     await started({
       ...paid("e@example.test"),
-      subscriber: { email: "e@example.test", attribs: { plan: "subscription" } },
+      subscriber: {
+        email: "e@example.test",
+        attribs: { plan: "subscription" },
+      },
     }),
   ).toEqual([attr.id]);
 });
 
 test("exit_on events end active enrollments before triggers, which can restart them", async () => {
   const f = await open();
-  const exits = await sequence(f, { exit_on: ["subscription_created", "refund"] });
+  const exits = await sequence(f, {
+    exit_on: ["subscription_created", "refund"],
+  });
   const restart = await sequence(f, {
     trigger: { event: "subscription_created" },
     exit_on: ["subscription_created"],
@@ -140,12 +157,21 @@ test("exit_on events end active enrollments before triggers, which can restart t
   });
   const first = await f.event(paid("x@example.test"));
   const subscriber = first.body.data.subscriber_id;
-  const created = await f.event({ subscriber: { email: "x@example.test" }, name: "subscription_created" });
+  const created = await f.event({
+    subscriber: { email: "x@example.test" },
+    name: "subscription_created",
+  });
   const exitedId = first.body.data.enrollments.started[0].id;
   const startedRestart = created.body.data.enrollments.started;
   expect(created.body.data.enrollments).toEqual({
     started: [{ id: expect.any(Number), sequence_id: restart.id }],
-    ended: [{ id: exitedId, sequence_id: exits.id, exit_reason: "event:subscription_created" }],
+    ended: [
+      {
+        id: exitedId,
+        sequence_id: exits.id,
+        exit_reason: "event:subscription_created",
+      },
+    ],
   });
   const ended = (await f.json(`/api/enrollments/${exitedId}`)).body.data;
   expect(ended).toMatchObject({
@@ -157,19 +183,31 @@ test("exit_on events end active enrollments before triggers, which can restart t
   });
   // The same event exits the running restart enrollment and starts a new one.
   f.clock.advance(1000);
-  const again = await f.event({ subscriber: { email: "x@example.test" }, name: "subscription_created" });
+  const again = await f.event({
+    subscriber: { email: "x@example.test" },
+    name: "subscription_created",
+  });
   expect(again.body.data.enrollments).toEqual({
     started: [{ id: expect.any(Number), sequence_id: restart.id }],
     ended: [
-      { id: startedRestart[0].id, sequence_id: restart.id, exit_reason: "event:subscription_created" },
+      {
+        id: startedRestart[0].id,
+        sequence_id: restart.id,
+        exit_reason: "event:subscription_created",
+      },
     ],
   });
   const active = await enrollments(f, `?subscriber_id=${subscriber}&status=active`);
   expect(active.map((e) => e.sequence_id)).toEqual([restart.id]);
   // Exits apply only to active sequences.
-  await f.json(`/api/sequences/${exits.id}/status`, "PUT", { status: "paused" });
+  await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
+    status: "paused",
+  });
   await f.event(paid("y@example.test"));
-  const paused = await f.event({ subscriber: { email: "y@example.test" }, name: "refund" });
+  const paused = await f.event({
+    subscriber: { email: "y@example.test" },
+    name: "refund",
+  });
   expect(paused.body.data.enrollments.ended).toEqual([]);
 });
 
@@ -188,16 +226,23 @@ test("reentry never, after_exit and always", async () => {
   expect(ids(second.started)).toEqual([always.id]);
   const replaced = first.started.find((e: any) => e.sequence_id === always.id);
   expect(second.ended).toEqual([
-    { id: replaced.id, sequence_id: always.id, exit_reason: "event:order_paid" },
+    {
+      id: replaced.id,
+      sequence_id: always.id,
+      exit_reason: "event:order_paid",
+    },
   ]);
   // After an exit: never stays out forever, after_exit starts again.
   await send("subscription_created");
   const third = await send();
   expect(ids(third.started)).toEqual([afterExit.id, always.id].sort());
   const all = await enrollments(f, "?per_page=100");
-  expect(all.filter((e) => e.status === "active").map((e) => e.sequence_id).sort()).toEqual(
-    [afterExit.id, always.id].sort(),
-  );
+  expect(
+    all
+      .filter((e) => e.status === "active")
+      .map((e) => e.sequence_id)
+      .sort(),
+  ).toEqual([afterExit.id, always.id].sort());
   expect(all.filter((e) => e.sequence_id === never.id)).toHaveLength(1);
 });
 
@@ -207,7 +252,10 @@ test("a repeated idempotency key replays the first {started, ended} and changes 
   const body = paid("k@example.test", { idempotency_key: "evt_1" });
   const first = await f.event(body);
   expect(first.body.data.enrollments.started).toHaveLength(1);
-  const second = await f.event({ ...paid("k@example.test"), idempotency_key: "evt_2" });
+  const second = await f.event({
+    ...paid("k@example.test"),
+    idempotency_key: "evt_2",
+  });
   expect(second.body.data.enrollments.ended).toHaveLength(1);
   const before = await enrollments(f);
   f.clock.advance(1000);
@@ -217,8 +265,14 @@ test("a repeated idempotency key replays the first {started, ended} and changes 
   // Without changes there is nothing to replay but the empty result.
   await f.json(`/api/sequences/${seq.id}/status`, "PUT", { status: "paused" });
   const quiet = paid("k@example.test", { idempotency_key: "evt_3" });
-  expect((await f.event(quiet)).body.data.enrollments).toEqual({ started: [], ended: [] });
-  expect((await f.event(quiet)).body.data.enrollments).toEqual({ started: [], ended: [] });
+  expect((await f.event(quiet)).body.data.enrollments).toEqual({
+    started: [],
+    ended: [],
+  });
+  expect((await f.event(quiet)).body.data.enrollments).toEqual({
+    started: [],
+    ended: [],
+  });
 });
 
 test("blocklisted subscribers are never enrolled; blocklisting exits every active enrollment", async () => {
@@ -239,19 +293,26 @@ test("blocklisted subscribers are never enrolled; blocklisting exits every activ
   );
   expect(await enrollments(f, `?subscriber_id=${other}&status=active`)).toHaveLength(1);
   // Blocklisted subscribers are not enrolled by events or manually.
-  const c = await sequence(f, { trigger: { event: "later" }, reentry: "always" });
-  const r = await f.event({ subscriber: { email: "bl@example.test" }, name: "later" });
+  const c = await sequence(f, {
+    trigger: { event: "later" },
+    reentry: "always",
+  });
+  const r = await f.event({
+    subscriber: { email: "bl@example.test" },
+    name: "later",
+  });
   expect(r.body.data.enrollments.started).toEqual([]);
-  const manual = await f.json("/api/enrollments", "POST", { sequence_id: c.id, subscriber_id: id });
+  const manual = await f.json("/api/enrollments", "POST", {
+    sequence_id: c.id,
+    subscriber_id: id,
+  });
   expect(manual.status).toBe(409);
 
   // Bulk, by-query and status-update blocklisting do the same, atomically with the change.
   const ids: number[] = [];
   for (const email of ["q1@example.test", "q2@example.test", "q3@example.test"])
     ids.push((await f.event(paid(email))).body.data.subscriber_id);
-  expect(
-    (await f.json("/api/subscribers/blocklist", "PUT", { ids: [ids[0]] })).status,
-  ).toBe(200);
+  expect((await f.json("/api/subscribers/blocklist", "PUT", { ids: [ids[0]] })).status).toBe(200);
   expect(
     (
       await f.json("/api/subscribers/query/blocklist", "PUT", {
@@ -405,10 +466,18 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
   });
   expect((await f.json(`/api/enrollments/${first.body.data.id}`, "DELETE")).status).toBe(409);
   expect((await enroll({ sequence_id: never.id, subscriber_id: id })).status).toBe(409);
-  const forced = await enroll({ sequence_id: never.id, subscriber_id: id, force: true });
+  const forced = await enroll({
+    sequence_id: never.id,
+    subscriber_id: id,
+    force: true,
+  });
   expect(forced.status).toBe(200);
   // Forcing over a running enrollment replaces it.
-  const forced2 = await enroll({ sequence_id: never.id, subscriber_id: id, force: true });
+  const forced2 = await enroll({
+    sequence_id: never.id,
+    subscriber_id: id,
+    force: true,
+  });
   expect(forced2.status).toBe(200);
   expect((await f.json(`/api/enrollments/${forced.body.data.id}`)).body.data).toMatchObject({
     status: "canceled",
@@ -483,9 +552,17 @@ test("concurrent triggers and manual enrolls never create two active enrollments
   const work: Promise<{ status: number }>[] = [];
   for (let i = 0; i < 20; i++) {
     work.push(f.event(paid("race@example.test")));
-    work.push(f.json("/api/enrollments", "POST", { sequence_id: always.id, subscriber_id: id }));
     work.push(
-      f.json("/api/enrollments", "POST", { sequence_id: afterExit.id, subscriber_id: id }),
+      f.json("/api/enrollments", "POST", {
+        sequence_id: always.id,
+        subscriber_id: id,
+      }),
+    );
+    work.push(
+      f.json("/api/enrollments", "POST", {
+        sequence_id: afterExit.id,
+        subscriber_id: id,
+      }),
     );
   }
   const statuses = (await Promise.all(work)).map((r) => r.status);
@@ -498,7 +575,9 @@ test("archiving exits active enrollments; archived sequences no longer trigger",
   const f = await open();
   const seq = await sequence(f, { reentry: "always" });
   const id = (await f.event(paid("arc@example.test"))).body.data.subscriber_id;
-  const archived = await f.json(`/api/sequences/${seq.id}/status`, "PUT", { status: "archived" });
+  const archived = await f.json(`/api/sequences/${seq.id}/status`, "PUT", {
+    status: "archived",
+  });
   expect(archived.status).toBe(200);
   expect(archived.body.data.active_enrollments).toBe(0);
   const [e] = await enrollments(f, `?subscriber_id=${id}`);

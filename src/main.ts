@@ -46,6 +46,9 @@ import { createTracking } from "@/unsubscribe/tracking";
 import { allowedDomain } from "@/subscribers/email";
 import { createEventStore } from "@/events/store";
 import { registerEventRoutes } from "@/events/routes";
+import { createEnrollments } from "@/sequences/enrollments";
+import { createSequenceStore } from "@/sequences/store";
+import { registerSequenceRoutes } from "@/sequences/routes";
 import { startEventRetention } from "@/events/retention";
 
 async function main(): Promise<void> {
@@ -78,16 +81,29 @@ async function main(): Promise<void> {
   let tracking: ReturnType<typeof createTracking> | undefined;
   let events: ReturnType<typeof createEventStore> | undefined;
   let retention: ReturnType<typeof startEventRetention> | undefined;
+  let enrollments: ReturnType<typeof createEnrollments> | undefined;
+  let sequences: ReturnType<typeof createSequenceStore> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
     roles = createRoles(db, lists);
     settings = createSettings(db, clock, bootstrap.config.rootUrl, roles);
     counts = createListCounts(db);
-    subscriberStore = createSubscriberStore(db, clock, lists);
+    enrollments = createEnrollments(db, clock);
+    subscriberStore = createSubscriberStore(db, clock, lists, enrollments.subscriberEffects);
     readonly = openReadOnly(db.filename);
-    queryRunner = createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 });
-    subscriberQuery = createSubscriberQuery({ db, readonly, clock, runner: queryRunner });
+    queryRunner = createQueryRunner({
+      path: db.filename,
+      timeoutMs: 10_000,
+      concurrency: 2,
+    });
+    subscriberQuery = createSubscriberQuery({
+      db,
+      readonly,
+      clock,
+      runner: queryRunner,
+      effects: enrollments.subscriberEffects,
+    });
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
@@ -178,6 +194,7 @@ async function main(): Promise<void> {
       subscribers: subscriberStore,
       tracking,
       settings: marketing,
+      effects: enrollments.unsubscribeEffects,
     });
     events = createEventStore(db, subscriberStore, {
       emailAllowed: (email) => {
@@ -188,8 +205,21 @@ async function main(): Promise<void> {
           current["privacy.domain_blocklist"],
         );
       },
+      exitThenTrigger: enrollments.exitThenTrigger,
     });
     registerEventRoutes(router, events, auth);
+    sequences = createSequenceStore(db, clock, {
+      templates,
+      lists,
+      enrollments,
+    });
+    registerSequenceRoutes(router, {
+      sequences,
+      enrollments,
+      subscribers: subscriberStore,
+      roles,
+      auth,
+    });
     retention = startEventRetention({ db, clock, logger: app.logger, events });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
@@ -231,6 +261,7 @@ async function main(): Promise<void> {
     await queryRunner?.close();
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
+    sequences?.close();
     events?.close();
     sends?.close();
     tracking?.close();
@@ -242,6 +273,7 @@ async function main(): Promise<void> {
     subscriberQuery?.close();
     readonly?.close();
     subscriberStore?.close();
+    enrollments?.close();
     campaigns?.close();
     counts?.close();
     roles?.close();

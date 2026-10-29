@@ -85,7 +85,10 @@ class TransactionLost extends Error {
 export function createEventStore(
   db: Database,
   subscribers: SubscriberStore,
-  options: { emailAllowed: (email: string) => boolean; exitThenTrigger?: ExitThenTrigger },
+  options: {
+    emailAllowed: (email: string) => boolean;
+    exitThenTrigger?: ExitThenTrigger;
+  },
 ) {
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
   const exitThenTrigger = options.exitThenTrigger ?? noSequences;
@@ -100,15 +103,13 @@ export function createEventStore(
     const found = subscribers.resolveForEvent(input.subscriber);
     if (found && input.idempotencyKey !== undefined) {
       const previous = q.get("event-by-key").get(found.id, input.idempotencyKey) as
-        | (Pick<EventRow, "id" | "subscriber_id"> & { enrollments: string | null })
+        | (Pick<EventRow, "id" | "subscriber_id"> & {
+            enrollments: string | null;
+          })
         | null;
       // Replay what the first request started and ended; never recompute it.
       if (previous)
-        return result(
-          previous.id,
-          previous.subscriber_id,
-          storedEnrollments(previous.enrollments),
-        );
+        return result(previous.id, previous.subscriber_id, storedEnrollments(previous.enrollments));
     }
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
     const occurredAt = input.occurredAt ?? receivedAt;
@@ -214,7 +215,13 @@ export function createEventStore(
      */
     submit(input: EventInput, receivedAt: Date, authorize: () => void): Promise<EventResult> {
       return new Promise((resolve, reject) => {
-        queue.push({ input, at: receivedAt.toISOString(), authorize, resolve, reject });
+        queue.push({
+          input,
+          at: receivedAt.toISOString(),
+          authorize,
+          resolve,
+          reject,
+        });
         schedule();
       });
     },
@@ -249,7 +256,9 @@ export function createEventStore(
      */
     purge(receivedBefore: Date, window: number): bigint[] {
       return (
-        q.get("events-purge").all(window, receivedBefore.toISOString()) as { id: bigint }[]
+        q.get("events-purge").all(window, receivedBefore.toISOString()) as {
+          id: bigint;
+        }[]
       ).map((row) => row.id);
     },
     close: () => q.close(),

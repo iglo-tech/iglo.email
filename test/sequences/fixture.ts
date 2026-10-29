@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@/app";
-import { openDatabase, openReadOnly } from "@/db/connection";
+import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { createListReferences } from "@/lists/references";
@@ -18,7 +18,7 @@ import { createSubscriberStore } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createSubscriberQuery } from "@/subscribers/query";
 import { registerSubscriberQueryRoutes } from "@/subscribers/query-routes";
-import { createQueryRunner } from "@/subscribers/query-runner";
+import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
 import { createRoles } from "@/roles/roles";
 import { createRouter } from "@/server/server";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
@@ -44,7 +44,10 @@ import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/pol
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 
-export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
+export const admin = {
+  user: "fixture-admin",
+  password: "fixture-admin-password",
+};
 
 export async function sequencesFixture() {
   const sink = await startSink({});
@@ -75,7 +78,11 @@ export async function sequencesFixture() {
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const readonly = openReadOnly(db.filename);
-  const runner = createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 });
+  const runner = createQueryRunner({
+    path: db.filename,
+    timeoutMs: 10_000,
+    concurrency: 2,
+  });
   const query = createSubscriberQuery({
     db,
     readonly,
@@ -137,7 +144,11 @@ export async function sequencesFixture() {
     clock,
     subscribers,
     rootUrl: () => "http://fixture.test",
-    marketingPolicy: createMarketingPolicy({ subscribers, lists, settings: () => marketing }),
+    marketingPolicy: createMarketingPolicy({
+      subscribers,
+      lists,
+      settings: () => marketing,
+    }),
   });
   const tracking = createTracking(db, clock);
   const outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
@@ -145,7 +156,11 @@ export async function sequencesFixture() {
     emailAllowed: (email) => allowedDomain(email, [], []),
     exitThenTrigger: enrollments.exitThenTrigger,
   });
-  const sequences = createSequenceStore(db, clock, { templates, lists, enrollments });
+  const sequences = createSequenceStore(db, clock, {
+    templates,
+    lists,
+    enrollments,
+  });
   const router = createRouter();
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
@@ -177,9 +192,18 @@ export async function sequencesFixture() {
     effects: enrollments.unsubscribeEffects,
   });
   registerEventRoutes(router, events, auth);
-  registerSequenceRoutes(router, { sequences, enrollments, subscribers, roles, auth });
+  registerSequenceRoutes(router, {
+    sequences,
+    enrollments,
+    subscribers,
+    roles,
+    auth,
+  });
 
-  const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
+  const sessionHeaders = {
+    cookie: `session=${session.id}`,
+    "x-csrf-token": session.csrf,
+  };
   const request = (path: string, init: RequestInit = {}) =>
     router.handle(app, new Request(`http://fixture.test${path}`, init));
   const json = async (
@@ -227,7 +251,9 @@ export async function sequencesFixture() {
       ...(listRole === undefined ? {} : { list_role_id: listRole }),
     });
     if (user.status !== 200) throw new Error(`user ${user.status}`);
-    return { authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}` };
+    return {
+      authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}`,
+    };
   };
   const template = async (type = "tx", body = "<p>{{ subscriber.name }}</p>") => {
     const created = await json("/api/templates", "POST", {
@@ -240,10 +266,19 @@ export async function sequencesFixture() {
     return created.body.data.id as number;
   };
   const list = async (name: string) =>
-    (await json("/api/lists", "POST", { name, type: "public", optin: "single" })).body.data
-      .id as number;
+    (
+      await json("/api/lists", "POST", {
+        name,
+        type: "public",
+        optin: "single",
+      })
+    ).body.data.id as number;
   const subscriber = async (email: string, extra: object = {}) => {
-    const created = await json("/api/subscribers", "POST", { email, name: "Fixture", ...extra });
+    const created = await json("/api/subscribers", "POST", {
+      email,
+      name: "Fixture",
+      ...extra,
+    });
     if (created.status !== 200) throw new Error(`subscriber ${created.status}`);
     return created.body.data.id as number;
   };

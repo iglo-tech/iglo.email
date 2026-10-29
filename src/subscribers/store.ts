@@ -61,7 +61,10 @@ export interface SubscriberEffects {
   /** The subscribers' memberships of `listIds` are now unsubscribed. */
   unsubscribed(ids: bigint[], listIds: bigint[]): void;
 }
-export const noSubscriberEffects: SubscriberEffects = { blocklisted() {}, unsubscribed() {} };
+export const noSubscriberEffects: SubscriberEffects = {
+  blocklisted() {},
+  unsubscribed() {},
+};
 export interface Scope {
   all: boolean;
   ids: bigint[];
@@ -197,7 +200,10 @@ export function createSubscriberStore(
           ? JSON.parse(row.attribs)
           : input.attribs === null
             ? {}
-            : { ...(input.attribsReset ? {} : JSON.parse(row.attribs)), ...input.attribs }
+            : {
+                ...(input.attribsReset ? {} : JSON.parse(row.attribs)),
+                ...input.attribs,
+              }
         : (input.attribs ?? {});
       if (input.external_id != null) {
         const existing = external(input.external_id);
