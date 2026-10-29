@@ -6,6 +6,9 @@ import type { Sends } from "@/messaging/sends";
 import type { createEmailer } from "@/messaging/email";
 import { startLoop } from "@/loops/loop";
 
+// A marketing send has exactly one SMTP recipient, its admitted subscriber.
+const copies = (row: { kind: string }) => ({ copies: row.kind !== "marketing" });
+
 export function startOutbox(options: {
   db: Database;
   clock: Clock;
@@ -60,7 +63,7 @@ export function startOutbox(options: {
     async process(row) {
       const message = options.sends.admit(row);
       if (!message) return;
-      const outcome = await options.emailer.push(message).result;
+      const outcome = await options.emailer.push(message, copies(row)).result;
       options.sends.finish(row, outcome);
       arm();
     },
@@ -92,7 +95,7 @@ export function startOutbox(options: {
         const message = options.sends.admit(row);
         if (!message) continue;
         work.push(
-          options.emailer.push(message).result.then((outcome) => {
+          options.emailer.push(message, copies(row)).result.then((outcome) => {
             options.sends.finish(row, outcome);
             arm();
           }),

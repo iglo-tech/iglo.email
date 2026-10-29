@@ -180,7 +180,7 @@ test("render, recipient and validation failures are atomic", async () => {
   expect(f.errors).toEqual([]);
 });
 
-test("blocklisted subscribers and addresses never receive mail; marketing is staged", async () => {
+test("blocklisted subscribers and addresses never receive mail; marketing needs consent", async () => {
   const f = await open();
   const template = await f.template("<p>x</p>");
   const blocked = await f.subscriber("blocked@example.test", "Blocked", { status: "blocklisted" });
@@ -210,13 +210,22 @@ test("blocklisted subscribers and addresses never receive mail; marketing is sta
   });
   expect(marketing.status).toBe(200);
   const row = (await f.json(`/api/sends/${marketing.body.data.sends[0].id}`)).body.data;
+  // M2.4: a confirmed member receives it; a non-member is skipped (test/unsubscribe).
   expect(row).toMatchObject({
-    status: "skipped",
-    skip_reason: "policy_unavailable",
+    status: "sent",
+    skip_reason: null,
     kind: "marketing",
     list_id: list.body.data.id,
   });
-  expect(f.sink.messages).toHaveLength(0);
+  expect(f.sink.messages.map((m) => m.to[0])).toEqual(["ada@example.test"]);
+  const stranger = await f.tx({
+    subscriber_id: blocked,
+    template_id: template,
+    kind: "marketing",
+    list_id: list.body.data.id,
+  });
+  expect(stranger.body.data.sends[0].status).toBe("skipped");
+  expect(f.sink.messages).toHaveLength(1);
 });
 
 test("domain policy, external IDs and unknown addresses follow the native rules", async () => {

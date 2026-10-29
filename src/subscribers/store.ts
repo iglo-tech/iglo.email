@@ -213,6 +213,25 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
             q.get("membership-update").run("unsubscribed", now, id, list);
         }
     },
+    byUuid: (uuid: string) => q.get("subscriber-by-uuid").get(uuid) as Row | null,
+    membership: (id: bigint, list: bigint) =>
+      q.get("membership-get").get(id, list) as Membership | null,
+    /**
+     * Public unsubscribe, adapted from listmonk's unsubscribe-by-campaign query: mark the
+     * list (or with `blocklist`, every list) unsubscribed and optionally blocklist the
+     * subscriber. Returns the list IDs whose status changed. The caller holds the write.
+     */
+    unsubscribe(id: bigint, list: bigint, blocklist: boolean): bigint[] {
+      const now = clock.now().toISOString();
+      // Like upstream, the subscriber's status change does not touch updated_at.
+      if (blocklist) q.get("subscriber-blocklist-only").run(id);
+      const rows = (
+        blocklist
+          ? q.get("membership-unsubscribe-all").all(now, id)
+          : q.get("membership-unsubscribe-list").all(now, id, list)
+      ) as { list_id: bigint }[];
+      return rows.map((row) => row.list_id);
+    },
     close: () => q.close(),
   };
 }

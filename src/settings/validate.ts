@@ -5,7 +5,7 @@ import { defaults } from "@/settings/defaults";
 import { trimSpace } from "@/lists/store";
 import { simpleLower } from "@/subscribers/unicode-lower";
 import { validFromAddress } from "@/settings/mail";
-import { goDuration, sessionDuration } from "@/settings/duration";
+import { goDuration, intervalStart, sessionDuration } from "@/settings/duration";
 import { cronError } from "@/settings/cron";
 import { cloneJson, int64, Members } from "@/settings/json";
 import { HttpError } from "@/server/response";
@@ -113,6 +113,11 @@ function entries(value: unknown): [string, unknown][] {
 // All JSON field tags here are ASCII. Go's simple folding also admits long s
 // and Kelvin sign, without multi-character expansions such as ß -> SS.
 const foldField = (value: string) => value.replace(/ſ/g, "s").replace(/K/g, "k").toLowerCase();
+/** Whether a decoded settings object names a top-level key, with Go field folding. */
+export function hasField(value: unknown, key: string): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return entries(value).some(([name]) => foldField(name) === foldField(key));
+}
 function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
   if (value === null)
     return shape === null ||
@@ -295,6 +300,9 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     if (!next["security.captcha"]?.hcaptcha) return fail();
     next["security.captcha"].hcaptcha.secret = current["security.captcha"].hcaptcha.secret;
   }
+  next["marketing.min_interval"] = trimSpace(next["marketing.min_interval"] ?? "");
+  if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined)
+    return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
   for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"])
     next[key] = next[key].map((d: string) => simpleLower(trimSpace(d ?? ""))).filter(Boolean);
   next["upload.extensions"] = next["upload.extensions"].map((v: string) =>

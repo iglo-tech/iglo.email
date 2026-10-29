@@ -106,10 +106,22 @@ export interface RenderRequest {
   data: string;
   transactional?: boolean;
 }
+/**
+ * Per-message tracking supplied by the send owner (M2.4 src/unsubscribe). Without it
+ * `track_link` returns its URL unchanged and `track_view` renders nothing.
+ */
+export interface RenderTracking {
+  /** Absolute view-pixel URL; `track_view` renders listmonk's hidden 1x1 image in HTML. */
+  readonly view?: string;
+  /** Rewrites an accepted HTTP(S) URL from `track_link` to its tracked redirect. */
+  readonly link?: (url: string) => string;
+}
+const attribute = (value: string) => value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 export function createRenderer(clock: Clock, translation: Translation) {
   const budgets = new WeakMap<Context, Budget>();
+  const trackers = new WeakMap<Context, RenderTracking>();
   const budget = (ctx: Context) => {
     const result = budgets.get(ctx);
     if (!result) throw new Error("Missing budget");
@@ -271,7 +283,10 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("track_link", function (value) {
       const b = budget(this.context);
       b.step();
-      const out = url(value);
+      let out = url(value);
+      // listmonk trackLink: unescape &amp; and register the URL for this message.
+      const link = trackers.get(this.context)?.link;
+      if (out && link) out = link(out.replaceAll("&amp;", "&"));
       b.charge(byteLength(out));
       return out;
     });
@@ -378,6 +393,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     request: RenderRequest,
     data: { [key: string]: TemplateData },
     compiled?: Compiled,
+    tracking?: RenderTracking,
   ): { body: string; subject: string } {
     if (request.mode !== "html" && request.mode !== "plain" && request.mode !== "markdown")
       throw new Error("Invalid render mode");
@@ -394,7 +410,10 @@ export function createRenderer(clock: Clock, translation: Translation) {
       if (data[key] != null) data[key] = url(data[key]);
     }
     if (request.transactional) data.unsubscribe_url = "";
-    data.track_view = "";
+    // A per-render random marker survives escaping and Markdown; the trusted pixel
+    // markup replaces it after the whole message is rendered.
+    const viewMarker = tracking?.view ? `igloview${crypto.randomUUID().replaceAll("-", "")}` : "";
+    data.track_view = viewMarker;
     const b = new Budget();
     const run = (source: string, html: boolean, limit: number, ready?: Template[]): string => {
       const e = html ? htmlEngine : plainEngine;
@@ -402,6 +421,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
         ready ?? parse(source, html, limit === SUBJECT_LIMIT ? SUBJECT_LIMIT : SOURCE_LIMIT);
       const ctx = new Context(data, e.options, { sync: true }, { liquid: e });
       budgets.set(ctx, b);
+      if (tracking) trackers.set(ctx, tracking);
       // The pinned LiquidJS patch charges expression and property evaluation to
       // the same message budget used by tags, filters and emitters.
       const bounded = ctx as Context & {
@@ -505,12 +525,24 @@ export function createRenderer(clock: Clock, translation: Translation) {
       budgets.delete(ctx);
       return out.buffer;
     };
-    const subject = run(request.subject ?? "", false, SUBJECT_LIMIT, compiled?.subject);
+    let subject = run(request.subject ?? "", false, SUBJECT_LIMIT, compiled?.subject);
     let body = run(request.body, request.mode !== "plain", OUTPUT_LIMIT, compiled?.body);
     if (request.mode === "markdown") body = renderMarkdown(body, b);
     if (request.layout !== undefined) {
       data.content = body;
       body = run(request.layout, request.mode !== "plain", OUTPUT_LIMIT, compiled?.layout);
+    }
+    if (viewMarker) {
+      const pixel =
+        request.mode === "plain"
+          ? ""
+          : `<img src="${attribute(tracking!.view!)}" width="1" height="1" style="display:none;max-height:0;max-width:0;opacity:0" alt="">`;
+      const count = body.split(viewMarker).length - 1;
+      const size = byteLength(body) + count * (byteLength(pixel) - byteLength(viewMarker));
+      if (size > OUTPUT_LIMIT) throw new Error("Output limit");
+      b.charge(Math.max(0, size - byteLength(body)));
+      body = body.replaceAll(viewMarker, () => pixel);
+      subject = subject.replaceAll(viewMarker, "");
     }
     return { body, subject };
   }
@@ -556,11 +588,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
         : { layout: parse(snapshot.layout, snapshot.mode !== "plain") }),
     };
     return Object.freeze({
-      renderSync(data: string) {
+      renderSync(data: string, tracking?: RenderTracking) {
         if (active >= 4) throw new RenderCapacityError();
         active++;
         try {
-          return runMessage({ ...snapshot, data }, parseTemplateData(data), compiled);
+          return runMessage({ ...snapshot, data }, parseTemplateData(data), compiled, tracking);
         } finally {
           active--;
         }

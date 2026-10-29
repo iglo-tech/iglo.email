@@ -219,6 +219,7 @@ function build(
   id: string,
   now: Date,
   copyAllowed: (address: string) => boolean,
+  copies: boolean,
 ) {
   const headers = new Map<string, { name: string; value: string }>();
   const add = (name: string, raw: string | string[]) => {
@@ -236,17 +237,20 @@ function build(
   const returnPath = headers.get("return-path")?.value;
   headers.delete("return-path");
   // Filter copies after merging server settings, so configured Cc/Bcc obey the same policy.
-  const copies = (value: string | undefined) =>
-    value
-      ?.split(",")
-      .filter((part) => {
-        const address = parseAddress(trimSpace(part));
-        return address === undefined || copyAllowed(address);
-      })
-      .join(",");
-  const cc = copies(headers.get("cc")?.value);
+  // A message without copies (marketing) drops message and server Cc/Bcc entirely.
+  const filtered = (value: string | undefined) =>
+    copies
+      ? value
+          ?.split(",")
+          .filter((part) => {
+            const address = parseAddress(trimSpace(part));
+            return address === undefined || copyAllowed(address);
+          })
+          .join(",")
+      : undefined;
+  const cc = filtered(headers.get("cc")?.value);
   headers.delete("cc");
-  const bcc = copies(headers.get("bcc")?.value);
+  const bcc = filtered(headers.get("bcc")?.value);
   headers.delete("bcc");
   headers.delete("message-id");
   const from = headers.get("from")?.value ?? input.from;
@@ -413,6 +417,7 @@ export function createEmailer(options: {
     rootUrl: string,
     temporary = false,
     startedAt = options.clock.now().getTime(),
+    copies = true,
   ): Dispatch {
     const serverId = suppliedId(server, message);
     let domain = "localhost";
@@ -434,7 +439,7 @@ export function createEmailer(options: {
       return local();
     let data: ReturnType<typeof build>;
     try {
-      data = build(server, message, messageId, options.clock.now(), copyAllowed);
+      data = build(server, message, messageId, options.clock.now(), copyAllowed, copies);
     } catch {
       return local();
     }
@@ -582,9 +587,14 @@ export function createEmailer(options: {
     pump(pool);
     return { messageId, result };
   }
-  function push(message: Message): Dispatch {
+  /**
+   * `copies: false` sends to `message.to` only: Cc/Bcc from the message and from the
+   * server's `email_headers` are dropped. Marketing sends use it (one admitted recipient).
+   */
+  function push(message: Message, delivery: { copies?: boolean } = {}): Dispatch {
     const startedAt = options.clock.now().getTime();
-    if (closed) return dispatch(undefined, message, "", false, startedAt);
+    const copies = delivery.copies ?? true;
+    if (closed) return dispatch(undefined, message, "", false, startedAt, copies);
     const current = options.settings();
     const servers = structuredClone(current.smtp).filter((s) => s.enabled);
     reconcile(servers);
@@ -606,7 +616,7 @@ export function createEmailer(options: {
       bucket = exact.length ? exact : domains.length ? domains : bucket;
     }
     const index = bucket.length ? selection(bucket.length) : -1;
-    return dispatch(bucket[index], message, current.rootUrl, false, startedAt);
+    return dispatch(bucket[index], message, current.rootUrl, false, startedAt, copies);
   }
   return {
     push,

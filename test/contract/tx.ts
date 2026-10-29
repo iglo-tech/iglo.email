@@ -1,7 +1,8 @@
 // Reference: listmonk cmd/tx.go, models/messages.go (TxMessage) and
 // internal/messenger/email/email.go at 6fcd95f. Messages are observed in the
 // invocation-owned Mailpit; the native response body and recipient rules are
-// declared differences (docs/design/07-api-and-ui.md, 04-sending.md, D58).
+// declared differences (docs/design/07-api-and-ui.md, 04-sending.md, D58). Marketing
+// consent, cap and unsubscribe are covered by test/contract/unsubscribe.ts.
 import { randomBytes } from "node:crypto";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
@@ -389,7 +390,7 @@ export async function runTxContract(target: {
         "external-id-missing",
       );
 
-      // D58: marketing is journaled as skipped until M2.4.
+      // M2.4: marketing needs list consent; ada is not a member of this list.
       const listResponse = await api("/api/lists", "POST", {
         name: `${marker} list`,
         type: "public",
@@ -410,7 +411,7 @@ export async function runTxContract(target: {
       check(
         marketingRow.kind === "marketing" &&
           marketingRow.list_id === list &&
-          marketingRow.skip_reason === "policy_unavailable",
+          marketingRow.skip_reason === "not_subscribed",
         "marketing-journal",
       );
       await failed(

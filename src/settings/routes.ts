@@ -4,7 +4,7 @@ import { HttpError, ok } from "@/server/response";
 import { readBodyBytes } from "@/users/input";
 import type { Authentication } from "@/users/auth";
 import type { SettingsStore } from "@/settings/store";
-import { bindFull, bindKey, masked, shapes } from "@/settings/validate";
+import { bindFull, bindKey, hasField, masked, shapes } from "@/settings/validate";
 import { decodeJsonBytes, orderedJson } from "@/settings/json";
 import { xmlSettings, xmlValue } from "@/settings/xml";
 
@@ -60,7 +60,13 @@ export function registerSettingsRoutes(
         throw new HttpError(400);
       }
       auth.revalidate(context, "settings:manage");
-      settings.update((current) => bindFull(body, current["app.root_url"]));
+      settings.update((current) => {
+        const next = bindFull(body, current["app.root_url"]);
+        // listmonk clients replace the full object without this native key; keep it.
+        const native = "marketing.min_interval";
+        if (!hasField(body, native)) next[native] = current[native];
+        return next;
+      });
       return ok(true);
     },
     auth.middleware("settings:manage"),

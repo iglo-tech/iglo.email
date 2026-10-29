@@ -549,3 +549,4 @@ Decided by agents on 2026-10-29, for owner review.
 
 - **Decision:** M2.3 implements `POST /api/tx` fully for `kind: "transactional"` (default). `kind: "marketing"` is validated and journaled, but M2.3 records it as `skipped` with a safe reason until M2.4 provides consent, frequency-cap and unsubscribe policy. It never reaches SMTP before then. Marketing still needs a valid `list_id`.
 - **Why:** consent and unsubscribe are mandatory for marketing (04-sending). Sending marketing mail without them, even briefly, is worse than a documented staged skip. The response shape and journal row are already final, so M2.4 changes only the admission result.
+- **Finished (M2.4):** the staging is over. Production injects the real consent and frequency-cap policy, and marketing messages carry the unsubscribe URL and RFC 8058 headers ([Sending](04-sending.md#unsubscribe)). `policy_unavailable` remains only for a journal created without a policy.

@@ -61,7 +61,8 @@ const sends = createSends({
   clock,
   subscribers,
   rootUrl: () => "http://fixture.test",
-  marketingPolicy: () => true,
+  // Component evidence only: consent always granted and the cap disabled.
+  marketingPolicy: { consent: () => null, capStart: () => null },
 });
 const settings = createSettings(db, clock, "http://fixture.test", roles);
 const smtp = {

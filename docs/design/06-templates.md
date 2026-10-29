@@ -35,7 +35,7 @@ M0.8 measured the selected library and found the precise library-limit semantics
 | Data | Primitive JSON strings are limited to 256 KiB UTF-8 before parsing and copied to owned dense arrays and null-prototype records; depth 16, 10,000 nodes, 1,024 entries, and 64 KiB per string |
 | Render | Source 64 KiB body/layout and 2 KiB subject; 1 MiB output per body/layout and 2 KiB subject; shared 4 MiB emission/intermediate budget, 10,000 work, depth 32 and 1,024 per range. Work includes expression tokens, property lookup, collection conversion and comparison size. Four admitted renders per instance. A caller can hold a compiled immutable snapshot; there is no retained cache |
 | Markdown | Liquid with HTML escaping, then local `marked` 15.0.12, then the optional HTML layout. The lexer shares the message work/byte/depth budget through the pinned patch; a conservative token reservation counts repeated reference URLs, escaping, nested parser output and prefixes before parsing. Conservative estimates can reject messages below the nominal byte limits |
-| Tracking and URLs | `track_link` accepts HTTP(S) and returns it unchanged, `track_view` is empty, and explicit URL fields are checked. These do not implement tracking or other delivery workflows |
+| Tracking and URLs | `track_link` accepts HTTP(S) and `track_view` renders nothing unless the sending owner supplies per-message tracking (M2.4 tx sends: tracked `/m/:sendUUID` links and listmonk's hidden pixel image, inserted after rendering via a per-render marker). Explicit URL fields are checked |
 
 The emitter, subset, JSON boundary and patches await hosted checks and
 independent review before they are treated as an accepted boundary. The time limit remains

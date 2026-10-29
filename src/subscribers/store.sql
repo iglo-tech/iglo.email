@@ -25,3 +25,15 @@ DELETE FROM subscriber_lists WHERE subscriber_id=? AND list_id=?;
 UPDATE subscribers SET status='blocklisted',updated_at=? WHERE id=?;
 -- name: membership-blocklist
 UPDATE subscriber_lists SET status='unsubscribed',updated_at=? WHERE subscriber_id=?;
+-- name: subscriber-by-uuid
+SELECT * FROM subscribers WHERE uuid = ?;
+-- name: membership-get
+SELECT * FROM subscriber_lists WHERE subscriber_id = ? AND list_id = ?;
+-- name: membership-unsubscribe-list
+-- Adapted from unsubscribe-by-campaign: one list, rows not already unsubscribed.
+UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND list_id=? AND status != 'unsubscribed' RETURNING list_id;
+-- name: membership-unsubscribe-all
+-- Adapted from unsubscribe-by-campaign with blocklist: every subscription not already unsubscribed.
+UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND status != 'unsubscribed' RETURNING list_id;
+-- name: subscriber-blocklist-only
+UPDATE subscribers SET status='blocklisted' WHERE id=?;

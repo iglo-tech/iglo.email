@@ -27,3 +27,26 @@ export function publicNotFound(i18n: Translation, method: string): Response {
     headers: { "Content-Type": "text/html; charset=UTF-8" },
   });
 }
+
+/** listmonk's public `message` page (makeMsgTpl): a title heading and one message. */
+export function publicMessage(
+  i18n: Translation,
+  page: { status: number; title: string; message: string; siteName: string },
+  headers: Record<string, string> = {},
+): Response {
+  const body = render(
+    <PublicShell
+      title={page.title}
+      siteName={page.siteName}
+      assetVersion={assetVersion}
+      poweredBy={i18n.T("public.poweredBy")}
+    >
+      <h2>{page.title}</h2>
+      <div>{page.message}</div>
+    </PublicShell>,
+  );
+  return new Response(`<!DOCTYPE html>${body}`, {
+    status: page.status,
+    headers: { "Content-Type": "text/html; charset=UTF-8", ...headers },
+  });
+}
