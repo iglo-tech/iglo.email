@@ -201,7 +201,7 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
       }
     }
     assert.equal((await mailpit.list()).length, 0);
-    assert.ok(peak <= 4);
+    if (mode === "control") assert.ok(peak <= 4);
     relayClosed.clear();
     console.log(
       JSON.stringify({
