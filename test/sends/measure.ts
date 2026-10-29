@@ -87,15 +87,17 @@ const tracked = {
     pending.delete(outcome.messageId);
   },
 };
-const loop = startOutbox({
-  db,
-  clock,
-  logger: { error: () => {} },
-  sends: tracked,
-  emailer: mailer,
-});
+let loop: ReturnType<typeof startOutbox> | undefined;
 try {
   for (const mode of ["control", "durable"] as const) {
+    if (mode === "durable")
+      loop = startOutbox({
+        db,
+        clock,
+        logger: { error: () => {} },
+        sends: tracked,
+        emailer: mailer,
+      });
     for (let repetition = 0; repetition <= 3; repetition++) {
       const count = repetition === 0 ? 10 : 50;
       const ids: string[] = [],
@@ -139,7 +141,7 @@ try {
     if (mode === "control") await direct.close();
   }
 } finally {
-  const stopped = loop.stop();
+  const stopped = loop?.stop();
   await Promise.all([direct.close(), mailer.close(), stopped]);
   sends.close();
   subscribers.close();
