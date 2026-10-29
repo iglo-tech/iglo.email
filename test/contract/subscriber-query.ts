@@ -410,10 +410,40 @@ export async function runSubscriberQuery(target: {
       1,
     );
 
+    // Accented search: case folds, accents do not (upstream `~*`), for listing and deletion.
+    const accent = await create("/api/subscribers", "subscribers", {
+      email: `accent-${tag}@example.test`,
+      name: `José ${tag}`,
+    });
+    await create("/api/subscribers", "subscribers", {
+      email: `plain-${tag}@example.test`,
+      name: `Jose ${tag}`,
+    });
+    for (const [search, expected, label] of [
+      [`José ${tag}`, ["accent"], "accent"],
+      [`JOSÉ ${tag}`, ["accent"], "accent-case"],
+      [`Jose ${tag}`, ["plain"], "accent-plain"],
+    ] as const) {
+      r = await json(`/api/subscribers?search=${q(search)}`);
+      check(same(names(r.body), expected), `subscriber-query-search-${label}`);
+    }
+    r = await json("/api/subscribers/query/delete", "POST", {
+      search: `José ${tag}`,
+    });
+    check(same(r.body, { data: true }), "subscriber-bulk-delete-accent");
+    r = await json(`/api/subscribers?query=${q(`subscribers.name LIKE '%${tag}'`)}`);
+    check(same(names(r.body), ["plain"]), "subscriber-bulk-delete-accent-scope");
+    resources.splice(
+      resources.findIndex((x) => x.kind === "subscribers" && x.id === accent.id),
+      1,
+    );
+
     if (normal) {
       // A raw query that never finishes is stopped at the production limit. SQLite only
       // evaluates the fragment for an existing row.
-      await create("/api/subscribers", "subscribers", { email: `timeout-${tag}@example.test` });
+      await create("/api/subscribers", "subscribers", {
+        email: `timeout-${tag}@example.test`,
+      });
       const started = performance.now();
       r = await json(
         `/api/subscribers?query=${q("(WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c) > 0")}`,

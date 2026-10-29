@@ -2,6 +2,7 @@
 // query-subscribers-for-export, query-subscribers-template), models/queries.go ApplyOrphanFilter,
 // internal/core/subscribers.go validateQueryTables and cmd/subscribers.go formatSQLExp at 6fcd95f.
 import type { Database, Statement } from "bun:sqlite";
+import { simpleLower } from "@/subscribers/unicode-lower";
 
 /** A SQL argument; integers are int64 identities. */
 export type Arg = string | bigint;
@@ -73,12 +74,49 @@ const ascii = (value: string) => /^[\p{ASCII}]*$/u.test(value);
 const hasToken = (value: string) => /[\p{L}\p{N}\p{Co}]/u.test(value);
 
 /**
+ * A GLOB pattern for PostgreSQL's case-insensitive literal match `~* ('***=' || search)`:
+ * each character matches itself and its single-character lower and upper case forms, with no
+ * accent folding or normalization, so `José` does not match `Jose`.
+ */
+export function caseInsensitiveGlob(search: string): string {
+  let pattern = "*";
+  for (const char of search) {
+    const variants = new Set([char, simpleLower(char)]);
+    const upper = char.toUpperCase();
+    if ([...upper].length === 1) variants.add(upper);
+    if (variants.size > 1) pattern += `[${[...variants].join("")}]`;
+    else pattern += "*?[".includes(char) ? `[${char}]` : char;
+  }
+  return `${pattern}*`;
+}
+
+/**
+ * The substring condition upstream's search applies. SQLite's lower() folds only ASCII, which
+ * is exact for ASCII input; other input uses the case-variant GLOB above.
+ */
+function substringSQL(search: string): { sql: string; args: Arg[] } {
+  if (ascii(search)) {
+    const lower = search.toLowerCase();
+    return {
+      sql: "(instr(lower(subscribers.name), ?) > 0 OR instr(lower(subscribers.email), ?) > 0)",
+      args: [lower, lower],
+    };
+  }
+  const glob = caseInsensitiveGlob(search);
+  return {
+    sql: "(subscribers.name GLOB ? OR subscribers.email GLOB ?)",
+    args: [glob, glob],
+  };
+}
+
+/**
  * The FROM/WHERE part of upstream's query-subscribers family in SQLite. The LEFT JOIN keeps
  * `subscriber_lists.*` addressable from fragments exactly when upstream joins it.
  *
  * Search matches listmonk's case-insensitive substring results for whole words, word prefixes
- * and e-mail addresses: an FTS5 phrase-prefix match narrows candidates and, for ASCII input,
- * a substring check keeps exactly the rows upstream's `~* ('***=' || search)` returns.
+ * and e-mail addresses: an FTS5 phrase-prefix match narrows candidates (it folds case and
+ * accents) and a substring check keeps exactly the rows upstream's `~* ('***=' || search)`
+ * returns.
  */
 export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args: Arg[] }) {
   const args: Arg[] = [];
@@ -106,22 +144,15 @@ export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args:
   if (status) where.push("subscriber_lists.subscriber_id IS NOT NULL");
   const search = filter.search;
   if (search) {
-    const lower = search.toLowerCase();
-    const substring =
-      "(instr(lower(subscribers.name), ?) > 0 OR instr(lower(subscribers.email), ?) > 0)";
     if (hasToken(search)) {
       where.push(
         "subscribers.id IN (SELECT rowid FROM subscribers_fts WHERE subscribers_fts MATCH ?)",
       );
       args.push(`"${search.replaceAll('"', '""')}" *`);
-      if (ascii(search)) {
-        where.push(substring);
-        args.push(lower, lower);
-      }
-    } else {
-      where.push(substring);
-      args.push(lower, lower);
     }
+    const substring = substringSQL(search);
+    where.push(substring.sql);
+    args.push(...substring.args);
   }
   if (filter.subscriberStatus) {
     where.push("subscribers.status = ?");

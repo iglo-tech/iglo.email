@@ -128,6 +128,7 @@ export async function queryFixture(options: { timeoutMs?: number } = {}) {
     clock,
     errors,
     runner,
+    sessionHeaders,
     request,
     json,
     apiUser,
