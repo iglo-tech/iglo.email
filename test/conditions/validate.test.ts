@@ -41,8 +41,10 @@ describe("accepted shapes", () => {
   });
 
   test("every op, since form, count comparator and list status", () => {
-    for (const op of ["eq", "ne", "gt", "gte", "lt", "lte"])
-      ok({ attr: "n", op, value: 1 }), ok({ attr: "n", op, value: "x" });
+    for (const op of ["eq", "ne", "gt", "gte", "lt", "lte"]) {
+      ok({ attr: "n", op, value: 1 });
+      ok({ attr: "n", op, value: "x" });
+    }
     ok({ attr: "flag", op: "eq", value: true });
     ok({ attr: "flag", op: "ne", value: false });
     ok({ attr: "n", op: "in", value: [1, "a", true] });
@@ -184,9 +186,9 @@ describe("rejected shapes", () => {
     expect(fields({ list: 1, status: [] })).toEqual(["condition.status"]);
     expect(fields({ list: 1, status: "confirmed" })).toEqual(["condition.status"]);
     expect(fields({ list: 1, status: ["confirmed", "maybe"] })).toEqual(["condition.status.1"]);
-    expect(fields({ list: 1, status: ["confirmed", "confirmed", "confirmed", "confirmed"] })).toEqual(
-      ["condition.status"],
-    );
+    expect(
+      fields({ list: 1, status: ["confirmed", "confirmed", "confirmed", "confirmed"] }),
+    ).toEqual(["condition.status"]);
   });
 
   test("sql needs the permission and M1.7's fragment checks", () => {

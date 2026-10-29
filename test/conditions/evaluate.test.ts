@@ -195,9 +195,9 @@ describe("attribute comparisons and type rules", () => {
   test("a huge in list at the limit is bound, not interpolated", async () => {
     const values = Array.from({ length: 100 }, (_, i) => `v${i}' OR '1'='1`);
     expect(await value(attr("plan", "in", values), context(rich))).toBe(false);
-    expect(await value(attr("plan", "in", [...values.slice(1), "subscription"]), context(rich))).toBe(
-      true,
-    );
+    expect(
+      await value(attr("plan", "in", [...values.slice(1), "subscription"]), context(rich)),
+    ).toBe(true);
   });
 });
 
@@ -205,15 +205,31 @@ describe("event predicates", () => {
   const cases: [string, unknown, boolean][] = [
     ["any time", { event: "download_finished" }, true],
     ["unknown name", { event: "nope" }, false],
-    ["since trigger excludes earlier events", { event: "download_finished", since: "trigger", count: { eq: 4 } }, true],
+    [
+      "since trigger excludes earlier events",
+      { event: "download_finished", since: "trigger", count: { eq: 4 } },
+      true,
+    ],
     ["since trigger excludes the trigger itself", { event: "order_paid", since: "trigger" }, false],
-    ["since enrollment", { event: "download_finished", since: "enrollment", count: { eq: 3 } }, true],
+    [
+      "since enrollment",
+      { event: "download_finished", since: "enrollment", count: { eq: 3 } },
+      true,
+    ],
     ["since last_step", { event: "download_finished", since: "last_step", count: { eq: 2 } }, true],
-    ["since a duration back from now", { event: "download_finished", since: "P3D", count: { eq: 4 } }, true],
+    [
+      "since a duration back from now",
+      { event: "download_finished", since: "P3D", count: { eq: 4 } },
+      true,
+    ],
     ["since PT13H", { event: "download_finished", since: "PT13H", count: { eq: 2 } }, true],
     ["since PT11H", { event: "download_finished", since: "PT11H", count: { eq: 1 } }, true],
     ["since P1W", { event: "download_finished", since: "P1W", count: { eq: 5 } }, true],
-    ["since PT0S counts only future events", { event: "download_finished", since: "PT0S", count: { eq: 1 } }, true],
+    [
+      "since PT0S counts only future events",
+      { event: "download_finished", since: "PT0S", count: { eq: 1 } },
+      true,
+    ],
     ["total count", { event: "download_finished", count: { eq: 5 } }, true],
     ["gte", { event: "download_finished", count: { gte: 5 } }, true],
     ["gte above", { event: "download_finished", count: { gte: 6 } }, false],
@@ -223,17 +239,46 @@ describe("event predicates", () => {
     ["eq 0 for no events", { event: "nope", count: { eq: 0 } }, true],
     ["range", { event: "download_finished", count: { gte: 2, lte: 5 } }, true],
     ["empty range", { event: "download_finished", count: { gte: 2, lte: 1 } }, false],
-    ["where", { event: "download_finished", where: { "data.source": "mcp" }, count: { eq: 2 } }, true],
-    ["where since", { event: "download_finished", since: "enrollment", where: { "data.source": "mcp" }, count: { eq: 1 } }, true],
+    [
+      "where",
+      { event: "download_finished", where: { "data.source": "mcp" }, count: { eq: 2 } },
+      true,
+    ],
+    [
+      "where since",
+      {
+        event: "download_finished",
+        since: "enrollment",
+        where: { "data.source": "mcp" },
+        count: { eq: 1 },
+      },
+      true,
+    ],
     ["where nested", { event: "download_finished", where: { "data.nested.ok": true } }, true],
     ["where number", { event: "download_finished", where: { "data.n": 2 } }, true],
     ["where number vs text", { event: "download_finished", where: { "data.n": "2" } }, false],
-    ["where all fields", { event: "download_finished", where: { "data.source": "web", "data.n": 2 } }, true],
-    ["where all fields mismatch", { event: "download_finished", where: { "data.source": "mcp", "data.n": 2 } }, false],
-    ["where injection", { event: "download_finished", where: { "data.source": "x' OR '1'='1" } }, false],
+    [
+      "where all fields",
+      { event: "download_finished", where: { "data.source": "web", "data.n": 2 } },
+      true,
+    ],
+    [
+      "where all fields mismatch",
+      { event: "download_finished", where: { "data.source": "mcp", "data.n": 2 } },
+      false,
+    ],
+    [
+      "where injection",
+      { event: "download_finished", where: { "data.source": "x' OR '1'='1" } },
+      false,
+    ],
     ["name injection is an ordinary name", { event: "odd' OR '1'='1" }, true],
     ["name injection does not match others", { event: "x' OR name <> '" }, false],
-    ["no download after the trigger", { not: { event: "download_finished", since: "trigger" } }, false],
+    [
+      "no download after the trigger",
+      { not: { event: "download_finished", since: "trigger" } },
+      false,
+    ],
   ];
   for (const [name, condition, expected] of cases)
     test(name, async () => {
@@ -249,8 +294,12 @@ describe("event predicates", () => {
 
   test("events of other subscribers are never counted", async () => {
     expect(await value({ event: "download_finished" }, context(bare))).toBe(false);
-    expect(await value({ event: "download_finished", since: "P1D" }, context(disabled))).toBe(false);
-    expect(await value({ event: "download_finished", since: "P11D" }, context(disabled))).toBe(true);
+    expect(await value({ event: "download_finished", since: "P1D" }, context(disabled))).toBe(
+      false,
+    );
+    expect(await value({ event: "download_finished", since: "P11D" }, context(disabled))).toBe(
+      true,
+    );
   });
 
   test("an injected clock moves duration windows", async () => {
@@ -322,23 +371,30 @@ describe("errors are returned, never thrown", () => {
     // A time the condition does not use is not needed.
     expect(await value({ event: "x", since: "trigger" }, noEnrollment)).toBe(false);
     const { triggerAt: __, ...noTrigger } = context(rich);
-    expect((await failure({ event: "x", since: "last_step" }, { ...noTrigger, lastStepAt: null })).kind).toBe(
-      "context",
-    );
-    expect((await failure({ event: "x", since: "trigger" }, context(rich, { triggerAt: "yesterday" }))).kind).toBe(
-      "context",
-    );
     expect(
-      (await failure({ event: "x", since: "P1D" }, context(rich, { now: new Date(Number.NaN) }))).kind,
+      (await failure({ event: "x", since: "last_step" }, { ...noTrigger, lastStepAt: null })).kind,
     ).toBe("context");
     expect(
-      (await failure({ event: "x" }, context(rich, { now: new Date("+020000-01-01T00:00:00Z") }))).kind,
+      (await failure({ event: "x", since: "trigger" }, context(rich, { triggerAt: "yesterday" })))
+        .kind,
     ).toBe("context");
-    expect((await failure({ event: "x" }, context(rich, { subscriberId: 1.5 }))).kind).toBe("context");
+    expect(
+      (await failure({ event: "x", since: "P1D" }, context(rich, { now: new Date(Number.NaN) })))
+        .kind,
+    ).toBe("context");
+    expect(
+      (await failure({ event: "x" }, context(rich, { now: new Date("+020000-01-01T00:00:00Z") })))
+        .kind,
+    ).toBe("context");
+    expect((await failure({ event: "x" }, context(rich, { subscriberId: 1.5 }))).kind).toBe(
+      "context",
+    );
   });
 
   test("a missing subscriber", async () => {
-    expect(await failure({ attr: "a", op: "exists" }, context(rich, { subscriberId: 99_999n }))).toEqual({
+    expect(
+      await failure({ attr: "a", op: "exists" }, context(rich, { subscriberId: 99_999n })),
+    ).toEqual({
       kind: "not_found",
       message: "subscriber not found",
     });
@@ -381,12 +437,21 @@ describe("the sql escape hatch", () => {
     expect(await value({ not: { sql: credits } }, context(bare))).toBe(true);
     expect(
       await value(
-        { all: [{ sql: credits }, { sql: "subscribers.status = 'enabled'" }, { event: "download_finished", since: "trigger" }] },
+        {
+          all: [
+            { sql: credits },
+            { sql: "subscribers.status = 'enabled'" },
+            { event: "download_finished", since: "trigger" },
+          ],
+        },
         context(rich),
       ),
     ).toBe(true);
     expect(
-      await value({ any: [{ sql: "1 = 0" }, { attr: "plan", op: "eq", value: "free" }] }, context(disabled)),
+      await value(
+        { any: [{ sql: "1 = 0" }, { attr: "plan", op: "eq", value: "free" }] },
+        context(disabled),
+      ),
     ).toBe(true);
     // The fragment sees the subscriber_lists join as segment queries do.
     expect(await value({ sql: "subscriber_lists.list_id IS NULL" }, context(rich))).toBe(true);
@@ -426,7 +491,9 @@ describe("the sql escape hatch", () => {
   });
 
   test("refused fragments and tables", async () => {
-    expect((await failure({ sql: "1); DELETE FROM subscribers; --" }, context(rich))).kind).toBe("invalid");
+    expect((await failure({ sql: "1); DELETE FROM subscribers; --" }, context(rich))).kind).toBe(
+      "invalid",
+    );
     for (const sql of [
       "(SELECT count(*) FROM users) > 0",
       "(SELECT count(*) FROM events) > 0",
@@ -436,7 +503,9 @@ describe("the sql escape hatch", () => {
     ])
       expect([sql, (await failure({ sql }, context(rich))).kind]).toEqual([sql, "query"]);
     // Writes are impossible: the subscriber is unchanged.
-    expect(await value({ attr: "plan", op: "eq", value: "subscription" }, context(rich))).toBe(true);
+    expect(await value({ attr: "plan", op: "eq", value: "subscription" }, context(rich))).toBe(
+      true,
+    );
   });
 
   test("time and memory limits are safe errors and leave no child running", async () => {
@@ -444,7 +513,9 @@ describe("the sql escape hatch", () => {
     const spin =
       "(WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c) > 0";
     const started = performance.now();
-    expect(await failure({ all: [{ attr: "plan", op: "exists" }, { sql: spin }] }, context(rich))).toEqual({
+    expect(
+      await failure({ all: [{ attr: "plan", op: "exists" }, { sql: spin }] }, context(rich)),
+    ).toEqual({
       kind: "timeout",
       message: "query timed out",
     });
@@ -459,7 +530,10 @@ describe("the sql escape hatch", () => {
   test("busy slots are a safe error", async () => {
     const spin =
       "(WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c) > 0";
-    const running = [f.evaluator.evaluate({ sql: spin }, context(rich)), f.evaluator.evaluate({ sql: spin }, context(rich))];
+    const running = [
+      f.evaluator.evaluate({ sql: spin }, context(rich)),
+      f.evaluator.evaluate({ sql: spin }, context(rich)),
+    ];
     await Bun.sleep(50);
     expect(await failure({ sql: "1 = 1" }, context(rich))).toEqual({
       kind: "busy",

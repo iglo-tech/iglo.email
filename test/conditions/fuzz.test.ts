@@ -75,7 +75,8 @@ function genCondition(depth: number): Record<string, unknown> {
     }
     const op = pick(["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"]);
     if (op === "exists") return { attr, op };
-    if (op === "in") return { attr, op, value: Array.from({ length: 1 + int(4) }, () => pick(scalars)) };
+    if (op === "in")
+      return { attr, op, value: Array.from({ length: 1 + int(4) }, () => pick(scalars)) };
     if (op === "eq" || op === "ne") return { attr, op, value: pick(scalars) };
     return { attr, op, value: chance(0.5) ? pick(strings) : pick(numbers) };
   }
@@ -154,7 +155,9 @@ test(`generated conditions agree with the reference evaluator (seed ${seed}, ${c
     const condition = genCondition(0);
     const checked = validate(condition, { canUseSql: false });
     if (!checked.ok)
-      throw new Error(`seed ${seed} case ${i}: generated condition invalid ${JSON.stringify(checked.errors)}`);
+      throw new Error(
+        `seed ${seed} case ${i}: generated condition invalid ${JSON.stringify(checked.errors)}`,
+      );
     const subscriber = pick(f.subscribers);
     const context = contextFor(subscriber);
     const expected = referenceEvaluate(condition, subscriber, {

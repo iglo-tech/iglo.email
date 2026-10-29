@@ -22,7 +22,9 @@ export interface ModelSubscriber {
   events: ModelEvent[];
 }
 
-export async function conditionsFixture(options: { timeoutMs?: number; memoryBytes?: number } = {}) {
+export async function conditionsFixture(
+  options: { timeoutMs?: number; memoryBytes?: number } = {},
+) {
   const directory = mkdtempSync(join(tmpdir(), "iglo-conditions-"));
   const clock = new TestClock();
   const db = openDatabase(directory);
