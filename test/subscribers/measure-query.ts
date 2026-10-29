@@ -108,6 +108,7 @@ try {
   await timed("search-common-token", "/api/subscribers?search=example7", get);
   await timed("search-every-row", "/api/subscribers?search=synthetic", get);
   await timed("search-no-token", "/api/subscribers?search=%40", get);
+  await timed("search-accented", `/api/subscribers?search=${encodeURIComponent("Usér54321")}`, get);
   await timed("raw-trivial", `/api/subscribers?query=${encodeURIComponent("1=1")}`, get);
   await timed("raw-attribs", `/api/subscribers?query=${city}`, get);
   await timed("raw-attribs-search", `/api/subscribers?query=${city}&search=synthetic`, get);
@@ -118,6 +119,8 @@ try {
     headers: { ...admin, "accept-encoding": "gzip" },
   });
   await timed("export-raw-attribs", `/api/subscribers/export?query=${city}`, get);
+  // Every ID of a raw selection is drained from the child into the parent.
+  await timed("export-raw-all", `/api/subscribers/export?query=${encodeURIComponent("1=1")}`, get);
   // A query that never ends: stopped at the 2 s fixture limit, child killed, CPU idle after.
   const spin = encodeURIComponent(
     "(WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c) > 0",
