@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.4 unsubscribe and frequency cap, [draft PR #19](https://github.com/iglo-tech/iglo.email/pull/19), head d5647b2. Round 1: CHANGES (2 agreed P1); one Opus fixer running. Lead accepted the renderer tracking seam.
-Next: Sol round-2 fix-only review, merge, then M2.6.
+M2.4 unsubscribe and frequency cap, [draft PR #19](https://github.com/iglo-tech/iglo.email/pull/19), head d983dd0. Round-1 fixes pushed (migration 0003); Sol round-2 fix-only review running. Lead accepted the renderer tracking seam.
+Next: lead disposition of round 2, merge, then M2.6.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -49,4 +49,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
 - Flaky test/messaging/route-auth.test.ts "held SMTP body … before a connection": the sink saw stray connections in ~3/5 isolated runs, with or without M1.8 ([#17](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6492720721)).
+- Flaky test/contract/contract.test.ts stray extra request on a fresh port (seen on M1.8 and M2.4 branches); likely the same localhost-port isolation cause as route-auth.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
