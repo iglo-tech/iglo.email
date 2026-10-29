@@ -57,6 +57,8 @@
     "unsubscribe:measure": "bun test/unsubscribe/measure.ts",
     "contract:unsubscribe": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned unsubscribe",
     "tx:measure": "bun test/tx/measure.ts",
+    "contract:events": "bun run build && bun test/contract/cli.ts owned events",
+    "events:measure": "bun run build && bun test/events/measure.ts",
     "templates:compiled": "bun test/templates/compiled-check.ts"
   },
   "dependencies": {

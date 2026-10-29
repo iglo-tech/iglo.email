@@ -35,6 +35,10 @@ import { registerTxRoutes } from "@/tx/routes";
 import { createMarketingPolicy, marketingSettings } from "@/unsubscribe/policy";
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import { allowedDomain } from "@/subscribers/email";
+import { createEventStore } from "@/events/store";
+import { registerEventRoutes } from "@/events/routes";
+import { startEventRetention } from "@/events/retention";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -59,6 +63,8 @@ async function main(): Promise<void> {
   let templates: ReturnType<typeof createTemplateStore> | undefined;
   let outbox: ReturnType<typeof startOutbox> | undefined;
   let tracking: ReturnType<typeof createTracking> | undefined;
+  let events: ReturnType<typeof createEventStore> | undefined;
+  let retention: ReturnType<typeof startEventRetention> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -156,6 +162,18 @@ async function main(): Promise<void> {
       tracking,
       settings: marketing,
     });
+    events = createEventStore(db, subscriberStore, {
+      emailAllowed: (email) => {
+        const current = settings!.read();
+        return allowedDomain(
+          email,
+          current["privacy.domain_allowlist"],
+          current["privacy.domain_blocklist"],
+        );
+      },
+    });
+    registerEventRoutes(router, events, auth);
+    retention = startEventRetention({ db, clock, logger: app.logger, events });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       let closing = false;
@@ -165,30 +183,37 @@ async function main(): Promise<void> {
         process.off("SIGTERM", onSignal);
         process.off("SIGINT", onSignal);
         const outboxStop = outbox!.stop();
+        const retentionStop = retention!.stop();
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
-        Promise.allSettled([outboxStop, messagingClose, httpStop]).then((results) => {
-          const error = failure ?? results.find((result) => result.status === "rejected");
-          if (error)
-            reject(
-              error instanceof Error
-                ? error
-                : error && typeof error === "object" && "reason" in error
-                  ? error.reason
-                  : new Error("Outbox stopped"),
-            );
-          else resolve();
-        });
+        Promise.allSettled([outboxStop, retentionStop, messagingClose, httpStop]).then(
+          (results) => {
+            const error = failure ?? results.find((result) => result.status === "rejected");
+            if (error)
+              reject(
+                error instanceof Error
+                  ? error
+                  : error && typeof error === "object" && "reason" in error
+                    ? error.reason
+                    : new Error("Outbox stopped"),
+              );
+            else resolve();
+          },
+        );
       };
       const onSignal = () => shutdown();
       process.once("SIGTERM", onSignal);
       process.once("SIGINT", onSignal);
       void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
+      void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
     });
   } finally {
     const stopped = outbox?.stop();
+    const purging = retention?.stop();
     await emailer?.close();
     await stopped?.catch(() => {});
+    await purging?.catch(() => {});
+    events?.close();
     sends?.close();
     tracking?.close();
     templates?.close();

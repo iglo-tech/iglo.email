@@ -7,6 +7,7 @@ import { writeTransaction } from "@/db/transaction";
 import type { ListReferences } from "@/lists/references";
 import type { SubscriberInput } from "@/subscribers/input";
 import { HttpError } from "@/server/response";
+import { titleWords } from "@/subscribers/unicode-title";
 import sql from "@/subscribers/store.sql" with { type: "text" };
 
 interface Row {
@@ -28,6 +29,28 @@ interface Membership {
   created_at: string;
   updated_at: string;
 }
+/**
+ * The subscriber part of a subscriber event (docs/design/05-sequences.md#events-api), after
+ * field validation: `email` is sanitized, `external_id` passed validExternal, `name` is
+ * trimmed and `attribs` holds top-level replacements where `null` removes a key.
+ */
+export interface EventSubscriber {
+  external_id?: string;
+  email?: string;
+  name?: string;
+  attribs?: Record<string, unknown>;
+}
+/** Largest merged attribute JSON an event may produce, unless it already was larger. */
+export const EVENT_ATTRIBS_BYTES = 64 * 1024;
+// The create default from routes.ts validate: title-cased words of the local part.
+const nameFromEmail = (email: string) =>
+  email
+    .split("@")[0]!
+    .replaceAll(".", " ")
+    .split(/[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/)
+    .filter(Boolean)
+    .map(titleWords)
+    .join(" ");
 export interface Scope {
   all: boolean;
   ids: bigint[];
@@ -212,6 +235,94 @@ export function createSubscriberStore(db: Database, clock: Clock, lists: ListRef
           else if (action === "unsubscribe" && existing)
             q.get("membership-update").run("unsubscribed", now, id, list);
         }
+    },
+    /** Event lookup: by `external_id`, then by `email`. Read-only; the caller holds the write. */
+    resolveForEvent(input: EventSubscriber): Row | null {
+      return (
+        (input.external_id === undefined ? null : external(input.external_id)) ??
+        (input.email === undefined ? null : byEmail(input.email))
+      );
+    },
+    /**
+     * Create or update the subscriber an event names, inside the caller's write transaction.
+     * Every conflict is detected before the single write, so a rejection writes nothing.
+     * `emailAllowed` is the privacy domain policy for a new or changed address.
+     */
+    upsertForEvent(
+      row: Row | null,
+      input: EventSubscriber,
+      emailAllowed: (email: string) => boolean,
+    ): Row {
+      const now = clock.now().toISOString();
+      const merge = (current: Record<string, unknown>) => {
+        const merged = new Map(Object.entries(current));
+        for (const [key, value] of Object.entries(input.attribs ?? {}))
+          if (value === null) merged.delete(key);
+          else merged.set(key, value);
+        return JSON.stringify(Object.fromEntries(merged));
+      };
+      const bounded = (attribs: string, previous: number) => {
+        if (Buffer.byteLength(attribs) > Math.max(EVENT_ATTRIBS_BYTES, previous))
+          throw new HttpError(400, "Invalid attributes.");
+        return attribs;
+      };
+      const blocked = () => new HttpError(400, "The e-mail domain is blocklisted.");
+      if (!row) {
+        if (input.email === undefined) throw new HttpError(404, "Subscriber not found");
+        if (!emailAllowed(input.email)) throw blocked();
+        const attribs = bounded(merge({}), 0);
+        try {
+          const created = q
+            .get("subscriber-insert")
+            .get(
+              crypto.randomUUID(),
+              input.email,
+              input.name || nameFromEmail(input.email),
+              "enabled",
+              attribs,
+              input.external_id ?? null,
+              now,
+              now,
+            ) as { id: bigint };
+          return get(created.id)!;
+        } catch (error) {
+          return conflict(error);
+        }
+      }
+      let changed = false;
+      let externalID = row.external_id;
+      if (input.external_id !== undefined && input.external_id !== row.external_id) {
+        // Found by email: link a new external ID, but never re-point an existing one.
+        if (row.external_id !== null || external(input.external_id))
+          throw new HttpError(409, "External ID and e-mail belong to different subscribers.");
+        externalID = input.external_id;
+        changed = true;
+      }
+      let email = row.email;
+      if (input.email !== undefined && input.email !== row.email) {
+        // The same address in another ASCII case is not a change.
+        const owner = byEmail(input.email);
+        if (owner && owner.id !== row.id) throw new HttpError(409, "E-mail already exists.");
+        if (!owner) {
+          if (!emailAllowed(input.email)) throw blocked();
+          email = input.email;
+          changed = true;
+        }
+      }
+      const name = input.name || row.name;
+      if (name !== row.name) changed = true;
+      let attribs = row.attribs;
+      if (input.attribs !== undefined) {
+        attribs = bounded(merge(JSON.parse(row.attribs)), Buffer.byteLength(row.attribs));
+        if (attribs !== row.attribs) changed = true;
+      }
+      if (!changed) return row;
+      try {
+        q.get("subscriber-update").run(email, name, row.status, attribs, externalID, now, row.id);
+      } catch (error) {
+        return conflict(error);
+      }
+      return get(row.id)!;
     },
     byUuid: (uuid: string) => q.get("subscriber-by-uuid").get(uuid) as Row | null,
     membership: (id: bigint, list: bigint) =>
