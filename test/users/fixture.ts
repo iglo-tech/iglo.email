@@ -21,12 +21,15 @@ import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { sessionDuration } from "@/settings/duration";
+import { createEmailer } from "@/messaging/email";
+import { createSMTPTest } from "@/messaging/test";
 
 export async function startUserFixture(
   policy: AuthPolicy = defaultAuthPolicy,
   initialize = true,
   liveSettings = false,
   persisted?: { dataDir: string; clock: TestClock },
+  smtp = false,
 ) {
   const dataDir = persisted?.dataDir ?? mkdtempSync(join(tmpdir(), "iglo-users-fixture-"));
   const clock = persisted?.clock ?? new TestClock();
@@ -87,7 +90,21 @@ export async function startUserFixture(
     });
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
-    registerSettingsRoutes(router, settings, auth);
+    const emailer = smtp
+      ? createEmailer({
+          clock,
+          settings: () => ({
+            smtp: settings.read().smtp,
+            rootUrl: settings.read()["app.root_url"],
+          }),
+        })
+      : undefined;
+    registerSettingsRoutes(
+      router,
+      settings,
+      auth,
+      emailer && createSMTPTest(settings, emailer, app.i18n),
+    );
     let announce!: () => void;
     let release!: () => void;
     const entered = new Promise<void>((resolve) => {
@@ -278,6 +295,7 @@ export async function startUserFixture(
       admin,
       origin: `http://127.0.0.1:${server.port}`,
       bodyEntered,
+      closeMessaging: () => emailer?.close() ?? Promise.resolve(),
       persisted: { dataDir, clock },
       // Arrange historical and damaged synthetic records; observations use HTTP.
       arrangeSession(
@@ -313,6 +331,7 @@ export async function startUserFixture(
           release();
           releaseLogin();
           await server.stop(true);
+          await emailer?.close();
         } finally {
           users.close();
           settings.close();

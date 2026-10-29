@@ -267,5 +267,13 @@ caller reads the real settings owner and checks authentication and RSA signature
 before and after restart/retention and null clearing. `bun run messaging:fixture`
 checks production message composition through owned Mailpit; `messaging:faults`,
 `messaging:auth` and `messaging:tls` exercise the owned relay and local TLS
-Mailpit. These are finite fixture observations, not provider or final-delivery
-evidence. Remaining acceptance gaps are recorded in the M2.1 draft PR.
+Mailpit. `bun run messaging:corpus` drives plain, Unicode HTML/alternate,
+binary and inline attachments, and server/message headers through the pinned
+TX/template API first and then a separately compiled production-owner caller.
+The reference harness creates its invocation-owned filesystem upload directory
+and opts into synthetic SMTP headers for this corpus only. SMTP tests also cover
+body-held revocation, CSRF, origin, API credentials, capacity and absolute
+deadlines. A compiled process is stopped while a test response is held after
+Mailpit accepts DATA. TLS probes include process-local CA trust and hostname
+mismatch in STARTTLS and implicit modes. These are finite fixture observations,
+not provider or final-delivery evidence; the TX endpoint itself is not ported.

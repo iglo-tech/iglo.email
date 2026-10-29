@@ -93,7 +93,8 @@ async function main(): Promise<void> {
       const shutdown = () => {
         process.off("SIGTERM", shutdown);
         process.off("SIGINT", shutdown);
-        server.stop().then(resolve, reject);
+        const messagingClose = emailer!.close();
+        Promise.all([messagingClose, server.stop()]).then(() => resolve(), reject);
       };
       process.once("SIGTERM", shutdown);
       process.once("SIGINT", shutdown);

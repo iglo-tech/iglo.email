@@ -9,6 +9,7 @@ export type Fault =
   | "before-data"
   | "during-data"
   | "lost-final"
+  | "hold-final"
   | "hold"
   | "auth";
 export async function faultRelay(
@@ -18,9 +19,18 @@ export async function faultRelay(
 ) {
   let connections = 0;
   let authenticated = 0;
+  const greetings: string[] = [];
   let firstReady!: () => void;
   const first = new Promise<void>((resolve) => {
     firstReady = resolve;
+  });
+  let finalReady!: () => void;
+  const atFinal = new Promise<void>((resolve) => {
+    finalReady = resolve;
+  });
+  let closedReady!: () => void;
+  const disconnected = new Promise<void>((resolve) => {
+    closedReady = resolve;
   });
   let heldReady!: () => void;
   let releaseHeld!: () => void;
@@ -40,6 +50,7 @@ export async function faultRelay(
     sockets.add(upstream);
     client.once("close", () => {
       sockets.delete(client);
+      closedReady();
       upstream.destroy();
     });
     upstream.once("close", () => {
@@ -127,6 +138,7 @@ export async function faultRelay(
           upstream.destroy();
           return;
         } else {
+          if (/^(EHLO|HELO) /i.test(line)) greetings.push(line);
           if (/^EHLO /i.test(line)) ehlo = true;
           upstream.write(`${line}\r\n`, "latin1");
           if (/^DATA$/i.test(line)) data = true;
@@ -148,6 +160,22 @@ export async function faultRelay(
         if (/^250[- ]PIPELINING/i.test(line)) continue;
         if (finalPending && /^250 /.test(line)) {
           finalPending = false;
+          if (fault === "hold-final") {
+            finalReady();
+            // Keep the socket active without completing an SMTP response. The
+            // process test's outer guard then detects an unbounded HTTP drain.
+            client.write("250-");
+            const trickle = setInterval(() => client.write("x"), 250);
+            try {
+              await Promise.race([
+                release,
+                new Promise<void>((done) => client.once("close", done)),
+              ]);
+            } finally {
+              clearInterval(trickle);
+            }
+            if (client.destroyed) return;
+          }
           if (fault === "lost-final") {
             client.destroy();
             upstream.destroy();
@@ -172,9 +200,12 @@ export async function faultRelay(
     port: address.port,
     first,
     entered,
+    atFinal,
+    disconnected,
     release: releaseHeld,
     connections: () => connections,
     authenticated: () => authenticated,
+    greetings: () => [...greetings],
     async close() {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve, reject) =>

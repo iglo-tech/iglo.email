@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createServer, createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -106,6 +106,44 @@ try {
         assert.notEqual((await emailer.push(message).result).status, "accepted");
         current = [{ ...server, tls_skip_verify: true }];
         assert.equal((await emailer.push(message).result).status, "accepted");
+        // A loopback proxy provides a different IP identity for the same certificate.
+        const proxy = createServer((incoming) => {
+          const upstream = createConnection({ host: "127.0.0.1", port: smtpPort });
+          incoming.on("error", () => {});
+          upstream.on("error", () => {});
+          incoming.pipe(upstream).pipe(incoming);
+          incoming.once("close", () => upstream.destroy());
+          upstream.once("close", () => incoming.destroy());
+        });
+        await new Promise<void>((done) => proxy.listen(0, "127.0.0.2", done));
+        const proxyAddress = proxy.address();
+        if (!proxyAddress || typeof proxyAddress === "string")
+          throw new Error("Missing proxy port");
+        try {
+          for (const [host, testPort, expected] of [
+            ["127.0.0.1", smtpPort, "accept"],
+            ["127.0.0.2", proxyAddress.port, "reject"],
+          ] as const) {
+            const probe = spawn(process.execPath, [resolve("test/messaging/tls-client.ts")], {
+              env: {
+                ...process.env,
+                NODE_EXTRA_CA_CERTS: cert,
+                M21_TLS_HOST: host,
+                M21_TLS_PORT: String(testPort),
+                M21_TLS_MODE: mode,
+                M21_TLS_EXPECT: expected,
+              },
+              stdio: "inherit",
+            });
+            const code = await new Promise<number | null>((done, reject) => {
+              probe.once("error", reject);
+              probe.once("exit", done);
+            });
+            assert.equal(code, 0);
+          }
+        } finally {
+          await new Promise<void>((done) => proxy.close(() => done()));
+        }
         const response = await fetch(`${sink.api}/api/v1/messages`, {
           signal: AbortSignal.timeout(5000),
         });

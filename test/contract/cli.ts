@@ -118,7 +118,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       async (baseUrl, runSignal, restart, dataDir) => {
         const credentials = await provisionApiUser(baseUrl, admin);
         if (args[1] === "messaging") {
-          await runMessagingContract({ mode: "normal", baseUrl, credentials });
+          await runMessagingContract({ mode: "normal", baseUrl, credentials, restart });
           await runDKIMSettings({ baseUrl, credentials, restart, dataDir });
           return true;
         }

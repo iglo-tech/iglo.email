@@ -155,7 +155,59 @@ try {
       .status,
     "accepted",
   );
-  assert.equal((await mailpit.list()).length, 3);
+  servers = [
+    { ...server, name: "fallback", from_addresses: [], email_headers: [{ "X-Route": "fallback" }] },
+    {
+      ...server,
+      name: "domain",
+      from_addresses: ["route.test"],
+      email_headers: [{ "X-Route": "domain" }],
+    },
+    {
+      ...server,
+      name: "exact",
+      from_addresses: ["exact@route.test"],
+      email_headers: [{ "X-Route": "exact" }],
+    },
+    {
+      ...server,
+      name: "private",
+      exclude_from_default: true,
+      from_addresses: ["exact@route.test"],
+      email_headers: [{ "X-Route": "private" }],
+    },
+  ];
+  for (const [label, from, messenger, route] of [
+    ["exact", "Exact <exact@route.test>", "", "exact"],
+    ["domain", "other@route.test", "", "domain"],
+    ["fallback", "other@else.test", "", "fallback"],
+    ["private", "exact@route.test", "private", "private"],
+  ]) {
+    const sent = emailer.push({
+      from: from!,
+      to: ["recipient@example.test"],
+      subject: `${marker} route-${label}`,
+      contentType: "plain",
+      body: Buffer.from("route"),
+      ...(messenger ? { messenger } : {}),
+    });
+    assert.equal((await sent.result).status, "accepted");
+    const found = (await mailpit.list()).find(
+      (entry) => entry.Subject === `${marker} route-${label}`,
+    );
+    assert.ok(found);
+    assert.equal(header(await mailpit.raw(found.ID), "X-Route"), route);
+  }
+  const injection = emailer.push({
+    from: "sender@example.test",
+    to: ["recipient@example.test"],
+    subject: `${marker} injection`,
+    contentType: "plain",
+    body: Buffer.from("test"),
+    headers: { "X-Test": "value\r\nInjected: yes" },
+  });
+  assert.equal((await injection.result).status, "proven-not-accepted");
+  assert.equal((await mailpit.list()).length, 7);
 } finally {
   await emailer.close();
   await mailpit.removeOwned();

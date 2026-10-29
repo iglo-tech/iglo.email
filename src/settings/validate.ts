@@ -148,8 +148,16 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
       const match = Object.keys(shape).find((name) => foldField(name) === foldField(key));
       if (match === "dkim" && shape === smtpShape) {
         try {
-          result[match] =
-            entry === null ? null : bind(entry, shape[match], result[match] ?? zero(shape[match]));
+          if (entry === null) result[match] = null;
+          else {
+            const fields = entries(entry);
+            for (const required of ["domain_name", "key_selector", "private_key"]) {
+              const values = fields.filter(([name]) => foldField(name) === required);
+              if (!values.length || values.some(([, value]) => typeof value !== "string"))
+                return fail("Invalid DKIM configuration.");
+            }
+            result[match] = bind(entry, shape[match], zero(shape[match]));
+          }
         } catch {
           return fail("Invalid DKIM configuration.");
         }

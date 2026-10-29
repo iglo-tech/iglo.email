@@ -20,7 +20,7 @@ async function availablePort(): Promise<number> {
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
   if (child.exitCode === null && child.signalCode === null) stopGroup(child);
-  const force = setTimeout(() => stopGroup(child, "SIGKILL"), 2000);
+  const force = setTimeout(() => stopGroup(child, "SIGKILL"), 8000);
   try {
     return await closed;
   } finally {

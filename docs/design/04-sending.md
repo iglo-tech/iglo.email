@@ -11,14 +11,17 @@ M0.8 verified predetermined IDs, MIME and DKIM through a synthetic Mailpit path 
 
 D49 defines M2.1's protected SMTP-test activation, safe response/errors and
 bounded temporary transports. D50 supplies optional native SMTP DKIM settings
-with masked key retention/null-clear and validated RSA configuration. The M2.1 candidate implements these paths; its outstanding acceptance work is
-recorded in the draft PR and performance note.
+with masked key retention/null-clear and validated RSA configuration. The M2.1
+owner implements these paths; the reference and performance notes describe the
+bounded evidence.
 
 The D49 owner deadlines are absolute: 60 seconds from ordinary dispatch,
 10 seconds for a temporary SMTP test, and five seconds to drain after shutdown
 starts. Forced cancellation closes owned work and remains ambiguous unless
 non-acceptance was independently established. HTTP drainage must not postpone
-the messaging shutdown deadline. These remain M2.1 acceptance requirements.
+the messaging shutdown deadline. Injected-clock connection and queue tests,
+and a compiled-process held SMTP-test shutdown, exercise these bounds. The
+owner does not implement the durable outbox or a retry engine.
 
 ## Campaigns
 

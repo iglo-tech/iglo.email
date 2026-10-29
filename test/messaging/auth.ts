@@ -57,6 +57,8 @@ try {
     }
   }
   assert.equal(relay.authenticated(), 3);
+  assert.ok(relay.greetings().every((greeting) => greeting === "EHLO fixture.test"));
+  assert.ok(relay.greetings().length >= 6);
   assert.equal((await mailpit.list()).length, 3);
 } finally {
   await relay.close();

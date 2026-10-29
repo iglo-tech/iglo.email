@@ -1,6 +1,6 @@
 // SMTP messenger adapted from listmonk internal/messenger/email/email.go and models/messages.go at 6fcd95f.
 import nodemailer from "nodemailer";
-import { isIP } from "node:net";
+import { createConnection, isIP, type Socket } from "node:net";
 import addressParser from "nodemailer/lib/addressparser";
 import type { Clock } from "@/clock";
 import { goDuration } from "@/settings/duration";
@@ -61,7 +61,12 @@ type Pool = {
   key: string;
   transport: Transport;
   active: number;
+  limit: number;
+  operations: Set<Operation>;
+  sockets: Set<Socket>;
+  socketState: { stopped: boolean };
   retired: boolean;
+  stopped: boolean;
   done: Promise<void>;
   resolve: () => void;
 };
@@ -89,11 +94,62 @@ export function validServer(s: SMTPServer): boolean {
     !/[\r\n\0]/.test(s.hello_hostname)
   );
 }
-function makeTransport(s: SMTPServer, test: boolean) {
+type Operation = {
+  started: boolean;
+  start(): void;
+  cancel(): void;
+};
+
+function makeTransport(
+  s: SMTPServer,
+  test: boolean,
+  sockets: Set<Socket>,
+  socketState: { stopped: boolean },
+) {
   const wait = test ? 2000 : duration(s.wait_timeout, 5000);
   const method = s.auth_protocol === "cram" ? "CRAM-MD5" : s.auth_protocol.toUpperCase();
   return nodemailer.createTransport({
     pool: true,
+    // The public socket hook lets the owner terminate even a busy pooled connection.
+    // Nodemailer upgrades this connected socket itself for implicit TLS and STARTTLS.
+    getSocket(
+      _options: unknown,
+      callback: (error: Error | null, socket: false | { connection: Socket }) => void,
+    ) {
+      if (socketState.stopped) {
+        callback(new Error("Transport closed"), false);
+        return;
+      }
+      const socket = createConnection({ host: s.host, port: s.port });
+      sockets.add(socket);
+      let pending = true;
+      const fail = (error: NodeJS.ErrnoException) => {
+        if (!pending) return;
+        pending = false;
+        socket.destroy();
+        callback(
+          Object.assign(error, {
+            command: "CONN",
+            originalCode: error.code,
+            ownerConnectRefused: error.code === "ECONNREFUSED",
+          }),
+          false,
+        );
+      };
+      socket.once("error", fail);
+      socket.once("close", () => {
+        sockets.delete(socket);
+        if (pending) fail(new Error("Connection closed"));
+      });
+      socket.setTimeout(wait, () => fail(new Error("Connection timed out")));
+      socket.once("connect", () => {
+        if (!pending) return;
+        pending = false;
+        socket.setTimeout(0);
+        socket.removeListener("error", fail);
+        callback(null, { connection: socket });
+      });
+    },
     host: s.host,
     port: s.port,
     secure: s.tls_type === "TLS",
@@ -204,9 +260,9 @@ function build(s: SMTPServer, input: Message, id: string, now: Date) {
     disableUrlAccess: true,
   };
 }
-function suppliedId(s: SMTPServer, m: Message): string | undefined {
+function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
   let result: string | undefined;
-  for (const group of s.email_headers ?? [])
+  for (const group of s?.email_headers ?? [])
     for (const [k, v] of Object.entries(group)) if (k.toLowerCase() === "message-id") result = v;
   for (const [k, v] of Object.entries(m.headers ?? {}))
     if (k.toLowerCase() === "message-id") result = Array.isArray(v) ? v[0] : v;
@@ -223,21 +279,39 @@ export function createEmailer(options: {
   const selection = options.select ?? ((n: number) => Math.floor(Math.random() * n));
   const id = options.id ?? (() => crypto.randomUUID());
   let closed = false;
-  function retire(pool: Pool) {
-    pool.retired = true;
-    retired.add(pool);
-    if (pool.active === 0) {
+  let closing: Promise<void> | undefined;
+  function finishPool(pool: Pool) {
+    if (pool.retired && pool.operations.size === 0 && !pool.stopped) {
+      pool.stopped = true;
+      pool.socketState.stopped = true;
       pool.transport.close();
       retired.delete(pool);
       pool.resolve();
     }
   }
-  function release(pool: Pool) {
-    pool.active--;
-    if (pool.retired && pool.active === 0) {
-      pool.transport.close();
-      retired.delete(pool);
-      pool.resolve();
+  function retire(pool: Pool) {
+    if (pool.retired) return;
+    pool.retired = true;
+    retired.add(pool);
+    finishPool(pool);
+  }
+  function cancelPool(pool: Pool) {
+    if (!pool.retired) retire(pool);
+    if (pools.get(pool.key) === pool) pools.delete(pool.key);
+    // Stop the library queue before destroying sockets; no work is resubmitted.
+    pool.stopped = true;
+    pool.socketState.stopped = true;
+    pool.transport.close();
+    for (const socket of pool.sockets) socket.destroy();
+    for (const operation of [...pool.operations]) operation.cancel();
+    retired.delete(pool);
+    pool.resolve();
+  }
+  function pump(pool: Pool) {
+    if (pool.stopped) return;
+    for (const operation of pool.operations) {
+      if (pool.active >= pool.limit) break;
+      if (!operation.started) operation.start();
     }
   }
   function createPool(key: string, server: SMTPServer, temporary = false): Pool {
@@ -245,11 +319,18 @@ export function createEmailer(options: {
     const done = new Promise<void>((finish) => {
       resolve = finish;
     });
+    const sockets = new Set<Socket>();
+    const socketState = { stopped: false };
     return {
       key,
-      transport: makeTransport(server, temporary),
+      sockets,
+      socketState,
+      transport: makeTransport(server, temporary, sockets, socketState),
       active: 0,
+      limit: temporary ? 1 : server.max_conns,
+      operations: new Set(),
       retired: false,
+      stopped: false,
       done,
       resolve,
     };
@@ -268,7 +349,7 @@ export function createEmailer(options: {
     rootUrl: string,
     temporary = false,
   ): Dispatch {
-    const serverId = server && suppliedId(server, message);
+    const serverId = suppliedId(server, message);
     let domain = "localhost";
     try {
       domain = new URL(rootUrl).hostname || domain;
@@ -276,16 +357,14 @@ export function createEmailer(options: {
       /* local fallback */
     }
     const messageId = serverId ?? `<${id()}@${domain}>`;
-    const local = (): Dispatch => ({
+    const localOutcome = (): Outcome => ({
       messageId,
-      result: Promise.resolve({
-        messageId,
-        status: "proven-not-accepted",
-        stage: "local",
-        accepted: [],
-        rejected: [],
-      }),
+      status: "proven-not-accepted",
+      stage: "local",
+      accepted: [],
+      rejected: [],
     });
+    const local = (): Dispatch => ({ messageId, result: Promise.resolve(localOutcome()) });
     if (closed || !server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId))
       return local();
     let data: ReturnType<typeof build>;
@@ -301,67 +380,130 @@ export function createEmailer(options: {
       pool = pools.get(key) ?? createPool(key, server);
       pools.set(key, pool);
     }
-    pool.active++;
     if (temporary) {
       pool.retired = true;
       retired.add(pool);
     }
-    const result: Promise<Outcome> = pool.transport
-      .sendMail(data)
-      .then((info): Outcome => ({
-        messageId,
-        status: "accepted",
-        stage: "smtp-complete",
-        accepted: info.accepted.map(String),
-        rejected: info.rejected.map(String),
-      }))
-      .catch((error: unknown): Outcome => {
-        const e = error as {
-          command?: string;
-          originalCode?: string;
-          response?: string;
-          responseCode?: number;
-          rejected?: unknown[];
-          rejectedErrors?: Array<{ recipient?: string; responseCode?: number }>;
-        };
-        if (
-          (e.command === "CONN" && e.originalCode === "ECONNREFUSED") ||
-          (e.command?.startsWith("AUTH ") &&
-            e.responseCode &&
-            e.responseCode >= 400 &&
-            e.responseCode < 600 &&
-            /^\d{3}[ -]/.test(e.response ?? ""))
-        )
-          return {
-            messageId,
-            status: "proven-not-accepted",
-            stage: "setup",
-            accepted: [],
-            rejected: [],
-          };
-        // Only a complete set of explicit RCPT replies, before message data, proves rejection.
-        if (
-          e.command === "RCPT TO" &&
-          Array.isArray(e.rejected) &&
-          e.rejected.length &&
-          e.rejectedErrors?.length === e.rejected.length &&
-          e.rejectedErrors.every(
-            (r) => r.recipient && r.responseCode && r.responseCode >= 400 && r.responseCode < 600,
+    const timer = new AbortController();
+    let resolve!: (outcome: Outcome) => void;
+    const result = new Promise<Outcome>((finish) => {
+      resolve = finish;
+    });
+    let settled = false;
+    const complete = (outcome: Outcome) => {
+      if (settled) return;
+      settled = true;
+      timer.abort();
+      pool.operations.delete(operation);
+      if (operation.started) pool.active--;
+      resolve(outcome);
+      finishPool(pool);
+      pump(pool);
+    };
+    const operation: Operation = {
+      started: false,
+      cancel() {
+        complete(
+          operation.started
+            ? { messageId, status: "ambiguous", stage: "unknown", accepted: [], rejected: [] }
+            : localOutcome(),
+        );
+      },
+      start() {
+        operation.started = true;
+        pool.active++;
+        void pool.transport
+          .sendMail(data)
+          .then((info) =>
+            complete({
+              messageId,
+              status: "accepted",
+              stage: "smtp-complete",
+              accepted: info.accepted.map(String),
+              rejected: info.rejected.map(String),
+            }),
           )
-        )
-          return {
-            messageId,
-            status: "proven-not-accepted",
-            stage: "recipients",
-            accepted: [],
-            rejected: e.rejected.map(String),
-          };
-        return { messageId, status: "ambiguous", stage: "unknown", accepted: [], rejected: [] };
-      })
-      .finally(() => release(pool));
+          .catch((error: unknown) => {
+            const e = error as {
+              command?: string;
+              ownerConnectRefused?: boolean;
+              response?: string;
+              responseCode?: number;
+              rejected?: unknown[];
+              rejectedErrors?: Array<{
+                recipient?: string;
+                responseCode?: number;
+                command?: string;
+                response?: string;
+              }>;
+            };
+            const rejected =
+              e.rejected?.map(String) ??
+              e.rejectedErrors?.flatMap((r) => (r.recipient ? [r.recipient] : [])) ??
+              [];
+            if (
+              e.ownerConnectRefused ||
+              (e.command?.startsWith("AUTH ") &&
+                e.responseCode &&
+                e.responseCode >= 400 &&
+                e.responseCode < 600 &&
+                /^\d{3}[ -]/.test(e.response ?? ""))
+            ) {
+              complete({
+                messageId,
+                status: "proven-not-accepted",
+                stage: "setup",
+                accepted: [],
+                rejected: [],
+              });
+            } else if (
+              e.command === "RCPT TO" &&
+              Array.isArray(e.rejected) &&
+              e.rejected.length &&
+              e.rejectedErrors?.length === e.rejected.length &&
+              e.rejectedErrors.every(
+                (r) =>
+                  r.recipient &&
+                  r.command === "RCPT TO" &&
+                  r.responseCode &&
+                  r.responseCode >= 400 &&
+                  r.responseCode < 600 &&
+                  r.response?.startsWith(`${r.responseCode} `),
+              )
+            ) {
+              complete({
+                messageId,
+                status: "proven-not-accepted",
+                stage: "recipients",
+                accepted: [],
+                rejected,
+              });
+            } else {
+              complete({
+                messageId,
+                status: "ambiguous",
+                stage: rejected.length ? "recipients" : "unknown",
+                accepted: [],
+                rejected,
+              });
+            }
+          });
+      },
+    };
+    pool.operations.add(operation);
+    void options.clock.sleep(temporary ? 10000 : 60000, timer.signal).then(
+      () => {
+        if (settled) return;
+        if (operation.started) cancelPool(pool);
+        else operation.cancel();
+      },
+      () => {},
+    );
+    pump(pool);
     return { messageId, result };
   }
   function push(message: Message): Dispatch {
+    if (closed) return dispatch(undefined, message, "");
     const current = options.settings();
     const servers = structuredClone(current.smtp).filter((s) => s.enabled);
     reconcile(servers);
@@ -383,11 +525,25 @@ export function createEmailer(options: {
     push,
     test: (server: SMTPServer, message: Message, rootUrl: string) =>
       dispatch(structuredClone(server), message, rootUrl, true),
-    async close() {
+    close() {
+      if (closing) return closing;
       closed = true;
       for (const pool of pools.values()) retire(pool);
       pools.clear();
-      await Promise.all([...retired].map((pool) => pool.done));
+      const draining = [...retired];
+      const timer = new AbortController();
+      closing = (async () => {
+        const timeout = options.clock.sleep(5000, timer.signal).then(
+          () => {
+            for (const pool of draining) if (retired.has(pool)) cancelPool(pool);
+          },
+          () => {},
+        );
+        await Promise.all(draining.map((pool) => pool.done));
+        timer.abort();
+        await timeout;
+      })();
+      return closing;
     },
   };
 }

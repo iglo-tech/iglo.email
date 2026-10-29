@@ -9,6 +9,7 @@ export async function runMessagingContract(target: {
   mode: Mode;
   baseUrl: string;
   credentials: Credentials;
+  restart?: () => Promise<void>;
 }) {
   const sink = referenceMailpit(process.env);
   await assertOwnedMailpit(sink);
@@ -85,6 +86,35 @@ export async function runMessagingContract(target: {
     );
     assert.equal(refused.status, 500);
     assert.deepEqual(await refused.json(), { message: "SMTP test failed." });
+    for (const fault of ["all-rcpt", "before-data", "during-data", "lost-final", "auth"] as const) {
+      const faulted = await faultRelay(sink, fault, {
+        user: "m21-fixture-user",
+        password: "m21-fixture-password",
+      });
+      try {
+        const failed = await request(
+          JSON.stringify({
+            email: recipient,
+            host: sink.host,
+            port: faulted.port,
+            auth_protocol: fault === "auth" ? "plain" : "none",
+            username: "m21-fixture-user",
+            password: "synthetic-wrong",
+            tls_type: "none",
+          }),
+        );
+        assert.equal(failed.status, 500);
+        assert.deepEqual(await failed.json(), {
+          message:
+            fault === "all-rcpt" || fault === "auth"
+              ? "SMTP test failed."
+              : "SMTP test outcome is unknown.",
+        });
+        assert.equal(faulted.connections(), 1);
+      } finally {
+        await faulted.close();
+      }
+    }
     const relay = await faultRelay(sink, "hold");
     try {
       const body = JSON.stringify({
@@ -113,6 +143,36 @@ export async function runMessagingContract(target: {
     } finally {
       relay.release();
       await relay.close();
+    }
+    if (target.restart) {
+      const heldFinal = await faultRelay(sink, "hold-final");
+      try {
+        const pending = request(
+          JSON.stringify({
+            email: recipient,
+            host: sink.host,
+            port: heldFinal.port,
+            auth_protocol: "none",
+            tls_type: "none",
+          }),
+        );
+        await Promise.race([
+          heldFinal.atFinal,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("SMTP final barrier failed")), 4000),
+          ),
+        ]);
+        const restarting = target.restart();
+        const outcome = await pending;
+        assert.equal(outcome.status, 500);
+        assert.deepEqual(await outcome.json(), { message: "SMTP test outcome is unknown." });
+        await heldFinal.disconnected;
+        await restarting;
+        assert.equal(heldFinal.connections(), 1);
+      } finally {
+        heldFinal.release();
+        await heldFinal.close();
+      }
     }
   }
 }

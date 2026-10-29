@@ -43,7 +43,8 @@
     "messaging:fixture": "bun build --compile test/messaging/observe.ts --outfile dist/messaging-fixture && bun run reference:run -- dist/messaging-fixture",
     "messaging:faults": "bun run reference:run -- bun test/messaging/failures.ts",
     "messaging:auth": "bun run reference:run -- bun test/messaging/auth.ts",
-    "messaging:tls": "bun run reference:run -- bun test/messaging/tls.ts"
+    "messaging:tls": "bun run reference:run -- bun test/messaging/tls.ts",
+    "messaging:corpus": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && M21_CORPUS_HEADERS=1 bun run reference:run -- bun test/messaging/corpus.ts"
   },
   "dependencies": {
     "liquidjs": "10.30.0",

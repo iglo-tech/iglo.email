@@ -57,7 +57,7 @@ export async function runDKIMSettings(target: {
       max_conns: 1,
       dkim: { domain_name: "fixture.example.test", key_selector: "m08", private_key: privateKey },
     };
-    const send = async (suffix: string, signed: boolean) => {
+    const send = async (suffix: string, signed: boolean, verificationKey = publicKey) => {
       const subject = `${marker} ${suffix}`;
       const child = spawn(resolve("dist/messaging-stored-caller"), [], {
         env: { PATH: "", M21_DATA_DIR: target.dataDir, M21_SUBJECT: subject },
@@ -71,12 +71,12 @@ export async function runDKIMSettings(target: {
       const found = (await mailpit.list()).filter((entry) => entry.Subject === subject);
       assert.equal(found.length, 1);
       const raw = await mailpit.raw(found[0]!.ID);
-      assert.equal(verifyFixtureDkim(raw, createPublicKey(publicKey)), signed);
+      assert.equal(verifyFixtureDkim(raw, createPublicKey(verificationKey)), signed);
       if (signed)
         assert.equal(
           verifyFixtureDkim(
             raw.replace("retained settings fixture", "tampered settings fixture"),
-            createPublicKey(publicKey),
+            createPublicKey(verificationKey),
           ),
           false,
         );
@@ -117,6 +117,73 @@ export async function runDKIMSettings(target: {
     ] as const)
       full[key][field] = "";
     full["security.captcha"].hcaptcha.secret = "";
+    const baseline = await read();
+    const shortKey = generateKeyPairSync("rsa", {
+      modulusLength: 1024,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    }).privateKey;
+    const ecKey = generateKeyPairSync("ec", {
+      namedCurve: "prime256v1",
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    }).privateKey;
+    const encrypted = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: {
+        type: "pkcs8",
+        format: "pem",
+        cipher: "aes-256-cbc",
+        passphrase: "synthetic-fixture",
+      },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    }).privateKey;
+    const valid = {
+      domain_name: "fixture.example.test",
+      key_selector: "m08",
+      private_key: privateKey,
+    };
+    const candidates: unknown[] = [
+      [],
+      "invalid",
+      { domain_name: "fixture.example.test" },
+      { ...valid, domain_name: "bad domain" },
+      { ...valid, key_selector: "-bad" },
+      { ...valid, private_key: "not a key" },
+      { ...valid, private_key: encrypted },
+      { ...valid, private_key: ecKey },
+      { ...valid, private_key: shortKey },
+      { ...valid, private_key: "x".repeat(16385) },
+      { ...valid, private_key: null },
+    ];
+    for (const candidate of candidates) {
+      for (const kind of ["key", "full"]) {
+        const snapshot = structuredClone(full);
+        snapshot.smtp[0].dkim = candidate;
+        snapshot["app.site_name"] = "candidate that must roll back";
+        const response = await request(
+          kind === "key" ? "/api/settings/smtp" : "/api/settings",
+          "PUT",
+          kind === "key" ? snapshot.smtp : snapshot,
+        );
+        assert.equal(response.status, 400);
+        assert.deepEqual(await response.json(), { message: "Invalid DKIM configuration." });
+        assert.deepEqual(await read(), baseline);
+      }
+    }
+    for (const kind of ["key", "full"]) {
+      const snapshot = structuredClone(full);
+      snapshot.smtp[0].uuid = crypto.randomUUID();
+      snapshot.smtp[0].dkim.private_key = "";
+      const response = await request(
+        kind === "key" ? "/api/settings/smtp" : "/api/settings",
+        "PUT",
+        kind === "key" ? snapshot.smtp : snapshot,
+      );
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { message: "Invalid DKIM configuration." });
+      assert.deepEqual(await read(), baseline);
+    }
     full["app.site_name"] = "candidate that must roll back";
     full.smtp[0].dkim.key_selector = "invalid selector";
     const invalidFull = await request("/api/settings", "PUT", full);
@@ -129,7 +196,27 @@ export async function runDKIMSettings(target: {
     assert.equal((await request("/api/settings/smtp", "PUT", retaining)).status, 200);
     assert.equal(Object.hasOwn((await read()).smtp[0], "dkim"), false);
     await send("cleared", false);
-    assert.equal(relay.authenticated(), 3);
+    // The final saved entry with a duplicate UUID supplies the retained secret.
+    const other = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    const duplicate = structuredClone(saved.smtp[0]);
+    duplicate.password = "";
+    duplicate.dkim.private_key = other.privateKey;
+    duplicate.enabled = false;
+    duplicate.name = "duplicate-secret";
+    const first = structuredClone(saved.smtp[0]);
+    first.password = "";
+    first.dkim.private_key = privateKey;
+    assert.equal((await request("/api/settings/smtp", "PUT", [first, duplicate])).status, 200);
+    const retainingLast = structuredClone((await read()).smtp[0]);
+    retainingLast.password = "";
+    retainingLast.dkim.private_key = "";
+    assert.equal((await request("/api/settings/smtp", "PUT", [retainingLast])).status, 200);
+    await send("last-duplicate", true, other.publicKey);
+    assert.equal(relay.authenticated(), 4);
   } finally {
     await relay.close();
     await mailpit.removeOwned();
