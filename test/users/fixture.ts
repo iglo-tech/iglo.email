@@ -23,6 +23,7 @@ import { registerSettingsRoutes } from "@/settings/routes";
 import { sessionDuration } from "@/settings/duration";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
+import { createRenderer } from "@/templates/renderer";
 
 export async function startUserFixture(
   policy: AuthPolicy = defaultAuthPolicy,
@@ -103,7 +104,7 @@ export async function startUserFixture(
       router,
       settings,
       auth,
-      emailer && createSMTPTest(settings, emailer, app.i18n),
+      emailer && createSMTPTest(settings, emailer, app.i18n, createRenderer(clock, app.i18n)),
     );
     let announce!: () => void;
     let release!: () => void;

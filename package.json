@@ -49,10 +49,14 @@
     "sends:crash": "bun build --compile test/sends/producer.ts --outfile dist/sends-producer && bun run reference:run -- bun test/sends/crash.ts",
     "sends:production": "bun run build && bun build --compile test/sends/producer.ts --outfile dist/sends-producer && bun run reference:run -- bun test/sends/production.ts",
     "messaging:routing": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && bun run reference:run -- bun test/messaging/routing.ts",
-    "messaging:corpus": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && M21_CORPUS_HEADERS=1 bun run reference:run -- bun test/messaging/corpus.ts"
+    "messaging:corpus": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && M21_CORPUS_HEADERS=1 bun run reference:run -- bun test/messaging/corpus.ts",
+    "contract:templates": "bun run build && bun test/contract/cli.ts owned templates",
+    "contract:templates:reference": "bun run reference:run -- bun test/contract/templates.ts reference",
+    "templates:compiled": "bun test/templates/compiled-check.ts"
   },
   "dependencies": {
     "liquidjs": "10.30.0",
+    "marked": "15.0.12",
     "nodemailer": "10.2.1",
     "qrcode": "1.5.4",
     "saxes": "6.0.0"
@@ -84,6 +88,8 @@
   },
   "packageManager": "bun@1.4.4",
   "patchedDependencies": {
-    "saxes@6.0.0": "patches/saxes@6.0.0.patch"
+    "saxes@6.0.0": "patches/saxes@6.0.0.patch",
+    "liquidjs@10.30.0": "patches/liquidjs@10.30.0.patch",
+    "marked@15.0.12": "patches/marked@15.0.12.patch"
   }
 }

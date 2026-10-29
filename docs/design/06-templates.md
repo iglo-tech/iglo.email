@@ -7,9 +7,15 @@ There are two kinds of templates:
 
 ## User-authored templates: Liquid
 
+> M1.8 provides the template API, renderer and converted SMTP diagnostic on
+> this task branch. Local D23/D54/D55 acceptance and measurements have been
+> run. Hosted exact-head CI and independent review remain pending; this branch
+> is not yet accepted.
+
+
 listmonk uses Go's `html/template` with Sprig functions (`{{ .Subscriber.FirstName }}`, `{{ UnsubscribeURL }}`). A TypeScript port needs an engine of its own. iglo.email uses **Liquid**, through [LiquidJS](https://liquidjs.com):
 
-- **Its capabilities are explicit:** M1.8 supplies sanitized plain data, dense arrays, reviewed filters and an allowlisted in-memory template resolver. `ownPropertyOnly` additionally restricts property lookup; it does not sanitize inherited array iteration. No filesystem or URL fallback is allowed ([D23](09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application)).
+- **Its capabilities are explicit:** M1.8 supplies bounded serialized JSON, dense arrays, reviewed filters and an allowlisted in-memory template resolver. `ownPropertyOnly` additionally restricts property lookup; it does not sanitize inherited array iteration. No filesystem or URL fallback is allowed ([D23](09-decisions.md#d23-liquid-template-boundaries-are-enforced-by-the-application)).
 - **Resource bounds are enforced by the application:** finite input/filter budgets and byte-counted output emission must complement the engine limits. `parseLimit` counts UTF-16 units, `renderLimit` is cooperative, and `memoryLimit` accounts selected operations without capping all output or heap use. M1.8 must implement and test those bounds before production use (D23). [D54](09-decisions.md#d54-template-ownership-safe-updates-and-bounded-liquid-rendering) sets the finite input/output/work budgets, safe store/preview semantics and authorized dependency seams. The supported tag/filter/resolver subset is documented rather than assuming every Liquid extension is safe.
 - **It is familiar:** Shopify, Jekyll and many email tools use it, so most people writing email templates have seen it.
 - **No reimplementation:** reimplementing Go template semantics in TypeScript to keep old templates working is not worth it. There are no existing iglo.email templates to keep compatible.
@@ -18,6 +24,25 @@ HTML templates render with `outputEscape: "escape"`, so values are HTML-escaped 
 
 M0.8 measured the selected library and found the precise library-limit semantics and capability boundaries ([evidence](../perf/M0.8-liquidjs.md)): filesystem lookup must be explicitly denied or mapped, `ownPropertyOnly` does not sanitize iteration, `memoryLimit` does not cap all output, and `renderLimit` is cooperative. D23 sets the required M1.8 boundaries; the fixture does not itself implement the production guarantee.
 
+### Current M1.8 branch subset (acceptance pending)
+
+| Capability | Current behavior |
+|---|---|
+| Tags | `if`, `unless`, `for`, `assign`, `capture`, `comment`, `raw`, `break`, `continue`; other tags, including user `include`, `render` and `layout`, are rejected |
+| Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`; other filters are rejected. These filters accept scalar inputs; `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution |
+| Dates | `now` and `today` use the injected clock; supported format directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%` in UTC. Other date strings must be a date or UTC ISO timestamp |
+| Lookup | No user partial lookup. Converted system templates are embedded and selected by the owning application, not by user-supplied paths or names |
+| Data | Primitive JSON strings are limited to 256 KiB UTF-8 before parsing and copied to owned dense arrays and null-prototype records; depth 16, 10,000 nodes, 1,024 entries, and 64 KiB per string |
+| Render | Source 64 KiB body/layout and 2 KiB subject; 1 MiB output per body/layout and 2 KiB subject; shared 4 MiB emission/intermediate budget, 10,000 work, depth 32 and 1,024 per range. Work includes expression tokens, property lookup, collection conversion and comparison size. Four admitted renders per instance. A caller can hold a compiled immutable snapshot; there is no retained cache |
+| Markdown | Liquid with HTML escaping, then local `marked` 15.0.12, then the optional HTML layout. The lexer shares the message work/byte/depth budget through the pinned patch; a conservative token reservation counts repeated reference URLs, escaping, nested parser output and prefixes before parsing. Conservative estimates can reject messages below the nominal byte limits |
+| Tracking and URLs | `track_link` accepts HTTP(S) and returns it unchanged, `track_view` is empty, and explicit URL fields are checked. These do not implement tracking or other delivery workflows |
+
+The emitter, subset, JSON boundary and patches await hosted checks and
+independent review before they are treated as an accepted boundary. The time limit remains
+cooperative, and raw author HTML is not sanitized. Preview CSP protects its
+sandboxed browser context; it is not a guarantee about HTML used elsewhere.
+Marked does not sanitize raw HTML or arbitrary author-provided URLs.
+
 [D55](09-decisions.md#d55-bound-serialized-template-context-before-reflection-and-preserve-sandbox-ci)
 refines D54's renderer entry: untrusted context is a primitive, byte-bounded
 JSON string checked before parse/reflection. Arbitrary JavaScript objects are
@@ -25,6 +50,34 @@ rejected without enumeration/coercion/getters; trusted callers compose explicit
 bounded fields. Bounded decoded data is copied into dense/null-prototype values
 with the same depth/node/string/entry rules. This is an internal renderer
 interface, not a changed CRUD/preview HTTP envelope or completed acceptance.
+
+### Loop metadata and arguments
+
+Only the reviewed `forloop.index`, `index0`, `rindex`, `rindex0`, `first`,
+`last` and `length` properties are exposed. Helper methods such as `valueOf`
+and `next`, and the source-bearing loop name, are not template capabilities.
+Implicit loop-record conversion reserves a conservative JSON-escaping bound
+and work before the library creates the string, so truthiness or indirect
+conversion cannot bypass the shared intermediate budget.
+
+Filter arity is checked before argument evaluation or argv allocation, and
+every evaluated argument consumes work. `raw`, `upcase`, `strip` and
+`track_link` accept no extra arguments; `default` and `date` accept at most
+one. `t` accepts zero to eight arguments in name/value pairs. This applies to
+literal arguments too; ignored extra arguments do not provide free work.
+
+The `for` tag admits only `offset`, `limit` and `reversed`. Unknown names,
+including magic property names, reject while parsing rather than entering the
+runtime hash. Duplicate supported names retain Liquid's final-value behavior.
+Each nonempty loop reserves shared work for its bounded hash construction,
+validation and every accepted argument before the library allocates its runtime
+object/key list or evaluates values. Literal and flag forms are charged too;
+ordinary modifiers and `offset:continue` retain their supported behavior.
+Modifier values are finite scalars or missing/null; arrays and objects reject
+before implicit slice-count coercion can allocate an uncharged joined string.
+String values also consume work proportional to their UTF-8 byte length.
+An unset `offset:continue` register starts at zero, preserving first-use behavior
+without relying on implicit conversion of an empty object.
 
 ### Data and functions
 

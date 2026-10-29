@@ -1,6 +1,6 @@
 // Notification rendering and SMTP testing adapted from listmonk cmd/settings.go, internal/notifs/notifs.go and static/email-templates at 6fcd95f.
-import base from "@/messaging/smtp-base.txt" with { type: "text" };
-import template from "@/messaging/smtp-test.txt" with { type: "text" };
+import { systemTemplates } from "@/templates/builtins";
+import type { TemplateRenderer } from "@/templates/renderer";
 import type { Translation } from "@/i18n/i18n";
 import type { SettingsStore } from "@/settings/store";
 import type { SMTPServer } from "@/messaging/email";
@@ -8,36 +8,15 @@ import { validServer, type createEmailer } from "@/messaging/email";
 import { HttpError } from "@/server/response";
 import { validateDKIM } from "@/settings/dkim";
 
-const escape = (v: string) =>
-  v
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&#34;")
-    .replaceAll("'", "&#39;");
-function render(logo: string, t: Translation): string {
-  const scheme = /^\s*([a-z][a-z0-9+.-]*):/i.exec(logo)?.[1]?.toLowerCase();
-  if (scheme && !["http", "https", "mailto"].includes(scheme)) logo = "#ZgotmplZ";
-  const sections =
-    /{{ define "header" }}([\s\S]*){{ end }}\s*{{ define "footer" }}([\s\S]*?){{ end }}/.exec(base);
-  if (!sections) throw new Error("Missing notification template");
-  const header = sections[1]!.replace(
-    /{{ if ne LogoURL "" }}[\s\S]*?{{ end }}/,
-    logo ? `<img src="${escape(logo)}" alt="listmonk" />` : "",
-  );
-  const footer = sections[2]!.replace(
-    '{{ L.T "public.poweredBy" }}',
-    escape(t.T("public.poweredBy")),
-  );
-  return template
-    .replace('{{ define "smtp-test" }}', "")
-    .replace('{{ template "header" . }}', header)
-    .replace(
-      '{{ L.Ts "globals.buttons.testConnection" }}',
-      escape(t.T("globals.buttons.testConnection")),
-    )
-    .replace('{{ template "footer" }}', footer)
-    .replace(/{{ end }}\s*$/, "");
+function safeLogo(value: string): string {
+  if (!value) return "";
+  if (Buffer.byteLength(value, "utf8") > 64 * 1024) throw new Error("Template data limit exceeded");
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : "";
+  } catch {
+    return "";
+  }
 }
 function parse(value: unknown): { server: SMTPServer; email: string } {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -149,6 +128,7 @@ export function createSMTPTest(
   settings: SettingsStore,
   emailer: ReturnType<typeof createEmailer>,
   t: Translation,
+  renderer: TemplateRenderer,
 ) {
   let active = 0;
   return async (body: unknown, revalidate: () => void): Promise<void> => {
@@ -158,6 +138,17 @@ export function createSMTPTest(
     try {
       revalidate();
       const current = settings.read();
+      let html: string;
+      try {
+        html = renderer.renderSync({
+          body: systemTemplates.smtpTest,
+          mode: "html",
+          data: JSON.stringify({ logo_url: safeLogo(current["app.logo_url"]) }),
+        }).body;
+      } catch {
+        throw new HttpError(500, "SMTP test failed.");
+      }
+      revalidate();
       const send = emailer.test(
         input.server,
         {
@@ -165,7 +156,7 @@ export function createSMTPTest(
           to: [input.email],
           subject: t.T("globals.buttons.testConnection"),
           contentType: "html",
-          body: Buffer.from(render(current["app.logo_url"], t)),
+          body: Buffer.from(html),
         },
         current["app.root_url"],
       );

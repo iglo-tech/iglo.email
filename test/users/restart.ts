@@ -59,6 +59,7 @@ await withProduction(
       "which-module@2.0.1",
       "wrap-ansi@6.2.0",
       "liquidjs@10.30.0",
+      "marked@15.0.12",
       "commander@10.0.1",
       "nodemailer@10.2.1",
     ];

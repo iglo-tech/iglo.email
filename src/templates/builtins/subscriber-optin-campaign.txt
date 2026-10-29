@@ -1,0 +1,17 @@
+{% comment %}Adapted from listmonk static/email-templates/subscriber-optin-campaign.html and base.html at 6fcd95f.{% endcomment %}
+
+
+<p>{{ "email.optin.confirmSubWelcome" | t }} {{ subscriber.first_name }}</p>
+<p>{{ "public.confirmSubInfo" | t }}</p>
+<ul>
+    {% for list in lists %}
+        {% if list.type == "public" %}
+            <li>{{ list.name }}</li>
+        {% else %}
+            <li>{{ "public.subPrivateList" | t }}</li>
+        {% endif %}
+    {% endfor %}
+</ul>
+<p>
+    <a class="button" href="{{ optin_url }}">{{ "globals.buttons.confirmSubscription" | t }}</a>
+</p>

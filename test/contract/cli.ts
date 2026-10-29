@@ -1,3 +1,5 @@
+import { runTemplatesContract } from "@/test/contract/templates";
+import { runTemplateAuthorization } from "@/test/templates/auth-contract";
 import { runDKIMSettings } from "@/test/contract/messaging-dkim";
 import { runMessagingContract } from "@/test/contract/messaging";
 import { readFile } from "node:fs/promises";
@@ -96,7 +98,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "lists" ||
       args[1] === "subscribers" ||
       args[1] === "settings" ||
-      args[1] === "messaging")
+      args[1] === "messaging" ||
+      args[1] === "templates")
   ) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
@@ -107,7 +110,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "lists" ||
         args[1] === "subscribers" ||
         args[1] === "settings" ||
-        args[1] === "messaging") &&
+        args[1] === "messaging" ||
+        args[1] === "templates") &&
       Object.keys(values).length
     )
       throw new Error("Invalid owned auth arguments");
@@ -117,6 +121,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       signal,
       async (baseUrl, runSignal, restart, dataDir) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "templates") {
+          await runTemplatesContract({ mode: "normal", baseUrl, credentials, restart });
+          await runTemplateAuthorization(baseUrl, credentials, admin);
+          return true;
+        }
         if (args[1] === "messaging") {
           await runMessagingContract({ mode: "normal", baseUrl, credentials, restart });
           await runDKIMSettings({ baseUrl, credentials, restart, dataDir });

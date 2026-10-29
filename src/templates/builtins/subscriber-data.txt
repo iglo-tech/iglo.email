@@ -1,4 +1,6 @@
-{{ define "header" }}
+{% comment %}Adapted from listmonk static/email-templates/subscriber-data.html and base.html at 6fcd95f.{% endcomment %}
+
+
 <!doctype html>
 <html>
     <head>
@@ -80,19 +82,21 @@
     <div class="gutter">&nbsp;</div>
     <div class="wrap">
         <div class="header">
-            {{ if ne LogoURL "" }}
-                <img src="{{ LogoURL }}" alt="listmonk" />
-            {{ end }}
+            {% if logo_url != "" %}
+                <img src="{{ logo_url }}" alt="listmonk" />
+            {% endif %}
         </div>
-{{ end }}
 
-{{ define "footer" }}
+<h2>{{ "email.data.title" | t }}</h2>
+<p>
+  {{ "email.data.info" | t }}
+</p>
+
     </div>
 
     <div class="footer">
-        <p>{{ L.T "public.poweredBy" }} <a href="https://listmonk.app" target="_blank" rel="noreferrer">listmonk</a></p>
+        <p>{{ "public.poweredBy" | t }} <a href="https://listmonk.app" target="_blank" rel="noreferrer">listmonk</a></p>
     </div>
     <div class="gutter">&nbsp;</div>
 </body>
 </html>
-{{ end }}

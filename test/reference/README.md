@@ -161,6 +161,34 @@ Only numeric HTTP loopback origins with an explicit port are accepted. `--case`
 selects a known supported case; requesting an unported production case fails
 before an HTTP request. Credentials must never appear in a URL or command line.
 
+## Template corpus (M1.8 in progress)
+
+`bun run contract:templates:reference` runs the source-first template cases
+against the pinned upstream; `bun run contract:templates` runs the same shared
+corpus against the compiled production task branch. Liquid and Go samples are
+separate, and the D54 differences are labelled in the cases. The test-only
+`bun test/templates/compiled-check.ts` builds the production renderer into an
+isolated Linux bubblewrap fixture with a local canary and network trap. These
+are initial gates, not evidence that the full M1.8 security and performance
+acceptance has passed.
+
+Coverage map (finite cases, not universal parser spellings or interleavings):
+
+| Boundary | Evidence |
+|---|---|
+| Source-first CRUD, projections, defaults, search and preview | shared `test/contract/templates.ts`, paired upstream and compiled profiles with named D54 differences |
+| References, high IDs, reinitialization and diagnostics | `test/templates/store.test.ts` test-only campaign owner and production template routes |
+| Authority and concurrency | template auth contract and held-body role/user/session tests; omitted-field updates, default/delete race, held-render revocation and real four-admission HTTP 429/recovery |
+| Data and rendering | `test/templates/render.test.ts` covers serialized input boundaries, object rejection without traps, Liquid subset, budgets, escaped/raw composition, clock/translation isolation, built-ins and Markdown reference expansion |
+| Compiled renderer and capability traps | `test/templates/compiled-fixture.ts` exercises the same production renderer, data admission, Markdown and file/loopback traps under `compiled-check.ts` |
+| Browser and SMTP | authenticated stored/posted preview browser check and protected SMTP diagnostic corpus; actual hosted isolation remains a CI result |
+
+The isolated fixture uses bubblewrap on Linux and is never silently skipped.
+The two disposable GitHub Ubuntu runners explicitly disable their AppArmor
+unprivileged-user-namespace restriction and probe bubblewrap before the gate.
+That runner-only setup does not change application behavior or establish local
+isolation on hosts with different namespace policy.
+
 ## Webhook receiver
 
 - `POST $WEBHOOK_URL` captures request headers and the original body and returns
@@ -341,3 +369,18 @@ relays are invocation-owned; outcomes establish SMTP intake, not final delivery.
 
 The bounded SMTP outcomes are not an exhaustive equivalence or interleaving
 proof. Production still has no enqueue endpoint and no marketing policy.
+
+M1.8 round1 regressions share finite loop-helper and filter-argument inputs
+between `budget-regressions.test.ts`, the isolated compiled renderer and the
+actual compiled production preview corpus. Long loop records and both invalid
+large arity and valid-arity cumulative argument work are rejected; reviewed
+loop metadata and ordinary filters remain positive controls. This includes
+implicit loop-record conversion as well as direct helper property access.
+
+
+M1.8 round2 adds `for` named/flag and valid cumulative modifier-work cases to
+those three boundaries, with ordinary offset/limit/reversed/continue controls.
+Unknown names reject before runtime hash allocation/evaluation; accepted
+arguments reserve work and array/object counts reject before implicit coercion.
+A bounded large-context coercion regression also runs through source HTTP and
+the isolated compiled renderer (production previews supply synthetic context).

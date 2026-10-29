@@ -1,0 +1,206 @@
+diff --git a/dist/liquid.node.js b/dist/liquid.node.js
+index 2fe297b510bb2a7918969b072ef5d14fa723ae13..97043ab597388d3f5ea0e9ffa66eb6fa431b5aa0 100644
+--- a/dist/liquid.node.js
++++ b/dist/liquid.node.js
+@@ -1305,8 +1305,10 @@ class Filter {
+         this.liquid = liquid;
+     }
+     *render(value, context) {
++        if (context.igloBudgetFilter) context.igloBudgetFilter(this.name, this.args.length);
+         const argv = [];
+         for (const arg of this.args) {
++            if (context.igloBudgetStep) context.igloBudgetStep();
+             if (isKeyValuePair(arg))
+                 argv.push([arg[0], yield evalToken(arg[1], context)]);
+             else
+@@ -1324,6 +1326,7 @@ class Expression {
+         assert(ctx, 'unable to evaluate: context not defined');
+         const operands = [];
+         for (const token of this.postfix) {
++            if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+             if (isOperatorToken(token)) {
+                 const r = operands.pop();
+                 let result;
+@@ -1385,6 +1388,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
+ function* evalPropertyAccessToken(token, ctx, lenient) {
+     const props = [];
+     for (const prop of token.props) {
++        if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+         props.push((yield evalTokenValue(prop, ctx, false)));
+     }
+     try {
+@@ -1408,7 +1412,12 @@ function evalQuotedToken(token) {
+ function* evalRangeToken(token, ctx) {
+     const low = (yield evalTokenValue(token.lhs, ctx));
+     const high = (yield evalTokenValue(token.rhs, ctx));
+-    ctx.memoryLimit.use(high - low + 1);
++    // Bound generated ranges before allocation and reject numbers whose increment can stall.
++    if (!Number.isSafeInteger(+low) || !Number.isSafeInteger(+high) || +high - +low + 1 > 1024)
++        throw new Error('range limit exceeded');
++    const size = Math.max(0, +high - +low + 1);
++    if (ctx.igloBudgetRange) ctx.igloBudgetRange(size);
++    ctx.memoryLimit.use(size);
+     return range(+low, +high + 1);
+ }
+ function* toPostfix(tokens) {
+@@ -2483,10 +2492,12 @@ class Tag extends TemplateImpl {
+  *    hash['reversed'] === undefined
+  */
+ class Hash {
+-    constructor(input, jekyllStyle) {
++    constructor(input, jekyllStyle, allowedKeys) {
+         this.hash = {};
+         const tokenizer = input instanceof Tokenizer ? input : new Tokenizer(input, {});
+         for (const hash of tokenizer.readHashes(jekyllStyle)) {
++            if (allowedKeys && !allowedKeys.includes(hash.name.content))
++                throw new Error('unsupported for argument');
+             this.hash[hash.name.content] = hash.value;
+         }
+     }
+@@ -4130,7 +4141,7 @@ class ForTag extends Tag {
+         }
+         this.variable = variable.content;
+         this.collection = collection;
+-        this.hash = new Hash(this.tokenizer, liquid.options.keyValueSeparator);
++        this.hash = new Hash(this.tokenizer, liquid.options.keyValueSeparator, MODIFIERS);
+         this.templates = [];
+         this.elseTemplates = [];
+         let p;
+@@ -4144,14 +4155,18 @@ class ForTag extends Tag {
+     }
+     *render(ctx, emitter) {
+         const r = this.liquid.renderer;
+-        let collection = toEnumerable(yield evalToken(this.collection, ctx));
++        const collectionValue = yield evalToken(this.collection, ctx);
++        if (ctx.igloBudgetCollection) ctx.igloBudgetCollection(collectionValue);
++        let collection = toEnumerable(collectionValue);
+         if (!collection.length) {
+             yield r.renderTemplates(this.elseTemplates, ctx, emitter);
+             return;
+         }
++        if (ctx.igloBudgetForArguments) ctx.igloBudgetForArguments(this.hash.hash);
+         const continueKey = 'continue-' + this.variable + '-' + this.collection.getText();
+-        ctx.push(createScope({ continue: ctx.getRegister(continueKey, {}) }));
++        ctx.push(createScope({ continue: ctx.getRegister(continueKey, 0) }));
+         const hash = (yield this.hash.render(ctx));
++        if (ctx.igloBudgetForValues) ctx.igloBudgetForValues(hash);
+         ctx.pop();
+         const modifiers = this.liquid.options.orderedFilterParameters
+             ? Object.keys(hash).filter(x => MODIFIERS.includes(x))
+@@ -4165,6 +4180,13 @@ class ForTag extends Tag {
+         }, collection);
+         ctx.setRegister(continueKey, (hash['offset'] || 0) + collection.length);
+         const scope = createScope({ forloop: new ForloopDrop(collection.length, this.collection.getText(), this.variable) });
++        if (ctx.igloBudgetForloop) {
++            const original = scope.forloop.valueOf.bind(scope.forloop);
++            Object.defineProperty(scope.forloop, 'valueOf', { value: () => {
++                ctx.igloBudgetForloop(scope.forloop.name);
++                return original();
++            } });
++        }
+         ctx.push(scope);
+         for (const item of collection) {
+             scope[this.variable] = item;
+diff --git a/dist/liquid.node.mjs b/dist/liquid.node.mjs
+index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..20704bb6fd21c9d3656843d0184091ec44f95756 100644
+--- a/dist/liquid.node.mjs
++++ b/dist/liquid.node.mjs
+@@ -1345,8 +1345,10 @@ class Filter {
+         this.liquid = liquid;
+     }
+     *render(value, context) {
++        if (context.igloBudgetFilter) context.igloBudgetFilter(this.name, this.args.length);
+         const argv = [];
+         for (const arg of this.args) {
++            if (context.igloBudgetStep) context.igloBudgetStep();
+             if (isKeyValuePair(arg))
+                 argv.push([arg[0], yield evalToken(arg[1], context)]);
+             else
+@@ -1364,6 +1366,7 @@ class Expression {
+         assert(ctx, 'unable to evaluate: context not defined');
+         const operands = [];
+         for (const token of this.postfix) {
++            if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+             if (isOperatorToken(token)) {
+                 const r = operands.pop();
+                 let result;
+@@ -1425,6 +1428,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
+ function* evalPropertyAccessToken(token, ctx, lenient) {
+     const props = [];
+     for (const prop of token.props) {
++        if (ctx.igloBudgetStep) ctx.igloBudgetStep();
+         props.push((yield evalTokenValue(prop, ctx, false)));
+     }
+     try {
+@@ -1448,7 +1452,12 @@ function evalQuotedToken(token) {
+ function* evalRangeToken(token, ctx) {
+     const low = (yield evalTokenValue(token.lhs, ctx));
+     const high = (yield evalTokenValue(token.rhs, ctx));
+-    ctx.memoryLimit.use(high - low + 1);
++    // Bound generated ranges before allocation and reject numbers whose increment can stall.
++    if (!Number.isSafeInteger(+low) || !Number.isSafeInteger(+high) || +high - +low + 1 > 1024)
++        throw new Error('range limit exceeded');
++    const size = Math.max(0, +high - +low + 1);
++    if (ctx.igloBudgetRange) ctx.igloBudgetRange(size);
++    ctx.memoryLimit.use(size);
+     return range(+low, +high + 1);
+ }
+ function* toPostfix(tokens) {
+@@ -2535,10 +2544,12 @@ class Tag extends TemplateImpl {
+  *    hash['reversed'] === undefined
+  */
+ class Hash {
+-    constructor(input, jekyllStyle) {
++    constructor(input, jekyllStyle, allowedKeys) {
+         this.hash = {};
+         const tokenizer = input instanceof Tokenizer ? input : new Tokenizer(input, {});
+         for (const hash of tokenizer.readHashes(jekyllStyle)) {
++            if (allowedKeys && !allowedKeys.includes(hash.name.content))
++                throw new Error('unsupported for argument');
+             this.hash[hash.name.content] = hash.value;
+         }
+     }
+@@ -4154,7 +4165,7 @@ class ForTag extends Tag {
+         }
+         this.variable = variable.content;
+         this.collection = collection;
+-        this.hash = new Hash(this.tokenizer, liquid.options.keyValueSeparator);
++        this.hash = new Hash(this.tokenizer, liquid.options.keyValueSeparator, MODIFIERS);
+         this.templates = [];
+         this.elseTemplates = [];
+         let p;
+@@ -4168,14 +4179,18 @@ class ForTag extends Tag {
+     }
+     *render(ctx, emitter) {
+         const r = this.liquid.renderer;
+-        let collection = toEnumerable(yield evalToken(this.collection, ctx));
++        const collectionValue = yield evalToken(this.collection, ctx);
++        if (ctx.igloBudgetCollection) ctx.igloBudgetCollection(collectionValue);
++        let collection = toEnumerable(collectionValue);
+         if (!collection.length) {
+             yield r.renderTemplates(this.elseTemplates, ctx, emitter);
+             return;
+         }
++        if (ctx.igloBudgetForArguments) ctx.igloBudgetForArguments(this.hash.hash);
+         const continueKey = 'continue-' + this.variable + '-' + this.collection.getText();
+-        ctx.push(createScope({ continue: ctx.getRegister(continueKey, {}) }));
++        ctx.push(createScope({ continue: ctx.getRegister(continueKey, 0) }));
+         const hash = (yield this.hash.render(ctx));
++        if (ctx.igloBudgetForValues) ctx.igloBudgetForValues(hash);
+         ctx.pop();
+         const modifiers = this.liquid.options.orderedFilterParameters
+             ? Object.keys(hash).filter(x => MODIFIERS.includes(x))
+@@ -4189,6 +4204,13 @@ class ForTag extends Tag {
+         }, collection);
+         ctx.setRegister(continueKey, (hash['offset'] || 0) + collection.length);
+         const scope = createScope({ forloop: new ForloopDrop(collection.length, this.collection.getText(), this.variable) });
++        if (ctx.igloBudgetForloop) {
++            const original = scope.forloop.valueOf.bind(scope.forloop);
++            Object.defineProperty(scope.forloop, 'valueOf', { value: () => {
++                ctx.igloBudgetForloop(scope.forloop.name);
++                return original();
++            } });
++        }
+         ctx.push(scope);
+         for (const item of collection) {
+             scope[this.variable] = item;
