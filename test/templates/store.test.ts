@@ -79,24 +79,28 @@ test("historical missing default is not reseeded, and high IDs retain exact wire
   }
 }, 30000);
 
-test("only real transactional unsubscribe references generate safe attention diagnostics", async () => {
+// M5.6: a tx template also serves marketing sends (tx API and sequence marketing steps), where
+// unsubscribe_url is filled in, so referencing it is not something that needs attention.
+test("a tx template referencing unsubscribe_url saves without an attention diagnostic", async () => {
   const f = await startTemplateFixture();
   try {
     const credential = await provisionApiUser(f.origin, f.admin),
       authorization = `Basic ${btoa(`${credential.user}:${credential.token}`)}`;
-    const post = (body: string) =>
-      fetch(`${f.origin}/api/templates`, {
-        method: "POST",
+    const save = (path: string, method: string, body: string) =>
+      fetch(`${f.origin}${path}`, {
+        method,
         headers: { authorization, "content-type": "application/json" },
-        body: JSON.stringify({ name: "synthetic-canary", type: "tx", subject: "s", body }),
+        body: JSON.stringify({ name: "marketing step", type: "tx", subject: "s", body }),
       });
-    expect((await post("{% comment %}{{ unsubscribe_url }}{% endcomment %}")).status).toBe(200);
+    const created = await save(
+      "/api/templates",
+      "POST",
+      '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
+    );
+    expect(created.status).toBe(200);
+    const id = (await created.json()).data.id;
+    expect((await save(`/api/templates/${id}`, "PUT", "{{ unsubscribe_url }}")).status).toBe(200);
     expect((await (await fetch(`${f.origin}/fixture/diagnostics`)).json()).data).toEqual([]);
-    expect((await post("{{ unsubscribe_url }}")).status).toBe(200);
-    const diagnostics = (await (await fetch(`${f.origin}/fixture/diagnostics`)).json())
-      .data as string[];
-    expect(diagnostics.length).toBe(1);
-    expect(diagnostics[0]).not.toContain("synthetic-canary");
   } finally {
     await f.close();
   }

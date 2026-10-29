@@ -104,7 +104,7 @@ export async function schedulerFixture() {
   let sessionHeaders = await login();
   const renderer = createRenderer(clock, app.i18n);
   const templateReferences = createCampaignTemplateReferences(db);
-  const templates = createTemplateStore(db, clock, renderer, templateReferences, app.logger);
+  const templates = createTemplateStore(db, clock, renderer, templateReferences);
   templates.initialize();
   const emailer = createEmailer({
     clock,

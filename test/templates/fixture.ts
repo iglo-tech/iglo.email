@@ -36,7 +36,7 @@ export async function startTemplateFixture(
     errors: unknown[] = [];
   const logger = { error: (error: unknown) => errors.push(error) };
   const renderer = createRenderer(clock, i18n),
-    templates = createTemplateStore(db, clock, renderer, campaigns, logger);
+    templates = createTemplateStore(db, clock, renderer, campaigns);
   try {
     templates.initialize();
     const auth = await createAuthentication(
