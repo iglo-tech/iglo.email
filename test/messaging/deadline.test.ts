@@ -107,6 +107,27 @@ describe("messaging absolute deadlines", () => {
     await emailer.close();
   });
 
+  test("time spent capturing configuration counts against dispatch lifetime", async () => {
+    const sink = await peer();
+    cleanup.push(sink.close);
+    const clock = new TestClock();
+    const emailer = createEmailer({
+      settings: () => {
+        clock.advance(60000);
+        return { smtp: [sink.server], rootUrl: "https://example.test" };
+      },
+      clock,
+    });
+    const send = emailer.push({ ...message, messageId: "<capture@example.test>" });
+    expect(await send.result).toMatchObject({
+      messageId: "<capture@example.test>",
+      status: "proven-not-accepted",
+      stage: "local",
+    });
+    expect(sink.connections()).toBe(0);
+    await emailer.close();
+  });
+
   test("configured connection cap bounds active sends and leaves excess locally queued", async () => {
     const sink = await peer();
     cleanup.push(sink.close);
