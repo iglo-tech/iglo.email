@@ -11,12 +11,21 @@ Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54e
 
 M1.2 merged and is unwatched. All workers/fixers/reviewers are terminal; [full M1.2 recovery/history](reviews/M1.2.md) and the local lock archive preserve IDs and the three-round disposition. Main source/executable were verified against the final measured runtime/hash.
 
-Next active task is **M2.1, brief stage**: production SMTP pools/message building/Message-ID outcomes and the real protected SMTP test. M0.8 and M1.2 prerequisites are merged; this advances the sending critical path ahead of the remaining independent M1 work. No task/M2.1 remote branch or existing worker was found. The lead is writing the exact upstream/scope/acceptance brief, then will dispatch one fresh GPT-6.1 Terra max worker in an isolated worktree with settings in target.options. No duplicate writer, helper or PR exists yet.
+Next active task is **M2.1, worker stage**: production SMTP pools/message building/Message-ID outcomes and the real protected SMTP test. M0.8 and M1.2 prerequisites are merged; this advances the sending critical path ahead of the remaining independent M1 work. No task/M2.1 remote branch or existing worker was found. The exact upstream/scope/acceptance brief and D49/D50 are pushed; one fresh GPT-6.1 Terra max worker is dispatched below in an isolated worktree with settings in target.options. No duplicate writer, helper or PR exists yet.
 
 [M2.1 brief](briefs/M2.1.md) is prepared from the exact pinned email messenger, init/config, SMTP-test handler, model/notification and M0.8 dependency evidence. D49 authorizes real bounded SMTP tests with safe data:[]/diagnostics instead of process-wide logs; D50 supplies the narrow native DKIM configuration/masking/retention seam required to make the existing signing design usable. Both are prospective implementation requirements, not completed behavior. Messaging owns transports/MIME/selection/outcomes; settings owns persistence, with explicitly authorized concrete main/route and DKIM-model seams. No schema, runtime dependency, queue, sender/outbox/TX/template feature, global registry or helper is authorized.
 
 The task requires actual Mailpit password/DKIM effects, partial recipient and before/after-DATA fault evidence with maxRequeues:0, protected bounded SMTP tests, finite shutdown/config replacement, all prior and new Linux gates, and serial sending/storage measurements. One fresh Terra max worker will start task/M2.1-messaging from current origin/main in the tool-supplied worktree. Existing SSH credentials can push workflow-bearing commits without the unavailable HTTPS workflow scope; no new credential/owner step is required. Completion immediately resumes the next fleet transition.
  After completion drive Linux CI, two fresh Sol xhigh council reviewers and merge, then immediately select the next eligible task.
+
+The sole worker is now dispatched: [M2.1: SMTP pools, message building and delivery outcomes](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-worker-043973d), GPT-6.1 Terra max, implementation role, separate isolated worktree and requested settings in target.options. It returned running without pending question/approval or child work. The brief is its whole context and explicitly starts from current origin/main; there is no duplicate writer/helper or PR yet. Its next instruction requires ending this turn and resuming on completion. No polling/waiting, premature council or PR watch. M1.2 is merged and unwatched; independent 45-minute recovery remains unbound.
+
+- Worker task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-worker-043973d.
+- Worker thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-worker-043973d.
+- Worker run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M2.1-worker-043973d:ordinal:1.
+- Idempotent request: iglo-email-M2.1-worker-043973d.
+
+Completion drives implementation/CI/review/merge immediately; an assignment or turn ending never completes the project. After this task merges, immediately select and dispatch the next eligible task.
 
 ## Automation
 
