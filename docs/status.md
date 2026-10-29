@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.3 transactional API, [draft PR #18](https://github.com/iglo-tech/iglo.email/pull/18), head cb3dac8. Round-1 fixes pushed; Sol round-2 fix-only review running.
-Next: lead disposition of round 2, merge, then M2.4.
+M2.3 transactional API, [draft PR #18](https://github.com/iglo-tech/iglo.email/pull/18), head 7c306d7. Round 2: settings Cc/Bcc fixed by lead, payload-retention finding disputed; Sol round-3 fix-only review running.
+Next: round 3 is final; lead decides any remaining disagreement, merges, then M2.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
