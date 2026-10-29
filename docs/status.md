@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.2 sequence conditions, [PR #22](https://github.com/iglo-tech/iglo.email/pull/22), head 526bbf2. Worker done; Sol xhigh round-1 review running. Critical path to M5.4: M5.2, M5.3.
-Next: lead disposition of round 1, merge (lead adds condition type rules to 05-sequences), then M5.3.
+M5.2 sequence conditions, [PR #22](https://github.com/iglo-tech/iglo.email/pull/22), head 526bbf2. Round 1: CHANGES (2 agreed P2); one Opus fixer running. Critical path to M5.4: M5.2, M5.3.
+Next: Sol round-2 fix-only review, merge, then M5.3.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
