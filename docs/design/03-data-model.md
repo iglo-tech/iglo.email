@@ -41,11 +41,14 @@ and permission checks, and the list owner supplies read-only labels.
 
 listmonk lets admins write raw SQL `WHERE` fragments over `subscribers`, for example `subscribers.attribs->>'city' = 'Bengaluru'`. SQLite 3.38+ supports `->` and `->>` with the same meaning, so many existing queries work unchanged. Postgres-specific functions do not, and that breaking change is accepted (documented in the admin UI help text).
 
-Safety:
+Safety (M1.7, [measurements](../perf/M1.7-query.md)):
 
-- Segment queries run on a **separate read-only connection** (`readonly: true`), so they cannot write.
-- The fragment is wrapped as `SELECT ... FROM subscribers WHERE (<fragment>)`, with a time limit enforced by `sqlite3_progress_handler` or an interrupt timer.
-- The permission is the same as listmonk's (`subscribers:sql_query`). As in listmonk, an admin with this permission can read any table. This is acceptable for a single-tenant server and is documented.
+- Built-in filters (lists, statuses, search) run in-process on a **separate read-only connection** (`readonly: true`, `PRAGMA query_only`). A raw fragment runs in a **child process** of the same executable with its own read-only connection, because bun:sqlite exposes neither `sqlite3_progress_handler` nor `sqlite3_interrupt`, and terminating a Worker does not stop a running SQLite step.
+- The fragment is checked lexically (no `;`, comments, unterminated quotes or parentheses that leave its own) and wrapped as `... WHERE ... AND (<fragment>)` in upstream's `query-subscribers` shape, including the `LEFT JOIN subscriber_lists`. Before it runs, the compiled program must be a read-only `SELECT` with exactly the bound parameters, and, as in listmonk's `validateQueryTables`, may open only `subscribers`, `lists`, `subscriber_lists`, `campaigns`, `campaign_lists`, `campaign_views`, `links`, `link_clicks` and `bounces` (checked from `EXPLAIN` root pages). The only virtual tables it may open are the subscriber FTS5 index and `json_each`/`json_tree` (checked from `EXPLAIN` `VOpen` objects); `pragma_*` functions, `dbstat`, FTS5 shadow tables and other virtual or eponymous tables are refused, as are users, sessions, settings and the schema table.
+- Time limit: the parent drains the child's output as it arrives, and the child is killed with SIGKILL 10 s after it starts, whether or not the HTTP reader is consuming; a streaming export then ends with an error. A resident-memory watchdog kills it above 256 MiB (bun:sqlite ignores `hard_heap_limit`). At most two children run at once; a request waits at most 1 s for a slot, then gets 429. A slot is released when its child exits.
+- Large selections (`per_page=all` and pages above 1,000 rows, exports and raw-query bulk actions) hold the selected IDs in the parent (about 40 bytes each); at most two run at once and excess requests get 429.
+- Query-selected bulk actions take the fragment's IDs from that snapshot, then recheck built-in filters and current list permissions in one write transaction, in batches of 500.
+- The permission is the same as listmonk's (`subscribers:sql_query`).
 
 ## Kept tables
 
