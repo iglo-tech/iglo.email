@@ -202,6 +202,15 @@ M2.1 activates the SMTP test under D49: real authorized send, bounded admission,
 safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
 400/429/500 categories and limits are paired against the pinned route; other
 authentication/cookie and settings behavior remains governed by existing policy.
+D51 requires configured PLAIN/LOGIN/CRAM to be advertised and successfully
+authenticated before MAIL/DATA, with no unauthenticated fallback or secret
+transmission to a peer that does not advertise the selected mechanism.
+Native keeps partial recipient acceptance and exposes both subsets to its
+caller instead of aborting before DATA as upstream does. The protected test
+returns safe 500 SMTP test was accepted for some recipients only. for that
+case, with one intake for the accepted subset versus upstream500/no intake;
+this is not proof that nothing was sent or permission to retry. Full
+acceptance remains 200/data:[] and D24 forbids automatic replay.
 D50 adds native-only optional SMTP dkim:{domain_name,key_selector,private_key}.
 GET masks the key; empty key retains by UUID, null clears, invalid candidates
 fail atomically. The Bun and compiled test-only callers verify signing, retained credentials,
