@@ -34,18 +34,27 @@ import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { createEventStore } from "@/events/store";
 import { registerEventRoutes } from "@/events/routes";
-import { createConditionEvaluator } from "@/conditions/evaluate";
+import {
+  createConditionEvaluator,
+  type ConditionEvaluator,
+} from "@/conditions/evaluate";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
 import { startScheduler, SCHEDULER_INTERVAL_MS } from "@/scheduler/scheduler";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
-import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
+import {
+  createMarketingPolicy,
+  type MarketingSettings,
+} from "@/unsubscribe/policy";
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 
-export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
+export const admin = {
+  user: "fixture-admin",
+  password: "fixture-admin-password",
+};
 export const minute = 60_000;
 export const hour = 3_600_000;
 export const day = 86_400_000;
@@ -75,11 +84,20 @@ export async function schedulerFixture() {
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
     listStore = createListStore(db, clock, counts, campaigns),
-    subscribers = createSubscriberStore(db, clock, lists, enrollments.subscriberEffects),
+    subscribers = createSubscriberStore(
+      db,
+      clock,
+      lists,
+      enrollments.subscriberEffects,
+    ),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const readonly = openReadOnly(db.filename);
-  const runner = createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 });
+  const runner = createQueryRunner({
+    path: db.filename,
+    timeoutMs: 10_000,
+    concurrency: 2,
+  });
   const auth = await createAuthentication(
     users,
     roles,
@@ -97,7 +115,13 @@ export async function schedulerFixture() {
   let sessionHeaders = await login();
   const renderer = createRenderer(clock, app.i18n);
   const templateReferences = createCampaignTemplateReferences(db);
-  const templates = createTemplateStore(db, clock, renderer, templateReferences, app.logger);
+  const templates = createTemplateStore(
+    db,
+    clock,
+    renderer,
+    templateReferences,
+    app.logger,
+  );
   templates.initialize();
   const emailer = createEmailer({
     clock,
@@ -139,7 +163,11 @@ export async function schedulerFixture() {
     clock,
     subscribers,
     rootUrl: () => "http://fixture.test",
-    marketingPolicy: createMarketingPolicy({ subscribers, lists, settings: () => marketing }),
+    marketingPolicy: createMarketingPolicy({
+      subscribers,
+      lists,
+      settings: () => marketing,
+    }),
   });
   const tracking = createTracking(db, clock);
   const outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
@@ -147,8 +175,27 @@ export async function schedulerFixture() {
     emailAllowed: (email) => allowedDomain(email, [], []),
     exitThenTrigger: enrollments.exitThenTrigger,
   });
-  const sequences = createSequenceStore(db, clock, { templates, lists, enrollments });
+  const sequences = createSequenceStore(db, clock, {
+    templates,
+    lists,
+    enrollments,
+  });
   const conditions = createConditionEvaluator({ readonly, runner });
+  // A test may act while a condition is being evaluated (an admin edit racing the scheduler),
+  // or answer in its place (a slow query timing out), by setting `f.onCondition`.
+  type Evaluate = ConditionEvaluator["evaluate"];
+  let onCondition:
+    | ((
+        context: Parameters<Evaluate>[1],
+        evaluate: () => ReturnType<Evaluate>,
+      ) => ReturnType<Evaluate>)
+    | null = null;
+  const observed: Pick<ConditionEvaluator, "evaluate"> = {
+    evaluate: (condition, context) =>
+      onCondition
+        ? onCondition(context, () => conditions.evaluate(condition, context))
+        : conditions.evaluate(condition, context),
+  };
 
   // Count the scheduler's idle sleeps: one marks the end of a complete pass.
   let passes = 0;
@@ -170,10 +217,18 @@ export async function schedulerFixture() {
     events,
     renderer,
     tracking,
-    conditions,
-    settings: () => ({ fromEmail: "Fixture <noreply@fixture.test>", marketing }),
+    conditions: observed,
+    settings: () => ({
+      fromEmail: "Fixture <noreply@fixture.test>",
+      marketing,
+    }),
   });
   enrollments.onDue(() => scheduler.wake());
+  let stopped = false;
+  scheduler.done.then(
+    () => (stopped = true),
+    () => (stopped = true),
+  );
 
   const router = createRouter();
   registerUserRoutes(router, users, roles, auth);
@@ -190,7 +245,13 @@ export async function schedulerFixture() {
     effects: enrollments.unsubscribeEffects,
   });
   registerEventRoutes(router, events, auth);
-  registerSequenceRoutes(router, { sequences, enrollments, subscribers, roles, auth });
+  registerSequenceRoutes(router, {
+    sequences,
+    enrollments,
+    subscribers,
+    roles,
+    auth,
+  });
 
   const request = (path: string, init: RequestInit = {}) =>
     router.handle(app, new Request(`http://fixture.test${path}`, init));
@@ -215,10 +276,14 @@ export async function schedulerFixture() {
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
   /** Yield to I/O, releasing zero-length clock sleeps, until `check` holds. */
-  async function until(check: () => boolean | Promise<boolean>, label = "condition") {
+  async function until(
+    check: () => boolean | Promise<boolean>,
+    label = "condition",
+  ) {
     const deadline = Date.now() + 15_000;
     while (!(await check())) {
-      if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+      if (Date.now() > deadline)
+        throw new Error(`timed out waiting for ${label}`);
       clock.advance(0);
       await new Promise((resolve) => setImmediate(resolve));
     }
@@ -229,23 +294,34 @@ export async function schedulerFixture() {
     const before = passes;
     if (ms) clock.advance(ms);
     else scheduler.wake();
-    await until(() => passes > before, "scheduler pass");
+    // A stopped scheduler ends the wait, so a test can assert that it is still running.
+    await until(() => passes > before || stopped, "scheduler pass");
   }
-  const template = async (body = "<p>{{ subscriber.name }}</p>", subject = "Hello") => {
+  const template = async (
+    body = "<p>{{ subscriber.name }}</p>",
+    subject = "Hello",
+  ) => {
     const created = await json("/api/templates", "POST", {
       name: "fixture tx",
       type: "tx",
       subject,
       body,
     });
-    if (created.status !== 200) throw new Error(`template ${JSON.stringify(created.body)}`);
+    if (created.status !== 200)
+      throw new Error(`template ${JSON.stringify(created.body)}`);
     return created.body.data.id as number;
   };
   const list = async (name: string, optin = "single") =>
-    (await json("/api/lists", "POST", { name, type: "public", optin })).body.data.id as number;
+    (await json("/api/lists", "POST", { name, type: "public", optin })).body
+      .data.id as number;
   const subscriber = async (email: string, extra: object = {}) => {
-    const created = await json("/api/subscribers", "POST", { email, name: "Fixture", ...extra });
-    if (created.status !== 200) throw new Error(`subscriber ${JSON.stringify(created.body)}`);
+    const created = await json("/api/subscribers", "POST", {
+      email,
+      name: "Fixture",
+      ...extra,
+    });
+    if (created.status !== 200)
+      throw new Error(`subscriber ${JSON.stringify(created.body)}`);
     return created.body.data.id as number;
   };
   const sequence = async (definition: object) => {
@@ -257,9 +333,16 @@ export async function schedulerFixture() {
       ...definition,
     });
     if (created.status !== 200) throw new Error(JSON.stringify(created.body));
-    return created.body.data as { id: number; steps: { id: number }[] } & Record<string, any>;
+    return created.body.data as {
+      id: number;
+      steps: { id: number }[];
+    } & Record<string, any>;
   };
-  const event = async (email: string, name = "order_paid", extra: object = {}) => {
+  const event = async (
+    email: string,
+    name = "order_paid",
+    extra: object = {},
+  ) => {
     const r = await json("/api/subscriber-events", "POST", {
       subscriber: { email, name: "Ana" },
       name,
@@ -275,7 +358,8 @@ export async function schedulerFixture() {
     (await json(`/api/enrollments/${id}`)).body.data as Record<string, any>;
   const sendLog = async (query = "") => {
     const r = await json(`/api/sends?per_page=100${query}`);
-    if (r.status !== 200) throw new Error(`send log ${r.status} ${JSON.stringify(r.body)}`);
+    if (r.status !== 200)
+      throw new Error(`send log ${r.status} ${JSON.stringify(r.body)}`);
     return (r.body.data.results as Record<string, any>[]).slice().reverse();
   };
   return {
@@ -297,6 +381,13 @@ export async function schedulerFixture() {
     event,
     enrollment,
     sendLog,
+    /** Whether the scheduler loop has ended (it only ends on close or a loop failure). */
+    get stopped() {
+      return stopped;
+    },
+    set onCondition(hook: typeof onCondition) {
+      onCondition = hook;
+    },
     async close() {
       const stoppedScheduler = scheduler.stop();
       const stopped = outbox.stop();
