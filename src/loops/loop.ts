@@ -40,6 +40,7 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
   else options.signal?.addEventListener("abort", stopFromSignal, { once: true });
   let idle: AbortController | undefined;
   let wakeable = false;
+  let wakeInterrupted = false;
   let notified = false;
   const run = async () => {
     try {
@@ -69,6 +70,7 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
               continue;
             }
             idle = new AbortController();
+            wakeInterrupted = false;
             wakeable = items.length === 0;
             const abortIdle = () => idle?.abort();
             controller.signal.addEventListener("abort", abortIdle, { once: true });
@@ -80,7 +82,7 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
               wakeable = false;
             }
           } catch (error) {
-            if (!controller.signal.aborted && !notified) throw error;
+            if (!controller.signal.aborted && !wakeInterrupted) throw error;
             notified = false;
           }
         }
@@ -103,7 +105,10 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
     done,
     wake() {
       notified = true;
-      if (wakeable) idle?.abort();
+      if (wakeable) {
+        wakeInterrupted = true;
+        idle?.abort();
+      }
     },
     stop() {
       controller.abort();
