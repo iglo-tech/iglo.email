@@ -20,7 +20,7 @@ export interface PreparedSend {
   listId?: bigint | null;
   idempotencyKey?: string | null;
 }
-interface Row {
+interface PublicRow {
   id: bigint;
   uuid: string;
   source: SendSource;
@@ -40,8 +40,13 @@ interface Row {
   next_attempt_at: string | null;
   created_at: string;
   sent_at: string | null;
+}
+interface Row extends PublicRow {
   payload: string | null;
 }
+const publicColumns = `id, uuid, source, kind, subscriber_id, to_email, template_id,
+  enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, error,
+  attempts, retry_of, next_attempt_at, created_at, sent_at`;
 export interface SendFilter {
   page: number;
   perPage: number;
@@ -57,7 +62,7 @@ const jsonID = (v: bigint | null) =>
     : v <= BigInt(Number.MAX_SAFE_INTEGER)
       ? Number(v)
       : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(v.toString());
-function project(row: Row) {
+function project(row: PublicRow) {
   return {
     id: jsonID(row.id),
     uuid: row.uuid,
@@ -90,8 +95,10 @@ export function createSends(options: {
   const { db, clock, subscribers } = options;
   let wake = () => {};
   const get = (id: bigint) => db.query<Row, [bigint]>("SELECT * FROM sends WHERE id = ?").get(id);
+  const getPublic = (id: bigint) =>
+    db.query<PublicRow, [bigint]>(`SELECT ${publicColumns} FROM sends WHERE id = ?`).get(id);
   const byChild = (id: bigint) =>
-    db.query<Row, [bigint]>("SELECT * FROM sends WHERE retry_of = ?").get(id);
+    db.query<PublicRow, [bigint]>(`SELECT ${publicColumns} FROM sends WHERE retry_of = ?`).get(id);
   const now = () => clock.now().toISOString();
   const messageId = (uuid: string) => {
     let host = "localhost";
@@ -153,7 +160,7 @@ export function createSends(options: {
       return row!.id;
     });
     wake();
-    return project(get(id)!);
+    return project(getPublic(id)!);
   }
   function resend(id: bigint, authorize: () => void) {
     const result = writeTransaction(db, () => {
@@ -189,7 +196,7 @@ export function createSends(options: {
           original.id,
           now(),
         );
-      return project(get(inserted!.id)!);
+      return project(getPublic(inserted!.id)!);
     });
     wake();
     return result;
@@ -198,7 +205,7 @@ export function createSends(options: {
     enqueue,
     resend,
     get(id: bigint) {
-      const row = get(id);
+      const row = getPublic(id);
       return row ? project(row) : null;
     },
     list(filter: SendFilter) {
@@ -220,7 +227,9 @@ export function createSends(options: {
         .query<{ total: bigint }, any[]>(`SELECT count(*) AS total FROM sends${where}`)
         .get(...values)!.total;
       const rows = db
-        .query<Row, any[]>(`SELECT * FROM sends${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+        .query<PublicRow, any[]>(
+          `SELECT ${publicColumns} FROM sends${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+        )
         .all(...values, filter.perPage, (filter.page - 1) * filter.perPage);
       return {
         results: rows.map(project),
