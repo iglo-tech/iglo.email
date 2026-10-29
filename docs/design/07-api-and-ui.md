@@ -199,6 +199,15 @@ This finite coverage is representative; reproduced unlisted differences must
 still be corrected. Secret retention is visible through masked projections
 until M2.1 verifies actual authentication and delivery with Mailpit.
 
+M2.1 activates the SMTP test under D49: real authorized send, bounded admission,
+safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
+400/429/500 categories and limits are paired against the pinned route; other
+authentication/cookie and settings behavior remains governed by existing policy.
+D50 adds native-only optional SMTP dkim:{domain_name,key_selector,private_key}.
+GET masks the key; empty key retains by UUID, null clears, invalid candidates
+fail atomically. Runtime activation and effect evidence belong to M2.1; this
+decision entry does not claim the worker implementation already exists.
+
 D46 rejects NUL in final normalized writable settings strings and map keys
 atomically with native HTTP 400 `Invalid data.` and no write; pinned PostgreSQL
 returns HTTP 500 with no write. Ignored, overwritten and legitimately normalized

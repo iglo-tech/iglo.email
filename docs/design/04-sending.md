@@ -9,6 +9,12 @@
 
 M0.8 verified predetermined IDs, MIME and DKIM through a synthetic Mailpit path in Bun and a compiled fixture ([evidence](../perf/M0.8-nodemailer.md)). Nodemailer 10.2.1 defaults pool requeues to five; M2.1 explicitly sets maxRequeues to 0 for D12 delivery paths under D24; the application alone owns proof-based transactional retries. SMTP acceptance alone does not establish delivery or an unambiguous retry classification.
 
+D49 defines M2.1's protected SMTP-test activation, safe response/errors and
+bounded temporary transports. D50 supplies optional native SMTP DKIM settings
+with masked key retention/null-clear and validated RSA configuration. These
+are prospective M2.1 requirements; M1.2's current SMTP route remains guarded
+501 until that task implements and verifies the real transport.
+
 ## Campaigns
 
 Ported from listmonk's `internal/manager`:
