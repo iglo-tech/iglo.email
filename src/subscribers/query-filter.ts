@@ -216,8 +216,7 @@ export function idsSQL(
   };
 }
 
-// listmonk internal/core/subscribers.go allowedSubQueryTables, plus the FTS5 index of
-// subscriber name and e-mail used by search.
+// listmonk internal/core/subscribers.go allowedSubQueryTables.
 const allowedTables = new Set([
   "subscribers",
   "lists",
@@ -228,12 +227,28 @@ const allowedTables = new Set([
   "links",
   "link_clicks",
   "bounces",
-  "subscribers_fts",
-  "subscribers_fts_data",
-  "subscribers_fts_idx",
-  "subscribers_fts_docsize",
-  "subscribers_fts_config",
 ]);
+// Virtual tables a statement may open: the FTS5 index of subscriber name and e-mail used by
+// search, and JSON table-valued functions, which read only their arguments. pragma_* functions,
+// dbstat and any other virtual or eponymous table are refused. FTS5 opens its shadow tables
+// itself, so they are not allowed to statements either.
+const allowedVirtualTables = [
+  "SELECT 1 FROM subscribers_fts WHERE subscribers_fts MATCH 'x'",
+  "SELECT 1 FROM json_each('[]')",
+  "SELECT 1 FROM json_tree('[]')",
+];
+
+/** EXPLAIN shows a virtual table as its connection-owned `vtab:<address>` object. */
+function allowedVirtualTableObjects(db: Database): Set<string> {
+  const out = new Set<string>();
+  for (const sql of allowedVirtualTables) {
+    const explain = db.prepare(`EXPLAIN ${sql}`);
+    for (const op of explain.all() as { opcode: string; p4: unknown }[])
+      if (op.opcode === "VOpen") out.add(String(op.p4));
+    explain.finalize();
+  }
+  return out;
+}
 
 export class QueryError extends Error {}
 
@@ -246,7 +261,13 @@ export function prepareChecked(db: Database, sql: string, args: Arg[]): Statemen
   // sqlite3_stmt_readonly also reports ATTACH/DETACH as read-only; only SELECTs run here.
   if (!/^SELECT\s/.test(sql)) throw new QueryError("only SELECT statements are allowed");
   let stmt: Statement;
-  let plan: { opcode: string; p2: number | bigint; p3: number | bigint; p5: number | bigint }[];
+  let plan: {
+    opcode: string;
+    p2: number | bigint;
+    p3: number | bigint;
+    p4: unknown;
+    p5: number | bigint;
+  }[];
   try {
     stmt = db.prepare(sql);
   } catch (error) {
@@ -270,7 +291,16 @@ export function prepareChecked(db: Database, sql: string, args: Arg[]): Statemen
   for (const row of schema.all() as { tbl_name: string; rootpage: number | bigint }[])
     roots.set(Number(row.rootpage), row.tbl_name);
   schema.finalize();
+  // The statement is still prepared, so every virtual table it opens is alive and its
+  // address cannot be shared with an allowed one.
+  const virtual = plan.some((op) => op.opcode === "VOpen")
+    ? allowedVirtualTableObjects(db)
+    : new Set<string>();
   for (const op of plan) {
+    if (op.opcode === "VOpen" && !virtual.has(String(op.p4))) {
+      stmt.finalize();
+      throw new QueryError("table is not allowed");
+    }
     if (!["OpenRead", "OpenWrite", "ReopenIdx"].includes(op.opcode)) continue;
     const name = roots.get(Number(op.p2));
     if (

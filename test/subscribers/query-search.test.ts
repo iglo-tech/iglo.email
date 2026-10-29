@@ -51,3 +51,42 @@ describe("accented search", () => {
     expect(emails(left.body).sort()).toEqual(["plain", "upper"]);
   });
 });
+
+describe("raw-query allow-list", () => {
+  let f: QueryFixture;
+  beforeAll(async () => {
+    f = await queryFixture();
+    await f.json("/api/subscribers", "POST", {
+      email: "vt-a@example.test",
+      name: "Vt",
+    });
+  });
+  afterAll(async () => {
+    await f.close();
+  });
+
+  test("refuses pragma functions, dbstat and FTS shadow tables", async () => {
+    for (const fragment of [
+      "EXISTS (SELECT 1 FROM pragma_table_info('users'))",
+      "EXISTS (SELECT 1 FROM pragma_table_list)",
+      "EXISTS (SELECT 1 FROM dbstat WHERE name = 'users')",
+      "EXISTS (SELECT 1 FROM subscribers_fts_data)",
+      "EXISTS (SELECT 1 FROM subscribers_fts_config)",
+    ]) {
+      const response = await f.json(`/api/subscribers?query=${q(fragment)}`);
+      expect([fragment, response.status]).toEqual([fragment, 400]);
+      expect(response.body.message).toStartWith("Error preparing subscriber query:");
+    }
+  });
+
+  test("still runs JSON table functions, search and the FTS index", async () => {
+    for (const fragment of [
+      "subscribers.id IN (SELECT value FROM json_each('[1,2,3]'))",
+      "EXISTS (SELECT 1 FROM json_tree(subscribers.attribs))",
+      "subscribers.id IN (SELECT rowid FROM subscribers_fts WHERE subscribers_fts MATCH 'vt')",
+    ]) {
+      const response = await f.json(`/api/subscribers?search=vt&query=${q(fragment)}`);
+      expect([fragment, response.status, emails(response.body)]).toEqual([fragment, 200, ["vt"]]);
+    }
+  });
+});
