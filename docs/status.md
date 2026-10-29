@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.3 transactional API, [draft PR #18](https://github.com/iglo-tech/iglo.email/pull/18), head 8e7934b. Round 1: CHANGES (3 agreed findings); one Opus fixer running.
-Next: Sol round-2 fix-only review, merge, then M2.4.
+M2.3 transactional API, [draft PR #18](https://github.com/iglo-tech/iglo.email/pull/18), head cb3dac8. Round-1 fixes pushed; Sol round-2 fix-only review running.
+Next: lead disposition of round 2, merge, then M2.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
