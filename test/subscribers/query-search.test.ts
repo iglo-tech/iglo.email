@@ -52,6 +52,43 @@ describe("accented search", () => {
   });
 });
 
+describe("sharp S search", () => {
+  let f: QueryFixture;
+  beforeAll(async () => {
+    f = await queryFixture();
+    for (const [email, name] of [
+      ["capital-s@example.test", "GRO\u1E9E Sharp"],
+      ["small-s@example.test", "Gro\u00DF Sharp"],
+      ["double-s@example.test", "GROSS Sharp"],
+    ])
+      expect((await f.json("/api/subscribers", "POST", { email, name })).status).toBe(200);
+  });
+  afterAll(async () => {
+    await f.close();
+  });
+
+  test("ß matches capital ẞ but not SS, in the list, export and bulk actions", async () => {
+    for (const search of ["Gro\u00DF", "GRO\u1E9E"]) {
+      const response = await f.json(`/api/subscribers?search=${q(search)}`);
+      expect([search, emails(response.body).sort()]).toEqual([search, ["capital", "small"]]);
+    }
+    const csv = await (await get(f, `/api/subscribers/export?search=${q("Gro\u00DF")}`)).text();
+    expect(csv).toContain("capital-s@example.test");
+    expect(csv).not.toContain("double-s@example.test");
+    expect(
+      (await f.json("/api/subscribers/query/blocklist", "PUT", { search: "Gro\u00DF" })).status,
+    ).toBe(200);
+    const all = await f.json("/api/subscribers?per_page=all");
+    const status = Object.fromEntries(
+      (all.body.data.results as { email: string; status: string }[]).map((row) => [
+        row.email.split("-")[0],
+        row.status,
+      ]),
+    );
+    expect(status).toEqual({ capital: "blocklisted", small: "blocklisted", double: "enabled" });
+  });
+});
+
 describe("raw-query allow-list", () => {
   let f: QueryFixture;
   beforeAll(async () => {
