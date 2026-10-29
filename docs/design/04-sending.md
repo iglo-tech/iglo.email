@@ -15,6 +15,12 @@ with masked key retention/null-clear and validated RSA configuration. These
 are prospective M2.1 requirements; M1.2's current SMTP route remains guarded
 501 until that task implements and verifies the real transport.
 
+The D49 owner deadlines are absolute: 60 seconds from ordinary dispatch,
+10 seconds for a temporary SMTP test, and five seconds to drain after shutdown
+starts. Forced cancellation closes owned work and remains ambiguous unless
+non-acceptance was independently established. HTTP drainage must not postpone
+the messaging shutdown deadline. These remain M2.1 acceptance requirements.
+
 ## Campaigns
 
 Ported from listmonk's `internal/manager`:

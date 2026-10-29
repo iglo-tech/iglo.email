@@ -9,23 +9,13 @@ Updated: 2026-10-29
 
 Day-to-day lead: [iglo.email — Chief of staff](t3-thread://v1/mcp:cc118fea-54ef-42c0-a515-e77d835e9df7), GPT-6.1 Sol xhigh. The continuous run still starts at 2026-10-28T20:34:55.959528+00:00; there is no elapsed/task/session cutoff. Only the completed whole applicable work plan ends the project goal. Async dispatch/check turns resume automatically; no polling, duplicate workers or owner approval for routine work.
 
-M1.2 merged and is unwatched. All workers/fixers/reviewers are terminal; [full M1.2 recovery/history](reviews/M1.2.md) and the local lock archive preserve IDs and the three-round disposition. Main source/executable were verified against the final measured runtime/hash.
+M1.2 is merged and unwatched; its complete recovery/history is in [the M1.2 record](reviews/M1.2.md). The continuous run now owns **M2.1, acceptance-fix stage**, on [draft PR #15](https://github.com/iglo-tech/iglo.email/pull/15), branch task/M2.1-messaging, head 7702279af28f54414db015ce942a75ac25a8bc51. The original worker completed and its final result was read; no other writer, reviewer, pending question or approval remains. All four Linux CI results on that head passed. The PR is linked here but not watched: it is still being implemented, with no council round started.
 
-Next active task is **M2.1, worker stage**: production SMTP pools/message building/Message-ID outcomes and the real protected SMTP test. M0.8 and M1.2 prerequisites are merged; this advances the sending critical path ahead of the remaining independent M1 work. No task/M2.1 remote branch or existing worker was found. The exact upstream/scope/acceptance brief and D49/D50 are pushed; one fresh GPT-6.1 Terra max worker is dispatched below in an isolated worktree with settings in target.options. No duplicate writer, helper or PR exists yet.
+The candidate implements SMTP selection/pools, MIME, pre-dispatch IDs, conservative outcomes, protected bounded SMTP tests and D50 DKIM settings. Its local compiled/reference gates passed for the stated coverage. This is not complete acceptance: absolute shutdown/cancellation, SMTP-specific revocation/CSRF, trusted hostname verification, finite paired MIME and DKIM validation cases, and sending/storage measurements remain. No external block or owner decision prevents finishing them. The [continuation brief](briefs/M2.1-fix1.md) narrows the remaining work; the [original brief](briefs/M2.1.md) retains all ownership/source requirements.
 
-[M2.1 brief](briefs/M2.1.md) is prepared from the exact pinned email messenger, init/config, SMTP-test handler, model/notification and M0.8 dependency evidence. D49 authorizes real bounded SMTP tests with safe data:[]/diagnostics instead of process-wide logs; D50 supplies the narrow native DKIM configuration/masking/retention seam required to make the existing signing design usable. Both are prospective implementation requirements, not completed behavior. Messaging owns transports/MIME/selection/outcomes; settings owns persistence, with explicitly authorized concrete main/route and DKIM-model seams. No schema, runtime dependency, queue, sender/outbox/TX/template feature, global registry or helper is authorized.
+D49 is clarified for owner review: absolute operation deadlines are 60 seconds ordinary / 10 seconds test; shutdown immediately stops admission and drains for at most five seconds, then cancels owned work. Start that bound before awaiting HTTP drainage. Deadline/forced-close uncertainty remains ambiguous, with no automatic resend or remote-cancellation guarantee. The lead authorizes the existing narrow main/settings/messaging seams; no new dependency, auth-store/schema, outbox/TX/template implementation or helper.
 
-The task requires actual Mailpit password/DKIM effects, partial recipient and before/after-DATA fault evidence with maxRequeues:0, protected bounded SMTP tests, finite shutdown/config replacement, all prior and new Linux gates, and serial sending/storage measurements. One fresh Terra max worker will start task/M2.1-messaging from current origin/main in the tool-supplied worktree. Existing SSH credentials can push workflow-bearing commits without the unavailable HTTPS workflow scope; no new credential/owner step is required. Completion immediately resumes the next fleet transition.
- After completion drive Linux CI, two fresh Sol xhigh council reviewers and merge, then immediately select the next eligible task.
-
-The sole worker is now dispatched: [M2.1: SMTP pools, message building and delivery outcomes](t3-thread://v1/thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-worker-043973d), GPT-6.1 Terra max, implementation role, separate isolated worktree and requested settings in target.options. It returned running without pending question/approval or child work. The brief is its whole context and explicitly starts from current origin/main; there is no duplicate writer/helper or PR yet. Its next instruction requires ending this turn and resuming on completion. No polling/waiting, premature council or PR watch. M1.2 is merged and unwatched; independent 45-minute recovery remains unbound.
-
-- Worker task ID: node:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-worker-043973d.
-- Worker thread ID: thread:delegated-task:command%3Amcp%3A624af58e-e375-403c-b70c-1b085003bf45%3Adelegate-task%3Aiglo-email-M2.1-worker-043973d.
-- Worker run ID: run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A624af58e-e375-403c-b70c-1b085003bf45%253Adelegate-task%253Aiglo-email-M2.1-worker-043973d:ordinal:1.
-- Idempotent request: iglo-email-M2.1-worker-043973d.
-
-Completion drives implementation/CI/review/merge immediately; an assignment or turn ending never completes the project. After this task merges, immediately select and dispatch the next eligible task.
+Next: dispatch exactly one fresh GPT-6.1 Terra max fixer in a supplied isolated worktree on the existing PR branch, with settings in target.options; persist its returned IDs below and yield for completion. Finish acceptance before council/watch. Then Linux CI and two fresh independent Sol xhigh reviewers, merge, and immediately advance the next eligible task. Full terminal-worker and subsequent dispatch identifiers remain in [M2.1 recovery](reviews/M2.1.md) and the lock; no duplicate workers or polling.
 
 ## Automation
 
@@ -65,7 +55,7 @@ Owner update: healthy redundant check-in threads auto-settle themselves through 
 
 ## Blocked
 
-No active external block or cooldown. M1.2 is starting under continuous fleet management; task completion no longer stops a run. Genuine item-level blocks must not stop other eligible work.
+No active external block or cooldown. M2.1 has concrete unfinished implementation/acceptance work on draft PR #15; one isolated fixer will continue it. Task completion never stops the continuous fleet, and a genuine item-level block must not stop other eligible work.
 
 ## For owner review
 
