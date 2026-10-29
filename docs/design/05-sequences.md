@@ -106,9 +106,18 @@ A small JSON predicate language. It covers what lifecycle emails need without le
 | `event` | The subscriber has events with this name. `since`: `trigger` (after the enrollment's trigger event), `enrollment` (after the enrollment started), `last_step` (after the previous step ran), or an ISO 8601 duration back from now (`P30D`). `where`: equality on event `data.*` fields. `count`: `gte`, `lte`, `eq`; default `gte: 1` |
 | `attr` | A subscriber attribute compares with a value. `op`: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `exists`. `attr: "status"` reads the subscriber status |
 | `list` | Membership in a list with one of the given statuses |
-| `sql` | A segment-query fragment over `subscribers`, run on the read-only connection. Requires the `subscribers:sql_query` permission to save. Escape hatch, not the default |
+| `sql` | A segment-query fragment over `subscribers`, run in M1.7's read-only child runner. Requires the `subscribers:sql_query` permission to save. Escape hatch, not the default |
 
 Conditions compile to one SQL query per evaluation, bound to the subscriber, using the `(subscriber_id, name, occurred_at)` index on events. "No download after 3 days" is `{ "not": { "event": "download_finished", "since": "trigger" } }`.
+
+Rules (implemented in `src/conditions`):
+
+- **Types.** Paths walk object keys only (`a.1` is key `"1"`, not an array index); a missing key or a non-object on the way makes the field missing. A string equals only the same JSON text, a number only a JSON number of the same value (`5` equals `5.0`), a boolean only the same boolean; nothing is coerced. `gt`/`gte`/`lt`/`lte` compare numbers numerically and text by code point, and are false for a missing field or another type. `ne` is the negation of `eq`, so it holds for a missing field. `in` is `eq` against any value. `exists` means present and not JSON null.
+- **Safe numbers.** A number in a condition (`value`, `in` items, `where` values) must be a safe integer (within ±(2^53 − 1)) or a finite fraction; validation refuses others with a field error, because JSON parsing has already rounded them. Stored numbers of any size compare exactly against accepted ones.
+- **Defaults.** A `list` without `status` means `["unconfirmed", "confirmed"]`: a member who has not unsubscribed. An `event` without `count` means `{ "gte": 1 }`; `count` comparators combine as a conjunction of integers 0–1000.
+- **`since`.** Events count strictly after the bound, so `since: trigger` never counts the trigger event itself, nor another event at the same instant. `last_step` before the first step falls back to the trigger. Without `since` there is no lower bound; there is never an upper bound.
+- **Durations.** ISO 8601 weeks, days, hours, minutes and seconds only (`P30D`, `PT12H`, `P1DT6H`); no years, months or fractions; at most 36,600 days, measured back from the injected clock's now.
+- **`sql`.** A condition containing `sql` runs whole, as one statement in one read snapshot, in the read-only child; each fragment must pass M1.7's checks on its own and binds no parameters. Conditions without `sql` run on the normal read path with no child.
 
 ## Template data
 
