@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.4 unsubscribe and frequency cap, branch task/M2.4-unsubscribe, [brief](briefs/M2.4.md). One Opus medium worker dispatched; no reviewer active.
-Next: on worker handback, Sol xhigh deep round 1, lead disposition, merge, then M2.6.
+M2.4 unsubscribe and frequency cap, [draft PR #19](https://github.com/iglo-tech/iglo.email/pull/19), head d5647b2. Worker done; Sol xhigh round-1 review running. Lead accepted the renderer tracking seam.
+Next: lead disposition of round 1, merge, then M2.6.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
