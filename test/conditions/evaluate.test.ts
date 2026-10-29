@@ -472,6 +472,10 @@ describe("the sql escape hatch", () => {
         calls++;
         return f.runner.run(...args);
       },
+      condition: (statement: Parameters<typeof f.runner.condition>[0]) => {
+        calls++;
+        return f.runner.condition(statement);
+      },
     };
     const evaluator = createConditionEvaluator({ readonly: f.readonly, runner: counted });
     try {
@@ -488,6 +492,50 @@ describe("the sql escape hatch", () => {
     } finally {
       evaluator.close();
     }
+  });
+
+  test("a mixed condition reads one snapshot when an update commits during evaluation", async () => {
+    // Neither state satisfies the condition: low credits on a trial, then high credits when paid.
+    const payer = f.addSubscriber({ attribs: { plan: "trial", credits: 0 } });
+    const upgrade = () =>
+      f.db
+        .query("UPDATE subscribers SET attribs = ? WHERE id = ?")
+        .run(JSON.stringify({ plan: "paid", credits: 100 }), payer.id);
+    // The update commits as soon as the child has answered, before anything else is read.
+    const interleaved = {
+      all: async (statements: Parameters<typeof f.runner.all>[0]) => {
+        const results = await f.runner.all(statements);
+        upgrade();
+        return results;
+      },
+      condition: async (statement: Parameters<typeof f.runner.condition>[0]) => {
+        const results = await f.runner.condition(statement);
+        upgrade();
+        return results;
+      },
+    };
+    const evaluator = createConditionEvaluator({ readonly: f.readonly, runner: interleaved });
+    const condition = {
+      all: [
+        { sql: "json_extract(subscribers.attribs, '$.credits') < 10" },
+        { attr: "plan", op: "eq", value: "paid" },
+      ],
+    };
+    try {
+      expect(await value(condition, context(payer))).toBe(false);
+      expect(await evaluator.evaluate(condition, context(payer))).toEqual({
+        ok: true,
+        value: false,
+      });
+      expect(await value(condition, context(payer))).toBe(false);
+    } finally {
+      evaluator.close();
+    }
+  });
+
+  test("fragments bind no parameters of the generated query", async () => {
+    for (const sql of ["subscribers.id = ?1", "subscribers.id = :id", "subscribers.id = ?"])
+      expect([sql, (await failure({ sql }, context(rich))).kind]).toEqual([sql, "query"]);
   });
 
   test("refused fragments and tables", async () => {

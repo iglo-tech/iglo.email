@@ -3,7 +3,7 @@
 // condition compiler takes these parts instead of querying the tables itself.
 import { compareSQL, existsSQL, inSQL, type CompareOp, type SQLPart } from "@/conditions/json";
 import type { Scalar } from "@/conditions/types";
-import { idsSQL, type Arg } from "@/subscribers/query-filter";
+import { fragmentConditionSQL } from "@/subscribers/query-filter";
 
 const attribs = "subscribers.attribs";
 
@@ -50,12 +50,10 @@ export function subscriberConditionSQL<P>(expression: SQLPart<P>, subscriber: P)
 }
 
 /**
- * A raw segment-query fragment checked for one subscriber, in M1.7's query shape, for the
- * read-only child runner: it yields the subscriber's ID when the fragment matches.
+ * The part for a raw segment-query fragment: true when it matches the subscriber. Its text
+ * contains a fragment slot that only the read-only child fills, after checking the fragment
+ * (prepareCondition), so the whole condition runs there in one snapshot.
  */
-export function fragmentSQL(fragment: string, subscriber: bigint): { sql: string; args: Arg[] } {
-  return idsSQL(
-    { lists: null, subscriptionStatus: "", search: "", subscriberStatus: "", fragment },
-    { only: [subscriber] },
-  );
+export function fragmentPartSQL<P>(subscriber: P): SQLPart<P> {
+  return { sql: fragmentConditionSQL, args: [subscriber] };
 }

@@ -1,14 +1,14 @@
 // Evaluation of sequence conditions (docs/design/05-sequences.md#conditions); no upstream source.
-// A condition without `sql` runs as one statement on the read-only connection. Raw fragments
-// run first in M1.7's read-only child runner, with its time, memory and concurrency limits, and
-// their results are bound into the same statement. Failures are returned, never thrown, and
-// nothing runs on the write connection, so a caller's transaction is never involved.
+// A condition without `sql` runs as one statement on the read-only connection. A condition with
+// `sql` runs as that same single statement, fragments included, in M1.7's read-only child
+// runner with its time, memory and concurrency limits, so every predicate sees one snapshot.
+// Failures are returned, never thrown, and nothing runs on the write connection, so a caller's
+// transaction is never involved.
 import type { Database, Statement } from "bun:sqlite";
 import { compile, type CompiledCondition } from "@/conditions/compile";
 import { parseDuration } from "@/conditions/duration";
 import type { ConditionContext, ConditionError, EvaluationResult } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
-import { fragmentSQL } from "@/subscribers/condition-sql";
 import { RunnerError, type QueryRunner } from "@/subscribers/query-runner";
 
 /** Prepared statements kept per evaluator; the least recently used is finalized beyond it. */
@@ -41,7 +41,7 @@ export function createConditionEvaluator(options: {
   /** A read-only connection (openReadOnly). */
   readonly: Database;
   /** M1.7's raw-query child runner, used only for conditions with `sql`. */
-  runner: Pick<QueryRunner, "all">;
+  runner: Pick<QueryRunner, "condition">;
 }) {
   const { readonly, runner } = options;
   const statements = new Map<string, Statement>();
@@ -80,13 +80,7 @@ export function createConditionEvaluator(options: {
         return time < MIN_TIME ? "" : new Date(time).toISOString();
       };
       args = compiled.params.map((param) =>
-        typeof param !== "object"
-          ? param
-          : param.slot === "subscriber"
-            ? id
-            : param.slot === "after"
-              ? after(param.since)
-              : 0,
+        typeof param !== "object" ? param : param.slot === "subscriber" ? id : after(param.since),
       );
     } catch (error) {
       if (error instanceof ContextError)
@@ -94,17 +88,18 @@ export function createConditionEvaluator(options: {
       return { ok: false, error: { kind: "execution", message: "condition query failed" } };
     }
     try {
-      if (compiled.fragments.length) {
-        const results = await runner.all(compiled.fragments.map((f) => fragmentSQL(f, id)));
-        compiled.params.forEach((param, i) => {
-          if (typeof param === "object" && param.slot === "sql")
-            args[i] = results[param.index]!.length ? 1 : 0;
-        });
-      }
-      const rows = prepared(compiled.sql).values(...args) as unknown[][];
-      if (!rows.length)
+      const matched = compiled.fragments.length
+        ? (
+            await runner.condition({
+              sql: compiled.sql,
+              args,
+              fragments: compiled.fragments,
+            })
+          )[0]
+        : (prepared(compiled.sql).values(...args) as unknown[][])[0]?.[0];
+      if (matched === undefined)
         return { ok: false, error: { kind: "not_found", message: "subscriber not found" } };
-      return { ok: true, value: rows[0]![0] === 1n || rows[0]![0] === 1 };
+      return { ok: true, value: matched === 1n || matched === 1 };
     } catch (error) {
       if (error instanceof RunnerError) return { ok: false, error: runnerError(error) };
       return { ok: false, error: { kind: "execution", message: "condition query failed" } };

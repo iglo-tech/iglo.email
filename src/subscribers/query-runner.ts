@@ -6,17 +6,39 @@
 import { Database } from "bun:sqlite";
 import { readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { prepareChecked, QueryError, type Arg } from "@/subscribers/query-filter";
+import {
+  prepareChecked,
+  prepareCondition,
+  QueryError,
+  type Arg,
+  type ConditionArg,
+} from "@/subscribers/query-filter";
 
 export interface Statement {
   sql: string;
   args: Arg[];
 }
-type WireArg = string | { int: string };
+/** A generated condition statement with checked fragments at its slots (prepareCondition). */
+export interface ConditionStatement {
+  sql: string;
+  args: ConditionArg[];
+  fragments: string[];
+}
+type WireArg = string | { int: string } | { num: number };
+interface WireStatement {
+  sql: string;
+  args: WireArg[];
+  /** Present only for a condition statement. */
+  fragments?: string[];
+}
 interface Request {
   path: string;
-  statements: { sql: string; args: WireArg[] }[];
+  statements: WireStatement[];
 }
+const toWire = (arg: ConditionArg): WireArg =>
+  typeof arg === "bigint" ? { int: arg.toString() } : typeof arg === "number" ? { num: arg } : arg;
+const fromWire = (arg: WireArg): ConditionArg =>
+  typeof arg === "string" ? arg : "int" in arg ? BigInt(arg.int) : arg.num;
 /** The command line that makes the executable run the child instead of the server. */
 export const childArgument = "__subscriber-query";
 
@@ -46,8 +68,10 @@ export async function runQueryChild(): Promise<void> {
     // One read transaction: every statement sees the same snapshot.
     db.run("BEGIN");
     for (const [index, statement] of request.statements.entries()) {
-      const args = statement.args.map((arg) => (typeof arg === "string" ? arg : BigInt(arg.int)));
-      const stmt = prepareChecked(db, statement.sql, args);
+      const args = statement.args.map(fromWire);
+      const stmt = statement.fragments
+        ? prepareCondition(db, statement.sql, statement.fragments, args)
+        : prepareChecked(db, statement.sql, args as Arg[]);
       emit(`R${index}`);
       // Report a validated statement before its first row arrives.
       flush();
@@ -144,8 +168,17 @@ export function createQueryRunner(options: RunnerOptions) {
    * streaming response can end. The slot is released when the child exits, which also happens
    * at the limit and when the consumer stops early.
    */
-  async function* run(
+  function run(
     statements: Statement[],
+    onError?: (error: RunnerError) => void,
+  ): AsyncGenerator<[number, bigint[]]> {
+    return spawn(
+      statements.map((s) => ({ sql: s.sql, args: s.args.map(toWire) })),
+      onError,
+    );
+  }
+  async function* spawn(
+    statements: WireStatement[],
     onError?: (error: RunnerError) => void,
   ): AsyncGenerator<[number, bigint[]]> {
     const releaseSlot = await acquire();
@@ -206,10 +239,7 @@ export function createQueryRunner(options: RunnerOptions) {
       child.stdin.write(
         JSON.stringify({
           path: options.path,
-          statements: statements.map((s) => ({
-            sql: s.sql,
-            args: s.args.map((arg) => (typeof arg === "bigint" ? { int: arg.toString() } : arg)),
-          })),
+          statements,
         } satisfies Request),
       );
       await child.stdin.end();
@@ -281,6 +311,18 @@ export function createQueryRunner(options: RunnerOptions) {
       const results: bigint[][] = statements.map(() => []);
       for await (const [index, values] of run(statements)) results[index]!.push(...values);
       return results;
+    },
+    /**
+     * Run one generated sequence condition, with its checked fragments, in one read-only
+     * snapshot under the same limits; yields the first column of each row.
+     */
+    async condition(statement: ConditionStatement): Promise<bigint[]> {
+      const values: bigint[] = [];
+      for await (const [, batch] of spawn([
+        { sql: statement.sql, args: statement.args.map(toWire), fragments: statement.fragments },
+      ]))
+        values.push(...batch);
+      return values;
     },
     /** Kill running children, as at shutdown. */
     async close() {

@@ -1,28 +1,30 @@
 // Compilation of a validated condition to one parameterized statement
 // (docs/design/05-sequences.md#conditions); no upstream source. Values, paths, names and list
-// IDs are bound parameters; context times are bound when the condition is evaluated.
+// IDs are bound parameters; context times are bound when the condition is evaluated. Raw `sql`
+// fragments are the only user text, and only M1.7's read-only child places them.
 import { formatSQLExp } from "@/subscribers/query-filter";
 import { eventCountSQL } from "@/events/condition-sql";
 import type { SQLPart } from "@/conditions/json";
 import type { Condition, Since } from "@/conditions/types";
 import {
   attributeSQL,
+  fragmentPartSQL,
   membershipSQL,
   statusSQL,
   subscriberConditionSQL,
 } from "@/subscribers/condition-sql";
 
 /** A parameter filled from the evaluation context. */
-export type Slot =
-  | { slot: "subscriber" }
-  | { slot: "after"; since: Since }
-  | { slot: "sql"; index: number };
+export type Slot = { slot: "subscriber" } | { slot: "after"; since: Since };
 
 export interface CompiledCondition {
   /** One SELECT yielding 0 or 1 for the subscriber, or no row when it does not exist. */
   sql: string;
   params: SQLPart<Slot>["args"];
-  /** Raw `sql` fragments, run in the read-only child; their results bind to `sql` slots. */
+  /**
+   * Raw `sql` fragments, in the order of the fragment slots in `sql`. When there are any, the
+   * read-only child checks them, fills the slots and runs the whole statement in one snapshot.
+   */
   fragments: string[];
 }
 
@@ -46,7 +48,7 @@ export function compile(condition: Condition): CompiledCondition {
     }
     if ("sql" in c) {
       fragments.push(formatSQLExp(c.sql));
-      return { sql: "(? = 1)", args: [{ slot: "sql", index: fragments.length - 1 }] };
+      return fragmentPartSQL(subscriber);
     }
     if ("list" in c) return membershipSQL(c.list, c.status ?? defaultListStatuses);
     if ("attr" in c) {

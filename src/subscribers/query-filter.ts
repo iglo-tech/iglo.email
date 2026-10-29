@@ -6,6 +6,8 @@ import { simpleLower } from "@/subscribers/unicode-lower";
 
 /** A SQL argument; integers are int64 identities. */
 export type Arg = string | bigint;
+/** An argument of a trusted compiled condition statement, which also binds JSON numbers. */
+export type ConditionArg = Arg | number;
 
 /**
  * The subscriber filter shared by query, export, bulk actions and (later) sequence conditions.
@@ -334,6 +336,61 @@ export function prepareChecked(db: Database, sql: string, args: Arg[]): Statemen
       stmt.finalize();
       throw new QueryError(`table '${name}' is not allowed`);
     }
+  }
+  return stmt;
+}
+
+/**
+ * The scope a sequence-condition `sql` fragment sees: the subscriber row and the unfiltered
+ * subscriber_lists join of segment queries, so its columns resolve exactly as in a segment.
+ */
+const fragmentScope =
+  "FROM subscribers LEFT JOIN subscriber_lists ON (subscriber_lists.subscriber_id = subscribers.id AND subscriber_lists.list_id IS NULL)";
+
+/** Where a checked fragment goes in a compiled condition; generated SQL never contains NUL. */
+export const fragmentSlot = "\0";
+
+/**
+ * A condition part true when the fragment in the next fragment slot matches the subscriber
+ * bound to its one parameter. The inner `subscribers` shadows any outer one, so the fragment
+ * resolves names exactly as in the standalone check of prepareCondition.
+ */
+export const fragmentConditionSQL = `EXISTS (SELECT 1 ${fragmentScope} WHERE subscribers.id = ? AND (\n${fragmentSlot}\n))`;
+
+/**
+ * Prepare a trusted, generated condition statement that embeds user fragments at its fragment
+ * slots, for the read-only child. Each fragment must be a self-contained expression
+ * (checkFragment) and pass prepareChecked on its own with no parameters, so it opens only
+ * allowed tables and binds nothing. The composed statement may read other tables through its
+ * generated parts, but must still be one read-only SELECT taking exactly the arguments given.
+ */
+export function prepareCondition(
+  db: Database,
+  sql: string,
+  fragments: string[],
+  args: ConditionArg[],
+): Statement {
+  const parts = sql.split(fragmentSlot);
+  if (parts.length !== fragments.length + 1 || !/^SELECT\s/.test(sql))
+    throw new QueryError("invalid condition statement");
+  for (const fragment of fragments) {
+    const problem = checkFragment(fragment);
+    if (problem || !fragment.trim()) throw new QueryError(problem ?? "empty fragment");
+    prepareChecked(
+      db,
+      `SELECT subscribers.id ${fragmentScope} WHERE (\n${fragment}\n)`,
+      [],
+    ).finalize();
+  }
+  let stmt: Statement;
+  try {
+    stmt = db.prepare(parts.map((part, i) => (i ? fragments[i - 1]! : "") + part).join(""));
+  } catch (error) {
+    throw new QueryError(error instanceof Error ? error.message : "invalid query");
+  }
+  if (!stmt.readonly || stmt.paramsCount !== args.length) {
+    stmt.finalize();
+    throw new QueryError("query parameters and writes are not allowed");
   }
   return stmt;
 }
