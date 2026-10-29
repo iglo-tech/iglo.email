@@ -35,8 +35,17 @@ function options(origin: string, profile = "staged") {
   return ["--mode", "normal", "--target", "fixture", "--profile", profile, "--base-url", origin];
 }
 
+// The host's dev runtime probes every new loopback port as `localhost:<port>`; the runner always
+// targets 127.0.0.1, so requests for any other host are probes and are not recorded.
+const probe = (host: string | null | undefined) => !host?.startsWith("127.0.0.1:");
+
 function server(handler: (request: Request) => Response) {
-  const target = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: handler });
+  const target = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: (request) =>
+      probe(request.headers.get("host")) ? new Response(null, { status: 404 }) : handler(request),
+  });
   return { origin: `http://127.0.0.1:${target.port}`, close: () => target.stop(true) };
 }
 
@@ -212,6 +221,7 @@ describe("contract runner public boundary", () => {
   test("sends an exact dot-segment target without client URL normalization", async () => {
     const seen: string[] = [];
     const target = createServer((request, response) => {
+      if (probe(request.headers.host)) return void response.writeHead(404).end();
       seen.push(request.url ?? "");
       response.writeHead(400, { "content-type": "application/json" });
       response.end('{"message":"invalid ID"}\n');
