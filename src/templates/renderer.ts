@@ -2,6 +2,7 @@
 // models/messages.go and internal/manager/message.go at 6fcd95f.
 import {
   Context,
+  Drop,
   Liquid,
   Output,
   defaultOperators,
@@ -21,6 +22,16 @@ const TOTAL_LIMIT = 4 * 1024 * 1024;
 const MAX_WORK = 10_000;
 const MAX_DEPTH = 32;
 const dangerous = new Set(["__proto__", "prototype", "constructor"]);
+const loopProperties = new Set(["index", "index0", "rindex", "rindex0", "first", "last", "length"]);
+const filterArguments: Readonly<Record<string, number>> = {
+  raw: 0,
+  default: 1,
+  upcase: 0,
+  strip: 0,
+  t: 8,
+  date: 1,
+  track_link: 0,
+};
 const byteLength = (value: string) => Buffer.byteLength(value, "utf8");
 
 export class TemplateSourceError extends Error {
@@ -383,12 +394,31 @@ export function createRenderer(clock: Clock, translation: Translation) {
         igloBudgetStep: () => void;
         igloBudgetRange: (size: number) => void;
         igloBudgetCollection: (value: unknown) => void;
+        igloBudgetFilter: (name: string, count: number) => void;
+        igloBudgetForloop: (name: string) => void;
       };
       bounded.igloBudgetStep = () => {
         b.step();
         ctx.renderLimit.check(performance.now());
       };
       bounded.igloBudgetRange = (size) => b.step(size);
+      bounded.igloBudgetFilter = (name, count) => {
+        // Liquid also creates a zero-argument filter for the trusted HTML escaper.
+        if (name === "[object Function]" && count === 0) return;
+        if (
+          !Object.hasOwn(filterArguments, name) ||
+          count > filterArguments[name]! ||
+          (name === "t" && count % 2 !== 0)
+        )
+          throw new Error("Invalid filter arguments");
+      };
+      bounded.igloBudgetForloop = (name) => {
+        const bytes = byteLength(name);
+        b.step(1 + Math.ceil(bytes / 1024));
+        // Reserve a conservative JSON-escaped name and finite numeric metadata
+        // before Liquid's implicit Drop conversion can allocate its string.
+        b.charge(128 + 6 * bytes);
+      };
       bounded.igloBudgetCollection = (value) => {
         if (Array.isArray(value)) {
           if (value.length > 1024) throw new Error("Array limit");
@@ -414,6 +444,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
           (typeof key === "string" && dangerous.has(key))
         )
           throw new Error("Invalid lookup");
+        if (object instanceof Drop && (typeof key !== "string" || !loopProperties.has(key)))
+          throw new Error("Invalid loop property");
         return read(object, key);
       };
       // Only the range evaluator uses the built-in memory limiter in our supported subset.

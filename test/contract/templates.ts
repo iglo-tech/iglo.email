@@ -1,5 +1,10 @@
 // Reference: listmonk cmd/templates.go, internal/core/templates.go and queries/templates.sql at 6fcd95f.
 import type { Credentials, Mode } from "@/test/contract/types";
+import {
+  budgetBypassBodies,
+  loopMetadataBody,
+  loopMetadataOutput,
+} from "@/test/templates/budget-cases";
 
 type Row = {
   id: number;
@@ -150,6 +155,31 @@ export async function runTemplatesContract(target: {
       body: new URLSearchParams({ template_type: "campaign", body: campaignBody }),
     });
     check(posted.status === 200 && (await posted.text()).includes("Hi there"), "posted-preview");
+    if (!reference) {
+      for (const body of budgetBypassBodies) {
+        const response = await fetch(`${target.baseUrl}/api/templates/preview`, {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({ template_type: "tx", body }),
+        });
+        check(response.status === 400, "D54-loop-filter-budget");
+      }
+      const control = await fetch(`${target.baseUrl}/api/templates/preview`, {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ template_type: "tx", body: loopMetadataBody }),
+      });
+      check(
+        control.status === 200 && (await control.text()) === loopMetadataOutput,
+        "D54-loop-metadata",
+      );
+    }
     const multipart = new FormData();
     multipart.set("template_type", "campaign");
     multipart.set("body", campaignBody);

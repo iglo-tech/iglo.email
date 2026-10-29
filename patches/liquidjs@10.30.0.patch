@@ -1,8 +1,19 @@
 diff --git a/dist/liquid.node.js b/dist/liquid.node.js
-index 2fe297b510bb2a7918969b072ef5d14fa723ae13..cdb28d60f5c31516a5a21bb971bc212bd582e1e1 100644
+index 2fe297b510bb2a7918969b072ef5d14fa723ae13..462db0e9a5d6cc8cd38e25745c7e3422d5270d08 100644
 --- a/dist/liquid.node.js
 +++ b/dist/liquid.node.js
-@@ -1324,6 +1324,7 @@ class Expression {
+@@ -1305,8 +1305,10 @@ class Filter {
+         this.liquid = liquid;
+     }
+     *render(value, context) {
++        if (context.igloBudgetFilter) context.igloBudgetFilter(this.name, this.args.length);
+         const argv = [];
+         for (const arg of this.args) {
++            if (context.igloBudgetStep) context.igloBudgetStep();
+             if (isKeyValuePair(arg))
+                 argv.push([arg[0], yield evalToken(arg[1], context)]);
+             else
+@@ -1324,6 +1326,7 @@ class Expression {
          assert(ctx, 'unable to evaluate: context not defined');
          const operands = [];
          for (const token of this.postfix) {
@@ -10,7 +21,7 @@ index 2fe297b510bb2a7918969b072ef5d14fa723ae13..cdb28d60f5c31516a5a21bb971bc212b
              if (isOperatorToken(token)) {
                  const r = operands.pop();
                  let result;
-@@ -1385,6 +1386,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
+@@ -1385,6 +1388,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
  function* evalPropertyAccessToken(token, ctx, lenient) {
      const props = [];
      for (const prop of token.props) {
@@ -18,7 +29,7 @@ index 2fe297b510bb2a7918969b072ef5d14fa723ae13..cdb28d60f5c31516a5a21bb971bc212b
          props.push((yield evalTokenValue(prop, ctx, false)));
      }
      try {
-@@ -1408,7 +1410,12 @@ function evalQuotedToken(token) {
+@@ -1408,7 +1412,12 @@ function evalQuotedToken(token) {
  function* evalRangeToken(token, ctx) {
      const low = (yield evalTokenValue(token.lhs, ctx));
      const high = (yield evalTokenValue(token.rhs, ctx));
@@ -32,7 +43,7 @@ index 2fe297b510bb2a7918969b072ef5d14fa723ae13..cdb28d60f5c31516a5a21bb971bc212b
      return range(+low, +high + 1);
  }
  function* toPostfix(tokens) {
-@@ -4144,7 +4151,9 @@ class ForTag extends Tag {
+@@ -4144,7 +4153,9 @@ class ForTag extends Tag {
      }
      *render(ctx, emitter) {
          const r = this.liquid.renderer;
@@ -43,11 +54,36 @@ index 2fe297b510bb2a7918969b072ef5d14fa723ae13..cdb28d60f5c31516a5a21bb971bc212b
          if (!collection.length) {
              yield r.renderTemplates(this.elseTemplates, ctx, emitter);
              return;
+@@ -4165,6 +4176,13 @@ class ForTag extends Tag {
+         }, collection);
+         ctx.setRegister(continueKey, (hash['offset'] || 0) + collection.length);
+         const scope = createScope({ forloop: new ForloopDrop(collection.length, this.collection.getText(), this.variable) });
++        if (ctx.igloBudgetForloop) {
++            const original = scope.forloop.valueOf.bind(scope.forloop);
++            Object.defineProperty(scope.forloop, 'valueOf', { value: () => {
++                ctx.igloBudgetForloop(scope.forloop.name);
++                return original();
++            } });
++        }
+         ctx.push(scope);
+         for (const item of collection) {
+             scope[this.variable] = item;
 diff --git a/dist/liquid.node.mjs b/dist/liquid.node.mjs
-index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..4e1d942dda9c87b6557a4fc5db87d100b2e0e7d4 100644
+index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..b71507631e76c42b00f55663e5209f0376dda7cb 100644
 --- a/dist/liquid.node.mjs
 +++ b/dist/liquid.node.mjs
-@@ -1364,6 +1364,7 @@ class Expression {
+@@ -1345,8 +1345,10 @@ class Filter {
+         this.liquid = liquid;
+     }
+     *render(value, context) {
++        if (context.igloBudgetFilter) context.igloBudgetFilter(this.name, this.args.length);
+         const argv = [];
+         for (const arg of this.args) {
++            if (context.igloBudgetStep) context.igloBudgetStep();
+             if (isKeyValuePair(arg))
+                 argv.push([arg[0], yield evalToken(arg[1], context)]);
+             else
+@@ -1364,6 +1366,7 @@ class Expression {
          assert(ctx, 'unable to evaluate: context not defined');
          const operands = [];
          for (const token of this.postfix) {
@@ -55,7 +91,7 @@ index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..4e1d942dda9c87b6557a4fc5db87d100
              if (isOperatorToken(token)) {
                  const r = operands.pop();
                  let result;
-@@ -1425,6 +1426,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
+@@ -1425,6 +1428,7 @@ function* evalTokenValue(token, ctx, lenient = false) {
  function* evalPropertyAccessToken(token, ctx, lenient) {
      const props = [];
      for (const prop of token.props) {
@@ -63,7 +99,7 @@ index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..4e1d942dda9c87b6557a4fc5db87d100
          props.push((yield evalTokenValue(prop, ctx, false)));
      }
      try {
-@@ -1448,7 +1450,12 @@ function evalQuotedToken(token) {
+@@ -1448,7 +1452,12 @@ function evalQuotedToken(token) {
  function* evalRangeToken(token, ctx) {
      const low = (yield evalTokenValue(token.lhs, ctx));
      const high = (yield evalTokenValue(token.rhs, ctx));
@@ -77,7 +113,7 @@ index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..4e1d942dda9c87b6557a4fc5db87d100
      return range(+low, +high + 1);
  }
  function* toPostfix(tokens) {
-@@ -4168,7 +4175,9 @@ class ForTag extends Tag {
+@@ -4168,7 +4177,9 @@ class ForTag extends Tag {
      }
      *render(ctx, emitter) {
          const r = this.liquid.renderer;
@@ -88,3 +124,17 @@ index 38e51b66cc2a6410c9abf7f1d944c8e33b88a5a3..4e1d942dda9c87b6557a4fc5db87d100
          if (!collection.length) {
              yield r.renderTemplates(this.elseTemplates, ctx, emitter);
              return;
+@@ -4189,6 +4200,13 @@ class ForTag extends Tag {
+         }, collection);
+         ctx.setRegister(continueKey, (hash['offset'] || 0) + collection.length);
+         const scope = createScope({ forloop: new ForloopDrop(collection.length, this.collection.getText(), this.variable) });
++        if (ctx.igloBudgetForloop) {
++            const original = scope.forloop.valueOf.bind(scope.forloop);
++            Object.defineProperty(scope.forloop, 'valueOf', { value: () => {
++                ctx.igloBudgetForloop(scope.forloop.name);
++                return original();
++            } });
++        }
+         ctx.push(scope);
+         for (const item of collection) {
+             scope[this.variable] = item;

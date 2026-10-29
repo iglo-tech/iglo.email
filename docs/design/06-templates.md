@@ -51,6 +51,21 @@ bounded fields. Bounded decoded data is copied into dense/null-prototype values
 with the same depth/node/string/entry rules. This is an internal renderer
 interface, not a changed CRUD/preview HTTP envelope or completed acceptance.
 
+### Loop metadata and filter arguments
+
+Only the reviewed `forloop.index`, `index0`, `rindex`, `rindex0`, `first`,
+`last` and `length` properties are exposed. Helper methods such as `valueOf`
+and `next`, and the source-bearing loop name, are not template capabilities.
+Implicit loop-record conversion reserves a conservative JSON-escaping bound
+and work before the library creates the string, so truthiness or indirect
+conversion cannot bypass the shared intermediate budget.
+
+Filter arity is checked before argument evaluation or argv allocation, and
+every evaluated argument consumes work. `raw`, `upcase`, `strip` and
+`track_link` accept no extra arguments; `default` and `date` accept at most
+one. `t` accepts zero to eight arguments in name/value pairs. This applies to
+literal arguments too; ignored extra arguments do not provide free work.
+
 ### Data and functions
 
 | listmonk (Go template) | iglo.email (Liquid) |

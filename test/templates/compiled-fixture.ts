@@ -6,6 +6,11 @@ import { createRenderer } from "@/templates/renderer";
 import { createRealClock } from "@/clock";
 import { createTranslation, Translation } from "@/i18n/i18n";
 import { initialTemplates, systemTemplates } from "@/templates/builtins";
+import {
+  budgetBypassBodies,
+  loopMetadataBody,
+  loopMetadataOutput,
+} from "@/test/templates/budget-cases";
 
 const renderer = createRenderer(createRealClock(), createTranslation());
 const canary = join(process.cwd(), "template-canary.txt");
@@ -41,6 +46,19 @@ const fixture = Bun.serve({
   },
 });
 try {
+  for (const body of budgetBypassBodies) {
+    const response = await fetch(fixture.url, {
+      method: "POST",
+      body: JSON.stringify({ body, data: {} }),
+    });
+    assert.equal(response.status, 400, "loop/filter budget bypass");
+  }
+  const loopControl = await fetch(fixture.url, {
+    method: "POST",
+    body: JSON.stringify({ body: loopMetadataBody, data: {} }),
+  });
+  assert.equal(loopControl.status, 200);
+  assert.equal(await loopControl.text(), loopMetadataOutput);
   let touched = 0;
   const proxy = new Proxy(
     {},

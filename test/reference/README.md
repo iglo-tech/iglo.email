@@ -369,3 +369,10 @@ relays are invocation-owned; outcomes establish SMTP intake, not final delivery.
 
 The bounded SMTP outcomes are not an exhaustive equivalence or interleaving
 proof. Production still has no enqueue endpoint and no marketing policy.
+
+M1.8 round1 regressions share finite loop-helper and filter-argument inputs
+between `budget-regressions.test.ts`, the isolated compiled renderer and the
+actual compiled production preview corpus. Long loop records and both invalid
+large arity and valid-arity cumulative argument work are rejected; reviewed
+loop metadata and ordinary filters remain positive controls. This includes
+implicit loop-record conversion as well as direct helper property access.
