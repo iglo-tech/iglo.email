@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.1 subscriber events API, branch task/M5.1-events, [brief](briefs/M5.1.md). Worker stopped on a Claude API rate limit; its unverified WIP is saved as 8f4f813. No agent active. Critical path to M5.4: M5.1, M1.7, M5.2, M5.3. M2.6 and M2.5 are off the critical path.
-Next: when Claude capacity returns, one fresh worker continues from 8f4f813; then Sol round 1, merge, M1.7.
+M5.1 subscriber events API, [draft PR #20](https://github.com/iglo-tech/iglo.email/pull/20), head ad2d8f6. Worker resumed after the rate limit and finished; Sol xhigh round-1 review running.
+Next: lead disposition of round 1, merge, then M1.7.
 Worker thread: thread:delegated-task:command%3Amcp%3A88f9dd6a-58af-4b4f-a599-958b77b6dac0%3Adelegate-task%3Aiglo-email-M5.1-worker-1 (run 1 failed 11:32Z with its lead; run 2 active since 12:40Z). Parent lead 250035dd last run failed, so the recovery run must collect the result.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate task/thread IDs and next action.
 
@@ -52,4 +52,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
 - Flaky test/messaging/route-auth.test.ts "held SMTP body … before a connection": the sink saw stray connections in ~3/5 isolated runs, with or without M1.8 ([#17](https://github.com/iglo-tech/iglo.email/pull/17#issuecomment-6492720721)).
 - Flaky test/contract/contract.test.ts stray extra request on a fresh port (seen on M1.8 and M2.4 branches); likely the same localhost-port isolation cause as route-auth.
+- Outbox send throughput: 50 msg/s not sustained even without events (one message at a time, two commits each); events at 100/s slow sending further ([M5.1 perf](https://github.com/iglo-tech/iglo.email/pull/20)). Owner: messaging, M3.2/M6.1 (D22).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
