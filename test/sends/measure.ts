@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
+import { createServer, createConnection, type Socket } from "node:net";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
@@ -21,6 +22,33 @@ const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
 const mailpit = new Mailpit(sink, marker);
+let connects = 0,
+  live = 0,
+  peak = 0;
+const sockets = new Set<Socket>();
+const relay = createServer((client) => {
+  connects++;
+  live++;
+  peak = Math.max(peak, live);
+  const upstream = createConnection({ host: sink.host, port: sink.port });
+  sockets.add(client);
+  sockets.add(upstream);
+  client.on("error", () => {});
+  upstream.on("error", () => {});
+  client.pipe(upstream).pipe(client);
+  client.on("close", () => {
+    live--;
+    sockets.delete(client);
+    upstream.destroy();
+  });
+  upstream.on("close", () => {
+    sockets.delete(upstream);
+    client.destroy();
+  });
+});
+await new Promise<void>((done) => relay.listen(0, "127.0.0.1", done));
+const relayAddress = relay.address();
+if (!relayAddress || typeof relayAddress === "string") throw new Error("Missing relay port");
 const directory = await mkdtemp(join(tmpdir(), "iglo-outbox-measure-"));
 const clock = createRealClock(),
   db = openDatabase(directory);
@@ -33,7 +61,7 @@ const smtp = [
     enabled: true,
     exclude_from_default: false,
     host: sink.host,
-    port: sink.port,
+    port: relayAddress.port,
     hello_hostname: "fixture.test",
     max_conns: 1,
     idle_timeout: "2s",
@@ -72,6 +100,8 @@ try {
       const count = repetition === 0 ? 10 : 50;
       const ids: string[] = [],
         enqueue: number[] = [];
+      const before = connects;
+      peak = live;
       const start = performance.now();
       for (let i = 0; i < count; i++) {
         const message: Message = {
@@ -102,10 +132,11 @@ try {
       assert.equal(received.length, count);
       assert.deepEqual(received.map((m) => m.MessageID.replace(/[<>]/g, "")).sort(), ids.sort());
       process.stdout.write(
-        `${JSON.stringify({ mode, repetition, count, elapsedMs: elapsed, enqueueMeanMs: enqueue.length ? enqueue.reduce((a, b) => a + b, 0) / enqueue.length : null, accepted: count, matched: received.length })}\n`,
+        `${JSON.stringify({ mode, repetition, count, elapsedMs: elapsed, enqueueMeanMs: enqueue.length ? enqueue.reduce((a, b) => a + b, 0) / enqueue.length : null, accepted: count, matched: received.length, connections: connects - before, peakLive: peak })}\n`,
       );
       await mailpit.removeOwned();
     }
+    if (mode === "control") await direct.close();
   }
 } finally {
   const stopped = loop.stop();
@@ -114,6 +145,8 @@ try {
   subscribers.close();
   lists.close();
   db.close(true);
+  for (const socket of sockets) socket.destroy();
+  await new Promise<void>((done, fail) => relay.close((error) => (error ? fail(error) : done())));
   await mailpit.removeOwned();
   await rm(directory, { recursive: true, force: true });
 }
