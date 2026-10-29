@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.3 sequences and enrollments, [PR #23](https://github.com/iglo-tech/iglo.email/pull/23), head 8dc969f. Worker done (migration 0004); Sol xhigh round-1 review running. Critical path: M5.3, then M5.4.
-Next: lead disposition of round 1, merge, then M5.4.
+M5.3 sequences and enrollments, [PR #23](https://github.com/iglo-tech/iglo.email/pull/23), head 8dc969f. Round 1: CHANGES (2 agreed P1 consent exits); one Opus fixer running. Critical path: M5.3, then M5.4.
+Next: Sol round-2 fix-only review, merge, then M5.4 (must handle a deleted step template).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
