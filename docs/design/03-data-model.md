@@ -101,9 +101,10 @@ Steps are never hard-deleted while enrollments point at them; deleting sets `sta
 | `status` | TEXT CHECK IN (`active`, `completed`, `exited`, `canceled`) | |
 | `exit_reason` | TEXT NULL | `condition`, `event:<name>`, `unsubscribed`, `blocklisted`, `manual`, `sequence_archived`, `subscriber_deleted` (M5.4) |
 | `claimed_until` | TEXT NULL | Scheduler lease |
+| `retry_at` | TEXT NULL | When a released enrollment may be claimed again after a failed attempt; `due_at` is kept for `max_late` (M5.4) |
 | `created_at`, `updated_at`, `finished_at` | TEXT | |
 
-Indexes: `(status, due_at)` for the scheduler, `(subscriber_id, sequence_id)`, `(sequence_id, status)`, and unique `(subscriber_id, sequence_id) WHERE status = 'active'`: at most one active enrollment per subscriber and sequence. Active sequences are indexed by `trigger.event`.
+Indexes: `(status, coalesce(retry_at, due_at))` for the scheduler claim, `(subscriber_id, sequence_id)`, `(sequence_id, status)`, and unique `(subscriber_id, sequence_id) WHERE status = 'active'`: at most one active enrollment per subscriber and sequence. Active sequences are indexed by `trigger.event`.
 
 ### `sends`
 

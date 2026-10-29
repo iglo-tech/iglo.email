@@ -39,7 +39,7 @@ test("compiled schema fixture installs embedded production SQL with an empty PAT
       result: { version: string; integrity: string; shapes: Record<string, string[]> };
     };
     expect(response.status).toBe(200);
-    expect(result.version).toBe("4");
+    expect(result.version).toBe("5");
     expect(result.integrity).toBe("ok");
     expect(result.shapes.enrollments).toContain("claimed_until");
     reader.releaseLock();

@@ -39,6 +39,27 @@ const DEFER_MIN_MS = 60_000;
 const BUSY_MS = SCHEDULER_INTERVAL_MS;
 /** Compiled step templates kept by the scheduler; the least recently used is dropped. */
 const COMPILED = 64;
+/**
+ * The definition a decision was made on. If any of it changed while the decision waited on its
+ * condition (an admin edit), the decision is stale: it is discarded and the step re-evaluated.
+ */
+const DECIDED_ON = [
+  "step_status",
+  "position",
+  "kind",
+  "template_id",
+  "subject",
+  "condition",
+  "on_false",
+  "cap_policy",
+  "max_late",
+  "list_id",
+] as const satisfies readonly (keyof SchedulerContext)[];
+
+/** A claim with the full context its decision read. */
+interface Decision extends Claim {
+  step: SchedulerContext;
+}
 
 export interface SchedulerSettings {
   /** Default sender (`app.from_email`'s first address). */
@@ -62,9 +83,9 @@ export function startScheduler(options: {
   signal?: AbortSignal;
 }) {
   const { db, clock, logger, enrollments, sends } = options;
-  const attention = (message: string) => {
+  const attention = (message: string, cause?: unknown) => {
     try {
-      logger.error(new Error(message));
+      logger.error(cause === undefined ? new Error(message) : new Error(message, { cause }));
     } catch {
       /* Logging never changes a decision. */
     }
@@ -79,21 +100,39 @@ export function startScheduler(options: {
     return template;
   }
 
-  /** One decision and its writes, in one transaction, only while the claim holds. */
-  function commit(claim: Claim, write: () => void): boolean {
+  /**
+   * One decision and its writes, in one transaction, only while the claim holds and the
+   * sequence and step are still what the decision read. The current definition is re-read here:
+   * a pause releases the claim, an archive ends the enrollment, and any other change to the
+   * step releases it to be decided again. A stale decision never writes or sends.
+   */
+  function commit(claim: Decision, write: (current: SchedulerContext) => void): boolean {
     return writeTransaction(db, () => {
       if (!enrollments.owns(claim)) return false;
-      write();
+      const current = enrollments.schedulerContext(claim.id);
+      if (!current) return false;
+      if (current.sequence_status !== claim.step.sequence_status) {
+        if (current.sequence_status === "archived")
+          enrollments.endClaimed(claim, "canceled", "sequence_archived", clock.now());
+        else enrollments.release(claim, null);
+        return false;
+      }
+      if (DECIDED_ON.some((field) => current[field] !== claim.step[field])) {
+        enrollments.release(claim, null);
+        return false;
+      }
+      write(current);
       return true;
     });
   }
-  function skipped(claim: Claim, row: SchedulerContext, email: string, reason: string) {
-    return commit(claim, () => {
+  function skipped(claim: Decision, email: string, reason: string) {
+    return commit(claim, (row) => {
       sends.recordSequence({
         skip: reason,
         kind: row.kind,
         subscriberId: row.subscriber_id,
         toEmail: email,
+        // The current reference: a template deleted meanwhile is null, never a dangling ID.
         templateId: row.template_id,
         enrollmentId: row.id,
         stepId: row.step_id,
@@ -102,13 +141,15 @@ export function startScheduler(options: {
       enrollments.advance(claim, clock.now());
     });
   }
-  const advance = (claim: Claim) => commit(claim, () => enrollments.advance(claim, clock.now()));
-  const end = (claim: Claim, status: "canceled" | "exited", reason: string) =>
+  const advance = (claim: Decision) => commit(claim, () => enrollments.advance(claim, clock.now()));
+  const end = (claim: Decision, status: "canceled" | "exited", reason: string) =>
     commit(claim, () => enrollments.endClaimed(claim, status, reason, clock.now()));
-  const capped = (claim: Claim, row: SchedulerContext, email: string) =>
-    row.cap_policy === "skip"
-      ? skipped(claim, row, email, "frequency_cap")
-      : commit(claim, () => {
+  const retry = (claim: Decision, ms: number) =>
+    commit(claim, () => enrollments.release(claim, new Date(clock.now().getTime() + ms)));
+  const capped = (claim: Decision, email: string) =>
+    claim.step.cap_policy === "skip"
+      ? skipped(claim, email, "frequency_cap")
+      : commit(claim, (row) => {
           const floor = new Date(clock.now().getTime() + DEFER_MIN_MS);
           enrollments.defer(claim, sends.capFreeAt(row.subscriber_id, floor));
         });
@@ -116,14 +157,15 @@ export function startScheduler(options: {
   async function decide(item: { id: bigint; lease: string }) {
     const row = enrollments.schedulerContext(item.id);
     if (!row || row.status !== "active" || row.claimed_until !== item.lease) return;
-    const claim: Claim = { id: row.id, lease: item.lease, step: row };
+    const claim: Decision = { id: row.id, lease: item.lease, step: row };
     const now = clock.now();
     // A send already recorded for this step (a crash before the advance, or a step revisited
     // after a reorder) is never written or sent again: only advance.
     if (sends.sequenceSend(row.id, row.step_id)) return advance(claim);
     if (row.sequence_status === "archived") return end(claim, "canceled", "sequence_archived");
     // Paused (or returned to draft) after the claim: release it; it runs when resumed.
-    if (row.sequence_status !== "active") return commit(claim, () => enrollments.hold(claim, null));
+    if (row.sequence_status !== "active")
+      return commit(claim, () => enrollments.release(claim, null));
     const subscriber = options.subscribers.get(row.subscriber_id);
     if (!subscriber) return end(claim, "canceled", "subscriber_deleted");
     if (subscriber.status === "blocklisted") return end(claim, "canceled", "blocklisted");
@@ -131,7 +173,7 @@ export function startScheduler(options: {
     const maxLate = row.max_late ?? (row.kind === "marketing" ? MARKETING_MAX_LATE : null);
     const late = maxLate === null ? undefined : parseDuration(maxLate);
     if (late !== undefined && now.getTime() > Date.parse(row.due_at) + late)
-      return skipped(claim, row, subscriber.email, "late");
+      return skipped(claim, subscriber.email, "late");
     const marketing = row.kind === "marketing";
     if (marketing) {
       const reason = sends.marketingReason(row.subscriber_id, row.list_id);
@@ -154,9 +196,7 @@ export function startScheduler(options: {
         attention(
           `Sequence condition failed for enrollment ${row.id} at step ${row.step_id} (${result.error.kind}); retrying later`,
         );
-        return commit(claim, () =>
-          enrollments.hold(claim, new Date(clock.now().getTime() + backoff)),
-        );
+        return retry(claim, backoff);
       }
       if (!result.value)
         return row.on_false === "skip" ? advance(claim) : end(claim, "exited", "condition");
@@ -164,15 +204,18 @@ export function startScheduler(options: {
 
     const template = row.template_id === null ? null : options.templates.get(row.template_id);
     if (!template || template.type !== "tx") {
-      attention(
-        `Sequence step ${row.step_id} has no transactional template; enrollment ${row.id} skipped it`,
-      );
-      return skipped(claim, row, subscriber.email, "template_unavailable");
+      // Logged once, when recorded: a template deleted during the condition is a stale
+      // decision, released and decided again.
+      if (skipped(claim, subscriber.email, "template_unavailable"))
+        attention(
+          `Sequence step ${row.step_id} has no transactional template; enrollment ${row.id} skipped it`,
+        );
+      return;
     }
     if (marketing) {
       // Rechecked after the condition, which may have waited on the query runner.
       const reason = sends.marketingReason(row.subscriber_id, row.list_id);
-      if (reason === "frequency_cap") return capped(claim, row, subscriber.email);
+      if (reason === "frequency_cap") return capped(claim, subscriber.email);
       if (reason) return end(claim, "exited", "unsubscribed");
     }
 
@@ -236,14 +279,12 @@ export function startScheduler(options: {
         subscriber.uuid,
       );
     } catch (error) {
-      if (error instanceof RenderCapacityError)
-        return commit(claim, () =>
-          enrollments.hold(claim, new Date(clock.now().getTime() + BUSY_MS)),
+      if (error instanceof RenderCapacityError) return retry(claim, BUSY_MS);
+      if (skipped(claim, subscriber.email, "render_failed"))
+        attention(
+          `Sequence step ${row.step_id} could not be rendered for enrollment ${row.id}; skipped`,
         );
-      attention(
-        `Sequence step ${row.step_id} could not be rendered for enrollment ${row.id}; skipped`,
-      );
-      return skipped(claim, row, subscriber.email, "render_failed");
+      return;
     }
 
     let queued = false;
@@ -255,7 +296,7 @@ export function startScheduler(options: {
       const reason = sends.sequenceAdmission(prepared);
       if (reason === "subscriber_unavailable") {
         // The address or identity changed while rendering: render again on the next pass.
-        enrollments.hold(claim, null);
+        enrollments.release(claim, null);
       } else if (reason === "subscriber_blocklisted") {
         enrollments.endClaimed(claim, "canceled", "blocklisted", clock.now());
       } else if (reason === "frequency_cap") {
@@ -265,7 +306,7 @@ export function startScheduler(options: {
             kind: row.kind,
             subscriberId: row.subscriber_id,
             toEmail: subscriber.email,
-            templateId: row.template_id,
+            templateId: template.id,
             enrollmentId: row.id,
             stepId: row.step_id,
             listId: row.list_id,
@@ -297,7 +338,20 @@ export function startScheduler(options: {
     claim: (now, lease, batch) =>
       enrollments.claimDue(now, lease, batch).map((id) => ({ id, lease: lease.toISOString() })),
     async process(item) {
-      await decide(item);
+      try {
+        await decide(item);
+      } catch (error) {
+        // One failed decision never stops the scheduler: log it and release the claim for a
+        // later retry. A broken database still surfaces through the next claim.
+        attention(`Sequence decision failed for enrollment ${item.id}; retrying later`, error);
+        try {
+          writeTransaction(db, () =>
+            enrollments.release(item, new Date(clock.now().getTime() + BACKOFF_MIN_MS)),
+          );
+        } catch {
+          /* The lease expires instead. */
+        }
+      }
       // Most decisions are synchronous: yield to I/O between them so a large due batch does
       // not starve outbox delivery and HTTP on the same thread. This waits for no time.
       await new Promise((resolve) => setImmediate(resolve));

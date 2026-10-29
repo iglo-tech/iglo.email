@@ -27,9 +27,7 @@ function decoded(data: string) {
   const body = data
     .slice(at + 4)
     .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) =>
-      String.fromCharCode(parseInt(hex, 16)),
-    );
+    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
   const header = (name: string) =>
     new RegExp(`^${name}: (.*)$`, "mi").exec(headers)?.[1]?.trim() ?? null;
   return { headers, body, header };
@@ -56,9 +54,7 @@ async function delivered(f: SchedulerFixture, count: number) {
   await f.until(
     async () =>
       f.sink.messages.length >= count &&
-      (await f.sendLog()).every(
-        (s) => s.status !== "queued" && s.status !== "sending",
-      ),
+      (await f.sendLog()).every((s) => s.status !== "queued" && s.status !== "sending"),
     `${count} messages`,
   );
 }
@@ -89,8 +85,7 @@ test("a due-now enrollment is sent promptly with the template data, then advance
   const id = r.enrollments.started[0]!.id;
   // No clock advance: the event wakes the scheduler.
   await delivered(f, 1);
-  const uuid = (await f.json(`/api/subscribers/${r.subscriber_id}`)).body.data
-    .uuid;
+  const uuid = (await f.json(`/api/subscribers/${r.subscriber_id}`)).body.data.uuid;
   const mail = decoded(f.sink.messages[0]!.data);
   expect(mail.header("Subject")).toBe("Hi Ana from Onboarding");
   expect(mail.body).toContain(
@@ -144,8 +139,7 @@ test("a manual enroll due now is processed promptly", async () => {
   expect(created.status).toBe(200);
   await delivered(f, 1);
   await f.until(
-    async () =>
-      (await f.enrollment(created.body.data.id)).status === "completed",
+    async () => (await f.enrollment(created.body.data.id)).status === "completed",
     "completion",
   );
 });
@@ -154,10 +148,7 @@ test("a paused sequence releases the claim and runs when resumed, subject to max
   const f = await open();
   const template = await f.template();
   const seq = await f.sequence({
-    steps: [
-      tx(template, { wait: "PT1H" }),
-      tx(template, { wait: "PT1H", max_late: "PT2H" }),
-    ],
+    steps: [tx(template, { wait: "PT1H" }), tx(template, { wait: "PT1H", max_late: "PT2H" })],
   });
   const id = (await f.event("p@example.test")).enrollments.started[0]!.id;
   expect(
@@ -207,14 +198,11 @@ test("an archived sequence or a blocklisted subscriber found at run time cancels
     steps: [tx(template, { wait: "PT1H" })],
   });
   const archived = (await f.event("a@example.test")).enrollments.started[0]!.id;
-  const blocked = (await f.event("b@example.test", "signup")).enrollments
-    .started[0]!.id;
+  const blocked = (await f.event("b@example.test", "signup")).enrollments.started[0]!.id;
   // The archive and blocklist APIs end enrollments themselves; these states model a change
   // that raced the scheduler's claim (written below the API, without its effects).
   f.db.run("UPDATE sequences SET status = 'archived' WHERE id = ?", [seq.id]);
-  f.db.run(
-    "UPDATE subscribers SET status = 'blocklisted' WHERE email = 'b@example.test'",
-  );
+  f.db.run("UPDATE subscribers SET status = 'blocklisted' WHERE email = 'b@example.test'");
   await f.pass(hour);
   expect(await f.enrollment(archived)).toMatchObject({
     status: "canceled",
@@ -240,11 +228,7 @@ test("a deleted step advances to the next active step without waiting again", as
     steps,
   });
   const seq = await f.sequence({
-    steps: [
-      tx(template),
-      tx(template, { wait: "P1D" }),
-      tx(template, { wait: "P5D" }),
-    ],
+    steps: [tx(template), tx(template, { wait: "P1D" }), tx(template, { wait: "P5D" })],
   });
   const id = (await f.event("d@example.test")).enrollments.started[0]!.id;
   await delivered(f, 1);
@@ -254,10 +238,7 @@ test("a deleted step advances to the next active step without waiting again", as
   const edited = await f.json(
     `/api/sequences/${seq.id}`,
     "PUT",
-    definition([
-      tx(template, { id: one!.id }),
-      tx(template, { id: three!.id, wait: "P5D" }),
-    ]),
+    definition([tx(template, { id: one!.id }), tx(template, { id: three!.id, wait: "P5D" })]),
   );
   expect(edited.status).toBe(200);
   await f.pass(day);
@@ -283,9 +264,9 @@ test("a step later than max_late is a late skip; marketing defaults to P2D", asy
   const id = (await f.event("late@example.test")).enrollments.started[0]!.id;
   // Exactly at due + max_late is still on time; the server was down far longer.
   await f.pass(hour + 31 * minute);
-  expect(
-    (await sendsOf(f, id)).map((s) => [s.step_id, s.status, s.skip_reason]),
-  ).toEqual([[seq.steps[0]!.id, "skipped", "late"]]);
+  expect((await sendsOf(f, id)).map((s) => [s.step_id, s.status, s.skip_reason])).toEqual([
+    [seq.steps[0]!.id, "skipped", "late"],
+  ]);
   expect(await f.enrollment(id)).toMatchObject({
     step_id: seq.steps[1]!.id,
     due_at: iso(f, hour),
@@ -309,28 +290,23 @@ test("marketing without permission on list_id ends the enrollment before the con
   const double = await f.list("double", "double");
   const seq = await f.sequence({
     list_id: news,
-    steps: [
-      mk(template, { condition: { attr: "plan", op: "eq", value: "never" } }),
-    ],
+    steps: [mk(template, { condition: { attr: "plan", op: "eq", value: "never" } })],
   });
-  const strangers = (await f.event("stranger@example.test")).enrollments
-    .started[0]!.id;
+  const strangers = (await f.event("stranger@example.test")).enrollments.started[0]!.id;
   const left = await f.subscriber("left@example.test", { lists: [news] });
   await f.json("/api/subscribers/lists", "PUT", {
     ids: [left],
     action: "unsubscribe",
     target_list_ids: [news],
   });
-  const leftEnrollment = (await f.event("left@example.test")).enrollments
-    .started[0]!.id;
+  const leftEnrollment = (await f.event("left@example.test")).enrollments.started[0]!.id;
   const doubleSeq = await f.sequence({
     trigger: { event: "signup" },
     list_id: double,
     steps: [mk(template)],
   });
   await f.subscriber("pending@example.test", { lists: [double] });
-  const pending = (await f.event("pending@example.test", "signup")).enrollments
-    .started[0]!.id;
+  const pending = (await f.event("pending@example.test", "signup")).enrollments.started[0]!.id;
   await f.pass();
   for (const id of [strangers, leftEnrollment, pending])
     expect(await f.enrollment(id)).toMatchObject({
@@ -374,9 +350,7 @@ test("a false condition follows on_false; a true one sends", async () => {
   });
   await f.pass(day);
   await delivered(f, 1);
-  expect((await sendsOf(f, id)).map((s) => s.step_id)).toEqual([
-    seq.steps[1]!.id,
-  ]);
+  expect((await sendsOf(f, id)).map((s) => s.step_id)).toEqual([seq.steps[1]!.id]);
 
   // Another subscriber without the plan: step 2 is false with the default on_false (exit).
   const other = (await f.event("o@example.test")).enrollments.started[0]!.id;
@@ -387,9 +361,7 @@ test("a false condition follows on_false; a true one sends", async () => {
     status: "exited",
     exit_reason: "condition",
   });
-  expect((await sendsOf(f, other)).map((s) => s.step_id)).toEqual([
-    seq.steps[0]!.id,
-  ]);
+  expect((await sendsOf(f, other)).map((s) => s.step_id)).toEqual([seq.steps[0]!.id]);
 });
 
 test("a condition error releases the claim with a bounded backoff, logs, and never sends", async () => {
@@ -490,9 +462,7 @@ test("a step whose template was deleted records a skipped send, logs once, and a
 
 test("a rendering failure is a recorded skipped send, not a crash", async () => {
   const f = await open();
-  const bad = await f.template(
-    "{% for i in (1..100000000) %}xxxxxxxxxx{% endfor %}",
-  );
+  const bad = await f.template("{% for i in (1..100000000) %}xxxxxxxxxx{% endfor %}");
   const good = await f.template();
   const seq = await f.sequence({
     steps: [tx(bad), tx(good, { wait: "PT1H" })],
@@ -524,20 +494,11 @@ test("an existing send for the step is only advanced past, never sent twice", as
   f.db.run(
     `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, status, payload, created_at)
      VALUES (?, 'sequence', 'transactional', ?, 'crash@example.test', ?, ?, ?, 'sent', NULL, ?)`,
-    [
-      crypto.randomUUID(),
-      r.subscriber_id,
-      template,
-      id,
-      seq.steps[0]!.id,
-      iso(f),
-    ],
+    [crypto.randomUUID(), r.subscriber_id, template, id, seq.steps[0]!.id, iso(f)],
   );
   await f.pass(hour);
   expect(f.sink.messages).toHaveLength(0);
-  expect((await sendsOf(f, id)).map((s) => s.step_id)).toEqual([
-    seq.steps[0]!.id,
-  ]);
+  expect((await sendsOf(f, id)).map((s) => s.step_id)).toEqual([seq.steps[0]!.id]);
   expect(await f.enrollment(id)).toMatchObject({
     step_id: seq.steps[1]!.id,
     due_at: iso(f, hour),
@@ -566,10 +527,7 @@ test("a live lease is not claimed again; an expired lease is", async () => {
 test("end to end: a transactional then a marketing step, with a working unsubscribe", async () => {
   const f = await open();
   const news = await f.list("news");
-  const welcome = await f.template(
-    "<p>Welcome {{ subscriber.name }}</p>",
-    "Welcome",
-  );
+  const welcome = await f.template("<p>Welcome {{ subscriber.name }}</p>", "Welcome");
   const nudge = await f.template(
     '<p>Need a hand? <a href="{{ unsubscribe_url }}">unsubscribe</a> <a href="{{ \'https://example.test/help\' | track_link }}">help</a>{{ track_view }}</p>',
     "Need a hand?",
@@ -597,9 +555,7 @@ test("end to end: a transactional then a marketing step, with a working unsubscr
   expect(mail.body).toContain(`http://fixture.test/m/${marketing.uuid}/link/`);
   expect(mail.body).toContain(`http://fixture.test/m/${marketing.uuid}/px.png`);
   expect(mail.header("List-Unsubscribe")).toBe(`<${url}>`);
-  expect(mail.header("List-Unsubscribe-Post")).toBe(
-    "List-Unsubscribe=One-Click",
-  );
+  expect(mail.header("List-Unsubscribe-Post")).toBe("List-Unsubscribe=One-Click");
   expect((await f.enrollment(id)).status).toBe("completed");
   expect(seq.steps).toHaveLength(2);
 
@@ -610,11 +566,8 @@ test("end to end: a transactional then a marketing step, with a working unsubscr
     body: "List-Unsubscribe=One-Click",
   });
   expect(response.status).toBe(200);
-  const lists = (await f.json(`/api/subscribers/${subscriber}`)).body.data
-    .lists;
-  expect(lists).toMatchObject([
-    { id: news, subscription_status: "unsubscribed" },
-  ]);
+  const lists = (await f.json(`/api/subscribers/${subscriber}`)).body.data.lists;
+  expect(lists).toMatchObject([{ id: news, subscription_status: "unsubscribed" }]);
 });
 
 test("a scheduler loop failure surfaces instead of leaving a dead loop", async () => {
@@ -630,12 +583,7 @@ test("a scheduler loop failure surfaces instead of leaving a dead loop", async (
 // Races with the condition: `f.onCondition` acts while the scheduler awaits the evaluation,
 // as an admin request arriving during a slow query would.
 const always = { not: { event: "never_happens", since: "trigger" } };
-const save = (
-  f: SchedulerFixture,
-  id: number,
-  steps: object[],
-  extra: object = {},
-) =>
+const save = (f: SchedulerFixture, id: number, steps: object[], extra: object = {}) =>
   f.json(`/api/sequences/${id}`, "PUT", {
     name: "Onboarding",
     status: "active",
@@ -662,13 +610,9 @@ test("a template deleted while the condition runs is a skipped send without a te
   const keep = await f.template();
   const gone = await f.template("<p>gone</p>");
   const seq = await f.sequence({
-    steps: [
-      tx(gone, { wait: "PT1H", condition: always }),
-      tx(keep, { wait: "PT1H" }),
-    ],
+    steps: [tx(gone, { wait: "PT1H", condition: always }), tx(keep, { wait: "PT1H" })],
   });
-  const id = (await f.event("race-template@example.test")).enrollments
-    .started[0]!.id;
+  const id = (await f.event("race-template@example.test")).enrollments.started[0]!.id;
   const raced = during(f, async () => {
     expect((await f.json(`/api/templates/${gone}`, "DELETE")).status).toBe(200);
   });
@@ -683,9 +627,7 @@ test("a template deleted while the condition runs is a skipped send without a te
       template_id: null,
     },
   ]);
-  expect(f.errors.filter((e) => String(e).includes("template"))).toHaveLength(
-    1,
-  );
+  expect(f.errors.filter((e) => String(e).includes("template"))).toHaveLength(1);
   await f.pass(hour);
   await delivered(f, 1);
   expect((await f.enrollment(id)).status).toBe("completed");
@@ -707,9 +649,7 @@ test("a failing decision is logged and released for a later retry, without stopp
   await f.pass(hour);
   expect(f.stopped).toBe(false);
   expect(calls).toBe(1);
-  expect(f.errors.some((e) => String(e).includes(`enrollment ${id}`))).toBe(
-    true,
-  );
+  expect(f.errors.some((e) => String(e).includes(`enrollment ${id}`))).toBe(true);
   expect(await sendsOf(f, id)).toEqual([]);
   // Released with a retry delay, not left leased for the full lease.
   await f.pass(minute);
@@ -724,8 +664,7 @@ test("a pause during the condition releases the claim instead of sending; it run
   const seq = await f.sequence({
     steps: [tx(template, { wait: "PT1H", condition: always })],
   });
-  const id = (await f.event("race-pause@example.test")).enrollments.started[0]!
-    .id;
+  const id = (await f.event("race-pause@example.test")).enrollments.started[0]!.id;
   const raced = during(f, async () => {
     const paused = await f.json(`/api/sequences/${seq.id}/status`, "PUT", {
       status: "paused",
@@ -754,12 +693,9 @@ test("an archive during the condition ends the enrollment instead of sending", a
   const seq = await f.sequence({
     steps: [tx(template, { wait: "PT1H", condition: always })],
   });
-  const id = (await f.event("race-archive@example.test")).enrollments
-    .started[0]!.id;
+  const id = (await f.event("race-archive@example.test")).enrollments.started[0]!.id;
   // Written below the API (whose archive also exits enrollments): the scheduler's own check.
-  during(f, () =>
-    f.db.run("UPDATE sequences SET status = 'archived' WHERE id = ?", [seq.id]),
-  );
+  during(f, () => f.db.run("UPDATE sequences SET status = 'archived' WHERE id = ?", [seq.id]));
   await f.pass(hour);
   expect(await f.enrollment(id)).toMatchObject({
     status: "canceled",
@@ -781,8 +717,7 @@ test("an edit during the condition discards the stale decision and re-evaluates 
     ],
   });
   const [one, two, three] = seq.steps as { id: number }[];
-  const id = (await f.event("race-edit@example.test")).enrollments.started[0]!
-    .id;
+  const id = (await f.event("race-edit@example.test")).enrollments.started[0]!.id;
 
   // The step's template changes while its condition runs: the new template is sent.
   const changed = during(f, async () => {
@@ -797,9 +732,7 @@ test("an edit during the condition discards the stale decision and re-evaluates 
   await delivered(f, 1);
   expect(changed.ran).toBe(true);
   expect(decoded(f.sink.messages[0]!.data).body).toContain("<p>after</p>");
-  expect(await sendsOf(f, id)).toMatchObject([
-    { step_id: one!.id, template_id: after },
-  ]);
+  expect(await sendsOf(f, id)).toMatchObject([{ step_id: one!.id, template_id: after }]);
 
   // The step is deleted while its condition runs: it is not sent; the next step is.
   const deleted = during(f, async () => {
@@ -812,10 +745,7 @@ test("an edit during the condition discards the stale decision and re-evaluates 
   await f.pass(hour);
   await delivered(f, 2);
   expect(deleted.ran).toBe(true);
-  expect((await sendsOf(f, id)).map((s) => s.step_id)).toEqual([
-    one!.id,
-    three!.id,
-  ]);
+  expect((await sendsOf(f, id)).map((s) => s.step_id)).toEqual([one!.id, three!.id]);
   expect((await f.enrollment(id)).status).toBe("completed");
   expect(f.sink.messages).toHaveLength(2);
 });
@@ -884,27 +814,20 @@ test("an enrollment waiting on a deleted step reaches the right next step after 
       steps: [step("PT0S"), step("P1D"), step("P1D"), step("P1D")],
     });
     const ids = (seq.steps as { id: number }[]).map((s) => s.id);
-    const id = (await f.event(`${event}@example.test`, event)).enrollments
-      .started[0]!.id;
-    await f.until(
-      async () => (await f.enrollment(id)).step_id === ids[1],
-      `${c.name}: A sent`,
-    );
+    const id = (await f.event(`${event}@example.test`, event)).enrollments.started[0]!.id;
+    await f.until(async () => (await f.enrollment(id)).step_id === ids[1], `${c.name}: A sent`);
     for (const kept of c.saves(ids)) {
       // Each save at its own time, as an admin makes them.
       f.clock.advance(1000);
       const r = await save(
         f,
         seq.id,
-        kept.map((i) =>
-          i < 0 ? step("P1D") : tx(template, { id: ids[i], wait: "P1D" }),
-        ),
+        kept.map((i) => (i < 0 ? step("P1D") : tx(template, { id: ids[i], wait: "P1D" }))),
         definition,
       );
       expect(r.status).toBe(200);
     }
-    for (let i = 0; i < 4 && (await f.enrollment(id)).status === "active"; i++)
-      await f.pass(day);
+    for (let i = 0; i < 4 && (await f.enrollment(id)).status === "active"; i++) await f.pass(day);
     const sent = (await sendsOf(f, id)).map((s) => ids.indexOf(s.step_id));
     expect({ name: c.name, sent }).toEqual({ name: c.name, sent: c.expected });
     expect((await f.enrollment(id)).status).toBe("completed");
@@ -923,13 +846,10 @@ test("enrollments whose condition keeps failing do not starve healthy due work",
   });
   const backlog = 1000;
   for (let i = 0; i < backlog; i++) await f.event(`fail-${i}@example.test`);
-  const healthy = (await f.event("healthy@example.test", "signup")).enrollments
-    .started[0]!.id;
-  const first = (
-    await f.json(`/api/enrollments?sequence_id=${failing.id}&per_page=1`)
-  ).body.data.results[0] as { id: number; due_at: string };
-  const healthySubscriber = (await f.enrollment(healthy))
-    .subscriber_id as number;
+  const healthy = (await f.event("healthy@example.test", "signup")).enrollments.started[0]!.id;
+  const first = (await f.json(`/api/enrollments?sequence_id=${failing.id}&per_page=1`)).body.data
+    .results[0] as { id: number; due_at: string };
+  const healthySubscriber = (await f.enrollment(healthy)).subscriber_id as number;
 
   let evaluations = 0;
   let reachedAfter: number | null = null;
@@ -948,15 +868,15 @@ test("enrollments whose condition keeps failing do not starve healthy due work",
   };
   f.clock.advance(hour);
   f.scheduler.wake();
-  await f.until(
-    () => reachedAfter !== null || evaluations >= 3 * backlog,
-    "healthy or bound",
-  );
-  // Each failing enrollment is tried at most once before the healthy one, due after them all.
+  await f.until(() => reachedAfter !== null || evaluations >= 3 * backlog, "healthy or bound");
+  // Each failing enrollment is tried at most once before the healthy one, due after them all;
+  // retries queue behind it by their retry time.
   expect(reachedAfter).not.toBeNull();
   expect(reachedAfter!).toBeLessThanOrEqual(backlog);
-  await delivered(f, 1);
-  expect((await f.enrollment(healthy)).status).toBe("completed");
+  // Its send is recorded and it completes. (Delivery is not awaited: the failing queries keep
+  // moving the injected clock past the SMTP timeouts.)
+  await f.until(async () => (await f.enrollment(healthy)).status === "completed", "healthy done");
+  expect((await sendsOf(f, healthy)).map((s) => s.source)).toEqual(["sequence"]);
   // The retry delay leaves the original due time, which max_late measures from.
   expect((await f.enrollment(first.id)).due_at).toBe(first.due_at);
   f.onCondition = null;

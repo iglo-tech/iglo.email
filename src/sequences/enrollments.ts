@@ -101,10 +101,7 @@ export interface SchedulerContext {
 export interface Claim {
   id: bigint;
   lease: string;
-  step: Pick<
-    SchedulerContext,
-    "sequence_id" | "step_id" | "position" | "step_status" | "step_updated_at" | "due_at"
-  >;
+  step: Pick<SchedulerContext, "sequence_id" | "step_id" | "position" | "step_status" | "due_at">;
 }
 
 export type EnrollOutcome =
@@ -372,11 +369,17 @@ export function createEnrollments(db: Database, clock: Clock) {
      * active or archived sequences. The loop helper holds the write transaction.
      */
     claimDue(now: Date, lease: Date, limit: number): bigint[] {
+      // In claim order (RETURNING has none), so a retry claimed with due work runs after it.
       return (
-        q.get("claim-due").all(lease.toISOString(), now.toISOString(), limit) as { id: bigint }[]
+        q.get("claim-due").all(lease.toISOString(), now.toISOString(), limit) as {
+          id: bigint;
+          run_at: string;
+        }[]
       )
-        .map((row) => row.id)
-        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        .sort((a, b) =>
+          a.run_at !== b.run_at ? (a.run_at < b.run_at ? -1 : 1) : a.id < b.id ? -1 : 1,
+        )
+        .map((row) => row.id);
     },
     /** A claimed enrollment with its current sequence and step definition. */
     schedulerContext(id: bigint): SchedulerContext | null {
@@ -398,7 +401,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       const deleted = step.step_status === "deleted";
       const next = (
         deleted
-          ? q.get("next-after-deleted").get(step.sequence_id, step.position, step.step_updated_at)
+          ? q.get("next-after-deleted").get(step.sequence_id, step.position)
           : q.get("next-after-active").get(step.sequence_id, step.position)
       ) as { id: bigint; wait: string } | null;
       const at = now.toISOString();
@@ -421,9 +424,12 @@ export function createEnrollments(db: Database, clock: Clock) {
     defer(claim: Claim, dueAt: Date) {
       q.get("claimed-defer").run(dueAt.toISOString(), claim.id, claim.lease);
     },
-    /** Keep a claimed enrollment leased until `until` (bounded backoff), or release it (null). */
-    hold(claim: Claim, until: Date | null) {
-      q.get("claimed-hold").run(until?.toISOString() ?? null, claim.id, claim.lease);
+    /**
+     * Release a claimed enrollment, claimable again at `retryAt` (a bounded backoff) or at once
+     * (null). Its `due_at`, which `max_late` measures from, is kept.
+     */
+    release(claim: Pick<Claim, "id" | "lease">, retryAt: Date | null) {
+      q.get("claimed-release").run(retryAt?.toISOString() ?? null, claim.id, claim.lease);
     },
     /** Called after an enrollment due now is created, inside the creating transaction. */
     onDue(fn: () => void) {

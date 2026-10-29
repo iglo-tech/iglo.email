@@ -35,13 +35,15 @@ UPDATE enrollments SET status = 'exited', exit_reason = 'sequence_archived', ste
   WHERE sequence_id = ? AND status = 'active';
 -- name: claim-due
 -- Scheduler claim: due, unleased enrollments of sequences that can run (paused and draft wait).
+-- A retried enrollment is due again at its retry time and queues by it behind other due work.
 UPDATE enrollments SET claimed_until = ?1
   WHERE id IN (
     SELECT id FROM enrollments
-    WHERE status = 'active' AND due_at <= ?2 AND (claimed_until IS NULL OR claimed_until < ?2)
+    WHERE status = 'active' AND coalesce(retry_at, due_at) <= ?2
+      AND (claimed_until IS NULL OR claimed_until < ?2)
       AND sequence_id IN (SELECT id FROM sequences WHERE status IN ('active', 'archived'))
-    ORDER BY due_at, id LIMIT ?3)
-  RETURNING id;
+    ORDER BY coalesce(retry_at, due_at), id LIMIT ?3)
+  RETURNING id, coalesce(retry_at, due_at) AS run_at;
 -- name: scheduler-context
 SELECT e.id, e.sequence_id, e.subscriber_id, e.trigger_event_id, e.step_id, e.due_at, e.status,
     e.claimed_until, e.created_at, e.updated_at,
@@ -58,22 +60,19 @@ SELECT 1 FROM enrollments WHERE id = ? AND status = 'active' AND claimed_until =
 SELECT id, wait FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active' AND position > ?2
   ORDER BY position LIMIT 1;
 -- name: next-after-deleted
--- Saving renumbers the remaining active steps, so the step that followed a deleted one now sits
--- at its old position minus the steps deleted before it in the same save.
-SELECT id, wait FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active'
-    AND position >= ?2 - (SELECT count(*) FROM sequence_steps
-      WHERE sequence_id = ?1 AND status = 'deleted' AND updated_at = ?3 AND position < ?2)
+-- A deleted step's position is the current position of the step that follows it (saves keep it).
+SELECT id, wait FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active' AND position >= ?2
   ORDER BY position LIMIT 1;
 -- name: claimed-advance
-UPDATE enrollments SET step_id = ?, due_at = ?, claimed_until = NULL, updated_at = ?
+UPDATE enrollments SET step_id = ?, due_at = ?, claimed_until = NULL, retry_at = NULL, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-complete
-UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, finished_at = ?, updated_at = ?
+UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-end
-UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, finished_at = ?, updated_at = ?
+UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-defer
-UPDATE enrollments SET due_at = ?, claimed_until = NULL WHERE id = ? AND status = 'active' AND claimed_until = ?;
--- name: claimed-hold
-UPDATE enrollments SET claimed_until = ? WHERE id = ? AND status = 'active' AND claimed_until = ?;
+UPDATE enrollments SET due_at = ?, claimed_until = NULL, retry_at = NULL WHERE id = ? AND status = 'active' AND claimed_until = ?;
+-- name: claimed-release
+UPDATE enrollments SET claimed_until = NULL, retry_at = ? WHERE id = ? AND status = 'active' AND claimed_until = ?;
