@@ -198,6 +198,43 @@ try {
     assert.ok(found);
     assert.equal(header(await mailpit.raw(found.ID), "X-Route"), route);
   }
+  let fetches = 0;
+  const unexpectedServer = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => {
+      fetches++;
+      return new Response("not attachment bytes");
+    },
+  });
+  try {
+    const supplied = {
+      name: "safe.txt",
+      content: Buffer.from("owned bytes"),
+      path: "/nonexistent-m21-secret",
+      href: `http://127.0.0.1:${unexpectedServer.port}/file`,
+    };
+    const closedInput = emailer.push({
+      from: "sender@example.test",
+      to: ["recipient@example.test"],
+      subject: `${marker} closed-input`,
+      contentType: "plain",
+      body: Buffer.from("closed"),
+      attachments: [supplied],
+    });
+    assert.equal((await closedInput.result).status, "accepted");
+    const found = (await mailpit.list()).find(
+      (entry) => entry.Subject === `${marker} closed-input`,
+    );
+    assert.ok(found);
+    const captured = await mailpit.message(found.ID);
+    const part = captured.Attachments.find((entry) => entry.FileName === "safe.txt");
+    assert.ok(part);
+    assert.equal((await mailpit.part(found.ID, part.PartID)).toString(), "owned bytes");
+    assert.equal(fetches, 0);
+  } finally {
+    await unexpectedServer.stop(true);
+  }
   const injection = emailer.push({
     from: "sender@example.test",
     to: ["recipient@example.test"],
@@ -207,7 +244,7 @@ try {
     headers: { "X-Test": "value\r\nInjected: yes" },
   });
   assert.equal((await injection.result).status, "proven-not-accepted");
-  assert.equal((await mailpit.list()).length, 7);
+  assert.equal((await mailpit.list()).length, 8);
 } finally {
   await emailer.close();
   await mailpit.removeOwned();
