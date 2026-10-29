@@ -12,6 +12,7 @@ export function registerSettingsRoutes(
   router: Router,
   settings: SettingsStore,
   auth: Authentication,
+  smtpTest?: (body: unknown, revalidate: () => void) => Promise<void>,
 ): void {
   router.route(
     "GET",
@@ -99,8 +100,18 @@ export function registerSettingsRoutes(
   router.route(
     "POST",
     "/api/settings/smtp/test",
-    () => {
-      throw new HttpError(501, "SMTP test is not implemented until M2.1");
+    async (context) => {
+      const bytes = await readBodyBytes(context.request);
+      let body: unknown;
+      try {
+        body = JSON.parse(decodeJsonBytes(bytes));
+      } catch {
+        throw new HttpError(400, "Invalid data.");
+      }
+      auth.revalidate(context, "settings:manage");
+      if (!smtpTest) throw new HttpError(501, "SMTP test is unavailable");
+      await smtpTest(body, () => auth.revalidate(context, "settings:manage"));
+      return ok([]);
     },
     auth.middleware("settings:manage"),
   );

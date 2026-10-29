@@ -31,7 +31,12 @@ async function stop(child: GroupChild, closed: Promise<number>): Promise<number>
 export async function withProduction<T>(
   executable: string,
   signal: AbortSignal,
-  run: (origin: string, signal: AbortSignal, restart: () => Promise<void>) => Promise<T>,
+  run: (
+    origin: string,
+    signal: AbortSignal,
+    restart: () => Promise<void>,
+    dataDir: string,
+  ) => Promise<T>,
   admin?: { user: string; password: string },
   timeoutMs = 30_000,
 ): Promise<T> {
@@ -116,7 +121,10 @@ export async function withProduction<T>(
     });
     try {
       lifetime.throwIfAborted();
-      result = await Promise.race([run(origin, lifetime, restart), cancelled]);
+      result = await Promise.race([
+        run(origin, lifetime, restart, join(directory, "data")),
+        cancelled,
+      ]);
     } finally {
       lifetime.removeEventListener("abort", abort);
     }

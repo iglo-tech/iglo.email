@@ -37,7 +37,13 @@
     "contract:subscribers": "bun run build && bun test/contract/cli.ts owned subscribers",
     "contract:subscribers:reference": "bun run reference:run -- bun test/contract/subscribers.ts reference",
     "contract:settings": "bun run build && bun test/contract/cli.ts owned settings",
-    "contract:settings:reference": "bun run reference:run -- bun test/contract/settings.ts reference"
+    "contract:settings:reference": "bun run reference:run -- bun test/contract/settings.ts reference",
+    "contract:messaging": "bun run build && bun build --compile test/messaging/stored-caller.ts --outfile dist/messaging-stored-caller && bun run reference:run -- bun test/contract/cli.ts owned messaging",
+    "contract:messaging:reference": "bun run reference:run -- bun test/contract/messaging.ts reference",
+    "messaging:fixture": "bun build --compile test/messaging/observe.ts --outfile dist/messaging-fixture && bun run reference:run -- dist/messaging-fixture",
+    "messaging:faults": "bun run reference:run -- bun test/messaging/failures.ts",
+    "messaging:auth": "bun run reference:run -- bun test/messaging/auth.ts",
+    "messaging:tls": "bun run reference:run -- bun test/messaging/tls.ts"
   },
   "dependencies": {
     "liquidjs": "10.30.0",

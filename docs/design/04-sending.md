@@ -11,9 +11,8 @@ M0.8 verified predetermined IDs, MIME and DKIM through a synthetic Mailpit path 
 
 D49 defines M2.1's protected SMTP-test activation, safe response/errors and
 bounded temporary transports. D50 supplies optional native SMTP DKIM settings
-with masked key retention/null-clear and validated RSA configuration. These
-are prospective M2.1 requirements; M1.2's current SMTP route remains guarded
-501 until that task implements and verifies the real transport.
+with masked key retention/null-clear and validated RSA configuration. The M2.1 candidate implements these paths; its outstanding acceptance work is
+recorded in the draft PR and performance note.
 
 ## Campaigns
 

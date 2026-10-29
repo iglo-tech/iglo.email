@@ -199,7 +199,7 @@ export async function runSettingsLive(target: {
       "writer-put",
     );
     check(
-      (await request("/api/settings/smtp/test", "POST", {}, writer.auth)).status === 501,
+      (await request("/api/settings/smtp/test", "POST", {}, writer.auth)).status === 400,
       "writer-staged",
     );
     check(

@@ -260,6 +260,12 @@ fixture owners and their database; a separate compiled test exercises an actual
 process restart with a retained valid session. D46 covers final writable NUL
 rejection with safe native 400/no write versus reference 500/no write. The corpus
 is representative rather than an exhaustive proof of parser compatibility.
-The SMTP test route remains guarded 501 until M2.1. Masked-secret checks do not
-prove a future SMTP delivery uses the original secret; M2.1 verifies that with
-Mailpit.
+The M2.1 candidate adds `bun run contract:messaging:reference` for the pinned
+SMTP-test response and Mailpit message, and `bun run contract:messaging` for
+compiled production, D49 admission and D50 settings. A separately compiled
+caller reads the real settings owner and checks authentication and RSA signatures
+before and after restart/retention and null clearing. `bun run messaging:fixture`
+checks production message composition through owned Mailpit; `messaging:faults`,
+`messaging:auth` and `messaging:tls` exercise the owned relay and local TLS
+Mailpit. These are finite fixture observations, not provider or final-delivery
+evidence. Remaining acceptance gaps are recorded in the M2.1 draft PR.

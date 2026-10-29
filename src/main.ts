@@ -22,6 +22,8 @@ import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { createEmailer } from "@/messaging/email";
+import { createSMTPTest } from "@/messaging/test";
 
 async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
@@ -40,6 +42,7 @@ async function main(): Promise<void> {
   let roles: ReturnType<typeof createRoles> | undefined;
   let users: ReturnType<typeof createUserStore> | undefined;
   let settings: ReturnType<typeof createSettings> | undefined;
+  let emailer: ReturnType<typeof createEmailer> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -77,7 +80,14 @@ async function main(): Promise<void> {
         "privacy.domain_blocklist": current["privacy.domain_blocklist"],
       };
     });
-    registerSettingsRoutes(router, settings, auth);
+    emailer = createEmailer({
+      clock,
+      settings: () => {
+        const current = settings!.read();
+        return { smtp: current.smtp, rootUrl: current["app.root_url"] };
+      },
+    });
+    registerSettingsRoutes(router, settings, auth, createSMTPTest(settings, emailer, app.i18n));
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       const shutdown = () => {
@@ -89,6 +99,7 @@ async function main(): Promise<void> {
       process.once("SIGINT", shutdown);
     });
   } finally {
+    await emailer?.close();
     settings?.close();
     users?.close();
     listStore?.close();

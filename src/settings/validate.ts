@@ -1,3 +1,4 @@
+import { validateDKIM } from "@/settings/dkim";
 import { validTrustedURL } from "@/settings/url";
 // Settings model and transformations adapted from listmonk models/settings.go and cmd/settings.go at 6fcd95f.
 import { defaults } from "@/settings/defaults";
@@ -34,6 +35,7 @@ const smtpShape = {
   tls_skip_verify: false,
   from_addresses: [""],
   exclude_from_default: false,
+  dkim: { domain_name: "", key_selector: "", private_key: "" },
 };
 const messengerShape = {
   uuid: "",
@@ -96,7 +98,7 @@ function zero(shape: any): any {
   if (typeof shape === "object")
     return Object.fromEntries(
       Object.entries(shape)
-        .filter(([key]) => key !== "*")
+        .filter(([key]) => key !== "*" && !(shape === smtpShape && key === "dkim"))
         .map(([key, value]) => [key, zero(value)]),
     );
   if (typeof shape === "string") return "";
@@ -141,10 +143,17 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
       return result;
     }
     for (const [key, fallback] of Object.entries(shape))
-      if (!Object.hasOwn(result, key)) result[key] = zero(fallback);
+      if (key !== "dkim" && !Object.hasOwn(result, key)) result[key] = zero(fallback);
     for (const [key, entry] of members) {
       const match = Object.keys(shape).find((name) => foldField(name) === foldField(key));
-      if (match) result[match] = bind(entry, shape[match], result[match]);
+      if (match === "dkim" && shape === smtpShape) {
+        try {
+          result[match] =
+            entry === null ? null : bind(entry, shape[match], result[match] ?? zero(shape[match]));
+        } catch {
+          return fail("Invalid DKIM configuration.");
+        }
+      } else if (match) result[match] = bind(entry, shape[match], result[match]);
     }
     return result;
   }
@@ -156,7 +165,10 @@ export function projectRaw(value: Settings, root: string): Settings {
   const out = bindFull(value, root);
   for (const key of arrays) out[key] ??= [];
   for (const key of ["smtp", "messengers", "bounce.mailboxes"])
-    for (const item of out[key]) if (!item.password) delete item.password;
+    for (const item of out[key]) {
+      if (!item.password) delete item.password;
+      if (key === "smtp" && !item.dkim) delete item.dkim;
+    }
   return out;
 }
 export function bindFull(value: unknown, root: string): Settings {
@@ -226,7 +238,13 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
       return fail("A name is required for an SMTP server excluded from the default messenger.");
     server.name = name;
     server.host = trimSpace(server.host);
+    const prior = current.smtp.findLast((item: Settings) => item.uuid === server.uuid);
     preserve(server, current.smtp);
+    if (!Object.hasOwn(server, "dkim") && prior?.dkim) server.dkim = cloneJson(prior.dkim);
+    if (server.dkim) {
+      if (!server.dkim.private_key && prior?.dkim) server.dkim.private_key = prior.dkim.private_key;
+      validateDKIM(server.dkim);
+    } else delete server.dkim;
     if (server.enabled)
       server.from_addresses = (server.from_addresses ?? [])
         .map((a: string) => simpleLower(trimSpace(a ?? "")))
@@ -320,6 +338,7 @@ export function masked(settings: Settings): Settings {
   for (const key of ["smtp", "messengers", "bounce.mailboxes"])
     for (const item of out[key]) {
       if (item.password) item.password = mask(item.password);
+      if (key === "smtp" && item.dkim) item.dkim.private_key = mask(item.dkim.private_key);
     }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
     if (out[key]) out[key] = mask(out[key]);

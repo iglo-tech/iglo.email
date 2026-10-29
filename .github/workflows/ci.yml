@@ -20,6 +20,8 @@ jobs:
       - run: bun run contract:subscribers
       - run: bun run contract:settings
       - run: bun run contract:fixture
+      - run: bun run contract:messaging
+      - run: bun run messaging:fixture
 
   reference-linux:
     runs-on: ubuntu-24.04
@@ -36,5 +38,9 @@ jobs:
       - run: bun run contract:lists:reference
       - run: bun run contract:subscribers:reference
       - run: bun run contract:settings:reference
+      - run: bun run contract:messaging:reference
+      - run: bun run messaging:faults
+      - run: bun run messaging:auth
+      - run: bun run messaging:tls
       - run: bun run server:reference
       - run: bun run reference:run -- bun -e 'if (!process.env.REFERENCE_URL) process.exit(1)'

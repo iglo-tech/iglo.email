@@ -55,7 +55,7 @@ Deliberate differences:
 | Settings bootstrap root URL | GET projects the effective bootstrap root; full snapshot PUT ignores this read-only field and per-key mutation returns safe 400/no write | Preserve flag/environment ownership and authentication/public-link consistency (D14/[D44](09-decisions.md#d44-settings-ownership-safe-per-key-updates-and-in-process-activation)) |
 | Per-key settings updates | Recognized writable keys receive full-candidate typed/invariant validation; unknown/read-only or invalid values fail safely without mutation | Avoid upstream raw per-key writes corrupting later reads or bypassing full-PUT validation (D44) |
 | Settings application | Supported policy changes take effect in-process; successful update envelope remains data:true | Avoid upstream delayed SIGHUP/request interruption; later-owner settings do not claim an implemented sender/loop (D44) |
-| Settings SMTP test before M2.1 | Authenticated, authorized mutation returns explicit 501; no connection/send/queue | M1.2 stores configuration; M2.1 owns delivery. No fake success (D44) |
+| Settings SMTP test | Authorized sends return data:[] on SMTP acceptance, safe error categories on failure, and 429 at capacity | Avoid upstream process-wide logs and provider diagnostics in this protected endpoint (D49) |
 | Dropped update-check setting | Native app.check_updates stays false/no-op and cannot be enabled | GitHub update polling is dropped in scope; no external update process is installed (D44) |
 | Template bodies | Liquid, not Go templates | [D9](09-decisions.md#d9-liquid-for-user-authored-templates) |
 | `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
@@ -196,8 +196,7 @@ syntax, field-shape rejection and XML's existing strict boundary are preserved.
 Shared compiled and reference corpora exercise binding, safe error envelopes,
 numeric ranges, supported document and per-key types, address and cron cases.
 This finite coverage is representative; reproduced unlisted differences must
-still be corrected. Secret retention is visible through masked projections
-until M2.1 verifies actual authentication and delivery with Mailpit.
+still be corrected. A compiled test-only caller exercises the unmasked settings owner through local authenticated SMTP and Mailpit, including retention after restart.
 
 M2.1 activates the SMTP test under D49: real authorized send, bounded admission,
 safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
@@ -205,8 +204,7 @@ safe errors and 200 data:[] rather than process-wide buffered logs. Its explicit
 authentication/cookie and settings behavior remains governed by existing policy.
 D50 adds native-only optional SMTP dkim:{domain_name,key_selector,private_key}.
 GET masks the key; empty key retains by UUID, null clears, invalid candidates
-fail atomically. Runtime activation and effect evidence belong to M2.1; this
-decision entry does not claim the worker implementation already exists.
+fail atomically. The M2.1 candidate exercises signing, retention, restart and clearing using a compiled test-only caller; acceptance remains incomplete.
 
 D46 rejects NUL in final normalized writable settings strings and map keys
 atomically with native HTTP 400 `Invalid data.` and no write; pinned PostgreSQL

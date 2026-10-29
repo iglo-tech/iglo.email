@@ -1,3 +1,5 @@
+import { runDKIMSettings } from "@/test/contract/messaging-dkim";
+import { runMessagingContract } from "@/test/contract/messaging";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { startContractFixture } from "@/test/contract/fixture";
@@ -93,7 +95,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "roles" ||
       args[1] === "lists" ||
       args[1] === "subscribers" ||
-      args[1] === "settings")
+      args[1] === "settings" ||
+      args[1] === "messaging")
   ) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
@@ -103,7 +106,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "roles" ||
         args[1] === "lists" ||
         args[1] === "subscribers" ||
-        args[1] === "settings") &&
+        args[1] === "settings" ||
+        args[1] === "messaging") &&
       Object.keys(values).length
     )
       throw new Error("Invalid owned auth arguments");
@@ -111,8 +115,13 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
     const passed = await withProduction(
       resolve(repository, "dist/iglo.email"),
       signal,
-      async (baseUrl, runSignal, restart) => {
+      async (baseUrl, runSignal, restart, dataDir) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "messaging") {
+          await runMessagingContract({ mode: "normal", baseUrl, credentials });
+          await runDKIMSettings({ baseUrl, credentials, restart, dataDir });
+          return true;
+        }
         if (args[1] === "settings") {
           await runSettingsContract({ mode: "normal", baseUrl, credentials, restart });
           await runSettingsLive({ baseUrl, credentials, admin, restart });
