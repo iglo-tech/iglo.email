@@ -3,10 +3,7 @@
 // POST /api/subscriber-events, /api/enrollments, the subscriber API and the public
 // unsubscribe endpoint.
 import { afterEach, expect, test } from "bun:test";
-import {
-  sequencesFixture,
-  type SequencesFixture,
-} from "@/test/sequences/fixture";
+import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
 
 const fixtures: SequencesFixture[] = [];
 afterEach(async () => {
@@ -19,11 +16,7 @@ async function open() {
 }
 const day = 86_400_000;
 
-async function sequence(
-  f: SequencesFixture,
-  extra: object = {},
-  status = "active",
-) {
+async function sequence(f: SequencesFixture, extra: object = {}, status = "active") {
   const tx = await f.template();
   const created = await f.json("/api/sequences", "POST", {
     name: "Onboarding",
@@ -41,10 +34,7 @@ async function sequence(
   return created.body.data as { id: number; steps: { id: number }[] };
 }
 const enrollments = async (f: SequencesFixture, query = "") =>
-  (await f.json(`/api/enrollments${query}`)).body.data.results as Record<
-    string,
-    any
-  >[];
+  (await f.json(`/api/enrollments${query}`)).body.data.results as Record<string, any>[];
 const paid = (email: string, extra: object = {}) => ({
   subscriber: { email },
   name: "order_paid",
@@ -82,27 +72,21 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
     updated_at: now,
     finished_at: null,
   });
-  expect(
-    (await f.json(`/api/enrollments/${enrollment!.id}`)).body.data,
-  ).toEqual(enrollment);
+  expect((await f.json(`/api/enrollments/${enrollment!.id}`)).body.data).toEqual(enrollment);
   expect(draft.id).not.toBe(seq.id);
   // Other event names and events older than 7 days start nothing.
   expect(
-    (await f.event({ ...paid("bo@example.test"), name: "other" })).body.data
-      .enrollments,
+    (await f.event({ ...paid("bo@example.test"), name: "other" })).body.data.enrollments,
   ).toEqual({ started: [], ended: [] });
   const old = new Date(f.clock.now().getTime() - 7 * day - 1).toISOString();
   expect(
-    (await f.event(paid("cy@example.test", { occurred_at: old }))).body.data
-      .enrollments,
+    (await f.event(paid("cy@example.test", { occurred_at: old }))).body.data.enrollments,
   ).toEqual({ started: [], ended: [] });
   // Batch events trigger the same way.
   const batch = await f.json("/api/subscriber-events/batch", "POST", {
     events: [paid("d1@example.test"), paid("d2@example.test")],
   });
-  expect(
-    batch.body.data.results.map((x: any) => x.enrollments.started.length),
-  ).toEqual([1, 1]);
+  expect(batch.body.data.results.map((x: any) => x.enrollments.started.length)).toEqual([1, 1]);
   expect(await enrollments(f, `?sequence_id=${seq.id}`)).toHaveLength(3);
   expect(await enrollments(f, `?sequence_id=${draft.id}`)).toHaveLength(0);
   expect(await enrollments(f, `?sequence_id=${paused.id}`)).toHaveLength(0);
@@ -133,19 +117,13 @@ test("trigger.where filters on event data and the subscriber after the event's u
         sequence_id: number;
       }[]
     ).map((s) => s.sequence_id);
-  expect(
-    await started(
-      paid("a@example.test", { data: { product: "prepaid", n: 2 } }),
-    ),
-  ).toEqual([data.id]);
-  expect(
-    await started(
-      paid("b@example.test", { data: { product: "prepaid", n: "2" } }),
-    ),
-  ).toEqual([]);
-  expect(
-    await started(paid("c@example.test", { data: { product: "prepaid" } })),
-  ).toEqual([]);
+  expect(await started(paid("a@example.test", { data: { product: "prepaid", n: 2 } }))).toEqual([
+    data.id,
+  ]);
+  expect(await started(paid("b@example.test", { data: { product: "prepaid", n: "2" } }))).toEqual(
+    [],
+  );
+  expect(await started(paid("c@example.test", { data: { product: "prepaid" } }))).toEqual([]);
   // The attribute merged by this very event, and this event itself, are visible.
   expect(
     await started({
@@ -219,10 +197,7 @@ test("exit_on events end active enrollments before triggers, which can restart t
       },
     ],
   });
-  const active = await enrollments(
-    f,
-    `?subscriber_id=${subscriber}&status=active`,
-  );
+  const active = await enrollments(f, `?subscriber_id=${subscriber}&status=active`);
   expect(active.map((e) => e.sequence_id)).toEqual([restart.id]);
   // Exits apply only to active sequences.
   await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
@@ -242,14 +217,10 @@ test("reentry never, after_exit and always", async () => {
   const afterExit = await sequence(f, { reentry: "after_exit" });
   const always = await sequence(f, { reentry: "always" });
   const send = async (name = "order_paid") =>
-    (await f.event({ subscriber: { email: "r@example.test" }, name })).body.data
-      .enrollments;
-  const ids = (list: { sequence_id: number }[]) =>
-    list.map((e) => e.sequence_id).sort();
+    (await f.event({ subscriber: { email: "r@example.test" }, name })).body.data.enrollments;
+  const ids = (list: { sequence_id: number }[]) => list.map((e) => e.sequence_id).sort();
   const first = await send();
-  expect(ids(first.started)).toEqual(
-    [never.id, afterExit.id, always.id].sort(),
-  );
+  expect(ids(first.started)).toEqual([never.id, afterExit.id, always.id].sort());
   // While running: never and after_exit do nothing; always replaces the running one.
   const second = await send();
   expect(ids(second.started)).toEqual([always.id]);
@@ -289,9 +260,7 @@ test("a repeated idempotency key replays the first {started, ended} and changes 
   const before = await enrollments(f);
   f.clock.advance(1000);
   expect(await f.event(body)).toEqual(first);
-  expect(
-    await f.event({ ...paid("k@example.test"), idempotency_key: "evt_2" }),
-  ).toEqual(second);
+  expect(await f.event({ ...paid("k@example.test"), idempotency_key: "evt_2" })).toEqual(second);
   expect(await enrollments(f)).toEqual(before);
   // Without changes there is nothing to replay but the empty result.
   await f.json(`/api/sequences/${seq.id}/status`, "PUT", { status: "paused" });
@@ -312,24 +281,17 @@ test("blocklisted subscribers are never enrolled; blocklisting exits every activ
   const b = await sequence(f, { trigger: { event: "signup" } });
   const id = (await f.event(paid("bl@example.test"))).body.data.subscriber_id;
   await f.event({ subscriber: { email: "bl@example.test" }, name: "signup" });
-  const other = (await f.event(paid("keep@example.test"))).body.data
-    .subscriber_id;
+  const other = (await f.event(paid("keep@example.test"))).body.data.subscriber_id;
   expect(await enrollments(f, "?status=active")).toHaveLength(3);
-  expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT")).status).toBe(
-    200,
-  );
+  expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT")).status).toBe(200);
   const exited = await enrollments(f, `?subscriber_id=${id}`);
-  expect(
-    exited.map((e) => [e.sequence_id, e.status, e.exit_reason]).sort(),
-  ).toEqual(
+  expect(exited.map((e) => [e.sequence_id, e.status, e.exit_reason]).sort()).toEqual(
     [
       [a.id, "exited", "blocklisted"],
       [b.id, "exited", "blocklisted"],
     ].sort(),
   );
-  expect(
-    await enrollments(f, `?subscriber_id=${other}&status=active`),
-  ).toHaveLength(1);
+  expect(await enrollments(f, `?subscriber_id=${other}&status=active`)).toHaveLength(1);
   // Blocklisted subscribers are not enrolled by events or manually.
   const c = await sequence(f, {
     trigger: { event: "later" },
@@ -350,10 +312,7 @@ test("blocklisted subscribers are never enrolled; blocklisting exits every activ
   const ids: number[] = [];
   for (const email of ["q1@example.test", "q2@example.test", "q3@example.test"])
     ids.push((await f.event(paid(email))).body.data.subscriber_id);
-  expect(
-    (await f.json("/api/subscribers/blocklist", "PUT", { ids: [ids[0]] }))
-      .status,
-  ).toBe(200);
+  expect((await f.json("/api/subscribers/blocklist", "PUT", { ids: [ids[0]] })).status).toBe(200);
   expect(
     (
       await f.json("/api/subscribers/query/blocklist", "PUT", {
@@ -465,14 +424,11 @@ test("unsubscribing exits enrollments of sequences tied to those lists only", as
     kind: "marketing",
     list_id: promo,
   });
-  const block = await f.request(
-    `/m/${sent4.body.data.sends[0].uuid}/unsubscribe/${uuid4}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: "blocklist=true",
-    },
-  );
+  const block = await f.request(`/m/${sent4.body.data.sends[0].uuid}/unsubscribe/${uuid4}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "blocklist=true",
+  });
   expect(block.status).toBe(200);
   expect(Object.values(await states(four))).toEqual([
     "exited:blocklisted",
@@ -497,8 +453,7 @@ test("a repeated public unsubscribe exits enrollments started after the first on
   const always = await marketing(news, "always");
   const onPromo = await marketing(promo, "never");
   const id = await f.subscriber("again@example.test", { lists: [news, promo] });
-  const go = () =>
-    f.event({ subscriber: { email: "again@example.test" }, name: "go" });
+  const go = () => f.event({ subscriber: { email: "again@example.test" }, name: "go" });
   await go();
   const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid;
   const sent = await f.json("/api/tx", "POST", {
@@ -518,9 +473,7 @@ test("a repeated public unsubscribe exits enrollments started after the first on
   const restarted = (await go()).body.data.enrollments.started as {
     id: number;
   }[];
-  expect(restarted.map((e: any) => e.sequence_id).sort()).toEqual(
-    [afterExit.id, always.id].sort(),
-  );
+  expect(restarted.map((e: any) => e.sequence_id).sort()).toEqual([afterExit.id, always.id].sort());
   // The membership is already unsubscribed; the repeated POST still exits the new ones.
   expect((await unsubscribe()).status).toBe(200);
   for (const started of restarted) {
@@ -532,10 +485,7 @@ test("a repeated public unsubscribe exits enrollments started after the first on
     `?subscriber_id=${id}&sequence_id=${onPromo.id}`,
   );
   expect(more).toEqual([]);
-  expect([promoEnrollment!.status, promoEnrollment!.exit_reason]).toEqual([
-    "active",
-    null,
-  ]);
+  expect([promoEnrollment!.status, promoEnrollment!.exit_reason]).toEqual(["active", null]);
 });
 
 test("admin add-as-unsubscribed and unsubscribe without a membership exit those lists only", async () => {
@@ -553,8 +503,7 @@ test("admin add-as-unsubscribed and unsubscribe without a membership exit those 
   const onPromo = await marketing(promo);
   // Events enroll subscribers without any list membership.
   const start = async (email: string) =>
-    (await f.event({ subscriber: { email }, name: "go" })).body.data
-      .subscriber_id as number;
+    (await f.event({ subscriber: { email }, name: "go" })).body.data.subscriber_id as number;
   const states = async (id: number) =>
     Object.fromEntries(
       (await enrollments(f, `?subscriber_id=${id}`)).map((e) => [
@@ -563,9 +512,8 @@ test("admin add-as-unsubscribed and unsubscribe without a membership exit those 
       ]),
     );
   const membership = async (id: number, list: number) =>
-    ((await f.json(`/api/subscribers/${id}`)).body.data.lists as any[]).find(
-      (l) => l.id === list,
-    )?.subscription_status;
+    ((await f.json(`/api/subscribers/${id}`)).body.data.lists as any[]).find((l) => l.id === list)
+      ?.subscription_status;
   const cases: {
     email: string;
     route: "ids" | "query";
@@ -648,13 +596,8 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
     due_at: new Date(f.clock.now().getTime() + 3_600_000).toISOString(),
     status: "active",
   });
-  expect(
-    (await enroll({ sequence_id: never.id, subscriber_id: id })).status,
-  ).toBe(409);
-  const cancel = await f.json(
-    `/api/enrollments/${first.body.data.id}`,
-    "DELETE",
-  );
+  expect((await enroll({ sequence_id: never.id, subscriber_id: id })).status).toBe(409);
+  const cancel = await f.json(`/api/enrollments/${first.body.data.id}`, "DELETE");
   expect(cancel.status).toBe(200);
   expect(cancel.body.data).toMatchObject({
     status: "canceled",
@@ -663,12 +606,8 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
     due_at: null,
     finished_at: f.clock.now().toISOString(),
   });
-  expect(
-    (await f.json(`/api/enrollments/${first.body.data.id}`, "DELETE")).status,
-  ).toBe(409);
-  expect(
-    (await enroll({ sequence_id: never.id, subscriber_id: id })).status,
-  ).toBe(409);
+  expect((await f.json(`/api/enrollments/${first.body.data.id}`, "DELETE")).status).toBe(409);
+  expect((await enroll({ sequence_id: never.id, subscriber_id: id })).status).toBe(409);
   const forced = await enroll({
     sequence_id: never.id,
     subscriber_id: id,
@@ -682,28 +621,18 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
     force: true,
   });
   expect(forced2.status).toBe(200);
-  expect(
-    (await f.json(`/api/enrollments/${forced.body.data.id}`)).body.data,
-  ).toMatchObject({
+  expect((await f.json(`/api/enrollments/${forced.body.data.id}`)).body.data).toMatchObject({
     status: "canceled",
     exit_reason: "manual",
   });
   const a1 = await enroll({ sequence_id: always.id, subscriber_id: id });
   const a2 = await enroll({ sequence_id: always.id, subscriber_id: id });
   expect([a1.status, a2.status]).toEqual([200, 200]);
-  expect(
-    (await f.json(`/api/enrollments/${a1.body.data.id}`)).body.data.status,
-  ).toBe("canceled");
+  expect((await f.json(`/api/enrollments/${a1.body.data.id}`)).body.data.status).toBe("canceled");
   // Unknown or inactive targets and malformed input.
-  expect(
-    (await enroll({ sequence_id: draft.id, subscriber_id: id })).status,
-  ).toBe(409);
-  expect((await enroll({ sequence_id: 9999, subscriber_id: id })).status).toBe(
-    404,
-  );
-  expect(
-    (await enroll({ sequence_id: never.id, subscriber_id: 9999 })).status,
-  ).toBe(404);
+  expect((await enroll({ sequence_id: draft.id, subscriber_id: id })).status).toBe(409);
+  expect((await enroll({ sequence_id: 9999, subscriber_id: id })).status).toBe(404);
+  expect((await enroll({ sequence_id: never.id, subscriber_id: 9999 })).status).toBe(404);
   for (const bad of [
     {},
     { sequence_id: "1", subscriber_id: id },
@@ -717,9 +646,7 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
   expect((await f.json("/api/enrollments/9999", "DELETE")).status).toBe(404);
   expect((await f.json("/api/enrollments/x")).status).toBe(400);
   expect(
-    (await enrollments(f, `?subscriber_id=${id}&status=active`))
-      .map((e) => e.sequence_id)
-      .sort(),
+    (await enrollments(f, `?subscriber_id=${id}&status=active`)).map((e) => e.sequence_id).sort(),
   ).toEqual([never.id, always.id].sort());
 });
 
@@ -730,16 +657,9 @@ test("enrollment list filters, paging and permissions", async () => {
   const all = await f.json("/api/enrollments?per_page=2");
   expect(all.body.data).toMatchObject({ total: 3, page: 1, per_page: 2 });
   expect(all.body.data.results).toHaveLength(2);
-  expect(all.body.data.results[0].id).toBeGreaterThan(
-    all.body.data.results[1].id,
-  );
-  expect(
-    (await enrollments(f, "?status=exited&exit_reason=event:order_paid"))
-      .length,
-  ).toBe(2);
-  expect(
-    (await enrollments(f, `?sequence_id=${a.id}&status=active`)).length,
-  ).toBe(1);
+  expect(all.body.data.results[0].id).toBeGreaterThan(all.body.data.results[1].id);
+  expect((await enrollments(f, "?status=exited&exit_reason=event:order_paid")).length).toBe(2);
+  expect((await enrollments(f, `?sequence_id=${a.id}&status=active`)).length).toBe(1);
   for (const bad of [
     "?status=done",
     "?per_page=0",
@@ -754,33 +674,16 @@ test("enrollment list filters, paging and permissions", async () => {
   const reader = await f.apiUser(["sequences:get"]);
   const none = await f.apiUser(["subscribers:get_all"]);
   const id = all.body.data.results[0].id;
-  expect(
-    (await f.json("/api/enrollments", "GET", undefined, reader)).status,
-  ).toBe(200);
-  expect(
-    (await f.json(`/api/enrollments/${id}`, "GET", undefined, reader)).status,
-  ).toBe(200);
-  expect(
-    (await f.json("/api/enrollments", "GET", undefined, none)).status,
-  ).toBe(403);
+  expect((await f.json("/api/enrollments", "GET", undefined, reader)).status).toBe(200);
+  expect((await f.json(`/api/enrollments/${id}`, "GET", undefined, reader)).status).toBe(200);
+  expect((await f.json("/api/enrollments", "GET", undefined, none)).status).toBe(403);
   const sub = all.body.data.results[0].subscriber_id;
   expect(
-    (
-      await f.json(
-        "/api/enrollments",
-        "POST",
-        { sequence_id: a.id, subscriber_id: sub },
-        reader,
-      )
-    ).status,
-  ).toBe(403);
-  expect(
-    (await f.json(`/api/enrollments/${id}`, "DELETE", undefined, reader))
+    (await f.json("/api/enrollments", "POST", { sequence_id: a.id, subscriber_id: sub }, reader))
       .status,
   ).toBe(403);
-  expect((await f.json(`/api/enrollments/${id}`)).body.data.status).toBe(
-    "active",
-  );
+  expect((await f.json(`/api/enrollments/${id}`, "DELETE", undefined, reader)).status).toBe(403);
+  expect((await f.json(`/api/enrollments/${id}`)).body.data.status).toBe("active");
 });
 
 test("concurrent triggers and manual enrolls never create two active enrollments", async () => {
@@ -806,13 +709,8 @@ test("concurrent triggers and manual enrolls never create two active enrollments
   }
   const statuses = (await Promise.all(work)).map((r) => r.status);
   expect(statuses.filter((s) => s !== 200 && s !== 409)).toEqual([]);
-  const active = await enrollments(
-    f,
-    `?subscriber_id=${id}&status=active&per_page=100`,
-  );
-  expect(active.map((e) => e.sequence_id).sort()).toEqual(
-    [always.id, afterExit.id].sort(),
-  );
+  const active = await enrollments(f, `?subscriber_id=${id}&status=active&per_page=100`);
+  expect(active.map((e) => e.sequence_id).sort()).toEqual([always.id, afterExit.id].sort());
 });
 
 test("archiving exits active enrollments; archived sequences no longer trigger", async () => {
@@ -826,9 +724,7 @@ test("archiving exits active enrollments; archived sequences no longer trigger",
   expect(archived.body.data.active_enrollments).toBe(0);
   const [e] = await enrollments(f, `?subscriber_id=${id}`);
   expect([e!.status, e!.exit_reason]).toEqual(["exited", "sequence_archived"]);
-  expect(
-    (await f.event(paid("arc@example.test"))).body.data.enrollments.started,
-  ).toEqual([]);
+  expect((await f.event(paid("arc@example.test"))).body.data.enrollments.started).toEqual([]);
   // Archiving through a definition update does the same.
   await f.json(`/api/sequences/${seq.id}/status`, "PUT", { status: "active" });
   await f.event(paid("arc@example.test"));
@@ -846,8 +742,7 @@ test("deleting a subscriber deletes its enrollments", async () => {
   const f = await open();
   const seq = await sequence(f);
   const id = (await f.event(paid("del@example.test"))).body.data.subscriber_id;
-  const keep = (await f.event(paid("keep@example.test"))).body.data
-    .subscriber_id;
+  const keep = (await f.event(paid("keep@example.test"))).body.data.subscriber_id;
   expect((await f.json(`/api/subscribers/${id}`, "DELETE")).status).toBe(200);
   const rest = await enrollments(f);
   expect(rest.map((e) => e.subscriber_id)).toEqual([keep]);

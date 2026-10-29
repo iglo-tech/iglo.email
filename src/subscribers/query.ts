@@ -14,10 +14,7 @@ import {
   type SubscriberFilter,
 } from "@/subscribers/query-filter";
 import type { QueryRunner, RunnerError } from "@/subscribers/query-runner";
-import {
-  noSubscriberEffects,
-  type SubscriberEffects,
-} from "@/subscribers/store";
+import { noSubscriberEffects, type SubscriberEffects } from "@/subscribers/store";
 import querySql from "@/subscribers/query.sql" with { type: "text" };
 import exportSql from "@/subscribers/export.sql" with { type: "text" };
 
@@ -50,16 +47,10 @@ export function createSubscriberQuery(options: {
   const effects = options.effects ?? noSubscriberEffects;
   const largeLimit = options.largeSelections ?? LARGE_SELECTIONS;
   let large = 0;
-  const writes = prepareNamedQueries(db, [
-    { name: "subscribers/query", sql: querySql },
-  ]);
-  const reads = prepareNamedQueries(readonly, [
-    { name: "subscribers/export", sql: exportSql },
-  ]);
+  const writes = prepareNamedQueries(db, [{ name: "subscribers/query", sql: querySql }]);
+  const reads = prepareNamedQueries(readonly, [{ name: "subscribers/export", sql: exportSql }]);
   const column = (connection: Database, sql: string, args: Arg[]) =>
-    (connection.query(sql).values(...args) as unknown[][]).map(
-      (row) => row[0] as bigint,
-    );
+    (connection.query(sql).values(...args) as unknown[][]).map((row) => row[0] as bigint);
   return {
     /** Admit one large selection; returns its idempotent release, or undefined when full. */
     admitLarge(): (() => void) | undefined {
@@ -132,20 +123,14 @@ export function createSubscriberQuery(options: {
       }
     },
     exportRows: (ids: bigint[]) =>
-      ids.length
-        ? (reads.get("export-rows").all(json(ids)) as ExportRow[])
-        : [],
+      ids.length ? (reads.get("export-rows").all(json(ids)) as ExportRow[]) : [],
     /**
      * Apply an action to the subscribers matching `filter` inside the caller's write
      * transaction. `candidates` are IDs a raw fragment selected in its snapshot; the built-in
      * filters and current permissions are rechecked here so a concurrent change cannot
      * redirect the action. Without a fragment the whole selection happens here.
      */
-    apply(
-      filter: SubscriberFilter,
-      candidates: bigint[] | null,
-      act: (ids: bigint[]) => void,
-    ) {
+    apply(filter: SubscriberFilter, candidates: bigint[] | null, act: (ids: bigint[]) => void) {
       const builtIn = { ...filter, fragment: "" };
       if (candidates) {
         for (let i = 0; i < candidates.length; i += BATCH) {
@@ -183,17 +168,14 @@ export function createSubscriberQuery(options: {
         .run(status || "unconfirmed", now, now, json(ids), json(lists));
       // Existing memberships keep their status; only those now unsubscribed end enrollments.
       if (status !== "unsubscribed") return;
-      const pairs = writes
-        .get("unsubscribed-memberships-by-ids")
-        .all(json(ids), json(lists)) as {
+      const pairs = writes.get("unsubscribed-memberships-by-ids").all(json(ids), json(lists)) as {
         subscriber_id: bigint;
         list_id: bigint;
       }[];
       const byList = new Map<bigint, bigint[]>();
       for (const { subscriber_id, list_id } of pairs)
         byList.set(list_id, [...(byList.get(list_id) ?? []), subscriber_id]);
-      for (const [list, subscribers] of byList)
-        effects.unsubscribed(subscribers, [list]);
+      for (const [list, subscribers] of byList) effects.unsubscribed(subscribers, [list]);
     },
     removeLists(ids: bigint[], lists: bigint[]) {
       writes.get("delete-memberships-by-ids").run(json(ids), json(lists));
