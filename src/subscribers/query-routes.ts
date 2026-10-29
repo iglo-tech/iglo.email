@@ -25,8 +25,7 @@ interface Types {
   get: boolean;
   manage: boolean;
 }
-const GET: Types = { get: true, manage: false },
-  MANAGE: Types = { get: false, manage: true },
+const MANAGE: Types = { get: false, manage: true },
   ANY: Types = { get: true, manage: true };
 const NONE = [-1n];
 const max = 9223372036854775807n,

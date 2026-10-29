@@ -65,9 +65,18 @@ export function createSubscriberQuery(options: {
      */
     async *ids(filter: SubscriberFilter, only: bigint[] = []): AsyncGenerator<bigint[]> {
       if (filter.fragment) {
-        for await (const [, values] of runner.run([idsSQL(filter, { only })]))
+        // As upstream's export, a COUNT() over the same snapshot runs first, so a failing
+        // or timed-out query is reported before any row is streamed.
+        const select = idsSQL(filter, { only });
+        const statements = [
+          { sql: `SELECT COUNT(*) FROM (${select.sql})`, args: select.args },
+          select,
+        ];
+        for await (const [index, values] of runner.run(statements)) {
+          if (index === 0) continue;
           for (let i = 0; i < values.length || i === 0; i += BATCH)
             yield values.slice(i, i + BATCH);
+        }
         return;
       }
       yield [];

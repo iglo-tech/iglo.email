@@ -68,7 +68,7 @@ export function checkFragment(sql: string): string | undefined {
   return depth ? "unbalanced parentheses" : undefined;
 }
 
-const ascii = (value: string) => !/[^\x00-\x7f]/.test(value);
+const ascii = (value: string) => /^[\p{ASCII}]*$/u.test(value);
 // FTS5's unicode61 tokenizer splits on everything except letters, numbers and private-use code points.
 const hasToken = (value: string) => /[\p{L}\p{N}\p{Co}]/u.test(value);
 
@@ -89,16 +89,14 @@ export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args:
     where.push("NOT EXISTS (SELECT 1 FROM subscriber_lists WHERE subscriber_id = subscribers.id)");
   }
   const lists = filter.lists ?? [];
-  const joined = lists.length > 0 || status !== "";
-  let join = "";
-  if (joined) {
-    join = " LEFT JOIN subscriber_lists ON (subscriber_lists.subscriber_id = subscribers.id";
-    if (status) {
-      join += " AND subscriber_lists.status = ?";
-      args.push(status);
-    }
-    join += ")";
+  // As upstream, subscriber_lists is always joined but only matches when a list or
+  // subscription status filter is given, so fragments may reference its columns.
+  let join = ` LEFT JOIN subscriber_lists ON (${lists.length > 0 || status !== "" ? "1" : "0"} AND subscriber_lists.subscriber_id = subscribers.id`;
+  if (status) {
+    join += " AND subscriber_lists.status = ?";
+    args.push(status);
   }
+  join += ")";
   if (lists.length) {
     where.push(`subscriber_lists.list_id IN (SELECT value FROM json_each(?))`);
     args.push(`[${lists.join(",")}]`);
@@ -212,6 +210,8 @@ export class QueryError extends Error {}
  * arguments supplied, and not touch temporary or attached schemas.
  */
 export function prepareChecked(db: Database, sql: string, args: Arg[]): Statement {
+  // sqlite3_stmt_readonly also reports ATTACH/DETACH as read-only; only SELECTs run here.
+  if (!/^SELECT\s/.test(sql)) throw new QueryError("only SELECT statements are allowed");
   let stmt: Statement;
   let plan: { opcode: string; p2: number | bigint; p3: number | bigint; p5: number | bigint }[];
   try {
