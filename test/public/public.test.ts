@@ -1,7 +1,7 @@
 // M2.5 behavior through the public HTTP boundary and the SMTP sink, on the injected clock.
 // Upstream-compared results are in test/contract/public.ts.
 import { afterEach, expect, test } from "bun:test";
-import { createRateLimit } from "@/public/rate-limit";
+import { createRateLimit, createThrottle } from "@/public/rate-limit";
 import { publicFixture, type PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
 
@@ -110,6 +110,38 @@ test("a double opt-in signup gets one mail, again after the throttle expires", a
     { kind: "transactional", source: "tx", status: "sent" },
     { kind: "transactional", source: "tx", status: "sent" },
   ]);
+});
+
+test("one address gets one opt-in mail per window, however many lists it joins", async () => {
+  const f = await open();
+  const address = "flood@example.test";
+  for (let i = 0; i < 8; i++) {
+    const list = await f.list(`Flood ${i}`, "public", "double");
+    expect((await api(f, address, list.uuid, `203.0.113.${20 + i}`)).status).toBe(200);
+  }
+  await f.drain();
+  expect(f.mailTo(address)).toHaveLength(1);
+  // Letter case is the same address, and the budget reopens on the clock.
+  const late = await f.list("Late", "public", "double");
+  await api(f, "FLOOD@example.test", late.uuid, "203.0.113.40");
+  await f.drain();
+  expect(f.mailTo(address)).toHaveLength(1);
+  f.clock.advance(10 * minute);
+  await api(f, address, late.uuid, "203.0.113.41");
+  await f.drain();
+  expect(f.mailTo(address)).toHaveLength(2);
+});
+
+test("a full opt-in budget refuses new keys instead of mailing unrecorded", () => {
+  const clock = new TestClock();
+  const allow = createThrottle(clock, 10 * minute, 2);
+  expect(allow("a")).toBe(true);
+  expect(allow("b")).toBe(true);
+  for (let i = 0; i < 3; i++) expect(allow("c")).toBe(false);
+  expect(allow("a")).toBe(false);
+  clock.advance(10 * minute);
+  expect(allow("c")).toBe(true);
+  expect(allow("c")).toBe(false);
 });
 
 test("a signup answer never reveals an existing subscriber", async () => {

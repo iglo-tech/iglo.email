@@ -18,6 +18,7 @@ import type { TemplateRenderer } from "@/templates/renderer";
 import type { Tracking } from "@/unsubscribe/tracking";
 
 type Subscriber = NonNullable<ReturnType<SubscriberStore["get"]>>;
+/** One opt-in mail per address in this window, whichever lists are pending. */
 const optinThrottleTTL = 10 * 60_000;
 const optinThrottleCap = 5000;
 /** Native export sections stay well inside the outbox attachment limit. */
@@ -116,7 +117,7 @@ export function createSubscriberMail(deps: {
     afterAdminWrite(sub: Subscriber, listIds: bigint[]) {
       if (deps.settings().sendOptin) quietly(() => optin(sub, listIds));
     },
-    /** sendOptinConfirmation for public signups: one mail per address and pending set. */
+    /** sendOptinConfirmation for public signups: one mail per address in the window. */
     afterPublicSignup(sub: Subscriber) {
       if (!deps.settings().sendOptin) return;
       const pending = deps.subscribers
@@ -124,8 +125,7 @@ export function createSubscriberMail(deps: {
         .filter((list) => list.optin === "double")
         .map((list) => list.id);
       if (!pending.length) return;
-      const key = `${sub.email.trim().toLowerCase()}:${pending.join(",")}`;
-      if (throttle(key)) quietly(() => optin(sub, pending.map(BigInt)));
+      if (throttle(sub.email.trim().toLowerCase())) quietly(() => optin(sub, pending.map(BigInt)));
     },
     /** SelfExportSubscriberData: the file goes to the subscriber, never into the response. */
     exportData(sub: Subscriber) {

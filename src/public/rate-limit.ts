@@ -62,7 +62,10 @@ export function rateLimited(clock: Clock, policy: LimitPolicy, siteName: () => s
   };
 }
 
-/** listmonk throttle.Throttle with exceedCap: past the cap new keys pass unrecorded. */
+/**
+ * listmonk throttle.Throttle, except that a full table refuses new keys: upstream's exceedCap
+ * lets them pass unrecorded, which mails the same address again and again.
+ */
 export function createThrottle(clock: Clock, ttlMs: number, capacity: number) {
   const expires = new Map<string, number>();
   let cleanAt = 0;
@@ -75,7 +78,7 @@ export function createThrottle(clock: Clock, ttlMs: number, capacity: number) {
     const expiry = expires.get(key);
     if (expiry !== undefined) {
       if (time < expiry) return false;
-    } else if (expires.size >= capacity) return true;
+    } else if (expires.size >= capacity) return false;
     expires.set(key, time + ttlMs);
     return true;
   };
