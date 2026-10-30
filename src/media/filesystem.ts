@@ -112,12 +112,15 @@ function canonical(path: string): string {
   return parent === path ? path : join(canonical(parent), basename(path));
 }
 
+/** A setting that names a refused directory. Media stops; everything else runs on (D64). */
+export class UploadRootError extends Error {}
+
 /**
  * The real directory of `upload_path`: strictly inside the real data directory, which holds the
  * database. Relative paths are under the data directory. Other storage is mounted there.
  */
 export function uploadRoot(dataDir: string, uploadPath: string): string {
-  const refused = new Error(
+  const refused = new UploadRootError(
     `The upload path "${uploadPath}" must be a directory inside the data directory. ` +
       "To use other storage, mount it there.",
   );

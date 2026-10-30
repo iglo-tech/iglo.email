@@ -4,7 +4,13 @@
 // served, and never a row without its file. Deletion removes the row first for the same reason.
 // Thumbnails are not generated (01-scope.md): `thumb` names the image itself. See 07-api-and-ui.md.
 import { imageSize } from "@/media/image";
-import { extensionOf, makeFilename, uploadRoot, type Filesystem } from "@/media/filesystem";
+import {
+  extensionOf,
+  makeFilename,
+  uploadRoot,
+  UploadRootError,
+  type Filesystem,
+} from "@/media/filesystem";
 import type { MediaRow, MediaStore } from "@/media/store";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -160,6 +166,15 @@ export function registerMediaRoutes(
       throw new HttpError(429, "Too many uploads in progress.", { "Retry-After": "1" });
     uploading++;
     try {
+      // Fixed before the body arrives, so a row always names the directory that admitted it.
+      let root: string;
+      try {
+        root = files.root();
+      } catch (error) {
+        if (error instanceof UploadRootError) throw new HttpError(503, error.message);
+        throw error;
+      }
+      const changed = () => new HttpError(409, "The upload path changed during the upload.");
       const body = await readUpload(c.request);
       const file = await formFile(c, body);
       // A long upload outlives the check that admitted it.
@@ -176,12 +191,11 @@ export function registerMediaRoutes(
       if (file.size > MAX_FILE_BYTES) throw new HttpError(413, "The file is too large.");
       const bytes = new Uint8Array(await file.arrayBuffer());
       const size = imageExtensions.includes(ext) ? imageSize(bytes) : null;
-      const root = files.root();
+      if (!files.current(root)) throw changed();
       const stored = await files.put(root, name, bytes, store.filenameTaken);
       try {
-        // Nothing runs between this check and the insert, so a row always names the directory.
-        if (!files.current(root))
-          throw new HttpError(409, "The upload path changed during the upload.");
+        // Nothing runs between this check and the insert.
+        if (!files.current(root)) throw changed();
         return ok(
           project(
             store.insert({

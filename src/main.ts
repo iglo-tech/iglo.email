@@ -248,8 +248,8 @@ async function main(): Promise<void> {
         uploadUri: current["upload.filesystem.upload_uri"],
       };
     });
-    // A database that names a directory it must not serve from stops here, with the reason.
-    files.root();
+    // A database that names a directory it must not serve from refuses media, not the server:
+    // the reason is logged here, and each media operation refuses with it (D64).
     await files.sweep().catch((error) => app.logger.error(error));
     registerSettingsRoutes(
       router,

@@ -1,7 +1,7 @@
 // Reference: listmonk cmd/media.go, internal/core/media.go, the filesystem provider and the Static
 // route of cmd/init.go at 6fcd95f. The shared corpus runs against both targets. Where this project
 // differs deliberately (07-api-and-ui.md) the check is on `reference`.
-import { existsSync, lstatSync, readdirSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { imagePng, imagePngSize, imageGif, imageJpeg } from "@/test/media/images";
@@ -429,6 +429,34 @@ export async function runMediaContract(target: {
     check(!existsSync(stale), "stale-temporary");
     check(existsSync(operator), "operator-directory");
     check((await served(image.url)).status === 200, "restart-serve");
+
+    // A refused directory takes media down and nothing else, so the operator keeps a way in.
+    const elsewhere = `${dataDir}-elsewhere`;
+    renameSync(uploads, elsewhere);
+    symlinkSync(elsewhere, uploads);
+    try {
+      await target.restart!();
+      check((await fetch(`${target.baseUrl}/health`)).status === 200, "refused-health");
+      check((await served(image.url)).status === 404, "refused-serve");
+      const refused = await upload(`refused-${suffix}.png`);
+      check(refused.status === 503, `refused-upload-${refused.status}`);
+      check(refused.body.message.includes("data directory"), "refused-reason");
+      check((await call("/api/media")).status === 200, "refused-listing");
+      const list = await call("/api/lists", "POST", {
+        name: `Refused ${suffix}`,
+        type: "public",
+        optin: "single",
+      });
+      check(list.status === 200, `refused-list-${list.status}`);
+      check((await call(`/api/lists/${list.body.data.id}`, "DELETE")).status === 200, "list-gone");
+      const settings = (await call("/api/settings")).body.data;
+      check((await call("/api/settings", "PUT", settings)).status === 200, "refused-settings");
+    } finally {
+      rmSync(uploads);
+      renameSync(elsewhere, uploads);
+    }
+    await target.restart!();
+    check((await served(image.url)).status === 200, "recovered-serve");
   } finally {
     for (const id of created) await call(`/api/media/${id}`, "DELETE");
     for (const id of users) await call(`/api/users/${id}`, "DELETE");

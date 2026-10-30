@@ -1,7 +1,7 @@
 // M3.5 behavior that needs a failure, the injected clock or a sent message. The shared corpus and
 // the compiled executable are in test/contract/media.ts.
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, readdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
@@ -549,6 +549,25 @@ test("an embedded image that lost its file pauses the campaign unsent", async ()
   await f.until(c.id, "paused");
   expect(f.pushes).toHaveLength(0);
   expect(String(f.errors.at(-1))).toContain("has no file");
+});
+
+test("a root that stopped qualifying pauses a campaign with media and says why", async () => {
+  const f = await openRunner();
+  const file = await stored(f, "kept.pdf", "kept");
+  const list = await f.list("refused-root");
+  await f.member("to@example.com", [list]);
+  const c = await f.campaign(
+    campaignInput([list], { name: "Refused", media: [file.id], messenger: "email" }),
+  );
+  const elsewhere = `${f.directory}-elsewhere`;
+  cleanups.push(() => rmSync(elsewhere, { recursive: true, force: true }));
+  renameSync(uploads(f), elsewhere);
+  symlinkSync(elsewhere, uploads(f));
+  f.start();
+  await f.status(c.id, "running");
+  await f.until(c.id, "paused");
+  expect(f.pushes).toHaveLength(0);
+  expect(String(f.errors.at(-1))).toContain("data directory");
 });
 
 test("embedded images count toward a campaign's size limit", async () => {

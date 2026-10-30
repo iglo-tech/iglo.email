@@ -11,6 +11,7 @@ import { parseAddress } from "@/settings/mail";
 import type { ListReferences } from "@/lists/references";
 import type { Attachments } from "@/media/attachments";
 import type { EmbedImages } from "@/media/embed";
+import { UploadRootError } from "@/media/filesystem";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -177,8 +178,9 @@ export function registerTxRoutes(
       });
       if (embedded.problem)
         throw new HttpError(400, t.Ts("templates.errorRendering", "error", embedded.problem));
-      const inline = await deps.attachments([], embedded.images).catch(() => {
-        throw new HttpError(500, t.Ts("templates.errorRendering", "error", "embedded image"));
+      const inline = await deps.attachments([], embedded.images).catch((error) => {
+        const reason = error instanceof UploadRootError ? error.message : "embedded image";
+        throw new HttpError(500, t.Ts("templates.errorRendering", "error", reason));
       });
 
       // Resolve every recipient before rendering or writing anything.

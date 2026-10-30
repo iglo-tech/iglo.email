@@ -62,20 +62,20 @@ async function bootOnce(dataDir: string) {
     child.kill();
     await child.exited;
   }
+  return new Response(child.stderr).text();
 }
 
-test("the server does not start on a root that leaves the data directory", async () => {
+test("a root that leaves the data directory refuses media and stops nothing else", async () => {
   const base = temporary();
   const data = join(base, "data");
+  const elsewhere = join(base, "elsewhere");
   mkdirSync(data);
-  mkdirSync(join(base, "elsewhere"));
-  symlinkSync(join(base, "elsewhere"), join(data, "uploads"));
-  const { child } = serve(data);
-  const code = await Promise.race([child.exited, Bun.sleep(4_000).then(() => "running")]);
-  child.kill();
-  await child.exited;
-  expect(code).toBe(1);
-  expect(await new Response(child.stderr).text()).toContain("data directory");
+  const stale = join(elsewhere, ".iglo-email-uploading", crypto.randomUUID());
+  await Bun.write(stale, "x");
+  symlinkSync(elsewhere, join(data, "uploads"));
+  const reason = await bootOnce(data);
+  expect(reason).toContain("data directory");
+  expect(existsSync(stale)).toBe(true);
 });
 
 test("the startup sweep removes its own temporary files and leaves the rest alone", async () => {

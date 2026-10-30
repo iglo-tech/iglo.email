@@ -101,8 +101,59 @@ test("a root replaced by a link after it was saved serves and accepts nothing", 
   renameSync(join(f.directory, "uploads"), elsewhere);
   symlinkSync(elsewhere, join(f.directory, "uploads"));
   expect((await served(f, media.filename)).status).toBe(404);
-  expect((await upload(f, "next.txt", "next")).status).toBe(500);
+  const refused = await upload(f, "next.txt", "next");
+  expect(refused.status).toBe(503);
+  expect((await refused.json()).message).toContain("data directory");
   expect(existsSync(join(elsewhere, "next.txt"))).toBe(false);
+  // Settings stay reachable, and a test send says why it has no file.
+  const all = (await f.json("/api/settings")).body.data;
+  expect((await f.json("/api/settings", "PUT", all)).status).toBe(200);
+  const list = await f.list("refused");
+  await f.subscriber("test@example.com", [list]);
+  const input = {
+    name: "Refused",
+    subject: "S",
+    lists: [list],
+    content_type: "plain",
+    type: "regular",
+    messenger: "fixture",
+    body: "B",
+    from_email: "Fixture <noreply@fixture.test>",
+  };
+  const campaign = await f.campaign(input);
+  const send = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", {
+    ...input,
+    media: [media.id],
+    subscribers: ["test@example.com"],
+  });
+  expect(send.status).toBe(500);
+  expect(send.body.message).toContain("data directory");
+});
+
+test("a change of root while a body is still streaming is refused", async () => {
+  const f = await open();
+  const body = new TransformStream<Uint8Array>();
+  const boundary = "fixture-boundary";
+  const pending = f.request("/api/media", {
+    method: "POST",
+    headers: {
+      ...f.sessionHeaders,
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    },
+    body: body.readable,
+  });
+  await Bun.sleep(10);
+  expect((await setRoot(f, "other")).status).toBe(200);
+  const writer = body.writable.getWriter();
+  await writer.write(
+    new TextEncoder().encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="late.txt"\r\n` +
+        `Content-Type: text/plain\r\n\r\nlate\r\n--${boundary}--\r\n`,
+    ),
+  );
+  await writer.close();
+  expect((await pending).status).toBe(409);
+  expect((await f.json("/api/media")).body.data.total).toBe(0);
 });
 
 test("an empty store can move to another directory inside the data directory", async () => {

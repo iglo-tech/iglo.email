@@ -2,6 +2,7 @@
 // routes in cmd/handlers.go at 6fcd95f. Analytics and running stats are M3.3; sending to
 // lists is the M3.2 runner: status changes here only record the state.
 import type { EmbedImages, InlineImage } from "@/media/embed";
+import { UploadRootError } from "@/media/filesystem";
 import type { Message } from "@/messaging/email";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
@@ -678,8 +679,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       if (problem)
         throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", problem));
       // As listmonk, the request names the media of a test send.
-      const attachments = await deps.attachments(input.media ?? [], images).catch(() => {
-        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", "attachment"));
+      const attachments = await deps.attachments(input.media ?? [], images).catch((error) => {
+        const reason = error instanceof UploadRootError ? error.message : "attachment";
+        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", reason));
       });
       const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
       const messages: Message[] = [];
