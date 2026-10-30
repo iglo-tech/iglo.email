@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import type { BounceTarget } from "@/messaging/sends";
+import { sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { RecordedBounce } from "@/webhooks/effects";
 import query from "@/bounces/query.sql" with { type: "text" };
@@ -21,12 +22,19 @@ export interface BounceEvent {
   subscriberUuid: string;
   email: string;
   campaignUuid: string;
-  /** Native: the send the message identifies. Its subscriber, when it has one, comes first. */
+  /** Native: the send the message identifies. A send that resolves settles who is named. */
   sendUuid: string;
+  /**
+   * Native, normalized: the address that bounced, which a message's identity must agree with. A
+   * Message-ID names a message, and a copy of it has the same one. Empty for a caller's own claim.
+   */
+  recipient: string;
   type: BounceType;
   source: string;
   /** A JSON object. */
   meta: string;
+  /** `meta` without provider text, for a row that no subscriber's wipe or export can reach. */
+  bareMeta: string;
   createdAt: string;
 }
 export interface BounceFilter {
@@ -123,6 +131,37 @@ export function createBounceStore(
         filter.limit < 1 ? -1 : filter.limit,
       );
   };
+  /**
+   * Who a bounce names, or null when nobody is left to link. A send that resolves is the answer
+   * and matching stops there: an anonymized send names nobody, and an unlinked one no subscriber,
+   * whoever holds its address now. An event that disagrees with the delivery is someone else's
+   * (a copy, an address since changed): it is noted for no subscriber or send, because a row
+   * linked to the send reads as that delivery's bounce, with its address.
+   */
+  const identify = (event: BounceEvent) => {
+    const owner = deps.subscribers();
+    const addressed = (email: string) =>
+      !event.recipient || sanitizeEmail(email) === event.recipient;
+    const send = event.sendUuid ? deps.sendTarget(event.sendUuid) : null;
+    if (send) {
+      if (!send.to_email) return null;
+      const subscriber = send.subscriber_id === null ? null : owner.get(send.subscriber_id);
+      const claimed =
+        !subscriber || !event.subscriberUuid || subscriber.uuid === event.subscriberUuid;
+      if (addressed(send.to_email) && claimed) return { subscriber, send, meta: event.meta };
+      const meta = { ...(JSON.parse(event.bareMeta) as object), send_uuid: send.uuid };
+      return { subscriber: null, send: null, meta: JSON.stringify(meta) };
+    }
+    const subscriber = event.subscriberUuid
+      ? owner.byUuid(event.subscriberUuid)
+      : event.email
+        ? owner.byEmail(event.email)
+        : null;
+    if (!subscriber) return null;
+    return addressed(subscriber.email)
+      ? { subscriber, send: null, meta: event.meta }
+      : { subscriber: null, send: null, meta: event.bareMeta };
+  };
   /** Bounce actions at the count (record-bounce's block1, block2 and final delete). */
   const act = (subscriber: { id: bigint; status: string }, action: string) => {
     const owner = deps.subscribers();
@@ -148,17 +187,9 @@ export function createBounceStore(
     record(event: BounceEvent) {
       const action = deps.actions()[event.type];
       if (!action || (event.campaignUuid && !reUUID.test(event.campaignUuid))) return;
-      const owner = deps.subscribers();
-      const send = event.sendUuid ? deps.sendTarget(event.sendUuid) : null;
-      const subscriber =
-        (send?.subscriber_id != null ? owner.get(send.subscriber_id) : null) ??
-        (event.subscriberUuid
-          ? owner.byUuid(event.subscriberUuid)
-          : event.email
-            ? owner.byEmail(event.email)
-            : null);
-      // A send anonymized by a wipe has nothing left to link: its late bounce stays unstored.
-      if (!subscriber && (!send || !send.to_email)) return;
+      const named = identify(event);
+      if (!named) return;
+      const { subscriber, send, meta } = named;
       const campaignId = event.campaignUuid ? deps.campaignID(event.campaignUuid) : null;
       const num = subscriber
         ? Number((q.get("bounce-count").get(subscriber.id, event.type) as { n: bigint }).n) + 1
@@ -172,17 +203,18 @@ export function createBounceStore(
             send?.id ?? null,
             event.type,
             event.source,
-            event.meta,
+            meta,
             event.createdAt,
           ) as { id: bigint };
-        deps.recorded({
-          id: inserted.id,
-          type: event.type,
-          source: event.source,
-          subscriber_id: subscriber?.id ?? null,
-          campaign_uuid: campaignId === null ? null : event.campaignUuid,
-          send,
-        });
+        if (subscriber || send)
+          deps.recorded({
+            id: inserted.id,
+            type: event.type,
+            source: event.source,
+            subscriber_id: subscriber?.id ?? null,
+            campaign_uuid: campaignId === null ? null : event.campaignUuid,
+            send,
+          });
       }
       if (subscriber && num >= action.count) act(subscriber, action.action);
     },

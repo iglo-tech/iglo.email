@@ -51,24 +51,35 @@ function safeText(value: unknown) {
   return value.slice(0, MAX_TEXT_LENGTH).replace(addresses, "[address]");
 }
 
+/** The provider's codes, without its free text. */
+function bareMeta(data: Record<string, unknown>) {
+  const { code } = record(data["delivery-status"]);
+  return {
+    event_id: safeText(data.id),
+    event: data.event,
+    severity: safeText(data.severity),
+    reason: safeText(data.reason),
+    code: typeof code === "number" ? code : undefined,
+  };
+}
+
 /**
  * The stored `meta`: why it bounced, and nothing of the message. Headers, the subject, the
  * envelope, client details and user variables are never kept.
  */
 function bounceMeta(data: Record<string, unknown>) {
   const status = record(data["delivery-status"]);
-  return JSON.stringify({
-    event_id: safeText(data.id),
-    event: data.event,
-    severity: safeText(data.severity),
-    reason: safeText(data.reason),
-    code: typeof status.code === "number" ? status.code : undefined,
+  return {
+    ...bareMeta(data),
     message: safeText(status.message),
     description: safeText(status.description),
-  });
+  };
 }
 
-/** The bounce an accepted event describes, or null for an event that is not one. */
+/**
+ * The bounce an accepted event describes, or null for an event that is not one. An event that
+ * names no recipient cannot be bound to a delivery, so nothing can be done with it.
+ */
 export function mailgunEvent(body: unknown, now: Date) {
   const data = record(record(body)["event-data"]);
   const type = bounceType(data);
@@ -77,14 +88,17 @@ export function mailgunEvent(body: unknown, now: Date) {
   const id = typeof messageId === "string" ? messageId.trim() : "";
   const campaign = campaignMessage.exec(id);
   const email = typeof data.recipient === "string" ? sanitizeEmail(data.recipient) : undefined;
+  if (!email) return null;
   const event: BounceEvent = {
     subscriberUuid: campaign?.[2]?.toLowerCase() ?? "",
-    email: email ?? "",
+    email,
     campaignUuid: campaign?.[1]?.toLowerCase() ?? "",
     sendUuid: sendMessage.exec(id)?.[1]?.toLowerCase() ?? "",
+    recipient: email,
     type,
     source: "mailgun",
-    meta: bounceMeta(data),
+    meta: JSON.stringify(bounceMeta(data)),
+    bareMeta: JSON.stringify(bareMeta(data)),
     createdAt: now.toISOString(),
   };
   const eventId = typeof data.id === "string" && data.id.length <= MAX_ID_LENGTH ? data.id : "";

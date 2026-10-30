@@ -235,9 +235,12 @@ export function registerBounceRoutes(
       email: sanitized,
       campaignUuid: text("campaign_uuid").toLowerCase(),
       sendUuid: sendUuid.toLowerCase(),
+      // Without a send the UUID or email is the caller's own claim, taken as upstream takes it.
+      recipient: sendUuid ? sanitized : "",
       type: type as BounceType,
       source: text("source"),
       meta: bounceMeta(body.meta),
+      bareMeta: "{}",
       createdAt: new Date(createdAt || clock.now()).toISOString(),
     };
   };

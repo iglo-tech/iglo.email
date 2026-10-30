@@ -771,13 +771,27 @@ export async function runBouncesContract(target: {
       const listID = await list("mailgun");
       const camp = await campaign("mailgun", listID);
       const una = await subscriber("una", [listID]);
-      const campaignEvent = failed("rewritten@example.com", {
-        severity: "temporary",
-        message: { headers: { "message-id": `${camp.uuid}.${una.uuid}@example.test` } },
-      });
+      const carried = { message: { headers: { "message-id": `${camp.uuid}.${una.uuid}@x.test` } } };
+      const campaignEvent = failed(una.email, { severity: "temporary", ...carried });
       check((await mailgun(now(), token(), campaignEvent)).status === 200, "mailgun-campaign");
       const [campaignRow] = await bounces(una.id);
       check(campaignRow.campaign.id === camp.id, "mailgun-campaign-row");
+
+      // A copy of that message has the same Message-ID: the campaign keeps the row, nobody acts.
+      const copied = failed(address("copy"), carried);
+      check((await mailgun(now(), token(), copied)).status === 200, "mailgun-campaign-copy");
+      const [copyRow] = stored<{ subscriber_id: number | null; campaign_id: number; meta: string }>(
+        "SELECT subscriber_id, campaign_id, meta FROM bounces WHERE meta ->> '$.event_id' = ?",
+        copied.id,
+      );
+      check(copyRow?.subscriber_id === null, "mailgun-campaign-copy-subscriber");
+      check(copyRow?.campaign_id === camp.id, "mailgun-campaign-copy-link");
+      check(!copyRow?.meta.includes("user unknown"), "mailgun-campaign-copy-text");
+      check((await bounces(una.id)).length === 1, "mailgun-campaign-copy-count");
+      check(
+        (await call(`/api/subscribers/${una.id}`)).body.data.status === "enabled",
+        "mailgun-campaign-copy-action",
+      );
 
       // The subscriber's own export carries their bounces with the activity beside them.
       check((await call("/api/settings/privacy.allow_export", "PUT", true)).status === 200, "ex");

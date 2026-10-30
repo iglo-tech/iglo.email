@@ -312,3 +312,203 @@ test("a missing key refuses everything, whatever the request claims", async () =
   expect(hidden.status).toBe(404);
   expect(rowsOf(f)).toEqual([]);
 });
+
+/** A Message-ID as the mailer sets it, in the event Mailgun reports. */
+const carrying = (id: string) => ({
+  message: { headers: { "message-id": `<${id}@fixture.test>` } },
+});
+const complaint = (recipient: string, id: string) =>
+  failed(recipient, {
+    event: "complained",
+    severity: undefined,
+    ...carrying(id),
+  });
+const sendTo = async (f: TxFixture, body: object) => {
+  const sent = await f.tx({
+    template_id: await f.template("<p>x</p>"),
+    ...body,
+  });
+  expect(sent.status).toBe(200);
+  const [row] = sent.body.data.sends as { id: number; status: string }[];
+  expect(row!.status).toBe("sent");
+  return (await f.json(`/api/sends/${row!.id}`)).body.data as {
+    id: number;
+    uuid: string;
+  };
+};
+const uuidOf = async (f: TxFixture, id: number) =>
+  (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+const wipe = async (f: TxFixture, uuid: string) =>
+  expect((await f.request(`/subscription/wipe/${uuid}`, { method: "POST" })).status).toBe(200);
+
+test("a signed event for a Cc recipient acts on nobody and does not read as the send's bounce", async () => {
+  const f = await open();
+  await hooked(f);
+  const primary = await f.subscriber("primary@example.com");
+  const copy = await f.subscriber("copy@example.com");
+  const send = await sendTo(f, {
+    subscriber_id: primary,
+    headers: [{ Cc: "copy@example.com" }],
+  });
+  expect(f.sink.messages[0]!.to).toEqual(["primary@example.com", "copy@example.com"]);
+  const answer = await mailgun(f, signed(f, complaint("copy@example.com", send.uuid)));
+  expect(answer.status).toBe(200);
+  const hard = failed("copy@example.com", {
+    "delivery-status": { code: 550, message: "No such person: Ann Copy" },
+    ...carrying(send.uuid),
+  });
+  expect((await mailgun(f, signed(f, hard))).status).toBe(200);
+  // The delivery to the primary address worked, and the copy's owner was not the addressee.
+  expect(await statusOf(f, primary)).toBe("enabled");
+  expect(await statusOf(f, copy)).toBe("enabled");
+  // Recorded, tied to the message by UUID only, without provider text no wipe could reach.
+  const rows = rowsOf(f);
+  expect(rows.map((row) => [row.subscriber_id, row.send_id, row.type])).toEqual([
+    [null, null, "complaint"],
+    [null, null, "hard"],
+  ]);
+  const meta = JSON.parse(rows[1]!.meta);
+  expect(meta).toMatchObject({
+    event: "failed",
+    code: 550,
+    send_uuid: send.uuid,
+  });
+  expect(meta.message).toBeUndefined();
+  expect(meta.description).toBeUndefined();
+  // Nothing tells an app or an operator that the send itself bounced.
+  expect(deliveries(f)).toEqual([]);
+  const listed = (await f.json("/api/bounces")).body.data.results;
+  for (const row of listed) expect(row.email).toBeUndefined();
+});
+
+test("the addressed recipient still acts on a send, however the provider spells the address", async () => {
+  const f = await open();
+  const id = await f.subscriber("cased@example.com");
+  const send = await sendTo(f, { subscriber_id: id });
+  expect((await mailgun(f, signed(f, complaint(" Cased@Example.COM ", send.uuid)))).status).toBe(
+    200,
+  );
+  expect((await f.json(`/api/subscribers/${id}`)).status).toBe(400);
+});
+
+test("a campaign Message-ID binds its subscriber token to the provider's recipient", async () => {
+  const f = await open();
+  const id = await f.subscriber("reader@example.com");
+  const uuid = await uuidOf(f, id);
+  const campaign = crypto.randomUUID();
+  const body = complaint("copy@example.com", `${campaign}.${uuid}`);
+  expect((await mailgun(f, signed(f, body))).status).toBe(200);
+  expect(await statusOf(f, id)).toBe("enabled");
+  expect(rowsOf(f).map((row) => row.subscriber_id)).toEqual([null]);
+  const own = complaint("reader@example.com", `${campaign}.${uuid}`);
+  expect((await mailgun(f, signed(f, own))).status).toBe(200);
+  expect((await f.json(`/api/subscribers/${id}`)).status).toBe(400);
+});
+
+test("an event with a Message-ID but no recipient it can bind acts on nobody", async () => {
+  const f = await open();
+  const id = await f.subscriber("unnamed@example.com");
+  const send = await sendTo(f, { subscriber_id: id });
+  for (const recipient of [undefined, "not an address"]) {
+    const body = { ...complaint("x@example.com", send.uuid), recipient };
+    expect((await mailgun(f, signed(f, body))).status).toBe(200);
+  }
+  expect(await statusOf(f, id)).toBe("enabled");
+  expect(rowsOf(f)).toEqual([]);
+});
+
+test("a delayed complaint for a wiped address leaves the address's new subscriber alone", async () => {
+  const f = await open();
+  await hooked(f);
+  const first = await f.subscriber("again@example.com");
+  const firstUuid = await uuidOf(f, first);
+  const send = await sendTo(f, { subscriber_id: first });
+  await wipe(f, firstUuid);
+  const second = await f.subscriber("again@example.com");
+  expect(second).not.toBe(first);
+  const before = deliveries(f).length;
+  expect((await mailgun(f, signed(f, complaint("again@example.com", send.uuid)))).status).toBe(200);
+  const stale = complaint("again@example.com", `${crypto.randomUUID()}.${firstUuid}`);
+  expect((await mailgun(f, signed(f, stale))).status).toBe(200);
+  expect(await statusOf(f, second)).toBe("enabled");
+  expect(rowsOf(f)).toEqual([]);
+  expect(deliveries(f).length).toBe(before);
+});
+
+test("an external send to a subscriber's address stays unlinked and acts on nobody", async () => {
+  const f = await open();
+  await hooked(f);
+  const id = await f.subscriber("member@example.com");
+  const send = await sendTo(f, {
+    subscriber_mode: "external",
+    subscriber_emails: ["member@example.com"],
+  });
+  expect((await mailgun(f, signed(f, complaint("member@example.com", send.uuid)))).status).toBe(
+    200,
+  );
+  expect(await statusOf(f, id)).toBe("enabled");
+  expect(rowsOf(f).map((row) => [row.subscriber_id, row.send_id])).toEqual([
+    [null, BigInt(send.id)],
+  ]);
+  const [recorded] = deliveries(f);
+  expect(recorded!.body.data.subscriber).toBe(null);
+  expect(recorded!.body.data.send.uuid).toBe(send.uuid);
+});
+
+test("POST /webhooks/bounce: a send_uuid is authoritative, and only then is the address bound", async () => {
+  const f = await open();
+  const post = (body: object) =>
+    f.json("/webhooks/bounce", "POST", {
+      type: "complaint",
+      source: "api",
+      ...body,
+    });
+  const linked = await f.subscriber("linked@example.com");
+  const other = await f.subscriber("other@example.com");
+  const send = await sendTo(f, { subscriber_id: linked });
+
+  // An address or a UUID that contradicts the send moves nobody.
+  expect((await post({ send_uuid: send.uuid, email: "other@example.com" })).status).toBe(200);
+  const otherUuid = await uuidOf(f, other);
+  expect((await post({ send_uuid: send.uuid, subscriber_uuid: otherUuid })).status).toBe(200);
+  expect(await statusOf(f, linked)).toBe("enabled");
+  expect(await statusOf(f, other)).toBe("enabled");
+  expect(rowsOf(f).map((row) => [row.subscriber_id, row.send_id])).toEqual([
+    [null, null],
+    [null, null],
+  ]);
+
+  // An unlinked send does not fall back to the UUID or the address it was given.
+  const unlinked = await sendTo(f, {
+    subscriber_mode: "external",
+    subscriber_emails: ["other@example.com"],
+  });
+  expect((await post({ send_uuid: unlinked.uuid, email: "other@example.com" })).status).toBe(200);
+  expect((await post({ send_uuid: unlinked.uuid, subscriber_uuid: otherUuid })).status).toBe(200);
+  expect(await statusOf(f, other)).toBe("enabled");
+
+  // Nor does an anonymized one.
+  const gone = await f.subscriber("gone-api@example.com");
+  const goneSend = await sendTo(f, { subscriber_id: gone });
+  await wipe(f, await uuidOf(f, gone));
+  const back = await f.subscriber("gone-api@example.com");
+  const stored = rowsOf(f).length;
+  const backUuid = await uuidOf(f, back);
+  expect((await post({ send_uuid: goneSend.uuid, email: "gone-api@example.com" })).status).toBe(
+    200,
+  );
+  expect((await post({ send_uuid: goneSend.uuid, subscriber_uuid: backUuid })).status).toBe(200);
+  expect(await statusOf(f, back)).toBe("enabled");
+  expect(rowsOf(f).length).toBe(stored);
+
+  // The send alone, or with its own address, names its subscriber.
+  expect((await post({ send_uuid: send.uuid })).status).toBe(200);
+  expect((await f.json(`/api/subscribers/${linked}`)).status).toBe(400);
+
+  // Without a send, the caller's explicit claim stands, UUID over address, as upstream.
+  const named = await f.subscriber("named@example.com");
+  const uuid = await uuidOf(f, named);
+  expect((await post({ subscriber_uuid: uuid, email: "other@example.com" })).status).toBe(200);
+  expect((await f.json(`/api/subscribers/${named}`)).status).toBe(400);
+  expect(await statusOf(f, other)).toBe("enabled");
+});
