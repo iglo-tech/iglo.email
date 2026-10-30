@@ -4,7 +4,7 @@ Updated 2026-10-30. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.5 media: [brief](briefs/M3.5.md); one Opus worker running.
+M3.5 media, [PR #37](https://github.com/iglo-tech/iglo.email/pull/37), head 3331d3c. Local checks pass; Sol round-1 review running.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
 Next: M1.9 import, M4 screens, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
