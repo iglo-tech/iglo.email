@@ -43,7 +43,9 @@ import { startSink } from "@/test/tx/sink";
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
 
-export async function campaignsFixture(options: { attachmentCacheBytes?: number } = {}) {
+export async function campaignsFixture(
+  options: { attachmentCacheBytes?: number; smtpPort?: number } = {},
+) {
   const sink = await startSink({});
   const directory = mkdtempSync(join(tmpdir(), "iglo-campaigns-"));
   const clock = new TestClock();
@@ -88,7 +90,7 @@ export async function campaignsFixture(options: { attachmentCacheBytes?: number 
           enabled: true,
           exclude_from_default: false,
           host: "127.0.0.1",
-          port: sink.port,
+          port: options.smtpPort ?? sink.port,
           hello_hostname: "fixture.test",
           max_conns: 4,
           idle_timeout: "2s",

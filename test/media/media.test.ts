@@ -2,6 +2,7 @@
 // the compiled executable are in test/contract/media.ts.
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, readdirSync, rmSync } from "node:fs";
+import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
@@ -331,6 +332,66 @@ test("claims left by a crash in the attachment step stay unknown and are not sen
   expect(
     f.db.query("SELECT status FROM campaign_deliveries WHERE subscriber_id = ?").get(first.id),
   ).toEqual({ status: "unknown" });
+});
+
+/** Greets and then never answers: the SMTP server of a slow day. */
+async function stalledSmtp() {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.write("220 stalled.test ESMTP\r\n");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  return {
+    port,
+    close: () => {
+      for (const socket of sockets) socket.destroy();
+      return new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
+
+test("queued test sends keep their slots until they settle, and the next is refused", async () => {
+  const smtp = await stalledSmtp();
+  const f = await campaignsFixture({ smtpPort: smtp.port });
+  cleanups.push(
+    () => f.close(),
+    () => smtp.close(),
+  );
+  const list = await f.list("stalled");
+  await f.subscriber("test@example.com", [list]);
+  const input = {
+    name: "Stalled",
+    subject: "S",
+    lists: [list],
+    content_type: "plain",
+    type: "regular",
+    messenger: "fixture",
+    body: "B",
+    from_email: "Fixture <noreply@fixture.test>",
+  };
+  const campaign = await f.campaign(input);
+  const send = async (i: number) => {
+    const media = await stored(f, `queued-${i}.pdf`, mebibytes(1));
+    return f.json(`/api/campaigns/${campaign.id}/test`, "POST", {
+      ...input,
+      media: [media.id],
+      subscribers: ["test@example.com"],
+    });
+  };
+  const statuses: number[] = [];
+  for (let i = 0; i < 6; i++) statuses.push((await send(i)).status);
+  expect(statuses).toEqual([200, 200, 200, 200, 429, 429]);
+  // The emailer's own deadline settles them, and the slots come back.
+  f.clock.advance(60_000);
+  let next = 0;
+  for (let i = 0; i < 400 && next !== 200; i++) {
+    await Bun.sleep(5);
+    next = (await send(6 + i)).status;
+  }
+  expect(next).toBe(200);
 });
 
 const embedded = (src: string) => `<p><img alt="Logo" src="${src}" data-embed="true"></p>`;
