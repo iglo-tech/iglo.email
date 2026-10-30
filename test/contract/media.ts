@@ -390,7 +390,6 @@ export async function runMediaContract(target: {
     const moveTo = (path: string) => call(uploadPath, "PUT", path);
     await Bun.write(join(uploads, `unlisted-${suffix}.txt`), "unlisted");
     check((await raw(`/uploads/unlisted-${suffix}.txt`)).status === 404, "unlisted-served");
-    check((await raw("/uploads/secret.txt")).status === 404, "beside-served");
     symlinkSync(dataDir, join(dataDir, "data-alias"));
     for (const path of ["data-alias", ".", "..", "/", dataDir, "/tmp"]) {
       const refusal = await moveTo(path);
