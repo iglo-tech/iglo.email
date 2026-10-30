@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.1 campaigns API, [PR #27](https://github.com/iglo-tech/iglo.email/pull/27), head 703870d. Round-1 fixes pushed (migration 6 `campaign_links`); Sol round-2 fix-only review running. Path to M6.1: M3.1, M3.2.
-Next: lead disposition of round 2, merge, then M3.2 (runner must record `campaign_links`).
+M3.1 campaigns API, [PR #27](https://github.com/iglo-tech/iglo.email/pull/27), head 7b72847. Round 2: İstanbul search fixed by the lead (ILIKE semantics); Sol round-3 (last) fix-only review running. Path to M6.1: M3.1, M3.2.
+Next: round 3 is final; lead decides any remaining disagreement, merges, then M3.2 (runner must record `campaign_links`).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
