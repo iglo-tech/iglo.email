@@ -32,6 +32,10 @@ export const defaultAuthPolicy: AuthPolicy = Object.freeze({
   challengeTtlMs: 300_000,
 });
 
+/** listmonk cmd/auth.go passwordResetTTL. */
+const resetTtlMs = 30 * 60_000;
+const resetMailIntervalMs = 5 * 60_000;
+
 function randomValue(): string {
   return randomBytes(32).toString("base64url");
 }
@@ -116,6 +120,11 @@ export async function createAuthentication(
   const challenges = new Map<string, { user: UserRow; expires: number; failed: number }>();
   // Only in-flight proofs have entries; completed operations leave no per-user history.
   const activeProofs = new Map<bigint, Set<{ valid: boolean }>>();
+  // One live link per address, as in upstream's tmptokens; a restart drops them all.
+  const resets = new Map<
+    string,
+    { token: string; userId: bigint; expires: number; mailed: number }
+  >();
   let activeProofCount = 0;
   function beginProof(userId: bigint) {
     if (activeProofCount >= 4096) throw new HttpError(429, "Too many requests");
@@ -140,6 +149,7 @@ export async function createAuthentication(
   function invalidate(userId: bigint) {
     for (const proof of activeProofs.get(userId) ?? []) proof.valid = false;
     clearChallenges(userId);
+    for (const [email, entry] of resets) if (entry.userId === userId) resets.delete(email);
   }
   store.onIdentityMutation(invalidate);
   function challenge(token: string) {
@@ -153,6 +163,38 @@ export async function createAuthentication(
       return undefined;
     }
     return value;
+  }
+  function newChallenge(user: UserRow): { token: string } {
+    for (const key of challenges.keys()) challenge(key);
+    clearChallenges(user.id);
+    if (challenges.size >= policy.challengeCapacity) throw new HttpError(429, "Too many requests");
+    const token = randomValue();
+    challenges.set(token, {
+      user,
+      expires: clock.now().getTime() + policy.challengeTtlMs,
+      failed: 0,
+    });
+    return { token };
+  }
+  function newSession(user: UserRow): { id: string; csrf: string; duration: number } | null {
+    const id = randomValue(),
+      csrf = randomValue();
+    const duration = policy.sessionDurationMs;
+    return store.createSession(user, id, csrf, duration) ? { id, csrf, duration } : null;
+  }
+  function resetEntry(email: string, token: string) {
+    const entry = resets.get(email);
+    if (!entry) return undefined;
+    if (entry.expires <= clock.now().getTime()) {
+      resets.delete(email);
+      return undefined;
+    }
+    // A link goes to one mailbox: it ends if the account has since moved to another.
+    if (store.byId(entry.userId)?.email !== email) {
+      resets.delete(email);
+      return undefined;
+    }
+    return equal(entry.token, token) ? entry : undefined;
   }
   function checkOrigin(request: Request): void {
     const origin = request.headers.get("origin");
@@ -247,6 +289,7 @@ export async function createAuthentication(
   }
   return {
     middleware,
+    authorize,
     revalidate(context: RequestContext, permission?: string): void {
       const prior = context.identity;
       if (!prior) throw new Error("Authenticated identity is required");
@@ -332,22 +375,9 @@ export async function createAuthentication(
             current.twofa_key !== candidate.twofa_key
           )
             return null;
-          for (const key of challenges.keys()) challenge(key);
-          clearChallenges(candidate.id);
-          if (challenges.size >= policy.challengeCapacity)
-            throw new HttpError(429, "Too many requests");
-          const token = randomValue();
-          challenges.set(token, {
-            user: current,
-            expires: clock.now().getTime() + policy.challengeTtlMs,
-            failed: 0,
-          });
-          return { token };
+          return newChallenge(current);
         }
-        const id = randomValue(),
-          csrf = randomValue();
-        const duration = policy.sessionDurationMs;
-        return store.createSession(candidate, id, csrf, duration) ? { id, csrf, duration } : null;
+        return newSession(candidate);
       } finally {
         proof?.release();
       }
@@ -366,10 +396,50 @@ export async function createAuthentication(
         return null;
       }
       challenges.delete(token);
-      const id = randomValue(),
-        csrf = randomValue();
-      const duration = policy.sessionDurationMs;
-      return store.createSession(entry.user, id, csrf, duration) ? { id, csrf, duration } : null;
+      return newSession(entry.user);
+    },
+    /** A fresh install with no users has no one to log in as until it is provisioned (D26). */
+    provisioned: () => store.count() !== 0n,
+    /**
+     * The link to mail, or nothing when the address cannot reset a password or was just mailed.
+     * A live link is mailed again rather than replaced, so a stranger who knows the address can
+     * neither flood the mailbox nor retire the link its owner is about to use.
+     */
+    issueReset(email: string): { user: UserRow; token: string } | null {
+      const user = store.byEmail(email);
+      if (!user || user.type !== "user" || user.status !== "enabled" || user.password_login === 0n)
+        return null;
+      const time = clock.now().getTime();
+      for (const [key, entry] of resets) if (entry.expires <= time) resets.delete(key);
+      const live = resets.get(email);
+      if (live?.userId === user.id) {
+        if (time - live.mailed < resetMailIntervalMs) return null;
+        live.mailed = time;
+        return { user, token: live.token };
+      }
+      if (resets.size >= policy.challengeCapacity && !resets.has(email)) return null;
+      const token = randomValue();
+      resets.set(email, { token, userId: user.id, expires: time + resetTtlMs, mailed: time });
+      return { user, token };
+    },
+    resetValid: (email: string, token: string): boolean => !!resetEntry(email, token),
+    /**
+     * Sets the password and ends every session. The link proves the mailbox, not the second
+     * factor, so a TOTP user continues to a challenge (D30); upstream logs them straight in.
+     */
+    async resetPassword(
+      email: string,
+      token: string,
+      password: string,
+    ): Promise<{ id: string; csrf: string; duration: number } | { token: string } | null> {
+      if (!resetEntry(email, token)) return null;
+      const hash = await work.run(() => Bun.password.hash(password, { algorithm: "argon2id" }));
+      const entry = resetEntry(email, token);
+      if (!entry) return null;
+      resets.delete(email);
+      const user = store.setPassword(entry.userId, hash);
+      if (!user) return null;
+      return user.twofa_type === "totp" ? newChallenge(user) : newSession(user);
     },
     async verifyPassword(password: string, hash: string): Promise<boolean> {
       return work.run(() => Bun.password.verify(password, hash));

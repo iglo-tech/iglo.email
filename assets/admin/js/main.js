@@ -43,7 +43,7 @@ function setupAlpine() {
     },
 
     async onLogout(logoutURL, loginURL) {
-      const resp = await fetch(logoutURL, { method: 'POST' });
+      const resp = await fetch(logoutURL, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken() } });
       const out = await resp.json();
       window.location.href = out.redirect_url || loginURL;
     },
@@ -85,6 +85,12 @@ function listenErrorEvents() {
     const msg = reMatchLog.exec(d.message.trim());
     u.toast(msg ? msg[2].trim() : d.message, 'error');
   };
+}
+
+// The session's CSRF token: cookie-authenticated unsafe requests send it as a header.
+function csrfToken() {
+  const part = document.cookie.split('; ').find((c) => c.startsWith('csrf='));
+  return part ? part.slice('csrf='.length) : '';
 }
 
 // Return the global Alpine store.
@@ -157,6 +163,7 @@ export async function api(name, uri, method, data) {
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json; charset=utf-8',
+      'X-CSRF-Token': csrfToken(),
     },
   }).then(async (resp) => {
     getStore().loading[name] = false;

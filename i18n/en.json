@@ -1,6 +1,7 @@
 {
     "_.code": "en",
     "_.name": "English (en)",
+    "admin.notYet": "This screen is not available yet.",
     "analytics.invalidDates": "Invalid `from` or `to` dates.",
     "analytics.showUnique": "Show unique counts?",
     "analytics.trackingDisabled": "E-mail tracking is globally disabled. No new views or clicks are being recorded.",
@@ -658,6 +659,7 @@
     "users.apiOneTimeToken": "Copy the API access token now. It will not be shown again.",
     "users.cantDeleteRole": "Cannot delete role that is in use.",
     "users.firstTime": "This is a fresh install. Pick a username and password for the Super Admin account.",
+    "users.firstTimeProvision": "This is a fresh install with no administrator yet. Set IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD on the server and restart it, then log in here.",
     "users.forgotPassword": "Forgot password?",
     "users.invalidLogin": "Invalid login or password",
     "users.invalidRequest": "Invalid auth request",

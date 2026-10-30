@@ -57,6 +57,8 @@ function page(context: RequestContext, auth: Authentication, next: string, messa
     >
       <section class="login">
         <h2>{title}</h2>
+        {/* D26 installs no first-account form; a fresh install says how to provision instead. */}
+        {auth.provisioned() ? null : <p>{i18n.T("users.firstTimeProvision")}</p>}
         <form method="post" action="/admin/login" class="form">
           <div>
             <input type="hidden" name="nonce" value={nonce} />
@@ -81,6 +83,9 @@ function page(context: RequestContext, auth: Authentication, next: string, messa
             </p>
           </div>
         </form>
+        <p class="center small">
+          <a href="/admin/forgot">{i18n.T("users.forgotPassword")}</a>
+        </p>
       </section>
     </PublicShell>,
   );
@@ -158,26 +163,31 @@ export function createLoginHandlers(auth: Authentication) {
             <input type="hidden" name="token" value={token} />
             <input type="hidden" name="next" value={next} />
             <input type="hidden" name="nonce" value={nonce} />
-            <input
-              id="totp_code"
-              name="totp_code"
-              type="text"
-              autofocus
-              required
-              pattern="[0-9]{6}"
-              maxlength="6"
-              aria-label={i18n.T("users.totpCode")}
-            />
-            {message ? (
+            <div>
               <p>
-                <span class="error">{message}</span>
+                <input
+                  id="totp_code"
+                  name="totp_code"
+                  type="text"
+                  autofocus
+                  required
+                  pattern="[0-9]{6}"
+                  maxlength="6"
+                  placeholder="• • • • • •"
+                  aria-label={i18n.T("users.totpCode")}
+                />
               </p>
-            ) : null}
-            <p class="submit">
-              <button class="button" type="submit">
-                {i18n.T("globals.buttons.continue")}
-              </button>
-            </p>
+              {message ? (
+                <p>
+                  <span class="error">{message}</span>
+                </p>
+              ) : null}
+              <p class="submit">
+                <button class="button" type="submit">
+                  {i18n.T("globals.buttons.continue")}
+                </button>
+              </p>
+            </div>
           </form>
         </section>
       </PublicShell>,

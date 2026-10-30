@@ -17,8 +17,10 @@ this project. Binary files cannot carry source headers; the paths map as follows
 
 The i18n module owns its replacement regex; the upstream main module's separate
 module scope cannot supply it. The dropped restart/reload action is removed
-from the admin app. No permission-dependent event stream, custom asset, logout,
-subscription, settings or domain screen is enabled by the shell.
+from the admin app. `api()` and logout send the session's `X-CSRF-Token`. The
+modules in `admin/js/views/` are adapted from upstream's `views/` of the same
+name; each is an entry point of the build. No permission-dependent event stream
+or custom asset is enabled by the shell.
 
 Direct browser build dependencies match the pinned upstream lock: Alpine.js
 3.15.12, Oat 1.0.0, CodeMirror commands 6.10.4, lang-css 6.3.1, lang-html

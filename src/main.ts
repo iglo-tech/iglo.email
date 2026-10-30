@@ -84,6 +84,7 @@ import {
   runAnalyticsChild,
 } from "@/analytics/reader";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
+import { registerAdminRoutes } from "@/admin/routes";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
 
 async function main(): Promise<void> {
@@ -578,6 +579,24 @@ async function main(): Promise<void> {
           cacheSlowQueries: current["app.cache_slow_queries"],
         };
       },
+    });
+    registerAdminRoutes(router, {
+      auth,
+      roles,
+      renderer,
+      logger: app.logger,
+      send: (message) => emailer!.push(message),
+      site: () => {
+        const current = pages();
+        return {
+          siteName: current.siteName,
+          faviconUrl: current.faviconUrl,
+          rootUrl: current.rootUrl,
+          lang: settings!.read()["app.lang"],
+          cacheSlowQueries: settings!.read()["app.cache_slow_queries"],
+        };
+      },
+      settings: pages,
     });
     summaryRefresh = startSummaryRefresh({
       clock,

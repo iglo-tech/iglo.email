@@ -17,8 +17,12 @@ for (const name of ["style.css", "richtext.css"])
 await cp(join(root, "node_modules/@knadh/oat/oat.min.css"), join(admin, "oat.min.css"));
 
 const jsRoot = join(root, "assets/admin/js");
+// Every per-view module under views/ is an entry point, as in upstream's build.
+const views = (await readdir(join(jsRoot, "views")))
+  .filter((name) => name.endsWith(".js"))
+  .map((name) => join("views", name));
 const built = await Bun.build({
-  entrypoints: ["main.js", "code-editor.js", "richtext-editor.js", "charts.js"].map((name) =>
+  entrypoints: ["main.js", "code-editor.js", "richtext-editor.js", ...views].map((name) =>
     join(jsRoot, name),
   ),
   outdir: join(admin, "js"),
