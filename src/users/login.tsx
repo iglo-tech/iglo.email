@@ -98,7 +98,7 @@ export function createLoginHandlers(auth: Authentication) {
   const getLogin: Handler = (context) =>
     page(context, auth, sanitizeNext(context.url.searchParams.get("next") ?? ""));
   const postLogin: Handler = async (context) => {
-    auth.limit(context.peerAddress);
+    auth.limit(auth.clientAddress(context));
     auth.checkOrigin(context.request);
     if (
       context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !==
@@ -198,7 +198,7 @@ export function createLoginHandlers(auth: Authentication) {
     return twofaPage(context, token, next === "/" ? "/admin" : next);
   };
   const postTwofa: Handler = async (context) => {
-    auth.limit(context.peerAddress);
+    auth.limit(auth.clientAddress(context));
     auth.checkOrigin(context.request);
     if (
       context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !==

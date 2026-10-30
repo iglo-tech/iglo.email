@@ -5,6 +5,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap } from "@/config/bootstrap";
+import { createClientAddress } from "@/server/client-address";
 import { startServer } from "@/server/server";
 import { createRouter } from "@/server/server";
 import { createListStore } from "@/lists/store";
@@ -33,6 +34,7 @@ import { registerSettingsRoutes } from "@/settings/routes";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
+import { createSendAnonymizer } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
@@ -58,6 +60,11 @@ import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { startCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
+import { registerArchiveRoutes } from "@/public/archive";
+import { createSubscriberMail, startSignupMail, type SubscriberMail } from "@/public/mail";
+import { rateLimited } from "@/public/rate-limit";
+import { registerPublicRoutes } from "@/public/routes";
+import { publicSettings } from "@/public/settings";
 
 async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
@@ -97,6 +104,8 @@ async function main(): Promise<void> {
   let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
   let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
   let runner: ReturnType<typeof startCampaignRunner> | undefined;
+  let mail: SubscriberMail | undefined;
+  let signups: ReturnType<typeof startSignupMail> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -104,7 +113,11 @@ async function main(): Promise<void> {
     settings = createSettings(db, clock, bootstrap.config.rootUrl, roles);
     counts = createListCounts(db);
     enrollments = createEnrollments(db, clock);
-    subscriberStore = createSubscriberStore(db, clock, lists, enrollments.subscriberEffects);
+    const subscriberEffects = {
+      ...enrollments.subscriberEffects,
+      deleting: createSendAnonymizer(db),
+    };
+    subscriberStore = createSubscriberStore(db, clock, lists, subscriberEffects);
     readonly = openReadOnly(db.filename);
     queryRunner = createQueryRunner({
       path: db.filename,
@@ -116,13 +129,15 @@ async function main(): Promise<void> {
       readonly,
       clock,
       runner: queryRunner,
-      effects: enrollments.subscriberEffects,
+      effects: subscriberEffects,
     });
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
+    const clientAddress = createClientAddress(() => settings!.read()["security.trusted_proxies"]);
     const auth = await createAuthentication(users, roles, clock, bootstrap.config.rootUrl, {
       ...defaultAuthPolicy,
+      clientAddress,
       get sessionDurationMs() {
         return sessionDuration(
           settings!.read()["security.session_duration"],
@@ -146,13 +161,25 @@ async function main(): Promise<void> {
     registerTemplateRoutes(router, templates, renderer, auth);
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
-    registerSubscriberRoutes(router, subscriberStore, roles, auth, () => {
-      const current = settings!.read();
-      return {
-        "privacy.domain_allowlist": current["privacy.domain_allowlist"],
-        "privacy.domain_blocklist": current["privacy.domain_blocklist"],
-      };
-    });
+    registerSubscriberRoutes(
+      router,
+      subscriberStore,
+      roles,
+      auth,
+      () => {
+        const current = settings!.read();
+        return {
+          "privacy.domain_allowlist": current["privacy.domain_allowlist"],
+          "privacy.domain_blocklist": current["privacy.domain_blocklist"],
+        };
+      },
+      {
+        afterAdminWrite: (row, listIds) => mail!.afterAdminWrite(row, listIds),
+        send: (row) => {
+          mail!.optin(row);
+        },
+      },
+    );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
     emailer = createEmailer({
       clock,
@@ -169,6 +196,27 @@ async function main(): Promise<void> {
       createSMTPTest(settings, emailer, app.i18n, renderer),
     );
     const marketing = () => marketingSettings(settings!.read());
+    const pages = () => publicSettings(settings!.read());
+    const limit = (name: keyof ReturnType<typeof publicSettings>["rateLimits"]) =>
+      rateLimited(
+        clock,
+        {
+          get limit() {
+            return pages().rateLimits[name];
+          },
+          windowMs: 60_000,
+          maxPeers: 10_000,
+        },
+        () => pages().siteName,
+        clientAddress,
+      );
+    const limits = {
+      subscribe: limit("subscribe"),
+      optin: limit("optin"),
+      privacy: limit("privacy"),
+    };
+    // Mail providers post one-click unsubscribes from shared addresses, hence its higher default.
+    const unsubscribeLimit = limit("unsubscribe");
     runnerStore = createRunnerStore(db);
     sends = createSends({
       db,
@@ -211,6 +259,8 @@ async function main(): Promise<void> {
       tracking,
       settings: marketing,
       effects: enrollments.unsubscribeEffects,
+      page: pages,
+      limit: unsubscribeLimit,
     });
     campaignStore = createCampaignStore(db, clock, {
       templateExists: (id) => templates!.get(id) !== null,
@@ -255,6 +305,8 @@ async function main(): Promise<void> {
       tracking,
       settings: campaignSettings,
       effects: enrollments.unsubscribeEffects,
+      page: pages,
+      limit: unsubscribeLimit,
     });
     recipients = createCampaignRecipients(db);
     const templateStore = templates;
@@ -304,6 +356,35 @@ async function main(): Promise<void> {
       exitThenTrigger: enrollments.exitThenTrigger,
     });
     registerEventRoutes(router, events, auth);
+    mail = createSubscriberMail({
+      subscribers: subscriberStore,
+      sends,
+      campaigns: campaignStore,
+      tracking,
+      events,
+      renderer,
+      i18n: app.i18n,
+      clock,
+      logger: app.logger,
+      settings: pages,
+    });
+    signups = startSignupMail({ db, clock, logger: app.logger, mail });
+    registerPublicRoutes(router, {
+      db,
+      lists,
+      subscribers: subscriberStore,
+      mail,
+      settings: pages,
+      limits,
+      clientAddress,
+    });
+    registerArchiveRoutes(router, {
+      store: campaignStore,
+      subscribers: subscriberStore,
+      templates,
+      renderer,
+      settings: pages,
+    });
     sequences = createSequenceStore(db, clock, {
       templates,
       lists,
@@ -332,7 +413,10 @@ async function main(): Promise<void> {
       conditions,
       settings: () => {
         const current = settings!.read();
-        return { fromEmail: current["app.from_email"][0] ?? "", marketing: marketing() };
+        return {
+          fromEmail: current["app.from_email"][0] ?? "",
+          marketing: marketing(),
+        };
       },
     });
     enrollments.onDue(() => scheduler!.wake());
@@ -350,6 +434,7 @@ async function main(): Promise<void> {
         const schedulerStop = scheduler!.stop();
         const outboxStop = outbox!.stop();
         const retentionStop = retention!.stop();
+        const signupStop = signups!.stop();
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
         Promise.allSettled([
@@ -357,6 +442,7 @@ async function main(): Promise<void> {
           schedulerStop,
           outboxStop,
           retentionStop,
+          signupStop,
           messagingClose,
           httpStop,
         ]).then((results) => {
@@ -376,6 +462,7 @@ async function main(): Promise<void> {
       process.once("SIGTERM", onSignal);
       process.once("SIGINT", onSignal);
       void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
+      void signups!.done.catch(() => shutdown(new Error("Opt-in mail failed")));
       void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
       void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
@@ -386,6 +473,7 @@ async function main(): Promise<void> {
     const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
     const purging = retention?.stop();
+    const signing = signups?.stop();
     // A decision awaiting a condition finishes before the runner and connections close.
     await scheduling?.catch(() => {});
     const closing = emailer?.close();
@@ -395,6 +483,7 @@ async function main(): Promise<void> {
     conditions?.close();
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
+    await signing?.catch(() => {});
     sequences?.close();
     recipients?.close();
     runnerStore?.close();

@@ -8,6 +8,7 @@ import { validFromAddress } from "@/settings/mail";
 import { goDuration, intervalStart, sessionDuration } from "@/settings/duration";
 import { cronError } from "@/settings/cron";
 import { cloneJson, int64, Members } from "@/settings/json";
+import { parseProxy } from "@/server/client-address";
 import { HttpError } from "@/server/response";
 import type { Roles } from "@/roles/roles";
 
@@ -78,6 +79,7 @@ const arrays = new Set([
   "privacy.domain_blocklist",
   "privacy.domain_allowlist",
   "security.trusted_urls",
+  "security.trusted_proxies",
   "upload.extensions",
   "smtp",
   "messengers",
@@ -90,6 +92,7 @@ const strings = new Set([
   "privacy.domain_blocklist",
   "privacy.domain_allowlist",
   "security.trusted_urls",
+  "security.trusted_proxies",
   "upload.extensions",
 ]);
 for (const key of strings) shapes[key] = [""];
@@ -314,6 +317,14 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   for (const url of next["security.trusted_urls"])
     if (url !== "*" && !validTrustedURL(url))
       return fail(`Invalid data: invalid trusted URL: ${url}`);
+  next["security.trusted_proxies"] = next["security.trusted_proxies"]
+    .map((v: string) => trimSpace(v ?? ""))
+    .filter(Boolean);
+  for (const proxy of next["security.trusted_proxies"])
+    if (!parseProxy(proxy)) return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
+  for (const budget of Object.values(next["security.public_rate_limit"] ?? {}))
+    if (!Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 1_000_000)
+      return fail("Invalid security.public_rate_limit: use whole requests per minute.");
   const oidc = next["security.oidc"];
   if (!oidc) return fail();
   if (oidc.roles === null) oidc.roles = current["security.oidc"].roles;

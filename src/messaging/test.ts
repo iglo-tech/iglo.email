@@ -8,7 +8,7 @@ import { validServer, type createEmailer } from "@/messaging/email";
 import { HttpError } from "@/server/response";
 import { validateDKIM } from "@/settings/dkim";
 
-function safeLogo(value: string): string {
+export function safeLogo(value: string): string {
   if (!value) return "";
   if (Buffer.byteLength(value, "utf8") > 64 * 1024) throw new Error("Template data limit exceeded");
   try {

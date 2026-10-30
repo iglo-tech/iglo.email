@@ -31,6 +31,8 @@ export type MessageCampaign = Pick<
   "name" | "subject" | "from_email" | "body" | "altbody" | "content_type" | "headers" | "attribs"
 > & { uuid: string; templateBody: string };
 export interface MessageLinks {
+  /** The configured root URL, for the public page URLs. */
+  rootUrl: string;
   unsubscribeUrl: string;
   tracking?: RenderTracking;
 }
@@ -43,7 +45,7 @@ export interface CampaignMessage {
 }
 
 /** listmonk models.Subscriber FirstName/LastName: first/last space chunk over two bytes. */
-function nameChunk(name: string, last: boolean): string {
+export function nameChunk(name: string, last: boolean): string {
   const chunks = name.split(" ");
   if (last) chunks.reverse();
   return chunks.find((chunk) => Buffer.byteLength(chunk) > 2) ?? name;
@@ -91,6 +93,7 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
       links: MessageLinks,
       budget = createMessageBudget(),
     ): CampaignMessage {
+      const root = links.rootUrl.replace(/\/+$/, "");
       const data = JSON.stringify({
         subscriber: {
           uuid: sub.uuid,
@@ -103,11 +106,10 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
         },
         campaign: { uuid: c.uuid, name: c.name, subject: c.subject, attribs: c.attribs },
         unsubscribe_url: links.unsubscribeUrl,
-        // Preferences, opt-in, view-in-browser and archive pages are later public pages.
-        manage_url: "",
-        optin_url: "",
-        message_url: "",
-        archive_url: "",
+        manage_url: links.unsubscribeUrl ? `${links.unsubscribeUrl}?manage=true` : "",
+        optin_url: `${root}/subscription/optin/${sub.uuid}`,
+        message_url: `${root}/campaign/${c.uuid}/${sub.uuid}`,
+        archive_url: `${root}/archive`,
       });
       const out = main.renderSync(data, links.tracking, budget);
       const plain = (tpl: ReturnType<TemplateRenderer["compile"]> | null, raw: string) =>
@@ -128,6 +130,20 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
         ),
       };
     },
+  };
+}
+/** compileArchiveCampaigns: `archive_meta` is the sample subscriber. */
+export function archiveSubscriber(meta: Record<string, unknown>): CampaignSubscriber {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  return {
+    uuid: text(meta.uuid),
+    email: text(meta.email),
+    name: text(meta.name),
+    attribs:
+      meta.attribs && typeof meta.attribs === "object" && !Array.isArray(meta.attribs)
+        ? (meta.attribs as Record<string, unknown>)
+        : {},
+    external_id: "",
   };
 }
 export class CampaignSourceError extends Error {

@@ -28,6 +28,7 @@ import {
 import { optinBody } from "@/campaigns/optin";
 import {
   CampaignSourceError,
+  archiveSubscriber,
   compileCampaign,
   dummySubscriber,
   dummyUUID,
@@ -110,7 +111,7 @@ export function projectCampaign(row: CampaignRow, noBody = false) {
     archive_meta: JSON.parse(row.archive_meta),
   };
 }
-const writable = (row: CampaignRow): WritableCampaign => ({
+export const writable = (row: CampaignRow): WritableCampaign => ({
   type: row.type,
   name: row.name,
   subject: row.subject,
@@ -377,6 +378,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     let body: string;
     try {
       body = compiled.render(dummySubscriber, {
+        rootUrl: deps.settings().rootUrl,
         unsubscribeUrl: `${deps.settings().rootUrl.replace(/\/+$/, "")}/subscription/${dummyUUID}/${dummyUUID}`,
       }).body;
     } catch (error) {
@@ -411,23 +413,13 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     } catch {
       return failed();
     }
-    const str = (v: unknown) => (typeof v === "string" ? v : "");
-    const subscriber: CampaignSubscriber = {
-      uuid: str(meta.uuid),
-      email: str(meta.email),
-      name: str(meta.name),
-      attribs:
-        meta.attribs && typeof meta.attribs === "object" && !Array.isArray(meta.attribs)
-          ? (meta.attribs as Record<string, unknown>)
-          : {},
-      external_id: "",
-    };
+    const subscriber = archiveSubscriber(meta);
     try {
       const body = compileCampaign(deps.renderer, {
         ...writable(stored),
         uuid: stored.uuid,
         templateBody: templateBody(templateId > 0 ? BigInt(templateId) : stored.template_id),
-      }).render(subscriber, { unsubscribeUrl: "" }).body;
+      }).render(subscriber, { rootUrl: deps.settings().rootUrl, unsubscribeUrl: "" }).body;
       return new Response(body, { headers: previewHeaders });
     } catch (error) {
       if (error instanceof RenderCapacityError)
@@ -687,6 +679,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           out = compiled.render(
             subscriberContext(sub),
             {
+              rootUrl: root,
               unsubscribeUrl,
               ...(settings.disableTracking
                 ? {}

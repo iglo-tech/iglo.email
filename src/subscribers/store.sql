@@ -37,3 +37,13 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber
 UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND status != 'unsubscribed' RETURNING list_id;
 -- name: subscriber-blocklist-only
 UPDATE subscribers SET status='blocklisted' WHERE id=?;
+-- name: subscriber-touch
+UPDATE subscribers SET updated_at=? WHERE id=?;
+-- name: subscriber-rename
+UPDATE subscribers SET name=?, updated_at=? WHERE id=?;
+-- name: membership-unsubscribe-unconfirmed
+-- Adapted from unsubscribe-by-campaign with unsubAllUnconfirmed: the opt-in mail's link.
+UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND status = 'unconfirmed' RETURNING list_id;
+-- name: membership-confirm
+-- Adapted from confirm-subscription-optin, for rows still awaiting confirmation only.
+UPDATE subscriber_lists SET status='confirmed', meta=json_patch(meta, ?), updated_at=? WHERE subscriber_id=? AND list_id=? AND status='unconfirmed';

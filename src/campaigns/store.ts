@@ -143,6 +143,22 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
         type: string;
         status: string;
       } | null,
+    archived(limit: number, offset: number) {
+      const rows = q.get("archived-campaigns").all(limit, offset) as {
+        id: bigint;
+        total: bigint;
+      }[];
+      return { ids: rows.map((row) => row.id), total: Number(rows[0]?.total ?? 0) };
+    },
+    archivedId: (key: string) =>
+      (q.get("archived-campaign-id").get(key) as { id: bigint } | null)?.id ?? null,
+    subscriberViews: (subscriberId: bigint) =>
+      (
+        q.get("subscriber-campaign-views").all(subscriberId) as {
+          campaign: string;
+          views: bigint;
+        }[]
+      ).map((row) => ({ campaign: row.campaign, views: Number(row.views) })),
     listIds: (id: bigint) =>
       (q.get("campaign-list-ids").all(id) as { list_id: bigint }[]).map((r) => r.list_id),
     hasLists(id: bigint, listIds: bigint[]): boolean {

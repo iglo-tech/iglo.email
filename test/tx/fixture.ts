@@ -12,7 +12,7 @@ import { registerListRoutes } from "@/lists/routes";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
-import { createSubscriberStore } from "@/subscribers/store";
+import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createRoles } from "@/roles/roles";
 import { createRouter } from "@/server/server";
@@ -22,9 +22,11 @@ import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
 import { createEmailer } from "@/messaging/email";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
+import { createSendAnonymizer } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createTemplateStore } from "@/templates/store";
+import type { PageOptions } from "@/public/preferences";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { registerTxRoutes, type TxPolicy } from "@/tx/routes";
@@ -45,6 +47,7 @@ export async function txFixture(
     emailHeaders?: Record<string, string>[];
     marketing?: Partial<MarketingSettings>;
     effects?: UnsubscribeEffects;
+    page?: () => PageOptions;
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -71,7 +74,10 @@ export async function txFixture(
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
     listStore = createListStore(db, clock, counts, campaigns),
-    subscribers = createSubscriberStore(db, clock, lists),
+    subscribers = createSubscriberStore(db, clock, lists, {
+      ...noSubscriberEffects,
+      deleting: createSendAnonymizer(db),
+    }),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const auth = await createAuthentication(
@@ -163,6 +169,7 @@ export async function txFixture(
     tracking,
     settings: () => marketing,
     ...(options.effects ? { effects: options.effects } : {}),
+    ...(options.page ? { page: options.page } : {}),
   });
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
@@ -215,6 +222,7 @@ export async function txFixture(
     sends,
     emailer,
     marketing,
+    owners: { router, lists, subscribers, tracking, renderer, templates, roles },
     get outbox() {
       return outbox;
     },

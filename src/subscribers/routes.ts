@@ -16,6 +16,8 @@ import {
 import type { SubscriberStore, Scope } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 
+type SubscriberRow = NonNullable<ReturnType<SubscriberStore["get"]>>;
+
 export function registerSubscriberRoutes(
   router: Router,
   store: SubscriberStore,
@@ -25,6 +27,12 @@ export function registerSubscriberRoutes(
     "privacy.domain_allowlist": string[];
     "privacy.domain_blocklist": string[];
   } = () => ({ "privacy.domain_allowlist": [], "privacy.domain_blocklist": [] }),
+  optin?: {
+    /** The automatic opt-in mail after an admin write; failures never undo the write. */
+    afterAdminWrite(row: SubscriberRow, listIds: bigint[]): void;
+    /** SubscriberSendOptin: enqueue now, throwing on failure. */
+    send(row: SubscriberRow): void;
+  },
 ) {
   const identity = (c: RequestContext) => {
     if (!c.identity) throw new Error("Identity required");
@@ -69,6 +77,10 @@ export function registerSubscriberRoutes(
           c.app.i18n.Ts("globals.messages.permissionDenied", "name", "lists"),
         );
     }
+  };
+  const permitted = (c: RequestContext, ids: bigint[] | null | undefined) => {
+    const s = scope(c, "manage");
+    return (ids ?? []).filter((id) => s.all || s.ids.includes(id));
   };
   const email = (value: string) => {
     const result = sanitizeEmail(value);
@@ -137,14 +149,18 @@ export function registerSubscriberRoutes(
     const input = await subscriberInput(c, "crud");
     validate(c, input, true, false);
     auth.revalidate(c, "subscribers:manage");
-    return store.transaction(() => {
+    let created: SubscriberRow;
+    const response = store.transaction(() => {
       listPermission(c, input.lists);
-      const row = store.create(
+      created = store.create(
         input as SubscriberInput & { email: string; name: string },
         scope(c, "manage"),
       );
-      return ok(store.project(row, maskScope(c)));
+      return ok(store.project(created, maskScope(c)));
     });
+    if (!input.preconfirm_subscriptions)
+      optin?.afterAdminWrite(created!, permitted(c, input.lists));
+    return response;
   };
   const update =
     (patch: boolean, external: boolean): Handler =>
@@ -159,14 +175,18 @@ export function registerSubscriberRoutes(
       const input = await subscriberInput(c, "crud");
       validate(c, input, false, patch);
       auth.revalidate(c, "subscribers:manage");
-      return store.transaction(() => {
+      let updated: SubscriberRow;
+      const response = store.transaction(() => {
         if (externalKey !== undefined && store.external(externalKey)?.id !== id)
           throw new HttpError(400, "Subscriber not found");
         allowed(c, [id], "manage");
         listPermission(c, input.lists);
-        const row = store.update(required(c, id, external), input, patch, scope(c, "manage"));
-        return ok(store.project(row, maskScope(c)));
+        updated = store.update(required(c, id, external), input, patch, scope(c, "manage"));
+        return ok(store.project(updated, maskScope(c)));
       });
+      if (!input.preconfirm_subscriptions && (!patch || input.lists?.length))
+        optin?.afterAdminWrite(updated!, permitted(c, input.lists));
+      return response;
     };
   const remove =
     (external: boolean): Handler =>
@@ -259,6 +279,25 @@ export function registerSubscriberRoutes(
     return get(true)(c);
   };
   router.route("POST", "/api/subscribers", create, auth.middleware("subscribers:manage"));
+  if (optin)
+    router.route(
+      "POST",
+      "/api/subscribers/:id/optin",
+      (c) => {
+        const id = BigInt(getID(c));
+        allowed(c, [id], "manage");
+        const row = required(c, id);
+        try {
+          optin.send(row);
+        } catch (error) {
+          c.app.logger.error(error);
+          throw new HttpError(500, c.app.i18n.T("subscribers.errorSendingOptin"));
+        }
+        return ok(true);
+      },
+      auth.middleware("subscribers:manage"),
+      hasID,
+    );
   router.route("GET", "/api/subscribers/:id", canGet, auth.middleware(), hasID);
   router.route(
     "PUT",

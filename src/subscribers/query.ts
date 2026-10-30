@@ -153,6 +153,12 @@ export function createSubscriberQuery(options: {
       writeTransaction(db, fn);
     },
     remove(ids: bigint[]) {
+      effects.deleting?.(
+        writes.get("emails-by-ids").all(json(ids)) as {
+          id: bigint;
+          email: string;
+        }[],
+      );
       writes.get("delete-by-ids").run(json(ids));
     },
     blocklist(ids: bigint[]) {

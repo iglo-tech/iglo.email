@@ -126,7 +126,7 @@ A step's template receives:
 - `subscriber`: `name`, `email`, `uuid`, `external_id`, `attribs`;
 - `trigger`: the triggering event's `name`, `data` and `occurred_at`;
 - `sequence` and `step`: names and IDs;
-- the usual functions: `unsubscribe_url` (marketing steps), `manage_url`, `track_link`, `track_view` ([Templates](06-templates.md)).
+- the usual functions: `unsubscribe_url` and `manage_url` (marketing steps; empty for transactional steps), `track_link`, `track_view` ([Templates](06-templates.md)).
 
 Anything else, such as monthly totals, is computed by the app and sent as event data. The sequence engine does not aggregate.
 

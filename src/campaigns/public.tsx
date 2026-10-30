@@ -2,22 +2,21 @@
 // adapted from listmonk cmd/public.go (SubscriptionPage, SubscriptionPrefs, LinkRedirect,
 // RegisterCampaignView), cmd/handlers.go (hasUUID, hasSub, noIndex) and
 // queries/subscribers.sql (unsubscribe-by-campaign) at 6fcd95f. Preferences management
-// (manage=true), view in browser and the archive are later public pages (M2.5).
+// and the page itself are src/public/preferences.tsx; view in browser and the archive are
+// src/public/archive.tsx.
 import type { Database } from "bun:sqlite";
 import { deflateSync, crc32 } from "node:zlib";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
-import { render } from "@/jsx/render";
-import { PublicShell } from "@/public/layout";
+import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
-import type { RequestContext } from "@/server/context";
-import { assetVersion } from "@/server/asset-manifest";
+import { savePreferences, subscriptionPage, type PageOptions } from "@/public/preferences";
+import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import type { Tracking } from "@/unsubscribe/tracking";
-import { readBodyBytes } from "@/users/input";
 import { dummyUUID } from "@/campaigns/render";
 import type { CampaignStore } from "@/campaigns/store";
 
@@ -51,46 +50,6 @@ function transparentPixel(): Uint8Array {
     chunk("IEND", new Uint8Array()),
   ]);
 }
-/** Go strconv.ParseBool, with Echo's empty-value-is-false form binding. */
-function parseBool(value: unknown): boolean | undefined {
-  if (value === undefined || value === null || value === "" || value === false) return false;
-  if (value === true) return true;
-  if (typeof value !== "string") return undefined;
-  if (["1", "t", "T", "TRUE", "true", "True"].includes(value)) return true;
-  if (["0", "f", "F", "FALSE", "false", "False"].includes(value)) return false;
-  return undefined;
-}
-/** Bounded form: browsers and RFC 8058 senders post url-encoded or multipart forms. */
-async function readForm(request: Request): Promise<{ blocklist: boolean; manage: boolean }> {
-  const bytes = await readBodyBytes(request);
-  const media = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-  let get: (name: string) => unknown = () => undefined;
-  if (bytes.length) {
-    if (media === "application/x-www-form-urlencoded") {
-      const form = new URLSearchParams(bytes.toString("utf8"));
-      get = (name) => form.get(name) ?? undefined;
-    } else if (media === "multipart/form-data") {
-      const form = await new Request("http://form.invalid", {
-        method: "POST",
-        headers: { "content-type": request.headers.get("content-type")! },
-        body: Uint8Array.from(bytes),
-      }).formData();
-      get = (name) => {
-        const value = form.get(name);
-        return value === null ? undefined : typeof value === "string" ? value : 0;
-      };
-    } else if (media === "application/json") {
-      const value = JSON.parse(bytes.toString("utf8")) as unknown;
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("body");
-      get = (name) => (value as Record<string, unknown>)[name];
-    } else throw new Error("media");
-  }
-  const blocklist = parseBool(get("blocklist"));
-  const manage = parseBool(get("manage"));
-  if (blocklist === undefined || manage === undefined) throw new Error("bool");
-  return { blocklist, manage };
-}
-
 export function registerCampaignPublicRoutes(
   router: Router,
   deps: {
@@ -100,8 +59,20 @@ export function registerCampaignPublicRoutes(
     tracking: Tracking;
     settings: () => PublicCampaignSettings;
     effects: UnsubscribeEffects;
+    /** Public page settings; without them only the plain unsubscribe page shows. */
+    page?: () => PageOptions;
+    limit?: Middleware;
   },
 ) {
+  const limit = deps.limit ? [deps.limit] : [];
+  const options = (): PageOptions =>
+    deps.page?.() ?? {
+      siteName: deps.settings().siteName,
+      allowBlocklist: deps.settings().allowBlocklist,
+      allowPreferences: false,
+      allowExport: false,
+      allowWipe: false,
+    };
   const pixel = transparentPixel();
   const page = (
     i18n: Translation,
@@ -140,88 +111,77 @@ export function registerCampaignPublicRoutes(
     if (!sub) return noSubscriber(t);
     if (sub.status === "blocklisted")
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
-    const settings = deps.settings();
-    const body = render(
-      <PublicShell
-        title={t.T("public.unsubscribeTitle")}
-        siteName={settings.siteName}
-        assetVersion={assetVersion}
-        poweredBy={t.T("public.poweredBy")}
-      >
-        <section class="section">
-          <h2>{t.T("globals.buttons.unsubscribe")}</h2>
-          <form method="post" class="unsub-form">
-            <div>
-              <p>{t.T("public.unsubHelp")}</p>
-              {settings.allowBlocklist ? (
-                <>
-                  <hr />
-                  <p class="small">
-                    <input id="privacy-blocklist" type="checkbox" name="blocklist" value="true" />{" "}
-                    <label for="privacy-blocklist">{t.T("public.unsubFull")}</label>
-                  </p>
-                </>
-              ) : null}
-              <p>
-                <button type="submit" class="button" id="btn-unsub">
-                  {t.T("globals.buttons.unsubscribe")}
-                </button>
-              </p>
-            </div>
-          </form>
-        </section>
-      </PublicShell>,
-    );
-    return new Response(`<!DOCTYPE html>${body}`, {
-      status: 200,
-      headers: { "Content-Type": "text/html; charset=UTF-8", ...noIndex },
-    });
+    const manage = parseBool(context.url.searchParams.get("manage")) === true;
+    return subscriptionPage(t, deps.subscribers, sub, options(), manage, noIndex);
   });
 
   // RFC 8058 one-click and the page form: no login, CSRF token or CAPTCHA.
-  router.route("POST", "/subscription/:campUUID/:subUUID", async (context) => {
-    const t = context.app.i18n;
-    const bad = invalidUUID(context, "campUUID", "subUUID");
-    if (bad) return bad;
-    if (!subscriber(context)) return noSubscriber(t);
-    let form: { blocklist: boolean; manage: boolean };
-    try {
-      form = await readForm(context.request);
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
-    }
-    const blocklist = deps.settings().allowBlocklist && form.blocklist;
-    if (form.manage && !blocklist)
-      return page(t, 400, t.T("globals.terms.error"), t.T("public.invalidFeature"));
-    writeTransaction(deps.db, () => {
-      // Re-read inside the write: unsubscribe from the campaign's lists, or blocklist.
-      const sub = subscriber(context);
-      if (!sub) return;
-      const campaign = deps.store.byUuid(context.params.campUUID!.toLowerCase());
-      const lists = campaign && campaign.uuid !== dummyUUID ? deps.store.listIds(campaign.id) : [];
-      if (blocklist) {
-        const changed = deps.subscribers.unsubscribe(sub.id, lists[0] ?? 0n, true);
-        deps.effects.unsubscribed({
-          subscriberId: sub.id,
-          listId: lists[0] ?? 0n,
-          listIds: changed,
-          blocklisted: true,
-        });
-        return;
+  router.route(
+    "POST",
+    "/subscription/:campUUID/:subUUID",
+    async (context) => {
+      const t = context.app.i18n;
+      const bad = invalidUUID(context, "campUUID", "subUUID");
+      if (bad) return bad;
+      if (!subscriber(context)) return noSubscriber(t);
+      let form: PreferenceForm;
+      try {
+        form = await readPreferences(context.request);
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
       }
-      for (const list of lists) {
-        const changed = deps.subscribers.unsubscribe(sub.id, list, false);
-        deps.effects.unsubscribed({
-          subscriberId: sub.id,
-          listId: list,
-          listIds: changed,
-          blocklisted: false,
-        });
-      }
-    });
-    return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
-  });
+      const blocklist = deps.settings().allowBlocklist && form.blocklist;
+      const campUuid = context.params.campUUID!.toLowerCase();
+      if (form.manage && !blocklist)
+        return (
+          savePreferences({ ...deps, effects: deps.effects }, t, options(), form, () =>
+            subscriber(context),
+          ) ?? noSubscriber(t)
+        );
+      writeTransaction(deps.db, () => {
+        // Re-read inside the write: unsubscribe from the campaign's lists, or blocklist.
+        const sub = subscriber(context);
+        if (!sub) return;
+        // The dummy campaign is the opt-in mail's link: end every unconfirmed subscription.
+        if (campUuid === dummyUUID && !blocklist) {
+          const changed = deps.subscribers.unsubscribeUnconfirmed(sub.id);
+          for (const list of changed)
+            deps.effects.unsubscribed({
+              subscriberId: sub.id,
+              listId: list,
+              listIds: [list],
+              blocklisted: false,
+            });
+          return;
+        }
+        const campaign = deps.store.byUuid(campUuid);
+        const lists =
+          campaign && campaign.uuid !== dummyUUID ? deps.store.listIds(campaign.id) : [];
+        if (blocklist) {
+          const changed = deps.subscribers.unsubscribe(sub.id, lists[0] ?? 0n, true);
+          deps.effects.unsubscribed({
+            subscriberId: sub.id,
+            listId: lists[0] ?? 0n,
+            listIds: changed,
+            blocklisted: true,
+          });
+          return;
+        }
+        for (const list of lists) {
+          const changed = deps.subscribers.unsubscribe(sub.id, list, false);
+          deps.effects.unsubscribed({
+            subscriberId: sub.id,
+            listId: list,
+            listIds: changed,
+            blocklisted: false,
+          });
+        }
+      });
+      return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
+    },
+    ...limit,
+  );
 
   router.route("GET", "/campaign/:campUUID/:subUUID/px.png", (context) => {
     const bad = invalidUUID(context, "campUUID", "subUUID");

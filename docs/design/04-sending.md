@@ -120,7 +120,7 @@ are rechecked before sending, including blocklist and identity replacement.
 
 - **Campaigns:** as in listmonk. `unsubscribe_url` in templates, plus `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers (RFC 8058) when `privacy.unsubscribe_header` is on.
 - **Marketing sends (tx and sequences):** the same URL and headers, scoped to `list_id`. The URL contains the send UUID and subscriber UUID.
-- **Transactional sends:** no unsubscribe link by default. A template may still include `manage_url` for preferences.
+- **Transactional sends:** no unsubscribe link by default. `POST /api/tx` fills `manage_url` for a subscriber recipient, the general preferences page (`/subscription/<dummy-uuid>/<subscriber-uuid>?manage=true`), and leaves it empty for an address that is not a subscriber. A tx marketing send fills it from its `unsubscribe_url`. Transactional sequence steps leave it empty ([Sequences](05-sequences.md)).
 - **What unsubscribing does:** sets the `subscriber_lists` status to `unsubscribed` for the scoped list (or all lists when the preferences page says so, or when `privacy.allow_blocklist` and the person chooses "never email me"). Then it cancels the subscriber's active enrollments in sequences tied to those lists (`exit_reason = 'unsubscribed'`), and queues a `subscriber.unsubscribed` webhook.
 - The one-click POST endpoint never requires a login or a CAPTCHA, as RFC 8058 requires.
 

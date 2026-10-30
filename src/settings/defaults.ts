@@ -58,6 +58,8 @@ export const defaults = {
     roles: [],
   },
   "security.trusted_urls": [],
+  "security.trusted_proxies": [],
+  "security.public_rate_limit": { subscribe: 30, optin: 60, unsubscribe: 300, privacy: 10 },
   "security.session_duration": "7d",
   "upload.provider": "filesystem",
   "upload.extensions": ["jpg", "jpeg", "png", "gif", "svg", "*"],

@@ -17,6 +17,8 @@ export interface AuthPolicy {
   readonly maxHashQueue: number;
   readonly challengeCapacity: number;
   readonly challengeTtlMs: number;
+  /** The address login limits count (D60); the transport peer unless a policy says otherwise. */
+  readonly clientAddress?: (context: RequestContext) => string;
 }
 
 export const defaultAuthPolicy: AuthPolicy = Object.freeze({
@@ -169,11 +171,17 @@ export async function createAuthentication(
       if (time - entry.start >= policy.loginWindowMs || time < entry.start) attempts.delete(key);
     let current = attempts.get(peer);
     if (!current) {
-      if (attempts.size >= policy.maxPeers) throw new HttpError(429, "Too many requests");
+      if (attempts.size >= policy.maxPeers)
+        throw new HttpError(429, "Too many requests", {
+          "Retry-After": String(Math.ceil(policy.loginWindowMs / 1000)),
+        });
       current = { start: time, count: 0 };
       attempts.set(peer, current);
     }
-    if (current.count >= policy.loginAttempts) throw new HttpError(429, "Too many requests");
+    if (current.count >= policy.loginAttempts)
+      throw new HttpError(429, "Too many requests", {
+        "Retry-After": String(Math.ceil((current.start + policy.loginWindowMs - time) / 1000)),
+      });
     current.count++;
   }
   function identity(request: Request): Identity {
@@ -253,6 +261,8 @@ export async function createAuthentication(
     },
     checkOrigin,
     limit,
+    clientAddress: (context: RequestContext) =>
+      policy.clientAddress?.(context) ?? context.peerAddress,
     async withIdentityProof<T>(
       id: bigint,
       work: (current: () => boolean) => Promise<T>,

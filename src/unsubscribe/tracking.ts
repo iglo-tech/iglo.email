@@ -26,6 +26,10 @@ export function createTracking(db: Database, clock: Clock) {
     view(sendId: bigint, subscriberId: bigint | null) {
       q.get("register-send-view").run(sendId, subscriberId, clock.now().toISOString());
     },
+    subscriberClicks: (subscriberId: bigint) =>
+      (q.get("subscriber-link-clicks").all(subscriberId) as { url: string; clicks: bigint }[]).map(
+        (row) => ({ url: row.url, clicks: Number(row.clicks) }),
+      ),
     close: () => q.close(),
   };
 }

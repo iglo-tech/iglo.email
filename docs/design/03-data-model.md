@@ -126,7 +126,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `uuid` | TEXT UNIQUE | Used in tracking and unsubscribe URLs |
 | `source` | TEXT CHECK IN (`tx`, `sequence`) | |
 | `kind` | TEXT CHECK IN (`marketing`, `transactional`) | |
-| `subscriber_id` | INTEGER NULL → subscribers | NULL for transactional sends to addresses that are not subscribers |
+| `subscriber_id` | INTEGER NULL → subscribers | NULL for transactional sends to addresses that are not subscribers, and after the subscriber is deleted |
 | `to_email` | TEXT NOT NULL | Recipient at send time |
 | `template_id` | INTEGER NULL → templates | |
 | `enrollment_id`, `step_id` | INTEGER NULL | For sequence sends. Unique `(enrollment_id, step_id)` |
@@ -144,7 +144,9 @@ One row per individual message that is not part of a campaign: transactional API
 | `attempted_at` | TEXT NULL | Latest outbox claim, committed with `sending` before SMTP and kept through `unknown` recovery (migration 3, M2.4) |
 | `created_at`, `sent_at` | TEXT | |
 
-Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the frequency cap (M2.4).
+Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the frequency cap (M2.4). `idx_sends_unlinked_to` (`to_email COLLATE NOCASE`, partial on `subscriber_id IS NULL`, migration 9) finds a deleted subscriber's unlinked rows.
+
+Deleting a subscriber anonymizes their sends in the same transaction (D25), whichever route deletes them: `to_email` becomes `''` and `payload` NULL on every row linked to the subscriber and on unlinked rows to the same address. Counts, statuses, timings and the send UUID stay. A `queued` row becomes `skipped` with `subscriber_unavailable`. A `sending` row settles by its SMTP outcome, and a retry of it fails with `payload_unavailable` without SMTP. `failed` and `unknown` rows can no longer be resent. A tracked link in a wiped message stops redirecting, because the redirect is checked against the prepared body. `idempotency_key` stays so a replayed producer request can't send again; it holds only digests.
 
 ### `webhooks`, `webhook_deliveries`
 

@@ -2,6 +2,7 @@ import { runCampaignsContract } from "@/test/contract/campaigns";
 import { runTemplatesContract } from "@/test/contract/templates";
 import { runTxContract } from "@/test/contract/tx";
 import { runUnsubscribeContract } from "@/test/contract/unsubscribe";
+import { runPublicContract } from "@/test/contract/public";
 import { runEventsContract } from "@/test/contract/events";
 import { runSequencesContract } from "@/test/contract/sequences";
 import { runTemplateAuthorization } from "@/test/templates/auth-contract";
@@ -108,6 +109,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "templates" ||
       args[1] === "tx" ||
       args[1] === "unsubscribe" ||
+      args[1] === "public" ||
       args[1] === "events" ||
       args[1] === "sequences" ||
       args[1] === "campaigns")
@@ -125,6 +127,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "templates" ||
         args[1] === "tx" ||
         args[1] === "unsubscribe" ||
+        args[1] === "public" ||
         args[1] === "events" ||
         args[1] === "sequences" ||
         args[1] === "campaigns") &&
@@ -155,6 +158,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         if (args[1] === "unsubscribe") {
           await runUnsubscribeContract({ baseUrl, credentials, restart });
           process.stdout.write("PASS unsubscribe production contract\n");
+          return true;
+        }
+        if (args[1] === "public") {
+          await runPublicContract({ mode: "normal", baseUrl, credentials, restart });
+          process.stdout.write("PASS public production contract\n");
           return true;
         }
         if (args[1] === "tx") {

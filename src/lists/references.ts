@@ -3,6 +3,15 @@ import type { Database } from "bun:sqlite";
 import { prepareNamedQueries } from "@/db/queries";
 import sql from "@/lists/queries.sql" with { type: "text" };
 
+/** The list fields public pages need. */
+export interface PublicList {
+  id: bigint;
+  uuid: string;
+  name: string;
+  type: string;
+  optin: string;
+  description: string;
+}
 export function createListReferences(db: Database) {
   const queries = prepareNamedQueries(db, [{ name: "lists/references", sql }]);
   return {
@@ -27,6 +36,14 @@ export function createListReferences(db: Database) {
       // Upstream lazy subscriber projection embeds raw list tags, unlike the
       // standalone list API. normalizeTags stores NULL for an empty result.
       return { ...row, id: Number(row.id), tags: tags?.length ? tags : null };
+    },
+    /** Adapted from get-lists: active public lists by ID. */
+    publicLists(): PublicList[] {
+      return queries.get("public-lists").all() as PublicList[];
+    },
+    /** Adapted from get-list-types: lists by UUID, of any type; unknown UUIDs are absent. */
+    byUuids(uuids: string[]): PublicList[] {
+      return queries.get("lists-by-uuid").all(JSON.stringify(uuids)) as PublicList[];
     },
     close: () => queries.close(),
   };
