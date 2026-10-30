@@ -298,6 +298,8 @@ async function main(): Promise<void> {
     registerSendRoutes(router, sends, auth);
     registerWebhookRoutes(router, { webhooks, auth });
     outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+    const attachments = createAttachments(media, files);
+    const embedImages = createEmbeds(media, app.logger);
     registerTxRoutes(router, {
       auth,
       sends,
@@ -316,6 +318,8 @@ async function main(): Promise<void> {
         };
       },
       marketing: { settings: marketing, tracking },
+      attachments,
+      embedImages,
     });
     registerUnsubscribeRoutes(router, {
       db,
@@ -340,8 +344,6 @@ async function main(): Promise<void> {
         };
       },
     });
-    const attachments = createAttachments(media, files);
-    const embedImages = createEmbeds(media, app.logger);
     campaignStore = createCampaignStore(db, clock, {
       templateExists: (id) => templates!.get(id) !== null,
       defaultTemplate: () => templates!.getDefault()?.id ?? null,

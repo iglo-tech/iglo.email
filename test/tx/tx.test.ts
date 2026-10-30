@@ -1,5 +1,8 @@
 // POST /api/tx behavior through the HTTP boundary and a loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import { imagePng } from "@/test/media/images";
 import { txFixture, type TxFixture } from "@/test/tx/fixture";
 
 const fixtures: TxFixture[] = [];
@@ -285,6 +288,68 @@ test("multipart attachments, limits and content types", async () => {
     ).status,
   ).toBe(400);
   expect(f.count()).toBe(1);
+});
+
+test("a tx template embeds a stored image as an inline part, read for each request", async () => {
+  const f = await open();
+  const upload = async () => {
+    const body = new FormData();
+    body.append("file", new File([imagePng], "logo.png", { type: "image/png" }));
+    const stored = await f.request("/api/media", {
+      method: "POST",
+      headers: f.sessionHeaders,
+      body,
+    });
+    expect(stored.status).toBe(200);
+    return (await stored.json()).data as { id: number };
+  };
+  const logo = await upload();
+  const template = await f.template(
+    `<img src="logo.png" data-embed="true"><img src="https://cdn.example.test/x.png" data-embed="true">`,
+  );
+  const send = () =>
+    f.tx({
+      subscriber_email: "receipt@example.test",
+      subscriber_mode: "external",
+      template_id: template,
+    });
+  expect((await send()).status).toBe(200);
+  const text = f.sink.messages.at(-1)!.data.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+  const [cid] = [...text.matchAll(/^Content-ID: <([^>]+)>/gim)].map((m) => m[1]!);
+  expect(text).toContain(`src="cid:${cid}"`);
+  expect(text).toContain(`src="https://cdn.example.test/x.png"`);
+  expect(text).toMatch(/^Content-Disposition: inline/im);
+
+  // Nothing about a template is cached, so a deleted image stops being embedded at once.
+  expect((await f.json(`/api/media/${logo.id}`, "DELETE")).status).toBe(200);
+  expect((await send()).status).toBe(200);
+  const after = f.sink.messages.at(-1)!.data.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+  expect(after).toContain(`src="logo.png"`);
+  expect(after).not.toMatch(/^Content-ID:/im);
+
+  // A row that lost its file refuses the request: nothing is journaled or sent.
+  await upload();
+  rmSync(join(f.directory, "uploads", "logo.png"));
+  const sends = () => (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
+  const before = sends();
+  expect((await send()).status).toBe(500);
+  expect(sends()).toBe(before);
+});
+
+test("an embedded image counts toward what a durable send can hold", async () => {
+  const f = await open();
+  const body = new FormData();
+  body.append("file", new File([new Uint8Array(5 * 1024 * 1024)], "large.png"));
+  const stored = await f.request("/api/media", { method: "POST", headers: f.sessionHeaders, body });
+  expect(stored.status).toBe(200);
+  const template = await f.template(`<img src="large.png" data-embed="true">`);
+  const refused = await f.tx({
+    subscriber_email: "large@example.test",
+    subscriber_mode: "external",
+    template_id: template,
+  });
+  expect(refused.status).toBe(400);
+  expect((f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n).toBe(0n);
 });
 
 test("permission, CSRF and origin use the existing authentication", async () => {

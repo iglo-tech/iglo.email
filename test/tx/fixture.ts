@@ -41,6 +41,8 @@ import type { PageOptions } from "@/public/preferences";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { registerTxRoutes, type TxPolicy } from "@/tx/routes";
+import { createAttachments } from "@/media/attachments";
+import { createEmbeds } from "@/media/embed";
 import { createFilesystem } from "@/media/filesystem";
 import { registerMediaRoutes } from "@/media/routes";
 import { createMediaStore } from "@/media/store";
@@ -249,6 +251,8 @@ export async function txFixture(
     templates,
     renderer,
     lists,
+    attachments: createAttachments(media, files),
+    embedImages: createEmbeds(media, app.logger),
     policy: () => ({
       fromEmail: "Fixture <noreply@fixture.test>",
       domainAllowlist: [],

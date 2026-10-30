@@ -9,6 +9,8 @@ import type { RequestedSend, Sends } from "@/messaging/sends";
 import type { startOutbox } from "@/messaging/outbox";
 import { parseAddress } from "@/settings/mail";
 import type { ListReferences } from "@/lists/references";
+import type { Attachments } from "@/media/attachments";
+import type { EmbedImages } from "@/media/embed";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -79,6 +81,8 @@ export function registerTxRoutes(
     lists: ListReferences;
     policy: () => TxPolicy;
     marketing: { settings: () => MarketingSettings; tracking: Tracking };
+    attachments: Attachments;
+    embedImages: EmbedImages;
   },
 ) {
   router.route(
@@ -162,6 +166,21 @@ export function registerTxRoutes(
           t.Ts("globals.messages.notFound", "name", `template ${m.templateId}`),
         );
 
+      // upstream's CacheTpl embeds once. Here a template has no cached form: its images are found
+      // for each request and the bytes come through the attachment cache, which checks the file,
+      // so a media change applies to the next send. The journal keeps what each send carried.
+      // Files are read before the recipients, so nothing awaits between those and the journal.
+      const embedded = deps.embedImages({
+        content_type: "html",
+        body: template.body,
+        templateBody: "",
+      });
+      if (embedded.problem)
+        throw new HttpError(400, t.Ts("templates.errorRendering", "error", embedded.problem));
+      const inline = await deps.attachments([], embedded.images).catch(() => {
+        throw new HttpError(500, t.Ts("templates.errorRendering", "error", "embedded image"));
+      });
+
       // Resolve every recipient before rendering or writing anything.
       const recipients: Array<{ row: SubscriberRow | null; email: string }> = [];
       const notFound = (label: string) =>
@@ -196,7 +215,7 @@ export function registerTxRoutes(
       try {
         body = deps.renderer.compile({
           ...transactional,
-          body: template.body,
+          body: embedded.campaign.body,
           subject: m.subject || template.subject,
         });
         if (m.altBody && /\{\{|\{%/.test(m.altBody))
@@ -213,6 +232,15 @@ export function registerTxRoutes(
       const marketingSettings = deps.marketing.settings();
       const links = messageLinks(marketingSettings, deps.marketing.tracking);
       const root = marketingSettings.rootUrl.replace(/\/+$/, "");
+      const attachments = [
+        ...m.attachments.map((a) => ({
+          name: a.name,
+          content: a.content,
+          contentType: a.contentType,
+        })),
+        ...inline,
+      ];
+      const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.byteLength, 0);
       let total = 0;
       for (const recipient of recipients) {
         // The send UUID is fixed before rendering so its URLs can carry it.
@@ -247,16 +275,9 @@ export function registerTxRoutes(
           ...(altBody ? { altBody: Buffer.from(altBody) } : {}),
           // The generated List-Unsubscribe pair replaces caller values of the same name.
           headers: { ...headers, ...prepared.headers },
-          attachments: m.attachments.map((a) => ({
-            name: a.name,
-            content: a.content,
-            contentType: a.contentType,
-          })),
+          attachments,
         };
-        total +=
-          message.body.byteLength +
-          (message.altBody?.byteLength ?? 0) +
-          m.attachments.reduce((sum, a) => sum + a.content.byteLength, 0);
+        total += message.body.byteLength + (message.altBody?.byteLength ?? 0) + attachmentBytes;
         if (total > MAX_REQUEST_BYTES) throw new HttpError(413);
         requested.push({
           send: {

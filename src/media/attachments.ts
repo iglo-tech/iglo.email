@@ -21,6 +21,7 @@ export function createAttachments(
 ) {
   /** Least recently used first. An entry holds for one version of the file. */
   const cache = new Map<string, { content: Buffer; size: number; modified: number }>();
+  const reading = new Map<string, Promise<Buffer>>();
   let cached = 0;
   const forget = (key: string) => {
     cached -= cache.get(key)?.content.length ?? 0;
@@ -37,16 +38,26 @@ export function createAttachments(
       cache.set(key, hit);
       return hit.content;
     }
-    const content = await files.read(file.path);
-    forget(key);
-    if (content.length > cacheBytes) return content;
-    cache.set(key, { content, size: file.size, modified: file.modified });
-    cached += content.length;
-    for (const oldest of cache.keys()) {
-      if (cached <= cacheBytes) break;
-      forget(oldest);
-    }
-    return content;
+    // Concurrent requests for a template's image share one read and not a copy each.
+    const version = `${key}:${file.size}:${file.modified}`;
+    const pending = reading.get(version);
+    if (pending) return pending;
+    const read = files
+      .read(file.path)
+      .then((content) => {
+        forget(key);
+        if (content.length > cacheBytes) return content;
+        cache.set(key, { content, size: file.size, modified: file.modified });
+        cached += content.length;
+        for (const oldest of cache.keys()) {
+          if (cached <= cacheBytes) break;
+          forget(oldest);
+        }
+        return content;
+      })
+      .finally(() => reading.delete(version));
+    reading.set(version, read);
+    return read;
   }
 
   /** Every item or an error: a campaign never goes out without one of its files. */
