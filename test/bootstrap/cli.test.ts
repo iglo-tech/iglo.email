@@ -375,7 +375,9 @@ describe("compiled executable", () => {
     expect(failure.stdout).toBe("");
     expect(failure.stderr).not.toBe("");
 
-    const socket = createServer();
+    // Only the bound port matters. Drop inbound connections (such as the host runtime's
+    // keep-alive port probes) so close() doesn't wait on them.
+    const socket = createServer((connection) => connection.destroy());
     await new Promise<void>((resolveListen, reject) => {
       socket.once("error", reject);
       socket.listen(0, "127.0.0.1", resolveListen);
