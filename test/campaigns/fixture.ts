@@ -32,15 +32,18 @@ import { registerTemplateRoutes } from "@/templates/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 import { createAttachments } from "@/media/attachments";
 import { createFilesystem } from "@/media/filesystem";
-import { registerMediaRoutes } from "@/media/routes";
+import { createEmbeds } from "@/media/embed";
+import { registerMediaRoutes, uploadPathCheck } from "@/media/routes";
 import { createMediaStore } from "@/media/store";
+import { createSettings } from "@/settings/store";
+import { registerSettingsRoutes } from "@/settings/routes";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
 
-export async function campaignsFixture() {
+export async function campaignsFixture(options: { attachmentCacheBytes?: number } = {}) {
   const sink = await startSink({});
   const directory = mkdtempSync(join(tmpdir(), "iglo-campaigns-"));
   const clock = new TestClock();
@@ -113,15 +116,21 @@ export async function campaignsFixture() {
   };
   const unsubscribed: unknown[] = [];
   const media = createMediaStore(db, clock);
-  const mediaSettings = {
-    provider: "filesystem",
-    extensions: ["*"],
-    rootUrl: root,
-    uploadPath: "uploads",
-    uploadUri: "/uploads",
+  // Media settings are the real ones, so that tests reach them through the settings API.
+  const stored = createSettings(db, clock, root, roles);
+  const mediaSettings = () => {
+    const current = stored.read();
+    return {
+      provider: current["upload.provider"],
+      extensions: current["upload.extensions"],
+      rootUrl: root,
+      uploadPath: current["upload.filesystem.upload_path"],
+      uploadUri: current["upload.filesystem.upload_uri"],
+    };
   };
-  const files = createFilesystem(directory, () => mediaSettings);
-  const attachments = createAttachments(media, files);
+  const files = createFilesystem(directory, mediaSettings);
+  const attachments = createAttachments(media, files, options.attachmentCacheBytes);
+  const embedImages = createEmbeds(media);
   const store = createCampaignStore(db, clock, {
     templateExists: (id) => templates.get(id) !== null,
     defaultTemplate: () => templates.getDefault()?.id ?? null,
@@ -129,7 +138,8 @@ export async function campaignsFixture() {
     mediaFilename: (id) => media.filename(id),
   });
   const router = createRouter();
-  registerMediaRoutes(router, { store: media, files, auth, settings: () => mediaSettings });
+  registerSettingsRoutes(router, stored, auth, undefined, uploadPathCheck(directory, media));
+  registerMediaRoutes(router, { store: media, files, auth, settings: mediaSettings });
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
@@ -146,6 +156,7 @@ export async function campaignsFixture() {
     emailer,
     settings: () => settings,
     attachments,
+    embedImages,
   });
   registerCampaignPublicRoutes(router, {
     db,
@@ -212,7 +223,6 @@ export async function campaignsFixture() {
     sink,
     errors,
     settings,
-    mediaSettings,
     directory,
     unsubscribed,
     sessionHeaders,
@@ -234,12 +244,14 @@ export async function campaignsFixture() {
       roles,
       auth,
       attachments,
+      embedImages,
     },
     router,
     async close() {
       await emailer.close();
       store.close();
       media.close();
+      stored.close();
       tracking.close();
       templates.close();
       templateReferences.close();

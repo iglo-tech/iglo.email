@@ -274,6 +274,7 @@ export async function runMediaContract(target: {
     const uploads = join(dataDir, "uploads");
     const raw = (path: string, init?: RequestInit) =>
       fetch(new URL(path, target.baseUrl), { redirect: "manual", ...init });
+    const temporary = ".iglo-email-uploading";
     const names = () => readdirSync(uploads).sort();
 
     // Paths stay inside the upload directory.
@@ -304,8 +305,8 @@ export async function runMediaContract(target: {
       "/uploads/%2e%2e/secret.txt",
       "/uploads/..%5csecret.txt",
       "/uploads/%2e%2e%2fsecret.txt",
-      "/uploads/.tmp",
-      "/uploads/.tmp/x",
+      "/uploads/.iglo-email-uploading",
+      "/uploads/.iglo-email-uploading/x",
       "/uploads/",
       "/uploads/%00",
     ]) {
@@ -344,7 +345,7 @@ export async function runMediaContract(target: {
         JSON.stringify(before),
       "oversized-left-files",
     );
-    check(readdirSync(join(uploads, ".tmp")).length === 0, "temporary-left");
+    check(readdirSync(join(uploads, temporary)).length === 0, "temporary-left");
 
     // Files cannot run as this origin.
     const script = `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(document.domain)</script></svg>`;
@@ -384,15 +385,27 @@ export async function runMediaContract(target: {
     await setting("upload.filesystem.upload_uri", "/api");
     check((await call("/api/media")).status === 200, "reserved-uri");
     await setting("upload.filesystem.upload_uri", "/uploads");
-    await setting("upload.filesystem.upload_path", "custom/place");
-    const placed = keep(await stored(`placed-${suffix}.png`));
-    check(lstatSync(join(dataDir, "custom/place", placed.filename)).isFile(), "upload-path");
-    check((await served(placed.url)).status === 200, "upload-path-served");
-    // The data directory holds the database: it is never the upload directory.
-    await setting("upload.filesystem.upload_path", ".");
-    check((await raw("/uploads/iglo-email.db")).status === 404, "database-served");
-    check((await upload(`refused-${suffix}.png`)).status === 500, "database-directory");
-    await setting("upload.filesystem.upload_path", "uploads");
+    // The upload directory is inside the data directory, and only stored media is served.
+    const uploadPath = "/api/settings/upload.filesystem.upload_path";
+    const moveTo = (path: string) => call(uploadPath, "PUT", path);
+    await Bun.write(join(uploads, `unlisted-${suffix}.txt`), "unlisted");
+    check((await raw(`/uploads/unlisted-${suffix}.txt`)).status === 404, "unlisted-served");
+    check((await raw("/uploads/secret.txt")).status === 404, "beside-served");
+    symlinkSync(dataDir, join(dataDir, "data-alias"));
+    for (const path of ["data-alias", ".", "..", "/", dataDir, "/tmp"]) {
+      const refusal = await moveTo(path);
+      check(refusal.status === 400, `upload-path-${path}-${refusal.status}`);
+      check(refusal.body.message.includes("data directory"), `upload-path-message-${path}`);
+      check((await raw("/uploads/iglo-email.db")).status === 404, `database-served-${path}`);
+    }
+    // A row has one location: the directory cannot change under it.
+    const populated = await moveTo("custom/place");
+    check(populated.status === 400, `upload-path-populated-${populated.status}`);
+    check(populated.body.message.includes("media"), "upload-path-reason");
+    check((await moveTo("uploads")).status === 200, "upload-path-unchanged");
+    const everything = (await call("/api/settings")).body.data;
+    check((await call("/api/settings", "PUT", everything)).status === 200, "settings-round-trip");
+    check((await served(image.url)).status === 200, "upload-path-kept");
 
     // S3 is refused and its settings stay.
     const s3 = { "upload.s3.bucket": `bucket-${suffix}`, "upload.provider": "s3" };
@@ -409,9 +422,13 @@ export async function runMediaContract(target: {
     await setting("upload.s3.bucket", "");
 
     // An interrupted upload's temporary file goes at startup, and files survive a restart.
-    await Bun.write(join(uploads, ".tmp/stale"), "partial");
+    const stale = join(uploads, temporary, crypto.randomUUID());
+    const operator = join(uploads, ".tmp/operator-owned");
+    await Bun.write(stale, "partial");
+    await Bun.write(operator, "theirs");
     await target.restart!();
-    check(!existsSync(join(uploads, ".tmp")), "stale-temporary");
+    check(!existsSync(stale), "stale-temporary");
+    check(existsSync(operator), "operator-directory");
     check((await served(image.url)).status === 200, "restart-serve");
   } finally {
     for (const id of created) await call(`/api/media/${id}`, "DELETE");

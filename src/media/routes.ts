@@ -1,10 +1,10 @@
 // Adapted from listmonk cmd/media.go, the media routes of cmd/handlers.go and the Static route
 // of cmd/init.go at 6fcd95f. Bytes reach the disk first and the row follows, without a
-// transaction open across file I/O: a crash between them leaves an unlisted file, never a row
-// without its file. Deletion removes the row first for the same reason. Thumbnails are not
-// generated (01-scope.md): `thumb` names the image itself. See 07-api-and-ui.md.
+// transaction open across file I/O: a crash between them leaves an unlisted file, which is never
+// served, and never a row without its file. Deletion removes the row first for the same reason.
+// Thumbnails are not generated (01-scope.md): `thumb` names the image itself. See 07-api-and-ui.md.
 import { imageSize } from "@/media/image";
-import { extensionOf, makeFilename, type Filesystem } from "@/media/filesystem";
+import { extensionOf, makeFilename, uploadRoot, type Filesystem } from "@/media/filesystem";
 import type { MediaRow, MediaStore } from "@/media/store";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -34,6 +34,37 @@ export interface MediaSettings {
   provider: string;
   extensions: string[];
   rootUrl: string;
+}
+
+const UPLOAD_PATH = "upload.filesystem.upload_path";
+
+/**
+ * Runs in the settings transaction. A row has one location, the upload directory, so the
+ * directory cannot change under stored media: an existing URL would name someone else's file.
+ */
+export function uploadPathCheck(dataDir: string, store: Pick<MediaStore, "any">) {
+  return (next: Record<string, any>, current: Record<string, any>): void => {
+    if (next[UPLOAD_PATH] === current[UPLOAD_PATH]) return;
+    let root: string;
+    try {
+      root = uploadRoot(dataDir, next[UPLOAD_PATH]);
+    } catch (error) {
+      throw new HttpError(400, (error as Error).message);
+    }
+    const same = (() => {
+      try {
+        return uploadRoot(dataDir, current[UPLOAD_PATH]) === root;
+      } catch {
+        return false;
+      }
+    })();
+    if (!same && store.any())
+      throw new HttpError(
+        400,
+        "The upload path cannot change while media exists: its files stay where they are. " +
+          "Delete the media first.",
+      );
+  };
 }
 
 // Go strconv.Atoi, ignoring its error.
@@ -145,8 +176,12 @@ export function registerMediaRoutes(
       if (file.size > MAX_FILE_BYTES) throw new HttpError(413, "The file is too large.");
       const bytes = new Uint8Array(await file.arrayBuffer());
       const size = imageExtensions.includes(ext) ? imageSize(bytes) : null;
-      const stored = await files.put(name, bytes, store.filenameTaken);
+      const root = files.root();
+      const stored = await files.put(root, name, bytes, store.filenameTaken);
       try {
+        // Nothing runs between this check and the insert, so a row always names the directory.
+        if (!files.current(root))
+          throw new HttpError(409, "The upload path changed during the upload.");
         return ok(
           project(
             store.insert({
@@ -159,7 +194,7 @@ export function registerMediaRoutes(
           ),
         );
       } catch (error) {
-        await files.remove(stored);
+        await files.remove(stored, root);
         throw error;
       }
     } finally {
@@ -210,14 +245,17 @@ export function registerMediaRoutes(
 
   /**
    * The Static route of cmd/init.go. `upload_uri` is a live setting, so this is a middleware and
-   * not a fixed route. The stored content type came from the uploader, so the file's own
-   * extension decides, and anything that is not known to be harmless is a download.
+   * not a fixed route. Only a stored name is served, looked up as a whole and never joined from
+   * the URL, so nothing else in the directory is reachable. The stored content type came from the
+   * uploader, so the file's own extension decides, and anything that is not known to be harmless
+   * is a download.
    */
   const serve: Middleware = async (c, next) => {
     const { method } = c.request;
     if (method !== "GET" && method !== "HEAD") return next();
     const name = files.nameOf(c.url.pathname);
     if (name === undefined || settings().provider !== "filesystem") return next();
+    if (!store.byFilename(name)) return next();
     const file = await files.stat(name).catch(() => null);
     if (!file) return next();
     const ext = extensionOf(name);
@@ -231,7 +269,8 @@ export function registerMediaRoutes(
       "Last-Modified": modified,
       "X-Content-Type-Options": "nosniff",
     };
-    // The browser's PDF viewer refuses a sandboxed document, and a PDF cannot reach the origin.
+    // A CSP sandbox can stop a browser's built-in viewer, so a PDF has none and `nosniff` keeps
+    // it a PDF. That viewers are isolated from the origin is their design, not verified here.
     if (type !== "application/pdf") headers["Content-Security-Policy"] = SANDBOX;
     if (type !== "application/pdf" && !inlineTypes.test(type))
       headers["Content-Disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(name)}`;

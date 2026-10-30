@@ -18,12 +18,13 @@ async function open() {
   cleanups.push(() => f.close());
   return f;
 }
-async function openRunner() {
-  const f = await runnerFixture();
+async function openRunner(options: Parameters<typeof runnerFixture>[0] = {}) {
+  const f = await runnerFixture(options);
   cleanups.push(() => f.close());
   return f;
 }
 type Fixture = Awaited<ReturnType<typeof open>>;
+type RunnerFixture = Awaited<ReturnType<typeof openRunner>>;
 const upload = (
   f: Pick<Fixture, "request" | "sessionHeaders">,
   name: string,
@@ -42,8 +43,9 @@ const stored = async (
   expect(response.status).toBe(200);
   return (await response.json()).data as { id: number; filename: string };
 };
-const uploads = (f: Fixture) => join(f.directory, "uploads");
-const entries = (f: Fixture) => readdirSync(uploads(f)).filter((name) => name !== ".tmp");
+const uploads = (f: Pick<Fixture, "directory">) => join(f.directory, "uploads");
+const TEMPORARY = ".iglo-email-uploading";
+const entries = (f: Fixture) => readdirSync(uploads(f)).filter((name) => name !== TEMPORARY);
 
 test("a database failure removes the file again", async () => {
   const f = await open();
@@ -53,16 +55,16 @@ test("a database failure removes the file again", async () => {
   const response = await upload(f, "second.txt", "second");
   expect(response.status).toBe(500);
   expect(entries(f)).toEqual(["first.txt"]);
-  expect(readdirSync(join(uploads(f), ".tmp"))).toEqual([]);
+  expect(readdirSync(join(uploads(f), TEMPORARY))).toEqual([]);
   expect(f.errors).toHaveLength(1);
 });
 
 test("a storage failure leaves neither a file nor a row", async () => {
   const f = await open();
   await stored(f, "first.txt", "first");
-  chmodSync(join(uploads(f), ".tmp"), 0o500);
+  chmodSync(join(uploads(f), TEMPORARY), 0o500);
   const response = await upload(f, "second.txt", "second");
-  chmodSync(join(uploads(f), ".tmp"), 0o700);
+  chmodSync(join(uploads(f), TEMPORARY), 0o700);
   expect(response.status).toBe(500);
   expect(entries(f)).toEqual(["first.txt"]);
   expect((await f.json("/api/media")).body.data.total).toBe(1);
@@ -217,6 +219,247 @@ test("attachments over the bound pause the campaign instead of holding them in m
   await f.status(campaign.id, "running");
   await f.until(campaign.id, "paused");
   expect(f.pushes).toHaveLength(0);
+});
+
+const mebibytes = (count: number, fill = 0) => new Uint8Array(count * 1024 * 1024).fill(fill);
+/** Bytes held by buffers now; the fixture's record of a push must not be what holds them. */
+const heldBytes = () => {
+  Bun.gc(true);
+  return process.memoryUsage().arrayBuffers;
+};
+const campaignInput = (lists: number[], extra: object) => ({
+  subject: "S",
+  lists,
+  content_type: "plain",
+  type: "regular",
+  messenger: "fixture",
+  body: "B",
+  ...extra,
+});
+/** Lets `count` messages go out, each held and then forgotten by the test, and the next held. */
+async function sendHeld(f: RunnerFixture, count: number) {
+  const seen: string[] = [];
+  for (let sent = 0; sent < count; sent++) {
+    await f.drive(() => f.pushes.length > sent);
+    const push = f.pushes[sent]!;
+    seen.push(Buffer.from(push.message.attachments![0]!.content.subarray(0, 1)).toString("hex"));
+    delete push.message.attachments;
+    push.settle();
+  }
+  return seen;
+}
+
+test("two campaigns sharing attachments hold them once, with concurrency 1", async () => {
+  const f = await openRunner({ hold: true });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
+  const media = await stored(f, "brochure.pdf", mebibytes(8));
+  const list = await f.list("shared");
+  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  for (const name of ["First", "Second"]) {
+    const c = await f.campaign(campaignInput([list], { name, media: [media.id] }));
+    await f.status(c.id, "running");
+  }
+  const before = heldBytes();
+  f.start();
+  await sendHeld(f, 4);
+  await f.drive(() => f.pushes.length === 5);
+  const held = heldBytes() - before;
+  expect(held).toBeGreaterThan(7 * 1024 * 1024);
+  expect(held).toBeLessThan(12 * 1024 * 1024);
+});
+
+test("attachments over the cache budget are evicted and read again for the next batch", async () => {
+  const f = await openRunner({ hold: true, attachmentCacheBytes: 9 * 1024 * 1024 });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
+  const list = await f.list("evicted");
+  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  for (const fill of [1, 2]) {
+    const media = await stored(f, `file-${fill}.pdf`, mebibytes(8, fill));
+    const c = await f.campaign(campaignInput([list], { name: `C${fill}`, media: [media.id] }));
+    await f.status(c.id, "running");
+  }
+  const before = heldBytes();
+  f.start();
+  const seen = await sendHeld(f, 5);
+  await f.drive(() => f.pushes.length === 6);
+  expect(heldBytes() - before).toBeLessThan(12 * 1024 * 1024);
+  expect(new Set(seen)).toEqual(new Set(["01", "02"]));
+});
+
+test("a file lost between batches pauses the campaign, and resuming sends the rest once", async () => {
+  const f = await openRunner({ hold: true });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
+  const media = await stored(f, "lost.pdf", "%PDF");
+  const list = await f.list("between");
+  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  const c = await f.campaign(campaignInput([list], { name: "Later", media: [media.id] }));
+  await f.status(c.id, "running");
+  f.start();
+  await f.drive(() => f.pushes.length === 1);
+  const path = join(uploads(f), media.filename);
+  rmSync(path);
+  f.pushes[0]!.settle();
+  await f.until(c.id, "paused");
+  expect(f.pushes).toHaveLength(1);
+  await Bun.write(path, "%PDF");
+  f.control.hold = false;
+  await f.status(c.id, "running");
+  await f.until(c.id, "finished");
+  expect(f.pushes.map((push) => push.to).sort()).toEqual([
+    "to-1@example.com",
+    "to-2@example.com",
+    "to-3@example.com",
+  ]);
+});
+
+test("claims left by a crash in the attachment step stay unknown and are not sent", async () => {
+  const f = await openRunner();
+  const media = await stored(f, "crash.pdf", "%PDF");
+  const list = await f.list("crash");
+  const first = await f.member("to-1@example.com", [list]);
+  await f.member("to-2@example.com", [list]);
+  const c = await f.campaign(campaignInput([list], { name: "Crash", media: [media.id] }));
+  await f.status(c.id, "running");
+  // A process that died before returning the batch left its claims and cursor committed.
+  const at = f.clock.now().toISOString();
+  const id = BigInt(c.id);
+  f.runnerStore.claim(id, BigInt(first.id), at);
+  f.db.run("UPDATE campaigns SET last_subscriber_id = ? WHERE id = ?", [first.id, c.id]);
+  f.start();
+  await f.until(c.id, "finished");
+  expect(f.pushes.map((push) => push.to)).toEqual(["to-2@example.com"]);
+  expect(
+    f.db.query("SELECT status FROM campaign_deliveries WHERE subscriber_id = ?").get(first.id),
+  ).toEqual({ status: "unknown" });
+});
+
+const embedded = (src: string) => `<p><img alt="Logo" src="${src}" data-embed="true"></p>`;
+const inlineParts = (raw: string) => {
+  const text = raw.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+  return {
+    text,
+    cids: [...text.matchAll(/^Content-ID: <([^>]+)>/gim)].map((m) => m[1]!),
+    sources: [...text.matchAll(/<img[^>]*\ssrc="(cid:[^"]*)"/g)].map((m) => m[1]!),
+  };
+};
+
+test("data-embed images in a body and a template go out as inline parts of a campaign", async () => {
+  const f = await openRunner({ realEmailer: true });
+  const logo = await stored(f, "logo.png", imagePng);
+  const header = await stored(f, "header.png", imagePng);
+  const template = await f.json("/api/templates", "POST", {
+    name: "Embedded",
+    type: "campaign",
+    body: `${embedded("header.png")}{{ content | raw }}`,
+  });
+  expect(template.status).toBe(200);
+  const list = await f.list("embedded");
+  await f.member("to@example.com", [list]);
+  const c = await f.campaign(
+    campaignInput([list], {
+      name: "Embedded",
+      content_type: "richtext",
+      messenger: "email",
+      template_id: template.body.data.id,
+      body: embedded(`http://fixture.test/uploads/${logo.filename}?v=1`),
+    }),
+  );
+  f.start();
+  await f.status(c.id, "running");
+  await f.until(c.id, "finished");
+  const [mail] = await f.mail(1);
+  const { text, cids, sources } = inlineParts(mail!.data);
+  expect(text).toContain("multipart/related");
+  expect(text).toMatch(/^Content-Disposition: inline/im);
+  expect(new Set(cids).size).toBe(2);
+  expect(sources.sort()).toEqual(cids.map((cid) => `cid:${cid}`).sort());
+  expect(text.replace(/\r\n/g, "")).toContain(
+    Buffer.from(imagePng).toString("base64").replace(/=+$/, ""),
+  );
+  expect(text).toContain(`filename=${header.filename}`);
+});
+
+test("a test send embeds data-embed images, and refuses one it cannot find", async () => {
+  const f = await open();
+  const logo = await stored(f, "logo.png", imagePng);
+  const list = await f.list("test-embed");
+  await f.subscriber("test@example.com", [list]);
+  const input = {
+    name: "Test",
+    subject: "S",
+    lists: [list],
+    content_type: "richtext",
+    type: "regular",
+    messenger: "fixture",
+    body: embedded(logo.filename),
+    from_email: "Fixture <noreply@fixture.test>",
+  };
+  const campaign = await f.campaign(input);
+  const send = (body: string) =>
+    f.json(`/api/campaigns/${campaign.id}/test`, "POST", {
+      ...input,
+      body,
+      subscribers: ["test@example.com"],
+    });
+  expect((await send(input.body)).status).toBe(200);
+  const [mail] = await f.mail(1);
+  const { cids, sources } = inlineParts(mail!.data);
+  expect(cids).toHaveLength(1);
+  expect(sources).toEqual([`cid:${cids[0]}`]);
+  expect((await send(embedded("nothing-here.png"))).status).toBe(500);
+  expect((await send(`<img data-embed src="cid:already">${input.body}`)).status).toBe(200);
+});
+
+test("a missing embedded image pauses the campaign unsent, as a missing attachment does", async () => {
+  const f = await openRunner();
+  const list = await f.list("embed-missing");
+  await f.member("to@example.com", [list]);
+  const c = await f.campaign(
+    campaignInput([list], {
+      name: "No image",
+      content_type: "richtext",
+      body: embedded("nothing-here.png"),
+    }),
+  );
+  f.start();
+  await f.status(c.id, "running");
+  await f.until(c.id, "paused");
+  expect(f.pushes).toHaveLength(0);
+  expect(String(f.errors.at(-1))).toContain("nothing-here.png");
+});
+
+test("embedded images count toward a campaign's size limit", async () => {
+  const f = await openRunner();
+  const image = await stored(f, "large.png", mebibytes(6));
+  const file = await stored(f, "large.pdf", mebibytes(5));
+  const list = await f.list("embed-large");
+  await f.member("to@example.com", [list]);
+  const c = await f.campaign(
+    campaignInput([list], {
+      name: "Large",
+      content_type: "richtext",
+      body: embedded(image.filename),
+      media: [file.id],
+    }),
+  );
+  f.start();
+  await f.status(c.id, "running");
+  await f.until(c.id, "paused");
+  expect(f.pushes).toHaveLength(0);
+});
+
+test("a plain campaign keeps data-embed as text", async () => {
+  const f = await openRunner();
+  const logo = await stored(f, "logo.png", imagePng);
+  const list = await f.list("embed-plain");
+  await f.member("to@example.com", [list]);
+  const body = embedded(logo.filename);
+  const c = await f.campaign(campaignInput([list], { name: "Plain", body }));
+  f.start();
+  await f.status(c.id, "running");
+  await f.until(c.id, "finished");
+  expect(Buffer.from(f.pushes[0]!.message.body).toString()).toContain(body);
+  expect(f.pushes[0]!.message.attachments).toBeUndefined();
 });
 
 test("a test send carries the request's media through SMTP", async () => {

@@ -4,7 +4,7 @@ import { HttpError, ok } from "@/server/response";
 import { readBodyBytes } from "@/users/input";
 import type { Authentication } from "@/users/auth";
 import type { SettingsStore } from "@/settings/store";
-import { bindFull, bindKey, hasField, masked, shapes } from "@/settings/validate";
+import { bindFull, bindKey, hasField, masked, shapes, type Settings } from "@/settings/validate";
 import { decodeJsonBytes, orderedJson } from "@/settings/json";
 import { xmlSettings, xmlValue } from "@/settings/xml";
 
@@ -13,6 +13,8 @@ export function registerSettingsRoutes(
   settings: SettingsStore,
   auth: Authentication,
   smtpTest?: (body: unknown, revalidate: () => void) => Promise<void>,
+  /** Another owner's rule on a change; throws inside the settings transaction to refuse it. */
+  check: (next: Settings, current: Settings) => void = () => {},
 ): void {
   router.route(
     "GET",
@@ -71,6 +73,7 @@ export function registerSettingsRoutes(
           "security.public_rate_limit",
         ])
           if (!hasField(body, native)) next[native] = current[native];
+        check(next, current);
         return next;
       });
       return ok(true);
@@ -104,7 +107,11 @@ export function registerSettingsRoutes(
         throw new HttpError(400);
       }
       auth.revalidate(context, "settings:manage");
-      settings.update((current) => bindKey(current, context.params.key ?? "", body));
+      settings.update((current) => {
+        const next = bindKey(current, context.params.key ?? "", body);
+        check(next, current);
+        return next;
+      });
       return ok(true);
     },
     auth.middleware("settings:manage"),

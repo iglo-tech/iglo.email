@@ -51,6 +51,13 @@ export function createMediaStore(db: Database, clock: Clock) {
     get(id: bigint | number): MediaRow | null {
       return q.get("get-media").get(id) as MediaRow | null;
     },
+    /** The row of a stored file; a name without one is not a file of this application. */
+    byFilename(filename: string): MediaRow | null {
+      return q.get("get-media-by-filename").get(filename) as MediaRow | null;
+    },
+    any(): boolean {
+      return q.get("any-media").get() !== null;
+    },
     filename(id: bigint | number): string | null {
       return (q.get("get-media").get(id) as MediaRow | null)?.filename ?? null;
     },

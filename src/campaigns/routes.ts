@@ -1,6 +1,7 @@
 // Campaign HTTP endpoints adapted from listmonk cmd/campaigns.go and the /api/campaigns
 // routes in cmd/handlers.go at 6fcd95f. Analytics and running stats are M3.3; sending to
 // lists is the M3.2 runner: status changes here only record the state.
+import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message } from "@/messaging/email";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
@@ -68,7 +69,8 @@ export interface CampaignDeps {
   };
   settings: () => CampaignSettings;
   /** Reads files, so a caller holds no transaction. */
-  attachments(ids: bigint[]): Promise<NonNullable<Message["attachments"]>>;
+  attachments(ids: bigint[], inline: InlineImage[]): Promise<NonNullable<Message["attachments"]>>;
+  embedImages: EmbedImages;
 }
 
 const idValue = (id: bigint | null) =>
@@ -644,12 +646,13 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     try {
       const settings = deps.settings();
       const root = settings.rootUrl.replace(/\/+$/, "");
-      const campaign: MessageCampaign = {
+      // LoadInlineImages comes first: what is compiled is the rewritten source.
+      const { campaign, images, problem } = deps.embedImages<MessageCampaign>({
         ...value,
         name: value.name,
         uuid: stored.uuid,
         templateBody: templateBody(templateId > 0 ? BigInt(templateId) : stored.template_id),
-      };
+      });
       const sendError = (error: unknown): never => {
         if (error instanceof RenderCapacityError)
           throw new HttpError(429, "Too many template renders in progress.");
@@ -668,8 +671,10 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       } catch (error) {
         return sendError(error);
       }
+      if (problem)
+        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", problem));
       // As listmonk, the request names the media of a test send.
-      const attachments = await deps.attachments(input.media ?? []).catch(() => {
+      const attachments = await deps.attachments(input.media ?? [], images).catch(() => {
         throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", "attachment"));
       });
       const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);

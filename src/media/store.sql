@@ -17,5 +17,12 @@ SELECT * FROM media WHERE id = ?;
 -- name: media-filename-exists
 SELECT 1 FROM media WHERE filename = ? LIMIT 1;
 
+-- name: get-media-by-filename
+-- A name is one file of this instance's directory. Public requests reach this: it is indexed.
+SELECT * FROM media WHERE provider = 'filesystem' AND filename = ? ORDER BY id LIMIT 1;
+
+-- name: any-media
+SELECT 1 FROM media LIMIT 1;
+
 -- name: delete-media
 DELETE FROM media WHERE id = ? RETURNING *;

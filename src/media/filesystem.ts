@@ -1,17 +1,30 @@
 // Adapted from listmonk internal/media/providers/filesystem/filesystem.go and makeFilename and
 // appendSuffixToFilename in cmd/utils.go at 6fcd95f. Uploads are one flat directory of regular
-// files: names are single path components, and nothing here follows a symlink at that level.
-import { closeSync, constants, openSync, renameSync } from "node:fs";
-import { lstat, mkdir, open, readFile, rm } from "node:fs/promises";
-import { extname, join, resolve, sep } from "node:path";
+// files inside the data directory (D64): names are single path components, nothing here follows
+// a symlink at that level, and the directory's own path is checked component by component.
+import {
+  closeSync,
+  constants,
+  lstatSync,
+  openSync,
+  realpathSync,
+  renameSync,
+  statSync,
+} from "node:fs";
+import { lstat, mkdir, open, readdir, readFile, rm } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 
 export interface FilesystemSettings {
   uploadPath: string;
   uploadUri: string;
 }
 
-/** Temporary files, inside the directory for an atomic rename. No stored name can start with a dot. */
-const TEMPORARY = ".tmp";
+/**
+ * Temporary files, inside the directory for an atomic rename. No stored name can start with a
+ * dot, and this name says whose it is: an operator's `.tmp` is not ours to touch.
+ */
+const TEMPORARY = ".iglo-email-uploading";
+const temporaryFile = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** A name fits every common filesystem's 255 bytes, with room for a unique suffix. */
 const MAX_NAME_BYTES = 200;
 /**
@@ -86,15 +99,44 @@ function singleComponent(name: string): boolean {
   return !!name && !name.startsWith(".") && !/[/\\\0]/.test(name);
 }
 
-export function createFilesystem(dataDir: string, settings: () => FilesystemSettings) {
-  /** Relative paths are under the data directory. It and its ancestors hold the database. */
-  function directory(): string {
-    const data = resolve(dataDir);
-    const dir = resolve(data, settings().uploadPath.trim() || "uploads");
-    if (dir === data || data.startsWith(dir === sep ? dir : dir + sep))
-      throw new Error("The upload path holds the data directory");
-    return dir;
+/** `path` with each component that exists resolved; only a missing tail stays as written. */
+function canonical(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  // realpath also says ENOENT for a broken link, and writing through one leaves this path.
+  if (lstatSync(path, { throwIfNoEntry: false })) throw new Error("Broken link");
+  const parent = dirname(path);
+  return parent === path ? path : join(canonical(parent), basename(path));
+}
+
+/**
+ * The real directory of `upload_path`: strictly inside the real data directory, which holds the
+ * database. Relative paths are under the data directory. Other storage is mounted there.
+ */
+export function uploadRoot(dataDir: string, uploadPath: string): string {
+  const refused = new Error(
+    `The upload path "${uploadPath}" must be a directory inside the data directory. ` +
+      "To use other storage, mount it there.",
+  );
+  let dir: string;
+  let inside: string;
+  try {
+    const data = realpathSync(resolve(dataDir));
+    inside = data.endsWith(sep) ? data : data + sep;
+    dir = canonical(resolve(data, uploadPath.trim() || "uploads"));
+    if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() === false) throw refused;
+  } catch {
+    throw refused;
+  }
+  if (!dir.startsWith(inside)) throw refused;
+  return dir;
+}
+
+export function createFilesystem(dataDir: string, settings: () => FilesystemSettings) {
+  const directory = () => uploadRoot(dataDir, settings().uploadPath);
   /** filepath.Clean of the URI, or null when it cannot serve files. */
   function uri(): string | null {
     const clean = settings()
@@ -128,11 +170,26 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
         return undefined;
       }
     },
-    /** Stores bytes under `name`, or a suffixed name if it is taken, and returns the name used. */
-    async put(name: string, bytes: Uint8Array, taken: (name: string) => boolean): Promise<string> {
-      const dir = directory();
+    /** The upload directory now, or an error saying why it is refused. */
+    root: directory,
+    /** Whether `root` is still the upload directory, for the end of a long operation. */
+    current(root: string): boolean {
+      try {
+        return directory() === root;
+      } catch {
+        return false;
+      }
+    },
+    /** Stores bytes under `name` in `dir`, or a suffixed name if it is taken; returns the name. */
+    async put(
+      dir: string,
+      name: string,
+      bytes: Uint8Array,
+      taken: (name: string) => boolean,
+    ): Promise<string> {
       const temporary = join(dir, TEMPORARY);
       await mkdir(temporary, { recursive: true });
+      if (!(await lstat(temporary)).isDirectory()) throw new Error("Unusable temporary directory");
       const path = join(temporary, crypto.randomUUID());
       let stored: string | undefined;
       try {
@@ -182,12 +239,19 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
       return readFile(path);
     },
     /** Delete. A file already gone is what was asked for. */
-    async remove(name: string): Promise<void> {
-      if (singleComponent(name)) await rm(join(directory(), name), { force: true });
+    async remove(name: string, dir = directory()): Promise<void> {
+      if (singleComponent(name)) await rm(join(dir, name), { force: true });
     },
-    /** Temporary files of an upload cut off by a crash; no upload runs yet at startup. */
+    /**
+     * Temporary files of an upload cut off by a crash; no upload runs yet at startup. Only this
+     * module's own: regular files, named as it names them, directly in its directory.
+     */
     async sweep(): Promise<void> {
-      await rm(join(directory(), TEMPORARY), { recursive: true, force: true });
+      const temporary = join(directory(), TEMPORARY);
+      if (!(await lstat(temporary).catch(() => null))?.isDirectory()) return;
+      for (const entry of await readdir(temporary, { withFileTypes: true }))
+        if (entry.isFile() && temporaryFile.test(entry.name))
+          await rm(join(temporary, entry.name), { force: true });
     },
   };
 }

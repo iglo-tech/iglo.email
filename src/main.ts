@@ -59,7 +59,8 @@ import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createAttachments } from "@/media/attachments";
 import { createFilesystem } from "@/media/filesystem";
-import { registerMediaRoutes } from "@/media/routes";
+import { createEmbeds } from "@/media/embed";
+import { registerMediaRoutes, uploadPathCheck } from "@/media/routes";
 import { createMediaStore } from "@/media/store";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { startCampaignRunner } from "@/campaigns/runner/runner";
@@ -238,11 +239,24 @@ async function main(): Promise<void> {
       },
       copyAllowed: (address) => !addressBlocklisted(subscriberStore!, address),
     });
+    mediaStore = createMediaStore(db, clock);
+    const media = mediaStore;
+    const files = createFilesystem(bootstrap.config.dataDir, () => {
+      const current = settings!.read();
+      return {
+        uploadPath: current["upload.filesystem.upload_path"],
+        uploadUri: current["upload.filesystem.upload_uri"],
+      };
+    });
+    // A database that names a directory it must not serve from stops here, with the reason.
+    files.root();
+    await files.sweep().catch((error) => app.logger.error(error));
     registerSettingsRoutes(
       router,
       settings,
       auth,
       createSMTPTest(settings, emailer, app.i18n, renderer),
+      uploadPathCheck(bootstrap.config.dataDir, media),
     );
     const marketing = () => marketingSettings(settings!.read());
     const pages = () => publicSettings(settings!.read());
@@ -313,16 +327,6 @@ async function main(): Promise<void> {
       page: pages,
       limit: unsubscribeLimit,
     });
-    mediaStore = createMediaStore(db, clock);
-    const media = mediaStore;
-    const files = createFilesystem(bootstrap.config.dataDir, () => {
-      const current = settings!.read();
-      return {
-        uploadPath: current["upload.filesystem.upload_path"],
-        uploadUri: current["upload.filesystem.upload_uri"],
-      };
-    });
-    await files.sweep().catch((error) => app.logger.error(error));
     registerMediaRoutes(router, {
       store: media,
       files,
@@ -337,6 +341,7 @@ async function main(): Promise<void> {
       },
     });
     const attachments = createAttachments(media, files);
+    const embedImages = createEmbeds(media);
     campaignStore = createCampaignStore(db, clock, {
       templateExists: (id) => templates!.get(id) !== null,
       defaultTemplate: () => templates!.getDefault()?.id ?? null,
@@ -374,6 +379,7 @@ async function main(): Promise<void> {
       emailer,
       settings: campaignSettings,
       attachments,
+      embedImages,
     });
     registerCampaignPublicRoutes(router, {
       db,
@@ -429,6 +435,7 @@ async function main(): Promise<void> {
       tracking,
       emailer,
       attachments,
+      embedImages,
       settings: () => {
         const current = settings!.read();
         const campaign = campaignSettings();
