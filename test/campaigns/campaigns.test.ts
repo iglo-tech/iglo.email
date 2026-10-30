@@ -450,6 +450,26 @@ test("campaign search and query deletion fold Unicode case", async () => {
   expect((await f.json(`/api/campaigns/${other.id}`)).status).toBe(200);
 });
 
+test("campaign search lowercases both sides like upstream ILIKE (İstanbul, ẞ)", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const istanbul = await f.campaign({ name: "\u0130stanbul", subject: "Bahar", lists: [news] });
+  const gross = await f.campaign({ name: "GRO\u1E9E", subject: "s", lists: [news] });
+  const other = await f.campaign({ name: "Izmir", subject: "s", lists: [news] });
+  const found = async (query: string) =>
+    (
+      await f.json(`/api/campaigns?query=${encodeURIComponent(query)}&per_page=all`)
+    ).body.data.results.map((c: { id: number }) => c.id);
+  expect(await found("istanbul")).toEqual([istanbul.id]);
+  expect(await found("\u0130STANBUL")).toEqual([istanbul.id]);
+  expect(await found("gro\u00DF")).toEqual([gross.id]);
+  expect(await found("gross")).toEqual([]);
+  const deleted = await f.json(`/api/campaigns?query=istanbul`, "DELETE");
+  expect(deleted.status).toBe(200);
+  expect((await f.json(`/api/campaigns/${istanbul.id}`)).status).toBe(400);
+  expect((await f.json(`/api/campaigns/${other.id}`)).status).toBe(200);
+});
+
 test("order_by=status follows upstream's status enum rank across pages", async () => {
   const f = await open();
   const news = await f.list("news");

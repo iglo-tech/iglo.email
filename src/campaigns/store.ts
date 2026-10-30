@@ -4,7 +4,7 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
-import { caseInsensitiveGlob } from "@/subscribers/query-filter";
+import { lowercaseGlob } from "@/campaigns/search";
 import sql from "@/campaigns/store.sql" with { type: "text" };
 
 export type CampaignStatus =
@@ -163,7 +163,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
         .all(
           JSON.stringify(filter.statuses),
           JSON.stringify(filter.tags),
-          caseInsensitiveGlob(filter.query),
+          lowercaseGlob(filter.query),
           filter.type,
           scope.all ? 1 : 0,
           ids(scope.ids),
@@ -333,7 +333,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
           .get("delete-campaign-ids")
           .all(
             ids(selection),
-            caseInsensitiveGlob(filter.query),
+            lowercaseGlob(filter.query),
             JSON.stringify(filter.statuses),
             JSON.stringify(filter.tags),
             filter.type,
