@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.1 performance against the targets, branch task/M6.1-performance, [brief](briefs/M6.1.md). One Opus medium worker dispatched; no reviewer active. Includes the outbox claim and cap lookup backlog fixes.
-Next: on worker handback, Sol xhigh round 1, lead disposition, merge. Then the remaining M2/M3/M4/M6 tasks.
+M6.1 performance, [PR #31](https://github.com/iglo-tech/iglo.email/pull/31), head e679343. Outbox claim 4.0→0.14 ms and cap lookup 11.3→0.02 ms fixed; target 1 met; mixed-load target 2 not met (campaign 48.9/s, events 3–4× slower). Sol xhigh round-1 review running.
+Next: merge, then M6.1b to close the mixed-load gap (outbox batching, campaign pacing; FULL sync stays per D22).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
