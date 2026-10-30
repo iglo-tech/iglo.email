@@ -354,6 +354,83 @@ export function createSubscriberStore(
       return get(row.id)!;
     },
     byUuid: (uuid: string) => q.get("subscriber-by-uuid").get(uuid) as Row | null,
+    /**
+     * Public signup, adapted from insert-subscriber and update-subscriber-with-lists with
+     * allow-resubscribe: a new address is created enabled; an existing one keeps its profile.
+     * Confirmed memberships stay, others restart unconfirmed, and a blocklisted subscriber's
+     * memberships are unsubscribed. The caller holds the write.
+     */
+    publicSubscribe(input: { email: string; name: string }, listIds: bigint[]): Row {
+      const now = clock.now().toISOString();
+      let row = byEmail(input.email);
+      if (row) q.get("subscriber-touch").run(now, row.id);
+      else {
+        const created = q
+          .get("subscriber-insert")
+          .get(crypto.randomUUID(), input.email, input.name, "enabled", "{}", null, now, now) as {
+          id: bigint;
+        };
+        row = get(created.id)!;
+      }
+      for (const list of listIds) {
+        const previous = q.get("membership-get").get(row.id, list) as Membership | null;
+        const status =
+          row.status === "blocklisted"
+            ? "unsubscribed"
+            : previous?.status === "confirmed"
+              ? "confirmed"
+              : "unconfirmed";
+        if (previous) q.get("membership-status").run(status, row.id, list);
+        else q.get("membership-insert").run(row.id, list, status, now, now);
+      }
+      return row;
+    },
+    /** The subscriber's unconfirmed lists in list order (get-subscriber-lists). */
+    unconfirmedLists(id: bigint) {
+      return memberships(id)
+        .filter((m) => m.status === "unconfirmed")
+        .map((m) => lists.subscriberMetadata(m.list_id))
+        .filter((list) => list !== null)
+        .sort((a, b) => a.id - b.id);
+    },
+    /** The memberships public pages may show: not private, not already unsubscribed. */
+    visibleSubscriptions(id: bigint) {
+      return memberships(id).flatMap((m) => {
+        const list = lists.subscriberMetadata(m.list_id);
+        return list && list.type !== "private"
+          ? [{ ...list, listId: m.list_id, subscriptionStatus: m.status }]
+          : [];
+      });
+    },
+    /** Adapted from export-subscriber-data: private list names stay hidden. */
+    exportSubscriptions(id: bigint) {
+      return memberships(id).flatMap((m) => {
+        const list = lists.subscriberMetadata(m.list_id);
+        if (!list) return [];
+        return [
+          {
+            subscription_status: m.status,
+            name: list.type === "private" ? "Private list" : list.name,
+            type: list.type,
+            created_at: m.created_at,
+          },
+        ];
+      });
+    },
+    /** Confirm unconfirmed memberships only: never reverses an unsubscribe. */
+    confirmOptin(id: bigint, listIds: bigint[], meta: Record<string, string>) {
+      const now = clock.now().toISOString();
+      for (const list of listIds)
+        q.get("membership-confirm").run(JSON.stringify(meta), now, id, list);
+    },
+    rename(id: bigint, name: string) {
+      q.get("subscriber-rename").run(name, clock.now().toISOString(), id);
+    },
+    /** Adapted from unsubscribe-by-campaign with unsubAllUnconfirmed. Returns changed lists. */
+    unsubscribeUnconfirmed(id: bigint): bigint[] {
+      const rows = q.get("membership-unsubscribe-unconfirmed").all(clock.now().toISOString(), id);
+      return (rows as { list_id: bigint }[]).map((row) => row.list_id);
+    },
     membership: (id: bigint, list: bigint) =>
       q.get("membership-get").get(id, list) as Membership | null,
     /**

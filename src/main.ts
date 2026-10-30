@@ -58,6 +58,11 @@ import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { startCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
+import { registerArchiveRoutes } from "@/public/archive";
+import { createSubscriberMail, type SubscriberMail } from "@/public/mail";
+import { rateLimited } from "@/public/rate-limit";
+import { registerPublicRoutes } from "@/public/routes";
+import { publicSettings } from "@/public/settings";
 
 async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
@@ -97,6 +102,7 @@ async function main(): Promise<void> {
   let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
   let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
   let runner: ReturnType<typeof startCampaignRunner> | undefined;
+  let mail: SubscriberMail | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -146,13 +152,25 @@ async function main(): Promise<void> {
     registerTemplateRoutes(router, templates, renderer, auth);
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
-    registerSubscriberRoutes(router, subscriberStore, roles, auth, () => {
-      const current = settings!.read();
-      return {
-        "privacy.domain_allowlist": current["privacy.domain_allowlist"],
-        "privacy.domain_blocklist": current["privacy.domain_blocklist"],
-      };
-    });
+    registerSubscriberRoutes(
+      router,
+      subscriberStore,
+      roles,
+      auth,
+      () => {
+        const current = settings!.read();
+        return {
+          "privacy.domain_allowlist": current["privacy.domain_allowlist"],
+          "privacy.domain_blocklist": current["privacy.domain_blocklist"],
+        };
+      },
+      {
+        afterAdminWrite: (row, listIds) => mail!.afterAdminWrite(row, listIds),
+        send: (row) => {
+          mail!.optin(row);
+        },
+      },
+    );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
     emailer = createEmailer({
       clock,
@@ -169,6 +187,12 @@ async function main(): Promise<void> {
       createSMTPTest(settings, emailer, app.i18n, renderer),
     );
     const marketing = () => marketingSettings(settings!.read());
+    const pages = () => publicSettings(settings!.read());
+    const limit = (limit: number) =>
+      rateLimited(clock, { limit, windowMs: 60_000, maxPeers: 10_000 }, () => pages().siteName);
+    // Mail providers post one-click unsubscribes from shared addresses, hence the higher limit.
+    const limits = { subscribe: limit(30), optin: limit(60), privacy: limit(10) };
+    const unsubscribeLimit = limit(300);
     runnerStore = createRunnerStore(db);
     sends = createSends({
       db,
@@ -211,6 +235,8 @@ async function main(): Promise<void> {
       tracking,
       settings: marketing,
       effects: enrollments.unsubscribeEffects,
+      page: pages,
+      limit: unsubscribeLimit,
     });
     campaignStore = createCampaignStore(db, clock, {
       templateExists: (id) => templates!.get(id) !== null,
@@ -255,6 +281,8 @@ async function main(): Promise<void> {
       tracking,
       settings: campaignSettings,
       effects: enrollments.unsubscribeEffects,
+      page: pages,
+      limit: unsubscribeLimit,
     });
     recipients = createCampaignRecipients(db);
     const templateStore = templates;
@@ -304,6 +332,33 @@ async function main(): Promise<void> {
       exitThenTrigger: enrollments.exitThenTrigger,
     });
     registerEventRoutes(router, events, auth);
+    mail = createSubscriberMail({
+      subscribers: subscriberStore,
+      sends,
+      campaigns: campaignStore,
+      tracking,
+      events,
+      renderer,
+      i18n: app.i18n,
+      clock,
+      logger: app.logger,
+      settings: pages,
+    });
+    registerPublicRoutes(router, {
+      db,
+      lists,
+      subscribers: subscriberStore,
+      mail,
+      settings: pages,
+      limits,
+    });
+    registerArchiveRoutes(router, {
+      store: campaignStore,
+      subscribers: subscriberStore,
+      templates,
+      renderer,
+      settings: pages,
+    });
     sequences = createSequenceStore(db, clock, {
       templates,
       lists,

@@ -1,7 +1,7 @@
 // Adapted from listmonk static/public/templates/message.html and cmd/handlers.go at 6fcd95f.
 import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
-import { PublicShell } from "@/public/layout";
+import { PublicShell, type ShellSite } from "@/public/layout";
 import { assetVersion } from "@/server/asset-manifest";
 
 export function publicNotFound(i18n: Translation, method: string): Response {
@@ -31,7 +31,7 @@ export function publicNotFound(i18n: Translation, method: string): Response {
 /** listmonk's public `message` page (makeMsgTpl): a title heading and one message. */
 export function publicMessage(
   i18n: Translation,
-  page: { status: number; title: string; message: string; siteName: string },
+  page: { status: number; title: string; message: string; siteName: string; site?: ShellSite },
   headers: Record<string, string> = {},
 ): Response {
   const body = render(
@@ -40,6 +40,8 @@ export function publicMessage(
       siteName={page.siteName}
       assetVersion={assetVersion}
       poweredBy={i18n.T("public.poweredBy")}
+      archiveTitle={i18n.T("public.archiveTitle")}
+      {...(page.site ? { site: page.site } : {})}
     >
       <h2>{page.title}</h2>
       <div>{page.message}</div>

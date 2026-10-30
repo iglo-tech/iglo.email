@@ -6,16 +6,14 @@ import type { Database } from "bun:sqlite";
 import { deflateSync, crc32 } from "node:zlib";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
-import { render } from "@/jsx/render";
 import type { Sends } from "@/messaging/sends";
-import { PublicShell } from "@/public/layout";
+import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
-import type { RequestContext } from "@/server/context";
-import { assetVersion } from "@/server/asset-manifest";
+import { savePreferences, subscriptionPage, type PageOptions } from "@/public/preferences";
+import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
 import type { SubscriberStore } from "@/subscribers/store";
-import { readBodyBytes } from "@/users/input";
 import { linkPath } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
@@ -62,47 +60,6 @@ function transparentPixel(): Uint8Array {
   ]);
 }
 
-/** Go strconv.ParseBool, with Echo's empty-value-is-false form binding. */
-function parseBool(value: unknown): boolean | undefined {
-  if (value === undefined || value === "" || value === false) return false;
-  if (value === true) return true;
-  if (typeof value !== "string") return undefined;
-  if (["1", "t", "T", "TRUE", "true", "True"].includes(value)) return true;
-  if (["0", "f", "F", "FALSE", "false", "False"].includes(value)) return false;
-  return undefined;
-}
-
-/** Bounded form body: browsers and RFC 8058 senders post url-encoded or multipart forms. */
-async function readForm(request: Request): Promise<{ blocklist: boolean; manage: boolean }> {
-  const bytes = await readBodyBytes(request);
-  const media = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-  let get: (name: string) => unknown = () => undefined;
-  if (bytes.length) {
-    if (media === "application/x-www-form-urlencoded") {
-      const form = new URLSearchParams(bytes.toString("utf8"));
-      get = (name) => form.get(name) ?? undefined;
-    } else if (media === "multipart/form-data") {
-      const form = await new Request("http://form.invalid", {
-        method: "POST",
-        headers: { "content-type": request.headers.get("content-type")! },
-        body: Uint8Array.from(bytes),
-      }).formData();
-      get = (name) => {
-        const value = form.get(name);
-        return value === null ? undefined : typeof value === "string" ? value : null;
-      };
-    } else if (media === "application/json") {
-      const value = JSON.parse(bytes.toString("utf8")) as unknown;
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("body");
-      get = (name) => (value as Record<string, unknown>)[name];
-    } else throw new Error("media");
-  }
-  const blocklist = parseBool(get("blocklist"));
-  const manage = parseBool(get("manage"));
-  if (blocklist === undefined || manage === undefined) throw new Error("bool");
-  return { blocklist, manage };
-}
-
 export function registerUnsubscribeRoutes(
   router: Router,
   deps: {
@@ -112,9 +69,21 @@ export function registerUnsubscribeRoutes(
     tracking: Tracking;
     settings: () => MarketingSettings;
     effects?: UnsubscribeEffects;
+    /** Public page settings; without them only the plain unsubscribe page shows. */
+    page?: () => PageOptions;
+    limit?: Middleware;
   },
 ) {
   const effects = deps.effects ?? noEffects;
+  const limit = deps.limit ? [deps.limit] : [];
+  const options = (): PageOptions =>
+    deps.page?.() ?? {
+      siteName: deps.settings().siteName,
+      allowBlocklist: deps.settings().allowBlocklist,
+      allowPreferences: false,
+      allowExport: false,
+      allowWipe: false,
+    };
   const pixel = transparentPixel();
   const page = (
     i18n: Translation,
@@ -152,82 +121,59 @@ export function registerUnsubscribeRoutes(
     if (!found) return notFound(t, noIndex);
     if (found.subscriber.status === "blocklisted")
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
-    const settings = deps.settings();
-    const title = t.T("public.unsubscribeTitle");
-    const body = render(
-      <PublicShell
-        title={title}
-        siteName={settings.siteName}
-        assetVersion={assetVersion}
-        poweredBy={t.T("public.poweredBy")}
-      >
-        <section class="section">
-          <h2>{t.T("globals.buttons.unsubscribe")}</h2>
-          <form method="post" class="unsub-form">
-            <div>
-              <p>{t.T("public.unsubHelp")}</p>
-              {settings.allowBlocklist ? (
-                <>
-                  <hr />
-                  <p class="small">
-                    <input id="privacy-blocklist" type="checkbox" name="blocklist" value="true" />{" "}
-                    <label for="privacy-blocklist">{t.T("public.unsubFull")}</label>
-                  </p>
-                </>
-              ) : null}
-              <p>
-                <button type="submit" class="button" id="btn-unsub">
-                  {t.T("globals.buttons.unsubscribe")}
-                </button>
-              </p>
-            </div>
-          </form>
-        </section>
-      </PublicShell>,
-    );
-    return new Response(`<!DOCTYPE html>${body}`, {
-      status: 200,
-      headers: { "Content-Type": "text/html; charset=UTF-8", ...noIndex },
-    });
+    const manage = parseBool(context.url.searchParams.get("manage")) === true;
+    return subscriptionPage(t, deps.subscribers, found.subscriber, options(), manage, noIndex);
   });
 
   // RFC 8058 one-click and the page form: no login, CSRF token or CAPTCHA.
-  router.route("POST", "/m/:sendUUID/unsubscribe/:subUUID", async (context) => {
-    const t = context.app.i18n;
-    const bad = invalidUUID(context, "sendUUID", "subUUID");
-    if (bad) return bad;
-    if (!target(context.params.sendUUID!, context.params.subUUID!)) return notFound(t);
-    let form: { blocklist: boolean; manage: boolean };
-    try {
-      form = await readForm(context.request);
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
-    }
-    const blocklist = deps.settings().allowBlocklist && form.blocklist;
-    // Preference management (manage=true) is the M2.5 preferences page.
-    if (form.manage && !blocklist)
-      return page(t, 400, t.T("globals.terms.error"), t.T("public.invalidFeature"));
-    const done = writeTransaction(deps.db, () => {
-      // Re-read inside the write so a concurrent identity change cannot be unsubscribed.
-      const found = target(context.params.sendUUID!, context.params.subUUID!);
-      if (!found) return false;
-      const listIds = deps.subscribers.unsubscribe(
-        found.subscriber.id,
-        found.send.list_id,
-        blocklist,
-      );
-      effects.unsubscribed({
-        subscriberId: found.subscriber.id,
-        listId: found.send.list_id,
-        listIds,
-        blocklisted: blocklist,
+  router.route(
+    "POST",
+    "/m/:sendUUID/unsubscribe/:subUUID",
+    async (context) => {
+      const t = context.app.i18n;
+      const bad = invalidUUID(context, "sendUUID", "subUUID");
+      if (bad) return bad;
+      if (!target(context.params.sendUUID!, context.params.subUUID!)) return notFound(t);
+      let form: PreferenceForm;
+      try {
+        form = await readPreferences(context.request);
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
+      }
+      const blocklist = deps.settings().allowBlocklist && form.blocklist;
+      if (form.manage && !blocklist)
+        return (
+          savePreferences(
+            { db: deps.db, subscribers: deps.subscribers, effects },
+            t,
+            options(),
+            form,
+            () => target(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null,
+          ) ?? notFound(t)
+        );
+      const done = writeTransaction(deps.db, () => {
+        // Re-read inside the write so a concurrent identity change cannot be unsubscribed.
+        const found = target(context.params.sendUUID!, context.params.subUUID!);
+        if (!found) return false;
+        const listIds = deps.subscribers.unsubscribe(
+          found.subscriber.id,
+          found.send.list_id,
+          blocklist,
+        );
+        effects.unsubscribed({
+          subscriberId: found.subscriber.id,
+          listId: found.send.list_id,
+          listIds,
+          blocklisted: blocklist,
+        });
+        return true;
       });
-      return true;
-    });
-    if (!done) return notFound(t);
-    return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
-  });
+      if (!done) return notFound(t);
+      return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
+    },
+    ...limit,
+  );
 
   router.route("GET", "/m/:sendUUID/px.png", (context) => {
     const bad = invalidUUID(context, "sendUUID");

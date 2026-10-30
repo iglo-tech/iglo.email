@@ -126,3 +126,21 @@ INSERT INTO campaign_links (campaign_id, link_id) VALUES (?, ?) ON CONFLICT DO N
 
 -- name: campaign-has-link
 SELECT EXISTS (SELECT 1 FROM campaign_links WHERE campaign_id = ? AND link_id = ?) AS has;
+
+-- name: archived-campaigns
+-- Adapted from get-archived-campaigns.
+SELECT id, COUNT(*) OVER () AS total FROM campaigns
+WHERE archive = 1 AND type = 'regular' AND status IN ('running', 'paused', 'finished')
+ORDER BY started_at IS NULL, started_at DESC, id DESC LIMIT ? OFFSET ?;
+
+-- name: archived-campaign-id
+-- A UUID or slug; unsent campaigns are not published.
+SELECT id FROM campaigns
+WHERE (uuid = ?1 OR archive_slug = ?1)
+  AND archive = 1 AND type = 'regular' AND status IN ('running', 'paused', 'finished');
+
+-- name: subscriber-campaign-views
+-- Adapted from export-subscriber-data.
+SELECT c.subject AS campaign, COUNT(v.id) AS views FROM campaign_views v
+JOIN campaigns c ON c.id = v.campaign_id
+WHERE v.subscriber_id = ? GROUP BY c.id ORDER BY c.id LIMIT 5000;

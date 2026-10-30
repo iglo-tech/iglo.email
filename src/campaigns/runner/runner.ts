@@ -352,7 +352,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
       try {
         const out = pipe.compiled.render(
           subscriber,
-          { unsubscribeUrl, ...(tracking ? { tracking } : {}) },
+          { rootUrl: root, unsubscribeUrl, ...(tracking ? { tracking } : {}) },
           createMessageBudget(),
         );
         const headers: Record<string, string | string[]> = {
