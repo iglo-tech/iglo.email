@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Udsendelses-metadata",
     "campaigns.archiveMetaHelp": "Eksempel-abonnentsdata til brug i den offentlige besked herunder navn, e-mail og valgfrie egenskaber, der bruges i beskeden eller skabelonen.",
     "campaigns.archiveSlugHelp": "Et kort navn til siden, der skal bruges i den offentlige URL. fx: mit-nyhedsbrev-nr-2",
-    "campaigns.attribsHelp": "Brugerdefineret JSON-objekt {} attributter for denne udsendelse. Brug i skabelon med {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Brugerdefineret JSON-objekt {} attributter for denne udsendelse. Brug i skabelon med {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Kan ikke opdatere et igangværende eller afsluttet udsendelse.",
     "campaigns.confirmSchedule": "Denne udsendelse starter automatisk ved den planlagte dato og tid. Planlæg nu?",
     "campaigns.customHeadersHelp": "Række af tilpassede headere der tilføjes nyheder der udsendes. F.eks: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"value\"}]",

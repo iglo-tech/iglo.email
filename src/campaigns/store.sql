@@ -55,6 +55,11 @@ WHERE (CASE WHEN json_array_length(?1) > 0 THEN c.id IN (SELECT value FROM json_
   AND (?6 OR EXISTS (SELECT 1 FROM campaign_lists cl WHERE cl.campaign_id = c.id
     AND cl.list_id IN (SELECT value FROM json_each(?7))));
 
+-- name: running-campaigns
+-- get-campaign-status for the running status.
+SELECT id, status, to_send, sent, started_at, updated_at FROM campaigns WHERE status = 'running'
+ORDER BY id;
+
 -- name: campaign-has-lists
 SELECT EXISTS (SELECT 1 FROM campaign_lists WHERE campaign_id = ?
   AND list_id IN (SELECT value FROM json_each(?))) AS has;

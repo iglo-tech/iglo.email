@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Kapány metaadat",
     "campaigns.archiveMetaHelp": "A nyilvánosan közzétett kampányüzenetbe helyettesítendő adatok (pl. név, e-mail cím, és amiket a sablon használ).",
     "campaigns.archiveSlugHelp": "Egy rövid név a nyilvános URL-címben való használathoz. Például: az-en-hirlevelem-2",
-    "campaigns.attribsHelp": "Egyedi JSON objektum {} attribútumok ehhez a kampányhoz. A sablonban használja ezt: {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Egyedi JSON objektum {} attribútumok ehhez a kampányhoz. A sablonban használja ezt: {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Nem lehet frissíteni futó vagy befejezett kampányt.",
     "campaigns.confirmSchedule": "A kampány az ütemezett napon és időpontban automatikusan elindul. Ütemezés most?",
     "campaigns.customHeadersHelp": "Kimenő üzenetek extra fejlécei. Például: [{\"X-K1\": \"V1\"}, {\"X-K2\": \"V2\"}]",

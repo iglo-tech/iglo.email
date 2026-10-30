@@ -124,6 +124,8 @@ export async function startUserFixture(
         rootUrl: "http://fixture.test",
         lang: "en",
         cacheSlowQueries: settings.read()["app.cache_slow_queries"],
+        fromEmails: ["Fixture <fixture@example.test>", "Other <other@example.test>"],
+        messengers: ["email"],
       }),
       settings: () => ({
         siteName: settings.read()["app.site_name"],

@@ -156,8 +156,11 @@ test.describe("Lists", () => {
         tag: `tag${n}`,
         description: `desc${n}`,
       });
-      await withListAPI(page, "PUT", () => page.getByTestId("btn-save").click());
-      await page.waitForEvent("load");
+      // Waited together: the reload can finish before the response's wait returns.
+      await Promise.all([
+        page.waitForEvent("load"),
+        withListAPI(page, "PUT", () => page.getByTestId("btn-save").click()),
+      ]);
     }
 
     await page.goto(here);

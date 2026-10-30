@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Metadáta kampane",
     "campaigns.archiveMetaHelp": "Použíť prázdne dáta prihlásených vo verejnom archíve vrátane mena, emailu a iných voliteľných atribútov použitých v správach kampane aleebo šablónach.",
     "campaigns.archiveSlugHelp": "Krátky názov stránky, ktorý sa používa v verejnom URL. Napríklad: moj-newsletter-edicia-2",
-    "campaigns.attribsHelp": "Vlastný JSON objekt {} atribútov pre túto kampáň. Použite v šablóne s {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Vlastný JSON objekt {} atribútov pre túto kampáň. Použite v šablóne s {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Nedá sa aktualizovať spustená alebo dokončená kampaň.",
     "campaigns.confirmSchedule": "Táto kampaň sa spustí automaticky v naplánovaný dátum a čas. Naplánovať hneď?",
     "campaigns.customHeadersHelp": "Pole voliteľných hlavičiek odosielaných správ, ako: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"value\"}]",

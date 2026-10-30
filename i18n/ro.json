@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Metadatele campaniei",
     "campaigns.archiveMetaHelp": "Datele abonaților inactivi de utilizat în mesajul public, inclusiv numele, e-mailul și orice atribute opționale utilizate în mesajul sau șablonul campaniei.",
     "campaigns.archiveSlugHelp": "Un nume scurt pentru pagina care va fi utilizat în URL-ul public. ex: editia-mea-de-newsletter-2",
-    "campaigns.attribsHelp": "Atribute personalizate de obiect JSON {} pentru această campanie. Utilizează în șablon cu {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Atribute personalizate de obiect JSON {} pentru această campanie. Utilizează în șablon cu {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Nu se poate actualiza o campanie care rulează sau s-a terminat.",
     "campaigns.confirmSchedule": "Această campanie va începe automat la data și ora programate. Programează-te acum?",
     "campaigns.customHeadersHelp": "Matrice de antete personalizate care să fie atașate la mesajele trimise. ex: [{\"X-Custom\": \"valoare\"}, {\"X-Custom2\": \"valoare\"}]",

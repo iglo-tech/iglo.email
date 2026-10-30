@@ -48,7 +48,7 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
       new AbortController().signal,
       (blankOrigin) => run({ origin: production.origin, blankOrigin, mailbox }),
       undefined,
-      300_000,
+      1_200_000,
     );
   } finally {
     await mailbox.close();

@@ -13,7 +13,8 @@ One file: `bun run e2e test/e2e/specs/login.e2e.js`. Arguments go to Playwright.
 `bun run e2e:browser` makes one `agent-browser` pass over login, 2FA enrolment,
 password reset and the dashboard against the same servers and prints what each
 page said. `bun run e2e:browser:lists` does the same for the subscribers and lists
-screens. `E2E_SHOTS=<directory>` keeps screenshots.
+screens, and `bun run e2e:browser:campaigns` for the templates and campaigns screens.
+`E2E_SHOTS=<directory>` keeps screenshots.
 
 Credentials are the synthetic ones in `test/worked-example/harness.ts`; each
 test makes its own users and data through the public API.

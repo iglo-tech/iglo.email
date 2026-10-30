@@ -937,6 +937,18 @@ export async function runCampaignsContract(target: {
       await call(`/api/campaigns?query=${marker}%20scope&per_page=all`, "GET", undefined, reader)
     ).body.data.results as Campaign[];
     check(visible.length === 1 && visible[0]!.id === scopeNews.id, "perm-collection-scope");
+    const stats = await call("/api/campaigns/running/stats");
+    check(
+      stats.status === 200 &&
+        Array.isArray(stats.body.data) &&
+        !stats.body.data.some((c: Campaign) => c.id === scopeNews.id),
+      "running-stats",
+    );
+    await denied(
+      await call("/api/campaigns/running/stats", "GET", undefined, nobody),
+      "permission denied: campaigns:get",
+      "perm-running-stats",
+    );
     check(
       (await call(`/api/campaigns/${scopeNews.id}`, "GET", undefined, reader)).status === 200,
       "perm-get",

@@ -6,6 +6,8 @@
 // and loaded by returning `script: "<name>"` from the view.
 import { createAdminPages, type AdminSite, type AdminView } from "@/admin/page";
 import { createPasswordReset, type ResetDeps } from "@/admin/password-reset";
+import { campaignView, newCampaignView } from "@/admin/views/campaign";
+import { campaignsView } from "@/admin/views/campaigns";
 import { dashboardView } from "@/admin/views/dashboard";
 import { listView, newListView } from "@/admin/views/list";
 import { listsView } from "@/admin/views/lists";
@@ -13,6 +15,8 @@ import { notYet } from "@/admin/views/not-yet";
 import { profileView } from "@/admin/views/profile";
 import { newSubscriberView, subscriberView } from "@/admin/views/subscriber";
 import { subscribersView } from "@/admin/views/subscribers";
+import { editTemplateView, newTemplateView } from "@/admin/views/template";
+import { templatesView } from "@/admin/views/templates";
 import type { Roles } from "@/roles/roles";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -69,24 +73,19 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
     "bounces:get",
   );
   const anyCampaigns = ["campaigns:get_all", "campaigns:get"];
-  page("/admin/campaigns", notYet("campaigns.all", "globals.terms.campaigns"), ...anyCampaigns);
-  page(
-    "/admin/campaigns/new",
-    notYet("campaigns.new", "globals.terms.campaigns"),
-    "campaigns:manage_all",
-    "campaigns:manage",
-  );
+  page("/admin/campaigns", campaignsView, ...anyCampaigns);
+  page("/admin/campaigns/new", newCampaignView, "campaigns:manage_all", "campaigns:manage");
+  withID("/admin/campaigns/:id", campaignView, ...anyCampaigns);
+  withID("/admin/campaigns/:id/:tab", campaignView, ...anyCampaigns);
   page("/admin/campaigns/media", notYet("campaigns.media", "globals.terms.media"), "media:get");
   page(
     "/admin/campaigns/analytics",
     notYet("campaigns.analytics", "globals.terms.analytics"),
     "campaigns:get_analytics",
   );
-  page(
-    "/admin/templates",
-    notYet("campaigns.templates", "globals.terms.templates"),
-    "templates:get",
-  );
+  page("/admin/templates", templatesView, "templates:get");
+  page("/admin/templates/new", newTemplateView, "templates:manage");
+  withID("/admin/templates/:id", editTemplateView, "templates:get");
   page("/admin/users", notYet("users.users", "globals.terms.users"), "users:get");
   page("/admin/users/roles", notYet("users.user-roles", "users.userRoles"), "roles:get");
   page("/admin/users/roles/lists", notYet("users.list-roles", "users.listRoles"), "roles:get");

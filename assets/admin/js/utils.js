@@ -127,8 +127,8 @@ export function formatNumber(value) {
   return new Intl.NumberFormat().format(value);
 }
 
-// Client-side equivalent of the server's NiceDate ("Mon, 02 Jan 2006").
-export function niceDate(iso) {
+// Client-side equivalent of the server's NiceDate ("Mon, 02 Jan 2006", then ", 15:04" withTime).
+export function niceDate(iso, withTime = false) {
   if (!iso) {
     return '';
   }
@@ -138,7 +138,9 @@ export function niceDate(iso) {
   }
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  const date = `${days[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  const pad = (n) => String(n).padStart(2, '0');
+  return withTime ? `${date}, ${pad(d.getHours())}:${pad(d.getMinutes())}` : date;
 }
 
 export function parseQueryIDs(ids) {

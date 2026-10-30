@@ -594,6 +594,8 @@ async function main(): Promise<void> {
           rootUrl: current.rootUrl,
           lang: settings!.read()["app.lang"],
           cacheSlowQueries: settings!.read()["app.cache_slow_queries"],
+          fromEmails: settings!.read()["app.from_email"],
+          messengers: campaignSettings().messengers,
         };
       },
       settings: pages,

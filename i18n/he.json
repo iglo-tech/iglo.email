@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "מטא-נתונים של קמפיין",
     "campaigns.archiveMetaHelp": "נתוני חבוי של המנויים לשימוש בהודעה ציבורית כולל שם, דואר אלקטרוני, וכל מאפיינים אופציונליים שבשימוש בהודעת הקמפיין או התבנית.",
     "campaigns.archiveSlugHelp": "שם קצר לדף המשמש בכתובת ה-URL הציבורית. לדוגמה: מכתב-חדשות-2",
-    "campaigns.attribsHelp": "אובייקט JSON מותאם אישית {} תכונות עבור קמפיין זה. השתמש בתבנית עם {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "אובייקט JSON מותאם אישית {} תכונות עבור קמפיין זה. השתמש בתבנית עם {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "לא ניתן לעדכן קמפיין בריצה או שהושלם.",
     "campaigns.confirmSchedule": "הקמפיין יתחיל באופן אוטומטי בתאריך ובשעה המתוכננים. לתזמן כעת?",
     "campaigns.customHeadersHelp": "מערך כותרות מותאמות אישית לצירוף להודעות. דוגמא: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"value\"}]",

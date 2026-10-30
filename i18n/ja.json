@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "キャンペーンメタデータ",
     "campaigns.archiveMetaHelp": "キャンペーンのメッセージやテンプレートに使う偽データ（名やメールアドレスや設定）。",
     "campaigns.archiveSlugHelp": "パブリックURLで使用されるページの短い名前。例：my-newsletter-edition-2",
-    "campaigns.attribsHelp": "このキャンペーン用のカスタムJSON オブジェクト {} 属性。テンプレート内で {{ .Campaign.Attribs.$key }} で使用できます",
+    "campaigns.attribsHelp": "このキャンペーン用のカスタムJSON オブジェクト {} 属性。テンプレート内で {{ campaign.attribs.$key }} で使用できます",
     "campaigns.cantUpdate": "実行中又は終了しているキャンペーンの更新はできません。",
     "campaigns.confirmSchedule": "このキャンペーンは予定された日時に自動的に開始されます。スケジュールを開始しますか？",
     "campaigns.customHeadersHelp": "送信メッセージに添付するカスタムヘッダーの配列。 例: [{\"X-Custom\": \"Value\"}, {\"X-Custom2\": \"value\"}]",

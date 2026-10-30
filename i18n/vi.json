@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Dữ liệu siêu của chiến dịch",
     "campaigns.archiveMetaHelp": "Dữ liệu giả của người đăng ký để sử dụng trong tin nhắn công khai bao gồm tên, email và bất kỳ thuộc tính tùy chọn nào được sử dụng trong tin nhắn chiến dịch hoặc mẫu.",
     "campaigns.archiveSlugHelp": "Một tên ngắn cho trang được sử dụng trong đường dẫn URL công khai. Ví dụ: my-newsletter-edition-2",
-    "campaigns.attribsHelp": "Thuộc tính đối tượng JSON {} tùy chỉnh cho chiến dịch này. Sử dụng trong mẫu với {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Thuộc tính đối tượng JSON {} tùy chỉnh cho chiến dịch này. Sử dụng trong mẫu với {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Không thể cập nhật chiến dịch đang chạy hoặc đã kết thúc.",
     "campaigns.confirmSchedule": "Chiến dịch này sẽ tự động bắt đầu vào ngày và giờ đã định. Lên lịch ngay bây giờ?",
     "campaigns.customHeadersHelp": "Mảng tiêu đề tùy chỉnh để đính kèm vào thư gửi đi. ví dụ: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"value\"}]",
