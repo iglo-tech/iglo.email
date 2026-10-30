@@ -451,11 +451,8 @@ test("owned enqueue wakes an idle outbox without advancing its polling clock", a
   });
   const sends = {
     ...f.journal,
-    finish(
-      row: Parameters<typeof f.journal.finish>[0],
-      outcome: Parameters<typeof f.journal.finish>[1],
-    ) {
-      f.journal.finish(row, outcome);
+    finishAll(results: Parameters<typeof f.journal.finishAll>[0]) {
+      f.journal.finishAll(results);
       finished();
     },
   };

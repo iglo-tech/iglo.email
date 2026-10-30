@@ -205,9 +205,9 @@ router.route("POST", "/fixture/start", async ({ request }) => {
   };
   const tracked = {
     ...sends,
-    finish(row: Parameters<typeof sends.finish>[0], outcome: Parameters<typeof sends.finish>[1]) {
-      sends.finish(row, outcome);
-      finishedCount++;
+    finishAll(results: Parameters<typeof sends.finishAll>[0]) {
+      sends.finishAll(results);
+      finishedCount += results.length;
       for (const notify of waiters.splice(0)) notify();
       finish();
     },

@@ -125,8 +125,9 @@ export function startCampaignRunner(deps: RunnerDeps) {
   const retryAt = new Map<bigint, number>();
   let rotation = 0;
   const stopping = new AbortController();
-  // Worker message counters and the sliding window are shared by all campaigns (Manager).
-  const workerCounts: number[] = [];
+  // Worker pacing and the sliding window are shared by all campaigns (Manager). Each worker
+  // keeps the times of its last `app.message_rate` messages (D59).
+  const workerTimes: number[][] = [];
   let slidingStart = clock.now().getTime();
   let slidingCount = 0;
   let slidingUntil = 0;
@@ -457,12 +458,17 @@ export function startCampaignRunner(deps: RunnerDeps) {
           outcomes.set(i, { status: "failed", at: clock.now().getTime() });
           continue;
         }
-        // Pause on hitting the message rate.
-        if ((workerCounts[w] ?? 0) >= rate) {
-          await sleep(1000);
-          workerCounts[w] = 0;
+        // Pause on hitting the message rate, only until the one-second window that began
+        // with the oldest of the worker's last `rate` messages ends (D59; listmonk sleeps a
+        // full second). No one-second window then holds more than `rate` of its messages.
+        const times = (workerTimes[w] ??= []);
+        if (times.length >= rate) {
+          const until = times[times.length - rate]! + 1000;
+          while (clock.now().getTime() < until && !stopping.signal.aborted)
+            await sleep(until - clock.now().getTime());
+          times.splice(0, times.length - rate + 1);
         }
-        workerCounts[w] = (workerCounts[w] ?? 0) + 1;
+        const slot = times.push(clock.now().getTime()) - 1;
         // The sliding window holds every worker until the window is over.
         while (slidingUntil > clock.now().getTime() && !stopping.signal.aborted)
           await sleep(slidingUntil - clock.now().getTime());
@@ -480,6 +486,8 @@ export function startCampaignRunner(deps: RunnerDeps) {
           continue;
         }
         pushed.add(i);
+        // The pace counts from the push, after any sliding-window hold.
+        times[slot] = clock.now().getTime();
         const dispatch = deps.emailer.push(message, { copies: false });
         if (sliding) {
           const nowMs = clock.now().getTime();
