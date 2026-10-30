@@ -140,7 +140,7 @@ export async function runWebhooksContract(target: {
     );
 
     // Bulk by query and by ID.
-    const bulk = await subscriber("bulk-a");
+    const bulk = await subscriber("bulk-a", "app-bulk");
     await subscriber("bulk-b");
     const byQuery = await call("/api/subscribers/query/blocklist", "PUT", {
       query: "subscribers.email LIKE 'bulk-%'",
@@ -208,7 +208,10 @@ export async function runWebhooksContract(target: {
     check(signatureValid(ofEvent("subscriber.deleted")[0]!, secret), "deleted-signature");
     await call(`/api/subscribers/${bulk.id}`, "DELETE");
     await arrived("subscriber.deleted", 2);
-    check(ofEvent("subscriber.deleted")[1]!.body.data.subscriber.external_id, "admin-external-id");
+    check(
+      ofEvent("subscriber.deleted")[1]!.body.data.subscriber.external_id === "app-bulk",
+      "admin-external-id",
+    );
     const settled = async () => {
       const deadline = Date.now() + 10_000;
       for (;;) {
@@ -222,7 +225,7 @@ export async function runWebhooksContract(target: {
     check(rows.length === receiver.received.length, "one-delivery-each");
     check(new Set(receiver.received.map((r) => r.body.id)).size === rows.length, "ids-unique");
     const bytes = stored();
-    for (const value of ["wiped@example.test", "bulk-a@example.test"])
+    for (const value of ["wiped@example.test", "bulk-a@example.test", "app-bulk"])
       check(!bytes.includes(value), `cleared-${value}`);
     check(bytes.includes("clicked@example.test"), "others-kept");
 
