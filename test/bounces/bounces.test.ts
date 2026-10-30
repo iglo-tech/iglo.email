@@ -512,3 +512,25 @@ test("POST /webhooks/bounce: a send_uuid is authoritative, and only then is the 
   expect((await f.json(`/api/subscribers/${named}`)).status).toBe(400);
   expect(await statusOf(f, other)).toBe("enabled");
 });
+
+test("a bounce unsubscribe stamps when consent changed, on the injected clock", async () => {
+  const f = await open();
+  f.bounceSettings.actions.hard = { count: 1, action: "unsubscribe" };
+  const list = await f.json("/api/lists", "POST", {
+    name: "stamped",
+    type: "private",
+  });
+  const id = await f.subscriber("stamped@example.com", "S", {
+    lists: [list.body.data.id],
+    preconfirm_subscriptions: true,
+  });
+  f.clock.advance(60_000);
+  const at = f.clock.now().toISOString();
+  await f.json("/webhooks/bounce", "POST", {
+    email: "stamped@example.com",
+    type: "hard",
+  });
+  const [membership] = (await f.json(`/api/subscribers/${id}`)).body.data.lists;
+  expect(membership.subscription_status).toBe("unsubscribed");
+  expect(membership.subscription_updated_at).toBe(at);
+});

@@ -333,6 +333,11 @@ export async function runBouncesContract(target: {
       (await call(`/api/subscribers/${id}`)).body.data.lists.map(
         (l: any) => l.subscription_status,
       ) as string[];
+    const consentTimes = async (id: number) =>
+      (await call(`/api/subscribers/${id}`)).body.data.lists.map((l: any) =>
+        Date.parse(l.subscription_updated_at),
+      ) as number[];
+    const consentBefore = await consentTimes(eve.id);
     await recorded({ email: eve.email, type: "hard", source: "api" });
     check(
       (await statuses(eve.id)).every((s) => s === "confirmed"),
@@ -343,6 +348,19 @@ export async function runBouncesContract(target: {
       (await statuses(eve.id)).every((s) => s === "unsubscribed"),
       "unsubscribe-action",
     );
+    // Upstream's action changes only the status, so its time stays that of the subscription.
+    // `subscription_updated_at` here says when consent changed.
+    const consentAfter = await consentTimes(eve.id);
+    if (reference)
+      check(
+        consentAfter.every((time, i) => time === consentBefore[i]),
+        "unsubscribe-time-reference",
+      );
+    else
+      check(
+        consentAfter.every((time, i) => time > consentBefore[i]!),
+        "unsubscribe-time-production",
+      );
     check((await call(`/api/subscribers/${eve.id}`)).body.data.status === "enabled", "unsub-sub");
     await recorded({ email: eve.email, type: "hard", source: "api" });
     check((await bounces(eve.id)).length === 2, "over-threshold");

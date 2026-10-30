@@ -508,7 +508,10 @@ export function createSubscriberStore(
       effects.blocklisted([id]);
       consentChanged(id, true, []);
     },
-    /** record-bounce's block2: every list, keeping the status. The caller holds the write. */
+    /**
+     * record-bounce's block2: every list, keeping the status. Unlike upstream it stamps the
+     * membership, which says when consent changed (07). The caller holds the write.
+     */
     bounceUnsubscribe(id: bigint) {
       const rows = q.get("membership-unsubscribe-all").all(clock.now().toISOString(), id);
       const changed = (rows as { list_id: bigint }[]).map((row) => row.list_id);
