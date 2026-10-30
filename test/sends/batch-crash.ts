@@ -36,6 +36,7 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
   let announce!: () => void;
   const held = new Promise<void>((r) => (announce = r));
   let greet = options.greet;
+  let holdAfter = options.holdAfter;
   const server = createServer((socket) => {
     sockets.add(socket);
     connect();
@@ -56,7 +57,7 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
           if (line !== ".") continue;
           body = null;
           data.push(to);
-          if (options.holdAfter !== undefined && accepted.length >= options.holdAfter) announce();
+          if (holdAfter !== undefined && accepted.length >= holdAfter) announce();
           else {
             accepted.push(to);
             socket.write("250 queued\r\n");
@@ -87,7 +88,7 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
     held,
     release() {
       greet = true;
-      options.holdAfter = undefined;
+      holdAfter = undefined;
       for (const socket of sockets) socket.destroy();
     },
     async close() {
