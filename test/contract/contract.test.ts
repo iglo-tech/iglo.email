@@ -64,6 +64,7 @@ describe("contract runner public boundary", () => {
   ])("fixture case %s detects a nonconforming route response", async (id, expectedTarget) => {
     const seen: string[] = [];
     const target = createServer((request, response) => {
+      if (probe(request.headers.host)) return void response.writeHead(404).end();
       seen.push(`${request.method} ${request.url}`);
       const preservedDot = /^\/fixture\/id\/%2E(?:%2E)?$/.test(request.url ?? "");
       const wrongMethod = request.method === "POST" && request.url === "/api/health";
