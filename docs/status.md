@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head 45cf272. Round 1: CHANGES (2 P1, 3 P2; one narrowed by the lead); one Opus fixer running.
-Next: Sol round-2 fix-only review, merge, then M6.1 or the next eligible task.
+M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head c2d0ebe. Round-1 fixes pushed; Sol round-2 fix-only review running.
+Next: lead disposition of round 2, merge, then M6.1 or the next eligible task.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
