@@ -34,7 +34,7 @@ import { registerSettingsRoutes } from "@/settings/routes";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
-import { createSendAnonymizer } from "@/messaging/anonymize";
+import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
@@ -65,6 +65,8 @@ import { createSubscriberMail, startSignupMail, type SubscriberMail } from "@/pu
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings } from "@/public/settings";
+import { createBounceStore } from "@/bounces/store";
+import { registerBounceRoutes } from "@/bounces/routes";
 import { startWebhookDelivery } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
@@ -119,6 +121,7 @@ async function main(): Promise<void> {
   let mail: SubscriberMail | undefined;
   let signups: ReturnType<typeof startSignupMail> | undefined;
   let webhooks: ReturnType<typeof createWebhookStore> | undefined;
+  let bounces: ReturnType<typeof createBounceStore> | undefined;
   let deliveries: ReturnType<typeof startWebhookDelivery> | undefined;
   let analyticsReader: ReturnType<typeof createAnalyticsReader> | undefined;
   let summaries: ReturnType<typeof createSummaries> | undefined;
@@ -133,10 +136,12 @@ async function main(): Promise<void> {
     webhooks = createWebhookStore(db, clock);
     const webhookEffects = createWebhookEffects(webhooks, () => subscriberStore!);
     const anonymizeSends = createSendAnonymizer(db);
+    const unlinkedSends = createUnlinkedSends(db);
     const subscriberEffects = {
       ...enrollments.subscriberEffects,
       ...webhookEffects.subscriberEffects,
       deleting(deleted: { id: bigint; email: string }[], wipe?: boolean) {
+        bounces!.deleteForSends(unlinkedSends(deleted.map(({ email }) => email)));
         anonymizeSends(deleted);
         webhookEffects.deleting(deleted, wipe);
       },
@@ -349,6 +354,32 @@ async function main(): Promise<void> {
       page: pages,
       limit: unsubscribeLimit,
     });
+    const campaignsByUuid = campaignStore;
+    bounces = createBounceStore(db, clock, {
+      subscribers: () => subscriberStore!,
+      sendTarget: (uuid) => sends!.bounceTarget(uuid),
+      campaignID: (uuid) => campaignsByUuid.byUuid(uuid)?.id ?? null,
+      recorded: webhookEffects.bounceRecorded,
+      actions: () => settings!.read()["bounce.actions"],
+    });
+    registerBounceRoutes(router, {
+      db,
+      clock,
+      store: bounces,
+      subscribers: subscriberStore,
+      roles,
+      auth,
+      settings: () => {
+        const current = settings!.read();
+        return {
+          enabled: current["bounce.enabled"],
+          webhooksEnabled: current["bounce.webhooks_enabled"],
+          mailgun: current["bounce.mailgun"],
+        };
+      },
+      // Providers post from shared addresses too, with a budget of their own.
+      limit: limit("unsubscribe"),
+    });
     recipients = createCampaignRecipients(db);
     const templateStore = templates;
     runner = startCampaignRunner({
@@ -403,6 +434,7 @@ async function main(): Promise<void> {
       campaigns: campaignStore,
       tracking,
       events,
+      bounces,
       renderer,
       i18n: app.i18n,
       clock,
@@ -572,6 +604,7 @@ async function main(): Promise<void> {
     await delivering?.catch(() => {});
     await summarizing?.catch(() => {});
     summaries?.close();
+    bounces?.close();
     webhooks?.close();
     sequences?.close();
     recipients?.close();

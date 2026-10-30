@@ -8,6 +8,7 @@ import type { ErrorLogger } from "@/app";
 import { dummyUUID, nameChunk } from "@/campaigns/render";
 import type { CampaignStore } from "@/campaigns/store";
 import type { Clock } from "@/clock";
+import type { BounceStore } from "@/bounces/store";
 import type { EventRow } from "@/events/store";
 import type { Translation } from "@/i18n/i18n";
 import { startLoop } from "@/loops/loop";
@@ -38,6 +39,7 @@ export function createSubscriberMail(deps: {
   campaigns: Pick<CampaignStore, "subscriberViews">;
   tracking: Pick<Tracking, "subscriberClicks">;
   events: { list(subscriberId: bigint, limit: number): EventRow[] };
+  bounces: Pick<BounceStore, "forExport">;
   renderer: TemplateRenderer;
   i18n: Translation;
   clock: Clock;
@@ -199,6 +201,7 @@ export function createSubscriberMail(deps: {
               }))
           : undefined,
         events: clicks ? boundedEvents(deps.events.list(sub.id, exportRows)) : undefined,
+        bounces: views ? deps.bounces.forExport(sub.id, exportRows) : undefined,
       };
       const html = deps.renderer.renderSync({
         body: systemTemplates.subscriberData,

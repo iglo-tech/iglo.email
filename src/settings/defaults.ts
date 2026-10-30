@@ -151,6 +151,11 @@ export const defaults = {
     enabled: false,
     key: "",
   },
+  // Native: the HTTP webhook signing key of POST /webhooks/bounce/mailgun.
+  "bounce.mailgun": {
+    enabled: false,
+    key: "",
+  },
   "bounce.lettermint": {
     enabled: false,
     key: "",

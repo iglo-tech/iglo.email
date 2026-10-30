@@ -16,6 +16,7 @@ import capLookup from "@/migrations/0008_cap_lookup.sql" with { type: "text" };
 import sendAnonymization from "@/migrations/0009_send_anonymization.sql" with { type: "text" };
 import webhookDeliveries from "@/migrations/0010_webhook_deliveries.sql" with { type: "text" };
 import analyticsSummaries from "@/migrations/0011_analytics_summaries.sql" with { type: "text" };
+import bounceReceipts from "@/migrations/0012_bounce_receipts.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -35,6 +36,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 9, sql: sendAnonymization },
   { version: 10, sql: webhookDeliveries },
   { version: 11, sql: analyticsSummaries },
+  { version: 12, sql: bounceReceipts },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

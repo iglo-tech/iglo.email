@@ -33,7 +33,7 @@ import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
 import { createEmailer } from "@/messaging/email";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
-import { createSendAnonymizer } from "@/messaging/anonymize";
+import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createTemplateStore } from "@/templates/store";
@@ -47,6 +47,8 @@ import { startSink } from "@/test/tx/sink";
 import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
 import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import { registerBounceRoutes, type BounceSettings } from "@/bounces/routes";
+import { createBounceStore, type BounceAction } from "@/bounces/store";
 import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
@@ -65,6 +67,8 @@ export async function txFixture(
     page?: () => PageOptions;
     /** Wire the production webhook owners, with this transport. */
     webhooks?: WebhookTransport;
+    /** The provider route's rate limit, with `webhooks`. */
+    bounceLimit?: Middleware;
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -87,6 +91,7 @@ export async function txFixture(
     i18n: createTranslation(),
     logger: { error: (error) => errors.push(error) },
   });
+  let bounces: ReturnType<typeof createBounceStore> | undefined;
   const lists = createListReferences(db),
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
@@ -94,10 +99,12 @@ export async function txFixture(
     webhooks = options.webhooks ? createWebhookStore(db, clock) : undefined,
     webhookEffects = webhooks && createWebhookEffects(webhooks, () => subscribers),
     anonymize = createSendAnonymizer(db),
+    unlinkedSends = createUnlinkedSends(db),
     subscriberEffects: SubscriberEffects = {
       ...noSubscriberEffects,
       ...webhookEffects?.subscriberEffects,
       deleting(deleted, wipe) {
+        bounces?.deleteForSends(unlinkedSends(deleted.map(({ email }) => email)));
         anonymize(deleted);
         webhookEffects?.deleting(deleted, wipe);
       },
@@ -168,6 +175,16 @@ export async function txFixture(
     disableTracking: false,
     ...options.marketing,
   };
+  const bounceSettings: BounceSettings & { actions: Record<string, BounceAction> } = {
+    enabled: true,
+    webhooksEnabled: true,
+    mailgun: { enabled: true, key: "fixture-mailgun-key" },
+    actions: {
+      soft: { count: 2, action: "none" },
+      hard: { count: 1, action: "blocklist" },
+      complaint: { count: 1, action: "delete" },
+    },
+  };
   const sends = createSends({
     db,
     clock,
@@ -187,6 +204,25 @@ export async function txFixture(
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
   if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
+  if (webhooks) {
+    bounces = createBounceStore(db, clock, {
+      subscribers: () => subscribers,
+      sendTarget: (uuid) => sends.bounceTarget(uuid),
+      campaignID: () => null,
+      recorded: webhookEffects!.bounceRecorded,
+      actions: () => bounceSettings.actions,
+    });
+    registerBounceRoutes(router, {
+      db,
+      clock,
+      store: bounces,
+      subscribers,
+      roles,
+      auth,
+      settings: () => bounceSettings,
+      limit: options.bounceLimit ?? ((_context, next) => next()),
+    });
+  }
   registerTxRoutes(router, {
     auth,
     sends,
@@ -303,6 +339,8 @@ export async function txFixture(
       outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
     },
     webhooks,
+    bounces,
+    bounceSettings,
     blockPrivate,
     /** Move the injected clock, then let the delivery loop see it without its idle poll. */
     advanceWebhooks(milliseconds: number) {
@@ -321,6 +359,7 @@ export async function txFixture(
     async close() {
       await delivery?.halt();
       clearInterval(pump);
+      bounces?.close();
       webhooks?.close();
       const stopped = outbox.stop();
       await emailer.close();

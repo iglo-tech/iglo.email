@@ -65,6 +65,7 @@ export function registerSettingsRoutes(
         // listmonk clients replace the full object without these native keys; keep them.
         for (const native of [
           "marketing.min_interval",
+          "bounce.mailgun",
           "webhooks.block_private_addresses",
           "security.trusted_proxies",
           "security.public_rate_limit",
