@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.6 outbound webhooks, branch task/M2.6-webhooks, [brief](briefs/M2.6.md). One Opus medium worker dispatched; no reviewer active.
-Next: on worker handback, Sol xhigh round 1, lead disposition, merge. Then M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
+M2.6 outbound webhooks, [PR #34](https://github.com/iglo-tech/iglo.email/pull/34), head 5acdd03. Worker done (migration 10, D61 for review); Sol xhigh round-1 review running.
+Next: lead disposition of round 1, merge. Then M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -62,4 +62,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Single-instance data-dir lock: D15 says one process per data dir but nothing enforces it; lease-based loops (outbox, scheduler, campaign runner) assume it. Bootstrap owner.
 - Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. Lowering it needs shared write batching across loops, or an owner decision on D22 durability.
 - `finishAll`: add permanent regressions for mixed retry outcomes, same-subscriber batch caps and COMMIT rollback ([#32 review](https://github.com/iglo-tech/iglo.email/pull/32#issuecomment-6517645045)).
+- Webhook delivery rows are never purged; add retention ([#34](https://github.com/iglo-tech/iglo.email/pull/34)).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
