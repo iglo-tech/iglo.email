@@ -4,9 +4,9 @@ Updated 2026-10-30. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M4.2 subscribers and lists screens, [PR #40](https://github.com/iglo-tech/iglo.email/pull/40), head d711ef7. Local checks pass; Sol round-1 review running. D26 stands: no public first-account form.
+M4.3 templates and campaigns screens: [brief](briefs/M4.3.md); one Opus worker running. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M4.3-M4.6, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
+Next: M4.4-M4.6, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -32,6 +32,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M4.2         | [#40](https://github.com/iglo-tech/iglo.email/pull/40) | b7ab730 | Subscribers and lists screens                              |
 | M4.1         | [#39](https://github.com/iglo-tech/iglo.email/pull/39) | 68defb0 | Admin shell, auth screens, dashboard, e2e harness; D65     |
 | M1.9         | [#38](https://github.com/iglo-tech/iglo.email/pull/38) | 7a21684 | CSV import; log holds no personal data; D61 revised        |
 | M3.5         | [#37](https://github.com/iglo-tech/iglo.email/pull/37) | 8b38fba | Media, attachments, data-embed; storage boundary D64       |
@@ -69,6 +70,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Analytics: global egress budget for many slow near-cap downloads; WAL growth under no-gap report polling (D62).
 - Intermittent: `route-auth` "held SMTP body denies disabled before a connection" failed once in M1.9 (`smtp.count()` 1); may be the same as the unnamed M3.4 failure.
 - Media: `runner:crash` has no media campaign; no compiled `data-embed` contract; synchronous `POST /api/tx` with caller attachments has no concurrency limit; supported PDF viewers unverified.
+- Tests: contract coverage of multi-list actions and exports (M4.2 dropped two API-only cases); `availablePort()` free-port race in the contract harness.
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
