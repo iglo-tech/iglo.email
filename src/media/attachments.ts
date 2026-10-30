@@ -10,6 +10,7 @@ import type { MediaStore } from "@/media/store";
 export const MAX_FILES = 10;
 const MAX_BYTES = 10 * 1024 * 1024;
 const CACHE_BYTES = 64 * 1024 * 1024;
+const MAX_LOADS = 4;
 const mediaType = /^[\w.+-]+\/[\w.+-]+(;[ \t]*[\w.+-]+=("[^"\r\n]*"|[\w.+-]+))*$/;
 
 export type Attachment = NonNullable<Message["attachments"]>[number];
@@ -22,6 +23,8 @@ export function createAttachments(
   /** Least recently used first. An entry holds for one version of the file. */
   const cache = new Map<string, { content: Buffer; size: number; modified: number }>();
   const reading = new Map<string, Promise<Buffer>>();
+  const waiting: (() => void)[] = [];
+  let loading = 0;
   let cached = 0;
   const forget = (key: string) => {
     cached -= cache.get(key)?.content.length ?? 0;
@@ -61,12 +64,10 @@ export function createAttachments(
   }
 
   /** Every item or an error: a campaign never goes out without one of its files. */
-  return async function attachments(
+  async function load(
     ids: readonly (bigint | number)[],
-    inline: readonly InlineImage[] = [],
+    inline: readonly InlineImage[],
   ): Promise<Attachment[]> {
-    if (ids.length + inline.length > MAX_FILES)
-      throw new Error(`more than ${MAX_FILES} attachments`);
     const out: Attachment[] = [];
     let total = 0;
     for (const { id, cid } of [...ids.map((id) => ({ id, cid: undefined })), ...inline]) {
@@ -88,6 +89,25 @@ export function createAttachments(
       });
     }
     return out;
+  }
+
+  /** At most MAX_LOADS load at a time, so requests in a burst wait holding no bytes. */
+  return async function attachments(
+    ids: readonly (bigint | number)[],
+    inline: readonly InlineImage[] = [],
+  ): Promise<Attachment[]> {
+    if (ids.length + inline.length > MAX_FILES)
+      throw new Error(`more than ${MAX_FILES} attachments`);
+    if (!ids.length && !inline.length) return [];
+    if (loading < MAX_LOADS) loading++;
+    else await new Promise<void>((turn) => waiting.push(turn));
+    try {
+      return await load(ids, inline);
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else loading--;
+    }
   };
 }
 export type Attachments = ReturnType<typeof createAttachments>;

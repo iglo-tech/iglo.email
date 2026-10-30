@@ -336,6 +336,26 @@ test("a tx template embeds a stored image as an inline part, read for each reque
   expect(sends()).toBe(before);
 });
 
+test("a burst of sends with an embedded image all go out", async () => {
+  const f = await open();
+  const body = new FormData();
+  body.append("file", new File([imagePng], "burst.png", { type: "image/png" }));
+  const stored = await f.request("/api/media", { method: "POST", headers: f.sessionHeaders, body });
+  expect(stored.status).toBe(200);
+  const template = await f.template(`<img src="burst.png" data-embed="true">`);
+  const answers = await Promise.all(
+    Array.from({ length: 12 }, (_, i) =>
+      f.tx({
+        subscriber_email: `burst-${i}@example.test`,
+        subscriber_mode: "external",
+        template_id: template,
+      }),
+    ),
+  );
+  expect(answers.map((a) => a.status)).toEqual(Array.from({ length: 12 }, () => 200));
+  expect(f.sink.messages.filter((m) => /^Content-ID:/im.test(m.data))).toHaveLength(12);
+});
+
 test("an embedded image counts toward what a durable send can hold", async () => {
   const f = await open();
   const body = new FormData();

@@ -20,7 +20,7 @@ export interface Push {
 }
 
 export async function runnerFixture(
-  options: { hold?: boolean; realEmailer?: boolean; attachmentCacheBytes?: number } = {},
+  options: { hold?: boolean; realEmailer?: boolean } & Parameters<typeof campaignsFixture>[0] = {},
 ) {
   const f = await campaignsFixture(options);
   const store = createRunnerStore(f.db);

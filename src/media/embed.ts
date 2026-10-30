@@ -1,7 +1,8 @@
 // Inline images, adapted from listmonk internal/manager/manager.go at 6fcd95f: LoadInlineImages,
-// applyInlineImages, MakeContentID, filenameFromSrc and extractSrc. Rewrites sources and reads no
-// file, so it can run inside a claim transaction; the bytes come with the attachments. Tags are
-// found by a linear scan: upstream's pattern is quadratic on a body of unclosed `<img`.
+// applyInlineImages, ApplyArchiveImages, MakeContentID, filenameFromSrc and extractSrc. Rewrites
+// sources and reads no file, so it can run inside a claim transaction; the bytes come with the
+// attachments. Tags are found by a linear scan: upstream's pattern is quadratic on a body of
+// unclosed `<img`.
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import type { ErrorLogger } from "@/app";

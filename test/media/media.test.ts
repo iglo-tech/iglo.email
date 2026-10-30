@@ -2,11 +2,11 @@
 // the compiled executable are in test/contract/media.ts.
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, readdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
-import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import { imagePng } from "@/test/media/images";
+import { startStalledSink } from "@/test/tx/sink";
 import { imageSize } from "@/media/image";
 import { makeFilename } from "@/media/filesystem";
 
@@ -334,27 +334,8 @@ test("claims left by a crash in the attachment step stay unknown and are not sen
   ).toEqual({ status: "unknown" });
 });
 
-/** Greets and then never answers: the SMTP server of a slow day. */
-async function stalledSmtp() {
-  const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.on("error", () => {});
-    socket.write("220 stalled.test ESMTP\r\n");
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as { port: number };
-  return {
-    port,
-    close: () => {
-      for (const socket of sockets) socket.destroy();
-      return new Promise((resolve) => server.close(resolve));
-    },
-  };
-}
-
 test("queued test sends keep their slots until they settle, and the next is refused", async () => {
-  const smtp = await stalledSmtp();
+  const smtp = await startStalledSink();
   const f = await campaignsFixture({ smtpPort: smtp.port });
   cleanups.push(
     () => f.close(),

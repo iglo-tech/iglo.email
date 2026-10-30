@@ -6,7 +6,8 @@ export interface Captured {
   to: string[];
   data: string;
 }
-export async function startSink(options: { reject?: () => boolean } = {}) {
+/** `pauseMs` stops reading after each chunk: an SMTP server on a slow link. */
+export async function startSink(options: { reject?: () => boolean; pauseMs?: number } = {}) {
   const messages: Captured[] = [];
   const sockets = new Set<Socket>();
   const server = createServer((socket) => {
@@ -18,6 +19,10 @@ export async function startSink(options: { reject?: () => boolean } = {}) {
     let current: Captured = { from: "", to: [], data: "" };
     socket.write("220 sink.test ESMTP\r\n");
     socket.on("data", (chunk: string) => {
+      if (options.pauseMs) {
+        socket.pause();
+        setTimeout(() => socket.resume(), options.pauseMs);
+      }
       buffer += chunk;
       let at: number;
       while ((at = buffer.indexOf("\r\n")) >= 0) {
@@ -61,6 +66,26 @@ export async function startSink(options: { reject?: () => boolean } = {}) {
   return {
     port: address.port,
     messages,
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+/** Greets and then never answers. */
+export async function startStalledSink() {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.write("220 stalled.test ESMTP\r\n");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("missing sink address");
+  return {
+    port: address.port,
     async close() {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));

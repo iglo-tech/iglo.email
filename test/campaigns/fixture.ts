@@ -44,9 +44,14 @@ const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
 
 export async function campaignsFixture(
-  options: { attachmentCacheBytes?: number; smtpPort?: number } = {},
+  options: {
+    attachmentCacheBytes?: number;
+    smtpPort?: number;
+    sinkPauseMs?: number;
+    dkim?: { domain_name: string; key_selector: string; private_key: string };
+  } = {},
 ) {
-  const sink = await startSink({});
+  const sink = await startSink(options.sinkPauseMs ? { pauseMs: options.sinkPauseMs } : {});
   const directory = mkdtempSync(join(tmpdir(), "iglo-campaigns-"));
   const clock = new TestClock();
   const db = openDatabase(directory);
@@ -101,6 +106,7 @@ export async function campaignsFixture(
           tls_skip_verify: false,
           email_headers: [{ Bcc: "copy@fixture.test" }],
           from_addresses: [],
+          ...(options.dkim ? { dkim: options.dkim } : {}),
         },
       ],
     }),
