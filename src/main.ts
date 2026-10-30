@@ -69,10 +69,18 @@ import { startWebhookDelivery } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
+import {
+  analyticsChildArgument,
+  createAnalyticsReader,
+  runAnalyticsChild,
+} from "@/analytics/reader";
+import { registerAnalyticsRoutes } from "@/analytics/routes";
+import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
 
 async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
   if (process.argv[2] === childArgument) return runQueryChild();
+  if (process.argv[2] === analyticsChildArgument) return runAnalyticsChild();
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
     process.stdout.write(helpText);
@@ -112,6 +120,9 @@ async function main(): Promise<void> {
   let signups: ReturnType<typeof startSignupMail> | undefined;
   let webhooks: ReturnType<typeof createWebhookStore> | undefined;
   let deliveries: ReturnType<typeof startWebhookDelivery> | undefined;
+  let analyticsReader: ReturnType<typeof createAnalyticsReader> | undefined;
+  let summaries: ReturnType<typeof createSummaries> | undefined;
+  let summaryRefresh: ReturnType<typeof startSummaryRefresh> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -145,7 +156,22 @@ async function main(): Promise<void> {
       effects: subscriberEffects,
     });
     campaigns = createCampaignListReferences(db);
-    listStore = createListStore(db, clock, counts, campaigns);
+    analyticsReader = createAnalyticsReader({ path: db.filename });
+    summaries = createSummaries(db, clock, analyticsReader);
+    const liveCounts = counts;
+    const cachedSummaries = summaries;
+    // With app.cache_slow_queries, list counters come from the summary too (query-lists).
+    listStore = createListStore(
+      db,
+      clock,
+      {
+        ...liveCounts,
+        all: () =>
+          (settings!.read()["app.cache_slow_queries"] ? cachedSummaries.listCounts() : null) ??
+          liveCounts.all(),
+      },
+      campaigns,
+    );
     users = createUserStore(db, clock, roles);
     const clientAddress = createClientAddress(() => settings!.read()["security.trusted_proxies"]);
     const auth = await createAuthentication(users, roles, clock, bootstrap.config.rootUrl, {
@@ -442,6 +468,32 @@ async function main(): Promise<void> {
       webhooks,
       blockPrivate: () => settings!.read()["webhooks.block_private_addresses"],
     });
+    registerAnalyticsRoutes(router, {
+      reader: analyticsReader,
+      summaries,
+      campaigns: campaignStore,
+      roles,
+      auth,
+      settings: () => {
+        const current = settings!.read();
+        return {
+          individualTracking: current["privacy.individual_tracking"],
+          cacheSlowQueries: current["app.cache_slow_queries"],
+        };
+      },
+    });
+    summaryRefresh = startSummaryRefresh({
+      clock,
+      logger: app.logger,
+      summaries,
+      settings: () => {
+        const current = settings!.read();
+        return {
+          enabled: current["app.cache_slow_queries"],
+          interval: current["app.cache_slow_queries_interval"],
+        };
+      },
+    });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       let closing = false;
@@ -458,6 +510,8 @@ async function main(): Promise<void> {
         const retentionStop = retention!.stop();
         const signupStop = signups!.stop();
         const deliveryStop = deliveries!.stop();
+        const summaryStop = summaryRefresh!.stop();
+        const readerClose = analyticsReader!.close();
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
         Promise.allSettled([
@@ -467,6 +521,8 @@ async function main(): Promise<void> {
           retentionStop,
           signupStop,
           deliveryStop,
+          summaryStop,
+          readerClose,
           messagingClose,
           httpStop,
         ]).then((results) => {
@@ -491,6 +547,7 @@ async function main(): Promise<void> {
       void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
       void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
+      void summaryRefresh!.done.catch(() => shutdown(new Error("Summary refresh failed")));
     });
   } finally {
     enrollments?.onDue(() => {});
@@ -500,6 +557,8 @@ async function main(): Promise<void> {
     const purging = retention?.stop();
     const signing = signups?.stop();
     const delivering = deliveries?.stop();
+    const summarizing = summaryRefresh?.stop();
+    await analyticsReader?.close();
     // A decision awaiting a condition finishes before the runner and connections close.
     await scheduling?.catch(() => {});
     const closing = emailer?.close();
@@ -511,6 +570,8 @@ async function main(): Promise<void> {
     await purging?.catch(() => {});
     await signing?.catch(() => {});
     await delivering?.catch(() => {});
+    await summarizing?.catch(() => {});
+    summaries?.close();
     webhooks?.close();
     sequences?.close();
     recipients?.close();

@@ -1,3 +1,4 @@
+import { runAnalyticsContract } from "@/test/contract/analytics";
 import { runCampaignsContract } from "@/test/contract/campaigns";
 import { runTemplatesContract } from "@/test/contract/templates";
 import { runTxContract } from "@/test/contract/tx";
@@ -114,6 +115,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "events" ||
       args[1] === "sequences" ||
       args[1] === "webhooks" ||
+      args[1] === "analytics" ||
       args[1] === "campaigns")
   ) {
     const values = argumentsForRun(args.slice(2));
@@ -133,6 +135,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "events" ||
         args[1] === "sequences" ||
         args[1] === "webhooks" ||
+        args[1] === "analytics" ||
         args[1] === "campaigns") &&
       Object.keys(values).length
     )
@@ -143,6 +146,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       signal,
       async (baseUrl, runSignal, restart, dataDir) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "analytics") {
+          await runAnalyticsContract({ mode: "normal", baseUrl, credentials, restart, dataDir });
+          process.stdout.write("PASS analytics production contract\n");
+          return true;
+        }
         if (args[1] === "campaigns") {
           await runCampaignsContract({ mode: "normal", baseUrl, credentials, restart });
           process.stdout.write("PASS campaigns production contract\n");

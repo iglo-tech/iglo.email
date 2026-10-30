@@ -22,16 +22,17 @@ These conventions are the same as [iglo.monitor](https://github.com/iglo-tech/ig
 
 ## Process model
 
-One process runs everything. Background work is a set of loops in the same process, each owning one table of work.
+One server process runs everything that writes. Background work is a set of loops in that process, each owning one table of work. Slow or untrusted reads run in short-lived read-only helpers: the same executable re-run with an internal argument, one read each, owned and killed by the server. They hold no state and never write ([D62](09-decisions.md#d62-read-only-helper-processes-for-slow-reads)).
 
-| Loop | Interval | Work |
-|---|---|---|
-| Campaign runner | 5 s scan; continuous while campaigns run | Starts due campaigns. Streams subscribers in ID order with a cursor stored on the campaign, renders and sends through the SMTP pool with rate limits |
-| Outbox | continuous, wakes on insert | Sends queued transactional and sequence messages from `sends` |
-| Sequence scheduler | 15 s | Claims due enrollments, evaluates conditions, queues sends, advances steps |
-| Webhook delivery | continuous, wakes on insert | Delivers queued outbound webhooks with retries |
-| Maintenance | hourly | Refreshes dashboard and list stats, purges expired sessions, tokens and old events |
-| Bounce mailbox | later | POP3 scanning |
+| Loop               | Interval                                                                                                | Work                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Campaign runner    | 5 s scan; continuous while campaigns run                                                                | Starts due campaigns. Streams subscribers in ID order with a cursor stored on the campaign, renders and sends through the SMTP pool with rate limits                                                                  |
+| Outbox             | continuous, wakes on insert                                                                             | Sends queued transactional and sequence messages from `sends`                                                                                                                                                         |
+| Sequence scheduler | 15 s                                                                                                    | Claims due enrollments, evaluates conditions, queues sends, advances steps                                                                                                                                            |
+| Webhook delivery   | continuous, wakes on insert                                                                             | Delivers queued outbound webhooks with retries                                                                                                                                                                        |
+| Maintenance        | hourly                                                                                                  | Purges expired sessions, tokens and old events                                                                                                                                                                        |
+| Summary refresh    | `app.cache_slow_queries_interval`, re-checked at least every minute; only with `app.cache_slow_queries` | Replaces the `analytics_summaries` rows from a reader helper in one short write. It has no work rows to claim, so it does not use the lease helper; a failed or unusable schedule is logged and keeps the stored rows |
+| Bounce mailbox     | later                                                                                                   | POP3 scanning                                                                                                                                                                                                         |
 
 Rules for every loop:
 
@@ -168,13 +169,13 @@ M6.2 owns the future backup command and operator guide. Continuous replication
 
 Small and justified. v1 runtime dependencies:
 
-| Package | Why |
-|---|---|
-| `liquidjs` | Safe, sandboxed template language for user-authored email ([Templates](06-templates.md)) |
-| `nodemailer` | SMTP pool, MIME building, attachments, DKIM. Writing a correct SMTP client and MIME encoder is not worth owning |
-| `marked` | Markdown campaigns and templates |
-| `qrcode` | TOTP provisioning QR/PNG response; pinned 1.5.4, MIT ([D30](09-decisions.md#d30-role-mutations-and-the-totp-authentication-boundary)) |
-| `saxes` | Strict streaming XML list input; pinned 6.0.0, ISC, xmlchars 2.2.0 MIT; consumed UTF-8/document boundary and declaration/depth restrictions ([D37](09-decisions.md#d37-strict-streaming-xml-list-input)) |
+| Package      | Why                                                                                                                                                                                                      |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `liquidjs`   | Safe, sandboxed template language for user-authored email ([Templates](06-templates.md))                                                                                                                 |
+| `nodemailer` | SMTP pool, MIME building, attachments, DKIM. Writing a correct SMTP client and MIME encoder is not worth owning                                                                                          |
+| `marked`     | Markdown campaigns and templates                                                                                                                                                                         |
+| `qrcode`     | TOTP provisioning QR/PNG response; pinned 1.5.4, MIT ([D30](09-decisions.md#d30-role-mutations-and-the-totp-authentication-boundary))                                                                    |
+| `saxes`      | Strict streaming XML list input; pinned 6.0.0, ISC, xmlchars 2.2.0 MIT; consumed UTF-8/document boundary and declaration/depth restrictions ([D37](09-decisions.md#d37-strict-streaming-xml-list-input)) |
 
 Built-in Bun or Web APIs cover the rest: password hashing (`Bun.password`), UUIDs, HMAC and TOTP (Web Crypto), gzip, file serving, and the JSX runtime (in-house, about 100 lines). Admin UI assets are listmonk v7's browser dependencies (Alpine.js, Oat, CodeMirror, Squire, Chart.js), bundled at build time.
 

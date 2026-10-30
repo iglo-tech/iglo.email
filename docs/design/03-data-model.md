@@ -18,7 +18,7 @@ The starting point is listmonk v7's `schema.sql` and `queries/*.sql`. Tables kee
 | `UNNEST`, `ARRAY_AGG` | `json_each`, `json_group_array` |
 | `DISTINCT ON` (2 queries) | window functions (`ROW_NUMBER() OVER (PARTITION BY ...)`) |
 | `ON CONFLICT`, `RETURNING` | supported natively |
-| Materialized views (`mat_dashboard_counts`, `mat_dashboard_charts`, `mat_list_subscriber_stats`, `mat_list_charts`) | ordinary summary tables, rebuilt by the maintenance loop |
+| Materialized views (`mat_dashboard_counts`, `mat_dashboard_charts`, `mat_list_subscriber_stats`) | one `analytics_summaries` table (migration 11, M3.3) read only with `app.cache_slow_queries`, refreshed by a maintenance loop on its cron interval. `mat_list_charts` feeds only upstream's list page, so M4 decides what that screen reads ([measurements](../perf/M3.3-analytics.md)) |
 | `settings.value JSONB` | same layout, JSON in `TEXT` |
 | Postgres session store | `sessions` table, same columns |
 
