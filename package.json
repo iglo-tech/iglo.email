@@ -62,6 +62,7 @@
     "campaigns:measure": "bun test/campaigns/measure.ts",
     "contract:unsubscribe": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned unsubscribe",
     "contract:public": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned public",
+    "public:browser": "bun run build && bun run reference:run -- bun test/public/browser.ts",
     "contract:public:reference": "bun run reference:run -- bun test/contract/public.ts reference",
     "tx:measure": "bun test/tx/measure.ts",
     "scheduler:crash": "bun run build && bun build --compile test/scheduler/crash-entry.ts --outfile dist/scheduler-crash && bun test/scheduler/crash.ts",

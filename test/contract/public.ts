@@ -899,6 +899,31 @@ export async function runPublicContract(target: {
       );
       check((await visit("/api/public/lists")).status === 200, "gate-lists-open");
     });
+    await withSetting("security.trusted_urls", ["https://example.test/thanks"], async () => {
+      const trusted = await post(
+        "/subscription/form",
+        new URLSearchParams({
+          email: address("next"),
+          l: single.uuid,
+          next: "https://example.test/thanks",
+        }),
+      );
+      check(
+        trusted.status === 303 && trusted.headers.get("location") === "https://example.test/thanks",
+        "next-trusted",
+      );
+      const foreign = await post(
+        "/subscription/form",
+        new URLSearchParams({
+          email: address("next2"),
+          l: single.uuid,
+          next: "https://attacker.test/",
+        }),
+      );
+      check(foreign.status === 200 && !foreign.headers.get("location"), "next-foreign");
+      await adminSubscriber(`next-${marker}@example.test`);
+      await adminSubscriber(`next2-${marker}@example.test`);
+    });
     await withSetting("privacy.domain_blocklist", ["blocked.example"], async () => {
       const response = await postJson("/api/public/subscription", {
         email: `someone-${marker}@blocked.example`,

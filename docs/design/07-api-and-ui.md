@@ -80,7 +80,13 @@ Deliberate differences:
 | Campaign test sends (M3.1) | Blocklisted subscribers are skipped (all blocklisted → `No known subscribers to test.`); the server's `email_headers` Cc/Bcc copies are not applied; at most 1,000 addresses per request and four concurrent test requests (429); all rendered parts of one message (subject, body, `from_email`, alt body, headers) share one render budget, and one request may render at most 32 MiB and 1,000,000 work units across its recipients (400, nothing sent). A campaign has at most 32 custom header values (400 `Invalid fields: headers`) | Blocklisted people never receive mail; a marketing message goes only to its subscriber ([Sending](04-sending.md)); bounded work |
 | Campaign runner delivery (M3.2) | At-most-once: the cursor and a per-subscriber claim commit before a batch is sent; a crash skips at most that batch and logs its range. A failed or ambiguous message is never resent, also after a pause and resume (upstream keeps failed messages of a stopped pipe pending and resends them on resume, and a crash resends everything since its last periodic checkpoint). Each subscriber's consent and blocklist status is rechecked just before the push (upstream checks only when the batch is fetched). | At-most-once marketing (D24); a duplicate is worse than a missed email; an unsubscribe takes effect within the batch |
 | Campaign runner notifications (M3.2) | No admin notification email when a campaign finishes or is paused by errors | No system notification mailer exists yet |
-| Campaign template URLs (M3.1) | `manage_url`, `optin_url`, `message_url` and `archive_url` render empty, and `POST /subscription/:campUUID/:subUUID` with `manage=true` is 400 `invalidFeature`, until the preferences, opt-in, view-in-browser and archive pages exist (M2.5) | No links to pages that do not exist |
+| Public signup answers (M2.5) | `has_optin` is true whenever a requested list is double opt-in and `app.send_optin_confirmation` is on. Upstream answers false for a subscriber already confirmed or blocklisted, which reveals them. A malformed list UUID is 400 `Invalid UUID(s)`, not a database 500 | No enumeration of subscribers through a public endpoint |
+| Public opt-in (M2.5) | Only a POST confirms: `GET ?confirm=true` and `app.show_optin_page=false` still show the page. A POST confirms memberships that are `unconfirmed` only, so a forged `l` can't reverse an unsubscribe. `privacy.record_optin_ip` stores the transport peer, not `X-Forwarded-For` | A mail scanner's prefetch must not confirm; consent stays with the subscriber; a client can't set the stored IP |
+| Public view and archive pages (M2.5) | `/campaign/:campUUID/:subUUID` and archive pages render without view pixel or tracked links, and are served with a scriptless sandbox CSP. A forged subscriber UUID on view in browser is 404, not 500. `/archive/:id` shows only running, paused or finished campaigns (upstream also publishes an unsent draft). `per_page=all` is capped at 50 | No state change on GET; campaign HTML can't script the public origin; unsent mail stays private; bounded anonymous rendering |
+| Public export (M2.5) | The mailed `data.json` adds `sends` (newest 1,000 journal rows, no message bodies), shown when `privacy.exportable` has `campaign_views`, and `events` (first 1,000, at most 2 MiB), shown with `link_clicks`. Delivery is an outbox send: a blocklisted subscriber gets no mail, and the page answers the same | A subscriber's native data belongs in their export; blocklisted people never receive mail |
+| Public rate limits (M2.5) | Per transport peer, per minute: 30 subscribes, 60 opt-in requests, 300 unsubscribe POSTs (one budget for the campaign and `/m/` forms; mail providers post one-click from shared addresses), 10 export or wipe POSTs. Excess is 429 with `Retry-After`: JSON under `/api/`, otherwise the public message page. At most 10,000 peers per limit; the oldest entry goes first. Behind a reverse proxy every client shares the proxy's budget, as login does (D26) | Bounded abuse of public writes and outgoing mail. Upstream has no limits |
+| Public captcha (M2.5) | ALTCHA and hCaptcha are not implemented: the ALTCHA widget and its v2 proof library are neither small nor native. `GET /api/public/captcha/altcha` is always 404, the form shows no widget, and with either setting enabled `POST /subscription/form` fails closed with `Invalid CAPTCHA.` `POST /api/public/subscription` has no captcha, as upstream | Enabling a captcha must never silently leave the form unprotected |
+| Public CORS (M2.5) | `security.trusted_urls` applies to `next` redirects only; no CORS headers. Cross-origin browser calls to `/api/public/*` need a same-origin proxy | Not in this task; form posts and server calls work |
 | `POST /api/tx` response | Returns the created sends instead of `true` | Callers need the send IDs and message IDs |
 | `POST /api/tx` recipients | Any email address can receive a transactional email. It does not have to be a subscriber first; listmonk's default mode rejects unknown addresses ([Sending](04-sending.md#transactional-api)) | A one-off email to someone is not a subscription. Forcing callers to create a subscriber first, or to know about `subscriber_mode`, is bookkeeping with no benefit |
 | `POST /api/tx` atomic recipients | Every recipient is resolved and rendered before any write; an unknown `subscriber_id`/`subscriber_external_id` or a render failure returns 400 with no rows and no SMTP. listmonk sends to the found recipients and then returns 400 | A partial send that reports failure invites a retry that duplicates mail |
@@ -135,7 +141,7 @@ sending remains staged until M2.4's full policy.
   - `subscriber_events:create`, `subscriber_events:get`;
   - `sends:get`, `sends:manage`;
   - `webhooks:manage`.
-- **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe) are rate-limited per IP in memory. M1.3 login uses the explicit injected policy and transport peer address under D26; M1.2 supplies persisted configuration later.
+- **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe, export, wipe) are rate-limited per IP in memory, on the injected clock and the transport peer address. M1.3 login uses the explicit injected policy under D26. Public budgets are listed in the differences above.
 
 M1.3's `GET /admin/login` supplies a pre-login nonce in the form and a host-only
 HttpOnly cookie; `POST /admin/login` requires both. A successful login issues a
@@ -176,7 +182,7 @@ Kept with listmonk's URL shapes, so the behavior people know stays the same:
 
 New, for sends (transactional and sequence messages):
 
-- `/m/:sendUUID/unsubscribe/:subUUID`: page and one-click `POST` (M2.4). The subscriber UUID must belong to the send; mismatches are 404 and change nothing. The page offers listmonk's blocklist option (`privacy.allow_blocklist`); preference management (`manage=true`) is M2.5 and returns 400;
+- `/m/:sendUUID/unsubscribe/:subUUID`: page and one-click `POST` (M2.4). The subscriber UUID must belong to the send; mismatches are 404 and change nothing. The page offers listmonk's blocklist option (`privacy.allow_blocklist`) and the same preference management (`manage=true`) and privacy forms as the campaign page;
 - `/m/:sendUUID/link/:linkUUID`: tracked links;
 - `/m/:sendUUID/px.png`: view pixel.
 
@@ -196,8 +202,8 @@ unconsumed suffix bytes are ignored as in pinned encoding/xml.Decode. The
 replacement decoding. This corrects compatibility defects, not a new API exception.
 
 M1.6 implements numeric-ID subscriber CRUD and ID-selected bulk actions. Collection/
-search/SQL/query-selected bulk/export remain M1.7. Automatic/explicit opt-in
-mail awaits M2.5; M1.6 stores actual membership state without delivery claims.
+search/SQL/query-selected bulk/export remain M1.7. M2.5 wires automatic and explicit
+(`POST /api/subscribers/:id/optin`) opt-in mail as transactional outbox sends.
 D38 defines the normal-only external_id field and GET/PUT/DELETE lookup routes,
 exact nullable identity, safe conflict/no-write and current-scope behavior.
 
