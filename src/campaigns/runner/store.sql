@@ -91,6 +91,10 @@ WHERE id = ?1 AND status IN ('running', 'scheduled');
 -- name: last-delivery
 -- The latest campaign delivery that counts toward the marketing frequency cap, and whether
 -- a claim is still outstanding (a reservation whatever its age).
-SELECT MAX(at) AS at, COALESCE(MAX(status = 'claimed'), 0) AS outstanding
-FROM campaign_deliveries
-WHERE subscriber_id = ? AND status IN ('claimed', 'sent', 'unknown');
+-- One idx_campaign_deliveries_subscriber seek per status, not a scan of the history.
+SELECT (SELECT MAX(at) FROM (
+    SELECT (SELECT MAX(at) FROM campaign_deliveries WHERE subscriber_id = ?1 AND status = 'claimed') AS at
+    UNION ALL SELECT (SELECT MAX(at) FROM campaign_deliveries WHERE subscriber_id = ?1 AND status = 'sent')
+    UNION ALL SELECT (SELECT MAX(at) FROM campaign_deliveries WHERE subscriber_id = ?1 AND status = 'unknown')
+  )) AS at,
+  EXISTS (SELECT 1 FROM campaign_deliveries WHERE subscriber_id = ?1 AND status = 'claimed') AS outstanding;

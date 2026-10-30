@@ -226,10 +226,15 @@ export function createSends(options: {
            SELECT id, retry_of FROM sends WHERE id = ?1
            UNION ALL SELECT s.id, s.retry_of FROM sends s JOIN chain c ON s.id = c.parent
          )
-         SELECT id FROM sends
-         WHERE subscriber_id = ?2 AND kind = 'marketing' AND id NOT IN (SELECT id FROM chain)
-           AND (status = 'sending' OR (?4 AND status = 'queued')
-             OR (status IN ('sent', 'unknown') AND coalesce(sent_at, attempted_at, created_at) > ?3))
+         -- One branch per status, so each seeks idx_sends_cap instead of scanning the history.
+         SELECT id FROM sends WHERE subscriber_id = ?2 AND kind = 'marketing' AND status = 'sending'
+           AND id NOT IN (SELECT id FROM chain)
+         UNION ALL
+         SELECT id FROM sends WHERE ?4 AND subscriber_id = ?2 AND kind = 'marketing' AND status = 'queued'
+           AND id NOT IN (SELECT id FROM chain)
+         UNION ALL
+         SELECT id FROM sends WHERE subscriber_id = ?2 AND kind = 'marketing' AND status IN ('sent', 'unknown')
+           AND coalesce(sent_at, attempted_at, created_at) > ?3 AND id NOT IN (SELECT id FROM chain)
          LIMIT 1`,
       )
       .get(scope.lineage ?? 0n, subscriberId, start.toISOString(), scope.pending ? 1 : 0);
@@ -462,8 +467,16 @@ export function createSends(options: {
     const policy = options.marketingPolicy;
     const latest = db
       .query<{ at: string | null }, [bigint]>(
-        `SELECT max(coalesce(sent_at, attempted_at, created_at)) AS at FROM sends
-         WHERE subscriber_id = ? AND kind = 'marketing' AND status IN ('queued', 'sending', 'sent', 'unknown')`,
+        // The latest time per status is the end of its idx_sends_cap range.
+        `SELECT max(at) AS at FROM (
+           SELECT (SELECT max(coalesce(sent_at, attempted_at, created_at)) FROM sends
+             WHERE subscriber_id = ?1 AND kind = 'marketing' AND status = 'queued') AS at
+           UNION ALL SELECT (SELECT max(coalesce(sent_at, attempted_at, created_at)) FROM sends
+             WHERE subscriber_id = ?1 AND kind = 'marketing' AND status = 'sending')
+           UNION ALL SELECT (SELECT max(coalesce(sent_at, attempted_at, created_at)) FROM sends
+             WHERE subscriber_id = ?1 AND kind = 'marketing' AND status = 'sent')
+           UNION ALL SELECT (SELECT max(coalesce(sent_at, attempted_at, created_at)) FROM sends
+             WHERE subscriber_id = ?1 AND kind = 'marketing' AND status = 'unknown'))`,
       )
       .get(subscriberId)?.at;
     const journal = latest ? Date.parse(latest) : NaN;
@@ -716,7 +729,12 @@ export function createSends(options: {
     claim(time: Date, lease: Date): Row[] {
       const row = db
         .query<Row, [string]>(
-          "SELECT * FROM sends WHERE status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY id LIMIT 1",
+          // The lowest queued id that is new or due for retry. Each half reads idx_sends_due
+          // (status, next_attempt_at, id), so new rows are not sorted per claim.
+          `SELECT * FROM sends WHERE id = (SELECT min(id) FROM (
+             SELECT min(id) AS id FROM sends WHERE status='queued' AND next_attempt_at IS NULL
+             UNION ALL
+             SELECT min(id) FROM sends WHERE status='queued' AND next_attempt_at <= ?))`,
         )
         .get(time.toISOString());
       if (!row) return [];
