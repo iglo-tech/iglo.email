@@ -116,3 +116,9 @@ INSERT INTO campaign_views (campaign_id, subscriber_id, created_at) VALUES (?, ?
 
 -- name: register-campaign-click
 INSERT INTO link_clicks (campaign_id, link_id, subscriber_id, created_at) VALUES (?, ?, ?, ?);
+
+-- name: register-campaign-link
+INSERT INTO campaign_links (campaign_id, link_id) VALUES (?, ?) ON CONFLICT DO NOTHING;
+
+-- name: campaign-has-link
+SELECT EXISTS (SELECT 1 FROM campaign_links WHERE campaign_id = ? AND link_id = ?) AS has;

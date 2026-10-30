@@ -294,3 +294,45 @@ test("deleting a campaign removes its list links; deleted lists keep the name", 
   expect((await f.json(`/api/campaigns/${c.id}`, "DELETE")).status).toBe(200);
   expect((await f.json(`/api/campaigns/${c.id}`)).status).toBe(400);
 });
+
+test("the campaign redirect follows only links that campaign's content registered", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  await f.subscriber("ada@example.test", [news]);
+  const send = async (name: string, url: string) => {
+    const c = await f.campaign({ name, subject: name, lists: [news] });
+    const sent = await f.json(`/api/campaigns/${c.id}/test`, "POST", {
+      name,
+      subject: name,
+      lists: [news],
+      messenger: "email",
+      content_type: "html",
+      body: `<a href="{{ "${url}" | track_link }}">x</a>`,
+      subscribers: ["ada@example.test"],
+    });
+    expect(sent.status).toBe(200);
+    return c;
+  };
+  const own = await send("own", "https://example.test/own");
+  const other = await send("other", "https://attacker.example/phish");
+  const links = (await f.mail(2)).map((m) =>
+    /http:\/\/fixture\.test(\/link\/([0-9a-f-]{36})\/[0-9a-f-]{36}\/[0-9a-f-]{36})/.exec(
+      decode(m.data),
+    )!,
+  );
+  const [ownLink, otherLink] = links[0]![1]!.includes(own.uuid) ? links : [links[1]!, links[0]!];
+  const dummy = "00000000-0000-0000-0000-000000000000";
+  const replayed = `/link/${otherLink![2]}/${own.uuid}/${dummy}`;
+  for (const disabled of [false, true]) {
+    f.settings.disableTracking = disabled;
+    const followed = await f.request(ownLink![1]!);
+    expect(followed.status).toBe(307);
+    expect(followed.headers.get("location")).toBe("https://example.test/own");
+    // Another campaign's link UUID with this campaign's UUID: no redirect, no click.
+    const refused = await f.request(replayed);
+    expect(refused.status).toBe(404);
+    expect(refused.headers.get("location")).toBeNull();
+  }
+  expect((await f.json(`/api/campaigns/${own.id}`)).body.data.clicks).toBe(1);
+  expect((await f.json(`/api/campaigns/${other.id}`)).body.data.clicks).toBe(0);
+});

@@ -256,10 +256,20 @@ export function registerCampaignPublicRoutes(
     const invalid = () =>
       page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidLink"), noIndex);
     if (!link) return invalid();
+    const campaign = deps.store.byUuid(context.params.campUUID!.toLowerCase());
+    if (!settings.disableTracking && !campaign) return invalid();
+    // Only links this campaign's content registered redirect, so a URL registered by another
+    // send can't use the campaign domain as an open redirect (a deliberate difference).
+    if (!campaign || !deps.store.hasLink(campaign.id, link.id))
+      return page(
+        t,
+        404,
+        t.T("globals.terms.notFound"),
+        t.T("globals.messages.invalidLink"),
+        noIndex,
+      );
     if (!settings.disableTracking) {
-      // RegisterCampaignLinkClick: the campaign must exist; the subscriber is optional.
-      const campaign = deps.store.byUuid(context.params.campUUID!.toLowerCase());
-      if (!campaign) return invalid();
+      // RegisterCampaignLinkClick: the subscriber is optional.
       const sub = settings.individualTracking
         ? deps.subscribers.byUuid(context.params.subUUID!.toLowerCase())
         : null;

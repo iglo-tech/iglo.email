@@ -345,6 +345,13 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
     registerView(id: bigint, subscriberId: bigint | null) {
       q.get("register-campaign-view").run(id, subscriberId, now());
     },
+    /** Records that this campaign's rendered content produced the link. */
+    registerLink(id: bigint, linkId: bigint) {
+      q.get("register-campaign-link").run(id, linkId);
+    },
+    hasLink(id: bigint, linkId: bigint): boolean {
+      return (q.get("campaign-has-link").get(id, linkId) as { has: bigint }).has === 1n;
+    },
     registerClick(id: bigint, linkId: bigint, subscriberId: bigint | null) {
       q.get("register-campaign-click").run(id, linkId, subscriberId, now());
     },

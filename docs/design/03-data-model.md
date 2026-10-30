@@ -65,6 +65,10 @@ Changes to kept tables:
 
 ## New tables
 
+### `campaign_links`
+
+`campaign_id` → campaigns, `link_id` → links (both cascade), primary key on the pair (migration 6, M3.1). A row records that the campaign's own rendered content produced the link; the public campaign redirect requires it ([Tracking](04-sending.md#tracking)).
+
 ### `events`
 
 | Column | Type | Notes |

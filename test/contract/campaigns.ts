@@ -122,6 +122,7 @@ export async function runCampaignsContract(target: {
     lists: [] as number[],
     users: [] as number[],
     roles: [] as number[],
+    templates: [] as number[],
   };
   let cleanupFailed = false;
   const create = async (input: object, label: string, auth = authorization) => {
@@ -840,6 +841,50 @@ export async function runCampaignsContract(target: {
       ["campaigns:send"],
       [{ id: news.id, permissions: ["list:get"] }],
     );
+    // D-campaign-link-scope: the campaign redirect follows only links registered by that
+    // campaign's content. Upstream redirects any registered link, so a tx:send-only account
+    // can register a URL through track_link in a tx subject and replay its link UUID with a
+    // received campaign UUID: an anonymous open redirect (307) on the campaign domain.
+    if (!reference) {
+      const txSender = await apiUser("txsender", ["tx:send"], []);
+      const txTemplate = await call("/api/templates", "POST", {
+        name: `${marker} tx`,
+        type: "tx",
+        subject: "fixed",
+        body: "<p>fixed</p>",
+      });
+      check(txTemplate.status === 200, "tx-template-create");
+      owned.templates.push(txTemplate.body.data.id);
+      const txSent = await call(
+        "/api/tx",
+        "POST",
+        {
+          subscriber_email: ada.email,
+          template_id: txTemplate.body.data.id,
+          subject: `${marker} tx {{ "https://attacker.example/phish" | track_link }}`,
+        },
+        txSender,
+      );
+      check(txSent.status === 200, "tx-link-send");
+      const deadline = Date.now() + 10_000;
+      let txSubject: string | undefined;
+      while (!txSubject && Date.now() < deadline) {
+        txSubject = (await mailpit.list()).find((m) =>
+          m.Subject.startsWith(`${marker} tx `),
+        )?.Subject;
+        if (!txSubject) await Bun.sleep(25);
+      }
+      const txLink = /\/link\/([0-9a-f-]{36})/.exec(txSubject ?? "")?.[1];
+      check(txLink, "tx-link-registered");
+      const replay = await fetch(
+        `${rootUrl}/link/${txLink}/${testCampaign.uuid}/00000000-0000-0000-0000-000000000000`,
+        { redirect: "manual", signal: AbortSignal.timeout(20_000) },
+      );
+      check(
+        replay.status === 404 && replay.headers.get("location") === null,
+        "link-other-registration",
+      );
+    }
     const denied = async (
       response: { status: number; body: any },
       expected: string,
@@ -1005,6 +1050,8 @@ export async function runCampaignsContract(target: {
       if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
     for (const id of owned.roles.reverse())
       if ((await call(`/api/roles/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    for (const id of owned.templates)
+      if ((await call(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
     for (const id of owned.subscribers)
       if ((await call(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
     for (const id of owned.lists)

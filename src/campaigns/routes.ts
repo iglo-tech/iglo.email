@@ -689,6 +689,8 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
                       let uuid = links.get(url);
                       if (uuid === undefined) {
                         uuid = deps.tracking.link(url);
+                        const link = uuid === null ? null : deps.tracking.get(uuid);
+                        if (link) deps.store.registerLink(stored.id, link.id);
                         links.set(url, uuid);
                       }
                       return uuid ? `${root}/link/${uuid}/${stored.uuid}/${trackedUuid}` : url;
