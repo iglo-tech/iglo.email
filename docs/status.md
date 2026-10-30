@@ -4,9 +4,9 @@ Updated 2026-10-30. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M1.9 CSV import, [PR #38](https://github.com/iglo-tech/iglo.email/pull/38), head 024830c. Local checks pass; Sol round-1 review running.
+M4.1 admin shell, auth screens, dashboard: [brief](briefs/M4.1.md); one Opus worker running.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M4 screens, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
+Next: M4.2-M4.6, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -31,6 +31,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M1.9         | [#38](https://github.com/iglo-tech/iglo.email/pull/38) | 7a21684 | CSV import; log holds no personal data; D61 revised        |
 | M3.5         | [#37](https://github.com/iglo-tech/iglo.email/pull/37) | 8b38fba | Media, attachments, data-embed; storage boundary D64       |
 | M3.4         | [#36](https://github.com/iglo-tech/iglo.email/pull/36) | 6375f5c | Bounces, actions, signed Mailgun webhook; D63              |
 | M3.3         | [#35](https://github.com/iglo-tech/iglo.email/pull/35) | a69abd7 | Analytics through a killable read-only child process (D62) |
