@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.6 outbound webhooks, [PR #34](https://github.com/iglo-tech/iglo.email/pull/34), head 5acdd03. Worker done (migration 10, D61 for review); Sol xhigh round-1 review running.
-Next: lead disposition of round 1, merge. Then M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
+M2.6 outbound webhooks, [PR #34](https://github.com/iglo-tech/iglo.email/pull/34), head 5acdd03. Round 1: CHANGES (2 P1 privacy, 1 P2 bulk bound; all agreed); one Opus fixer running.
+Next: Sol round-2 fix-only review, merge. Then M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
