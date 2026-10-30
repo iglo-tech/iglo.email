@@ -45,12 +45,24 @@ export function createCampaignRecipients(db: Database) {
       const recipient = q.get("campaign-recipient");
       return ids.map(({ id }) => recipient.get(id) as CampaignRecipient);
     },
-    /** Whether the subscriber still qualifies (not unsubscribed or blocklisted since). */
-    eligible(audience: CampaignAudience, id: bigint): boolean {
-      const row = q.get("campaign-recipient-eligible").get(lists(audience), audience.type, id) as {
+    /**
+     * Whether the subscriber still qualifies (not unsubscribed or blocklisted since), and
+     * still has the UUID and email its message was rendered for (`changed` otherwise).
+     */
+    eligible(
+      audience: CampaignAudience,
+      recipient: Pick<CampaignRecipient, "id" | "uuid" | "email">,
+    ): "eligible" | "ineligible" | "changed" {
+      const row = q
+        .get("campaign-recipient-eligible")
+        .get(lists(audience), audience.type, recipient.id) as {
+        uuid: string | null;
+        email: string | null;
         eligible: bigint;
       };
-      return row.eligible === 1n;
+      if (row.uuid === null) return "ineligible";
+      if (row.uuid !== recipient.uuid || row.email !== recipient.email) return "changed";
+      return row.eligible === 1n ? "eligible" : "ineligible";
     },
     close: () => q.close(),
   };

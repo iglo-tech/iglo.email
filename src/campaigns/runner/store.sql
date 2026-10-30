@@ -15,7 +15,8 @@ WHERE id = ?1
   AND (status = 'running' OR (status = 'scheduled' AND send_at IS NOT NULL AND send_at <= ?4))
   AND (runner_lease IS NULL OR runner_lease_until IS NULL OR runner_lease_until <= ?4)
 RETURNING id, uuid, type, name, subject, from_email, body, altbody, content_type, headers,
-  attribs, messenger, template_id, status, last_subscriber_id, max_subscriber_id;
+  attribs, messenger, template_id, status, last_subscriber_id, max_subscriber_id,
+  runner_generation;
 
 -- name: campaign-list-ids
 SELECT list_id FROM campaign_lists WHERE campaign_id = ? AND list_id IS NOT NULL ORDER BY id;
@@ -36,7 +37,8 @@ UPDATE campaigns SET runner_lease = NULL, runner_lease_until = NULL
 WHERE id = ?1 AND runner_lease = ?2;
 
 -- name: campaign-run-state
-SELECT status, runner_lease, last_subscriber_id, max_subscriber_id FROM campaigns WHERE id = ?;
+SELECT status, runner_lease, runner_generation, last_subscriber_id, max_subscriber_id
+FROM campaigns WHERE id = ?;
 
 -- name: advance-cursor
 UPDATE campaigns SET last_subscriber_id = MAX(last_subscriber_id, ?2), updated_at = ?3
@@ -66,7 +68,8 @@ SELECT COUNT(*) AS count, MIN(subscriber_id) AS first, MAX(subscriber_id) AS las
 FROM campaign_deliveries WHERE campaign_id = ? AND status = 'claimed';
 
 -- name: mark-abandoned
-UPDATE campaign_deliveries SET status = 'unknown' WHERE campaign_id = ? AND status = 'claimed';
+-- The message may have gone out at any time up to now: the cap counts it from now.
+UPDATE campaign_deliveries SET status = 'unknown', at = ?2 WHERE campaign_id = ?1 AND status = 'claimed';
 
 -- name: finish-campaign
 UPDATE campaigns SET status = 'finished', updated_at = ?2
@@ -80,6 +83,8 @@ UPDATE campaigns SET status = 'cancelled', updated_at = ?2
 WHERE id = ?1 AND status IN ('running', 'scheduled');
 
 -- name: last-delivery
--- The latest campaign delivery that counts toward the marketing frequency cap.
-SELECT MAX(at) AS at FROM campaign_deliveries
+-- The latest campaign delivery that counts toward the marketing frequency cap, and whether
+-- a claim is still outstanding (a reservation whatever its age).
+SELECT MAX(at) AS at, COALESCE(MAX(status = 'claimed'), 0) AS outstanding
+FROM campaign_deliveries
 WHERE subscriber_id = ? AND status IN ('claimed', 'sent', 'unknown');

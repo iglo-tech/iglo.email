@@ -23,6 +23,7 @@ export interface RunnableCampaign {
   status: string;
   last_subscriber_id: bigint;
   max_subscriber_id: bigint;
+  runner_generation: bigint;
 }
 export type DeliveryStatus = "sent" | "failed" | "unknown" | "skipped";
 
@@ -56,6 +57,7 @@ export function createRunnerStore(db: Database) {
       return q.get("campaign-run-state").get(id) as {
         status: string;
         runner_lease: string | null;
+        runner_generation: bigint;
         last_subscriber_id: bigint;
         max_subscriber_id: bigint;
       } | null;
@@ -82,13 +84,13 @@ export function createRunnerStore(db: Database) {
       q.get("unclaim-delivery").run(id, subscriberId);
     },
     /** Marks claims left by a stopped runner as unknown and returns their range. */
-    abandon(id: bigint): { count: number; first: bigint | null; last: bigint | null } {
+    abandon(id: bigint, now: string): { count: number; first: bigint | null; last: bigint | null } {
       const found = q.get("abandoned-deliveries").get(id) as {
         count: bigint;
         first: bigint | null;
         last: bigint | null;
       };
-      if (found.count > 0n) q.get("mark-abandoned").run(id);
+      if (found.count > 0n) q.get("mark-abandoned").run(id, now);
       return { count: Number(found.count), first: found.first, last: found.last };
     },
     finish(id: bigint, now: string): boolean {
@@ -100,9 +102,16 @@ export function createRunnerStore(db: Database) {
     cancel(id: bigint, now: string): boolean {
       return q.get("cancel-campaign").run(id, now).changes > 0;
     },
-    /** The latest campaign delivery counted by the marketing frequency cap, or null. */
-    lastDelivery(subscriberId: bigint): string | null {
-      return (q.get("last-delivery").get(subscriberId) as { at: string | null } | null)?.at ?? null;
+    /**
+     * The latest campaign delivery counted by the marketing frequency cap, or null.
+     * `outstanding` is set while a claim awaits its outcome: it holds the cap at any age.
+     */
+    lastDelivery(subscriberId: bigint): { at: string; outstanding: boolean } | null {
+      const row = q.get("last-delivery").get(subscriberId) as {
+        at: string | null;
+        outstanding: bigint;
+      } | null;
+      return row?.at ? { at: row.at, outstanding: row.outstanding === 1n } : null;
     },
     close: () => q.close(),
   };

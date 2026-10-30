@@ -351,3 +351,190 @@ test("an unsubscribe or blocklist during a batch stops that subscriber's message
   expect(recipientsOf()).toEqual(["a@x.test", "d@x.test"]);
   expect(f.runnerStore.lastDelivery(BigInt(b.id))).toBeNull();
 });
+
+test("pause, list edit and resume while a message is outstanding reaches the new audience", async () => {
+  f = await runnerFixture({ hold: true });
+  const before = await f.list("before");
+  const after = await f.list("after");
+  await f.member("s1@x.test", [before]);
+  await f.member("s2@x.test", [before]);
+  await f.member("s3@x.test", [after]);
+  await f.member("s4@x.test", [after]);
+  const c = await f.campaign({ name: "edit", subject: "Old", lists: [before] });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  await f.status(c.id, "running");
+  f.start();
+  await f.drive(() => f.pushes.length === 1);
+  // Pause, replace the lists and resume before the outstanding message settles.
+  expect((await f.status(c.id, "paused")).status).toBe(200);
+  const edited = await f.json(`/api/campaigns/${c.id}`, "PUT", {
+    name: "edit",
+    subject: "New",
+    lists: [after],
+    content_type: c.content_type,
+    body: c.body,
+    messenger: c.messenger,
+  });
+  expect(edited.status).toBe(200);
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  f.control.hold = false;
+  f.pushes[0]!.settle();
+  await f.until(c.id, "finished");
+  // s2 left the audience before its turn; the replacement audience gets the new content.
+  expect(recipientsOf()).toEqual(["s1@x.test", "s3@x.test", "s4@x.test"]);
+  expect(f.pushes.slice(1).map((p) => p.message.subject)).toEqual(["New", "New"]);
+  expect((await f.read(c.id)).sent).toBe(3);
+});
+
+test("a subscriber whose email changed after the claim is not sent the old address", async () => {
+  f = await runnerFixture({ hold: true });
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const b = await f.member("b@x.test", [list]);
+  const c = await f.campaign({ name: "id", subject: "s", lists: [list] });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  await f.status(c.id, "running");
+  f.start();
+  await f.drive(() => f.pushes.length === 1);
+  // b's message is claimed and waits; b moves to a new address and the old one is blocklisted.
+  const moved = await f.json(`/api/subscribers/${b.id}`, "PUT", {
+    email: "b2@x.test",
+    name: "Ada Lovelace",
+    status: "enabled",
+    lists: [list],
+    preconfirm_subscriptions: true,
+  });
+  expect(moved.status).toBe(200);
+  const old = await f.subscriber("b@x.test", [], { status: "blocklisted" });
+  expect(old.email).toBe("b@x.test");
+  f.control.hold = false;
+  f.pushes[0]!.settle();
+  await f.until(c.id, "finished");
+  expect(recipientsOf()).toEqual(["a@x.test"]);
+  // Resolved as not sent, and logged for a manual resend; never sent again.
+  expect(f.runnerStore.lastDelivery(BigInt(b.id))).toBeNull();
+  expect(f.errors.map(String).some((e) => e.includes(`subscriber ${b.id} changed`))).toBe(true);
+});
+
+function capSends(minInterval: string) {
+  return createSends({
+    db: f.db,
+    clock: f.clock,
+    subscribers: f.owners.subscribers,
+    rootUrl: () => "http://fixture.test",
+    marketingPolicy: createMarketingPolicy({
+      subscribers: f.owners.subscribers,
+      lists: f.owners.lists,
+      settings: () => ({
+        rootUrl: "http://fixture.test",
+        siteName: "Fixture",
+        minInterval,
+        unsubscribeHeader: true,
+        allowBlocklist: false,
+        individualTracking: false,
+        disableTracking: false,
+      }),
+      campaignDeliveries: f.runnerStore,
+    }),
+  });
+}
+
+test("a batch still in flight holds the cap for messages sent late in the batch", async () => {
+  f = await runnerFixture({ hold: true });
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const b = await f.member("b@x.test", [list]);
+  await f.member("c@x.test", [list]);
+  const c = await f.campaign({ name: "slow", subject: "s", lists: [list] });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 1000 });
+  const sends = capSends("PT1M");
+  try {
+    await f.status(c.id, "running");
+    f.start();
+    const t0 = f.clock.now().getTime();
+    // Each message takes 30 s of SMTP time: b goes out at about 60 s, c is still in flight.
+    await f.drive(() => {
+      for (const push of f.pushes) if (f.clock.now().getTime() - push.at >= 30_000) push.settle();
+      return f.clock.now().getTime() - t0 >= 64_000;
+    }, 1000);
+    expect(f.pushes.map((p) => p.to)).toEqual(["a@x.test", "b@x.test", "c@x.test"]);
+    expect(sends.marketingReason(BigInt(b.id), BigInt(list))).toBe("frequency_cap");
+  } finally {
+    sends.close();
+  }
+});
+
+test("a runner whose heartbeat stalled keeps its campaign from a second pipe in the process", async () => {
+  f = await runnerFixture({ hold: true });
+  const c = await campaignOf(4);
+  Object.assign(f.settings, { concurrency: 1, batchSize: 2 });
+  await f.status(c.id, "running");
+  // The first runner's timers stall, as in a blocked event loop, so it misses its renewals.
+  let resume!: () => void;
+  const stalled = new Promise<void>((done) => (resume = done));
+  let stall = false;
+  const stallable = {
+    now: () => f.clock.now(),
+    async sleep(ms: number, signal?: AbortSignal) {
+      if (stall) await stalled;
+      return f.clock.sleep(ms, signal);
+    },
+  };
+  f.start(3_000, stallable);
+  await f.drive(() => f.pushes.length === 1);
+  stall = true;
+  // Well past the lease; a second runner in the same process scans meanwhile.
+  f.start(3_000);
+  await f.drive(() => false, 500, 30).catch(() => {});
+  expect(f.pushes.length).toBe(1);
+  expect(f.maxInFlight).toBe(1);
+  stall = false;
+  resume();
+  f.control.hold = false;
+  f.pushes[0]!.settle();
+  await f.until(c.id, "finished");
+  expect(recipientsOf().length).toBe(4);
+  expect(new Set(recipientsOf()).size).toBe(4);
+  expect(f.maxInFlight).toBe(1);
+});
+
+test("tracked links personalized per subscriber do not accumulate across batches", async () => {
+  f = await runnerFixture({ hold: true });
+  const { heapStats } = await import("bun:jsc");
+  const list = await f.list("l");
+  const count = 300;
+  for (let i = 0; i < count; i++) await f.member(`p${String(i).padStart(4, "0")}@x.test`, [list]);
+  const pad = "x".repeat(7000);
+  const links = Array.from(
+    { length: 8 },
+    (_, n) =>
+      `{% capture u${n} %}https://example.test/${pad}/${n}/{{ subscriber.uuid }}{% endcapture %}` +
+      `<a href="{{ u${n} | track_link }}">${n}</a>`,
+  ).join("");
+  const c = await f.campaign({ name: "links", subject: "s", lists: [list], body: links });
+  Object.assign(f.settings, { concurrency: 5, batchSize: 20 });
+  await f.status(c.id, "running");
+  f.start();
+  const heap = () => {
+    Bun.gc(true);
+    return heapStats().heapSize;
+  };
+  let first = 0;
+  // Settle everything but the last message, measuring after the first few batches.
+  await f.drive(() => {
+    if (f.pushes.length >= 60 && !first) first = heap();
+    if (f.pushes.length === count) return true;
+    for (const push of f.pushes) push.settle();
+    return false;
+  }, 10);
+  const last = heap();
+  // About 13 MB of distinct tracked URLs were rendered since the first measurement.
+  expect(last - first).toBeLessThan(6 * 1024 * 1024);
+  f.control.hold = false;
+  for (const push of f.pushes) push.settle();
+  await f.until(c.id, "finished");
+  // Every link still redirects: campaign_links is the lasting record.
+  const body = Buffer.from(f.pushes.at(-1)!.message.body).toString();
+  const link = /http:\/\/fixture\.test(\/link\/[^"]+)/.exec(body)![1]!;
+  expect((await f.request(link)).status).toBe(307);
+});

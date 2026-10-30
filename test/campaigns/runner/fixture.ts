@@ -2,7 +2,12 @@
 // controllable emailer that records each push on the injected clock.
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import { createRunnerStore } from "@/campaigns/runner/store";
-import { startCampaignRunner, type RunnerSettings } from "@/campaigns/runner/runner";
+import {
+  createCampaignRunnerRegistry,
+  startCampaignRunner,
+  type RunnerSettings,
+} from "@/campaigns/runner/runner";
+import type { Clock } from "@/clock";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import type { Message, Outcome } from "@/messaging/email";
 
@@ -63,10 +68,13 @@ export async function runnerFixture(options: { hold?: boolean } = {}) {
     individualTracking: false,
   };
   const runners: ReturnType<typeof startCampaignRunner>[] = [];
-  const start = (leaseMs = 30_000) => {
+  // Runners of one fixture share a process and so a data directory (D15).
+  const registry = createCampaignRunnerRegistry();
+  const start = (leaseMs = 30_000, clock: Clock = f.clock) => {
     const runner = startCampaignRunner({
       db: f.db,
-      clock: f.clock,
+      clock,
+      registry,
       logger: { error: (error) => f.errors.push(error) },
       store,
       campaigns: f.owners.store,

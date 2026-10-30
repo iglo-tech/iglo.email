@@ -58,6 +58,12 @@ export interface RunnerDeps {
     push(message: Message, delivery?: { copies?: boolean }): { result: Promise<Outcome> };
   };
   settings: () => RunnerSettings;
+  /**
+   * Campaigns with a live pipe in this process. Runners sharing a data directory share it
+   * (D15: one process per data directory), so no campaign gets a second pipe while one
+   * lives, even after the first pipe's lease expired during a stall.
+   */
+  registry?: CampaignRunnerRegistry;
   /** Idle scan interval; listmonk scans every five seconds. */
   scanIntervalMs?: number;
   leaseMs?: number;
@@ -66,6 +72,7 @@ export interface RunnerDeps {
 interface Pipe {
   campaign: RunnableCampaign;
   compiled: ReturnType<typeof compileCampaign>;
+  /** Tracked links seen in the current batch; campaign_links is the lasting record. */
   links: Map<string, string | null>;
   errors: number;
 }
@@ -77,11 +84,42 @@ type Stop = "status" | "errors" | "shutdown";
 
 const scanInterval = 5_000;
 const defaultLease = 30_000;
+/** Bound on the per-batch tracked link cache: personalized URLs are distinct per recipient. */
+const maxCachedLinks = 10_000;
+
+/** In-process owners of live campaign pipes, and of the one batch sent at a time. */
+export function createCampaignRunnerRegistry() {
+  const owners = new Map<bigint, string>();
+  let sending: string | null = null;
+  return {
+    /** Takes the campaign for `token`; false while another runner's pipe holds it. */
+    take(id: bigint, token: string): boolean {
+      const owner = owners.get(id);
+      if (owner !== undefined && owner !== token) return false;
+      owners.set(id, token);
+      return true;
+    },
+    drop(id: bigint, token: string): void {
+      if (owners.get(id) === token) owners.delete(id);
+    },
+    /** The batch slot: one batch, and so at most `concurrency` messages, at a time. */
+    begin(token: string): boolean {
+      if (sending !== null && sending !== token) return false;
+      sending = token;
+      return true;
+    },
+    end(token: string): void {
+      if (sending === token) sending = null;
+    },
+  };
+}
+export type CampaignRunnerRegistry = ReturnType<typeof createCampaignRunnerRegistry>;
 
 export function startCampaignRunner(deps: RunnerDeps) {
   const { db, clock, store } = deps;
   const leaseMs = deps.leaseMs ?? defaultLease;
   const token = crypto.randomUUID();
+  const registry = deps.registry ?? createCampaignRunnerRegistry();
   const pipes = new Map<bigint, Pipe>();
   /** Campaigns whose setup failed are retried at the next scan, as listmonk does. */
   const retryAt = new Map<bigint, number>();
@@ -97,8 +135,13 @@ export function startCampaignRunner(deps: RunnerDeps) {
   const log = (message: string) => deps.logger.error(new Error(message));
   const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
 
+  /** Ends the pipe. Its batch has drained: nothing it pushed is still outstanding. */
+  function drop(id: bigint) {
+    pipes.delete(id);
+    registry.drop(id, token);
+  }
   function release(pipe: Pipe) {
-    pipes.delete(pipe.campaign.id);
+    drop(pipe.campaign.id);
     store.release(pipe.campaign.id, token);
   }
   function audience(c: RunnableCampaign) {
@@ -117,9 +160,18 @@ export function startCampaignRunner(deps: RunnerDeps) {
 
   /** newPipe and next-campaigns' pickup, inside the claim transaction. */
   function open(id: bigint, now: number, settings: RunnerSettings): void {
+    // A pipe still alive in this process, even one whose lease lapsed, keeps the campaign.
+    if (!registry.take(id, token)) return;
+    try {
+      openPipe(id, now, settings);
+    } finally {
+      if (!pipes.has(id)) registry.drop(id, token);
+    }
+  }
+  function openPipe(id: bigint, now: number, settings: RunnerSettings): void {
     const campaign = store.acquire(id, token, iso(now + leaseMs), iso(now));
     if (!campaign) return;
-    const abandoned = store.abandon(id);
+    const abandoned = store.abandon(id, iso(now));
     if (abandoned.count)
       log(
         `${label(campaign)}: ${abandoned.count} subscribers with IDs ${abandoned.first}-${abandoned.last} ` +
@@ -170,11 +222,12 @@ export function startCampaignRunner(deps: RunnerDeps) {
     const id = pipe.campaign.id;
     const state = store.state(id);
     if (!state || state.runner_lease !== token) {
-      pipes.delete(id);
+      drop(id);
       return null;
     }
-    if (state.status !== "running") {
-      // Paused or cancelled between batches (cleanup for a stopped pipe).
+    if (state.status !== "running" || state.runner_generation !== pipe.campaign.runner_generation) {
+      // Paused or cancelled between batches, even if resumed since (cleanup for a stopped
+      // pipe). A resumed campaign reopens with its current content, lists and audience.
       release(pipe);
       return null;
     }
@@ -201,6 +254,18 @@ export function startCampaignRunner(deps: RunnerDeps) {
   function claim(nowDate: Date): Batch[] {
     const now = nowDate.getTime();
     const settings = deps.settings();
+    // Another runner in this process is sending a batch: wait for it.
+    if (!registry.begin(token)) return [];
+    try {
+      const batch = claimBatch(now, settings);
+      if (!batch.length) registry.end(token);
+      return batch;
+    } catch (error) {
+      registry.end(token);
+      throw error;
+    }
+  }
+  function claimBatch(now: number, settings: RunnerSettings): Batch[] {
     for (const id of store.due(iso(now))) {
       if (pipes.has(id) || (retryAt.get(id) ?? 0) > now) continue;
       open(id, now, settings);
@@ -242,6 +307,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
           link(url: string) {
             let uuid = pipe.links.get(url);
             if (uuid === undefined) {
+              if (pipe.links.size >= maxCachedLinks) pipe.links.clear();
               uuid = deps.tracking.link(url);
               const link = uuid === null ? null : deps.tracking.get(uuid);
               // The campaign redirect follows only links this campaign registered.
@@ -318,6 +384,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
       settings.slidingWindowRate > 0 &&
       Number.isFinite(windowMs) &&
       windowMs > 1000;
+    pipe.links.clear();
     const outcomes = new Map<number, { status: DeliveryStatus; at: number }>();
     const pushed = new Set<number>();
     let stop: Stop | null = null;
@@ -328,7 +395,13 @@ export function startCampaignRunner(deps: RunnerDeps) {
       if (stopping.signal.aborted) stop = "shutdown";
       else {
         const state = store.state(c.id);
-        if (!state || state.status !== "running" || state.runner_lease !== token) stop = "status";
+        if (
+          !state ||
+          state.status !== "running" ||
+          state.runner_lease !== token ||
+          state.runner_generation !== c.runner_generation
+        )
+          stop = "status";
       }
       return stop !== null;
     };
@@ -372,7 +445,14 @@ export function startCampaignRunner(deps: RunnerDeps) {
           await sleep(slidingUntil - clock.now().getTime());
         if (stopped()) return;
         // Consent is rechecked at the push: an unsubscribe or blocklist during the batch holds.
-        if (!deps.recipients.eligible(audience(c), sub.id)) {
+        // The message was rendered for the captured address: a changed one is not sent.
+        const current = deps.recipients.eligible(audience(c), sub);
+        if (current !== "eligible") {
+          if (current === "changed")
+            log(
+              `${label(c)}: subscriber ${sub.id} changed its UUID or email after the batch was ` +
+                "claimed; the message was not sent. Resend to them manually if needed.",
+            );
           outcomes.set(i, { status: "skipped", at: clock.now().getTime() });
           continue;
         }
@@ -420,14 +500,19 @@ export function startCampaignRunner(deps: RunnerDeps) {
         }
       }
     };
+    let failure: unknown;
     try {
-      await Promise.all(
+      // Every worker settles before the pipe can end: none leaves a push outstanding.
+      const settled = await Promise.allSettled(
         Array.from({ length: Math.min(concurrency, recipients.length) }, (_, w) => worker(w)),
       );
+      failure = settled.find((r) => r.status === "rejected");
     } finally {
       heartbeat.abort();
       await beating;
+      pipe.links.clear();
     }
+    if (failure) throw (failure as PromiseRejectedResult).reason;
     // Progress for the batch: sent count, outcomes, and the unsent rest returned to the cursor.
     const now = iso(clock.now().getTime());
     const unsent = recipients.filter((_, i) => !pushed.has(i) && !outcomes.has(i));
@@ -461,12 +546,14 @@ export function startCampaignRunner(deps: RunnerDeps) {
       } catch (error) {
         // The claims stay in place: the batch is skipped, never resent.
         deps.logger.error(error);
-        pipes.delete(batch.pipe.campaign.id);
+        drop(batch.pipe.campaign.id);
         try {
           store.release(batch.pipe.campaign.id, token);
         } catch {
           /* The lease expires. */
         }
+      } finally {
+        registry.end(token);
       }
     },
   });
@@ -480,6 +567,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
       try {
         await loop.done;
       } finally {
+        registry.end(token);
         if (pipes.size)
           writeTransaction(db, () => {
             for (const pipe of pipes.values()) release(pipe);
