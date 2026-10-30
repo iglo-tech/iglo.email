@@ -182,6 +182,26 @@ describe("one server", () => {
     expect(failed.log).toContain("record over");
   });
 
+  test("empty fields cannot fill memory: a sparse record or header fails the file", async () => {
+    const before = await c.subscribers();
+    const commas = ",".repeat(2 * 1024 * 1024);
+    const record = await c.run(subscribe(), `email\nsparse-row@example.test\n${commas}\n`);
+    expect(record).toMatchObject({ status: "failed", imported: 0 });
+    expect(record.log).toContain("record over");
+    const header = await c.run(subscribe(), `email${commas}\nsparse-head@example.test\n`);
+    expect(header).toMatchObject({ status: "failed", imported: 0 });
+    expect(header.log).toContain("record over");
+    expect(await c.subscribers()).toBe(before);
+  });
+
+  test("a wide file up to the column limit still imports", async () => {
+    const done = await c.run(
+      subscribe(),
+      `email${",".repeat(16_383)}\nwide@example.test${",".repeat(16_383)}\n`,
+    );
+    expect(done).toMatchObject({ status: "finished", imported: 1 });
+  });
+
   test("attributes obey the API's rules and size", async () => {
     const big = JSON.stringify({ v: "x".repeat(70_000) }).replaceAll('"', '""');
     const deep = `${'{""a"":'.repeat(1100)}1${"}".repeat(1100)}`;

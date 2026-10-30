@@ -5,8 +5,13 @@
 const QUOTE = 34,
   LF = 10,
   CR = 13;
-/** The longest record, so an unclosed quote cannot hold the rest of a file in memory. */
+/**
+ * The longest record, so an unclosed quote cannot hold the rest of a file in memory. A field's
+ * delimiter counts as a byte, since its offset is held like the text.
+ */
 export const MAX_RECORD_BYTES = 1024 * 1024;
+/** The widest record, checked before an offset is kept. Spreadsheets stop at this many columns. */
+export const MAX_RECORD_FIELDS = 16_384;
 
 export class CsvError extends Error {}
 
@@ -36,13 +41,13 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
   };
   const fail = (message: string) => new CsvError(`parse error on line ${newlines + 1}: ${message}`);
   const append = (byte: number) => {
-    if (size === buffer.length) {
-      if (size >= MAX_RECORD_BYTES) throw fail(`record over ${MAX_RECORD_BYTES} bytes`);
+    if (size + ends.length >= MAX_RECORD_BYTES) throw fail(`record over ${MAX_RECORD_BYTES} bytes`);
+    if (size === buffer.length)
       buffer = Buffer.concat([buffer], Math.min(size * 2, MAX_RECORD_BYTES));
-    }
     buffer[size++] = byte;
   };
   const endField = () => {
+    if (ends.length === MAX_RECORD_FIELDS) throw fail(`record over ${MAX_RECORD_FIELDS} fields`);
     ends.push(size);
     state = "start";
   };
