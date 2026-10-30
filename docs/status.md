@@ -4,15 +4,16 @@ Updated 2026-10-30. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.5 media, [PR #37](https://github.com/iglo-tech/iglo.email/pull/37), head 3331d3c. Local checks pass; Sol round-1 review running.
+M1.9 CSV import: [brief](briefs/M1.9.md); one Opus worker running.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M1.9 import, M4 screens, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
+Next: M4 screens, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
 
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one Sol xhigh reviewer; lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
+[D64](design/09-decisions.md) (agents, for owner review): the upload root must be inside the data directory; a bad root refuses media only.
 [D63](design/09-decisions.md) (agents, for owner review): durable Mailgun receipts; rows no wipe reaches keep codes only.
 [D62](design/09-decisions.md) (agents, for owner review): analytics reads run in a read-only helper process.
 [D61](design/09-decisions.md#d61-outbound-webhook-delivery-and-privacy) (agents, for owner review): webhooks clear personal data on deletion; a public wipe keeps only numeric ID and UUID; bulk actions capped at 50,000 deliveries.
@@ -30,6 +31,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M3.5         | [#37](https://github.com/iglo-tech/iglo.email/pull/37) | 8b38fba | Media, attachments, data-embed; storage boundary D64       |
 | M3.4         | [#36](https://github.com/iglo-tech/iglo.email/pull/36) | 6375f5c | Bounces, actions, signed Mailgun webhook; D63              |
 | M3.3         | [#35](https://github.com/iglo-tech/iglo.email/pull/35) | a69abd7 | Analytics through a killable read-only child process (D62) |
 | M2.6         | [#34](https://github.com/iglo-tech/iglo.email/pull/34) | 3b99900 | Signed outbound webhooks; wipe clears personal data        |
@@ -63,6 +65,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 - Analytics: global egress budget for many slow near-cap downloads; WAL growth under no-gap report polling (D62).
 - One unidentified test failed once in `bun run check` on 2026-10-30 (M3.4); two reruns clean. Capture the name if it recurs.
+- Media: `runner:crash` has no media campaign; no compiled `data-embed` contract; synchronous `POST /api/tx` with caller attachments has no concurrency limit; supported PDF viewers unverified.
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
