@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.5 public pages, [PR #33](https://github.com/iglo-tech/iglo.email/pull/33), head ae8ba23. Round 1: CHANGES (4 P1, 1 P2; all agreed); one Opus fixer running, including trusted proxies (D60).
-Next: Sol round-2 fix-only review, merge. Then M2.6 webhooks, M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
+M2.5 public pages, [PR #33](https://github.com/iglo-tech/iglo.email/pull/33), head 2c5618d. Round-1 fixes pushed (migration 9, trusted proxies D60); Sol round-2 fix-only review running.
+Next: lead disposition of round 2, merge. Then M2.6 webhooks, M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
