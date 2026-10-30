@@ -443,6 +443,20 @@ test("a late bounce of an address its subscriber left stays the send's and acts 
   expect(delivery!.body.data.send.uuid).toBe(send.uuid);
 });
 
+test("a bounce of a left address names no list, so a wipe has none to clear", async () => {
+  const f = await open();
+  await hooked(f);
+  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
+    .body.data.id;
+  const moved = await f.subscriber("old@example.com", "M", { lists: [list] });
+  const send = await sendTo(f, { subscriber_id: moved, kind: "marketing", list_id: list });
+  await f.json(`/api/subscribers/${moved}`, "PATCH", { email: "new@example.com" });
+  await mailgun(f, signed(f, failed("old@example.com", carrying(send.uuid))));
+  const [delivery] = deliveries(f).filter((d) => d.body.event === "bounce.recorded");
+  expect(delivery!.body.data.send.uuid).toBe(send.uuid);
+  expect(delivery!.body.data.list_ids).toEqual([]);
+});
+
 test("a row no wipe can reach keeps no free-form source", async () => {
   const f = await open();
   const primary = await f.subscriber("primary@example.com");

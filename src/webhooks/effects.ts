@@ -35,7 +35,13 @@ export interface RecordedBounce {
   source: string;
   subscriber_id: bigint | null;
   campaign_uuid: string | null;
-  send: { uuid: string; source: string; kind: string; list_id: bigint | null } | null;
+  send: {
+    uuid: string;
+    source: string;
+    kind: string;
+    subscriber_id: bigint | null;
+    list_id: bigint | null;
+  } | null;
 }
 const subject = (row: {
   id: bigint;
@@ -119,6 +125,8 @@ export function createWebhookEffects(
     /**
      * A bounce row was stored. Its provider text stays out of the payload, and so does the
      * address of a send to a non-subscriber; a later deletion clears this row like the others.
+     * A bounce of an address the send's subscriber has left names no list: the row is stored
+     * for no subscriber, so their wipe could not clear it.
      */
     bounceRecorded(bounce: RecordedBounce) {
       webhooks.queueWebhook("bounce.recorded", () => {
@@ -128,7 +136,7 @@ export function createWebhookEffects(
           subscriber: row ? subject(row) : null,
           list_ids: row
             ? listIDs(row.id)
-            : send?.list_id === null || !send
+            : !send || send.list_id === null || send.subscriber_id !== null
               ? []
               : [webhookID(send.list_id)],
           bounce: { id: webhookID(id), type, source },
