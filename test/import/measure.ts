@@ -246,7 +246,6 @@ async function lockHolds() {
       const slot = importer.reserve()!;
       writeFileSync(slot.path, csv("person", rows));
       importer.start(slot, {
-        name: "m.csv",
         mode,
         status: "unconfirmed",
         overwriteUserInfo: overwrite,

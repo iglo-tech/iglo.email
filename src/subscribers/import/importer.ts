@@ -36,6 +36,11 @@ const PROGRESS_ROWS = 10_000;
 /** The log keeps its newest lines. Half of this is always there, so the outcome never goes. */
 const MAX_LOG_BYTES = 1024 * 1024;
 const MAX_LOG_LINE = 1000;
+/**
+ * Every import's name in the status and log: a file name can name a person, and those outlive a
+ * wipe and reach accounts scoped to other lists. Upstream shows the uploaded name.
+ */
+const IMPORT_NAME = "subscribers.csv";
 /** Upstream has no limit on a name; this is the one an API update has. */
 const MAX_NAME_BYTES = 2000;
 const TEMPORARY = ".iglo-email-import";
@@ -43,7 +48,6 @@ const temporaryFile = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const knownHeaders = new Set(["email", "name", "attributes"]);
 
 export interface ImportOptions {
-  name: string;
   mode: "subscribe" | "blocklist";
   status: string;
   overwriteUserInfo: boolean;
@@ -328,8 +332,8 @@ export function createImporter(deps: {
       taken = slot.path;
       stopRequested = false;
       log = createLog(clock);
-      status = { ...idle(), name: options.name, status: "importing" };
-      log.add(`processing '${options.name}'`);
+      status = { ...idle(), name: IMPORT_NAME, status: "importing" };
+      log.add(`processing '${IMPORT_NAME}'`);
       session = run(slot.path, options);
     },
     /** A running import stops at the next batch; otherwise the last status is cleared. */

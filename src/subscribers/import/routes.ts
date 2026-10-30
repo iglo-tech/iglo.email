@@ -119,7 +119,6 @@ export function registerImportRoutes(
     if (!form.filename.toLowerCase().endsWith(".csv"))
       throw new HttpError(400, "Only a CSV file can be imported: ZIP files are not supported.");
     return {
-      name: form.filename,
       mode,
       status,
       // The old `overwrite` field means both.

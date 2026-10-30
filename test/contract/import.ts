@@ -205,7 +205,8 @@ export async function runImportContract(target: {
       "Delimited.CSV",
     );
     check(delimited.status === "finished" && delimited.imported === 2, `delim-${delimited.log}`);
-    check(delimited.name === "Delimited.CSV", "delimited-name");
+    // 07: an uploaded name can name a person, so production reports a fixed one.
+    check(delimited.name === (reference ? "Delimited.CSV" : "subscribers.csv"), "delimited-name");
     const dup = await subscriber(address("dup"));
     check(dup.name === "First" && membership(dup, a) === "unconfirmed", "duplicate-first-wins");
 

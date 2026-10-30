@@ -40,14 +40,16 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
     field: (index) => buffer.subarray(index ? ends[index - 1]! : 0, ends[index]!),
   };
   const fail = (message: string) => new CsvError(`parse error on line ${newlines + 1}: ${message}`);
+  const overBudget = () => fail(`record over ${MAX_RECORD_BYTES} bytes`);
   const append = (byte: number) => {
-    if (size + ends.length >= MAX_RECORD_BYTES) throw fail(`record over ${MAX_RECORD_BYTES} bytes`);
+    if (size + ends.length >= MAX_RECORD_BYTES) throw overBudget();
     if (size === buffer.length)
       buffer = Buffer.concat([buffer], Math.min(size * 2, MAX_RECORD_BYTES));
     buffer[size++] = byte;
   };
   const endField = () => {
     if (ends.length === MAX_RECORD_FIELDS) throw fail(`record over ${MAX_RECORD_FIELDS} fields`);
+    if (size + ends.length >= MAX_RECORD_BYTES) throw overBudget();
     ends.push(size);
     state = "start";
   };

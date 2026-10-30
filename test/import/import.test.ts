@@ -237,7 +237,7 @@ describe("one server", () => {
     expect(
       (await c.call("/api/settings/privacy.domain_blocklist", "PUT", ["kept-out.test"])).status,
     ).toBe(200);
-    const leaks = /kept-out|Private Name|privatevalue/;
+    const leaks = /kept-out|Private Name|privatevalue|jan-kowalski/;
     const longName = `Private Name ${"n".repeat(2000)}`;
     const content = Buffer.concat([
       Buffer.from(
@@ -255,8 +255,10 @@ describe("one server", () => {
       Buffer.from([0xff, 0xfe]),
       Buffer.from(",\n"),
     ]);
-    expect((await c.post(subscribe(), content)).status).toBe(200);
-    expect((await c.settled()).status).toBe("finished");
+    expect((await c.post(subscribe(), content, "jan-kowalski-export.csv")).status).toBe(200);
+    const settled = await c.settled();
+    expect(settled.status).toBe("finished");
+    expect(settled.name).toBe("subscribers.csv");
     const logs = async () => (await c.call("/api/import/subscribers/logs")).body.data as string;
     const before = await logs();
     expect(before).toContain("skipping line 7");
@@ -277,6 +279,13 @@ describe("one server", () => {
     expect(headerless.status).toBe("failed");
     expect(headerless.log).toContain("'email' column not found");
     expect(headerless.log).not.toMatch(leaks);
+  });
+
+  test("trailing delimiters count toward the record limit", async () => {
+    const delimiters = ",".repeat(16_000);
+    const cell = "x".repeat(1024 * 1024 - 16_000 + 16);
+    const done = await c.run(subscribe(), `email,notes\nbound@example.test,${cell}${delimiters}\n`);
+    expect(done).toMatchObject({ status: "failed", imported: 0 });
   });
 
   test("a long name is a bad row", async () => {
@@ -364,7 +373,7 @@ describe("one server", () => {
       body,
     });
     expect(response.status).toBe(200);
-    expect(await c.settled()).toMatchObject({ name: "parts.csv", imported: 1 });
+    expect(await c.settled()).toMatchObject({ imported: 1 });
     await c.call("/api/import/subscribers", "DELETE");
   });
 
@@ -393,7 +402,7 @@ describe("one server", () => {
       }),
     });
     expect(response.status).toBe(200);
-    expect(await c.settled()).toMatchObject({ name: "split.csv", imported: 1 });
+    expect(await c.settled()).toMatchObject({ imported: 1 });
     await c.call("/api/import/subscribers", "DELETE");
   });
 
@@ -437,6 +446,8 @@ describe("one server", () => {
     await c.call("/api/import/subscribers", "DELETE");
     await c.settled();
     await c.call("/api/import/subscribers", "DELETE");
+    // The status is published just before the file goes.
+    for (let i = 0; i < 400 && leftovers().length; i++) await Bun.sleep(5);
     expect(leftovers()).toEqual([]);
   });
 
