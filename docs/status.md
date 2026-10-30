@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.1b close the mixed-load gap, branch task/M6.1b-throughput, [brief](briefs/M6.1b.md). One Opus medium worker dispatched; no reviewer active. Outbox batching, D59 campaign pacing, real `exit_on` load; FULL sync unchanged.
-Next: on worker handback, Sol xhigh round 1, lead disposition, merge. If the target is still missed, ask the owner about D22 durability. Then the remaining M2/M3/M4/M6 tasks.
+M6.1b mixed-load gap, [PR #32](https://github.com/iglo-tech/iglo.email/pull/32), head 35529d3. Campaign 78.8/s under mixed load, outbox ~500/s, 2,799 real exits; event p95 51 ms (above the brief line, not a slowed-sends failure). Sol xhigh round-1 review running.
+Next: lead disposition of round 1, merge, then the remaining M2/M3/M4/M6 tasks.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
