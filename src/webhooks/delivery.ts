@@ -90,11 +90,12 @@ export function startWebhookDelivery(options: {
   const logged = new Map<bigint, number>();
   const abandon = new AbortController();
   writeTransaction(options.db, () => webhooks.recover());
-  let failLoop!: (error: Error) => void;
-  const failure = new Promise<never>((_resolve, reject) => {
-    failLoop = reject;
-  });
-  void failure.catch(() => {});
+  /** Finished attempts, settled together in the next claim's commit. */
+  const finished: { delivery: ClaimedDelivery; error: string | null }[] = [];
+  const settleFinished = () => {
+    for (const { delivery, error } of finished.splice(0))
+      report(delivery, webhooks.settle(delivery, error), error);
+  };
 
   /** One attempt; its whole time is bounded. An error code is safe to store and show. */
   async function attempt(delivery: ClaimedDelivery): Promise<string | null> {
@@ -107,10 +108,19 @@ export function startWebhookDelivery(options: {
       },
       () => {},
     );
+    /** A resolver can outlast the deadline and cannot be cancelled. */
+    const beforeAbort = <T>(work: Promise<T>) =>
+      Promise.race([
+        work,
+        new Promise<never>((_resolve, reject) => {
+          controller.signal.addEventListener("abort", () => reject(new Error("Aborted")), {
+            once: true,
+          });
+        }),
+      ]);
     try {
       const url = new URL(delivery.target.url);
-      const route = options.blockPrivate() ? await pinned(url, transport) : null;
-      controller.signal.throwIfAborted();
+      const route = options.blockPrivate() ? await beforeAbort(pinned(url, transport)) : null;
       const unix = Math.floor(clock.now().getTime() / 1000);
       const response = await send(route?.url ?? url, {
         method: "POST",
@@ -163,21 +173,17 @@ export function startWebhookDelivery(options: {
     intervalMs: POLL_MS,
     leaseMs: LEASE_MS,
     batchSize: MAX_WEBHOOKS * WEBHOOK_CONCURRENCY,
-    claim: (now, lease) =>
-      webhooks.claim(lease, now, (id) => WEBHOOK_CONCURRENCY - (active.get(id) ?? 0)),
+    claim(now, lease) {
+      settleFinished();
+      return webhooks.claim(lease, now, (id) => WEBHOOK_CONCURRENCY - (active.get(id) ?? 0));
+    },
     // Requests run beside the loop, so it keeps claiming for receivers with free slots.
     process(delivery) {
       const id = delivery.target.id;
       active.set(id, (active.get(id) ?? 0) + 1);
       const run = attempt(delivery)
         .then((error) => {
-          if (abandon.signal.aborted) return;
-          const status = writeTransaction(options.db, () => webhooks.settle(delivery, error));
-          report(delivery, status, error);
-        })
-        .catch((error: unknown) => {
-          failLoop(error instanceof Error ? error : new Error("Webhook delivery failed"));
-          void loop.stop();
+          if (!abandon.signal.aborted) finished.push({ delivery, error });
         })
         .finally(() => {
           const left = active.get(id)! - 1;
@@ -190,10 +196,8 @@ export function startWebhookDelivery(options: {
     },
   });
   webhooks.onWake(() => loop.wake());
-  const done = Promise.race([loop.done, failure]);
-  void done.catch(() => {});
   return {
-    done,
+    done: loop.done,
     wake: () => loop.wake(),
     /** Stop claiming and abandon attempts in flight, whose rows keep only their lease. */
     async halt() {
@@ -209,6 +213,7 @@ export function startWebhookDelivery(options: {
         await loop.stop();
       } finally {
         await Promise.allSettled(running);
+        if (finished.length) writeTransaction(options.db, settleFinished);
       }
     },
   };

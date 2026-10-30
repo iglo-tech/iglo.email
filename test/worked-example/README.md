@@ -22,5 +22,5 @@ unsubscribe routes). It takes about two minutes and needs no Docker or network.
 - The process must log nothing to stderr (application code logs only what needs attention).
 - Everything it creates is removed with the temporary directory; no process is left behind.
 
-Scenarios, subscribers and expected mail: [data.md](data.md). Left out: the
-`subscriber.unsubscribed` webhook (M2.6, not built yet).
+Scenarios, subscribers and expected mail: [data.md](data.md). The app's consent sync is a
+local receiver: both unsubscribes must arrive as signed `subscriber.unsubscribed` deliveries.

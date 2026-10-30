@@ -185,7 +185,9 @@ export function createWebhookStore(db: Database, clock: Clock) {
       if (!hooks.length) return;
       const at = iso();
       const snapshot = data();
-      const subscriber = snapshot.subscriber ? BigInt(String(snapshot.subscriber.id)) : null;
+      const subscriber = snapshot.subscriber
+        ? BigInt(JSON.stringify(snapshot.subscriber.id))
+        : null;
       for (const hook of hooks) {
         const uuid = crypto.randomUUID();
         const body = JSON.stringify({ id: uuid, event, occurred_at: at, data: snapshot });

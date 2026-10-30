@@ -560,3 +560,13 @@ Decided by agents on 2026-10-30, for owner review.
 - **Scope:** public rate limits, login and TOTP limits and `privacy.record_optin_ip` all use this function. It extends D26's forwarded-header rule; nothing else reads the header. `security.public_rate_limit` makes the four public budgets per-minute settings with the previous values as defaults, and both keys are native: a listmonk client's full settings update leaves them unchanged, and changes apply without a restart.
 - **Why:** in the recommended reverse-proxy deployment every visitor shares the proxy's address, so one client's 30 invalid signups a minute denied all signups. Right-to-left walking is what makes the header safe: a client controls only the left of the chain, and the first entry a trusted proxy recorded is the real peer.
 - **Not changed:** the 4,096-entry login table and the 10,000-entry public tables stay bounded per client. A client with many addresses can still spend many budgets; the limits bound abuse and are not a defense against distributed traffic.
+
+## D61. Outbound webhook delivery and privacy
+
+Decided by agents on 2026-10-30, for owner review.
+
+- **Decision:** deliveries follow [Sending](04-sending.md#outbound-webhooks). Configuration is capped at 20 webhooks, which bounds fan-out per event, and each webhook has 4 request slots, so one failing receiver cannot starve another. Migration 10 adds `webhook_deliveries.subscriber_id` and makes the due index per webhook.
+- **Privacy:** deleting or wiping a subscriber clears `email` and `external_id` from all their stored deliveries in the same transaction. `subscriber.deleted` omits the address (`email` is `""`) and keeps `external_id` only until that delivery ends. A send to a non-subscriber never stores the address in a delivery, so there is nothing to find by address later.
+- **Why:** an app keyed on its own ID must still learn that a subscriber is gone, or its consent data goes stale, and that ID is the app's own key. The address is the direct identifier and is not needed once `uuid` and `external_id` identify the record. The cost is that an external ID can outlive a wipe by up to about 24 hours while the delivery is pending.
+- **Not chosen:** keeping the address until delivery would leave a wiped address in the database for a day. Omitting `external_id` would leave apps that hold no `uuid` unable to match the event.
+- **At-least-once, not at-most-once:** D12 covers marketing email, where a duplicate harms a person. A duplicate webhook is deduped by `id`, and a lost one leaves an app's consent wrong.

@@ -115,7 +115,7 @@ Upstream's OpenAPI file (`docs/swagger/collections.yaml`) is the starting refere
 | `GET/POST /api/sequences`, `GET/PUT/DELETE /api/sequences/:id`, `PUT /api/sequences/:id/status` | Manage sequences |
 | `GET /api/enrollments`, `GET /api/enrollments/:id`, `POST /api/enrollments` (manual enroll), `DELETE /api/enrollments/:id` (cancel) | Inspect and control enrollments |
 | `GET /api/sends`, `GET /api/sends/:id`, `POST /api/sends/:id/resend` | Send log |
-| `GET/POST /api/webhooks`, `PUT/DELETE /api/webhooks/:id`, `GET /api/webhooks/:id/deliveries` | Outbound webhooks |
+| `GET/POST /api/webhooks`, `PUT/DELETE /api/webhooks/:id`, `GET /api/webhooks/:id/deliveries` | Outbound webhooks. `POST` takes `url` (http or https, at most 2048 characters, no credentials), `events` and optional `enabled` and `secret` (16 to 256 bytes; generated if absent). The secret appears only in the `POST` response; `PUT` rejects one (rotate by recreating). Deliveries return status and timing but no payload, because `webhooks:manage` does not imply access to subscribers. Lists page with `per_page` up to 100 |
 | `POST /webhooks/bounce/mailgun` | Mailgun bounce webhook |
 
 M2.2's native send journal follows [D53](09-decisions.md#d53-durable-outbox-boundaries-and-native-send-log-contract):

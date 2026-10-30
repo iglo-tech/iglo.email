@@ -291,6 +291,30 @@ test("a rollback queues nothing and repeats of a consent change queue nothing ne
   ).toThrow();
 });
 
+test("an update that blocklists a subscriber reports the memberships it ended", async () => {
+  const f = await open();
+  const r = receiver();
+  await hook(f, r, ["subscriber.unsubscribed", "subscriber.blocklisted"]);
+  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
+    .body.data.id as number;
+  const subscriber = await f.subscriber("a@example.test", "a", { lists: [list] });
+  await f.json(`/api/subscribers/${subscriber}`, "PUT", {
+    email: "a@example.test",
+    name: "a",
+    status: "blocklisted",
+    lists: [list],
+  });
+  await r.waitFor(2);
+  expect(r.received.map((x) => [x.body.event, x.body.data.list_ids])).toEqual([
+    ["subscriber.unsubscribed", [list]],
+    ["subscriber.blocklisted", [list]],
+  ]);
+  // Created blocklisted: an admin blocklisting, with no membership that ended.
+  await f.subscriber("b@example.test", "b", { lists: [list], status: "blocklisted" });
+  await r.waitFor(3);
+  expect(r.received[2]!.body.event).toBe("subscriber.blocklisted");
+});
+
 test("one-click unsubscribes queue once, inside the unsubscribe transaction", async () => {
   const f = await open();
   const r = receiver();
@@ -622,6 +646,19 @@ test("block_private_addresses refuses private targets after resolution, without 
   f.blockPrivate.value = false;
   f.advanceWebhooks(30_000);
   await r.waitFor(1);
+});
+
+test("a resolver that never answers cannot outlast the request deadline", async () => {
+  const f = await open({ webhooks: { lookup: () => new Promise(() => {}) } });
+  const r = receiver();
+  f.blockPrivate.value = true;
+  const { id } = await hook(f, r);
+  await f.json(`/api/webhooks/${id}`, "PUT", { url: "http://never.test/" });
+  await blocklist(f, await f.subscriber("a@example.test"));
+  await until(async () => (await deliveries(f, id))[0]?.claimed_until);
+  f.advanceWebhooks(10_000);
+  await queued(f, id, 1);
+  expect((await deliveries(f, id))[0].last_error).toBe("timeout");
 });
 
 test("with blocking on, the request goes to the checked address, not a fresh lookup", async () => {

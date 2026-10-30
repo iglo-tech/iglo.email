@@ -5,6 +5,7 @@ import { runUnsubscribeContract } from "@/test/contract/unsubscribe";
 import { runPublicContract } from "@/test/contract/public";
 import { runEventsContract } from "@/test/contract/events";
 import { runSequencesContract } from "@/test/contract/sequences";
+import { runWebhooksContract } from "@/test/contract/webhooks";
 import { runTemplateAuthorization } from "@/test/templates/auth-contract";
 import { runDKIMSettings } from "@/test/contract/messaging-dkim";
 import { runMessagingContract } from "@/test/contract/messaging";
@@ -112,6 +113,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "public" ||
       args[1] === "events" ||
       args[1] === "sequences" ||
+      args[1] === "webhooks" ||
       args[1] === "campaigns")
   ) {
     const values = argumentsForRun(args.slice(2));
@@ -130,6 +132,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "public" ||
         args[1] === "events" ||
         args[1] === "sequences" ||
+        args[1] === "webhooks" ||
         args[1] === "campaigns") &&
       Object.keys(values).length
     )
@@ -148,6 +151,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         if (args[1] === "sequences") {
           await runSequencesContract({ baseUrl, credentials, restart });
           process.stdout.write("PASS sequences production contract\n");
+          return true;
+        }
+        if (args[1] === "webhooks") {
+          await runWebhooksContract({ baseUrl, credentials, restart, dataDir });
+          process.stdout.write("PASS webhooks production contract\n");
           return true;
         }
         if (args[1] === "events") {
