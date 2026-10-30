@@ -271,7 +271,6 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
   const logged: unknown[] = [];
   const settings = { enabled: true, interval: "TZ=UTC 0 4 * * *" };
   const loop = startSummaryRefresh({
-    db: f.db,
     clock: f.clock,
     logger: { error: (error) => logged.push(error) },
     summaries,
@@ -324,7 +323,6 @@ test("a refresh that fails is logged, keeps the old rows and leaves the loop run
   const broken = createSummaries(f.db, f.clock, failing);
   const logged: unknown[] = [];
   const loop = startSummaryRefresh({
-    db: f.db,
     clock: f.clock,
     logger: { error: (error) => logged.push(error) },
     summaries: broken,
@@ -390,11 +388,7 @@ test("the cron interval follows the settings' spec forms", () => {
   expect(due("TZ=Europe/Warsaw 0 3 * * *", "2026-01-01T01:59:00Z", "2026-01-01T02:00:00Z")).toBe(
     true,
   );
-  expect(due("@every 5m", "2026-01-01T00:04:59Z", "2026-01-01T00:05:01Z")).toBe(true);
-  expect(due("@every 5m", "2026-01-01T00:05:01Z", "2026-01-01T00:06:01Z")).toBe(false);
-  expect(due("CRON_TZ=UTC @every 1h30m", "2026-01-01T00:00:00Z", "2026-01-01T03:00:00Z")).toBe(
-    true,
-  );
+  expect(due("CRON_TZ=UTC 0 3 * * *", "2026-01-01T02:59:00Z", "2026-01-01T03:00:00Z")).toBe(true);
   // Calendar forms widen to every day and never miss.
   expect(due("TZ=UTC 0 3 L * *", "2026-01-01T02:59:00Z", "2026-01-01T03:00:00Z")).toBe(true);
   expect(due("TZ=UTC 0 3 * * 5#2", "2026-01-01T02:59:00Z", "2026-01-01T03:00:00Z")).toBe(true);
@@ -420,7 +414,6 @@ function refreshing(interval: string) {
   const logged: unknown[] = [];
   const settings = { enabled: true, interval };
   const loop = startSummaryRefresh({
-    db: f.db,
     clock: f.clock,
     logger: { error: (error) => logged.push(error) },
     summaries,

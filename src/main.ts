@@ -483,7 +483,6 @@ async function main(): Promise<void> {
       },
     });
     summaryRefresh = startSummaryRefresh({
-      db,
       clock,
       logger: app.logger,
       summaries,

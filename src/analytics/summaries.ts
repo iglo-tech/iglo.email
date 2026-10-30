@@ -4,12 +4,11 @@
 // reader child and only its last step, one short transaction, holds the write lock.
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
-import type { AnalyticsReader } from "@/analytics/reader";
-import { dueBetween } from "@/analytics/schedule";
+import { ReaderError, type AnalyticsReader } from "@/analytics/reader";
+import { createSchedule, type Schedule } from "@/analytics/schedule";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
-import { startLoop } from "@/loops/loop";
 import type { ListCounts } from "@/subscribers/list-counts";
 import sql from "@/analytics/summaries.sql" with { type: "text" };
 
@@ -42,7 +41,7 @@ export function createSummaries(db: Database, clock: Clock, reader: AnalyticsRea
       return JSON.parse(get(name)!);
     },
     /** Turning caching off forgets the rows, so turning it on again never shows old ones. */
-    clear: () => void q.get("clear-summaries").run(),
+    clear: () => writeTransaction(db, () => void q.get("clear-summaries").run()),
     /** The list counters for GET /api/lists; null falls back to the live count. */
     listCounts(): ReturnType<ListCounts["all"]> | null {
       const data = get("list_stats");
@@ -58,40 +57,84 @@ export function createSummaries(db: Database, clock: Clock, reader: AnalyticsRea
 }
 export type Summaries = ReturnType<typeof createSummaries>;
 
-/** The app.cache_slow_queries cron job, checked once a minute in the maintenance loop. */
+/** Longest sleep, which is how soon a changed setting takes effect. */
+const CHECK_MS = 60_000;
+
+/**
+ * The app.cache_slow_queries cron job. It sleeps to the schedule's next due time, so it does
+ * not use src/loops/loop.ts, whose interval is fixed and whose claims are write transactions:
+ * @every can be one second, and there is no work row to lease. A setting or a refresh that
+ * fails is logged and keeps the stored rows; neither stops the server.
+ */
 export function startSummaryRefresh(options: {
-  db: Database;
   clock: Clock;
   logger: ErrorLogger;
   summaries: Summaries;
   settings: () => { enabled: boolean; interval: string };
-  intervalMs?: number;
 }) {
-  let checked = options.clock.now();
-  return startLoop<true>({
-    db: options.db,
-    clock: options.clock,
-    logger: options.logger,
-    intervalMs: options.intervalMs ?? 60_000,
-    leaseMs: 1,
-    batchSize: 1,
-    claim(now) {
-      const { enabled, interval } = options.settings();
-      const after = checked;
-      checked = now;
-      if (!enabled) {
-        options.summaries.clear();
-        return [];
-      }
-      return options.summaries.missing() || dueBetween(interval, after, now) ? [true] : [];
-    },
-    async process() {
+  const { clock, logger, summaries } = options;
+  const controller = new AbortController();
+  let current: { interval: string; schedule: Schedule } | undefined;
+  let refused: string | undefined;
+  const schedule = (interval: string, now: Date) => {
+    if (current?.interval === interval) return current.schedule;
+    current = undefined;
+    try {
+      current = { interval, schedule: createSchedule(interval, now) };
+      refused = undefined;
+      return current.schedule;
+    } catch (error) {
+      // Logged once per value: it stays wrong until someone changes the setting.
+      if (refused !== interval) logger.error(error);
+      refused = interval;
+      return undefined;
+    }
+  };
+  const refresh = async () => {
+    try {
+      await summaries.refresh();
+    } catch (error) {
+      // The next due time tries again; a failed refresh keeps the previous numbers.
+      if (!(error instanceof ReaderError && error.kind === "closed")) logger.error(error);
+    }
+  };
+  /** One check; returns how long to sleep. */
+  const check = async () => {
+    const now = clock.now();
+    const { enabled, interval } = options.settings();
+    if (!enabled) {
+      current = undefined;
+      refused = undefined;
+      summaries.clear();
+      return CHECK_MS;
+    }
+    const due = schedule(interval, now);
+    if (due?.due(now) || summaries.missing()) await refresh();
+    return due ? Math.min(CHECK_MS, Math.max(0, due.delay(clock.now()))) : CHECK_MS;
+  };
+  const run = async () => {
+    while (!controller.signal.aborted) {
+      let wait = CHECK_MS;
       try {
-        await options.summaries.refresh();
+        wait = await check();
       } catch (error) {
-        // The next interval tries again; a failed refresh keeps the previous numbers.
-        options.logger.error(error);
+        logger.error(error);
       }
+      try {
+        await clock.sleep(wait, controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted) throw error;
+      }
+    }
+  };
+  const done = run();
+  // The caller can await `done` later without an interim unhandled rejection.
+  void done.catch(() => undefined);
+  return {
+    done,
+    stop() {
+      controller.abort();
+      return done;
     },
-  });
+  };
 }
