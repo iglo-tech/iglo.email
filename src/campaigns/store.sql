@@ -16,10 +16,13 @@ SELECT id, uuid, type, status FROM campaigns WHERE uuid = ?;
 
 -- name: query-campaign-ids
 -- ?1 statuses JSON, ?2 tags JSON, ?3 search GLOB, ?4 type, ?5 all lists, ?6 permitted list IDs JSON,
--- ?7 sort field, ?8 ASC/DESC, ?9 limit (-1 all), ?10 offset. NULLs sort as in Postgres.
+-- ?7 sort field, ?8 ASC/DESC, ?9 limit (-1 all), ?10 offset. NULLs sort as in Postgres;
+-- status sorts by the rank of upstream's campaign_status enum.
 SELECT id, total FROM (
   SELECT c.id,
-    CASE ?7 WHEN 'name' THEN c.name WHEN 'status' THEN c.status WHEN 'updated_at' THEN c.updated_at
+    CASE ?7 WHEN 'name' THEN c.name WHEN 'status' THEN (CASE c.status WHEN 'draft' THEN 0
+        WHEN 'running' THEN 1 WHEN 'scheduled' THEN 2 WHEN 'paused' THEN 3 WHEN 'cancelled' THEN 4
+        ELSE 5 END) WHEN 'updated_at' THEN c.updated_at
       WHEN 'started_at' THEN c.started_at WHEN 'send_at' THEN c.send_at ELSE c.created_at END AS k,
     COUNT(*) OVER () AS total
   FROM campaigns c

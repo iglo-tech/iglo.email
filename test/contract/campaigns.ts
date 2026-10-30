@@ -377,6 +377,44 @@ export async function runCampaignsContract(target: {
       "collection-empty",
     );
 
+    // order_by=status sorts by the campaign_status enum rank, not text, in both directions
+    // and across pages.
+    const ranked = [
+      ["finished", "finished"],
+      ["scheduled", "scheduled"],
+      ["draft", ""],
+    ] as const;
+    for (const [name, status] of ranked) {
+      const c = await create(
+        {
+          name: `${marker} rank ${name}`,
+          subject: "s",
+          lists: [news.id],
+          ...(status === "scheduled" ? { send_at: "2099-01-01T00:00:00Z" } : {}),
+        },
+        `rank-${name}`,
+      );
+      if (status)
+        check(
+          (await call(`/api/campaigns/${c.id}/status`, "PUT", { status })).status === 200,
+          `rank-${name}-status`,
+        );
+    }
+    const statusPages = async (order: string) => {
+      const out: string[] = [];
+      for (const page of [1, 2, 3])
+        out.push(
+          ...(
+            await collection(
+              `query=${marker}%20rank&order_by=status&order=${order}&per_page=1&page=${page}`,
+            )
+          ).results.map((row) => row.status as string),
+        );
+      return out.join(",");
+    };
+    check((await statusPages("asc")) === "draft,scheduled,finished", "collection-status-asc");
+    check((await statusPages("desc")) === "finished,scheduled,draft", "collection-status-desc");
+
     // Updates: the request replaces sent fields; lists must always be sent.
     const noLists = await call(`/api/campaigns/${minimal.id}`, "PUT", { name: "x" });
     check(noLists.status === 400 && message(noLists) === "Invalid list IDs.", "update-no-lists");

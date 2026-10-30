@@ -449,3 +449,39 @@ test("campaign search and query deletion fold Unicode case", async () => {
   expect((await f.json(`/api/campaigns/${krakow.id}`)).status).toBe(400);
   expect((await f.json(`/api/campaigns/${other.id}`)).status).toBe(200);
 });
+
+test("order_by=status follows upstream's status enum rank across pages", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const later = new Date(f.clock.now().getTime() + 86_400_000).toISOString();
+  const status = async (id: number, value: string) =>
+    expect((await f.json(`/api/campaigns/${id}/status`, "PUT", { status: value })).status).toBe(
+      200,
+    );
+  // Created so that neither creation order nor text order matches the enum rank.
+  const make = async (name: string, ...steps: string[]) => {
+    const c = await f.campaign({
+      name,
+      subject: "s",
+      lists: [news],
+      ...(steps[0] === "scheduled" ? { send_at: later } : {}),
+    });
+    for (const step of steps) await status(c.id, step);
+    return c;
+  };
+  await make("finished", "finished");
+  await make("cancelled", "running", "cancelled");
+  await make("paused", "running", "paused");
+  await make("scheduled", "scheduled");
+  await make("running", "running");
+  await make("draft");
+  const page = async (order: string, n: number) =>
+    (
+      await f.json(`/api/campaigns?order_by=status&order=${order}&per_page=2&page=${n}`)
+    ).body.data.results.map((c: { status: string }) => c.status);
+  const rank = ["draft", "running", "scheduled", "paused", "cancelled", "finished"];
+  const asc = [...(await page("asc", 1)), ...(await page("asc", 2)), ...(await page("asc", 3))];
+  expect(asc).toEqual(rank);
+  const desc = [...(await page("desc", 1)), ...(await page("desc", 2)), ...(await page("desc", 3))];
+  expect(desc).toEqual([...rank].reverse());
+});
