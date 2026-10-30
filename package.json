@@ -27,6 +27,7 @@
     "postinstall": "bun run assets:build",
     "e2e": "bun run build && bun test/e2e/run.ts",
     "e2e:browser": "bun run build && bun test/e2e/browser.ts",
+    "e2e:browser:lists": "bun run build && bun test/e2e/browser-lists.ts",
     "ui:verify": "bun run assets:build && bun test/ui/verify.ts",
     "runtime:spike:liquid": "bun test/perf/runtime-compat/liquid-bench.ts",
     "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",

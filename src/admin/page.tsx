@@ -41,6 +41,8 @@ export interface AdminRequest {
   readonly site: AdminSite;
   /** True for any of the permissions; a trailing `*` matches a prefix, as upstream's `Can`. */
   can(...permissions: string[]): boolean;
+  /** The lists this user holds a list permission on. */
+  listScope(permission: "list:get" | "list:manage"): { all: boolean; ids: bigint[] };
 }
 export type AdminView = (request: AdminRequest) => AdminPage | Promise<AdminPage>;
 
@@ -132,7 +134,9 @@ export function createAdminPages(deps: {
           );
         const can = (...wanted: string[]) => has(identity, wanted);
         const current = site();
-        const page = await view({ context, identity, site: current, can });
+        const listScope: AdminRequest["listScope"] = (permission) =>
+          roles.listScope(identity.role, identity.user.list_role_id, permission);
+        const page = await view({ context, identity, site: current, can, listScope });
         const html = renderAdminShell({
           title: page.title,
           siteName: current.siteName,

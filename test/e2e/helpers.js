@@ -47,6 +47,31 @@ export async function logout(page) {
   ]);
 }
 
+// Open a table row's "More" actions dropdown.
+export async function openMenu(row) {
+  await row.getByRole("button", { name: "More" }).click();
+}
+
+// Click the "Ok" button on the confirmation dialog.
+export async function confirm(page) {
+  await page.locator("dialog[open] [data-confirm-ok]").click();
+}
+
+// Pick a list by name in an <ot-taginput> list selector. Filling the input matches a datalist
+// option, which the component turns into a badge. Upstream stops there; a run here can have more
+// lists than the ten suggestions on focus, so an option that only filling brought up is handed to
+// the component as the browser's own pick would be.
+export async function selectList(scope, name) {
+  const input = scope.locator("ot-taginput input");
+  await input.click();
+  await input.fill(name);
+  await input.evaluate((el, wanted) => {
+    const option = [...el.list.options].find((o) => o.value === wanted);
+    if (option) el.closest("ot-taginput").add(option.data);
+  }, name);
+  await expect(scope.locator("ot-taginput .badge").filter({ hasText: name })).toBeVisible();
+}
+
 // A session-authenticated API call from the logged in page, with its CSRF header.
 export function api(page, path, method = "GET", body = undefined) {
   return page.evaluate(
