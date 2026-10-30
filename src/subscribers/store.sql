@@ -27,6 +27,27 @@ UPDATE subscribers SET status='blocklisted',updated_at=? WHERE id=?;
 UPDATE subscriber_lists SET status='unsubscribed',updated_at=? WHERE subscriber_id=?;
 -- name: subscriber-by-uuid
 SELECT * FROM subscribers WHERE uuid = ?;
+-- name: webhook-unsubscribed
+-- Webhook data as one JSON array, read before the write. ?2 null means every list.
+SELECT json_group_array(json_object(
+    'subscriber', json_object('id', s.id, 'uuid', s.uuid, 'email', s.email, 'external_id', s.external_id),
+    'list_ids', json(m.list_ids))) AS data
+  FROM (SELECT subscriber_id, json_group_array(list_id) AS list_ids FROM subscriber_lists
+      WHERE status != 'unsubscribed' AND subscriber_id IN (SELECT value FROM json_each(?1))
+        AND (?2 IS NULL OR list_id IN (SELECT value FROM json_each(?2)))
+      GROUP BY subscriber_id) m
+  JOIN subscribers s ON s.id = m.subscriber_id;
+-- name: webhook-blocklisted
+SELECT json_group_array(json_object(
+    'subscriber', json_object('id', s.id, 'uuid', s.uuid, 'email', s.email, 'external_id', s.external_id),
+    'list_ids', (SELECT json_group_array(list_id) FROM subscriber_lists WHERE subscriber_id = s.id))) AS data
+  FROM subscribers s WHERE s.status != 'blocklisted' AND s.id IN (SELECT value FROM json_each(?));
+-- name: webhook-deleted
+-- D61: never the address.
+SELECT json_group_array(json_object(
+    'subscriber', json_object('id', s.id, 'uuid', s.uuid, 'email', '', 'external_id', s.external_id),
+    'list_ids', (SELECT json_group_array(list_id) FROM subscriber_lists WHERE subscriber_id = s.id))) AS data
+  FROM subscribers s WHERE s.id IN (SELECT value FROM json_each(?));
 -- name: membership-get
 SELECT * FROM subscriber_lists WHERE subscriber_id = ? AND list_id = ?;
 -- name: membership-unsubscribe-list

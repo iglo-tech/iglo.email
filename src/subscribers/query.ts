@@ -14,7 +14,7 @@ import {
   type SubscriberFilter,
 } from "@/subscribers/query-filter";
 import type { QueryRunner, RunnerError } from "@/subscribers/query-runner";
-import { noSubscriberEffects, type SubscriberEffects } from "@/subscribers/store";
+import { noSubscriberEffects, type BulkAction, type SubscriberEffects } from "@/subscribers/store";
 import querySql from "@/subscribers/query.sql" with { type: "text" };
 import exportSql from "@/subscribers/export.sql" with { type: "text" };
 
@@ -149,6 +149,14 @@ export function createSubscriberQuery(options: {
         after = ids.at(-1)!;
       }
     },
+    /** In the action's transaction, before its first write. */
+    admitBulk(action: BulkAction, filter: SubscriberFilter, candidates: bigint[] | null) {
+      effects.admitBulk?.(action, () => {
+        if (candidates) return candidates.length;
+        const count = countSQL({ ...filter, fragment: "" });
+        return Number(column(db, count.sql, count.args)[0] ?? 0n);
+      });
+    },
     transaction(fn: () => void): void {
       writeTransaction(db, fn);
     },
@@ -162,20 +170,11 @@ export function createSubscriberQuery(options: {
       writes.get("delete-by-ids").run(json(ids));
     },
     blocklist(ids: bigint[]) {
+      effects.blocklisting?.(ids);
       const now = clock.now().toISOString();
-      const before = (effects.changed ? writes.get("consent-by-ids").all(json(ids)) : []) as {
-        id: bigint;
-        status: string;
-        lists: string;
-      }[];
       writes.get("blocklist-by-ids").run(now, json(ids));
       writes.get("blocklist-memberships-by-ids").run(now, json(ids));
       effects.blocklisted(ids);
-      for (const { id, status, lists } of before) {
-        const listIds = (JSON.parse(lists) as string[]).map(BigInt);
-        if (status !== "blocklisted" || listIds.length)
-          effects.changed!({ id, blocklisted: status !== "blocklisted", listIds });
-      }
     },
     addLists(ids: bigint[], lists: bigint[], status: string) {
       const now = clock.now().toISOString();
@@ -197,17 +196,11 @@ export function createSubscriberQuery(options: {
       writes.get("delete-memberships-by-ids").run(json(ids), json(lists));
     },
     unsubscribeLists(ids: bigint[], lists: bigint[]) {
-      const ended = new Map<bigint, bigint[]>();
-      if (effects.changed)
-        for (const { subscriber_id, list_id } of writes
-          .get("subscribed-memberships-by-ids")
-          .all(json(ids), json(lists)) as { subscriber_id: bigint; list_id: bigint }[])
-          ended.set(subscriber_id, [...(ended.get(subscriber_id) ?? []), list_id]);
+      effects.unsubscribing?.(ids, lists);
       writes
         .get("unsubscribe-memberships-by-ids")
         .run(clock.now().toISOString(), json(ids), json(lists));
       effects.unsubscribed(ids, lists);
-      for (const [id, listIds] of ended) effects.changed!({ id, blocklisted: false, listIds });
     },
     close() {
       writes.close();

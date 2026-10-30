@@ -124,6 +124,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
   const retryDelay = (attempts: bigint) =>
     Math.min(FIRST_RETRY_MS * 2 ** Math.min(Number(attempts) - 1, 20), MAX_RETRY_MS);
   let wake = () => {};
+  const subscribed = (event: WebhookEvent) => q.get("webhooks-for-event").all(event).length;
   return {
     list(pageNumber: number, perPage: number) {
       const rows = q.get("webhook-list").all(perPage, (pageNumber - 1) * perPage) as Row[];
@@ -195,6 +196,18 @@ export function createWebhookStore(db: Database, clock: Clock) {
       // Writes are synchronous, so the woken loop runs only after this transaction ends.
       wake();
     },
+    /**
+     * `queueWebhook` for a batch of subscribers, in one statement: `data` returns a JSON array
+     * of what `queueWebhook`'s callback returns, so no row passes through JavaScript.
+     */
+    queueMany(event: WebhookEvent, data: () => string) {
+      if (!db.inTransaction) throw new Error("Webhooks are queued in the caller's transaction");
+      if (!subscribed(event)) return;
+      q.get("delivery-insert-many").run(event, data(), iso());
+      wake();
+    },
+    /** Enabled webhooks subscribed to `event`. */
+    subscribed,
     /**
      * D25: clear the address and external ID from every stored delivery of these subscribers,
      * whatever its status. Pending rows stay and go out cleared.

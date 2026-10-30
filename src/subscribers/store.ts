@@ -68,7 +68,14 @@ export interface SubscriberEffects {
    * effects above it stays silent on repeats, so a replayed request queues no webhook.
    */
   changed?(change: { id: bigint; blocklisted: boolean; listIds: bigint[] }): void;
+  /** Set-based `changed` for these subscribers, called before the write it reports. */
+  blocklisting?(ids: bigint[]): void;
+  unsubscribing?(ids: bigint[], listIds: bigint[]): void;
+  /** May refuse a bulk action, by throwing, before its first write. */
+  admitBulk?(action: BulkAction, selected: () => number): void;
 }
+/** A bulk action that can queue webhooks. */
+export type BulkAction = "delete" | "blocklist" | "unsubscribe";
 export const noSubscriberEffects: SubscriberEffects = {
   blocklisted() {},
   unsubscribed() {},
@@ -126,6 +133,9 @@ export function createSubscriberStore(
   const consentChanged = (id: bigint, blocklisted: boolean, listIds: bigint[]) => {
     if (blocklisted || listIds.length) effects.changed?.({ id, blocklisted, listIds });
   };
+  const json = (ids: bigint[]) => `[${ids.join(",")}]`;
+  const webhookData = (name: string, ...args: (string | number | null)[]) =>
+    (q.get(name).get(...args) as { data: string }).data;
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
   const byEmail = (email: string) => q.get("subscriber-by-email").get(email) as Row | null;
   const conflict = (error: unknown): never => {
@@ -259,21 +269,25 @@ export function createSubscriberStore(
       return get(row.id)!;
     },
     remove(ids: bigint[]) {
+      effects.admitBulk?.("delete", () => new Set(ids).size);
       effects.deleting?.(ids.flatMap((id) => get(id) ?? []));
       for (const id of ids) q.get("subscriber-delete").run(id);
     },
     blocklist(ids: bigint[]) {
+      effects.admitBulk?.("blocklist", () => new Set(ids).size);
+      effects.blocklisting?.(ids);
       const now = clock.now().toISOString();
       for (const id of ids) {
-        const previous = get(id);
-        const subscribed = subscribedLists(id);
         q.get("subscriber-blocklist").run(now, id);
         q.get("membership-blocklist").run(now, id);
-        if (previous) consentChanged(id, previous.status !== "blocklisted", subscribed);
       }
       effects.blocklisted(ids);
     },
     action(ids: bigint[], listIDs: bigint[], action: string, status: string) {
+      if (action === "unsubscribe" || (action === "add" && status === "unsubscribed")) {
+        effects.admitBulk?.("unsubscribe", () => new Set(ids).size);
+        effects.unsubscribing?.(ids, listIDs);
+      }
       const now = clock.now().toISOString();
       for (const id of new Set(ids))
         for (const list of new Set(listIDs)) {
@@ -282,17 +296,13 @@ export function createSubscriberStore(
             if (!existing)
               q.get("membership-insert").run(id, list, status || "unconfirmed", now, now);
             else if (status) q.get("membership-status").run(status, id, list);
-            if (status === "unsubscribed") {
-              effects.unsubscribed([id], [list]);
-              if (existing && existing.status !== "unsubscribed") consentChanged(id, false, [list]);
-            }
+            if (status === "unsubscribed") effects.unsubscribed([id], [list]);
           } else if (action === "remove") q.get("membership-delete").run(id, list);
           else if (action === "unsubscribe") {
             if (existing) q.get("membership-update").run("unsubscribed", now, id, list);
             // An absent membership stays absent, but the consent action still ends the
             // list's enrollments.
             effects.unsubscribed([id], [list]);
-            if (existing && existing.status !== "unsubscribed") consentChanged(id, false, [list]);
           }
         }
     },
@@ -485,6 +495,11 @@ export function createSubscriberStore(
       consentChanged(id, newlyBlocklisted, changed);
       return changed;
     },
+    /** JSON arrays of webhook data, read in one statement before the write they describe. */
+    webhookUnsubscribed: (ids: bigint[], lists: bigint[] | null) =>
+      webhookData("webhook-unsubscribed", json(ids), lists && json(lists)),
+    webhookBlocklisted: (ids: bigint[]) => webhookData("webhook-blocklisted", json(ids)),
+    webhookDeleted: (ids: bigint[]) => webhookData("webhook-deleted", json(ids)),
     close: () => q.close(),
   };
 }

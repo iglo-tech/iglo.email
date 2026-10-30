@@ -6,13 +6,24 @@ import { createApp } from "@/app";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
+import type { SubscriberMail } from "@/public/mail";
+import { registerPublicRoutes } from "@/public/routes";
+import type { PublicSettings } from "@/public/settings";
+import type { Middleware } from "@/server/context";
 import { createListReferences } from "@/lists/references";
 import { createListStore } from "@/lists/store";
 import { registerListRoutes } from "@/lists/routes";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
-import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
+import {
+  createSubscriberStore,
+  noSubscriberEffects,
+  type SubscriberEffects,
+} from "@/subscribers/store";
+import { createSubscriberQuery } from "@/subscribers/query";
+import { registerSubscriberQueryRoutes } from "@/subscribers/query-routes";
+import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createRoles } from "@/roles/roles";
 import { createRouter } from "@/server/server";
@@ -83,19 +94,29 @@ export async function txFixture(
     webhooks = options.webhooks ? createWebhookStore(db, clock) : undefined,
     webhookEffects = webhooks && createWebhookEffects(webhooks, () => subscribers),
     anonymize = createSendAnonymizer(db),
+    subscriberEffects: SubscriberEffects = {
+      ...noSubscriberEffects,
+      ...webhookEffects?.subscriberEffects,
+      deleting(deleted) {
+        anonymize(deleted);
+        webhookEffects?.deleting(deleted);
+      },
+    },
     subscribers: ReturnType<typeof createSubscriberStore> = createSubscriberStore(
       db,
       clock,
       lists,
-      {
-        ...noSubscriberEffects,
-        ...(webhookEffects ? { changed: webhookEffects.consentChanged } : {}),
-        deleting(deleted) {
-          anonymize(deleted);
-          webhookEffects?.deleting(deleted);
-        },
-      },
+      subscriberEffects,
     ),
+    readonly = openReadOnly(db.filename),
+    runner = createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 }),
+    subscriberQuery = createSubscriberQuery({
+      db,
+      readonly,
+      clock,
+      runner,
+      effects: subscriberEffects,
+    }),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const auth = await createAuthentication(
@@ -163,6 +184,7 @@ export async function txFixture(
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
+  registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
   if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
@@ -190,6 +212,17 @@ export async function txFixture(
     settings: () => marketing,
     ...(options.effects ? { effects: options.effects } : {}),
     ...(options.page ? { page: options.page } : {}),
+  });
+  // Only the public wipe is reachable here: it sends no mail and reads one setting.
+  const open: Middleware = (_context, next) => next();
+  registerPublicRoutes(router, {
+    db,
+    lists,
+    subscribers,
+    mail: {} as SubscriberMail,
+    settings: () => ({ allowWipe: true }) as PublicSettings,
+    limits: { subscribe: open, optin: open, privacy: open },
+    clientAddress: () => "127.0.0.1",
   });
   const blockPrivate = { value: false };
   const startDelivery = () =>
@@ -297,6 +330,9 @@ export async function txFixture(
       templateReferences.close();
       users.close();
       roles.close();
+      subscriberQuery.close();
+      await runner.close();
+      readonly.close();
       subscribers.close();
       listStore.close();
       counts.close();

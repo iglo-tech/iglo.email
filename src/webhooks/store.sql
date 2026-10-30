@@ -20,6 +20,22 @@ SELECT id FROM webhooks WHERE enabled = 1 AND ? IN (SELECT value FROM json_each(
 -- name: delivery-insert
 INSERT INTO webhook_deliveries (uuid, webhook_id, event, payload, subscriber_id, next_attempt_at, created_at, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+-- name: delivery-insert-many
+-- One statement per batch. MATERIALIZED evaluates each row's random v4 UUID once, so its column
+-- and its body agree. ?2 is a JSON array of webhook data, in the shape queueWebhook serializes.
+INSERT INTO webhook_deliveries (uuid, webhook_id, event, payload, subscriber_id, next_attempt_at, created_at, updated_at)
+  WITH fan AS MATERIALIZED (
+    SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4'
+        || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + abs(random() % 4), 1)
+        || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) AS uuid,
+      h.id AS webhook_id, d.value AS data
+    FROM webhooks h, json_each(?2) d
+    WHERE h.enabled = 1 AND ?1 IN (SELECT value FROM json_each(h.events))
+  )
+  SELECT uuid, webhook_id, ?1,
+    json_object('id', uuid, 'event', ?1, 'occurred_at', ?3, 'data', json(data)),
+    json_extract(data, '$.subscriber.id'), ?3, ?3, ?3
+  FROM fan;
 -- name: delivery-list
 SELECT id, uuid, webhook_id, event, status, attempts, next_attempt_at, last_error, claimed_until, created_at, updated_at
   FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id DESC LIMIT ? OFFSET ?;

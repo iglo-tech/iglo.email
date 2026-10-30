@@ -2,6 +2,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { writeTransaction } from "@/db/transaction";
 import { blockedAddress } from "@/webhooks/address";
+import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
 import { txFixture, type TxFixture } from "@/test/tx/fixture";
 import {
   signatureTime,
@@ -749,6 +750,212 @@ test("a delivery held at DNS sends nothing when its row is gone", async () => {
   release();
   await Bun.sleep(100);
   expect(r.received.length).toBe(0);
+});
+
+/** Synthetic subscribers without one request each; `list` adds a confirmed membership. */
+function seed(f: TxFixture, count: number, list?: number) {
+  f.db.run(
+    `WITH RECURSIVE i(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM i WHERE n < ?)
+     INSERT INTO subscribers (uuid, email, name)
+     SELECT lower(hex(randomblob(16))), 'seed' || n || '@example.test', 'Seed' FROM i`,
+    [count],
+  );
+  if (list)
+    f.db.run(
+      "INSERT INTO subscriber_lists (subscriber_id, list_id, status) SELECT id, ?, 'confirmed' FROM subscribers",
+      [list],
+    );
+}
+const deliveryCount = (f: TxFixture) =>
+  Number((f.db.query("SELECT count(*) AS n FROM webhook_deliveries").get() as { n: bigint }).n);
+const subscriberCount = (f: TxFixture, status: string) =>
+  Number(
+    (
+      f.db.query("SELECT count(*) AS n FROM subscribers WHERE status = ?").get(status) as {
+        n: bigint;
+      }
+    ).n,
+  );
+const memberships = (f: TxFixture, status: string) =>
+  Number(
+    (
+      f.db.query("SELECT count(*) AS n FROM subscriber_lists WHERE status = ?").get(status) as {
+        n: bigint;
+      }
+    ).n,
+  );
+const newList = async (f: TxFixture) =>
+  (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" })).body.data
+    .id as number;
+
+test("bulk actions queue the bytes a single action would, each with its own id", async () => {
+  const f = await open();
+  const r = receiver();
+  const { secret } = await hook(f, r);
+  const [list, other] = [await newList(f), await newList(f)];
+  const email = (name: string, extra: object = {}) =>
+    f.subscriber(`${name}@example.test`, name, { lists: [list, other], ...extra });
+  const a = await email("a", { external_id: 'app "é" a' });
+  const b = await email("b");
+  const person = (await f.json(`/api/subscribers/${a}`)).body.data;
+  const done = await f.json("/api/subscribers/query/blocklist", "PUT", { all: true });
+  expect(done.status).toBe(200);
+  await r.waitFor(4);
+  const repeat = await f.json("/api/subscribers/query/blocklist", "PUT", { all: true });
+  expect(repeat.status).toBe(200);
+
+  const ofEvent = (event: string) =>
+    r.received
+      .filter((x) => x.body.event === event)
+      .sort((x, y) => x.body.data.subscriber.id - y.body.data.subscriber.id);
+  const [blocked] = ofEvent("subscriber.blocklisted");
+  expect(ofEvent("subscriber.blocklisted").length).toBe(2);
+  expect(ofEvent("subscriber.unsubscribed").length).toBe(2);
+  expect(Object.keys(blocked!.body)).toEqual(["id", "event", "occurred_at", "data"]);
+  expect(blocked!.text).toBe(
+    JSON.stringify({
+      id: blocked!.body.id,
+      event: "subscriber.blocklisted",
+      occurred_at: f.clock.now().toISOString(),
+      data: {
+        subscriber: { id: a, uuid: person.uuid, email: person.email, external_id: 'app "é" a' },
+        list_ids: [list, other],
+      },
+    }),
+  );
+  expect(ofEvent("subscriber.unsubscribed")[1]!.body.data.subscriber.id).toBe(b);
+  expect(ofEvent("subscriber.unsubscribed")[0]!.body.data.list_ids).toEqual([list, other]);
+  for (const received of r.received) {
+    expect(signatureValid(received, secret)).toBe(true);
+    expect(received.body.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  }
+  const rows = f.db.query("SELECT uuid, payload, subscriber_id FROM webhook_deliveries").all() as {
+    uuid: string;
+    payload: string;
+    subscriber_id: bigint;
+  }[];
+  expect(new Set(rows.map((row) => row.uuid)).size).toBe(4);
+  for (const row of rows) {
+    const body = JSON.parse(row.payload);
+    expect(body.id).toBe(row.uuid);
+    expect(row.subscriber_id).toBe(BigInt(body.data.subscriber.id));
+  }
+
+  await f.json("/api/subscribers/query/lists", "PUT", {
+    all: true,
+    action: "add",
+    target_list_ids: [list],
+  });
+  const removed = await f.json("/api/subscribers/query/delete", "POST", { all: true });
+  expect(removed.status).toBe(200);
+  await r.waitFor(6);
+  const [deleted] = ofEvent("subscriber.deleted");
+  expect(deleted!.body.data).toEqual({
+    subscriber: { id: a, uuid: person.uuid, email: "", external_id: 'app "é" a' },
+    list_ids: [list, other],
+  });
+});
+
+test("bulk unsubscribing queues only memberships that really ended", async () => {
+  const f = await open();
+  const r = receiver();
+  await hook(f, r, ["subscriber.unsubscribed"]);
+  const [list, other] = [await newList(f), await newList(f)];
+  const a = await f.subscriber("a@example.test", "A", { lists: [list, other] });
+  const b = await f.subscriber("b@example.test", "B", { lists: [other] });
+  const c = await f.subscriber("c@example.test", "C", { lists: [list, other] });
+  const unsubscribe = (body: object, path = "/api/subscribers/query/lists") =>
+    f.json(path, "PUT", { action: "unsubscribe", target_list_ids: [list], ...body });
+  expect((await unsubscribe({ all: true })).status).toBe(200);
+  await r.waitFor(2);
+  expect((await unsubscribe({ all: true })).status).toBe(200);
+  expect((await unsubscribe({ ids: [a, b, c] }, "/api/subscribers/lists")).status).toBe(200);
+  expect(
+    (await unsubscribe({ ids: [b, c], target_list_ids: [list, other] }, "/api/subscribers/lists"))
+      .status,
+  ).toBe(200);
+  await r.waitFor(4);
+  expect(r.received.map((x) => [x.body.data.subscriber.id, x.body.data.list_ids]).sort()).toEqual([
+    [a, [list]],
+    [b, [other]],
+    [c, [list]],
+    [c, [other]],
+  ]);
+});
+
+test("a bulk action within the delivery budget queues every row", async () => {
+  const f = await open();
+  const r = receiver();
+  for (let i = 0; i < 20; i++) await hook(f, r, ["subscriber.deleted"]);
+  await f.crashWebhooks();
+  seed(f, MAX_BULK_DELIVERIES / 20);
+  const done = await f.json("/api/subscribers/query/delete", "POST", { all: true });
+  expect(done.status).toBe(200);
+  expect(deliveryCount(f)).toBe(MAX_BULK_DELIVERIES);
+  expect(subscriberCount(f, "enabled")).toBe(0);
+});
+
+test("a bulk action over the delivery budget is refused before any write", async () => {
+  const f = await open();
+  const r = receiver();
+  // A subscriber costs one row per subscribed event per enabled webhook.
+  const consent = ["subscriber.blocklisted", "subscriber.unsubscribed", "subscriber.deleted"];
+  for (let i = 0; i < 19; i++) await hook(f, r, consent);
+  await hook(f, r, all, { enabled: false });
+  await f.crashWebhooks();
+  const list = await newList(f);
+  const selection = Math.ceil(MAX_BULK_DELIVERIES / 19);
+  seed(f, selection, list);
+  const ids = (f.db.query("SELECT id FROM subscribers ORDER BY id").all() as { id: bigint }[]).map(
+    ({ id }) => Number(id),
+  );
+  const refused = async (result: Promise<{ status: number; body: any }>) => {
+    const response = await result;
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("Narrow the selection");
+    expect(response.body.message).toContain("50,000");
+  };
+  const unsubscribe = { action: "unsubscribe", target_list_ids: [list] };
+  const half = Math.ceil(MAX_BULK_DELIVERIES / 38);
+  const blocklistBudget = { query: `subscribers.id <= ${ids[half - 1]}` };
+  await refused(f.json("/api/subscribers/query/blocklist", "PUT", blocklistBudget));
+  await refused(f.json("/api/subscribers/query/lists", "PUT", { all: true, ...unsubscribe }));
+  await refused(f.json("/api/subscribers/query/delete", "POST", { all: true }));
+  await refused(f.json("/api/subscribers/query/delete", "POST", { query: "subscribers.id > 0" }));
+  await refused(f.json("/api/subscribers/blocklist", "PUT", { ids: ids.slice(0, half) }));
+  await refused(f.json("/api/subscribers/lists", "PUT", { ids, ...unsubscribe }));
+  await refused(
+    f
+      .request(`/api/subscribers?${ids.map((id) => `id=${id}`).join("&")}`, {
+        method: "DELETE",
+        headers: f.sessionHeaders,
+      })
+      .then(async (response) => ({ status: response.status, body: await response.json() })),
+  );
+  expect(deliveryCount(f)).toBe(0);
+  expect(subscriberCount(f, "blocklisted")).toBe(0);
+  expect(subscriberCount(f, "enabled")).toBe(selection);
+  expect(memberships(f, "confirmed")).toBe(selection);
+
+  // One subscriber fewer fits, and the disabled webhook never counted.
+  const narrowed = { query: `subscribers.id != ${ids[0]}`, ...unsubscribe };
+  expect((await f.json("/api/subscribers/query/lists", "PUT", narrowed)).status).toBe(200);
+  expect(deliveryCount(f)).toBe((selection - 1) * 19);
+});
+
+test("the delivery budget does not touch bulk actions no webhook wants", async () => {
+  const f = await open();
+  const r = receiver();
+  await hook(f, r, ["subscriber.unsubscribed"], { enabled: false });
+  await hook(f, r, ["send.failed"]);
+  seed(f, MAX_BULK_DELIVERIES / 10);
+  await f.crashWebhooks();
+  expect((await f.json("/api/subscribers/query/blocklist", "PUT", { all: true })).status).toBe(200);
+  expect(subscriberCount(f, "blocklisted")).toBe(MAX_BULK_DELIVERIES / 10);
+  expect((await f.json("/api/subscribers/query/delete", "POST", { all: true })).status).toBe(200);
+  expect(deliveryCount(f)).toBe(0);
 });
 
 test("non-public addresses are classified as blocked", () => {

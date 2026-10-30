@@ -72,6 +72,7 @@
     "contract:sequences": "bun run build && bun test/contract/cli.ts owned sequences",
     "contract:webhooks": "bun run build && bun test/contract/cli.ts owned webhooks && bun test/webhooks/crash.ts",
     "webhooks:measure": "bun run build && bun test/webhooks/measure.ts",
+    "webhooks:measure:bulk": "bun run build && bun test/webhooks/measure-bulk.ts",
     "events:measure": "bun run build && bun test/events/measure.ts",
     "runner:crash": "bun run build && bun test/campaigns/runner/measure.ts crash",
     "runner:measure": "bun run build && bun test/campaigns/runner/measure.ts",

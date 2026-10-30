@@ -124,7 +124,7 @@ async function main(): Promise<void> {
     const anonymizeSends = createSendAnonymizer(db);
     const subscriberEffects = {
       ...enrollments.subscriberEffects,
-      changed: webhookEffects.consentChanged,
+      ...webhookEffects.subscriberEffects,
       deleting(deleted: { id: bigint; email: string }[]) {
         anonymizeSends(deleted);
         webhookEffects.deleting(deleted);
