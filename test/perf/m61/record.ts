@@ -5,7 +5,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export const repository = resolve(import.meta.dir, "../../..");
-export const resultsFile = join(repository, "docs/perf/M6.1-results.jsonl");
+// M6.1 records stay in M6.1-results.jsonl; M6.1b appends to its own file.
+export const resultsFile = join(repository, "docs/perf/M6.1b-results.jsonl");
 
 /** Durable measurement directory (never tmpfs/ramfs, which also keeps /tmp free). */
 export function measurementBase() {

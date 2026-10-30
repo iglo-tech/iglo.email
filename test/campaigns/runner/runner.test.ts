@@ -117,6 +117,33 @@ test("concurrency and the per-worker message rate bound sends", async () => {
   expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(6000);
 });
 
+test("D59 pacing never exceeds the per-worker rate in any one-second window", async () => {
+  f = await runnerFixture();
+  const c = await campaignOf(41);
+  Object.assign(f.settings, { concurrency: 1, messageRate: 4, batchSize: 50 });
+  f.control.hold = true;
+  await f.status(c.id, "running");
+  f.start();
+  // SMTP time varies from 0 to 270 ms, standing in for a busy shared thread.
+  const smtpMs = (i: number) => ((i * 7) % 10) * 30;
+  await f.drive(async () => {
+    f.pushes.forEach((push, i) => {
+      if (f.clock.now().getTime() - push.at >= smtpMs(i)) push.settle();
+    });
+    return (await f.read(c.id)).status === "finished";
+  }, 10);
+  expect(new Set(recipientsOf()).size).toBe(41);
+  const times = f.pushes.map((p) => p.at).sort((a, b) => a - b);
+  for (const t of times)
+    expect(times.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(4);
+  for (const t of times)
+    expect(times.filter((u) => u > t - 1000 && u <= t).length).toBeLessThanOrEqual(4);
+  // The worker waits only for the rest of each window: 41 messages at 4/s take ten seconds
+  // plus SMTP time, where a full-second sleep after every four would take over 13 s.
+  expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(10_000);
+  expect(times.at(-1)! - times[0]!).toBeLessThan(10_500);
+});
+
 test("the sliding window holds sends until the window is over", async () => {
   f = await runnerFixture();
   const c = await campaignOf(25);

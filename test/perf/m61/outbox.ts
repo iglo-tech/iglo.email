@@ -76,6 +76,7 @@ async function run(sequence: number) {
       });
     // The production claim on this queue, rolled back so the drain still starts from it.
     const claimMs: number[] = [];
+    const batchClaimMs: number[] = [];
     for (let i = 0; i < 200; i++) {
       producer.db.run("BEGIN IMMEDIATE");
       const t = performance.now();
@@ -83,6 +84,15 @@ async function run(sequence: number) {
       claimMs.push(performance.now() - t);
       producer.db.run("ROLLBACK");
       if (!row) throw new Error("nothing to claim");
+    }
+    // The outbox's batched claim: ten claims and their admissions, as one commit holds them.
+    for (let i = 0; i < 200; i++) {
+      producer.db.run("BEGIN IMMEDIATE");
+      const t = performance.now();
+      const batch = producer.sends.claimBatch(clock.now(), new Date(Date.now() + 60_000), 10);
+      batchClaimMs.push(performance.now() - t);
+      producer.db.run("ROLLBACK");
+      if (batch.length !== 10) throw new Error("short batch");
     }
     await producer.close();
 
@@ -133,6 +143,7 @@ async function run(sequence: number) {
         ? null
         : +(txCount / ((started + seconds * 1000 - firstTx) / 1000)).toFixed(1),
       claimMs: stats(claimMs),
+      batchClaimMs: stats(batchClaimMs),
       peakRssMiB: peak,
       memAvailableMiB: memAvailable(),
       samples,

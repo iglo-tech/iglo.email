@@ -79,6 +79,11 @@ export interface SendSummary {
 interface Row extends PublicRow {
   payload: string | null;
 }
+/** A claimed row and its admitted message; null when admission already settled the row. */
+export interface Claimed {
+  row: Row;
+  message: Message | null;
+}
 const publicColumns = `id, uuid, source, kind, subscriber_id, to_email, template_id,
   enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, error,
   attempts, retry_of, next_attempt_at, created_at, sent_at`;
@@ -195,6 +200,81 @@ export function createSends(options: {
     if (row.kind === "marketing")
       return marketing(row.subscriber_id, row.list_id, { lineage: row.id, pending: false });
     return null;
+  }
+  function claimOne(time: Date, lease: Date): Row | null {
+    const row = db
+      .query<Row, [string]>(
+        // The lowest queued id that is new or due for retry. Each half reads idx_sends_due
+        // (status, next_attempt_at, id), so new rows are not sorted per claim.
+        `SELECT * FROM sends WHERE id = (SELECT min(id) FROM (
+           SELECT min(id) AS id FROM sends WHERE status='queued' AND next_attempt_at IS NULL
+           UNION ALL
+           SELECT min(id) FROM sends WHERE status='queued' AND next_attempt_at <= ?))`,
+      )
+      .get(time.toISOString());
+    if (!row) return null;
+    db.run(
+      "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?, claimed_until=?, next_attempt_at=NULL WHERE id=?",
+      [time.toISOString(), lease.toISOString(), row.id],
+    );
+    return get(row.id)!;
+  }
+  /**
+   * Decode and recheck a claimed row. A row that cannot be sent is settled here; a sendable
+   * row records only its dropped copy count. Callers in the claim transaction commit these
+   * writes with the claim.
+   */
+  function admit(row: Row): Message | null {
+    let payload: ReturnType<typeof decodePayload>;
+    try {
+      if (!row.payload) throw new Error();
+      payload = decodePayload(row.payload);
+    } catch {
+      db.run(
+        "UPDATE sends SET status='failed', error='payload_unavailable', claimed_until=NULL WHERE id=? AND status='sending'",
+        [row.id],
+      );
+      return null;
+    }
+    const reason = eligibility(row, payload.subscriberUuid);
+    if (reason) {
+      db.run(
+        "UPDATE sends SET status='skipped', skip_reason=?, claimed_until=NULL WHERE id=? AND status='sending'",
+        [reason, row.id],
+      );
+      return null;
+    }
+    // A delivered row records only how many copy recipients were dropped.
+    const { message, removed } = withoutBlockedCopies(payload.message);
+    db.run("UPDATE sends SET skip_reason=? WHERE id=? AND status='sending'", [
+      removed ? `copies_blocklisted:${removed}` : null,
+      row.id,
+    ]);
+    return { ...message, messageId: row.smtp_message_id };
+  }
+  function finish(row: Row, outcome: Outcome) {
+    const at = now();
+    if (outcome.status === "accepted")
+      db.run(
+        "UPDATE sends SET status='sent', sent_at=?, error=?, claimed_until=NULL WHERE id=? AND status='sending'",
+        [at, outcome.rejected.length ? "partial_acceptance" : null, row.id],
+      );
+    else if (outcome.status === "ambiguous")
+      db.run(
+        "UPDATE sends SET status='unknown', error='uncertain', claimed_until=NULL WHERE id=? AND status='sending'",
+        [row.id],
+      );
+    else if (row.kind === "transactional" && outcome.retry === "transient" && row.attempts < 5n) {
+      const delay = 1000 * 2 ** (Number(row.attempts) - 1);
+      db.run(
+        "UPDATE sends SET status='queued', error='temporary_rejection', next_attempt_at=?, claimed_until=NULL WHERE id=? AND status='sending'",
+        [new Date(clock.now().getTime() + delay).toISOString(), row.id],
+      );
+    } else
+      db.run(
+        "UPDATE sends SET status='failed', error=?, claimed_until=NULL WHERE id=? AND status='sending'",
+        [outcome.retry === "transient" ? "temporary_rejection" : "not_accepted", row.id],
+      );
   }
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /**
@@ -641,14 +721,23 @@ export function createSends(options: {
       const row = getPublic(id);
       return row ? summary(row) : null;
     },
-    /** Claim one specific queued row for an awaited producer dispatch. */
-    claimQueued(id: bigint, time: Date, lease: Date): Row | null {
+    /**
+     * Claim specific queued rows for an awaited producer dispatch and admit them, all in one
+     * commit before any SMTP call. Rows already claimed by the loop are left to it.
+     */
+    claimQueued(ids: bigint[], time: Date, lease: Date): Claimed[] {
       return writeTransaction(db, () => {
-        const changed = db.run(
-          "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?3, claimed_until=?1, next_attempt_at=NULL WHERE id=?2 AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?3)",
-          [lease.toISOString(), id, time.toISOString()],
-        );
-        return changed.changes ? get(id) : null;
+        const claimed: Claimed[] = [];
+        for (const id of ids) {
+          const changed = db.run(
+            "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?3, claimed_until=?1, next_attempt_at=NULL WHERE id=?2 AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?3)",
+            [lease.toISOString(), id, time.toISOString()],
+          );
+          if (!changed.changes) continue;
+          const row = get(id)!;
+          claimed.push({ row, message: admit(row) });
+        }
+        return claimed;
       });
     },
     resend,
@@ -726,75 +815,34 @@ export function createSends(options: {
         ),
       );
     },
+    /** Claim the lowest due row inside the caller's write transaction. */
     claim(time: Date, lease: Date): Row[] {
-      const row = db
-        .query<Row, [string]>(
-          // The lowest queued id that is new or due for retry. Each half reads idx_sends_due
-          // (status, next_attempt_at, id), so new rows are not sorted per claim.
-          `SELECT * FROM sends WHERE id = (SELECT min(id) FROM (
-             SELECT min(id) AS id FROM sends WHERE status='queued' AND next_attempt_at IS NULL
-             UNION ALL
-             SELECT min(id) FROM sends WHERE status='queued' AND next_attempt_at <= ?))`,
-        )
-        .get(time.toISOString());
-      if (!row) return [];
-      db.run(
-        "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?, claimed_until=?, next_attempt_at=NULL WHERE id=?",
-        [time.toISOString(), lease.toISOString(), row.id],
-      );
-      return [get(row.id)!];
+      const row = claimOne(time, lease);
+      return row ? [row] : [];
     },
-    admit(row: Row): Message | null {
-      let payload: ReturnType<typeof decodePayload>;
-      try {
-        if (!row.payload) throw new Error();
-        payload = decodePayload(row.payload);
-      } catch {
-        db.run(
-          "UPDATE sends SET status='failed', error='payload_unavailable', claimed_until=NULL WHERE id=? AND status='sending'",
-          [row.id],
-        );
-        return null;
+    /**
+     * Claim up to `limit` due rows in id order and admit each, inside the caller's write
+     * transaction, so the claims and every admission outcome commit together before SMTP.
+     * Each row is admitted right after its claim, so a later row in the batch sees an
+     * earlier one as `sending` for the marketing cap, as it would one batch later.
+     */
+    claimBatch(time: Date, lease: Date, limit: number): Claimed[] {
+      const claimed: Claimed[] = [];
+      for (let i = 0; i < limit; i++) {
+        const row = claimOne(time, lease);
+        if (!row) break;
+        claimed.push({ row, message: admit(row) });
       }
-      const reason = eligibility(row, payload.subscriberUuid);
-      if (reason) {
-        db.run(
-          "UPDATE sends SET status='skipped', skip_reason=?, claimed_until=NULL WHERE id=? AND status='sending'",
-          [reason, row.id],
-        );
-        return null;
-      }
-      // A delivered row records only how many copy recipients were dropped.
-      const { message, removed } = withoutBlockedCopies(payload.message);
-      db.run("UPDATE sends SET skip_reason=? WHERE id=? AND status='sending'", [
-        removed ? `copies_blocklisted:${removed}` : null,
-        row.id,
-      ]);
-      return { ...message, messageId: row.smtp_message_id };
+      return claimed;
     },
-    finish(row: Row, outcome: Outcome) {
-      const at = now();
-      if (outcome.status === "accepted")
-        db.run(
-          "UPDATE sends SET status='sent', sent_at=?, error=?, claimed_until=NULL WHERE id=? AND status='sending'",
-          [at, outcome.rejected.length ? "partial_acceptance" : null, row.id],
-        );
-      else if (outcome.status === "ambiguous")
-        db.run(
-          "UPDATE sends SET status='unknown', error='uncertain', claimed_until=NULL WHERE id=? AND status='sending'",
-          [row.id],
-        );
-      else if (row.kind === "transactional" && outcome.retry === "transient" && row.attempts < 5n) {
-        const delay = 1000 * 2 ** (Number(row.attempts) - 1);
-        db.run(
-          "UPDATE sends SET status='queued', error='temporary_rejection', next_attempt_at=?, claimed_until=NULL WHERE id=? AND status='sending'",
-          [new Date(clock.now().getTime() + delay).toISOString(), row.id],
-        );
-      } else
-        db.run(
-          "UPDATE sends SET status='failed', error=?, claimed_until=NULL WHERE id=? AND status='sending'",
-          [outcome.retry === "transient" ? "temporary_rejection" : "not_accepted", row.id],
-        );
+    admit,
+    finish,
+    /** Journal several SMTP outcomes in one commit. */
+    finishAll(results: { row: Row; outcome: Outcome }[]) {
+      if (!results.length) return;
+      writeTransaction(db, () => {
+        for (const { row, outcome } of results) finish(row, outcome);
+      });
     },
     onWake(fn: () => void) {
       wake = fn;

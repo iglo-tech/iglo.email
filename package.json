@@ -47,6 +47,7 @@
     "messaging:tls": "bun run reference:run -- bun test/messaging/tls.ts",
     "contract:sends": "bun run build && bun test/contract/sends.ts && bun test test/sends",
     "sends:proofs": "bun build --compile test/sends/producer.ts --outfile dist/sends-producer && bun run reference:run -- bun test/sends/proofs.ts",
+    "sends:batch-crash": "bun test/sends/batch-crash.ts",
     "sends:crash": "bun build --compile test/sends/producer.ts --outfile dist/sends-producer && bun run reference:run -- bun test/sends/crash.ts",
     "sends:production": "bun run build && bun build --compile test/sends/producer.ts --outfile dist/sends-producer && bun run reference:run -- bun test/sends/production.ts",
     "messaging:routing": "bun build --compile test/messaging/corpus-caller.ts --outfile dist/messaging-corpus-caller && bun run reference:run -- bun test/messaging/routing.ts",

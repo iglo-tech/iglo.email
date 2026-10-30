@@ -81,10 +81,12 @@ const sends = createSends({ db, clock, subscribers, rootUrl: () => "https://exam
 const pending = new Map<string, (accepted: boolean) => void>();
 const tracked = {
   ...sends,
-  finish(row: Parameters<typeof sends.finish>[0], outcome: Parameters<typeof sends.finish>[1]) {
-    sends.finish(row, outcome);
-    pending.get(outcome.messageId)?.(outcome.status === "accepted");
-    pending.delete(outcome.messageId);
+  finishAll(results: Parameters<typeof sends.finishAll>[0]) {
+    sends.finishAll(results);
+    for (const { outcome } of results) {
+      pending.get(outcome.messageId)?.(outcome.status === "accepted");
+      pending.delete(outcome.messageId);
+    }
   },
 };
 let loop: ReturnType<typeof startOutbox> | undefined;

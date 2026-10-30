@@ -2,12 +2,14 @@
 import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import type { ErrorLogger } from "@/app";
-import type { Sends } from "@/messaging/sends";
+import type { Claimed, Sends } from "@/messaging/sends";
 import type { createEmailer } from "@/messaging/email";
 import { startLoop } from "@/loops/loop";
 
 // A marketing send has exactly one SMTP recipient, its admitted subscriber.
 const copies = (row: { kind: string }) => ({ copies: row.kind !== "marketing" });
+/** Rows claimed per commit; their SMTP calls run in parallel on the pool. */
+const batchSize = 10;
 
 export function startOutbox(options: {
   db: Database;
@@ -59,15 +61,33 @@ export function startOutbox(options: {
     intervalMs: 1000,
     leaseMs: 60000,
     batchSize: 1,
-    claim: (now, lease) => options.sends.claim(now, lease),
-    async process(row) {
-      const message = options.sends.admit(row);
-      if (!message) return;
-      const outcome = await options.emailer.push(message, copies(row)).result;
-      options.sends.finish(row, outcome);
+    // One loop item is a batch: its claims and admissions committed together before SMTP.
+    claim: (now, lease) => {
+      const batch = options.sends.claimBatch(now, lease, batchSize);
+      return batch.length ? [batch] : [];
+    },
+    async process(batch) {
+      await deliver(batch);
       arm();
     },
   });
+  /**
+   * Push every admitted message of a committed batch and journal all outcomes in one commit.
+   * A push that rejects leaves its row `sending` (recovered as `unknown`) and fails the caller.
+   */
+  async function deliver(batch: Claimed[]) {
+    const pending = batch.flatMap(({ row, message }) =>
+      message ? [{ row, result: options.emailer.push(message, copies(row)).result }] : [],
+    );
+    const settled = await Promise.allSettled(pending.map((p) => p.result));
+    options.sends.finishAll(
+      settled.flatMap((s, i) =>
+        s.status === "fulfilled" ? [{ row: pending[i]!.row, outcome: s.value }] : [],
+      ),
+    );
+    const failed = settled.find((s) => s.status === "rejected");
+    if (failed) throw failed.reason;
+  }
   options.sends.onWake(() => {
     loop.wake();
     arm();
@@ -88,21 +108,9 @@ export function startOutbox(options: {
       if (stopped) return Promise.resolve();
       const now = options.clock.now();
       const lease = new Date(now.getTime() + 60000);
-      const work: Promise<void>[] = [];
-      for (const id of ids) {
-        const row = options.sends.claimQueued(id, now, lease);
-        if (!row) continue;
-        const message = options.sends.admit(row);
-        if (!message) continue;
-        work.push(
-          options.emailer.push(message, copies(row)).result.then((outcome) => {
-            options.sends.finish(row, outcome);
-            arm();
-          }),
-        );
-      }
-      const all = Promise.all(work).then(
-        () => {},
+      const batch = options.sends.claimQueued(ids, now, lease);
+      const all = deliver(batch).then(
+        () => arm(),
         () => options.logger.error(new Error("Outbox dispatch failed")),
       );
       inflight.add(all);

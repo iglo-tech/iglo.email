@@ -3,8 +3,9 @@
 // - `events`: open-loop POST /api/subscriber-events at 100/s alone (reference for latency).
 // - `baseline`: a running campaign plus the 100/s events.
 // - `mixed`: the baseline plus active sequences (every tenth event is a `signup` that enrolls
-//   in a sequence whose first step queues a send now, and in one that exits on the next
-//   `order_paid`) and a trickle of async transactional POST /api/tx sends.
+//   in a sequence whose first step queues a send now, and in one that exits on the
+//   subscriber's next `order_paid`, rotated so that it arrives) and a trickle of async
+//   transactional POST /api/tx sends.
 // Usage: bun run perf:mixed [events|baseline|mixed ...]. M61_WINDOW_MS (default 300000),
 // M61_CONCURRENCY and M61_RATE (campaign workers, default 8 x 10), M61_TX_PER_SECOND (2),
 // M61_AUDIENCE (campaign subscribers; default enough for the configured maximum rate).
@@ -307,6 +308,18 @@ async function run(name: "events" | "baseline" | "mixed") {
           }[]
         ).map((row) => [row.status, row.n]),
       );
+    // Exits by sequence and reason: `event:signup` is a `reentry: always` replacement,
+    // `event:order_paid` an `exit_on` exit.
+    const exits = () =>
+      Object.fromEntries(
+        (
+          db
+            .query(
+              "SELECT q.name || ' ' || e.status || ' ' || coalesce(e.exit_reason, '-') AS k, count(*) AS n FROM enrollments e JOIN sequences q ON q.id = e.sequence_id GROUP BY k ORDER BY k",
+            )
+            .all() as { k: string; n: number }[]
+        ).map((row) => [row.k, row.n]),
+      );
     const campaignState = async () => {
       const data = (await api(`/api/campaigns/${campaignId}`)).body.data;
       return { status: data.status, to_send: data.to_send, sent: data.sent };
@@ -376,7 +389,10 @@ async function run(name: "events" | "baseline" | "mixed") {
       }
       while (start + eventIndex * EVENT_MS <= now && eventIndex * EVENT_MS < windowMs) {
         const n = eventIndex++;
-        const signup = sequences && n % 10 === 0;
+        // Event n goes to subscriber n % SUBSCRIBERS. The signup slot shifts by one on every
+        // pass over the subscribers, so each subscriber's signup is followed by `order_paid`
+        // events on later passes, which exit `nudge` through `exit_on` (still 10% signups).
+        const signup = sequences && (n + Math.floor(n / SUBSCRIBERS)) % 10 === 0;
         send(
           "/api/subscriber-events",
           {
@@ -415,6 +431,7 @@ async function run(name: "events" | "baseline" | "mixed") {
     const endQueue = queue();
     const endCampaign = campaign ? await campaignState() : null;
     const endEnrollments = sequences ? enrollments() : null;
+    const endExits = sequences ? exits() : null;
     await Promise.all(pending);
     // Let tx and sequence sends queued near the end arrive, for their delivery latency.
     if (sequences) await Bun.sleep(5_000);
@@ -476,9 +493,12 @@ async function run(name: "events" | "baseline" | "mixed") {
         : null,
       sequences: sequences
         ? {
-            signupEvents: Math.ceil(eventIndex / 10),
+            signupEvents: Array.from({ length: eventIndex }, (_, n) => n).filter(
+              (n) => (n + Math.floor(n / SUBSCRIBERS)) % 10 === 0,
+            ).length,
             sendsDeliveredInWindow: sequenceMail.length,
             enrollmentsAtWindowEnd: endEnrollments,
+            enrollmentsBySequenceStatusReasonAtWindowEnd: endExits,
           }
         : null,
       outbox: { atWindowStart: startQueue, atWindowEnd: endQueue },
