@@ -43,7 +43,7 @@ export interface EventSubscriber {
 /** Largest merged attribute JSON an event may produce, unless it already was larger. */
 export const EVENT_ATTRIBS_BYTES = 64 * 1024;
 // The create default from routes.ts validate: title-cased words of the local part.
-const nameFromEmail = (email: string) =>
+export const nameFromEmail = (email: string) =>
   email
     .split("@")[0]!
     .replaceAll(".", " ")
@@ -73,6 +73,18 @@ export interface SubscriberEffects {
   unsubscribing?(ids: bigint[], listIds: bigint[]): void;
   /** May refuse a bulk action, by throwing, before its first write. */
   admitBulk?(action: BulkAction, selected: () => number): void;
+}
+/** A row of a CSV import, validated. `attribs` is JSON. */
+export interface ImportRow {
+  email: string;
+  name: string;
+  attribs: string;
+}
+export interface ImportSubscribe {
+  listIds: bigint[];
+  status: string;
+  overwriteUserInfo: boolean;
+  overwriteStatus: boolean;
 }
 /** A bulk action that can queue webhooks. */
 export type BulkAction = "delete" | "blocklist" | "unsubscribe";
@@ -174,6 +186,16 @@ export function createSubscriberStore(
       if (previous) q.get("membership-status").run(target, id, list);
       else q.get("membership-insert").run(id, list, target, now, now);
     }
+  };
+  const blocklist = (ids: bigint[]) => {
+    effects.admitBulk?.("blocklist", () => new Set(ids).size);
+    effects.blocklisting?.(ids);
+    const now = clock.now().toISOString();
+    for (const id of ids) {
+      q.get("subscriber-blocklist").run(now, id);
+      q.get("membership-blocklist").run(now, id);
+    }
+    effects.blocklisted(ids);
   };
   return {
     get,
@@ -277,16 +299,7 @@ export function createSubscriberStore(
       );
       for (const id of ids) q.get("subscriber-delete").run(id);
     },
-    blocklist(ids: bigint[]) {
-      effects.admitBulk?.("blocklist", () => new Set(ids).size);
-      effects.blocklisting?.(ids);
-      const now = clock.now().toISOString();
-      for (const id of ids) {
-        q.get("subscriber-blocklist").run(now, id);
-        q.get("membership-blocklist").run(now, id);
-      }
-      effects.blocklisted(ids);
-    },
+    blocklist,
     action(ids: bigint[], listIDs: bigint[], action: string, status: string) {
       if (action === "unsubscribe" || (action === "add" && status === "unsubscribed")) {
         effects.admitBulk?.("unsubscribe", () => new Set(ids).size);
@@ -522,6 +535,101 @@ export function createSubscriberStore(
     webhookUnsubscribed: (ids: bigint[], lists: bigint[] | null) =>
       webhookData("webhook-unsubscribed", json(ids), lists && json(lists)),
     webhookBlocklisted: (ids: bigint[]) => webhookData("webhook-blocklisted", json(ids)),
+    /**
+     * One batch of an import in its own transaction, row by row in file order like
+     * upsert-subscriber. A blocklisted subscriber stays so and is unsubscribed from new lists, and
+     * a membership's status changes only with `overwriteStatus`. Ending one takes the same path
+     * as an API write, so it exits enrollments and queues the webhook in this transaction.
+     */
+    importSubscribe(rows: ImportRow[], options: ImportSubscribe) {
+      writeTransaction(db, () => {
+        const now = clock.now().toISOString();
+        for (const row of rows) {
+          const existing = byEmail(row.email);
+          if (existing && options.overwriteUserInfo)
+            q.get("subscriber-import-update").run(row.name, row.attribs, now, existing.id);
+          else if (existing) q.get("subscriber-touch").run(now, existing.id);
+          const id =
+            existing?.id ??
+            (
+              q
+                .get("subscriber-insert")
+                .get(
+                  crypto.randomUUID(),
+                  row.email,
+                  row.name,
+                  "enabled",
+                  row.attribs,
+                  null,
+                  now,
+                  now,
+                ) as { id: bigint }
+            ).id;
+          const target = existing?.status === "blocklisted" ? "unsubscribed" : options.status;
+          const ended: bigint[] = [];
+          const changed: bigint[] = [];
+          for (const list of options.listIds) {
+            const previous = existing
+              ? (q.get("membership-get").get(id, list) as Membership)
+              : null;
+            if (!previous) q.get("membership-insert").run(id, list, target, now, now);
+            else
+              q.get("membership-update").run(
+                options.overwriteStatus ? target : previous.status,
+                now,
+                id,
+                list,
+              );
+            if (target !== "unsubscribed" || (previous && !options.overwriteStatus)) continue;
+            ended.push(list);
+            if (previous && previous.status !== "unsubscribed") changed.push(list);
+          }
+          if (ended.length) effects.unsubscribed([id], ended);
+          consentChanged(id, false, changed);
+        }
+      });
+    },
+    /** One batch of a blocklist import: new addresses are created and all go through `blocklist`. */
+    importBlocklist(rows: ImportRow[]) {
+      writeTransaction(db, () => {
+        const now = clock.now().toISOString();
+        blocklist(
+          rows.map(
+            (row) =>
+              (
+                byEmail(row.email) ??
+                (q
+                  .get("subscriber-insert")
+                  .get(
+                    crypto.randomUUID(),
+                    row.email,
+                    row.name,
+                    "enabled",
+                    row.attribs,
+                    null,
+                    now,
+                    now,
+                  ) as { id: bigint })
+              ).id,
+          ),
+        );
+      });
+    },
+    /** Of these addresses, the subscribers `importSubscribe` with `overwriteStatus` would unsubscribe. */
+    importUnsubscribing(emails: string[], options: Pick<ImportSubscribe, "listIds" | "status">) {
+      const row = q
+        .get("import-unsubscribing")
+        .get(
+          JSON.stringify(emails),
+          json(options.listIds),
+          options.status === "unsubscribed" ? 1 : 0,
+        ) as { n: bigint };
+      return Number(row.n);
+    },
+    /** The budget of a bulk action (D61), for an import that counted its subscribers. */
+    admitImport(action: BulkAction, selected: number) {
+      effects.admitBulk?.(action, () => selected);
+    },
     webhookDeleted: (ids: bigint[], wipe: boolean) =>
       webhookData("webhook-deleted", json(ids), wipe ? 1 : 0),
     close: () => q.close(),

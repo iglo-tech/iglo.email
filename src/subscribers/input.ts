@@ -28,6 +28,8 @@ const fields = new Set([
   "external_id",
   "preconfirm_subscriptions",
 ]);
+/** SQLite's JSON_MAX_DEPTH. */
+const MAX_ATTRIBS_DEPTH = 1000;
 const max = 9223372036854775807n,
   min = -9223372036854775808n;
 function id(value: unknown): bigint {
@@ -139,6 +141,26 @@ function normalizeStrings(raw: string): string {
     start = i + 1;
   }
   return result + raw.slice(start);
+}
+/**
+ * The attribute object in `raw`, under the rules `attribs` binds with, or null for JSON `null`.
+ * Throws when it holds anything else, or nests deeper than SQLite's json_valid accepts.
+ */
+export function parseAttributes(raw: string): Record<string, unknown> | null {
+  finiteNumbers(raw);
+  const value: unknown = JSON.parse(normalizeStrings(raw));
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) throw new Error("not an object");
+  const attribs = value as Record<string, unknown>;
+  if (!validAttributes(attribs)) throw new Error("NUL character");
+  const pending: [unknown, number][] = [[attribs, 1]];
+  while (pending.length) {
+    const [item, depth] = pending.pop()!;
+    if (depth > MAX_ATTRIBS_DEPTH) throw new Error("nested too deeply");
+    if (item && typeof item === "object")
+      for (const child of Object.values(item)) pending.push([child, depth + 1]);
+  }
+  return attribs;
 }
 function jsonInput(
   body: string,

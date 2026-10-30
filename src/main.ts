@@ -57,6 +57,8 @@ import { startScheduler } from "@/scheduler/scheduler";
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
+import { createImporter } from "@/subscribers/import/importer";
+import { registerImportRoutes } from "@/subscribers/import/routes";
 import { createAttachments } from "@/media/attachments";
 import { createFilesystem } from "@/media/filesystem";
 import { createEmbeds, createPublicImages } from "@/media/embed";
@@ -132,6 +134,7 @@ async function main(): Promise<void> {
   let analyticsReader: ReturnType<typeof createAnalyticsReader> | undefined;
   let summaries: ReturnType<typeof createSummaries> | undefined;
   let summaryRefresh: ReturnType<typeof startSummaryRefresh> | undefined;
+  let importer: ReturnType<typeof createImporter> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -231,6 +234,24 @@ async function main(): Promise<void> {
       },
     );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
+    const touchLists = listStore.touch;
+    importer = createImporter({
+      dataDir: bootstrap.config.dataDir,
+      clock,
+      logger: app.logger,
+      i18n: app.i18n,
+      store: subscriberStore,
+      touchLists,
+      domainPolicy: () => {
+        const current = settings!.read();
+        return {
+          allow: current["privacy.domain_allowlist"],
+          block: current["privacy.domain_blocklist"],
+        };
+      },
+    });
+    await importer.sweep().catch((error) => app.logger.error(error));
+    registerImportRoutes(router, { importer, roles, auth });
     emailer = createEmailer({
       clock,
       settings: () => {
@@ -578,6 +599,8 @@ async function main(): Promise<void> {
         closing = true;
         process.off("SIGTERM", onSignal);
         process.off("SIGINT", onSignal);
+        // An import stops at its next batch and uploads end, so nothing new reaches the writer.
+        const importStop = importer!.close();
         // Stop campaign and sequence claims first. The campaign batch in flight finishes or
         // is abandoned by the emailer's drain deadline; its unsent rest returns to the cursor.
         const runnerStop = runner!.stop();
@@ -591,6 +614,7 @@ async function main(): Promise<void> {
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
         Promise.allSettled([
+          importStop,
           runnerStop,
           schedulerStop,
           outboxStop,
@@ -627,6 +651,7 @@ async function main(): Promise<void> {
     });
   } finally {
     enrollments?.onDue(() => {});
+    await importer?.close();
     const running = runner?.stop();
     const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
