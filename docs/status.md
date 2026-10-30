@@ -4,7 +4,7 @@ Updated 2026-10-30. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M4.1 admin shell, auth screens, dashboard: [brief](briefs/M4.1.md); one Opus worker running.
+M4.1 admin shell, auth screens, dashboard, [PR #39](https://github.com/iglo-tech/iglo.email/pull/39), head 7e67852. Local checks pass; Sol round-1 review running. Lead decision: D26 stands, no public first-account form; a new install provisions the admin through environment variables.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
 Next: M4.2-M4.6, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
