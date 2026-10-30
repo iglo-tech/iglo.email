@@ -39,6 +39,7 @@ Decided 2026-10-27.
   - no external services are needed.
 
   The scheduling logic is small. The value is in conditions and permissions, which no engine provides.
+
 - **Considered:**
   - BullMQ or Redis, which needs an external service;
   - Effect Workflow, unstable APIs and replay-based versioning trouble with long waits;
@@ -308,7 +309,6 @@ Decided by agents on 2026-10-28, for owner review, after M1.5 council round 2.
 - **Whitespace:** no new search exception. D33 requires Go TrimSpace/makeSearchString throughout list collection and deletion filters; reuse the existing exact Go whitespace set (NEL included, BOM excluded) rather than JavaScript trim, and preserve RE2 internal whitespace behavior. The BOM-padded destructive query must retain the list exactly as pinned upstream does. Reference-first retention/selection cases are required.
 - **Scope:** the lead makes these small decoder/selection corrections directly, with paired reference-first regressions and full exact-head acceptance before fresh round-3 council. No new runtime dependency, schema/SQL, route, auth bypass or shared identity change is authorized. Preserve D34's disclosed role-input limit and D35 parser/notice protections. Record fresh bounded before/after controls without claiming byte-identical historical binaries when rebuild hashes differ.
 
-
 ## D37. Strict streaming XML list input
 
 Decided by agents on 2026-10-28, for owner review, under the runbook's three-round resolution rule.
@@ -319,7 +319,6 @@ Decided by agents on 2026-10-28, for owner review, under the runbook's three-rou
 - **Byte/document boundary:** retain the shared 64 KiB byte-counted body reader and add a lossless byte-returning boundary; existing JSON callers keep compatible replacement decoding. Feed XML with fatal streaming UTF-8 decoding through ASCII > boundaries, stopping immediately when the first root closes, so invalid consumed bytes fail while unused suffix bytes are not decoded or parsed. No network or external entity resolver. Reject DTD before any registration/expansion (the parser does neither), reject nesting over 64, and validate XML 1.0 syntax/characters in ignored attributes/elements as well as writable fields. Reject unsupported XML versions as pinned Go does.
 - **Mapping:** keep Go case-sensitive local writable names, repeated Tags, direct text/CDATA and source-order field replacement; namespace bindings do not grant authority. D36 still ignores response-only metadata, but the consumed document must be valid. Preserve ordinary/predefined/numeric/long-zero/one-pass controls and generated metadata protection.
 - **Acceptance:** add shared POST/PUT/no-write malformed attribute/comment/text and invalid UTF-8 cases, compatible JSON replacement controls, valid first-root/incomplete or invalid-byte suffix cases, normal escaped/CDATA/BOM controls, exact compiled dependency notices and full local/CI acceptance. Measure the same old/new compiled operations in three serial ext4 FULL/WAL repetitions after acceptance. The lead fixes directly; no extra implementation worker, helper or review is needed. Merge only after fixes and green final-head CI, with a public lead resolution explaining the tie-breaker and all three rounds' CHANGES.
-
 
 ## D38. Subscriber scope, writable input and external identity
 
@@ -332,7 +331,6 @@ Decided by agents on 2026-10-28, for owner review, before M1.6 implementation.
 - **Partial/atomic writes:** resolve omitted PATCH fields against current stored state under the write transaction after the asynchronous body read. This prevents prepopulation from overwriting concurrent unrelated changes. Recheck live identity/grants and source memberships; keep target list ownership checks and updates atomic with the subscriber write. No network calls inside transactions; actual bodies/default/null/consent semantics remain pinned except this concurrency correction.
 - **Single-ID membership action:** pinned ManageSubscriberLists requires a nonempty body ids array even when the route already supplies :id. Accept that path ID without requiring redundant body IDs; bulk collection actions still require IDs. This removes an internal catch-all-struct requirement that serves no caller need. Record the reference 400/noIDs versus normal success as D38, with permission and invalid-body controls.
 - **Acceptance/limits:** reference-first common corpus, normal-only new-feature corpus, real token/session and in-flight authorization tests, no-write/partial-update/uniqueness races, compiled restart and real positive list counts, all prior gates and three serial ext4 FULL/WAL controls. No schema migration/new runtime dependency, SMTP/queue, raw SQL engine, subscriber event upsert, webhook or sequence side effects are authorized. Additional concrete differences require lead disposition, not a blanket extension of D34 or this decision.
-
 
 ## D39. Query selector for every opaque external ID
 
@@ -352,7 +350,6 @@ Decided by agents on 2026-10-28, for owner review, after the M1.6 reference-firs
 - **Decision:** extend D34's native storage principle to M1.6 subscriber IDs and membership list selectors. Parse valid signed-64-bit JSON integer tokens/query selectors losslessly, bind bigint to native SQLite owners and serialize identities exactly. Do not cap native identities at PostgreSQL int32 or round through a JavaScript number. Positive route IDs and overflow still follow D17. Go-invalid float/exponent integer spellings and values outside signed64 fail safely before mutation; preserve compatible null/omission/selector behavior otherwise.
 - **Precise differences:** a valid native high-ID lookup uses the ordinary native lookup/missing result instead of a PostgreSQL width error. For create/update requested lists, a nonexistent 9223372036854775807 list is ignored as other missing lists are; the valid subscriber write may succeed where reference returns 500/no write. Existing managed-list replacement semantics still apply on update and must be asserted, not described as no-write. The decision does not turn missing bulk targets into successes, bypass permissions, swallow constraints or authorize partial writes.
 - **Scope/limits:** subscriber/membership boundaries only; D34's role-child JSON safe-integer limitation remains disclosed and unchanged. No schema/global identity rewrite, explicit production ID seeding, new dependency or blanket response mismatch. Mark precise paired D40 cases for high missing lookups/list selection and exact no-rounding/overflow cases; label any synthetic high-existing-ID fixture truthfully. All ordinary role/auth/list corpora and stored-data invariants remain required.
-
 
 ## D41. Subscriber conflicts and duplicate bulk selectors
 
@@ -479,7 +476,6 @@ Decided by agents on 2026-10-29, for owner review, after M2.1 council round 3.
 - **Precise difference:** From Sender <"sender@x"@route.test>, no full-address match, valid Return-Path, servers mapped to x@route.test and route.test: pinned selects the first mapping, native the second, one accepted Mailpit message each. Pair those exact outcomes in the routing corpus; ordinary/quoted-simple/Unicode full-address and domain controls still agree. No broad normalization, new endpoint, dependency or schema.
 - **Other round-3 finding:** restore compatible challenge-driven LOGIN: decode each challenge, respond to Username: or Password: regardless of order, and reject unknown challenges without transmitting a response. Preserve D51 advertisement enforcement, TLS guard, safe errors, absolute deadlines and no resend. The LOGIN correction is not a new deliberate difference.
 
-
 ## D53. Durable outbox boundaries and native send-log contract
 
 Decided by agents on 2026-10-29, for owner review. M2.2 implements this boundary; production marketing remains staged until M2.4.
@@ -493,7 +489,6 @@ Decided by agents on 2026-10-29, for owner review. M2.2 implements this boundary
 - **Manual resend:** accept an empty request body or JSON `{}` only, with the existing 64 KiB read bound. Return 200 with the new row's safe projection. Only `failed` and `unknown` originals can create a child; queued/sending/sent/skipped give safe 409. In one transaction, revalidate authority and eligibility, look for an existing retry_of child first, then create at most one child with fresh UUID/message ID, attempts zero and queued status. A repeated/concurrent request returns that same child's current projection, even if its status changed; a later explicit resend of a failed/unknown child can extend the chain. Keep the original unchanged and retain retry_of provenance. Do not copy unique idempotency_key or enrollment/step claim identity to a child. Missing retained payload gives safe 409. Manual resend of unknown is an intentional new send that can duplicate earlier uncertain delivery; never describe it as automatic recovery or exactly-once. No network runs in the route transaction.
 - **Eligibility and marketing staging:** recheck current linked-subscriber identity/blocklist immediately before dispatch and on manual resend using subscriber-owned functions, not messaging SQL into subscriber tables. Preserve original recipient identity: deleted/replaced linked identities must not become external recipients or send to a new address owner. M2.4 owns the full marketing consent/cap/unsubscribe policy. Until it supplies that concrete policy, production marketing dispatch/resend fails closed with a safe skipped policy-unavailable result (or 409 for manual resend), never sends mail. A compiled fixture may inject an explicit marketing policy to exercise the same outbox's at-most-once/no-retry mechanics, clearly labelled as component evidence. M2.3 must keep marketing staged until M2.4; do not invent completed caps or one-click functionality. Transactional external recipients remain supported by the owner and require no synthetic subscriber creation.
 - **Acceptance/benefit:** crash barriers before claim, after durable claim, during DATA, after sink acceptance without ACK, after ACK before journal commit and after sent commit; restart through real stores/routes and prove no automatic duplicate. Test durable retry deadlines, permanent and mixed/partial outcomes, concurrent resends, held-body revocation, restart and safe projections through public HTTP/SMTP boundaries. Source-derived M2.1 SMTP regressions remain required. New native endpoints are design-first, not invented upstream parity. Include serial before/after measurements on final code and preserve the existing two-job Linux-only CI.
-
 
 ## D54. Template ownership, safe updates and bounded Liquid rendering
 
@@ -510,7 +505,6 @@ Decided by agents on 2026-10-29, for owner review. Prospective M1.8 authorizatio
 - **Preview isolation and diagnostics:** stored and posted previews render synthetic bounded data, not private subscribers. Return HTML with CSP sandbox/default-src none (inline style and data images only), no scripts/popups/forms/base navigation, and nosniff. This intentionally tightens upstream's allow-scripts/popups preview. Preserve safe localized compile/render/field context but omit submitted source/data/URLs and raw library/storage diagnostics; bad syntax/limits400, request-too-large413, render-capacity exhaustion429. Revalidate live authority after held input/async rendering and before effects. No general HTML sanitizer or context-aware safety claim for arbitrary user-authored HTML.
 - **Acceptance and reason:** source-first paired metadata/CRUD/default/search/preview/validation contracts with exact named differences, native Liquid examples rather than Go parity claims, compiled restart and isolated filesystem/network traps, inherited/accessor/capture/filter/Markdown/output exhaustion tests, independent instances, current permissions and immutable concurrent updates. Bounded rendering prevents authored templates from gaining host capabilities or unbounded expansion; safe update/default semantics preserve caller intent and a usable default. Sending/storage changes include final serial ext4 FULL/WAL/common API and synthetic-versus-production rendering measurements, with no throughput/heap/preemption/delivery guarantee or CI timing threshold.
 
-
 ## D55. Bound serialized template context before reflection and preserve sandbox CI
 
 Decided by agents on 2026-10-29, for owner review. Prospective M1.8 completion authorization after the initial draft; not an acceptance claim.
@@ -521,7 +515,6 @@ Decided by agents on 2026-10-29, for owner review. Prospective M1.8 completion a
 - **Markdown seam:** retain the D54 output/intermediate/work budgets and implement local Liquid-then-marked rendering. Authorize exact marked15.0.12 after verifying its primary metadata/source/license and embedding notices (the draft worker inspected this candidate but did not install it). Prefer a reviewed bounded token/emitter/renderer path. If public hooks cannot stop allocations/expanding references before concatenation, authorize a minimal patches/marked@15.0.12.patch plus lock/package registration solely to propagate the existing message budget through those paths, analogous to the authorized Liquid patch. No broad fork, alternate Markdown implementation, post-hoc-only check or independent uncharged capture/parser budget. Test repeated references/URLs, nested token output, escaping and final layout, source and compiled.
 - **CI evidence and authority:** inspected push job123281067803 of run40823480063 failed templates:compiled with bwrap setting up uid map: Permission denied, before the isolated program ran. The other reference job failed too; its log was unavailable through gh while that run remained active, so no separate cause is claimed. Keep the isolated compiled gate. Authorize narrowly scoped setup/invocation on disposable GitHub-hosted Linux runners to grant bwrap its required namespace ability (for example CI-only privileged bwrap invocation or a specific runner permission setup), with an explicit capability probe and diagnostics. Do not silently skip isolation, replace it with an unsandboxed pass or mutate this VM's sysctls/AppArmor/memory/security policy. Both existing Linux jobs remain; no platform expansion. Document runner setup separately from product guarantees.
 - **Acceptance:** reject large enumerable/non-enumerable/symbol/accessor/class/proxy/cyclic caller objects without touching them; valid bounded JSON still enforces exact/one-past D54 limits and inherited/magic-name protection. Complete Markdown and admission/concurrency/authority/source/compiled matrix from the original finite brief. Correct the actual CI environment failure, rerun changed code/gates and refresh final serial measurements/hashes. Historical generic upstream settings failure remains cause-unknown unless reproduced/diagnosed; never erase it with an unconditional rerun.
-
 
 ## D56. Owner-directed models, review and local verification
 
@@ -550,3 +543,11 @@ Decided by agents on 2026-10-29, for owner review.
 - **Decision:** M2.3 implements `POST /api/tx` fully for `kind: "transactional"` (default). `kind: "marketing"` is validated and journaled, but M2.3 records it as `skipped` with a safe reason until M2.4 provides consent, frequency-cap and unsubscribe policy. It never reaches SMTP before then. Marketing still needs a valid `list_id`.
 - **Why:** consent and unsubscribe are mandatory for marketing (04-sending). Sending marketing mail without them, even briefly, is worse than a documented staged skip. The response shape and journal row are already final, so M2.4 changes only the admission result.
 - **Finished (M2.4):** the staging is over. Production injects the real consent and frequency-cap policy, and marketing messages carry the unsubscribe URL and RFC 8058 headers ([Sending](04-sending.md#unsubscribe)). `policy_unavailable` remains only for a journal created without a policy.
+
+## D59. Campaign pacing sleeps only the rest of the second
+
+Decided by agents on 2026-10-30, for owner review.
+
+- **Decision:** the campaign runner keeps listmonk's per-worker `app.message_rate`, but after a worker reaches its rate it sleeps only until the end of the current one-second window, instead of a full second after the last message. `app.concurrency`, the sliding window and the error threshold are unchanged.
+- **Why:** M6.1 measured that the full sleep turns any time the shared thread spends elsewhere (event and outbox commits) directly into lost campaign rate. Under mixed load the 50/s target was missed at 8 × 10. The configured rate is a ceiling either way; this only stops the runner sending below it. It's a timing difference, not a result a client can see (D57).
+- **Not changed:** FULL synchronous commits (D19, D22) stay. Relaxing durability is an owner decision.

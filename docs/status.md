@@ -4,14 +4,15 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.1 performance, [PR #31](https://github.com/iglo-tech/iglo.email/pull/31), head e6a9c20. Outbox claim and cap lookup fixed; target 1 met; mixed-load target 2 not met. Round 1 report/test corrections done by the lead; Sol round-2 review running.
-Next: merge, then M6.1b to close the mixed-load gap (outbox batching, campaign pacing; FULL sync stays per D22).
+M6.1b close the mixed-load gap, branch task/M6.1b-throughput, [brief](briefs/M6.1b.md). One Opus medium worker dispatched; no reviewer active. Outbox batching, D59 campaign pacing, real `exit_on` load; FULL sync unchanged.
+Next: on worker handback, Sol xhigh round 1, lead disposition, merge. If the target is still missed, ask the owner about D22 durability. Then the remaining M2/M3/M4/M6 tasks.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
 
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one Sol xhigh reviewer; lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
+[D59](design/09-decisions.md#d59-campaign-pacing-sleeps-only-the-rest-of-the-second) (agents, for owner review): campaign workers sleep only the rest of the second after reaching their rate.
 [D58](design/09-decisions.md#d58-stage-marketing-transactional-sends-until-m24) (agents, for owner review): tx marketing sends are journaled as skipped until M2.4.
 
 ## Automation and capacity
@@ -59,5 +60,4 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - M5.1 perf: record source/executable hashes for each measured variant.
 - M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
 - Single-instance data-dir lock: D15 says one process per data dir but nothing enforces it; lease-based loops (outbox, scheduler, campaign runner) assume it. Bootstrap owner.
-- Cap lookup cost grows with long per-subscriber histories (~5 ms at 10k rows); add an indexed reservation/latest-delivery lookup ([M3.2 review](https://github.com/iglo-tech/iglo.email/pull/29#issuecomment-6514899358)).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
