@@ -4,15 +4,15 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.1b mixed-load gap, [PR #32](https://github.com/iglo-tech/iglo.email/pull/32), head 35529d3. Campaign 78.8/s under mixed load, outbox ~500/s, 2,799 real exits; event p95 51 ms (above the brief line, not a slowed-sends failure). Sol xhigh round-1 review running.
-Next: lead disposition of round 1, merge, then the remaining M2/M3/M4/M6 tasks.
+M2.5 public pages, branch task/M2.5-public, [brief](briefs/M2.5.md). One Opus medium worker dispatched; no reviewer active.
+Next: on worker handback, Sol xhigh round 1, lead disposition, merge. Then M2.6 webhooks, M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
 
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one Sol xhigh reviewer; lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
-[D59](design/09-decisions.md#d59-campaign-pacing-sleeps-only-the-rest-of-the-second) (agents, for owner review): campaign workers sleep only the rest of the second after reaching their rate.
+[D59](design/09-decisions.md#d59-campaign-pacing-sleeps-only-the-rest-of-the-second) (agents, for owner review): campaign workers pace with a rolling one-second window per worker.
 [D58](design/09-decisions.md#d58-stage-marketing-transactional-sends-until-m24) (agents, for owner review): tx marketing sends are journaled as skipped until M2.4.
 
 ## Automation and capacity
@@ -56,8 +56,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
-- Outbox send throughput: 50 msg/s not sustained even without events (one message at a time, two commits each); events at 100/s slow sending further ([M5.1 perf](https://github.com/iglo-tech/iglo.email/pull/20)). Owner: messaging, M3.2/M6.1 (D22). The outbox claim query sorts all queued rows per claim; delivery falls from ~370/s to ~150/s while a 10k sequence burst is queued ([M5.4 perf](https://github.com/iglo-tech/iglo.email/pull/25)). A `(status, id)` index or a split query is the likely fix.
 - M5.1 perf: record source/executable hashes for each measured variant.
 - M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
 - Single-instance data-dir lock: D15 says one process per data dir but nothing enforces it; lease-based loops (outbox, scheduler, campaign runner) assume it. Bootstrap owner.
+- Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. Lowering it needs shared write batching across loops, or an owner decision on D22 durability.
+- `finishAll`: add permanent regressions for mixed retry outcomes, same-subscriber batch caps and COMMIT rollback ([#32 review](https://github.com/iglo-tech/iglo.email/pull/32#issuecomment-6517645045)).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.

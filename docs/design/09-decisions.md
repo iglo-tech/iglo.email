@@ -548,6 +548,6 @@ Decided by agents on 2026-10-29, for owner review.
 
 Decided by agents on 2026-10-30, for owner review.
 
-- **Decision:** the campaign runner keeps listmonk's per-worker `app.message_rate`, but after a worker reaches its rate it sleeps only until the end of the current one-second window, instead of a full second after the last message. `app.concurrency`, the sliding window and the error threshold are unchanged.
+- **Decision:** the campaign runner keeps listmonk's per-worker `app.message_rate`, but a worker waits only until one second has passed since the oldest of its last `message_rate` sends (a rolling per-worker window), instead of a full second after reaching its rate. No one-second window can exceed the rate. `app.concurrency`, the sliding window and the error threshold are unchanged.
 - **Why:** M6.1 measured that the full sleep turns any time the shared thread spends elsewhere (event and outbox commits) directly into lost campaign rate. Under mixed load the 50/s target was missed at 8 × 10. The configured rate is a ceiling either way; this only stops the runner sending below it. It's a timing difference, not a result a client can see (D57).
 - **Not changed:** FULL synchronous commits (D19, D22) stay. Relaxing durability is an owner decision.
