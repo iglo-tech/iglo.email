@@ -121,6 +121,8 @@ export function createImporter(deps: {
     logged: boolean,
     each: (rows: ImportRow[], final: boolean) => Promise<boolean>,
   ) {
+    // The log outlives a wipe and reaches accounts of other lists, so it holds no cell of a file:
+    // a first row with no header above it is someone's address, not a column name.
     const say = (message: string) => {
       if (logged) log.add(message);
     };
@@ -136,18 +138,13 @@ export function createImporter(deps: {
         return undefined;
       }
     };
-    const shown = (record: CsvRecord) => {
-      const cells: string[] = [];
-      for (let i = 0; i < record.count; i++) cells.push(record.field(i).toString("utf8"));
-      return `[${cells.join(" ")}]`;
-    };
     const header = (record: CsvRecord) => {
       columns = new Map();
       width = record.count;
       for (let i = 0; i < width; i++) {
         const name = trimSpace(record.field(i).toString("utf8")).replace(/[^\0-\x7f]/g, "");
         if (knownHeaders.has(name)) columns.set(name, i);
-        else say(`ignoring unknown header '${name}'`);
+        else say(`ignoring unknown header in column ${i + 1}`);
       }
       if (!columns.has("email")) throw new CsvError("'email' column not found");
     };
@@ -167,21 +164,21 @@ export function createImporter(deps: {
         rawAttributes = cell("attributes");
       if (rawEmail === undefined || rawName === undefined || rawAttributes === undefined) {
         const reason = i18n.Ts("globals.messages.invalidFields", "name", "non-UTF8 encoding");
-        say(`skipping line ${line}: ${reason}: ${shown(record)}`);
+        say(`skipping line ${line}: ${reason}`);
         return;
       }
       const email = Buffer.byteLength(rawEmail) > 1000 ? undefined : sanitizeEmail(rawEmail);
       if (email === undefined) {
-        say(`skipping line ${line}: ${i18n.T("globals.messages.invalidEmail")}: ${shown(record)}`);
+        say(`skipping line ${line}: ${i18n.T("globals.messages.invalidEmail")}`);
         return;
       }
       if (!allowedDomain(email, policy.allow, policy.block)) {
-        say(`skipping line ${line}: ${i18n.T("subscribers.domainBlocklisted")}: ${shown(record)}`);
+        say(`skipping line ${line}: ${i18n.T("subscribers.domainBlocklisted")}`);
         return;
       }
       const name = trimSpace(rawName);
       if (Buffer.byteLength(name) > MAX_NAME_BYTES) {
-        say(`skipping line ${line}: Invalid name: ${shown(record)}`);
+        say(`skipping line ${line}: Invalid name`);
         return;
       }
       let attribs = "{}";
@@ -190,10 +187,9 @@ export function createImporter(deps: {
           const stored = JSON.stringify(parseAttributes(rawAttributes) ?? {});
           if (Buffer.byteLength(stored) > EVENT_ATTRIBS_BYTES) throw new Error("too large");
           attribs = stored;
-        } catch (error) {
-          say(
-            `skipping invalid attributes JSON on line ${line} for '${email}': ${(error as Error).message}`,
-          );
+        } catch {
+          // A parser's message quotes the text it failed on.
+          say(`skipping invalid attributes JSON on line ${line}`);
         }
       rows.push({ email, name: name || nameFromEmail(email), attribs });
     };

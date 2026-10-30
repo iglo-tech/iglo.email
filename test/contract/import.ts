@@ -167,7 +167,7 @@ export async function runImportContract(target: {
     );
     check(clean.name === "subscribers.csv", "clean-name");
     check(clean.log.includes("processing 'subscribers.csv'"), "clean-log-file");
-    check(clean.log.includes("ignoring unknown header 'notes'"), "clean-log-header");
+    check(clean.log.includes("ignoring unknown header"), "clean-log-header");
     check(clean.log.includes("imported finished"), "clean-log-end");
     check(JSON.stringify(await status()) === JSON.stringify(IDLE), "reset-clears");
     check((await logs()) === "", "reset-clears-log");
@@ -238,6 +238,8 @@ export async function runImportContract(target: {
     check(rows.log.includes("skipping line 4"), "rows-log-binary");
     check(rows.log.includes("skipping line 5"), "rows-log-nul");
     check(rows.log.includes("skipping invalid attributes JSON on line 6"), "rows-log-attribs");
+    // Deliberate: upstream quotes the row; this log keeps no personal data.
+    if (!reference) check(!rows.log.includes("@"), "rows-log-no-address");
     for (const label of ["short", "long", "binary", "nul"])
       check(!(await subscriber(address(label))), `rows-absent-${label}`);
     for (const label of ["badjson", "array", "good"]) {

@@ -225,6 +225,60 @@ describe("one server", () => {
     expect((await c.subscriber("fine-attr@example.test")).attribs).toEqual({ n: { m: [1, 2] } });
   });
 
+  test("the log keeps no personal data, before or after a wipe", async () => {
+    const person = "kept-out@example.test";
+    const created = await c.call("/api/subscribers", "POST", {
+      email: person,
+      name: "Existing",
+      lists: [lists],
+    });
+    expect(created.status).toBe(200);
+    expect((await c.call("/api/settings/privacy.allow_wipe", "PUT", true)).status).toBe(200);
+    expect(
+      (await c.call("/api/settings/privacy.domain_blocklist", "PUT", ["kept-out.test"])).status,
+    ).toBe(200);
+    const leaks = /kept-out|Private Name|privatevalue/;
+    const longName = `Private Name ${"n".repeat(2000)}`;
+    const content = Buffer.concat([
+      Buffer.from(
+        [
+          "email,name,attributes",
+          `not-an-address-kept-out,Private Name,`,
+          `kept-out@kept-out.test,Private Name,`,
+          `${person},${longName},`,
+          `${person},Private Name`,
+          `${person},Private Name,{privatevalue}`,
+          `${person},Private Name,"{""n"":""private\\u0000value""}"`,
+          `kept-out-binary@example.test,Private Name `,
+        ].join("\n"),
+      ),
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from(",\n"),
+    ]);
+    expect((await c.post(subscribe(), content)).status).toBe(200);
+    expect((await c.settled()).status).toBe("finished");
+    const logs = async () => (await c.call("/api/import/subscribers/logs")).body.data as string;
+    const before = await logs();
+    expect(before).toContain("skipping line 7");
+    expect(before).toContain("skipping invalid attributes JSON on line 5");
+    expect(before).not.toMatch(leaks);
+    const { uuid } = await c.subscriber(person);
+    const wiped = await fetch(`${origin}/subscription/wipe/${uuid}`, {
+      method: "POST",
+      headers: { "sec-fetch-site": "same-origin" },
+    });
+    expect(wiped.status).toBe(200);
+    expect(await c.subscriber(person)).toBeUndefined();
+    expect(await logs()).not.toMatch(leaks);
+    await c.call("/api/import/subscribers", "DELETE");
+    await c.call("/api/settings/privacy.domain_blocklist", "PUT", []);
+    // A file with no header row puts its first address where a column name belongs.
+    const headerless = await c.run(subscribe(), `${person},Private Name\n`);
+    expect(headerless.status).toBe("failed");
+    expect(headerless.log).toContain("'email' column not found");
+    expect(headerless.log).not.toMatch(leaks);
+  });
+
   test("a long name is a bad row", async () => {
     const done = await c.run(subscribe(), `email,name\nlong@example.test,${"n".repeat(2001)}\n`);
     expect(done).toMatchObject({ status: "finished", imported: 0 });
