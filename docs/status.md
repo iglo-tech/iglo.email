@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.1 campaigns API, [PR #27](https://github.com/iglo-tech/iglo.email/pull/27), head b597e77. Worker done; Sol xhigh round-1 review running. Path to M6.1: M3.1, M3.2.
-Next: lead disposition of round 1, merge, then M3.2.
+M3.1 campaigns API, [PR #27](https://github.com/iglo-tech/iglo.email/pull/27), head b597e77. Round 1: CHANGES (2 P1 incl. open redirect, 3 P2; all agreed); one Opus fixer running. Path to M6.1: M3.1, M3.2.
+Next: Sol round-2 fix-only review, merge, then M3.2.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
