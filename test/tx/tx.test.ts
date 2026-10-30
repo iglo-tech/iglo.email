@@ -356,6 +356,51 @@ test("a burst of sends with an embedded image all go out", async () => {
   expect(f.sink.messages.filter((m) => /^Content-ID:/im.test(m.data))).toHaveLength(12);
 });
 
+test("synchronous sends with an embedded image hold a bounded number of bytes", async () => {
+  let release = () => {};
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  const f = await open({ beforeDispatch: () => stalled });
+  const body = new FormData();
+  body.append("file", new File([new Uint8Array(3 * 1024 * 1024)], "brand.png"));
+  const stored = await f.request("/api/media", { method: "POST", headers: f.sessionHeaders, body });
+  expect(stored.status).toBe(200);
+  const template = await f.template(`<img src="brand.png" data-embed="true">`);
+  const send = (i: number) =>
+    f.tx({
+      subscriber_email: `held-${i}@example.test`,
+      subscriber_mode: "external",
+      template_id: template,
+    });
+  const held = Array.from({ length: 21 }, (_, i) => send(i));
+  const journaled = () => (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
+  for (let i = 0; i < 2000 && journaled() < 21n; i++) await Bun.sleep(5);
+  expect(journaled()).toBe(21n);
+  const refused = await f.request("/api/tx", {
+    method: "POST",
+    headers: { ...f.sessionHeaders, "content-type": "application/json" },
+    body: JSON.stringify({
+      subscriber_email: "refused@example.test",
+      subscriber_mode: "external",
+      template_id: template,
+    }),
+  });
+  expect(refused.status).toBe(429);
+  expect(refused.headers.get("retry-after")).toBe("1");
+  // Refused before the journal, so the caller's retry is not a second send.
+  expect(journaled()).toBe(21n);
+  // A send with no embedded image holds nothing the bound counts.
+  const plain = await f.template("<p>plain</p>");
+  const unheld = f.tx({
+    subscriber_email: "plain@example.test",
+    subscriber_mode: "external",
+    template_id: plain,
+  });
+  release();
+  expect((await unheld).status).toBe(200);
+  expect((await Promise.all(held)).every((a) => a.status === 200)).toBe(true);
+  expect((await send(98)).status).toBe(200);
+}, 30_000);
+
 test("an embedded image counts toward what a durable send can hold", async () => {
   const f = await open();
   const body = new FormData();

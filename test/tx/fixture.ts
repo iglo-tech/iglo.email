@@ -74,6 +74,8 @@ export async function txFixture(
     webhooks?: WebhookTransport;
     /** The provider route's rate limit, with `webhooks`. */
     bounceLimit?: Middleware;
+    /** Holds each synchronous dispatch, as a stalled SMTP server does. */
+    beforeDispatch?: () => Promise<void>;
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -246,7 +248,12 @@ export async function txFixture(
   registerTxRoutes(router, {
     auth,
     sends,
-    outbox: { dispatch: (ids: bigint[]) => outbox.dispatch(ids) },
+    outbox: {
+      dispatch: (ids: bigint[]) =>
+        options.beforeDispatch
+          ? options.beforeDispatch().then(() => outbox.dispatch(ids))
+          : outbox.dispatch(ids),
+    },
     subscribers,
     templates,
     renderer,

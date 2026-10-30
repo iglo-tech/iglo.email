@@ -27,6 +27,7 @@ import type { Tracking } from "@/unsubscribe/tracking";
 const MAX_RECIPIENTS = 100;
 /** Aggregate prepared bytes for one request; each payload is also bounded by messaging. */
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+const MAX_DISPATCHING_BYTES = 64 * 1024 * 1024;
 const MAX_KEY_BYTES = 255;
 const MAX_HEADERS = 64;
 const headerName = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -86,6 +87,7 @@ export function registerTxRoutes(
     embedImages: EmbedImages;
   },
 ) {
+  let dispatching = 0;
   router.route(
     "POST",
     "/api/tx",
@@ -295,6 +297,14 @@ export function registerTxRoutes(
         });
       }
 
+      // A template's image costs a small JSON request nothing, but each synchronous send decodes
+      // its own copy from the journal and holds it until SMTP answers.
+      const held = !m.async && inline.length ? attachmentBytes * requested.length : 0;
+      if (held && dispatching + held > MAX_DISPATCHING_BYTES)
+        throw new HttpError(429, "Too many sends with embedded images in progress.", {
+          "Retry-After": "1",
+        });
+
       let result: ReturnType<Sends["enqueueRequest"]>;
       try {
         result = deps.sends.enqueueRequest({
@@ -309,7 +319,12 @@ export function registerTxRoutes(
       }
       // Synchronously after commit, so the outbox loop cannot claim these rows first.
       if (!m.async && result.queued.length) {
-        await deps.outbox.dispatch(result.queued);
+        dispatching += held;
+        try {
+          await deps.outbox.dispatch(result.queued);
+        } finally {
+          dispatching -= held;
+        }
         const current = result.ids.map((id, i) => deps.sends.summary(id) ?? result.sends[i]!);
         return ok({ sends: current });
       }
