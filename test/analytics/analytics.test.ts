@@ -194,9 +194,17 @@ test("sends group by template and by sequence step; only sent ones count as send
     (
       db
         .query(
-          "INSERT INTO sends (uuid, source, kind, to_email, template_id, step_id, status, created_at) VALUES (?, ?, 'transactional', 'a@example.test', ?, ?, ?, ?) RETURNING id",
+          "INSERT INTO sends (uuid, source, kind, to_email, template_id, step_id, status, created_at, sent_at) VALUES (?, ?, 'transactional', 'a@example.test', ?, ?, ?, ?, ?) RETURNING id",
         )
-        .get(`s${++n}`, step ? "sequence" : "tx", template, step, status, at) as { id: bigint }
+        .get(
+          `s${++n}`,
+          step ? "sequence" : "tx",
+          template,
+          step,
+          status,
+          at,
+          status === "sent" ? at : null,
+        ) as { id: bigint }
     ).id;
   const one = send(receipt, null);
   send(receipt, null, "failed");

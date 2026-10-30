@@ -72,9 +72,10 @@ WHERE campaign_id IS NOT NULL AND created_at >= date(latest.day, '-30 days')
   AND created_at < date(latest.day, '+1 day')
 GROUP BY date ORDER BY date;
 -- name: sends-by-template
+-- A send belongs to the moment it was delivered; its row may have been queued days earlier.
 WITH sent AS (
   SELECT template_id, COUNT(*) AS count FROM sends
-  WHERE status = 'sent' AND created_at >= ?1 AND created_at <= ?2
+  WHERE status = 'sent' AND sent_at >= ?1 AND sent_at <= ?2
   GROUP BY template_id
 ), views AS (
   SELECT s.template_id, COUNT(*) AS count, COUNT(DISTINCT v.send_id) AS uniq
@@ -101,7 +102,7 @@ ORDER BY g.template_id;
 -- name: sends-by-step
 WITH sent AS (
   SELECT step_id, COUNT(*) AS count FROM sends
-  WHERE status = 'sent' AND step_id IS NOT NULL AND created_at >= ?1 AND created_at <= ?2
+  WHERE status = 'sent' AND step_id IS NOT NULL AND sent_at >= ?1 AND sent_at <= ?2
   GROUP BY step_id
 ), views AS (
   SELECT s.step_id, COUNT(*) AS count, COUNT(DISTINCT v.send_id) AS uniq
