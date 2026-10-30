@@ -1,8 +1,10 @@
 // Adapted from listmonk internal/subimporter/importer.go at 6fcd95f. The upload stays on disk and
 // is read twice in small chunks. The first pass validates the file, logs bad rows, counts lines
-// and admits the webhook budget, so a bad file or one over budget writes nothing. The second pass
-// writes short batches, each its own transaction, and gives way between them. An import is not
-// durable: status and log live in memory as upstream's do, and nothing resumes after a restart.
+// and checks the webhook budget, so a bad file or one seen over budget writes nothing. The second
+// pass writes short batches, each its own transaction, and gives way between them. Each batch
+// admits what it will really queue against the same budget, because memberships and webhooks can
+// change after the first pass (D61). An import is not durable: status and log live in memory as
+// upstream's do, and nothing resumes after a restart.
 import { lstat, mkdir, open, readdir, rm, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import type { ErrorLogger } from "@/app";
@@ -22,6 +24,7 @@ import {
   EVENT_ATTRIBS_BYTES,
   nameFromEmail,
   type ImportRow,
+  type ImportSpend,
   type SubscriberStore,
 } from "@/subscribers/store";
 
@@ -242,9 +245,10 @@ export function createImporter(deps: {
     policy: { allow: string[]; block: string[] },
   ) {
     let sinceProgress = 0;
+    const spent: ImportSpend = { deliveries: 0 };
     const commit = (rows: ImportRow[]) => {
-      if (options.mode === "blocklist") store.importBlocklist(rows);
-      else store.importSubscribe(rows, options);
+      if (options.mode === "blocklist") store.importBlocklist(rows, spent);
+      else store.importSubscribe(rows, options, spent);
       status.imported += rows.length;
       sinceProgress += rows.length;
       if (sinceProgress >= PROGRESS_ROWS) {

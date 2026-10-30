@@ -12,7 +12,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createListReferences } from "@/lists/references";
 import { createImporter } from "@/subscribers/import/importer";
-import { createSubscriberStore, type ImportRow } from "@/subscribers/store";
+import { createSubscriberStore } from "@/subscribers/store";
 import { createTranslation } from "@/i18n/i18n";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { createWebhookEffects } from "@/webhooks/effects";
@@ -230,10 +230,8 @@ async function lockHolds() {
       logger: { error: console.error },
       i18n: createTranslation(),
       store: {
-        importSubscribe: timed<[ImportRow[], Parameters<typeof store.importSubscribe>[1]]>(
-          store.importSubscribe,
-        ),
-        importBlocklist: timed<[ImportRow[]]>(store.importBlocklist),
+        importSubscribe: timed<Parameters<typeof store.importSubscribe>>(store.importSubscribe),
+        importBlocklist: timed<Parameters<typeof store.importBlocklist>>(store.importBlocklist),
         importUnsubscribing: store.importUnsubscribing,
         admitImport: store.admitImport,
       },

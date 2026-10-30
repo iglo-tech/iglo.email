@@ -78,3 +78,10 @@ SELECT count(*) AS n FROM subscribers s
   WHERE s.email IN (SELECT value FROM json_each(?1)) AND (?3 OR s.status = 'blocklisted')
     AND EXISTS (SELECT 1 FROM subscriber_lists m WHERE m.subscriber_id = s.id AND m.status != 'unsubscribed'
       AND m.list_id IN (SELECT value FROM json_each(?2)));
+-- name: import-blocklisting
+-- Of the e-mails ?, those with a subscriber, those not yet blocklisted and those with a live
+-- membership: what webhook-blocklisted and webhook-unsubscribed will select for them.
+SELECT count(*) AS known, coalesce(sum(s.status != 'blocklisted'), 0) AS enabled,
+    coalesce(sum(EXISTS (SELECT 1 FROM subscriber_lists m
+      WHERE m.subscriber_id = s.id AND m.status != 'unsubscribed')), 0) AS members
+  FROM subscribers s WHERE s.email IN (SELECT value FROM json_each(?));

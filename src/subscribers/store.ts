@@ -73,12 +73,18 @@ export interface SubscriberEffects {
   unsubscribing?(ids: bigint[], listIds: bigint[]): void;
   /** May refuse a bulk action, by throwing, before its first write. */
   admitBulk?(action: BulkAction, selected: () => number): void;
+  /** The same for one batch of an import: adds what it will queue to `spent`, or refuses it. */
+  admitImportBatch?(spent: ImportSpend, batch: { unsubscribed: number; blocklisted: number }): void;
 }
 /** A row of a CSV import, validated. `attribs` is JSON. */
 export interface ImportRow {
   email: string;
   name: string;
   attribs: string;
+}
+/** Webhook deliveries an import has queued so far, across its batches. */
+export interface ImportSpend {
+  deliveries: number;
 }
 export interface ImportSubscribe {
   listIds: bigint[];
@@ -186,6 +192,19 @@ export function createSubscriberStore(
       if (previous) q.get("membership-status").run(target, id, list);
       else q.get("membership-insert").run(id, list, target, now, now);
     }
+  };
+  const importUnsubscribing = (
+    emails: string[],
+    options: Pick<ImportSubscribe, "listIds" | "status">,
+  ) => {
+    const row = q
+      .get("import-unsubscribing")
+      .get(
+        JSON.stringify(emails),
+        json(options.listIds),
+        options.status === "unsubscribed" ? 1 : 0,
+      ) as { n: bigint };
+    return Number(row.n);
   };
   const blocklist = (ids: bigint[]) => {
     effects.admitBulk?.("blocklist", () => new Set(ids).size);
@@ -539,10 +558,19 @@ export function createSubscriberStore(
      * One batch of an import in its own transaction, row by row in file order like
      * upsert-subscriber. A blocklisted subscriber stays so and is unsubscribed from new lists, and
      * a membership's status changes only with `overwriteStatus`. Ending one takes the same path
-     * as an API write, so it exits enrollments and queues the webhook in this transaction.
+     * as an API write, so it exits enrollments and queues the webhook in this transaction. The
+     * batch is admitted first, against what memberships and webhooks are now.
      */
-    importSubscribe(rows: ImportRow[], options: ImportSubscribe) {
+    importSubscribe(rows: ImportRow[], options: ImportSubscribe, spent: ImportSpend) {
       writeTransaction(db, () => {
+        if (options.overwriteStatus)
+          effects.admitImportBatch?.(spent, {
+            unsubscribed: importUnsubscribing(
+              rows.map((row) => row.email),
+              options,
+            ),
+            blocklisted: 0,
+          });
         const now = clock.now().toISOString();
         for (const row of rows) {
           const existing = byEmail(row.email);
@@ -590,8 +618,18 @@ export function createSubscriberStore(
       });
     },
     /** One batch of a blocklist import: new addresses are created and all go through `blocklist`. */
-    importBlocklist(rows: ImportRow[]) {
+    importBlocklist(rows: ImportRow[], spent: ImportSpend) {
       writeTransaction(db, () => {
+        const emails = [...new Set(rows.map((row) => row.email))];
+        const known = q.get("import-blocklisting").get(JSON.stringify(emails)) as {
+          known: bigint;
+          enabled: bigint;
+          members: bigint;
+        };
+        effects.admitImportBatch?.(spent, {
+          unsubscribed: Number(known.members),
+          blocklisted: emails.length - Number(known.known) + Number(known.enabled),
+        });
         const now = clock.now().toISOString();
         blocklist(
           rows.map(
@@ -616,16 +654,7 @@ export function createSubscriberStore(
       });
     },
     /** Of these addresses, the subscribers `importSubscribe` with `overwriteStatus` would unsubscribe. */
-    importUnsubscribing(emails: string[], options: Pick<ImportSubscribe, "listIds" | "status">) {
-      const row = q
-        .get("import-unsubscribing")
-        .get(
-          JSON.stringify(emails),
-          json(options.listIds),
-          options.status === "unsubscribed" ? 1 : 0,
-        ) as { n: bigint };
-      return Number(row.n);
-    },
+    importUnsubscribing,
     /** The budget of a bulk action (D61), for an import that counted its subscribers. */
     admitImport(action: BulkAction, selected: number) {
       effects.admitBulk?.(action, () => selected);
