@@ -69,3 +69,19 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber
 -- name: membership-confirm
 -- Adapted from confirm-subscription-optin, for rows still awaiting confirmation only.
 UPDATE subscriber_lists SET status='confirmed', meta=json_patch(meta, ?), updated_at=? WHERE subscriber_id=? AND list_id=? AND status='unconfirmed';
+-- name: subscriber-import-update
+UPDATE subscribers SET name=?, attribs=?, updated_at=? WHERE id=?;
+-- name: import-unsubscribing
+-- Subscribers among the e-mails ?1 an overwriting import ends a membership of the lists ?2 for:
+-- all with a live one when the import's status is unsubscribed (?3), else only the blocklisted.
+SELECT count(*) AS n FROM subscribers s
+  WHERE s.email IN (SELECT value FROM json_each(?1)) AND (?3 OR s.status = 'blocklisted')
+    AND EXISTS (SELECT 1 FROM subscriber_lists m WHERE m.subscriber_id = s.id AND m.status != 'unsubscribed'
+      AND m.list_id IN (SELECT value FROM json_each(?2)));
+-- name: import-blocklisting
+-- Of the e-mails ?, those with a subscriber, those not yet blocklisted and those with a live
+-- membership: what webhook-blocklisted and webhook-unsubscribed will select for them.
+SELECT count(*) AS known, coalesce(sum(s.status != 'blocklisted'), 0) AS enabled,
+    coalesce(sum(EXISTS (SELECT 1 FROM subscriber_lists m
+      WHERE m.subscriber_id = s.id AND m.status != 'unsubscribed')), 0) AS members
+  FROM subscribers s WHERE s.email IN (SELECT value FROM json_each(?));

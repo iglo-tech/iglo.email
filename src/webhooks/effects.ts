@@ -1,7 +1,7 @@
 // Native: the state changes that queue outbound webhooks, called inside their own write
 // transactions (docs/design/04-sending.md#outbound-webhooks).
 import { HttpError } from "@/server/response";
-import type { BulkAction, SubscriberStore } from "@/subscribers/store";
+import type { BulkAction, ImportSpend, SubscriberStore } from "@/subscribers/store";
 import {
   webhookID,
   type WebhookEvent,
@@ -107,6 +107,24 @@ export function createWebhookEffects(
               `over the limit of ${MAX_BULK_DELIVERIES.toLocaleString("en-US")} per bulk action. ` +
               "Narrow the selection and try again.",
           );
+      },
+      /**
+       * One batch of an import, with the budget of one bulk action across all its batches. The
+       * webhooks of the batches before it are committed, so they stay and the import ends here.
+       */
+      admitImportBatch(spent: ImportSpend, batch: { unsubscribed: number; blocklisted: number }) {
+        const deliveries =
+          spent.deliveries +
+          batch.unsubscribed * webhooks.subscribed("subscriber.unsubscribed") +
+          batch.blocklisted * webhooks.subscribed("subscriber.blocklisted");
+        if (deliveries > MAX_BULK_DELIVERIES)
+          throw new HttpError(
+            400,
+            `This import would reach ${deliveries.toLocaleString("en-US")} webhook deliveries, ` +
+              `over the limit of ${MAX_BULK_DELIVERIES.toLocaleString("en-US")} per bulk action. ` +
+              "It stopped before this batch: earlier batches stay, with their webhooks.",
+          );
+        spent.deliveries = deliveries;
       },
     },
     /**

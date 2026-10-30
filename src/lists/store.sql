@@ -10,3 +10,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
 UPDATE lists SET name = ?, type = ?, optin = ?, status = ?, tags = ?, description = ?, updated_at = ? WHERE id = ?;
 -- name: delete-list
 DELETE FROM lists WHERE id = ?;
+
+-- name: lists-touch
+-- Adapted from update-lists-date.
+UPDATE lists SET updated_at = ? WHERE id IN (SELECT value FROM json_each(?));

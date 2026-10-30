@@ -53,15 +53,16 @@ async function peer(hold = false) {
     ready = resolve;
   });
   const sockets = new Set<Socket>();
+  // The host's dev runtime probes every new loopback port, some silently and some with HTTP or
+  // TLS, sooner or later. An SMTP client speaks after the greeting and opens with EHLO or HELO, so
+  // only that is a connection. A held peer counts it and never answers.
   const accept = (socket: Socket) => {
-    count++;
-    if (count === 4) ready();
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
-    if (hold) return;
     socket.write("220 fixture ESMTP\r\n");
     let pending = "",
-      data = false;
+      data = false,
+      spoken = false;
     socket.on("data", (part) => {
       pending += part.toString();
       for (;;) {
@@ -69,6 +70,13 @@ async function peer(hold = false) {
         if (end < 0) break;
         const line = pending.slice(0, end);
         pending = pending.slice(end + 2);
+        if (!spoken) {
+          if (!/^(EHLO|HELO) /i.test(line)) return void socket.destroy();
+          spoken = true;
+          count++;
+          if (count === 4) ready();
+        }
+        if (hold) continue;
         if (data) {
           if (line === ".") {
             data = false;
@@ -85,8 +93,7 @@ async function peer(hold = false) {
   };
   const server = createServer((socket) => {
     socket.on("error", () => {});
-    // The host's dev runtime probes every new loopback port with HTTP and TLS. An SMTP client
-    // speaks only after the greeting, so a connection that writes first is a probe, not a send.
+    // A connection that writes before the greeting is not a client.
     const timer = setTimeout(() => {
       socket.off("data", probe);
       accept(socket);
@@ -96,6 +103,7 @@ async function peer(hold = false) {
       socket.destroy();
     };
     socket.once("data", probe);
+    socket.once("close", () => clearTimeout(timer));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const addr = server.address();
@@ -118,6 +126,30 @@ const smtpBody = (port: number) =>
     tls_type: "none",
     auth_protocol: "none",
   });
+
+test("a loopback probe is not counted as an SMTP client", async () => {
+  const smtp = await peer();
+  try {
+    const silent = createConnection({ host: "127.0.0.1", port: smtp.port });
+    await new Promise((resolve) => silent.once("connect", resolve));
+    silent.destroy();
+    const greeted = (socket: Socket) => new Promise((resolve) => socket.once("data", resolve));
+    const delayed = createConnection({ host: "127.0.0.1", port: smtp.port });
+    await greeted(delayed);
+    delayed.write("GET / HTTP/1.1\r\n\r\n");
+    await Bun.sleep(100);
+    delayed.destroy();
+    expect(smtp.count()).toBe(0);
+    const client = createConnection({ host: "127.0.0.1", port: smtp.port });
+    await greeted(client);
+    client.write("EHLO fixture\r\n");
+    await greeted(client);
+    expect(smtp.count()).toBe(1);
+    client.destroy();
+  } finally {
+    await smtp.close();
+  }
+});
 
 for (const change of ["disabled", "deleted", "grant", "explicit"] as const) {
   test(`held SMTP body denies ${change} before a connection`, async () => {

@@ -183,6 +183,10 @@ export function createListStore(
         for (const row of selected) queries.get("delete-list").run(row.id);
       });
     },
+    /** update-lists-date. */
+    touch(ids: bigint[]) {
+      queries.get("lists-touch").run(clock.now().toISOString(), `[${ids.join(",")}]`);
+    },
     close: () => queries.close(),
   };
 }
