@@ -5,7 +5,6 @@ import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
 import {
   createMessageBudget,
-  type MessageBudget,
   type RenderTracking,
   type TemplateRenderer,
 } from "@/templates/renderer";

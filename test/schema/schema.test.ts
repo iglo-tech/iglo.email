@@ -28,7 +28,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     const installed = await call(fixture.origin, "migrate");
     expect(installed.status).toBe(200);
     expect(installed.result).toMatchObject({
-      version: "5",
+      version: "6",
       integrity: "ok",
       foreignKeyErrors: [],
       journal: "wal",
@@ -111,6 +111,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
       campaign_views: ["id", "campaign_id", "send_id", "subscriber_id", "created_at"],
       media: ["id", "uuid", "provider", "filename", "content_type", "thumb", "meta", "created_at"],
       campaign_media: ["campaign_id", "media_id", "filename"],
+      campaign_links: ["campaign_id", "link_id"],
       links: ["id", "uuid", "url", "created_at"],
       link_clicks: ["id", "campaign_id", "send_id", "link_id", "subscriber_id", "created_at"],
       settings: ["key", "value", "updated_at"],
@@ -292,7 +293,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     await fixture.close();
     fixture = startSchemaFixture(directory);
     expect((await call(fixture.origin, "migrate")).result).toMatchObject({
-      version: "5",
+      version: "6",
       integrity: "ok",
       foreignKeyErrors: [],
       backups: [],
@@ -322,7 +323,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "5",
+      version: "6",
     });
   } finally {
     await fixture.close();
@@ -354,7 +355,7 @@ test("deleted identities never resolve to replacement accounts or entities after
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "5",
+      version: "6",
       backups: [],
     });
   } finally {
