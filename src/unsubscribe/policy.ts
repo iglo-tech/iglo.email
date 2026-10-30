@@ -35,6 +35,10 @@ export function createMarketingPolicy(deps: {
   subscribers: SubscriberStore;
   lists: ListReferences;
   settings: () => MarketingSettings;
+  /** Campaign deliveries, which count toward the cap (04-sending.md#frequency-cap). */
+  campaignDeliveries?: {
+    lastDelivery(subscriberId: bigint): { at: string; outstanding: boolean } | null;
+  };
 }): MarketingPolicy {
   return {
     consent({ subscriberId, listId }) {
@@ -52,6 +56,10 @@ export function createMarketingPolicy(deps: {
       const start = intervalStart(deps.settings().minInterval, now);
       // Settings validation rejects invalid values; a corrupt stored one keeps the default.
       return start === undefined ? intervalStart(fallbackInterval, now)! : start;
+    },
+    lastCampaignDelivery(subscriberId) {
+      const last = deps.campaignDeliveries?.lastDelivery(subscriberId);
+      return last ? { at: new Date(last.at), outstanding: last.outstanding } : null;
     },
   };
 }

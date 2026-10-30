@@ -203,6 +203,8 @@ export async function campaignsFixture() {
     subscriber,
     campaign,
     mail,
+    /** Production owners, for wiring the campaign runner as src/main.ts does. */
+    owners: { store, templates, renderer, tracking, lists, subscribers, emailer },
     async close() {
       await emailer.close();
       store.close();

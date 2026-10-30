@@ -37,6 +37,11 @@ export interface MarketingPolicy {
   consent(row: { subscriberId: bigint | null; listId: bigint | null }): string | null;
   /** Start of the cap window ending at `now`, or null when the cap is disabled. */
   capStart(now: Date): Date | null;
+  /**
+   * The subscriber's latest campaign delivery the cap counts (M3.2), or null. An
+   * outstanding one (claimed, outcome pending) holds the cap whatever its age.
+   */
+  lastCampaignDelivery?(subscriberId: bigint): { at: Date; outstanding: boolean } | null;
 }
 interface PublicRow {
   id: bigint;
@@ -201,7 +206,8 @@ export function createSends(options: {
    * only rows already sending or sent count, so two queued rows cannot skip each other.
    * An `unknown` row counts from its latest attempt (`attempted_at`, committed with the
    * claim before SMTP), so a delayed send recovered after a crash still uses the cap.
-   * Campaign sends (M3) must add their deliveries to this count.
+   * Campaign deliveries count too, from the policy (M3.2); an outstanding campaign claim
+   * counts at any age, as a `sending` row does.
    */
   function marketing(
     subscriberId: bigint | null,
@@ -227,7 +233,11 @@ export function createSends(options: {
          LIMIT 1`,
       )
       .get(scope.lineage ?? 0n, subscriberId, start.toISOString(), scope.pending ? 1 : 0);
-    return hit ? "frequency_cap" : null;
+    if (hit) return "frequency_cap";
+    const campaign = policy.lastCampaignDelivery?.(subscriberId);
+    return campaign && (campaign.outstanding || campaign.at.getTime() > start.getTime())
+      ? "frequency_cap"
+      : null;
   }
   function enqueue(input: PreparedSend) {
     if (
@@ -456,7 +466,13 @@ export function createSends(options: {
          WHERE subscriber_id = ? AND kind = 'marketing' AND status IN ('queued', 'sending', 'sent', 'unknown')`,
       )
       .get(subscriberId)?.at;
-    const last = latest ? Date.parse(latest) : NaN;
+    const journal = latest ? Date.parse(latest) : NaN;
+    const campaign = policy?.lastCampaignDelivery?.(subscriberId)?.at.getTime() ?? NaN;
+    const last = Number.isFinite(campaign)
+      ? Number.isFinite(journal)
+        ? Math.max(journal, campaign)
+        : campaign
+      : journal;
     if (!policy || !Number.isFinite(last)) return floor;
     // capStart is monotonic in its argument: find the first instant whose window starts at or
     // after the last counted send. A window is at most about 10,000 years plus a few days.
