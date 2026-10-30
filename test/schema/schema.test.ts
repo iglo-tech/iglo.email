@@ -108,6 +108,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
         "updated_at",
         "runner_lease",
         "runner_lease_until",
+        "runner_generation",
       ],
       campaign_lists: ["id", "campaign_id", "list_id", "list_name"],
       campaign_views: ["id", "campaign_id", "send_id", "subscriber_id", "created_at"],
