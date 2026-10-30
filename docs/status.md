@@ -4,7 +4,7 @@ Updated 2026-10-30. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M1.9 CSV import: [brief](briefs/M1.9.md); one Opus worker running.
+M1.9 CSV import, [PR #38](https://github.com/iglo-tech/iglo.email/pull/38), head 024830c. Local checks pass; Sol round-1 review running.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
 Next: M4 screens, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
@@ -64,7 +64,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 ## Hardening backlog
 
 - Analytics: global egress budget for many slow near-cap downloads; WAL growth under no-gap report polling (D62).
-- One unidentified test failed once in `bun run check` on 2026-10-30 (M3.4); two reruns clean. Capture the name if it recurs.
+- Intermittent: `route-auth` "held SMTP body denies disabled before a connection" failed once in M1.9 (`smtp.count()` 1); may be the same as the unnamed M3.4 failure.
 - Media: `runner:crash` has no media campaign; no compiled `data-embed` contract; synchronous `POST /api/tx` with caller attachments has no concurrency limit; supported PDF viewers unverified.
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
