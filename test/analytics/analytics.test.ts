@@ -483,7 +483,7 @@ function refreshing(interval: string) {
     lists: async () => (await data("/api/dashboard/counts")).lists.total as number,
     async stop() {
       f.clock.advance(60_000);
-      await loop.stop();
+      await loop.stop().catch(() => {}); // A test's own assertion reports a dead loop.
     },
   };
 }
@@ -534,6 +534,7 @@ test("every zone the settings accept can be evaluated", () => {
       new Date("2026-01-01T02:59:00Z"),
       new Date("2026-01-01T03:00:00Z"),
     );
+  expect(() => due("Factory")).not.toThrow();
   expect(due("Factory")).toBe(true);
   const system = process.env.TZ;
   process.env.TZ = "Asia/Tokyo";
