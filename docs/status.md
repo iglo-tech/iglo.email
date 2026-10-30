@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.2 campaign runner, branch task/M3.2-runner, [brief](briefs/M3.2.md). One Opus medium worker dispatched; no reviewer active. Then M6.1 performance can start.
-Next: on worker handback, Sol xhigh round 1, lead disposition, merge.
+M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head 45cf272. Worker done (10k exactly-once, crash runs, D22 mixed load met at 7×10/s); Sol xhigh round-1 review running.
+Next: lead disposition of round 1, merge, then M6.1 or the next eligible task.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
