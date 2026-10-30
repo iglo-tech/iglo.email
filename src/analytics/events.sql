@@ -5,7 +5,8 @@
 SELECT campaign_id, substr(created_at, 1, ?1) AS bucket, COUNT(*) AS count
 FROM %table%
 WHERE campaign_id IN (SELECT value FROM json_each(?2)) AND created_at >= ?3 AND created_at <= ?4
-GROUP BY campaign_id, bucket;
+GROUP BY campaign_id, bucket
+ORDER BY bucket, campaign_id;
 -- name: campaign-unique-counts
 -- DISTINCT ON keeps each pair's earliest period, and NULL subscribers are one pair.
 SELECT campaign_id, substr(first, 1, ?1) AS bucket, COUNT(*) AS count
@@ -15,7 +16,8 @@ FROM (
   WHERE campaign_id IN (SELECT value FROM json_each(?2)) AND created_at >= ?3 AND created_at <= ?4
   GROUP BY subscriber_id, campaign_id
 )
-GROUP BY campaign_id, bucket;
+GROUP BY campaign_id, bucket
+ORDER BY bucket, campaign_id;
 -- name: list-counts
 WITH counts AS (
   SELECT campaign_id, substr(created_at, 1, ?1) AS bucket, COUNT(*) AS count
@@ -28,7 +30,8 @@ WITH counts AS (
 SELECT cl.list_id, c.bucket, SUM(c.count) AS count
 FROM counts c JOIN campaign_lists cl ON cl.campaign_id = c.campaign_id
 WHERE cl.list_id IN (SELECT value FROM json_each(?2))
-GROUP BY cl.list_id, c.bucket;
+GROUP BY cl.list_id, c.bucket
+ORDER BY c.bucket, cl.list_id;
 -- name: list-unique-counts
 WITH counts AS (
   SELECT campaign_id, substr(first, 1, ?1) AS bucket, COUNT(*) AS count
@@ -45,4 +48,5 @@ WITH counts AS (
 SELECT cl.list_id, c.bucket, SUM(c.count) AS count
 FROM counts c JOIN campaign_lists cl ON cl.campaign_id = c.campaign_id
 WHERE cl.list_id IN (SELECT value FROM json_each(?2))
-GROUP BY cl.list_id, c.bucket;
+GROUP BY cl.list_id, c.bucket
+ORDER BY c.bucket, cl.list_id;

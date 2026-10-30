@@ -344,16 +344,16 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
     concurrency: 1,
     admissionMs: 10,
   });
-  const first = slow.read("dashboardCounts");
-  await expect(slow.read("dashboardCounts")).rejects.toMatchObject({ kind: "busy" });
+  const first = slow.read("dashboardCounts", []);
+  await expect(slow.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "busy" });
   await expect(first).rejects.toMatchObject({ kind: "timeout" });
   const failed = createAnalyticsReader({ path: "x", command: ["false"] });
-  await expect(failed.read("dashboardCounts")).rejects.toMatchObject({ kind: "failed" });
+  await expect(failed.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "failed" });
 
   const router = createRouter();
   let current = failed;
   registerAnalyticsRoutes(router, {
-    reader: { read: (method: "dashboardCounts") => current.read(method) } as never,
+    reader: { read: (method: "dashboardCounts") => current.read(method, []) } as never,
     summaries,
     campaigns: f.owners.store,
     roles: f.owners.roles,
@@ -368,7 +368,7 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
   expect((await counts()).status).toBe(500);
   expect(f.errors).toHaveLength(1);
   current = slow;
-  const held = slow.read("dashboardCounts").catch(() => {});
+  const held = slow.read("dashboardCounts", []).catch(() => {});
   expect((await counts()).status).toBe(429);
   await held;
   expect((await counts()).status).toBe(500); // Timed out, with a slot free again.
@@ -493,7 +493,8 @@ test("every zone the settings accept can be evaluated", () => {
     // An empty location is UTC to Go's time.LoadLocation, not the system zone.
     expect(due("")).toBe(true);
   } finally {
-    process.env.TZ = system;
+    if (system === undefined) delete process.env.TZ;
+    else process.env.TZ = system;
   }
 });
 
@@ -619,13 +620,11 @@ test("closing stops admission, refuses queued reads and awaits every child", asy
   const running = owned.read("dashboardCounts", []);
   const queued = owned.read("dashboardCounts", []);
   await until(() => child.pids().length === 1);
+  const settled = kinds([running, queued]);
   await owned.close();
   expect(child.pids().filter(alive)).toEqual([]);
-  expect(await kinds([running, queued, owned.read("dashboardCounts", [])])).toEqual([
-    "closed",
-    "closed",
-    "closed",
-  ]);
+  expect(await settled).toEqual(["closed", "closed"]);
+  expect(await kinds([owned.read("dashboardCounts", [])])).toEqual(["closed"]);
   await Bun.sleep(350);
   expect(child.pids()).toHaveLength(1);
 });

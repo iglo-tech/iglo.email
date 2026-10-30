@@ -21,7 +21,7 @@ export function createSummaries(db: Database, clock: Clock, reader: AnalyticsRea
   const get = (name: SummaryName) =>
     (q.get("get-summary").get(name) as { data: string } | null)?.data ?? null;
   const refresh = async () => {
-    const { data } = JSON.parse(await reader.read("summary")) as {
+    const { data } = JSON.parse(new TextDecoder().decode(await reader.read("summary", []))) as {
       data: Record<SummaryName, unknown>;
     };
     const at = clock.now().toISOString();

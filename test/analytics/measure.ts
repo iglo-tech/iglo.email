@@ -43,19 +43,19 @@ try {
     ["dashboard/charts", () => store.dashboardCharts()],
     ["lists counts.all", () => counts.all()],
     ["summary", () => store.summary()],
-    ["campaign views year day", () => store.campaignCounts("total_views", big, year, "day")],
-    ["campaign views month hour", () => store.campaignCounts("total_views", big, month, "hour")],
-    ["campaign views unique year", () => store.campaignCounts("views", big, year, "day")],
-    ["campaign clicks year", () => store.campaignCounts("total_clicks", big, year, "day")],
-    ["campaign clicks unique year", () => store.campaignCounts("clicks", big, year, "day")],
-    ["campaign bounces year", () => store.campaignCounts("bounces", big, year, "day")],
+    ["campaign views year day", () => [...store.campaignCounts("total_views", big, year, "day")]],
+    ["campaign views month hour", () => [...store.campaignCounts("total_views", big, month, "hour")]],
+    ["campaign views unique year", () => [...store.campaignCounts("views", big, year, "day")]],
+    ["campaign clicks year", () => [...store.campaignCounts("total_clicks", big, year, "day")]],
+    ["campaign clicks unique year", () => [...store.campaignCounts("clicks", big, year, "day")]],
+    ["campaign bounces year", () => [...store.campaignCounts("bounces", big, year, "day")]],
     ["campaign links year", () => store.links("campaign", big, year, false)],
     ["campaign links distinct", () => store.links("campaign", big, year, true)],
-    ["list views 20 lists", () => store.listCounts("total_views", all, year, "day")],
-    ["list views unique 20 lists", () => store.listCounts("views", all, year, "day")],
+    ["list views 20 lists", () => [...store.listCounts("total_views", all, year, "day")]],
+    ["list views unique 20 lists", () => [...store.listCounts("views", all, year, "day")]],
     ["list links 20 lists", () => store.links("list", all, year, false)],
-    ["list subscriptions 20 lists", () => store.listCounts("subscriptions", all, year, "month")],
-    ["list unsubscriptions 20", () => store.listCounts("unsubscriptions", all, year, "month")],
+    ["list subscriptions 20 lists", () => [...store.listCounts("subscriptions", all, year, "month")]],
+    ["list unsubscriptions 20", () => [...store.listCounts("unsubscriptions", all, year, "month")]],
     ["sends by template year", () => store.sends("template", year)],
     ["sends by step year", () => store.sends("step", year)],
   ];
@@ -93,14 +93,14 @@ try {
     return stats(times);
   };
   for (const [name, read] of [
-    ["dashboard/counts", () => reader.read("dashboardCounts")],
-    ["dashboard/charts", () => reader.read("dashboardCharts")],
+    ["dashboard/counts", () => reader.read("dashboardCounts", [])],
+    ["dashboard/charts", () => reader.read("dashboardCharts", [])],
     [
       "campaign views year day",
-      () => reader.read("campaignCounts", "total_views", big, year, "day"),
+      () => reader.read("campaignCounts", ["total_views", big, year, "day"]),
     ],
-    ["list views unique 20 lists", () => reader.read("listCounts", "views", all, year, "day")],
-    ["sends by template year", () => reader.read("sends", "template", year)],
+    ["list views unique 20 lists", () => reader.read("listCounts", ["views", all, year, "day"])],
+    ["sends by template year", () => reader.read("sends", ["template", year])],
   ] as [string, () => Promise<unknown>][])
     report({ name, in_child: true, compiled: existsSync(compiled), ...(await timed(read)) });
 
@@ -113,9 +113,9 @@ try {
     const before = performance.now();
     await summaries.refresh();
     refreshes.push(performance.now() - before);
-    const body = await reader.read("summary");
+    const body = await reader.read("summary", []);
     const hold = performance.now();
-    const { data } = JSON.parse(body) as { data: Record<string, unknown> };
+    const { data } = JSON.parse(new TextDecoder().decode(body)) as { data: Record<string, unknown> };
     writeTransaction(db, () => {
       for (const [name, value] of Object.entries(data))
         db.query("UPDATE analytics_summaries SET data = ?, updated_at = ? WHERE name = ?").run(
@@ -160,11 +160,11 @@ try {
   };
   report({
     name: "pixel inserts during unique list read, in process",
-    ...(await lagDuring(() => store.listCounts("views", all, year, "day"))),
+    ...(await lagDuring(() => [...store.listCounts("views", all, year, "day")])),
   });
   report({
     name: "pixel inserts during unique list read, in child",
-    ...(await lagDuring(() => reader.read("listCounts", "views", all, year, "day"))),
+    ...(await lagDuring(() => reader.read("listCounts", ["views", all, year, "day"]))),
   });
   report({
     name: "pixel inserts during summary refresh",

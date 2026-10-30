@@ -4,14 +4,16 @@
 SELECT list_id, substr(created_at, 1, ?1) AS bucket, COUNT(*) AS count
 FROM subscriber_lists
 WHERE list_id IN (SELECT value FROM json_each(?2)) AND created_at >= ?3 AND created_at <= ?4
-GROUP BY list_id, bucket;
+GROUP BY list_id, bucket
+ORDER BY bucket, list_id;
 -- name: list-unsubscription-counts
 -- Memberships retain only their current status and last update, not event history.
 SELECT list_id, substr(updated_at, 1, ?1) AS bucket, COUNT(*) AS count
 FROM subscriber_lists
 WHERE list_id IN (SELECT value FROM json_each(?2)) AND status = 'unsubscribed'
   AND updated_at >= ?3 AND updated_at <= ?4
-GROUP BY list_id, bucket;
+GROUP BY list_id, bucket
+ORDER BY bucket, list_id;
 -- name: campaign-link-counts
 SELECT COUNT(*) AS count, l.url
 FROM link_clicks c JOIN links l ON l.id = c.link_id

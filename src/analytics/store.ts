@@ -42,6 +42,34 @@ function period(bucket: string, interval: Interval): string {
 }
 const idList = (ids: readonly string[]) => `[${ids.join(",")}]`;
 
+/**
+ * Finish rows that SQL ordered by bucket: several days of one week merge here, within a period
+ * that holds at most one count per requested ID, so memory does not grow with the result.
+ */
+function* rows(found: Iterable<Row>, interval: Interval, list: boolean): Generator<CountRow> {
+  const finish = (timestamp: string, counts: Map<bigint, number>) =>
+    [...counts]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([owner, count]): CountRow =>
+        list
+          ? { list_id: Number(owner), campaign_id: 0, count, timestamp }
+          : { campaign_id: Number(owner), count, timestamp },
+      );
+  let current: string | undefined;
+  const counts = new Map<bigint, number>();
+  for (const row of found) {
+    const timestamp = period(row.bucket, interval);
+    if (timestamp !== current) {
+      if (current !== undefined) yield* finish(current, counts);
+      current = timestamp;
+      counts.clear();
+    }
+    const owner = list ? row.list_id! : row.campaign_id!;
+    counts.set(owner, (counts.get(owner) ?? 0) + Number(row.count));
+  }
+  if (current !== undefined) yield* finish(current, counts);
+}
+
 export function createAnalyticsStore(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "analytics", sql }]);
   const prepare = (table: string) =>
@@ -52,25 +80,6 @@ export function createAnalyticsStore(db: Database) {
     views: prepare("campaign_views"),
     clicks: prepare("link_clicks"),
     bounces: prepare("bounces"),
-  };
-  /** Finish the periods; several days of one week merge here, and rows sort by period. */
-  const rows = (found: Row[], interval: Interval, list: boolean): CountRow[] => {
-    const merged = new Map<string, CountRow>();
-    for (const row of found) {
-      const timestamp = period(row.bucket, interval);
-      const owner = list ? row.list_id! : row.campaign_id!;
-      const key = `${owner} ${timestamp}`;
-      const count = Number(row.count);
-      const seen = merged.get(key);
-      if (seen) seen.count += count;
-      else if (list) merged.set(key, { list_id: Number(owner), campaign_id: 0, count, timestamp });
-      else merged.set(key, { campaign_id: Number(owner), count, timestamp });
-    }
-    return [...merged.values()].sort(
-      (a, b) =>
-        a.timestamp.localeCompare(b.timestamp) ||
-        (a.list_id ?? a.campaign_id) - (b.list_id ?? b.campaign_id),
-    );
   };
   const eventRows = (
     resource: "campaign" | "list",
@@ -87,7 +96,7 @@ export function createAnalyticsStore(db: Database) {
           : events.bounces;
     const unique = type === "views" || type === "clicks";
     const statement = source.get(`${resource}-${unique ? "unique-" : ""}counts`);
-    return statement.all(prefix[interval], idList(ids), range.from, range.to) as Row[];
+    return statement.iterate(prefix[interval], idList(ids), range.from, range.to) as Iterable<Row>;
   };
   return {
     campaignCounts(type: CountType, ids: readonly string[], range: Range, interval: Interval) {
@@ -98,7 +107,7 @@ export function createAnalyticsStore(db: Database) {
         const name = type === "subscriptions" ? "subscription" : "unsubscription";
         const found = q
           .get(`list-${name}-counts`)
-          .all(prefix[interval], idList(ids), range.from, range.to) as Row[];
+          .iterate(prefix[interval], idList(ids), range.from, range.to) as Iterable<Row>;
         return rows(found, interval, true);
       }
       return rows(eventRows("list", type, ids, range, interval), interval, true);

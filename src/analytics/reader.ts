@@ -2,6 +2,7 @@
 // src/subscribers/query-runner.ts. A read covers up to every view and click, bun:sqlite is
 // synchronous, and the pixel, redirect and send paths share the server's one thread, so at
 // a million rows an in-process read stalls them for seconds (docs/perf/M3.3-analytics.md).
+import { readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { createAnalyticsStore, type AnalyticsStore } from "@/analytics/store";
 import { ok } from "@/server/response";
@@ -20,6 +21,9 @@ const methods = [
 ] as const;
 type Method = (typeof methods)[number];
 
+/** Reads whose rows can number one per ID and period; these stream instead of collecting. */
+const streamed: readonly Method[] = ["campaignCounts", "listCounts"];
+
 /** Child entry: one read in one snapshot; stdout is the response body, ready to serve. */
 export async function runAnalyticsChild(): Promise<void> {
   const request = JSON.parse(await Bun.stdin.text()) as {
@@ -28,14 +32,33 @@ export async function runAnalyticsChild(): Promise<void> {
     args: unknown[];
   };
   if (!methods.includes(request.method)) throw new Error("Unknown analytics read");
+  let out = "";
+  const flush = () => {
+    let bytes = Buffer.from(out);
+    while (bytes.length) bytes = bytes.subarray(writeSync(1, bytes));
+    out = "";
+  };
+  const emit = (text: string) => {
+    out += text;
+    if (out.length >= 65536) flush();
+  };
   const db = openReadOnly(request.path);
   try {
     const store = createAnalyticsStore(db);
     db.run("BEGIN");
     const read = store[request.method] as (...args: unknown[]) => unknown;
-    const body = await ok(read.apply(store, request.args)).text();
+    const result = read.apply(store, request.args);
+    if (streamed.includes(request.method)) {
+      emit(`{"data":[`);
+      let separator = "";
+      for (const row of result as Iterable<unknown>) {
+        emit(separator + JSON.stringify(row));
+        separator = ",";
+      }
+      emit("]}");
+    } else emit(await ok(result).text());
+    flush();
     db.run("COMMIT");
-    await Bun.write(Bun.stdout, body);
   } finally {
     db.close(true);
   }
@@ -43,7 +66,7 @@ export async function runAnalyticsChild(): Promise<void> {
 
 export class ReaderError extends Error {
   constructor(
-    readonly kind: "busy" | "timeout" | "failed",
+    readonly kind: "busy" | "timeout" | "limit" | "failed" | "cancelled" | "closed",
     message: string,
   ) {
     super(message);
@@ -57,8 +80,14 @@ export interface ReaderOptions {
   timeoutMs?: number;
   /** Children running at once; the rest wait their turn. */
   concurrency?: number;
+  /** Reads waiting for a child; any more are refused as busy at once. */
+  maxQueued?: number;
   /** How long a read waits for a free child before it is refused as busy. */
   admissionMs?: number;
+  /** Resident memory a child may use; as in the query runner, /proc is sampled. */
+  memoryBytes?: number;
+  /** Bytes of one response, which the server holds whole so it can never send a partial one. */
+  maxOutputBytes?: number;
   command?: string[];
 }
 
@@ -73,73 +102,130 @@ export function createAnalyticsReader(options: ReaderOptions) {
   const command = options.command ?? defaultCommand();
   const timeoutMs = options.timeoutMs ?? 30_000;
   const concurrency = options.concurrency ?? 2;
+  const maxQueued = options.maxQueued ?? 32;
   const admissionMs = options.admissionMs ?? 30_000;
-  const children = new Set<Bun.Subprocess>();
-  const waiting: (() => void)[] = [];
+  const memoryBytes = options.memoryBytes ?? 256 * 1024 * 1024;
+  const maxOutputBytes = options.maxOutputBytes ?? 32 * 1024 * 1024;
+  const busy = () => new ReaderError("busy", "too many analytics reads in progress");
+  const cancelled = () => new ReaderError("cancelled", "analytics read cancelled");
+  const closing = () => new ReaderError("closed", "analytics reader closed");
+  /** Each running child and how to stop it with a reason. */
+  const children = new Map<Bun.Subprocess, (error: ReaderError) => void>();
+  /** Queued reads in arrival order: called with nothing to admit, or with why not. */
+  const waiting = new Set<(error?: ReaderError) => void>();
   let active = 0;
+  let closed = false;
   const release = () => {
-    const next = waiting.shift();
+    const [next] = waiting;
     if (next) next();
     else active--;
   };
-  const acquire = async () => {
+  const acquire = (signal: AbortSignal | undefined) => {
+    if (closed) throw closing();
+    if (signal?.aborted) throw cancelled();
     if (active < concurrency) {
       active++;
       return;
     }
-    let timer: Timer | undefined;
-    const admitted = await new Promise<boolean>((resolve) => {
-      const wake = () => {
+    if (waiting.size >= maxQueued) throw busy();
+    return new Promise<void>((resolve, reject) => {
+      const settle = (error?: ReaderError) => {
+        waiting.delete(settle);
         clearTimeout(timer);
-        resolve(true);
+        signal?.removeEventListener("abort", abort);
+        if (error) reject(error);
+        else resolve();
       };
-      waiting.push(wake);
-      timer = setTimeout(() => {
-        waiting.splice(waiting.indexOf(wake), 1);
-        resolve(false);
-      }, admissionMs);
+      const abort = () => settle(cancelled());
+      const timer = setTimeout(() => settle(busy()), admissionMs);
+      signal?.addEventListener("abort", abort, { once: true });
+      waiting.add(settle);
     });
-    if (!admitted) throw new ReaderError("busy", "too many analytics reads in progress");
+  };
+  const run = async (request: string, signal: AbortSignal | undefined) => {
+    const child = Bun.spawn(command, {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+      env: { PATH: process.env.PATH ?? "" },
+    });
+    let stopped: ReaderError | undefined;
+    const stop = (error: ReaderError) => {
+      stopped ??= error;
+      child.kill("SIGKILL");
+    };
+    children.set(child, stop);
+    const abort = () => stop(cancelled());
+    signal?.addEventListener("abort", abort, { once: true });
+    const deadline = setTimeout(
+      () => stop(new ReaderError("timeout", "analytics read timed out")),
+      timeoutMs,
+    );
+    const pid = child.pid;
+    const tooLarge = () => new ReaderError("limit", "analytics result too large");
+    const watchdog = setInterval(() => {
+      try {
+        const pages = Number(readFileSync(`/proc/${pid}/statm`, "utf8").split(" ")[1]);
+        if (pages * 4096 > memoryBytes) stop(tooLarge());
+      } catch {
+        /* exited, or no /proc */
+      }
+    }, 20);
+    try {
+      try {
+        child.stdin.write(request);
+        await child.stdin.end();
+      } catch {
+        /* A child that exited early reports through its exit code. */
+      }
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for await (const chunk of child.stdout) {
+        size += chunk.length;
+        if (size > maxOutputBytes) {
+          stop(tooLarge());
+          break;
+        }
+        chunks.push(chunk);
+      }
+      const code = await child.exited;
+      if (stopped) throw stopped;
+      if (code !== 0) throw new ReaderError("failed", "analytics read failed");
+      return new Uint8Array(Bun.concatArrayBuffers(chunks));
+    } finally {
+      child.kill("SIGKILL");
+      clearTimeout(deadline);
+      clearInterval(watchdog);
+      signal?.removeEventListener("abort", abort);
+      await child.exited;
+      children.delete(child);
+    }
   };
   return {
-    /** The read's response body. The JSON stays text here, so a big result is never parsed. */
+    /**
+     * The read's response body. The JSON stays bytes here, so a big result is never parsed.
+     * The signal cancels it: a queued read leaves the queue and a running child is killed.
+     */
     async read<M extends Method>(
       method: M,
-      ...args: Parameters<AnalyticsStore[M]>
-    ): Promise<string> {
-      await acquire();
-      let timedOut = false;
+      args: Parameters<AnalyticsStore[M]>,
+      signal?: AbortSignal,
+    ): Promise<Uint8Array<ArrayBuffer>> {
+      await acquire(signal);
       try {
-        const child = Bun.spawn(command, {
-          stdin: "pipe",
-          stdout: "pipe",
-          stderr: "ignore",
-          env: { PATH: process.env.PATH ?? "" },
-        });
-        children.add(child);
-        const deadline = setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGKILL");
-        }, timeoutMs);
-        try {
-          child.stdin.write(JSON.stringify({ path: options.path, method, args }));
-          await child.stdin.end();
-          const [body, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-          if (timedOut) throw new ReaderError("timeout", "analytics read timed out");
-          if (code !== 0) throw new ReaderError("failed", "analytics read failed");
-          return body;
-        } finally {
-          clearTimeout(deadline);
-          children.delete(child);
-        }
+        if (closed) throw closing();
+        if (signal?.aborted) throw cancelled();
+        return await run(JSON.stringify({ path: options.path, method, args }), signal);
       } finally {
         release();
       }
     },
-    /** Kill running children, as at shutdown. */
+    /** Refuse new and queued reads, kill running children and wait for them to exit. */
     async close() {
-      for (const child of children) child.kill("SIGKILL");
-      await Promise.all([...children].map((child) => child.exited));
+      closed = true;
+      for (const settle of [...waiting]) settle(closing());
+      for (const stop of children.values()) stop(closing());
+      await Promise.all([...children.keys()].map((child) => child.exited));
     },
   };
 }

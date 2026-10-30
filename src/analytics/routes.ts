@@ -58,14 +58,23 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const invalidDates = (context: RequestContext) =>
     new HttpError(400, t(context).T("analytics.invalidDates"));
   /** A body the child already serialized, with the headers of ok(). */
-  const body = (text: string) =>
-    new Response(text, { headers: { "Content-Type": "application/json" } });
-  const served = async (context: RequestContext, read: () => Promise<string>) => {
+  const body = (bytes: Uint8Array<ArrayBuffer> | string) =>
+    new Response(bytes, { headers: { "Content-Type": "application/json" } });
+  const refused: Partial<Record<ReaderError["kind"], [number, string]>> = {
+    busy: [429, "Too many analytics reads in progress."],
+    limit: [422, "Analytics result too large. Narrow the range, the IDs or the interval."],
+    cancelled: [499, "Client closed the request."],
+    closed: [503, "The server is shutting down."],
+  };
+  const served = async (
+    context: RequestContext,
+    read: (signal: AbortSignal) => Promise<Uint8Array<ArrayBuffer> | string>,
+  ) => {
     try {
-      return body(await read());
+      return body(await read(context.request.signal));
     } catch (error) {
-      if (error instanceof ReaderError && error.kind === "busy")
-        throw new HttpError(429, "Too many analytics reads in progress.");
+      const answer = error instanceof ReaderError ? refused[error.kind] : undefined;
+      if (answer) throw new HttpError(...answer);
       context.app.logger.error(error);
       throw new HttpError(
         500,
@@ -140,8 +149,8 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
       const { individualTracking } = settings();
       const text = ids.map(String);
       if (type === "links")
-        return served(context, () =>
-          reader.read("links", resource, text, range, individualTracking),
+        return served(context, (signal) =>
+          reader.read("links", [resource, text, range, individualTracking], signal),
         );
 
       const params = context.url.searchParams;
@@ -155,13 +164,11 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
       if (!(resource === "list" ? listTypes : campaignTypes).includes(counted))
         throw invalidData(context);
       if (!intervals.includes(interval)) throw invalidData(context);
-      return served(context, () =>
+      return served(context, (signal) =>
         reader.read(
           resource === "list" ? "listCounts" : "campaignCounts",
-          counted as CountType,
-          text,
-          range,
-          interval as Interval,
+          [counted as CountType, text, range, interval as Interval],
+          signal,
         ),
       );
     };
@@ -169,8 +176,11 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const dashboard =
     (name: SummaryName, live: "dashboardCounts" | "dashboardCharts"): Handler =>
     (context) =>
-      served(context, async () =>
-        settings().cacheSlowQueries ? ok(await summaries.read(name)).text() : reader.read(live),
+      served(context, async (signal) =>
+        // A cached read may start the shared refresh, which outlives one client.
+        settings().cacheSlowQueries
+          ? ok(await summaries.read(name)).text()
+          : reader.read(live, [], signal),
       );
 
   /** getDashboardCampaigns: scheduled ones on top, the bodies stripped. */
@@ -204,7 +214,7 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
     const range = parseRange(context);
     const group = context.url.searchParams.get("group_by") ?? "template";
     if (group !== "template" && group !== "step") throw invalidData(context);
-    return served(context, () => reader.read("sends", group, range));
+    return served(context, (signal) => reader.read("sends", [group, range], signal));
   };
 
   router.route(
