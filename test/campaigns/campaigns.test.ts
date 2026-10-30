@@ -336,3 +336,66 @@ test("the campaign redirect follows only links that campaign's content registere
   expect((await f.json(`/api/campaigns/${own.id}`)).body.data.clicks).toBe(1);
   expect((await f.json(`/api/campaigns/${other.id}`)).body.data.clicks).toBe(0);
 });
+
+test("all parts of a test message share one render budget", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  await f.subscriber("ada@example.test", [news]);
+  const c = await f.campaign({ name: "c", subject: "s", lists: [news] });
+  // Each 512 KiB header alone fits a fresh budget; ten together exceed one message budget.
+  const header = `{% for i in (1..512) %}${"x".repeat(1024)}{% endfor %}`;
+  const sent = await f.json(`/api/campaigns/${c.id}/test`, "POST", {
+    name: "c",
+    subject: "s",
+    lists: [news],
+    messenger: "email",
+    content_type: "html",
+    body: "<p>hi</p>",
+    headers: Array.from({ length: 10 }, (_, i) => ({ [`X-Big-${i}`]: header })),
+    subscribers: ["ada@example.test"],
+  });
+  expect(sent.status).toBe(500);
+  expect(sent.body.message).toBe("Error sending test: invalid template");
+  await Bun.sleep(100);
+  expect(f.sink.messages).toHaveLength(0);
+});
+
+test("a test send has an aggregate size limit across recipients and sends nothing past it", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const emails = Array.from({ length: 40 }, (_, i) => `r${i}@example.test`);
+  for (const email of emails) await f.subscriber(email, [news]);
+  const c = await f.campaign({ name: "c", subject: "s", lists: [news] });
+  const send = (to: string[]) =>
+    f.json(`/api/campaigns/${c.id}/test`, "POST", {
+      name: "c",
+      subject: "s",
+      lists: [news],
+      messenger: "email",
+      content_type: "html",
+      body: `{% for i in (1..900) %}${"x".repeat(1024)}{% endfor %}`,
+      subscribers: to,
+    });
+  // About 900 KiB fits one message's budget; forty messages exceed the request's 32 MiB.
+  const tooLarge = await send(emails);
+  expect(tooLarge.status).toBe(400);
+  expect(tooLarge.body.message).toBe(
+    "The test send is too large: send it to fewer recipients or reduce the rendered size.",
+  );
+  await Bun.sleep(100);
+  expect(f.sink.messages).toHaveLength(0);
+  expect((await send(emails.slice(0, 2))).status).toBe(200);
+  expect(await f.mail(2)).toHaveLength(2);
+});
+
+test("custom header values are limited in number", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const headers = (n: number) => Array.from({ length: n }, (_, i) => ({ [`X-H-${i}`]: "v" }));
+  const create = (name: string, value: object[]) =>
+    f.json("/api/campaigns", "POST", { name, subject: "s", lists: [news], headers: value });
+  expect((await create("ok", headers(32))).status).toBe(200);
+  const many = await create("many", [{ "X-A": "v", "X-B": "v" }, ...headers(31)]);
+  expect(many.status).toBe(400);
+  expect(many.body.message).toBe("Invalid fields: headers");
+});

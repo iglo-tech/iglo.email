@@ -15,6 +15,8 @@ import {
 
 const LIMIT = 2 * 1024 * 1024;
 const TEXT_LIMIT = 1024 * 1024;
+/** Custom header values across all header sets. */
+const MAX_HEADERS = 32;
 export interface CampaignRequest {
   type?: string;
   name?: string;
@@ -187,6 +189,9 @@ export function validateCampaign(c: WritableCampaign, listIds: bigint[], p: Fiel
   }
   for (const field of [value.body, value.altbody ?? "", value.body_source ?? ""])
     if (field.includes("\0")) invalid(t, "body");
+  // Every header value is a template rendered per recipient; bound how many there are.
+  if (value.headers.reduce((n, set) => n + Object.keys(set).length, 0) > MAX_HEADERS)
+    invalid(t, "headers");
   for (const set of value.headers)
     for (const [name, header] of Object.entries(set))
       if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,256}$/.test(name) || /[\r\n\0]/.test(header))

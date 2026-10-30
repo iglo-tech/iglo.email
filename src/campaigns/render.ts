@@ -3,7 +3,12 @@
 // 6fcd95f, on the M1.8 Liquid renderer (docs/design/06-templates.md).
 import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
-import type { RenderTracking, TemplateRenderer } from "@/templates/renderer";
+import {
+  createMessageBudget,
+  type MessageBudget,
+  type RenderTracking,
+  type TemplateRenderer,
+} from "@/templates/renderer";
 
 export const dummyUUID = "00000000-0000-0000-0000-000000000000";
 /** listmonk's preview subscriber (cmd/subscribers.go dummySubscriber). */
@@ -81,7 +86,12 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
     Object.fromEntries(Object.entries(set).map(([k, v]) => [k, text("header", v)])),
   );
   return {
-    render(sub: CampaignSubscriber, links: MessageLinks): CampaignMessage {
+    /** Every part of the message shares one budget; the caller may read its usage. */
+    render(
+      sub: CampaignSubscriber,
+      links: MessageLinks,
+      budget = createMessageBudget(),
+    ): CampaignMessage {
       const data = JSON.stringify({
         subscriber: {
           uuid: sub.uuid,
@@ -100,9 +110,9 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
         message_url: "",
         archive_url: "",
       });
-      const out = main.renderSync(data, links.tracking);
+      const out = main.renderSync(data, links.tracking, budget);
       const plain = (tpl: ReturnType<TemplateRenderer["compile"]> | null, raw: string) =>
-        tpl ? tpl.renderSync(data).body : raw;
+        tpl ? tpl.renderSync(data, undefined, budget).body : raw;
       return {
         subject: out.subject,
         from: plain(from, c.from_email),

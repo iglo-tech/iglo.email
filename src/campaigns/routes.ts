@@ -11,7 +11,7 @@ import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { TemplateRenderer } from "@/templates/renderer";
-import { RenderCapacityError } from "@/templates/renderer";
+import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
 import type { TemplateStore } from "@/templates/store";
 import type { Tracking } from "@/unsubscribe/tracking";
 import type { Authentication } from "@/users/auth";
@@ -611,6 +611,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     return ok(true);
   };
   let testing = 0;
+  /** Aggregate bounds for one test-send request, checked before a message is retained. */
+  const TEST_SEND_BYTES = 32 * 1024 * 1024;
+  const TEST_SEND_WORK = 1_000_000;
   const test: Handler = async (context) => {
     const id = BigInt(getID(context));
     checkCampaign(context, true, id);
@@ -673,34 +676,52 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       }
       const messages: Message[] = [];
       const links = new Map<string, string | null>();
+      let totalBytes = 0;
+      let totalWork = 0;
       for (const sub of recipients) {
+        const budget = createMessageBudget();
         const unsubscribeUrl = `${root}/subscription/${stored.uuid}/${sub.uuid}`;
         const trackedUuid = settings.individualTracking ? sub.uuid : dummyUUID;
         let out;
         try {
-          out = compiled.render(subscriberContext(sub), {
-            unsubscribeUrl,
-            ...(settings.disableTracking
-              ? {}
-              : {
-                  tracking: {
-                    view: `${root}/campaign/${stored.uuid}/${trackedUuid}/px.png`,
-                    link(url: string) {
-                      let uuid = links.get(url);
-                      if (uuid === undefined) {
-                        uuid = deps.tracking.link(url);
-                        const link = uuid === null ? null : deps.tracking.get(uuid);
-                        if (link) deps.store.registerLink(stored.id, link.id);
-                        links.set(url, uuid);
-                      }
-                      return uuid ? `${root}/link/${uuid}/${stored.uuid}/${trackedUuid}` : url;
+          out = compiled.render(
+            subscriberContext(sub),
+            {
+              unsubscribeUrl,
+              ...(settings.disableTracking
+                ? {}
+                : {
+                    tracking: {
+                      view: `${root}/campaign/${stored.uuid}/${trackedUuid}/px.png`,
+                      link(url: string) {
+                        let uuid = links.get(url);
+                        if (uuid === undefined) {
+                          uuid = deps.tracking.link(url);
+                          const link = uuid === null ? null : deps.tracking.get(uuid);
+                          if (link) deps.store.registerLink(stored.id, link.id);
+                          links.set(url, uuid);
+                        }
+                        return uuid ? `${root}/link/${uuid}/${stored.uuid}/${trackedUuid}` : url;
+                      },
                     },
-                  },
-                }),
-          });
+                  }),
+            },
+            budget,
+          );
         } catch (error) {
           return sendError(error);
         }
+        const size = (value: string) => Buffer.byteLength(value);
+        totalWork += budget.work;
+        totalBytes += size(out.body) + size(out.altBody ?? "") + size(out.subject) + size(out.from);
+        for (const set of out.headers)
+          for (const [name, header] of Object.entries(set)) totalBytes += size(name) + size(header);
+        // Nothing is queued until every message is rendered, so a refusal sends nothing.
+        if (totalBytes > TEST_SEND_BYTES || totalWork > TEST_SEND_WORK)
+          throw new HttpError(
+            400,
+            "The test send is too large: send it to fewer recipients or reduce the rendered size.",
+          );
         const headers: Record<string, string | string[]> = {
           "X-Listmonk-Campaign": stored.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
