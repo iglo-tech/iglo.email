@@ -3,11 +3,13 @@
 // refresh loop and how reader failures surface. test/contract/analytics.ts covers the rest
 // against both the reference and the compiled executable.
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createAnalyticsReader, ReaderError } from "@/analytics/reader";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { dueBetween } from "@/analytics/schedule";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
-import { createRouter } from "@/server/server";
+import { createRouter, startServer } from "@/server/server";
 import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
 
 const DAY = 86_400_000;
@@ -393,4 +395,372 @@ test("the cron interval follows the settings' spec forms", () => {
   expect(due("TZ=UTC 0 3 L-3 * *", "2026-01-01T02:59:00Z", "2026-01-01T03:00:00Z")).toBe(true);
   expect(due("TZ=UTC 0 3 * * WED", "2026-01-06T02:59:00Z", "2026-01-07T03:00:00Z")).toBe(true);
   expect(due("TZ=UTC 0 3 * JUL *", "2026-01-01T02:59:00Z", "2026-01-01T03:00:00Z")).toBe(false);
+});
+
+const ended = (done: Promise<void>) =>
+  Promise.race([
+    done.then(
+      () => "ended",
+      () => "ended",
+    ),
+    Bun.sleep(50).then(() => "running"),
+  ]);
+
+/** The refresh loop with the cached dashboard behind it, driven by the fake clock. */
+function refreshing(interval: string) {
+  options.cacheSlowQueries = true;
+  const logged: unknown[] = [];
+  const settings = { enabled: true, interval };
+  const loop = startSummaryRefresh({
+    db: f.db,
+    clock: f.clock,
+    logger: { error: (error) => logged.push(error) },
+    summaries,
+    settings: () => settings,
+  });
+  return {
+    logged,
+    settings,
+    loop,
+    /** Let the loop reach its sleep, move the clock, and wait for what that woke to finish. */
+    async tick(ms: number) {
+      const settled = () =>
+        Promise.race([f.clock.whenSleeping(), loop.done.catch(() => {}), Bun.sleep(2_000)]);
+      await settled();
+      f.clock.advance(ms);
+      await Bun.sleep(1);
+      await settled();
+    },
+    lists: async () => (await data("/api/dashboard/counts")).lists.total as number,
+    async stop() {
+      f.clock.advance(60_000);
+      await loop.stop();
+    },
+  };
+}
+
+test("TZ=Local fires in the system zone and keeps the server running", async () => {
+  const minute = new Date(f.clock.now().getTime() + 60_000);
+  const spec = `TZ=Local ${minute.getMinutes()} ${minute.getHours()} * * *`;
+  const refresh = refreshing(spec);
+  try {
+    await refresh.tick(0);
+    await f.list("one");
+    await refresh.tick(60_000);
+    expect(await ended(refresh.loop.done)).toBe("running");
+    expect(await refresh.lists()).toBe(1);
+    expect(refresh.logged).toEqual([]);
+    expect(await ended(refresh.loop.done)).toBe("running");
+  } finally {
+    await refresh.stop();
+  }
+});
+
+test("a schedule that cannot be evaluated is logged once and keeps the last snapshot", async () => {
+  const refresh = refreshing("TZ=UTC 0 3 * * *");
+  try {
+    await refresh.tick(0);
+    expect(await refresh.lists()).toBe(0);
+    await f.list("one");
+    refresh.settings.interval = "TZ=Mars/Base 0 3 * * *";
+    await refresh.tick(60_000);
+    await refresh.tick(60_000);
+    expect(await ended(refresh.loop.done)).toBe("running");
+    expect(refresh.logged).toHaveLength(1);
+    expect(await refresh.lists()).toBe(0);
+    // A corrected setting takes effect at the next check.
+    refresh.settings.interval = "@every 1m";
+    await refresh.tick(60_000);
+    await refresh.tick(60_000);
+    expect(await refresh.lists()).toBe(1);
+  } finally {
+    await refresh.stop();
+  }
+});
+
+test("every zone the settings accept can be evaluated", () => {
+  const due = (zone: string) =>
+    dueBetween(
+      `TZ=${zone} 0 3 * * *`,
+      new Date("2026-01-01T02:59:00Z"),
+      new Date("2026-01-01T03:00:00Z"),
+    );
+  expect(due("Factory")).toBe(true);
+  const system = process.env.TZ;
+  process.env.TZ = "Asia/Tokyo";
+  try {
+    // An empty location is UTC to Go's time.LoadLocation, not the system zone.
+    expect(due("")).toBe(true);
+  } finally {
+    process.env.TZ = system;
+  }
+});
+
+test("@every shorter than a minute refreshes on time", async () => {
+  const refresh = refreshing("@every 5s");
+  try {
+    await refresh.tick(0);
+    expect(await refresh.lists()).toBe(0);
+    await f.list("one");
+    await refresh.tick(4_999);
+    expect(await refresh.lists()).toBe(0);
+    await refresh.tick(1);
+    expect(await refresh.lists()).toBe(1);
+  } finally {
+    await refresh.stop();
+  }
+});
+
+test("@every counts from when scheduling starts, not from multiples of the duration", async () => {
+  const refresh = refreshing("@every 1h"); // Starts at 03:04:05.
+  try {
+    await refresh.tick(0);
+    await f.list("one");
+    await refresh.tick(56 * 60_000); // 04:00:05 is a multiple of an hour's start, not a period.
+    expect(await refresh.lists()).toBe(0);
+    await refresh.tick(4 * 60_000); // 04:04:05.
+    expect(await refresh.lists()).toBe(1);
+  } finally {
+    await refresh.stop();
+  }
+});
+
+test("a send counts on the day it was delivered, not the day it was queued", async () => {
+  const { id: template } = f.db
+    .query(
+      "INSERT INTO templates (name, type, subject, body) VALUES ('t', 'tx', 's', 'b') RETURNING id",
+    )
+    .get() as { id: bigint };
+  const { id: sequence } = f.db
+    .query(
+      `INSERT INTO sequences (uuid, name, trigger) VALUES ('q', 'Q', '{"event":"x"}') RETURNING id`,
+    )
+    .get() as { id: bigint };
+  const { id: step } = f.db
+    .query(
+      "INSERT INTO sequence_steps (uuid, sequence_id, position, wait, kind) VALUES ('st', ?, 1, 'PT0S', 'marketing') RETURNING id",
+    )
+    .get(sequence) as { id: bigint };
+  f.db
+    .query(
+      "INSERT INTO sends (uuid, source, kind, to_email, template_id, step_id, status, created_at, sent_at) VALUES ('s', 'sequence', 'transactional', 'a@example.test', ?, ?, 'sent', '2026-01-01T23:59:00.000Z', '2026-01-02T00:01:00.000Z')",
+    )
+    .run(template, step);
+  const sends = async (from: string, to: string, group: string) =>
+    ((await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as {
+      sends: number;
+    }[]).map((row) => row.sends);
+  for (const group of ["template", "step"]) {
+    expect(await sends("2026-01-02", "2026-01-03", group)).toEqual([1]);
+    expect(await sends("2026-01-01", "2026-01-01T23:59:59Z", group)).toEqual([]);
+  }
+});
+
+test("rows arrive by period and then owner when days of a week merge", async () => {
+  const first = await f.list("first");
+  const second = await f.list("second");
+  const ada = await f.subscriber("ada@example.test", [first, second]);
+  const a = await f.campaign({ name: "a", subject: "s", lists: [first] });
+  const b = await f.campaign({ name: "b", subject: "s", lists: [second] });
+  f.clock.advance(3 * DAY); // Monday 2026-01-05.
+  await view(b, ada);
+  f.clock.advance(DAY);
+  await view(a, ada);
+  await view(b, ada);
+  await relogin();
+  const week = (id: number, count: number) => ({
+    list_id: id,
+    campaign_id: 0,
+    count,
+    timestamp: "2026-01-05T00:00:00Z",
+  });
+  expect(
+    await data(`/api/lists/analytics/views?id=${second}&id=${first}&${wide}&interval=week`),
+  ).toEqual([week(first, 1), week(second, 2)]);
+});
+
+/** A child that records its PID and then waits, so a test can see which ones really ran. */
+const recorded = () => {
+  const file = join(f.db.filename.replace(/[^/]*$/, ""), `pids-${crypto.randomUUID()}`);
+  return {
+    command: ["sh", "-c", `echo $$ >> ${file}; exec sleep 30`],
+    pids: () =>
+      existsSync(file)
+        ? readFileSync(file, "utf8").split("\n").filter(Boolean).map(Number)
+        : [],
+  };
+};
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const until = async (condition: () => boolean) => {
+  for (let i = 0; i < 400 && !condition(); i++) await Bun.sleep(5);
+  expect(condition()).toBe(true);
+};
+const kinds = async (reads: Promise<unknown>[]) =>
+  (await Promise.allSettled(reads)).map((result) =>
+    result.status === "rejected" ? (result.reason as ReaderError).kind : "read",
+  );
+
+test("closing stops admission, refuses queued reads and awaits every child", async () => {
+  const child = recorded();
+  const owned = createAnalyticsReader({
+    path: "x",
+    command: child.command,
+    concurrency: 1,
+    timeoutMs: 300,
+  });
+  const running = owned.read("dashboardCounts", []);
+  const queued = owned.read("dashboardCounts", []);
+  await until(() => child.pids().length === 1);
+  await owned.close();
+  expect(child.pids().filter(alive)).toEqual([]);
+  expect(await kinds([running, queued, owned.read("dashboardCounts", [])])).toEqual([
+    "closed",
+    "closed",
+    "closed",
+  ]);
+  await Bun.sleep(350);
+  expect(child.pids()).toHaveLength(1);
+});
+
+test("cancelling kills a running read and removes a queued one", async () => {
+  const child = recorded();
+  const owned = createAnalyticsReader({
+    path: "x",
+    command: child.command,
+    concurrency: 1,
+    timeoutMs: 300,
+  });
+  const client = new AbortController();
+  const other = new AbortController();
+  const running = owned.read("dashboardCounts", [], client.signal);
+  const queued = owned.read("dashboardCounts", [], other.signal);
+  await until(() => child.pids().length === 1);
+  other.abort();
+  expect(await kinds([queued])).toEqual(["cancelled"]);
+  expect(child.pids().filter(alive)).toHaveLength(1);
+  client.abort();
+  expect(await kinds([running])).toEqual(["cancelled"]);
+  expect(child.pids().filter(alive)).toEqual([]);
+  await expect(owned.read("dashboardCounts", [], client.signal)).rejects.toMatchObject({
+    kind: "cancelled",
+  });
+  await owned.close();
+});
+
+test("a client that disconnects takes its read with it", async () => {
+  const child = recorded();
+  const owned = createAnalyticsReader({ path: "x", command: child.command, timeoutMs: 2_000 });
+  const router = createRouter();
+  registerAnalyticsRoutes(router, {
+    reader: owned,
+    summaries,
+    campaigns: f.owners.store,
+    roles: f.owners.roles,
+    auth: f.owners.auth,
+    settings: () => ({ individualTracking: false, cacheSlowQueries: false }),
+  });
+  const server = startServer(f.app, router);
+  try {
+    const client = new AbortController();
+    const response = fetch(`http://127.0.0.1:${server.port}/api/dashboard/counts`, {
+      headers: f.sessionHeaders,
+      signal: client.signal,
+    }).catch(() => null);
+    await until(() => child.pids().length === 1);
+    client.abort();
+    await response;
+    await until(() => child.pids().filter(alive).length === 0);
+    await Bun.sleep(20);
+    expect(f.errors).toEqual([]);
+  } finally {
+    await server.stop(true);
+    await owned.close();
+  }
+});
+
+test("output over the cap is refused whole and the child is killed", async () => {
+  const big = createAnalyticsReader({
+    path: "x",
+    command: ["sh", "-c", "head -c 100000 /dev/zero; exec sleep 30"],
+    maxOutputBytes: 1_000,
+    timeoutMs: 300,
+  });
+  await expect(big.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "limit" });
+  await big.close();
+
+  const exact = createAnalyticsReader({
+    path: "x",
+    command: ["sh", "-c", "printf 0123456789"],
+    maxOutputBytes: 10,
+  });
+  expect(new TextDecoder().decode(await exact.read("dashboardCounts", []))).toBe("0123456789");
+  await exact.close();
+});
+
+test("a child above the memory limit is killed", async () => {
+  const hungry = createAnalyticsReader({
+    path: "x",
+    command: [
+      process.execPath,
+      "-e",
+      "const b = Buffer.alloc(120 * 1048576, 1); await Bun.sleep(30000); console.log(b.length)",
+    ],
+    memoryBytes: 80 * 1048576,
+    timeoutMs: 3_000,
+  });
+  await expect(hungry.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "limit" });
+  await hungry.close();
+});
+
+test("a queue past its bound is refused at once, without touching queued reads", async () => {
+  const child = recorded();
+  const owned = createAnalyticsReader({
+    path: "x",
+    command: child.command,
+    concurrency: 1,
+    maxQueued: 1,
+    admissionMs: 300,
+    timeoutMs: 400,
+  });
+  const running = owned.read("dashboardCounts", []);
+  let settled = false;
+  const queued = owned.read("dashboardCounts", []).finally(() => (settled = true));
+  await expect(owned.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "busy" });
+  expect(settled).toBe(false);
+  await Promise.allSettled([running, queued]);
+  await owned.close();
+});
+
+test("a read over a limit is a clean error, never a partial body", async () => {
+  const big = createAnalyticsReader({
+    path: "x",
+    command: ["sh", "-c", `printf '{"data":['; head -c 100000 /dev/zero | tr '\\0' 1`],
+    maxOutputBytes: 1_000,
+  });
+  const router = createRouter();
+  registerAnalyticsRoutes(router, {
+    reader: big,
+    summaries,
+    campaigns: f.owners.store,
+    roles: f.owners.roles,
+    auth: f.owners.auth,
+    settings: () => ({ individualTracking: false, cacheSlowQueries: false }),
+  });
+  const response = await router.handle(
+    f.app,
+    new Request("http://fixture.test/api/dashboard/counts", { headers: f.sessionHeaders }),
+  );
+  expect(response.status).toBe(422);
+  expect((await response.json()) as { message: string }).toMatchObject({
+    message: expect.stringContaining("too large"),
+  });
+  expect(f.errors).toEqual([]);
+  await big.close();
 });
