@@ -35,6 +35,7 @@ function Fields({ t }: { t: Translation }) {
         <label for="sub-status">{t.T("globals.fields.status")}</label>
         <select name="status" id="sub-status" required x-model="form.status">
           <option value="enabled">{t.T("globals.terms.enabled")}</option>
+          <option value="disabled">{t.T("globals.terms.disabled")}</option>
           <option value="blocklisted">{t.T("globals.terms.blocklisted")}</option>
         </select>
         <small data-hint="">{t.T("subscribers.blocklistedHelp")}</small>
