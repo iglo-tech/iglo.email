@@ -4,14 +4,15 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M2.5 public pages, [PR #33](https://github.com/iglo-tech/iglo.email/pull/33), head 2c5618d. Round-1 fixes pushed (migration 9, trusted proxies D60); Sol round-2 fix-only review running.
-Next: lead disposition of round 2, merge. Then M2.6 webhooks, M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
+M2.6 outbound webhooks, branch task/M2.6-webhooks, [brief](briefs/M2.6.md). One Opus medium worker dispatched; no reviewer active.
+Next: on worker handback, Sol xhigh round 1, lead disposition, merge. Then M3.3 analytics, M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
 
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one Sol xhigh reviewer; lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
+[D60](design/09-decisions.md#d60) (agents, for owner review): `security.trusted_proxies` for client addresses behind a reverse proxy, default empty.
 [D59](design/09-decisions.md#d59-campaign-pacing-sleeps-only-the-rest-of-the-second) (agents, for owner review): campaign workers pace with a rolling one-second window per worker.
 [D58](design/09-decisions.md#d58-stage-marketing-transactional-sends-until-m24) (agents, for owner review): tx marketing sends are journaled as skipped until M2.4.
 
