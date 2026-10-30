@@ -60,7 +60,7 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { startCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import { registerArchiveRoutes } from "@/public/archive";
-import { createSubscriberMail, type SubscriberMail } from "@/public/mail";
+import { createSubscriberMail, startSignupMail, type SubscriberMail } from "@/public/mail";
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings } from "@/public/settings";
@@ -104,6 +104,7 @@ async function main(): Promise<void> {
   let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
   let runner: ReturnType<typeof startCampaignRunner> | undefined;
   let mail: SubscriberMail | undefined;
+  let signups: ReturnType<typeof startSignupMail> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -349,6 +350,7 @@ async function main(): Promise<void> {
       logger: app.logger,
       settings: pages,
     });
+    signups = startSignupMail({ db, clock, logger: app.logger, mail });
     registerPublicRoutes(router, {
       db,
       lists,
@@ -410,6 +412,7 @@ async function main(): Promise<void> {
         const schedulerStop = scheduler!.stop();
         const outboxStop = outbox!.stop();
         const retentionStop = retention!.stop();
+        const signupStop = signups!.stop();
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
         Promise.allSettled([
@@ -417,6 +420,7 @@ async function main(): Promise<void> {
           schedulerStop,
           outboxStop,
           retentionStop,
+          signupStop,
           messagingClose,
           httpStop,
         ]).then((results) => {
@@ -436,6 +440,7 @@ async function main(): Promise<void> {
       process.once("SIGTERM", onSignal);
       process.once("SIGINT", onSignal);
       void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
+      void signups!.done.catch(() => shutdown(new Error("Opt-in mail failed")));
       void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
       void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
@@ -446,6 +451,7 @@ async function main(): Promise<void> {
     const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
     const purging = retention?.stop();
+    const signing = signups?.stop();
     // A decision awaiting a condition finishes before the runner and connections close.
     await scheduling?.catch(() => {});
     const closing = emailer?.close();
@@ -455,6 +461,7 @@ async function main(): Promise<void> {
     conditions?.close();
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
+    await signing?.catch(() => {});
     sequences?.close();
     recipients?.close();
     runnerStore?.close();

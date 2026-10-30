@@ -132,6 +132,51 @@ test("one address gets one opt-in mail per window, however many lists it joins",
   expect(f.mailTo(address)).toHaveLength(2);
 });
 
+test("every subscriber state answers alike and mail is prepared after the response", async () => {
+  const f = await open();
+  const list = await f.list("Double", "public", "double");
+  await f.subscriber("confirmed@example.test", "Confirmed", {
+    lists: [list.id],
+    preconfirm_subscriptions: true,
+  });
+  await f.subscriber("pending@example.test", "Pending", { lists: [list.id] });
+  const blocked = await f.subscriber("blocked@example.test");
+  await f.json(`/api/subscribers/${blocked}/blocklist`, "PUT");
+  await f.drain();
+  const before = f.count();
+  const answers = [];
+  for (const email of [
+    "fresh@example.test",
+    "pending@example.test",
+    "confirmed@example.test",
+    "blocked@example.test",
+  ]) {
+    const response = await api(f, email, list.uuid);
+    answers.push(await response.text());
+    // Nothing state-dependent ran before the answer: no state has a send yet.
+    expect(f.count()).toBe(before);
+  }
+  expect(new Set(answers).size).toBe(1);
+  expect(f.mail.queued()).toBe(4);
+  await f.drain();
+  expect(f.mail.queued()).toBe(0);
+  expect(f.mailTo("fresh@example.test")).toHaveLength(1);
+  expect(f.mailTo("pending@example.test")).toHaveLength(1);
+  expect(f.mailTo("confirmed@example.test")).toHaveLength(0);
+  expect(f.mailTo("blocked@example.test")).toHaveLength(0);
+});
+
+test("the opt-in queue is bounded and a wipe beats a queued signup", async () => {
+  const f = await open();
+  const list = await f.list("Double", "public", "double");
+  await api(f, "gone@example.test", list.uuid);
+  await f.fresh(`/subscription/wipe/${f.owners.subscribers.byEmail("gone@example.test")!.uuid}`);
+  await f.drain();
+  expect(f.mailTo("gone@example.test")).toHaveLength(0);
+  for (let id = 1n; id <= 6000n; id++) f.mail.acceptSignup(id);
+  expect(f.mail.queued()).toBe(5000);
+});
+
 test("a full opt-in budget refuses new keys instead of mailing unrecorded", () => {
   const clock = new TestClock();
   const allow = createThrottle(clock, 10 * minute, 2);

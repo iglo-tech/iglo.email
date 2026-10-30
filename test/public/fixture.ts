@@ -4,7 +4,7 @@ import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createEventStore } from "@/events/store";
 import { registerArchiveRoutes } from "@/public/archive";
-import { createSubscriberMail } from "@/public/mail";
+import { createSubscriberMail, startSignupMail } from "@/public/mail";
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings, type PublicSettings } from "@/public/settings";
@@ -58,6 +58,7 @@ export async function publicFixture() {
     logger: f.app.logger,
     settings,
   });
+  const signups = startSignupMail({ db: f.db, clock: f.clock, logger: f.app.logger, mail });
   const limit = (limit: number) =>
     rateLimited(f.clock, { limit, windowMs: 60_000, maxPeers: 100 }, () => "Fixture");
   registerPublicRoutes(router, {
@@ -93,6 +94,7 @@ export async function publicFixture() {
     settings,
     overrides,
     campaigns,
+    mail,
     calls,
     failEffects: (value: boolean) => {
       failEffect = value;
@@ -113,12 +115,13 @@ export async function publicFixture() {
     mailTo: (address: string) => f.sink.messages.filter((m) => m.to.includes(address)),
     async drain() {
       // The outbox also polls on the clock; a wake during its previous batch waits for that.
-      for (let i = 0; i < 200 && (await pending(f)); i++) {
+      for (let i = 0; i < 200 && (mail.queued() > 0 || (await pending(f))); i++) {
         f.clock.advance(1000);
         await Bun.sleep(5);
       }
     },
     async close() {
+      await signups.stop();
       campaigns.close();
       events.close();
       store.close();

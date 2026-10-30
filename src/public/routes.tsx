@@ -130,7 +130,8 @@ export function registerPublicRoutes(
         lists.map((list) => list.id),
       ),
     );
-    deps.mail.afterPublicSignup(row);
+    // Every subscriber state takes this path; the conditional mail work runs later.
+    deps.mail.acceptSignup(row.id);
     return settings.sendOptin && lists.some((list) => list.optin === "double");
   }
 

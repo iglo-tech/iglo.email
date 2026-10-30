@@ -2,12 +2,15 @@
 // exportSubscriberData), cmd/public.go (SelfExportSubscriberData) and
 // internal/core/subscribers.go (sendOptinConfirmation) at 6fcd95f. Both mails are
 // transactional outbox sends enqueued after the subscriber write commits, never SMTP calls.
+// Public signup mail runs in a background step so a response never reveals subscriber state.
+import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import { dummyUUID, nameChunk } from "@/campaigns/render";
 import type { CampaignStore } from "@/campaigns/store";
 import type { Clock } from "@/clock";
 import type { EventRow } from "@/events/store";
 import type { Translation } from "@/i18n/i18n";
+import { startLoop } from "@/loops/loop";
 import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
 import { createThrottle } from "@/public/rate-limit";
@@ -21,6 +24,10 @@ type Subscriber = NonNullable<ReturnType<SubscriberStore["get"]>>;
 /** One opt-in mail per address in this window, whichever lists are pending. */
 const optinThrottleTTL = 10 * 60_000;
 const optinThrottleCap = 5000;
+/** Accepted signups awaiting the background step; past it they get no mail until a new signup. */
+const signupQueueCap = 5000;
+const signupBatch = 20;
+const signupIntervalMs = 1000;
 /** Native export sections stay well inside the outbox attachment limit. */
 const exportRows = 1000;
 const exportEventBytes = 2 * 1024 * 1024;
@@ -39,6 +46,8 @@ export function createSubscriberMail(deps: {
 }) {
   const t = deps.i18n;
   const throttle = createThrottle(deps.clock, optinThrottleTTL, optinThrottleCap);
+  const signups = new Set<bigint>();
+  let overflowed = false;
   const enqueue = (
     sub: Subscriber,
     settings: PublicSettings,
@@ -117,11 +126,28 @@ export function createSubscriberMail(deps: {
     afterAdminWrite(sub: Subscriber, listIds: bigint[]) {
       if (deps.settings().sendOptin) quietly(() => optin(sub, listIds));
     },
+    /** Record a committed public signup, whatever its subscriber's state. */
+    acceptSignup(id: bigint) {
+      if (signups.size < signupQueueCap) {
+        signups.add(id);
+        overflowed = false;
+      } else if (!overflowed) {
+        overflowed = true;
+        deps.logger.error(new Error("Opt-in mail queue is full"));
+      }
+    },
+    queued: () => signups.size,
+    takeSignups(limit: number): bigint[] {
+      const taken = [...signups.values().take(limit)];
+      for (const id of taken) signups.delete(id);
+      return taken;
+    },
     /** sendOptinConfirmation for public signups: one mail per address in the window. */
-    afterPublicSignup(sub: Subscriber) {
-      if (!deps.settings().sendOptin) return;
+    prepareSignup(id: bigint) {
+      const sub = deps.subscribers.get(id);
+      if (!sub || !deps.settings().sendOptin) return;
       const pending = deps.subscribers
-        .unconfirmedLists(sub.id)
+        .unconfirmedLists(id)
         .filter((list) => list.optin === "double")
         .map((list) => list.id);
       if (!pending.length) return;
@@ -188,6 +214,49 @@ export function createSubscriberMail(deps: {
   };
 }
 export type SubscriberMail = ReturnType<typeof createSubscriberMail>;
+
+/**
+ * Prepares opt-in mail on its own interval, never woken by a request, so its work is not tied
+ * to any response. The queue is in memory: the committed `unconfirmed` membership is the
+ * durable record, and a lost mail is recovered by signing up again.
+ */
+export function startSignupMail(deps: {
+  db: Database;
+  clock: Clock;
+  logger: ErrorLogger;
+  mail: SubscriberMail;
+}) {
+  const prepare = (ids: bigint[]) => {
+    for (const id of ids) {
+      try {
+        deps.mail.prepareSignup(id);
+      } catch (error) {
+        deps.logger.error(error);
+      }
+    }
+  };
+  const loop = startLoop({
+    db: deps.db,
+    clock: deps.clock,
+    logger: { error: () => deps.logger.error(new Error("Opt-in mail failed")) },
+    intervalMs: signupIntervalMs,
+    leaseMs: signupIntervalMs,
+    batchSize: 1,
+    // One loop item is a batch, so a stop cannot drop claimed signups.
+    claim: () => {
+      const ids = deps.mail.takeSignups(signupBatch);
+      return ids.length ? [ids] : [];
+    },
+    process: prepare,
+  });
+  return {
+    done: loop.done,
+    async stop() {
+      await loop.stop();
+      prepare(deps.mail.takeSignups(signupBatch));
+    },
+  };
+}
 
 function boundedEvents(rows: EventRow[]) {
   let bytes = 0;
