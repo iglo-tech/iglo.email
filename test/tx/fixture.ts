@@ -12,7 +12,7 @@ import { registerListRoutes } from "@/lists/routes";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
-import { createSubscriberStore } from "@/subscribers/store";
+import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createRoles } from "@/roles/roles";
 import { createRouter } from "@/server/server";
@@ -22,6 +22,7 @@ import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
 import { createEmailer } from "@/messaging/email";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
+import { createSendAnonymizer } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createTemplateStore } from "@/templates/store";
@@ -73,7 +74,10 @@ export async function txFixture(
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
     listStore = createListStore(db, clock, counts, campaigns),
-    subscribers = createSubscriberStore(db, clock, lists),
+    subscribers = createSubscriberStore(db, clock, lists, {
+      ...noSubscriberEffects,
+      deleting: createSendAnonymizer(db),
+    }),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const auth = await createAuthentication(

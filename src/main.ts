@@ -33,6 +33,7 @@ import { registerSettingsRoutes } from "@/settings/routes";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
+import { createSendAnonymizer } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
@@ -110,7 +111,11 @@ async function main(): Promise<void> {
     settings = createSettings(db, clock, bootstrap.config.rootUrl, roles);
     counts = createListCounts(db);
     enrollments = createEnrollments(db, clock);
-    subscriberStore = createSubscriberStore(db, clock, lists, enrollments.subscriberEffects);
+    const subscriberEffects = {
+      ...enrollments.subscriberEffects,
+      deleting: createSendAnonymizer(db),
+    };
+    subscriberStore = createSubscriberStore(db, clock, lists, subscriberEffects);
     readonly = openReadOnly(db.filename);
     queryRunner = createQueryRunner({
       path: db.filename,
@@ -122,7 +127,7 @@ async function main(): Promise<void> {
       readonly,
       clock,
       runner: queryRunner,
-      effects: enrollments.subscriberEffects,
+      effects: subscriberEffects,
     });
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);

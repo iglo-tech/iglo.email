@@ -60,6 +60,8 @@ export interface SubscriberEffects {
   blocklisted(ids: bigint[]): void;
   /** The subscribers' memberships of `listIds` are now unsubscribed. */
   unsubscribed(ids: bigint[], listIds: bigint[]): void;
+  /** The subscribers are about to be deleted (D25: messaging anonymizes their sends). */
+  deleting?(subscribers: { id: bigint; email: string }[]): void;
 }
 export const noSubscriberEffects: SubscriberEffects = {
   blocklisted() {},
@@ -236,6 +238,7 @@ export function createSubscriberStore(
       return get(row.id)!;
     },
     remove(ids: bigint[]) {
+      effects.deleting?.(ids.flatMap((id) => get(id) ?? []));
       for (const id of ids) q.get("subscriber-delete").run(id);
     },
     blocklist(ids: bigint[]) {

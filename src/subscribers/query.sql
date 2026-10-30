@@ -1,4 +1,6 @@
 -- Adapted from listmonk queries/subscribers.sql at 6fcd95f: the *-by-query actions. Each ? JSON array is one bounded batch of IDs.
+-- name: emails-by-ids
+SELECT id, email FROM subscribers WHERE id IN (SELECT value FROM json_each(?));
 -- name: delete-by-ids
 DELETE FROM subscribers WHERE id IN (SELECT value FROM json_each(?));
 -- name: blocklist-by-ids

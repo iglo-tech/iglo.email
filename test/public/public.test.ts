@@ -16,32 +16,47 @@ async function open() {
 }
 const dummy = "00000000-0000-0000-0000-000000000000";
 const minute = 60_000;
-const signup = (email: string, uuid: string) => JSON.stringify({ email, list_uuids: [uuid] });
-const api = (f: PublicFixture, email: string, uuid: string, peer = "203.0.113.9") =>
+const signup = (email: string, uuid: string) =>
+  JSON.stringify({ email, list_uuids: [uuid] });
+const api = (
+  f: PublicFixture,
+  email: string,
+  uuid: string,
+  peer = "203.0.113.9",
+) =>
   f.peer("/api/public/subscription", peer, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: signup(email, uuid),
   });
-const form = (values: Record<string, string>) => new URLSearchParams(values).toString();
+const form = (values: Record<string, string>) =>
+  new URLSearchParams(values).toString();
 
 test("each limit is per peer, answers 429 and reopens on the clock", async () => {
   const f = await open();
   const list = await f.list("News");
   const bad = form({ email: "bad", l: list.uuid });
   for (let i = 0; i < 5; i++)
-    expect((await f.post("/subscription/form", bad, "192.0.2.7")).status).toBe(400);
+    expect((await f.post("/subscription/form", bad, "192.0.2.7")).status).toBe(
+      400,
+    );
   const limited = await f.post("/subscription/form", bad, "192.0.2.7");
   expect(limited.status).toBe(429);
   expect(limited.headers.get("retry-after")).toBe("60");
   expect(limited.headers.get("content-type")).toContain("text/html");
-  const json = await f.peer("/api/public/subscription", "192.0.2.7", { method: "POST" });
+  const json = await f.peer("/api/public/subscription", "192.0.2.7", {
+    method: "POST",
+  });
   expect(json.status).toBe(429);
   expect(await json.json()).toEqual({ message: "Too many requests" });
   // Another peer and the unsubscribe budget are unaffected.
-  expect((await f.post("/subscription/form", bad, "192.0.2.8")).status).toBe(400);
+  expect((await f.post("/subscription/form", bad, "192.0.2.8")).status).toBe(
+    400,
+  );
   f.clock.advance(minute);
-  expect((await f.post("/subscription/form", bad, "192.0.2.7")).status).toBe(400);
+  expect((await f.post("/subscription/form", bad, "192.0.2.7")).status).toBe(
+    400,
+  );
 });
 
 test("opt-in, unsubscribe and privacy POSTs are limited too", async () => {
@@ -61,7 +76,11 @@ test("opt-in, unsubscribe and privacy POSTs are limited too", async () => {
 
 test("the limiter stays bounded without locking out new peers", () => {
   const clock = new TestClock();
-  const check = createRateLimit(clock, { limit: 1, windowMs: minute, maxPeers: 3 });
+  const check = createRateLimit(clock, {
+    limit: 1,
+    windowMs: minute,
+    maxPeers: 3,
+  });
   expect(check("a")).toBe(0);
   expect(check("a")).toBeGreaterThan(0);
   for (const peer of ["b", "c", "d"]) expect(check(peer)).toBe(0);
@@ -103,7 +122,11 @@ test("a signup answer never reveals an existing subscriber", async () => {
   const blocked = await f.subscriber("blocked@example.test");
   await f.json(`/api/subscribers/${blocked}/blocklist`, "PUT");
   const answers = [];
-  for (const email of ["new@example.test", "known@example.test", "blocked@example.test"]) {
+  for (const email of [
+    "new@example.test",
+    "known@example.test",
+    "blocked@example.test",
+  ]) {
     const response = await api(f, email, list.uuid);
     answers.push([response.status, await response.text()]);
   }
@@ -111,7 +134,10 @@ test("a signup answer never reveals an existing subscriber", async () => {
   expect(answers[2]).toEqual(answers[0]!);
   const posts = [];
   for (const email of ["new2@example.test", "known@example.test"]) {
-    const response = await f.fresh("/subscription/form", form({ email, l: list.uuid }));
+    const response = await f.fresh(
+      "/subscription/form",
+      form({ email, l: list.uuid }),
+    );
     posts.push(await response.text());
   }
   expect(posts[1]).toBe(posts[0]!);
@@ -124,7 +150,9 @@ test("GET never confirms and a POST cannot reverse an unsubscribe", async () => 
   const f = await open();
   const double = await f.list("Double", "public", "double");
   const gone = await f.list("Gone", "public", "double");
-  const id = await f.subscriber("mia@example.test", "Mia", { lists: [double.id, gone.id] });
+  const id = await f.subscriber("mia@example.test", "Mia", {
+    lists: [double.id, gone.id],
+  });
   const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
   await f.json(`/api/subscribers/lists/${id}`, "PUT", {
     action: "unsubscribe",
@@ -132,7 +160,10 @@ test("GET never confirms and a POST cannot reverse an unsubscribe", async () => 
   });
   f.overrides.showOptinPage = false;
   for (const query of ["", "?confirm=true"]) {
-    const page = await f.peer(`/subscription/optin/${uuid}${query}`, "192.0.2.20");
+    const page = await f.peer(
+      `/subscription/optin/${uuid}${query}`,
+      "192.0.2.20",
+    );
     expect(page.status).toBe(200);
     expect(await f.status(id, double.id)).toBe("unconfirmed");
   }
@@ -161,10 +192,14 @@ test("preferences commit with their effects, or not at all", async () => {
   f.failEffects(false);
   f.calls.length = 0;
   expect((await f.fresh(path, body)).status).toBe(200);
-  expect((await f.json(`/api/subscribers/${id}`)).body.data.name).toBe("Renamed");
+  expect((await f.json(`/api/subscribers/${id}`)).body.data.name).toBe(
+    "Renamed",
+  );
   expect(await f.status(id, drop.id)).toBe("unsubscribed");
   expect(await f.status(id, hidden.id)).toBe("confirmed");
-  expect(f.calls).toEqual([{ inTransaction: true, listIds: [BigInt(drop.id)] }]);
+  expect(f.calls).toEqual([
+    { inTransaction: true, listIds: [BigInt(drop.id)] },
+  ]);
 });
 
 test("send pages offer the same preferences, bound to their subscriber", async () => {
@@ -178,7 +213,10 @@ test("send pages offer the same preferences, bound to their subscriber", async (
   const stranger = await f.subscriber("eve@example.test", "Eve");
   const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
   const eve = (await f.json(`/api/subscribers/${stranger}`)).body.data.uuid;
-  const template = await f.template(`<a href="{{ unsubscribe_url }}">x</a>`, "Hi");
+  const template = await f.template(
+    `<a href="{{ unsubscribe_url }}">x</a>`,
+    "Hi",
+  );
   const sent = await f.tx({
     subscriber_id: id,
     template_id: template,
@@ -193,7 +231,9 @@ test("send pages offer the same preferences, bound to their subscriber", async (
   expect(text).toContain('class="manage-form"');
   expect(text).toContain(`value="${other.uuid}"`);
   const body = form({ manage: "true", name: "Sam Two", l: news.uuid });
-  expect((await f.post(`/m/${send}/unsubscribe/${eve}`, body)).status).toBe(404);
+  expect((await f.post(`/m/${send}/unsubscribe/${eve}`, body)).status).toBe(
+    404,
+  );
   expect((await f.post(path, body)).status).toBe(200);
   expect(await f.status(id, other.id)).toBe("unsubscribed");
   expect(await f.status(id, news.id)).toBe("confirmed");
@@ -209,31 +249,197 @@ test("export mails native sections; the response holds nothing personal", async 
   await f.drain();
   const [message] = f.mailTo("noa@example.test");
   expect(message?.data).toContain("filename=data.json");
-  const part = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(message!.data)![1]!;
+  const part = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(
+    message!.data,
+  )![1]!;
   const data = JSON.parse(Buffer.from(part, "base64").toString("utf8"));
   expect(Object.keys(data).sort()).toEqual(
-    ["campaign_views", "events", "link_clicks", "profile", "sends", "subscriptions"].sort(),
+    [
+      "campaign_views",
+      "events",
+      "link_clicks",
+      "profile",
+      "sends",
+      "subscriptions",
+    ].sort(),
   );
   f.overrides.exportable = ["profile"];
   await f.fresh(`/subscription/export/${uuid}`);
   await f.drain();
   const second = f.mailTo("noa@example.test")[1]!;
-  const only = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(second.data)![1]!;
-  expect(Object.keys(JSON.parse(Buffer.from(only, "base64").toString("utf8")))).toEqual([
-    "profile",
-  ]);
+  const only = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(
+    second.data,
+  )![1]!;
+  expect(
+    Object.keys(JSON.parse(Buffer.from(only, "base64").toString("utf8"))),
+  ).toEqual(["profile"]);
 });
 
 test("wipe removes the subscriber and memberships in one step", async () => {
   const f = await open();
   const list = await f.list("News");
-  const id = await f.subscriber("oli@example.test", "Oli", { lists: [list.id] });
+  const id = await f.subscriber("oli@example.test", "Oli", {
+    lists: [list.id],
+  });
   const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
   expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(200);
   expect((await f.json(`/api/subscribers/${id}`)).status).toBe(400);
   expect(
-    f.db.query("SELECT count(*) AS n FROM subscriber_lists WHERE subscriber_id = ?").get(id),
+    f.db
+      .query(
+        "SELECT count(*) AS n FROM subscriber_lists WHERE subscriber_id = ?",
+      )
+      .get(id),
   ).toEqual({ n: 0n });
+});
+
+const insertSend = (
+  f: PublicFixture,
+  status: string,
+  to: string,
+  subscriber: number | null,
+) =>
+  (
+    f.db
+      .query(
+        `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, status, smtp_message_id, payload, created_at)
+         VALUES (?, 'tx', 'transactional', ?, ?, ?, '<m@fixture.test>', ?, ?) RETURNING id`,
+      )
+      .get(
+        crypto.randomUUID(),
+        subscriber,
+        to,
+        status,
+        JSON.stringify({ message: { to: [to], subject: "Personal" } }),
+        f.clock.now().toISOString(),
+      ) as { id: bigint }
+  ).id;
+const sendCounts = (f: PublicFixture) =>
+  f.db
+    .query(
+      "SELECT status, count(*) AS n FROM sends GROUP BY status ORDER BY status",
+    )
+    .all();
+
+test("wipe anonymizes retained sends and cancels queued ones in its transaction", async () => {
+  const f = await open();
+  const address = "wipe@example.test";
+  const id = await f.subscriber(address, "Wipe Me");
+  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
+  const other = insertSend(f, "sent", "kept@example.test", null);
+  const rows = Object.fromEntries(
+    ["queued", "sending", "sent", "failed", "skipped", "unknown"].map(
+      (status) => [status, insertSend(f, status, address, id)],
+    ),
+  );
+  // An unlinked transactional recipient with the same address, in any letter case.
+  const unlinked = insertSend(f, "sent", "Wipe@Example.Test", null);
+
+  // A failed deletion leaves everything as it was.
+  f.db.run(
+    "CREATE TRIGGER wipe_fails BEFORE DELETE ON subscribers BEGIN SELECT RAISE(ABORT, 'no'); END",
+  );
+  const before = f.db.query("SELECT * FROM sends ORDER BY id").all();
+  expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(500);
+  expect(f.db.query("SELECT * FROM sends ORDER BY id").all()).toEqual(before);
+  f.db.run("DROP TRIGGER wipe_fails");
+
+  const counts = sendCounts(f) as { status: string; n: bigint }[];
+  expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(200);
+  for (const send of [...Object.values(rows), unlinked]) {
+    const { data } = (await f.json(`/api/sends/${send}`)).body;
+    expect(data.to_email).toBe("");
+    expect(data.subscriber_id).toBeNull();
+    expect(JSON.stringify(data)).not.toContain("xample.test");
+  }
+  expect(
+    f.db
+      .query(
+        "SELECT count(*) AS n FROM sends WHERE payload IS NOT NULL AND id != ?",
+      )
+      .get(other),
+  ).toEqual({ n: 0n });
+  // Row counts and settled statuses stay; only queued mail is cancelled.
+  const after = f.db
+    .query("SELECT id, status, skip_reason FROM sends ORDER BY id")
+    .all() as {
+    id: bigint;
+    status: string;
+    skip_reason: string | null;
+  }[];
+  expect(after).toHaveLength(before.length);
+  expect(after.find((row) => row.id === rows.queued)).toEqual({
+    id: rows.queued!,
+    status: "skipped",
+    skip_reason: "subscriber_unavailable",
+  });
+  expect(sendCounts(f)).toEqual(
+    counts
+      .map((row) =>
+        row.status === "queued"
+          ? { status: "skipped", n: 0n }
+          : row.status === "skipped"
+            ? { status: "skipped", n: row.n + 1n }
+            : row,
+      )
+      .filter((row) => row.n > 0n),
+  );
+  expect((await f.json(`/api/sends/${other}`)).body.data.to_email).toBe(
+    "kept@example.test",
+  );
+  // Nothing wiped can go out again.
+  for (const send of [rows.failed!, rows.unknown!])
+    expect((await f.json(`/api/sends/${send}/resend`, "POST", {})).status).toBe(
+      409,
+    );
+  await f.drain();
+  expect(f.sink.messages).toHaveLength(0);
+});
+
+test("a send in flight during a wipe settles without its payload and never retries", async () => {
+  const f = await open();
+  const id = await f.subscriber("flight@example.test");
+  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
+  const send = insertSend(f, "queued", "flight@example.test", id);
+  const lease = new Date(f.clock.now().getTime() + minute);
+  f.db.run(
+    "UPDATE sends SET status='sending', attempts=1, claimed_until=? WHERE id=?",
+    [lease.toISOString(), send],
+  );
+  expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(200);
+  const row = f.db.query("SELECT * FROM sends WHERE id = ?").get(send) as never;
+  expect((await f.json(`/api/sends/${send}`)).body.data.status).toBe("sending");
+  f.sends.finish(row, {
+    status: "proven-not-accepted",
+    retry: "transient",
+  } as never);
+  await f.drain();
+  const { data } = (await f.json(`/api/sends/${send}`)).body;
+  expect(data).toMatchObject({
+    status: "failed",
+    error: "payload_unavailable",
+    to_email: "",
+  });
+  expect(f.sink.messages).toHaveLength(0);
+});
+
+test("admin subscriber deletion anonymizes sends as a wipe does", async () => {
+  const f = await open();
+  for (const remove of [
+    (id: number) => f.json(`/api/subscribers/${id}`, "DELETE"),
+    (id: number) => f.json(`/api/subscribers?id=${id}`, "DELETE"),
+  ]) {
+    const address = `admin-${crypto.randomUUID()}@example.test`;
+    const id = await f.subscriber(address);
+    const send = insertSend(f, "sent", address, id);
+    expect((await remove(id)).status).toBe(200);
+    const { data } = (await f.json(`/api/sends/${send}`)).body;
+    expect(data).toMatchObject({
+      status: "sent",
+      to_email: "",
+      subscriber_id: null,
+    });
+  }
 });
 
 test("view in browser writes nothing and escapes subscriber data", async () => {
@@ -242,7 +448,10 @@ test("view in browser writes nothing and escapes subscriber data", async () => {
   const email = "xss@example.test";
   await api(f, email, list.uuid);
   const row = f.owners.subscribers.byEmail(email)!;
-  f.db.run("UPDATE subscribers SET name = ? WHERE id = ?", ["<script>x</script>", row.id]);
+  f.db.run("UPDATE subscribers SET name = ? WHERE id = ?", [
+    "<script>x</script>",
+    row.id,
+  ]);
   const campaign = f.db
     .query(
       `INSERT INTO campaigns (uuid, name, subject, from_email, body, content_type, status, type, messenger, max_subscriber_id, last_subscriber_id, archive, archive_slug, archive_meta)
@@ -283,14 +492,19 @@ test("malformed public input fails safely with no write", async () => {
   const f = await open();
   const list = await f.list("News");
   const count = () =>
-    (f.db.query("SELECT count(*) AS n FROM subscribers").get() as { n: bigint }).n;
+    (f.db.query("SELECT count(*) AS n FROM subscribers").get() as { n: bigint })
+      .n;
   const before = count();
   const post = (body: string, type: string) =>
-    f.peer("/api/public/subscription", `192.0.2.${50 + before.toString().length}`, {
-      method: "POST",
-      headers: { "content-type": type },
-      body,
-    });
+    f.peer(
+      "/api/public/subscription",
+      `192.0.2.${50 + before.toString().length}`,
+      {
+        method: "POST",
+        headers: { "content-type": type },
+        body,
+      },
+    );
   const json = "application/json";
   for (const [body, type] of [
     ["{", json],
@@ -309,7 +523,12 @@ test("malformed public input fails safely with no write", async () => {
   expect((await post("x".repeat(70_000), json)).status).toBe(413);
   f.clock.advance(minute);
   expect(
-    (await f.fresh("/subscription/form", `email=a@b.test&name=%00&l=${list.uuid}`)).status,
+    (
+      await f.fresh(
+        "/subscription/form",
+        `email=a@b.test&name=%00&l=${list.uuid}`,
+      )
+    ).status,
   ).toBe(400);
   expect(count()).toBe(before);
   expect(f.errors).toEqual([]);
@@ -330,8 +549,13 @@ test("an enabled captcha fails closed on the form", async () => {
 test("a public signup never changes an existing stored profile", async () => {
   const f = await open();
   const list = await f.list("News");
-  const id = await f.subscriber("ivy@example.test", "Ivy", { attribs: { a: 1 } });
-  await f.fresh("/subscription/form", form({ email: "IVY@example.test", name: "Z", l: list.uuid }));
+  const id = await f.subscriber("ivy@example.test", "Ivy", {
+    attribs: { a: 1 },
+  });
+  await f.fresh(
+    "/subscription/form",
+    form({ email: "IVY@example.test", name: "Z", l: list.uuid }),
+  );
   const stored = (await f.json(`/api/subscribers/${id}`)).body.data;
   expect([stored.name, stored.attribs]).toEqual(["Ivy", { a: 1 }]);
   expect(await f.status(id, list.id)).toBe("unconfirmed");
