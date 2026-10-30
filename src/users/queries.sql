@@ -8,6 +8,9 @@ SELECT * FROM users WHERE id = ?;
 -- name: get-user-name
 SELECT * FROM users WHERE username = ?;
 
+-- name: get-user-email
+SELECT * FROM users WHERE email = ?;
+
 -- name: get-users
 SELECT * FROM users ORDER BY
   CASE WHEN ?1 = 'username' AND ?2 = 'asc' THEN username END ASC,
@@ -28,6 +31,9 @@ UPDATE users SET username = ?, password_login = ?, password = ?, email = ?, name
 
 -- name: update-profile
 UPDATE users SET name = ?, email = ?, password = ?, updated_at = ? WHERE id = ? RETURNING *;
+
+-- name: update-password
+UPDATE users SET password = ?, updated_at = ? WHERE id = ? RETURNING *;
 
 -- name: update-login
 UPDATE users SET loggedin_at = ? WHERE id = ?;

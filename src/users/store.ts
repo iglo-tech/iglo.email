@@ -37,6 +37,8 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
   const byId = (id: bigint): UserRow | null => queries.get("get-user-id").get(id) as UserRow | null;
   const byName = (name: string): UserRow | null =>
     queries.get("get-user-name").get(name) as UserRow | null;
+  const byEmail = (email: string): UserRow | null =>
+    queries.get("get-user-email").get(email) as UserRow | null;
   const now = () => clock.now().toISOString();
   const revoke = (id: bigint, except = "") =>
     queries.get("delete-user-sessions").run(String(id), except, except);
@@ -76,6 +78,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     },
     byId,
     byName,
+    byEmail,
     bootstrap(username: string, hash: string): void {
       writeTransaction(db, () => {
         if (count() !== 0n) return;
@@ -171,6 +174,24 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       });
       if (result && hash !== null) onMutation(id);
       return result;
+    },
+    /** A password reset: applies to an enabled login user and ends all of their sessions. */
+    setPassword(id: bigint, hash: string): UserRow | null {
+      const updated = writeTransaction(db, () => {
+        const current = byId(id);
+        if (
+          !current ||
+          current.type !== "user" ||
+          current.status !== "enabled" ||
+          current.password_login === 0n
+        )
+          return null;
+        const result = queries.get("update-password").get(hash, now(), id) as UserRow;
+        revoke(id);
+        return result;
+      });
+      if (updated) onMutation(id);
+      return updated;
     },
     setFactor(
       expected: UserRow,

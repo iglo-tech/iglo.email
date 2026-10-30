@@ -84,6 +84,12 @@ function match(route: Route, parts: string[]): Record<string, string> | undefine
 export class Router {
   private readonly routes: Route[] = [];
   private readonly middleware: Middleware[] = [];
+  private readonly missing: { prefix: string; handler: Handler }[] = [];
+
+  /** Echo's RouteNotFound: answers unmatched paths under a prefix, instead of the public 404. */
+  notFound(prefix: string, handler: Handler): void {
+    this.missing.push({ prefix, handler });
+  }
 
   use(...middleware: Middleware[]): void {
     this.middleware.push(...middleware);
@@ -134,7 +140,8 @@ export class Router {
       if (url.pathname.startsWith("/api/")) throw new HttpError(404, "404 unknown endpoint");
       const asset = assetResponse(url.pathname, request.method);
       if (asset) return asset;
-      return publicNotFound(app.i18n, request.method);
+      const missing = this.missing.find(({ prefix }) => url.pathname.startsWith(prefix));
+      return missing ? missing.handler(context) : publicNotFound(app.i18n, request.method);
     };
     const chain = [...this.middleware, ...(selected?.middleware ?? [])];
     const handler = selected?.handler ?? fallback;

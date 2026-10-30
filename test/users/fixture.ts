@@ -24,6 +24,8 @@ import { sessionDuration } from "@/settings/duration";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { createRenderer } from "@/templates/renderer";
+import { registerAdminRoutes } from "@/admin/routes";
+import type { Message } from "@/messaging/email";
 
 export async function startUserFixture(
   policy: AuthPolicy = defaultAuthPolicy,
@@ -105,6 +107,39 @@ export async function startUserFixture(
       settings,
       auth,
       emailer && createSMTPTest(settings, emailer, app.i18n, createRenderer(clock, app.i18n)),
+    );
+    const outgoing: Message[] = [];
+    registerAdminRoutes(router, {
+      auth,
+      roles,
+      renderer: createRenderer(clock, app.i18n),
+      logger: app.logger,
+      send: (message) => {
+        outgoing.push(message);
+        return { messageId: "<fixture>", result: Promise.resolve({ status: "local" } as never) };
+      },
+      site: () => ({
+        siteName: settings.read()["app.site_name"],
+        faviconUrl: "",
+        rootUrl: "http://fixture.test",
+        lang: "en",
+        cacheSlowQueries: settings.read()["app.cache_slow_queries"],
+      }),
+      settings: () => ({
+        siteName: settings.read()["app.site_name"],
+        rootUrl: "http://fixture.test",
+        fromEmail: "fixture@example.test",
+        logoUrl: "",
+      }),
+    });
+    router.route("GET", "/fixture/mail", () =>
+      ok(
+        outgoing.map(({ to, subject, body }) => ({
+          to,
+          subject,
+          body: Buffer.from(body).toString(),
+        })),
+      ),
     );
     let announce!: () => void;
     let release!: () => void;

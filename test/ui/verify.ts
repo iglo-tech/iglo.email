@@ -79,7 +79,7 @@ try {
     ["/admin/static/js/main.js", "text/javascript; charset=utf-8"],
     ["/admin/static/js/code-editor.js", "text/javascript; charset=utf-8"],
     ["/admin/static/js/richtext-editor.js", "text/javascript; charset=utf-8"],
-    ["/admin/static/js/charts.js", "text/javascript; charset=utf-8"],
+    ["/admin/static/js/views/dashboard.js", "text/javascript; charset=utf-8"],
     ["/admin/static/fonts/Geist-Variable.woff2", "font/woff2"],
     ["/admin/static/logo.svg", "image/svg+xml"],
   ] as const) {

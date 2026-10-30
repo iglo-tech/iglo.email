@@ -1,4 +1,5 @@
 // Adapted from listmonk static/admin/views/base.html and partials/sidebar.html at 6fcd95f.
+import { Icon } from "@/admin/layout/icon";
 import type { Translation } from "@/i18n/i18n";
 import { raw, render, type Child } from "@/jsx/render";
 
@@ -12,6 +13,14 @@ type JSONValue =
 export interface NavigationLink {
   readonly label: string;
   readonly href: string;
+  readonly current?: boolean;
+}
+/** A collapsible sidebar group; a plain link stays one row. */
+export interface NavigationGroup {
+  readonly label: string;
+  readonly icon: string;
+  readonly open: boolean;
+  readonly links: readonly NavigationLink[];
 }
 export interface AdminShellProps {
   readonly title: string;
@@ -20,8 +29,13 @@ export interface AdminShellProps {
   readonly i18n: Translation;
   readonly translationKeys?: readonly string[];
   readonly config: Readonly<Record<string, JSONValue>>;
-  readonly navigation?: readonly NavigationLink[];
+  readonly navigation?: readonly (NavigationLink | NavigationGroup)[];
   readonly profile?: { readonly name: string };
+  readonly faviconUrl?: string;
+  /** Module under /admin/static/js/views, without its extension. */
+  readonly script?: string;
+  /** Page render time, as upstream's footer shows it. */
+  readonly duration?: string;
   readonly children?: Child;
 }
 
@@ -60,10 +74,64 @@ function localLink(value: string): string {
     throw new TypeError("Navigation must use a local URL");
   return value;
 }
+/** cmd/avatar.go makeInitials. */
+function initials(name: string): string {
+  const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (!words.length) return "?";
+  const [first, second] = words.map((word) => [...word]);
+  return (first![0]! + (second?.[0] ?? first![1] ?? "")).toUpperCase();
+}
+function Link({ item, icon }: { item: NavigationLink; icon?: string }) {
+  return (
+    <a href={localLink(item.href)} {...(item.current ? { "aria-current": "page" } : {})}>
+      {icon ? <Icon name={icon} /> : null}
+      {icon ? " " : null}
+      {item.label}
+    </a>
+  );
+}
+function Navigation({ items }: { items: readonly (NavigationLink | NavigationGroup)[] }) {
+  return (
+    <nav>
+      <ul>
+        {items.map((item) =>
+          "links" in item ? (
+            <li>
+              <details open={item.open} name="sidebar-nav">
+                <summary>
+                  <Icon name={item.icon} /> {item.label}
+                </summary>
+                <ul>
+                  {item.links.map((link) => (
+                    <li>
+                      <Link item={link} />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </li>
+          ) : (
+            <li>
+              <Link item={item} icon="grid" />
+            </li>
+          ),
+        )}
+      </ul>
+    </nav>
+  );
+}
+const themeModes = [
+  ["auto", "monitor", "globals.terms.system"],
+  ["light", "sun", "globals.terms.light"],
+  ["dark", "moon", "globals.terms.dark"],
+] as const;
 const themeScript = `(function(){try{var t=localStorage.getItem('theme');if(t)document.documentElement.style.colorScheme=t;}catch(e){}})();`;
 
 function AdminShell(props: AdminShellProps) {
   const { title, siteName, assetVersion, i18n, config, navigation, profile, children } = props;
+  const { faviconUrl, script, duration } = props;
+  if (script !== undefined && !/^[a-z][a-z0-9-]*$/.test(script))
+    throw new TypeError("Invalid view script");
   if (!/^[a-f0-9]{10}$/.test(assetVersion)) throw new TypeError("Invalid asset version");
   const keys = new Set([
     "globals.buttons.ok",
@@ -93,23 +161,29 @@ function AdminShell(props: AdminShellProps) {
         />
         <link href={`${base}/oat.min.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
         <link href={`${base}/style.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
-        <link href={`${base}/favicon.png?v=${assetVersion}`} rel="icon" type="image/png" />
+        {faviconUrl ? (
+          <link href={faviconUrl} rel="icon" type="image/x-icon" />
+        ) : (
+          <link href={`${base}/favicon.png?v=${assetVersion}`} rel="icon" type="image/png" />
+        )}
         <script>{raw(bootstrap)}</script>
       </head>
       <body x-data="adminApp">
         <div id="app" data-sidebar-layout="">
           <aside data-sidebar="">
             <header class="sidebar-branding">
-              <img src={`${base}/logo.svg?v=${assetVersion}`} alt={siteName} />
+              <a href="/admin">
+                <img src={`${base}/logo.svg?v=${assetVersion}`} alt={siteName} />
+              </a>
             </header>
-            {navigation && (
-              <nav>
-                {navigation.map((item) => (
-                  <a href={localLink(item.href)}>{item.label}</a>
-                ))}
-              </nav>
-            )}
-            <footer id="footer"></footer>
+            {navigation && <Navigation items={navigation} />}
+            <footer id="footer">
+              {duration ? (
+                <span class="text-light text-8" title="Page render time">
+                  {duration}
+                </span>
+              ) : null}
+            </footer>
           </aside>
           <main>
             <header class="main-bar">
@@ -120,9 +194,11 @@ function AdminShell(props: AdminShellProps) {
                   aria-label="Toggle sidebar menu"
                   class="small"
                 >
-                  ☰
+                  <Icon name="menu" />
                 </button>
-                <img src={`${base}/favicon.png?v=${assetVersion}`} alt={siteName} />
+                <a href="/admin">
+                  <img src={`${base}/favicon.png?v=${assetVersion}`} alt={siteName} />
+                </a>
               </div>
               {profile && (
                 <ot-dropdown>
@@ -132,22 +208,40 @@ function AdminShell(props: AdminShellProps) {
                     class="user-nav-button ghost small user-trigger"
                   >
                     <span class="avatar">
+                      <span class="avatar-icon avatar-user">
+                        <span class="avatar-initials" aria-hidden="true">
+                          {initials(profile.name)}
+                        </span>
+                      </span>
                       <span class="avatar-label user-label">{profile.name}</span>
                     </span>
                   </button>
                   <menu popover="" id="user-menu">
+                    <a href="/admin/user/profile" role="menuitem" class="button ghost">
+                      <Icon name="user" /> {i18n.T("globals.terms.profile")}
+                    </a>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="ghost"
+                      {...{ "@click": "onLogout('/api/logout', '/admin/login')" }}
+                    >
+                      <Icon name="log-out" /> {i18n.T("globals.buttons.logout")}
+                    </button>
+                    <hr />
                     <div class="theme-switch" role="group" aria-label="Theme">
-                      {(["auto", "light", "dark"] as const).map((mode) => (
+                      {themeModes.map(([mode, icon, label]) => (
                         <button
                           type="button"
                           class="ghost small"
-                          title={mode}
+                          title={i18n.T(label)}
                           {...{
                             "@click": `setTheme('${mode}')`,
+                            ":class": `{ 'is-active': theme === '${mode}' }`,
                             ":aria-pressed": `theme === '${mode}'`,
                           }}
                         >
-                          {mode}
+                          <Icon name={icon} />
                         </button>
                       ))}
                     </div>
@@ -177,6 +271,13 @@ function AdminShell(props: AdminShellProps) {
             </div>
           </dialog>
         </template>
+        {script ? (
+          <script
+            type="module"
+            src={`${base}/js/views/${script}.js?v=${assetVersion}`}
+            defer
+          ></script>
+        ) : null}
         <script type="module" src={`${base}/js/main.js?v=${assetVersion}`} defer></script>
       </body>
     </html>
