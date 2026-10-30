@@ -429,3 +429,23 @@ test("the emitted view pixel counts as an anonymous view without individual trac
   expect((await f.request(pixel)).status).toBe(200);
   expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(1);
 });
+
+test("campaign search and query deletion fold Unicode case", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const krakow = await f.campaign({ name: "Kraków", subject: "Wiosna", lists: [news] });
+  const other = await f.campaign({ name: "Gdańsk", subject: "s", lists: [news] });
+  const found = async (query: string) =>
+    (
+      await f.json(`/api/campaigns?query=${encodeURIComponent(query)}&per_page=all`)
+    ).body.data.results.map((c: { id: number }) => c.id);
+  expect(await found("KRAKÓW")).toEqual([krakow.id]);
+  expect(await found("kraków")).toEqual([krakow.id]);
+  expect(await found("ów wIOSNA")).toEqual([krakow.id]);
+  expect(await found("krakow")).toEqual([]);
+  expect(await found("*")).toEqual([]);
+  const deleted = await f.json(`/api/campaigns?query=${encodeURIComponent("KRAKÓW")}`, "DELETE");
+  expect(deleted.status).toBe(200);
+  expect((await f.json(`/api/campaigns/${krakow.id}`)).status).toBe(400);
+  expect((await f.json(`/api/campaigns/${other.id}`)).status).toBe(200);
+});

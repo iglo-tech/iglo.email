@@ -15,7 +15,7 @@ FROM campaigns c WHERE c.id = ?;
 SELECT id, uuid, type, status FROM campaigns WHERE uuid = ?;
 
 -- name: query-campaign-ids
--- ?1 statuses JSON, ?2 tags JSON, ?3 search, ?4 type, ?5 all lists, ?6 permitted list IDs JSON,
+-- ?1 statuses JSON, ?2 tags JSON, ?3 search GLOB, ?4 type, ?5 all lists, ?6 permitted list IDs JSON,
 -- ?7 sort field, ?8 ASC/DESC, ?9 limit (-1 all), ?10 offset. NULLs sort as in Postgres.
 SELECT id, total FROM (
   SELECT c.id,
@@ -27,7 +27,7 @@ SELECT id, total FROM (
     AND (json_array_length(?2) = 0 OR NOT EXISTS (
       SELECT 1 FROM json_each(?2) t
       WHERE NOT EXISTS (SELECT 1 FROM json_each(COALESCE(c.tags, '[]')) ct WHERE ct.value = t.value)))
-    AND (?3 = '' OR instr(lower(c.name || ' ' || c.subject), lower(?3)) > 0)
+    AND (c.name || ' ' || c.subject) GLOB ?3
     AND (?4 = '' OR c.type = ?4)
     AND (?5 OR EXISTS (SELECT 1 FROM campaign_lists cl WHERE cl.campaign_id = c.id
       AND cl.list_id IN (SELECT value FROM json_each(?6))))
@@ -38,10 +38,11 @@ ORDER BY CASE WHEN ?8 = 'ASC' THEN k IS NULL END ASC, CASE WHEN ?8 = 'ASC' THEN 
 LIMIT ?9 OFFSET ?10;
 
 -- name: delete-campaign-ids
--- Bulk deletion selection: explicit IDs, or the collection filters. Same scope as listing.
+-- Bulk deletion selection: explicit IDs, or the collection filters (?2 search GLOB). Same
+-- scope as listing.
 SELECT c.id FROM campaigns c
 WHERE (CASE WHEN json_array_length(?1) > 0 THEN c.id IN (SELECT value FROM json_each(?1))
-  ELSE (?2 = '' OR instr(lower(c.name || ' ' || c.subject), lower(?2)) > 0)
+  ELSE (c.name || ' ' || c.subject) GLOB ?2
     AND (json_array_length(?3) = 0 OR c.status IN (SELECT value FROM json_each(?3)))
     AND (json_array_length(?4) = 0 OR NOT EXISTS (
       SELECT 1 FROM json_each(?4) t
