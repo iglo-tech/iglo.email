@@ -26,6 +26,9 @@ SELECT b.type, b.source, b.meta, b.created_at, c.subject AS campaign FROM bounce
   LEFT JOIN campaigns c ON c.id = b.campaign_id
   WHERE b.subscriber_id = ? ORDER BY b.id DESC LIMIT ?;
 -- name: receipts-expire
-DELETE FROM bounce_receipts WHERE expires_at <= ?;
+DELETE FROM bounce_receipts WHERE key IN
+  (SELECT key FROM bounce_receipts WHERE expires_at <= ?1 ORDER BY expires_at LIMIT ?2);
 -- name: receipt-insert
-INSERT INTO bounce_receipts (key, expires_at) VALUES (?, ?) ON CONFLICT (key) DO NOTHING;
+-- A key past its expiry may be waiting for its turn to be pruned, and no longer counts.
+INSERT INTO bounce_receipts (key, expires_at) VALUES (?1, ?2) ON CONFLICT (key)
+  DO UPDATE SET expires_at = excluded.expires_at WHERE bounce_receipts.expires_at <= ?3;

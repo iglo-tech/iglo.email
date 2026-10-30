@@ -534,3 +534,35 @@ test("a bounce unsubscribe stamps when consent changed, on the injected clock", 
   expect(membership.subscription_status).toBe("unsubscribed");
   expect(membership.subscription_updated_at).toBe(at);
 });
+
+test("one request prunes a bounded batch of expired receipts, and a backlog still drains", async () => {
+  const f = await open();
+  const seed = 1000;
+  const expired = new Date(f.clock.now().getTime() - 1000).toISOString();
+  const insert = f.db.query("INSERT INTO bounce_receipts (key, expires_at) VALUES (?, ?)");
+  f.db.transaction(() => {
+    for (let i = 0; i < seed; i++) insert.run(`event:seed-${i}`, expired);
+  })();
+  const expiredLeft = () =>
+    Number(
+      (
+        f.db
+          .query("SELECT count(*) AS n FROM bounce_receipts WHERE expires_at <= ?")
+          .get(f.clock.now().toISOString()) as { n: bigint }
+      ).n,
+    );
+  expect((await mailgun(f, signed(f, { event: "delivered" }))).status).toBe(200);
+  const first = expiredLeft();
+  expect(first).toBeLessThan(seed);
+  expect(first).toBeGreaterThanOrEqual(seed - 200);
+  // An expired key awaiting its turn does not hold a new delivery of that key back.
+  await f.subscriber("again-event@example.com");
+  const repeat = {
+    ...failed("again-event@example.com"),
+    id: `seed-${seed - 1}`,
+  };
+  expect((await mailgun(f, signed(f, repeat))).status).toBe(200);
+  expect(rowsOf(f).length).toBe(1);
+  for (let i = 0; i < 20 && expiredLeft(); i++) await mailgun(f, signed(f, { event: "delivered" }));
+  expect(expiredLeft()).toBe(0);
+});

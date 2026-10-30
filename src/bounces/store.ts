@@ -64,6 +64,8 @@ interface Row {
   subscriber_status: string | null;
   campaign_name: string | null;
 }
+/** Expired receipts one provider request removes. A request adds at most two. */
+const RECEIPT_PRUNE_BATCH = 100;
 // Upstream's `campaign_name` names no column and fails with a 500 (07-api-and-ui.md).
 const sortColumns: Record<string, string> = {
   email: "email",
@@ -223,8 +225,12 @@ export function createBounceStore(
      * False when it was already noted.
      */
     receive(key: string, expiresAt: Date) {
-      q.get("receipts-expire").run(clock.now().toISOString());
-      return q.get("receipt-insert").run(key, expiresAt.toISOString()).changes === 1;
+      const now = clock.now().toISOString();
+      return q.get("receipt-insert").run(key, expiresAt.toISOString(), now).changes === 1;
+    },
+    /** One batch inside the caller's write transaction, so a backlog never stalls a request. */
+    pruneReceipts() {
+      q.get("receipts-expire").run(clock.now().toISOString(), RECEIPT_PRUNE_BATCH);
     },
     deleteIDs(ids: (bigint | number)[]) {
       q.get("bounces-delete-ids").run(json(ids));

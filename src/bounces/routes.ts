@@ -280,6 +280,7 @@ export function registerBounceRoutes(
     if (!signature) throw refused();
     const parsed = mailgunEvent(body, now);
     const accepted = writeTransaction(db, () => {
+      store.pruneReceipts();
       if (!store.receive(`token:${signature.token}`, signature.expiresAt)) return false;
       const eventExpiry = new Date(now.getTime() + EVENT_RECEIPT_MS);
       if (parsed && (!parsed.eventId || store.receive(`event:${parsed.eventId}`, eventExpiry)))
