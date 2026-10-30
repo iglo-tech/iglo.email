@@ -27,8 +27,11 @@ const free = () =>
     Bun.spawnSync(["free", "-m"]).stdout.toString(),
   )?.[1];
 
+const head = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: repository })
+  .stdout.toString()
+  .trim();
 function record(entry: object) {
-  appendFileSync(results, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n");
+  appendFileSync(results, JSON.stringify({ at: new Date().toISOString(), head, ...entry }) + "\n");
   console.log(JSON.stringify(entry, null, 2));
 }
 function stats(values: number[]) {
