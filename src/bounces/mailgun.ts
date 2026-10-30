@@ -99,6 +99,7 @@ export function mailgunEvent(body: unknown, now: Date) {
     source: "mailgun",
     meta: JSON.stringify(bounceMeta(data)),
     bareMeta: JSON.stringify(bareMeta(data)),
+    bareSource: "mailgun",
     createdAt: now.toISOString(),
   };
   const eventId = typeof data.id === "string" && data.id.length <= MAX_ID_LENGTH ? data.id : "";

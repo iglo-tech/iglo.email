@@ -241,6 +241,7 @@ export function registerBounceRoutes(
       source: text("source"),
       meta: bounceMeta(body.meta),
       bareMeta: "{}",
+      bareSource: "api",
       createdAt: new Date(createdAt || clock.now()).toISOString(),
     };
   };

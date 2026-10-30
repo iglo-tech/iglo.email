@@ -417,6 +417,49 @@ test("an event with a Message-ID but no recipient it can bind acts on nobody", a
   expect(rowsOf(f)).toEqual([]);
 });
 
+test("a late bounce of an address its subscriber left stays the send's and acts on nobody", async () => {
+  const f = await open();
+  await hooked(f);
+  const moved = await f.subscriber("old@example.com");
+  const send = await sendTo(f, { subscriber_id: moved });
+  const update = await f.json(`/api/subscribers/${moved}`, "PATCH", { email: "new@example.com" });
+  expect(update.status).toBe(200);
+  const heir = await f.subscriber("old@example.com");
+  const hard = failed("old@example.com", {
+    "delivery-status": { code: 550, message: "No such person: Ann Old" },
+    ...carrying(send.uuid),
+  });
+  expect((await mailgun(f, signed(f, hard))).status).toBe(200);
+  // The old address failed. That says nothing of the new one, or of whoever holds the old one now.
+  expect(await statusOf(f, moved)).toBe("enabled");
+  expect(await statusOf(f, heir)).toBe("enabled");
+  const [row] = rowsOf(f);
+  expect(row!.subscriber_id).toBeNull();
+  expect(row!.send_id).not.toBeNull();
+  // Nothing about the moved subscriber reaches this row, so it holds no provider text.
+  expect(JSON.parse(row!.meta).message).toBeUndefined();
+  const [delivery] = deliveries(f).filter((d) => d.body.event === "bounce.recorded");
+  expect(delivery!.body.data.subscriber).toBeNull();
+  expect(delivery!.body.data.send.uuid).toBe(send.uuid);
+});
+
+test("a row no wipe can reach keeps no free-form source", async () => {
+  const f = await open();
+  const primary = await f.subscriber("primary@example.com");
+  const send = await sendTo(f, { subscriber_id: primary, headers: [{ Cc: "copy@example.com" }] });
+  const answer = await f.json("/webhooks/bounce", "POST", {
+    send_uuid: send.uuid,
+    email: "copy@example.com",
+    type: "soft",
+    source: "customer mailbox copy@example.com",
+  });
+  expect(answer.status).toBe(200);
+  const [row] = rowsOf(f);
+  expect(row!.subscriber_id).toBeNull();
+  expect(row!.send_id).toBeNull();
+  expect(JSON.stringify((await f.json("/api/bounces")).body)).not.toContain("copy@example.com");
+});
+
 test("a delayed complaint for a wiped address leaves the address's new subscriber alone", async () => {
   const f = await open();
   await hooked(f);
