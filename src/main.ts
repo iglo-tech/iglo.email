@@ -57,6 +57,10 @@ import { startScheduler } from "@/scheduler/scheduler";
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
+import { createAttachments } from "@/media/attachments";
+import { createFilesystem } from "@/media/filesystem";
+import { registerMediaRoutes } from "@/media/routes";
+import { createMediaStore } from "@/media/store";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { startCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
@@ -115,6 +119,7 @@ async function main(): Promise<void> {
   let conditions: ReturnType<typeof createConditionEvaluator> | undefined;
   let scheduler: ReturnType<typeof startScheduler> | undefined;
   let campaignStore: ReturnType<typeof createCampaignStore> | undefined;
+  let mediaStore: ReturnType<typeof createMediaStore> | undefined;
   let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
   let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
   let runner: ReturnType<typeof startCampaignRunner> | undefined;
@@ -308,10 +313,35 @@ async function main(): Promise<void> {
       page: pages,
       limit: unsubscribeLimit,
     });
+    mediaStore = createMediaStore(db, clock);
+    const media = mediaStore;
+    const files = createFilesystem(bootstrap.config.dataDir, () => {
+      const current = settings!.read();
+      return {
+        uploadPath: current["upload.filesystem.upload_path"],
+        uploadUri: current["upload.filesystem.upload_uri"],
+      };
+    });
+    await files.sweep().catch((error) => app.logger.error(error));
+    registerMediaRoutes(router, {
+      store: media,
+      files,
+      auth,
+      settings: () => {
+        const current = settings!.read();
+        return {
+          provider: current["upload.provider"],
+          extensions: current["upload.extensions"],
+          rootUrl: current["app.root_url"],
+        };
+      },
+    });
+    const attachments = createAttachments(media, files);
     campaignStore = createCampaignStore(db, clock, {
       templateExists: (id) => templates!.get(id) !== null,
       defaultTemplate: () => templates!.getDefault()?.id ?? null,
       listName: (id) => lists!.name(id),
+      mediaFilename: (id) => media.filename(id),
     });
     const campaignSettings = () => {
       const current = settings!.read();
@@ -343,6 +373,7 @@ async function main(): Promise<void> {
       tracking,
       emailer,
       settings: campaignSettings,
+      attachments,
     });
     registerCampaignPublicRoutes(router, {
       db,
@@ -397,6 +428,7 @@ async function main(): Promise<void> {
       renderer,
       tracking,
       emailer,
+      attachments,
       settings: () => {
         const current = settings!.read();
         const campaign = campaignSettings();
@@ -610,6 +642,7 @@ async function main(): Promise<void> {
     recipients?.close();
     runnerStore?.close();
     campaignStore?.close();
+    mediaStore?.close();
     events?.close();
     sends?.close();
     tracking?.close();

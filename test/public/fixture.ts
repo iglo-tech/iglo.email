@@ -42,6 +42,7 @@ export async function publicFixture() {
     templateExists: (id) => templates.get(id) !== null,
     defaultTemplate: () => templates.getDefault()?.id ?? null,
     listName: (id) => lists.name(id),
+    mediaFilename: () => null,
   });
   const events = createEventStore(f.db, subscribers, {
     emailAllowed: () => true,

@@ -30,6 +30,10 @@ import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import { createAttachments } from "@/media/attachments";
+import { createFilesystem } from "@/media/filesystem";
+import { registerMediaRoutes } from "@/media/routes";
+import { createMediaStore } from "@/media/store";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 
@@ -108,12 +112,24 @@ export async function campaignsFixture() {
     individualTracking: false,
   };
   const unsubscribed: unknown[] = [];
+  const media = createMediaStore(db, clock);
+  const mediaSettings = {
+    provider: "filesystem",
+    extensions: ["*"],
+    rootUrl: root,
+    uploadPath: "uploads",
+    uploadUri: "/uploads",
+  };
+  const files = createFilesystem(directory, () => mediaSettings);
+  const attachments = createAttachments(media, files);
   const store = createCampaignStore(db, clock, {
     templateExists: (id) => templates.get(id) !== null,
     defaultTemplate: () => templates.getDefault()?.id ?? null,
     listName: (id) => lists.name(id),
+    mediaFilename: (id) => media.filename(id),
   });
   const router = createRouter();
+  registerMediaRoutes(router, { store: media, files, auth, settings: () => mediaSettings });
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
@@ -129,6 +145,7 @@ export async function campaignsFixture() {
     tracking,
     emailer,
     settings: () => settings,
+    attachments,
   });
   registerCampaignPublicRoutes(router, {
     db,
@@ -195,6 +212,8 @@ export async function campaignsFixture() {
     sink,
     errors,
     settings,
+    mediaSettings,
+    directory,
     unsubscribed,
     sessionHeaders,
     request,
@@ -204,11 +223,23 @@ export async function campaignsFixture() {
     campaign,
     mail,
     /** Production owners, for wiring the campaign runner as src/main.ts does. */
-    owners: { store, templates, renderer, tracking, lists, subscribers, emailer, roles, auth },
+    owners: {
+      store,
+      templates,
+      renderer,
+      tracking,
+      lists,
+      subscribers,
+      emailer,
+      roles,
+      auth,
+      attachments,
+    },
     router,
     async close() {
       await emailer.close();
       store.close();
+      media.close();
       tracking.close();
       templates.close();
       templateReferences.close();

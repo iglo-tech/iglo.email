@@ -85,6 +85,7 @@ export async function runnerFixture(options: { hold?: boolean } = {}) {
       tracking: f.owners.tracking,
       emailer,
       settings: () => settings,
+      attachments: f.owners.attachments,
       leaseMs,
     });
     runners.push(runner);

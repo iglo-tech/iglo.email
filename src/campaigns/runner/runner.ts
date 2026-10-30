@@ -58,6 +58,8 @@ export interface RunnerDeps {
     push(message: Message, delivery?: { copies?: boolean }): { result: Promise<Outcome> };
   };
   settings: () => RunnerSettings;
+  /** Reads a campaign's files, so never inside the claim transaction. */
+  attachments(ids: bigint[]): Promise<NonNullable<Message["attachments"]>>;
   /**
    * Campaigns with a live pipe in this process. Runners sharing a data directory share it
    * (D15: one process per data directory), so no campaign gets a second pipe while one
@@ -72,6 +74,8 @@ export interface RunnerDeps {
 interface Pipe {
   campaign: RunnableCampaign;
   compiled: ReturnType<typeof compileCampaign>;
+  /** attachMedia: loaded once for the life of the pipe, before its first message. */
+  attachments?: NonNullable<Message["attachments"]>;
   /** Tracked links seen in the current batch; campaign_links is the lasting record. */
   links: Map<string, string | null>;
   errors: number;
@@ -382,6 +386,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
           body: Buffer.from(out.body),
           ...(out.altBody !== null ? { altBody: Buffer.from(out.altBody) } : {}),
           headers,
+          ...(pipe.attachments?.length ? { attachments: pipe.attachments } : {}),
           messenger: c.messenger,
           messageId: `<${c.uuid}.${sub.uuid}@${domain}>`,
         };
@@ -395,10 +400,35 @@ export function startCampaignRunner(deps: RunnerDeps) {
     }
   }
 
+  /**
+   * attachMedia. A campaign does not go out without its files, and a missing file does not come
+   * back by itself, so this pauses the campaign rather than retrying each scan as listmonk does.
+   * Nothing of the batch was pushed: every claim returns to the cursor for the resume.
+   */
+  async function attach({ pipe, recipients }: Batch): Promise<boolean> {
+    if (pipe.attachments) return true;
+    const c = pipe.campaign;
+    try {
+      pipe.attachments = await deps.attachments(store.mediaIds(c.id));
+      return true;
+    } catch (error) {
+      log(`error fetching attachments on ${label(c)}: ${errorText(error)}. Pausing the campaign.`);
+    }
+    const now = iso(clock.now().getTime());
+    writeTransaction(db, () => {
+      for (const sub of recipients) store.unclaim(c.id, sub.id);
+      if (recipients.length) store.rewind(c.id, token, recipients[0]!.id - 1n, now);
+      store.pause(c.id, now);
+      release(pipe);
+    });
+    return false;
+  }
+
   /** The campaign's message workers for one batch (Manager.worker and pipe flow). */
   async function process(batch: Batch): Promise<void> {
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
+    if (!(await attach(batch))) return;
     const settings = deps.settings();
     const concurrency = settings.concurrency >= 1 ? Math.floor(settings.concurrency) : 1;
     const rate = settings.messageRate >= 1 ? Math.floor(settings.messageRate) : 1;

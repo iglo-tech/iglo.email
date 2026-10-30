@@ -67,6 +67,8 @@ export interface CampaignDeps {
     push(message: Message, delivery?: { copies?: boolean }): { result: Promise<unknown> };
   };
   settings: () => CampaignSettings;
+  /** Reads files, so a caller holds no transaction. */
+  attachments(ids: bigint[]): Promise<NonNullable<Message["attachments"]>>;
 }
 
 const idValue = (id: bigint | null) =>
@@ -666,6 +668,11 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       } catch (error) {
         return sendError(error);
       }
+      // As listmonk, the request names the media of a test send.
+      const attachments = await deps.attachments(input.media ?? []).catch(() => {
+        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", "attachment"));
+      });
+      const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
       const messages: Message[] = [];
       const links = new Map<string, string | null>();
       let totalBytes = 0;
@@ -707,6 +714,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         const size = (value: string) => Buffer.byteLength(value);
         totalWork += budget.work;
         totalBytes += size(out.body) + size(out.altBody ?? "") + size(out.subject) + size(out.from);
+        totalBytes += attachmentBytes;
         for (const set of out.headers)
           for (const [name, header] of Object.entries(set)) totalBytes += size(name) + size(header);
         // Nothing is queued until every message is rendered, so a refusal sends nothing.
@@ -736,6 +744,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           body: Buffer.from(out.body),
           ...(out.altBody !== null ? { altBody: Buffer.from(out.altBody) } : {}),
           headers,
+          ...(attachments.length ? { attachments } : {}),
           messenger: value.messenger,
         });
       }
