@@ -132,7 +132,7 @@ test("migration 5 converts populated v4 tombstones once and waiting enrollments 
       clock: createRealClock(),
     });
     try {
-      expect(version(runtime.db)).toBe(5);
+      expect(version(runtime.db)).toBe(productionMigrations.length);
       // one: B and C (same save) both point at D's position; two: B and C (separate saves) at D.
       expect(positions(runtime.db, deleted)).toEqual([1, 1, 1, 1, 1]);
       await until(

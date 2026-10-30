@@ -1,3 +1,4 @@
+import { runCampaignsContract } from "@/test/contract/campaigns";
 import { runTemplatesContract } from "@/test/contract/templates";
 import { runTxContract } from "@/test/contract/tx";
 import { runUnsubscribeContract } from "@/test/contract/unsubscribe";
@@ -108,7 +109,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "tx" ||
       args[1] === "unsubscribe" ||
       args[1] === "events" ||
-      args[1] === "sequences")
+      args[1] === "sequences" ||
+      args[1] === "campaigns")
   ) {
     const values = argumentsForRun(args.slice(2));
     if (Object.keys(values).some((key) => key !== "--case"))
@@ -124,7 +126,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "tx" ||
         args[1] === "unsubscribe" ||
         args[1] === "events" ||
-        args[1] === "sequences") &&
+        args[1] === "sequences" ||
+        args[1] === "campaigns") &&
       Object.keys(values).length
     )
       throw new Error("Invalid owned auth arguments");
@@ -134,6 +137,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       signal,
       async (baseUrl, runSignal, restart, dataDir) => {
         const credentials = await provisionApiUser(baseUrl, admin);
+        if (args[1] === "campaigns") {
+          await runCampaignsContract({ mode: "normal", baseUrl, credentials, restart });
+          process.stdout.write("PASS campaigns production contract\n");
+          return true;
+        }
         if (args[1] === "sequences") {
           await runSequencesContract({ baseUrl, credentials, restart });
           process.stdout.write("PASS sequences production contract\n");

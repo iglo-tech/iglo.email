@@ -17,6 +17,7 @@ export const tables = [
   "campaign_views",
   "media",
   "campaign_media",
+  "campaign_links",
   "links",
   "link_clicks",
   "settings",

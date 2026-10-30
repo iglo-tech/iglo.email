@@ -52,6 +52,9 @@ import { registerSequenceRoutes } from "@/sequences/routes";
 import { startEventRetention } from "@/events/retention";
 import { createConditionEvaluator } from "@/conditions/evaluate";
 import { startScheduler } from "@/scheduler/scheduler";
+import { createCampaignStore } from "@/campaigns/store";
+import { registerCampaignRoutes } from "@/campaigns/routes";
+import { registerCampaignPublicRoutes } from "@/campaigns/public";
 
 async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
@@ -87,6 +90,7 @@ async function main(): Promise<void> {
   let sequences: ReturnType<typeof createSequenceStore> | undefined;
   let conditions: ReturnType<typeof createConditionEvaluator> | undefined;
   let scheduler: ReturnType<typeof startScheduler> | undefined;
+  let campaignStore: ReturnType<typeof createCampaignStore> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -200,6 +204,50 @@ async function main(): Promise<void> {
       settings: marketing,
       effects: enrollments.unsubscribeEffects,
     });
+    campaignStore = createCampaignStore(db, clock, {
+      templateExists: (id) => templates!.get(id) !== null,
+      defaultTemplate: () => templates!.getDefault()?.id ?? null,
+      listName: (id) => lists!.name(id),
+    });
+    const campaignSettings = () => {
+      const current = settings!.read();
+      return {
+        // listmonk getDefaultFromEmail: the first configured address.
+        fromEmail: current["app.from_email"][0] ?? "",
+        rootUrl: current["app.root_url"],
+        siteName: current["app.site_name"],
+        messengers: [
+          "email",
+          ...(current.smtp as { enabled: boolean; name: string }[])
+            .filter((s) => s.enabled && s.name)
+            .map((s) => s.name),
+        ],
+        unsubscribeHeader: current["privacy.unsubscribe_header"],
+        allowBlocklist: current["privacy.allow_blocklist"],
+        disableTracking: current["privacy.disable_tracking"],
+        individualTracking: current["privacy.individual_tracking"],
+      };
+    };
+    registerCampaignRoutes(router, {
+      store: campaignStore,
+      templates,
+      renderer,
+      roles,
+      auth,
+      lists,
+      subscribers: subscriberStore,
+      tracking,
+      emailer,
+      settings: campaignSettings,
+    });
+    registerCampaignPublicRoutes(router, {
+      db,
+      store: campaignStore,
+      subscribers: subscriberStore,
+      tracking,
+      settings: campaignSettings,
+      effects: enrollments.unsubscribeEffects,
+    });
     events = createEventStore(db, subscriberStore, {
       emailAllowed: (email) => {
         const current = settings!.read();
@@ -297,6 +345,7 @@ async function main(): Promise<void> {
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
     sequences?.close();
+    campaignStore?.close();
     events?.close();
     sends?.close();
     tracking?.close();

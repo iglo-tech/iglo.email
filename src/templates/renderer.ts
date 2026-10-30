@@ -60,6 +60,18 @@ class Budget {
     this.work += count;
   }
 }
+/**
+ * One message's output and work budget. Pass the same budget to every compiled part of a
+ * message (subject, body, from, headers) so the parts share one limit instead of each
+ * receiving a fresh one.
+ */
+export interface MessageBudget {
+  readonly bytes: number;
+  readonly work: number;
+}
+export function createMessageBudget(): MessageBudget {
+  return new Budget();
+}
 class BoundedEmitter implements Emitter {
   buffer = "";
   bytes = 0;
@@ -386,7 +398,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
     data: { [key: string]: TemplateData },
     compiled?: Compiled,
     tracking?: RenderTracking,
+    budget?: MessageBudget,
   ): { body: string; subject: string } {
+    if (budget !== undefined && !(budget instanceof Budget)) throw new Error("Invalid budget");
     if (request.mode !== "html" && request.mode !== "plain" && request.mode !== "markdown")
       throw new Error("Invalid render mode");
     for (const key of [
@@ -406,7 +420,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // markup replaces it after the whole message is rendered.
     const viewMarker = tracking?.view ? `igloview${crypto.randomUUID().replaceAll("-", "")}` : "";
     data.track_view = viewMarker;
-    const b = new Budget();
+    const b = budget ?? new Budget();
     const run = (source: string, html: boolean, limit: number, ready?: Template[]): string => {
       const e = html ? htmlEngine : plainEngine;
       const parsed =
@@ -580,11 +594,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
         : { layout: parse(snapshot.layout, snapshot.mode !== "plain") }),
     };
     return Object.freeze({
-      renderSync(data: string, tracking?: RenderTracking) {
+      renderSync(data: string, tracking?: RenderTracking, budget?: MessageBudget) {
         if (active >= 4) throw new RenderCapacityError();
         active++;
         try {
-          return runMessage({ ...snapshot, data }, parseTemplateData(data), compiled, tracking);
+          const clean = parseTemplateData(data);
+          return runMessage({ ...snapshot, data }, clean, compiled, tracking, budget);
         } finally {
           active--;
         }
