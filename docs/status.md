@@ -4,7 +4,8 @@ Updated 2026-10-30. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.3 analytics: [brief](briefs/M3.3.md); one Opus worker running.
+M3.3 analytics, [PR #35](https://github.com/iglo-tech/iglo.email/pull/35), head dfce44b. Local checks pass; Sol round-1 review running.
+Host: VM rebooted 3 times 2026-10-30 14:56-15:15, cause unknown; root disk 86% used (18 GiB free).
 Next: M3.4 bounces, M3.5 media, M1.9 import, M4 screens, M5.5, M6.2-M6.4.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
