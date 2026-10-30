@@ -341,7 +341,7 @@ async function main(): Promise<void> {
       },
     });
     const attachments = createAttachments(media, files);
-    const embedImages = createEmbeds(media);
+    const embedImages = createEmbeds(media, app.logger);
     campaignStore = createCampaignStore(db, clock, {
       templateExists: (id) => templates!.get(id) !== null,
       defaultTemplate: () => templates!.getDefault()?.id ?? null,

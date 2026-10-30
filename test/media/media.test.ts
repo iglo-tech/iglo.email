@@ -440,7 +440,66 @@ test("data-embed images in a body and a template go out as inline parts of a cam
   expect(text).toContain(`filename=${header.filename}`);
 });
 
-test("a test send embeds data-embed images, and refuses one it cannot find", async () => {
+const unresolved = [
+  `<img src="https://cdn.example.com/customer.png" data-embed="true">`,
+  `<img src="{{ subscriber.attribs.logo }}" data-embed="true">`,
+].join("");
+
+test("data-embed images with no media row go out with their source unchanged", async () => {
+  const f = await openRunner({ realEmailer: true });
+  const list = await f.list("embed-external");
+  await f.member("to@example.com", [list], "confirmed", {
+    attribs: { logo: "https://cdn.example.com/personal.png" },
+  });
+  const c = await f.campaign(
+    campaignInput([list], {
+      name: "External",
+      content_type: "richtext",
+      messenger: "email",
+      body: unresolved,
+    }),
+  );
+  f.start();
+  await f.status(c.id, "running");
+  await f.until(c.id, "finished");
+  const [mail] = await f.mail(1);
+  const { text, cids } = inlineParts(mail!.data);
+  expect(cids).toEqual([]);
+  expect(text).toContain(`src="https://cdn.example.com/customer.png"`);
+  expect(text).toContain(`src="https://cdn.example.com/personal.png"`);
+  expect(String(f.errors.at(-1))).toContain("not embedded");
+});
+
+test("a test send keeps a source with no media row, as a campaign does", async () => {
+  const f = await open();
+  const list = await f.list("test-external");
+  await f.subscriber("test@example.com", [list], {
+    attribs: { logo: "https://cdn.example.com/personal.png" },
+  });
+  const input = {
+    name: "Test",
+    subject: "S",
+    lists: [list],
+    content_type: "richtext",
+    type: "regular",
+    messenger: "fixture",
+    body: unresolved,
+    from_email: "Fixture <noreply@fixture.test>",
+  };
+  const campaign = await f.campaign(input);
+  const sent = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", {
+    ...input,
+    subscribers: ["test@example.com"],
+  });
+  expect(sent.status).toBe(200);
+  const [mail] = await f.mail(1);
+  const { text, cids } = inlineParts(mail!.data);
+  expect(cids).toEqual([]);
+  expect(text).toContain(`src="https://cdn.example.com/customer.png"`);
+  expect(text).toContain(`src="https://cdn.example.com/personal.png"`);
+});
+
+test("a test send embeds data-embed images, and fails on one whose file is gone", async () => {
   const f = await open();
   const logo = await stored(f, "logo.png", imagePng);
   const list = await f.list("test-embed");
@@ -467,26 +526,29 @@ test("a test send embeds data-embed images, and refuses one it cannot find", asy
   const { cids, sources } = inlineParts(mail!.data);
   expect(cids).toHaveLength(1);
   expect(sources).toEqual([`cid:${cids[0]}`]);
-  expect((await send(embedded("nothing-here.png"))).status).toBe(500);
   expect((await send(`<img data-embed src="cid:already">${input.body}`)).status).toBe(200);
+  rmSync(join(uploads(f), logo.filename));
+  expect((await send(input.body)).status).toBe(500);
 });
 
-test("a missing embedded image pauses the campaign unsent, as a missing attachment does", async () => {
+test("an embedded image that lost its file pauses the campaign unsent", async () => {
   const f = await openRunner();
+  const image = await stored(f, "lost.png", imagePng);
+  rmSync(join(uploads(f), image.filename));
   const list = await f.list("embed-missing");
   await f.member("to@example.com", [list]);
   const c = await f.campaign(
     campaignInput([list], {
       name: "No image",
       content_type: "richtext",
-      body: embedded("nothing-here.png"),
+      body: embedded(image.filename),
     }),
   );
   f.start();
   await f.status(c.id, "running");
   await f.until(c.id, "paused");
   expect(f.pushes).toHaveLength(0);
-  expect(String(f.errors.at(-1))).toContain("nothing-here.png");
+  expect(String(f.errors.at(-1))).toContain("has no file");
 });
 
 test("embedded images count toward a campaign's size limit", async () => {

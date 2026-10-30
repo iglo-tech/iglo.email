@@ -132,7 +132,7 @@ export async function campaignsFixture(
   };
   const files = createFilesystem(directory, mediaSettings);
   const attachments = createAttachments(media, files, options.attachmentCacheBytes);
-  const embedImages = createEmbeds(media);
+  const embedImages = createEmbeds(media, app.logger);
   const store = createCampaignStore(db, clock, {
     templateExists: (id) => templates.get(id) !== null,
     defaultTemplate: () => templates.getDefault()?.id ?? null,
