@@ -369,16 +369,22 @@ async function limits() {
         while (mails[j]! < mails[i]! - 1000 + 1e-9) j++;
         perSecond = Math.max(perSecond, i - j + 1);
       }
-      // Windows anchored at the first message after each window, as the runner counts them.
+      // Runner windows are separated by the sliding-window pause (the rest of a minute after
+      // 2,500 messages at 50/s). Group sends by gaps of over 2 s; the first MAIL of a run comes
+      // late (connection setup), so fixed 60 s spans from it are not the runner's windows.
       const windows: number[] = [];
-      for (let i = 0; i < mails.length;) {
-        const startAt = mails[i]!;
-        let n = 0;
-        while (i < mails.length && mails[i]! < startAt + windowMs) {
-          n++;
-          i++;
+      const pauses: number[] = [];
+      for (let i = 0; i < mails.length; i++) {
+        if (i === 0 || mails[i]! - mails[i - 1]! > 2000) {
+          if (i) pauses.push(Math.round(mails[i]! - mails[i - 1]!));
+          windows.push(0);
         }
-        windows.push(n);
+        windows[windows.length - 1]!++;
+      }
+      let anySixty = 0;
+      for (let i = 0, j = 0; i < mails.length; i++) {
+        while (mails[j]! < mails[i]! - windowMs) j++;
+        anySixty = Math.max(anySixty, i - j + 1);
       }
       const seconds = new Map<number, number>();
       for (const m of mails) {
@@ -398,6 +404,8 @@ async function limits() {
         maxPerAnyOneSecond: perSecond,
         configuredPerSecond: concurrency * rate,
         windows,
+        pausesMs: pauses,
+        maxInAnySixtySeconds: anySixty,
         maxConcurrentTransactions: sink.peak,
         busiestSeconds: [...seconds.values()].sort((a, b) => b - a).slice(0, 5),
         loggedErrors: app.stderr.trim() ? app.stderr.trim().split("\n").length : 0,
@@ -522,13 +530,16 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
 /** D22: campaign sending at 50/s while 100 events/s arrive through the real API. */
 async function mixed(name: "events" | "campaign" | "mixed") {
   const windowMs = Number(process.env.M32_WINDOW_MS ?? 60_000);
+  // listmonk's message_rate is per worker and each worker sleeps a full second after it, so
+  // 5 x 10 delivers below 50/s; M32_CONCURRENCY=6 reaches the 50/s target.
+  const concurrency = Number(process.env.M32_CONCURRENCY ?? 5);
   const events = name !== "campaign",
     campaign = name !== "events";
   await withRun(`mixed-${name}`, async (directory, sink) => {
     const app = await server(directory);
     try {
       const { api, authorization } = await client(app.origin, sink.port, {
-        "app.concurrency": 5,
+        "app.concurrency": concurrency,
         "app.message_rate": 10,
         "app.batch_size": 1000,
         "app.message_sliding_window": false,
@@ -630,6 +641,7 @@ async function mixed(name: "events" | "campaign" | "mixed") {
       record({
         scenario: `d22-${name}`,
         windowMs,
+        settings: { concurrency, rate: 10 },
         events: events
           ? {
               offered: Math.ceil(windowMs / 10),
@@ -644,7 +656,7 @@ async function mixed(name: "events" | "campaign" | "mixed") {
           : null,
         campaign: campaign
           ? {
-              offeredRatePerSecond: 50,
+              configuredMaxPerSecond: concurrency * 10,
               deliveredInWindow: mailInWindow.length,
               ratePerSecond: +((mailInWindow.length / windowMs) * 1000).toFixed(2),
               maxPerAnyOneSecond: perSecond,
@@ -669,4 +681,5 @@ if (mode === "crash" || mode === "all")
   for (const point of ["after-commit", "mid-batch", "batch-end", "unheld"] as const)
     await crash(point);
 if (mode === "mixed" || mode === "all")
-  for (const name of ["events", "campaign", "mixed"] as const) await mixed(name);
+  for (const name of (process.env.M32_SCENARIOS ?? "events,campaign,mixed").split(","))
+    await mixed(name as "events" | "campaign" | "mixed");
