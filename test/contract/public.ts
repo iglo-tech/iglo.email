@@ -5,10 +5,7 @@
 // and the compiled executable; declared differences are marked D-public-… below and listed
 // in docs/design/07-api-and-ui.md. Mail is read from the invocation-owned Mailpit.
 import { randomBytes } from "node:crypto";
-import {
-  assertOwnedMailpit,
-  referenceMailpit,
-} from "@/test/perf/runtime-compat/smtp-env";
+import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
@@ -18,10 +15,7 @@ const dummy = "00000000-0000-0000-0000-000000000000";
 const missing = "11111111-1111-4111-8111-111111111111";
 const form = { "content-type": "application/x-www-form-urlencoded" };
 const decodeEntities = (html: string) =>
-  html
-    .replaceAll("&amp;", "&")
-    .replaceAll("&#43;", "+")
-    .replaceAll("&#x2B;", "+");
+  html.replaceAll("&amp;", "&").replaceAll("&#43;", "+").replaceAll("&#x2B;", "+");
 
 export async function runPublicContract(target: {
   mode: Mode;
@@ -108,16 +102,12 @@ export async function runPublicContract(target: {
     }
   };
   const message = async (id: string) =>
-    (await (
-      await mailpit(`/api/v1/message/${encodeURIComponent(id)}`)
-    ).json()) as {
+    (await (await mailpit(`/api/v1/message/${encodeURIComponent(id)}`)).json()) as {
       HTML: string;
       Attachments: { PartID: string; FileName: string; ContentType: string }[];
     };
   const raw = async (id: string) =>
-    await (
-      await mailpit(`/api/v1/message/${encodeURIComponent(id)}/raw`)
-    ).text();
+    await (await mailpit(`/api/v1/message/${encodeURIComponent(id)}/raw`)).text();
   const owned = {
     lists: [] as number[],
     subscribers: new Set<number>(),
@@ -135,8 +125,7 @@ export async function runPublicContract(target: {
       query: `subscribers.email = '${email}'`,
       per_page: "1",
     });
-    const found = (await call(`/api/subscribers?${query}`)).body?.data
-      ?.results?.[0];
+    const found = (await call(`/api/subscribers?${query}`)).body?.data?.results?.[0];
     if (found) owned.subscribers.add(found.id);
     return found as {
       id: number;
@@ -162,11 +151,7 @@ export async function runPublicContract(target: {
     owned.lists.push(response.body.data.id);
     return response.body.data as { id: number; uuid: string; name: string };
   };
-  const createSubscriber = async (
-    name: string,
-    lists: number[],
-    preconfirm = false,
-  ) => {
+  const createSubscriber = async (name: string, lists: number[], preconfirm = false) => {
     const email = address(name);
     const response = await call("/api/subscribers", "POST", {
       email,
@@ -188,11 +173,7 @@ export async function runPublicContract(target: {
     // Upstream reloads asynchronously after a settings write.
     if (reference) {
       await Bun.sleep(1200);
-      for (
-        const deadline = Date.now() + 15_000;
-        Date.now() < deadline;
-        await Bun.sleep(100)
-      ) {
+      for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(100)) {
         try {
           const health = await fetch(`${target.baseUrl}/health`, {
             signal: AbortSignal.timeout(1000),
@@ -205,11 +186,7 @@ export async function runPublicContract(target: {
     }
   };
   const originals = new Map<string, unknown>();
-  const withSetting = async (
-    key: string,
-    value: unknown,
-    run: () => Promise<void>,
-  ) => {
+  const withSetting = async (key: string, value: unknown, run: () => Promise<void>) => {
     const settings = (await call("/api/settings")).body.data;
     originals.set(key, settings[key]);
     await setSetting(key, value);
@@ -238,10 +215,7 @@ export async function runPublicContract(target: {
           email_headers: [],
         },
       ];
-      check(
-        (await call("/api/settings/smtp", "PUT", smtp)).status === 200,
-        "smtp-settings",
-      );
+      check((await call("/api/settings/smtp", "PUT", smtp)).status === 200, "smtp-settings");
     }
     const rootUrl = (settings["app.root_url"] as string).replace(/\/+$/, "");
     const single = await createList("single", "public", "single");
@@ -256,9 +230,7 @@ export async function runPublicContract(target: {
       lists.status === 200 &&
         listed.some((l) => l.uuid === single.uuid && l.name === single.name) &&
         listed.some((l) => l.uuid === double.uuid) &&
-        !listed.some(
-          (l) => l.uuid === hidden.uuid || l.uuid === hiddenDouble.uuid,
-        ) &&
+        !listed.some((l) => l.uuid === hidden.uuid || l.uuid === hiddenDouble.uuid) &&
         listed.every((l) => Object.keys(l).sort().join() === "name,uuid"),
       "lists",
     );
@@ -273,10 +245,7 @@ export async function runPublicContract(target: {
     const page = await visit("/subscription/form");
     check(
       page.status === 200 &&
-        page.headers
-          .get("content-type")
-          ?.toLowerCase()
-          .startsWith("text/html") &&
+        page.headers.get("content-type")?.toLowerCase().startsWith("text/html") &&
         page.text.includes('<form method="post"') &&
         page.text.includes('name="email"') &&
         page.text.includes('name="nonce"') &&
@@ -294,10 +263,7 @@ export async function runPublicContract(target: {
       name: "Ada",
       list_uuids: [single.uuid],
     });
-    check(
-      ada.status === 200 && JSON.parse(ada.text).data.has_optin === false,
-      "api-single",
-    );
+    check(ada.status === 200 && JSON.parse(ada.text).data.has_optin === false, "api-single");
     const adaRow = await adminSubscriber(adaEmail);
     check(
       adaRow?.name === "Ada" &&
@@ -318,10 +284,7 @@ export async function runPublicContract(target: {
       ).status === 200,
       "api-no-name",
     );
-    check(
-      (await adminSubscriber(lowEmail))?.name === lowEmail.split("@")[0],
-      "api-no-name-stored",
-    );
+    check((await adminSubscriber(lowEmail))?.name === lowEmail.split("@")[0], "api-no-name-stored");
 
     // Double opt-in: unconfirmed, confirmation mail, then the link confirms.
     const bobEmail = address("bob");
@@ -330,41 +293,28 @@ export async function runPublicContract(target: {
       name: "Bob Builder",
       list_uuids: [double.uuid],
     });
-    check(
-      bob.status === 200 && JSON.parse(bob.text).data.has_optin === true,
-      "api-double",
-    );
+    check(bob.status === 200 && JSON.parse(bob.text).data.has_optin === true, "api-double");
     const bobRow = await adminSubscriber(bobEmail);
-    check(
-      (await status(bobRow.id, double.id)) === "unconfirmed",
-      "api-double-unconfirmed",
-    );
+    check((await status(bobRow.id, double.id)) === "unconfirmed", "api-double-unconfirmed");
     const [bobMail] = await received(bobEmail);
     check(bobMail?.Subject === "Confirm subscription", "optin-subject");
     const bobHtml = decodeEntities((await message(bobMail!.ID)).HTML);
     const bobRaw = await raw(bobMail!.ID);
-    const optinLink = new RegExp(
-      `href="([^"]*/subscription/optin/${uuidText}\\?[^"]*)"`,
-    ).exec(bobHtml)?.[1];
-    check(
-      optinLink ===
-        `${rootUrl}/subscription/optin/${bobRow.uuid}?l=${double.uuid}`,
-      "link",
-    );
+    const optinLink = new RegExp(`href="([^"]*/subscription/optin/${uuidText}\\?[^"]*)"`).exec(
+      bobHtml,
+    )?.[1];
+    check(optinLink === `${rootUrl}/subscription/optin/${bobRow.uuid}?l=${double.uuid}`, "link");
     check(bobHtml.includes("Hi Bob"), "optin-greeting");
     check(bobHtml.includes(double.name), "optin-list-name");
     check(
-      bobHtml.includes(
-        `${rootUrl}/subscription/${dummy}/${bobRow.uuid}?manage=true`,
-      ),
+      bobHtml.includes(`${rootUrl}/subscription/${dummy}/${bobRow.uuid}?manage=true`),
       "optin-manage-link",
     );
     check(
       header(bobRaw, "X-Listmonk-Subscriber") === bobRow.uuid &&
         header(bobRaw, "List-Unsubscribe") ===
           `<${rootUrl}/subscription/${dummy}/${bobRow.uuid}>` &&
-        header(bobRaw, "List-Unsubscribe-Post") ===
-          "List-Unsubscribe=One-Click",
+        header(bobRaw, "List-Unsubscribe-Post") === "List-Unsubscribe=One-Click",
       "optin-headers",
     );
 
@@ -374,17 +324,11 @@ export async function runPublicContract(target: {
       name: "Another Name",
       list_uuids: [double.uuid],
     });
-    check(
-      again.status === 200 && JSON.parse(again.text).data.has_optin === true,
-      "api-repeat",
-    );
+    check(again.status === 200 && JSON.parse(again.text).data.has_optin === true, "api-repeat");
     await Bun.sleep(200);
     check((await mails(bobEmail)).length === 1, "optin-throttled");
     // An existing subscriber's stored name is not overwritten by a public request.
-    check(
-      (await adminSubscriber(bobEmail)).name === "Bob Builder",
-      "api-repeat-name",
-    );
+    check((await adminSubscriber(bobEmail)).name === "Bob Builder", "api-repeat-name");
 
     // GET shows the page and never confirms.
     const optinPath = optinLink!.slice(rootUrl.length);
@@ -398,10 +342,7 @@ export async function runPublicContract(target: {
         optinPage.text.includes(double.name),
       "optin-page",
     );
-    check(
-      (await status(bobRow.id, double.id)) === "unconfirmed",
-      "optin-get-no-change",
-    );
+    check((await status(bobRow.id, double.id)) === "unconfirmed", "optin-get-no-change");
     // A POST without confirm shows the same page.
     check(
       (await post(optinPath)).text.includes('class="optin-form"') &&
@@ -411,10 +352,7 @@ export async function runPublicContract(target: {
     // A hostile prefetch with confirm in the query (D-public-get-confirm).
     const prefetch = await visit(`${optinPath}&confirm=true`);
     if (reference) {
-      check(
-        (await status(bobRow.id, double.id)) === "confirmed",
-        "reference-get-confirm",
-      );
+      check((await status(bobRow.id, double.id)) === "confirmed", "reference-get-confirm");
       check(
         (
           await call(`/api/subscribers/lists/${bobRow.id}`, "PUT", {
@@ -428,29 +366,15 @@ export async function runPublicContract(target: {
       );
     } else {
       check(
-        prefetch.status === 200 &&
-          (await status(bobRow.id, double.id)) === "unconfirmed",
+        prefetch.status === 200 && (await status(bobRow.id, double.id)) === "unconfirmed",
         "optin-get-query-no-change",
       );
     }
     // Malformed list filter and identifiers.
-    check(
-      (await visit(`/subscription/optin/${bobRow.uuid}?l=nope`)).status === 400,
-      "optin-bad-l",
-    );
-    check(
-      (await visit("/subscription/optin/not-a-uuid")).status === 400,
-      "optin-bad-uuid",
-    );
-    check(
-      (await visit(`/subscription/optin/${missing}`)).status === 404,
-      "optin-missing",
-    );
-    check(
-      (await post(`/subscription/optin/${missing}`, "confirm=true")).status ===
-        404,
-      "forged",
-    );
+    check((await visit(`/subscription/optin/${bobRow.uuid}?l=nope`)).status === 400, "optin-bad-l");
+    check((await visit("/subscription/optin/not-a-uuid")).status === 400, "optin-bad-uuid");
+    check((await visit(`/subscription/optin/${missing}`)).status === 404, "optin-missing");
+    check((await post(`/subscription/optin/${missing}`, "confirm=true")).status === 404, "forged");
     // Confirm.
     const confirmed = await post(
       `/subscription/optin/${bobRow.uuid}`,
@@ -464,8 +388,7 @@ export async function runPublicContract(target: {
     );
     const none = await visit(`/subscription/optin/${bobRow.uuid}`);
     check(
-      none.status === 200 &&
-        none.text.includes("There are no subscriptions to confirm."),
+      none.status === 200 && none.text.includes("There are no subscriptions to confirm."),
       "optin-none",
     );
 
@@ -476,14 +399,10 @@ export async function runPublicContract(target: {
       list_uuids: [double.uuid],
     });
     check(
-      repeat.status === 200 &&
-        JSON.parse(repeat.text).data.has_optin === !reference,
+      repeat.status === 200 && JSON.parse(repeat.text).data.has_optin === !reference,
       "api-existing-confirmed",
     );
-    check(
-      (await status(bobRow.id, double.id)) === "confirmed",
-      "api-existing-stays-confirmed",
-    );
+    check((await status(bobRow.id, double.id)) === "confirmed", "api-existing-stays-confirmed");
 
     // An unsubscribed membership resubscribes as unconfirmed; only a public signup can.
     const carol = await createSubscriber("carol", [single.id], true);
@@ -491,10 +410,7 @@ export async function runPublicContract(target: {
       (await post(`/subscription/${dummy}/${carol.uuid}`)).status === 200,
       "dummy-unsubscribe-page",
     );
-    check(
-      (await status(carol.id, single.id)) === "confirmed",
-      "dummy-keeps-confirmed",
-    );
+    check((await status(carol.id, single.id)) === "confirmed", "dummy-keeps-confirmed");
     check(
       (
         await call(`/api/subscribers/lists/${carol.id}`, "PUT", {
@@ -517,11 +433,7 @@ export async function runPublicContract(target: {
 
     // A blocklisted subscriber stays blocked, gets no mail and is not revealed.
     const dora = await createSubscriber("dora", []);
-    check(
-      (await call(`/api/subscribers/${dora.id}/blocklist`, "PUT")).status ===
-        200,
-      "dora",
-    );
+    check((await call(`/api/subscribers/${dora.id}/blocklist`, "PUT")).status === 200, "dora");
     const doraSignup = await postJson("/api/public/subscription", {
       email: dora.email,
       list_uuids: [double.uuid],
@@ -537,17 +449,9 @@ export async function runPublicContract(target: {
     check((await mails(dora.email)).length === 0, "blocklisted-no-mail");
 
     // Input errors.
-    const fail = async (
-      body: unknown,
-      code: number,
-      text: string,
-      label: string,
-    ) => {
+    const fail = async (body: unknown, code: number, text: string, label: string) => {
       const response = await postJson("/api/public/subscription", body);
-      check(
-        response.status === code && JSON.parse(response.text).message === text,
-        label,
-      );
+      check(response.status === code && JSON.parse(response.text).message === text, label);
     };
     await fail(
       { email: address("none"), list_uuids: [] },
@@ -555,12 +459,7 @@ export async function runPublicContract(target: {
       "No valid lists selected to subscribe.",
       "api-no-lists",
     );
-    await fail(
-      { email: "bad", list_uuids: [single.uuid] },
-      400,
-      "Invalid email.",
-      "api-email",
-    );
+    await fail({ email: "bad", list_uuids: [single.uuid] }, 400, "Invalid email.", "api-email");
     await fail(
       { email: `${"a".repeat(1001)}@example.test`, list_uuids: [single.uuid] },
       400,
@@ -609,9 +508,7 @@ export async function runPublicContract(target: {
     const posted = await post("/subscription/form", formData(eveEmail));
     check(
       posted.status === 200 &&
-        posted.text.includes(
-          "An e-mail has been sent to you to confirm your subscription(s).",
-        ),
+        posted.text.includes("An e-mail has been sent to you to confirm your subscription(s)."),
       "form-optin",
     );
     const eveRow = await adminSubscriber(eveEmail);
@@ -646,10 +543,7 @@ export async function runPublicContract(target: {
         l: single.uuid,
       }),
     );
-    check(
-      gus.status === 200 && gus.text.includes("Subscribed successfully."),
-      "form-single",
-    );
+    check(gus.status === 200 && gus.text.includes("Subscribed successfully."), "form-single");
     await adminSubscriber(gusEmail);
     // Bot field: Echo's 502 JSON error.
     const bot = await post(
@@ -661,20 +555,11 @@ export async function runPublicContract(target: {
       }),
     );
     check(bot.status === 502, "form-nonce");
-    check(
-      !(await adminSubscriber(`bot-${marker}@example.test`)),
-      "form-nonce-no-write",
-    );
-    const noLists = await post(
-      "/subscription/form",
-      new URLSearchParams({ email: eveEmail }),
-    );
+    check(!(await adminSubscriber(`bot-${marker}@example.test`)), "form-nonce-no-write");
+    const noLists = await post("/subscription/form", new URLSearchParams({ email: eveEmail }));
     check(
       noLists.status === 400 &&
-        noLists.headers
-          .get("content-type")
-          ?.toLowerCase()
-          .startsWith("text/html") &&
+        noLists.headers.get("content-type")?.toLowerCase().startsWith("text/html") &&
         noLists.text.includes("No valid lists selected to subscribe."),
       "form-no-lists",
     );
@@ -685,14 +570,11 @@ export async function runPublicContract(target: {
     check(henryMail?.Subject === "Confirm subscription", "admin-create-mail");
     const henryHtml = decodeEntities((await message(henryMail!.ID)).HTML);
     check(
-      henryHtml.includes("Private list") &&
-        !henryHtml.includes(hiddenDouble.name),
+      henryHtml.includes("Private list") && !henryHtml.includes(hiddenDouble.name),
       "admin-create-private",
     );
     check(
-      (await visit(`/subscription/optin/${henry.uuid}`)).text.includes(
-        "Private list",
-      ),
+      (await visit(`/subscription/optin/${henry.uuid}`)).text.includes("Private list"),
       "optin-page-private",
     );
     // preconfirm_subscriptions and single opt-in lists send nothing.
@@ -715,14 +597,12 @@ export async function runPublicContract(target: {
     check((await received(jay.email)).length === 1, "admin-update-mail");
     // The explicit endpoint.
     check(
-      (await call(`/api/subscribers/${jay.id}/optin`, "POST")).body?.data ===
-        true,
+      (await call(`/api/subscribers/${jay.id}/optin`, "POST")).body?.data === true,
       "admin-optin",
     );
     check((await received(jay.email, 2)).length === 2, "admin-optin-mail");
     check(
-      (await call(`/api/subscribers/${ida.id}/optin`, "POST")).body?.data ===
-        true,
+      (await call(`/api/subscribers/${ida.id}/optin`, "POST")).body?.data === true,
       "admin-optin-nothing",
     );
     await Bun.sleep(200);
@@ -733,11 +613,7 @@ export async function runPublicContract(target: {
     );
 
     // Preferences.
-    const kim = await createSubscriber(
-      "kim",
-      [single.id, double.id, hidden.id],
-      true,
-    );
+    const kim = await createSubscriber("kim", [single.id, double.id, hidden.id], true);
     const prefs = `/subscription/${dummy}/${kim.uuid}`;
     const unsubPage = await visit(prefs);
     check(
@@ -764,17 +640,12 @@ export async function runPublicContract(target: {
       "prefs-manage-page",
     );
     check(
-      (await post(prefs, new URLSearchParams({ manage: "true", name: "  " })))
-        .status === 400,
+      (await post(prefs, new URLSearchParams({ manage: "true", name: "  " }))).status === 400,
       "prefs-empty-name",
     );
     check(
-      (
-        await post(
-          prefs,
-          new URLSearchParams({ manage: "true", name: "n".repeat(257) }),
-        )
-      ).status === 400,
+      (await post(prefs, new URLSearchParams({ manage: "true", name: "n".repeat(257) }))).status ===
+        400,
       "prefs-long-name",
     );
     const saved = await post(
@@ -786,13 +657,11 @@ export async function runPublicContract(target: {
       }),
     );
     check(
-      saved.status === 200 &&
-        saved.text.includes("Your preferences have been saved."),
+      saved.status === 200 && saved.text.includes("Your preferences have been saved."),
       "prefs-saved",
     );
     check(
-      (await call(`/api/subscribers/${kim.id}`)).body.data.name ===
-        "Kim Renamed" &&
+      (await call(`/api/subscribers/${kim.id}`)).body.data.name === "Kim Renamed" &&
         (await status(kim.id, single.id)) === "confirmed" &&
         (await status(kim.id, double.id)) === "unsubscribed" &&
         (await status(kim.id, hidden.id)) === "confirmed",
@@ -800,9 +669,7 @@ export async function runPublicContract(target: {
     );
     // The manage page lists only current subscriptions.
     check(
-      !(await visit(`${prefs}?manage=true`)).text.includes(
-        `value="${double.uuid}"`,
-      ),
+      !(await visit(`${prefs}?manage=true`)).text.includes(`value="${double.uuid}"`),
       "prefs-unsubscribed-hidden",
     );
     // Blocklist through the manage form.
@@ -814,17 +681,13 @@ export async function runPublicContract(target: {
     check(
       blocked.status === 200 &&
         blocked.text.includes("You have unsubscribed successfully.") &&
-        (await call(`/api/subscribers/${lee.id}`)).body.data.status ===
-          "blocklisted" &&
+        (await call(`/api/subscribers/${lee.id}`)).body.data.status === "blocklisted" &&
         (await status(lee.id, hidden.id)) === "unsubscribed",
       "prefs-blocklist",
     );
-    const leePage = await visit(
-      `/subscription/${dummy}/${lee.uuid}?manage=true`,
-    );
+    const leePage = await visit(`/subscription/${dummy}/${lee.uuid}?manage=true`);
     check(
-      leePage.status === 200 &&
-        leePage.text.includes("Permanently unsubscribed."),
+      leePage.status === 200 && leePage.text.includes("Permanently unsubscribed."),
       "prefs-blocklisted-page",
     );
     // The dummy campaign (the opt-in mail's unsubscribe link) ends unconfirmed memberships.
@@ -841,37 +704,23 @@ export async function runPublicContract(target: {
       ).status === 200,
       "mia-confirm",
     );
-    check(
-      (await post(`/subscription/${dummy}/${mia.uuid}`)).status === 200,
-      "dummy-post",
-    );
+    check((await post(`/subscription/${dummy}/${mia.uuid}`)).status === 200, "dummy-post");
     check(
       (await status(mia.id, double.id)) === "unsubscribed" &&
         (await status(mia.id, single.id)) === "confirmed",
       "dummy-unsub-unconfirmed",
     );
     // Forged UUIDs.
-    check(
-      (await visit(`/subscription/${dummy}/${missing}`)).status === 404,
-      "prefs-forged",
-    );
-    check(
-      (await post(`/subscription/${dummy}/${missing}`)).status === 404,
-      "prefs-forged-post",
-    );
-    check(
-      (await visit(`/subscription/nope/${kim.uuid}`)).status === 400,
-      "prefs-bad-camp",
-    );
+    check((await visit(`/subscription/${dummy}/${missing}`)).status === 404, "prefs-forged");
+    check((await post(`/subscription/${dummy}/${missing}`)).status === 404, "prefs-forged-post");
+    check((await visit(`/subscription/nope/${kim.uuid}`)).status === 400, "prefs-bad-camp");
 
     // Export: a data file by mail, nothing in the response.
     const noa = await createSubscriber("noa", [single.id, hidden.id], true);
     const exported = await post(`/subscription/export/${noa.uuid}`);
     check(
       exported.status === 200 &&
-        exported.text.includes(
-          "Your data has been e-mailed to you as an attachment.",
-        ) &&
+        exported.text.includes("Your data has been e-mailed to you as an attachment.") &&
         !exported.text.includes(noa.email),
       "export",
     );
@@ -881,8 +730,7 @@ export async function runPublicContract(target: {
     check(noaMessage.Attachments.length === 1, "export-attachment");
     const attachment = noaMessage.Attachments[0]!;
     check(
-      attachment.FileName === "data.json" &&
-        attachment.ContentType.includes("application/json"),
+      attachment.FileName === "data.json" && attachment.ContentType.includes("application/json"),
       "export-attachment-type",
     );
     const data = JSON.parse(
@@ -904,40 +752,23 @@ export async function runPublicContract(target: {
         Array.isArray(data.campaign_views) &&
         Array.isArray(data.link_clicks) &&
         // D-public-export: sends and events are native additions.
-        (reference ||
-          (Array.isArray(data.sends) && Array.isArray(data.events))),
+        (reference || (Array.isArray(data.sends) && Array.isArray(data.events))),
       "export-data",
     );
-    check(
-      (await post(`/subscription/export/${missing}`)).status === 404,
-      "export-forged",
-    );
-    check(
-      (await post("/subscription/export/nope")).status === 400,
-      "export-bad-uuid",
-    );
+    check((await post(`/subscription/export/${missing}`)).status === 404, "export-forged");
+    check((await post("/subscription/export/nope")).status === 400, "export-bad-uuid");
 
     // Wipe.
     const oli = await createSubscriber("oli", [single.id], true);
     const wiped = await post(`/subscription/wipe/${oli.uuid}`);
     check(
-      wiped.status === 200 &&
-        wiped.text.includes("Your subscriptions and all associated data"),
+      wiped.status === 200 && wiped.text.includes("Your subscriptions and all associated data"),
       "wipe",
     );
-    check(
-      (await call(`/api/subscribers/${oli.id}`)).status === 400,
-      "wipe-gone",
-    );
+    check((await call(`/api/subscribers/${oli.id}`)).status === 400, "wipe-gone");
     owned.subscribers.delete(oli.id);
-    check(
-      (await post(`/subscription/wipe/${oli.uuid}`)).status === 404,
-      "wipe-repeat",
-    );
-    check(
-      (await post(`/subscription/wipe/${missing}`)).status === 404,
-      "wipe-forged",
-    );
+    check((await post(`/subscription/wipe/${oli.uuid}`)).status === 404, "wipe-repeat");
+    check((await post(`/subscription/wipe/${missing}`)).status === 404, "wipe-forged");
     if (!reference) {
       // D25: every subscriber deletion anonymizes the retained send journal.
       const created = await call("/api/templates", "POST", {
@@ -947,14 +778,8 @@ export async function runPublicContract(target: {
         body: "<p>Receipt</p>",
       });
       check(created.status === 200, "wipe-template");
-      const removals: [
-        string,
-        (who: { id: number; uuid: string }) => Promise<number>,
-      ][] = [
-        [
-          "wipe",
-          async (who) => (await post(`/subscription/wipe/${who.uuid}`)).status,
-        ],
+      const removals: [string, (who: { id: number; uuid: string }) => Promise<number>][] = [
+        ["wipe", async (who) => (await post(`/subscription/wipe/${who.uuid}`)).status],
         [
           "bulk",
           async (who) =>
@@ -979,26 +804,21 @@ export async function runPublicContract(target: {
         owned.subscribers.delete(who.id);
         const row = (await call(`/api/sends/${send}`)).body.data;
         check(
-          row.to_email === "" &&
-            row.subscriber_id === null &&
-            row.status === "sent",
+          row.to_email === "" && row.subscriber_id === null && row.status === "sent",
           `anon-${label}-row`,
         );
       }
       check(
-        (await call(`/api/templates/${created.body.data.id}`, "DELETE"))
-          .status === 200,
+        (await call(`/api/templates/${created.body.data.id}`, "DELETE")).status === 200,
         "anon-end",
       );
     }
 
     // A finished campaign: view in browser, template URLs and the archive.
     const reader = await createSubscriber("reader", [single.id], true);
-    const templates = (await call("/api/templates?no_body=true")).body
-      .data as any[];
-    const archiveTemplate = templates.find(
-      (t) => t.name === "Default archive template",
-    ).id as number;
+    const templates = (await call("/api/templates?no_body=true")).body.data as any[];
+    const archiveTemplate = templates.find((t) => t.name === "Default archive template")
+      .id as number;
     const defaultTemplate = templates.find((t) => t.is_default).id as number;
     const urls = reference
       ? `<a href="{{ MessageURL }}">view</a> <a href="{{ ManageURL }}">manage</a> <a href="{{ ArchiveURL }}">all</a> <a href="{{ OptinURL }}">confirm</a> Hi {{ .Subscriber.FirstName }}`
@@ -1025,24 +845,16 @@ export async function runPublicContract(target: {
     const view = `/campaign/${campaign.uuid}/${reader.uuid}`;
     const draftView = await visit(view);
     check(
-      draftView.status === 200 &&
-        draftView.headers.get("x-robots-tag") === "noindex",
+      draftView.status === 200 && draftView.headers.get("x-robots-tag") === "noindex",
       "view-draft",
     );
     // Upstream falls through to a 500 page; a forged UUID is a safe 404 here.
     check(
-      (await visit(`/campaign/${campaign.uuid}/${missing}`)).status ===
-        (reference ? 500 : 404),
+      (await visit(`/campaign/${campaign.uuid}/${missing}`)).status === (reference ? 500 : 404),
       "view-no-sub",
     );
-    check(
-      (await visit(`/campaign/${missing}/${reader.uuid}`)).status === 404,
-      "view-no-camp",
-    );
-    check(
-      (await visit(`/campaign/nope/${reader.uuid}`)).status === 400,
-      "view-bad-uuid",
-    );
+    check((await visit(`/campaign/${missing}/${reader.uuid}`)).status === 404, "view-no-camp");
+    check((await visit(`/campaign/nope/${reader.uuid}`)).status === 400, "view-bad-uuid");
     const notYet = await visit(`/archive/${campaign.uuid}`);
     // D-public-archive-draft: upstream publishes an unsent draft by its UUID or slug.
     check(notYet.status === (reference ? 200 : 404), "archive-draft-hidden");
@@ -1055,8 +867,7 @@ export async function runPublicContract(target: {
       "campaign-start",
     );
     for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
-      const current = (await call(`/api/campaigns/${campaign.id}`)).body.data
-        .status;
+      const current = (await call(`/api/campaigns/${campaign.id}`)).body.data.status;
       if (current === "finished") break;
       check(Date.now() < deadline, "campaign-finish");
     }
@@ -1066,9 +877,7 @@ export async function runPublicContract(target: {
     check(readerMail, "campaign-mail");
     const readerHtml = decodeEntities((await message(readerMail!.ID)).HTML);
     check(
-      readerHtml.includes(
-        `href="${rootUrl}/campaign/${campaign.uuid}/${reader.uuid}"`,
-      ) &&
+      readerHtml.includes(`href="${rootUrl}/campaign/${campaign.uuid}/${reader.uuid}"`) &&
         readerHtml.includes(
           `href="${rootUrl}/subscription/${campaign.uuid}/${reader.uuid}?manage=true"`,
         ) &&
@@ -1082,10 +891,7 @@ export async function runPublicContract(target: {
     const viewed = await visit(view);
     check(
       viewed.status === 200 &&
-        viewed.headers
-          .get("content-type")
-          ?.toLowerCase()
-          .startsWith("text/html") &&
+        viewed.headers.get("content-type")?.toLowerCase().startsWith("text/html") &&
         viewed.text.includes(`/campaign/${campaign.uuid}/${reader.uuid}`) &&
         viewed.text.includes("Hi reader"),
       "view",
@@ -1135,133 +941,87 @@ export async function runPublicContract(target: {
       "archive-single",
     );
     const latest = await visit("/archive/latest");
-    check(
-      latest.status === 200 && latest.text.includes("Hi Archive"),
-      "archive-latest",
-    );
-    check(
-      (await visit(`/archive/${missing}`)).status === 404,
-      "archive-missing",
-    );
-    check(
-      (await visit(`/archive/no-such-${marker}`)).status === 404,
-      "archive-missing-slug",
-    );
+    check(latest.status === 200 && latest.text.includes("Hi Archive"), "archive-latest");
+    check((await visit(`/archive/${missing}`)).status === 404, "archive-missing");
+    check((await visit(`/archive/no-such-${marker}`)).status === 404, "archive-missing-slug");
     const pageTwo = await visit("/api/public/archive?page=5000&per_page=1");
     check(
-      pageTwo.status === 200 &&
-        JSON.parse(pageTwo.text).data.results.length === 0,
+      pageTwo.status === 200 && JSON.parse(pageTwo.text).data.results.length === 0,
       "archive-past-end",
     );
 
     // Custom appearance.
-    await withSetting(
-      "appearance.public.custom_css",
-      `/* ${marker} */`,
-      async () => {
-        const css = await visit("/public/custom.css");
-        check(
-          css.status === 200 &&
-            css.headers.get("content-type") === "text/css; charset=utf-8" &&
-            css.text === `/* ${marker} */`,
-          "custom-css",
-        );
-      },
-    );
+    await withSetting("appearance.public.custom_css", `/* ${marker} */`, async () => {
+      const css = await visit("/public/custom.css");
+      check(
+        css.status === 200 &&
+          css.headers.get("content-type") === "text/css; charset=utf-8" &&
+          css.text === `/* ${marker} */`,
+        "custom-css",
+      );
+    });
     const js = await visit("/public/custom.js");
     check(
       js.status === 200 &&
-        js.headers.get("content-type") ===
-          "application/javascript; charset=utf-8",
+        js.headers.get("content-type") === "application/javascript; charset=utf-8",
       "custom-js",
     );
-    check(
-      (await visit("/subscription/form")).text.includes("/public/custom.css"),
-      "custom-link",
-    );
+    check((await visit("/subscription/form")).text.includes("/public/custom.css"), "custom-link");
 
     // Settings gates.
-    await withSetting(
-      "app.enable_public_subscription_page",
-      false,
-      async () => {
-        check(
-          (await visit("/subscription/form")).status === 404,
-          "gate-form-page",
-        );
-        check(
-          (
-            await post(
-              "/subscription/form",
-              new URLSearchParams({ email: address("gate") }),
-            )
-          ).status === 404,
-          "gate-form-post",
-        );
-        const api = await postJson("/api/public/subscription", {
-          email: address("gate"),
-          list_uuids: [single.uuid],
-        });
-        check(
-          api.status === 400 &&
-            JSON.parse(api.text).message === "That feature is not available.",
-          "gate-api",
-        );
-        check(
-          (await visit("/api/public/lists")).status === 200,
-          "gate-lists-open",
-        );
-      },
-    );
-    await withSetting(
-      "security.trusted_urls",
-      ["https://example.test/thanks"],
-      async () => {
-        const trusted = await post(
-          "/subscription/form",
-          new URLSearchParams({
-            email: address("next"),
-            l: single.uuid,
-            next: "https://example.test/thanks",
-          }),
-        );
-        check(
-          trusted.status === 303 &&
-            trusted.headers.get("location") === "https://example.test/thanks",
-          "next-trusted",
-        );
-        const foreign = await post(
-          "/subscription/form",
-          new URLSearchParams({
-            email: address("next2"),
-            l: single.uuid,
-            next: "https://attacker.test/",
-          }),
-        );
-        check(
-          foreign.status === 200 && !foreign.headers.get("location"),
-          "next-foreign",
-        );
-        await adminSubscriber(`next-${marker}@example.test`);
-        await adminSubscriber(`next2-${marker}@example.test`);
-      },
-    );
-    await withSetting(
-      "privacy.domain_blocklist",
-      ["blocked.example"],
-      async () => {
-        const response = await postJson("/api/public/subscription", {
-          email: `someone-${marker}@blocked.example`,
-          list_uuids: [single.uuid],
-        });
-        check(
-          response.status === 400 &&
-            JSON.parse(response.text).message ===
-              "The e-mail domain is blocklisted.",
-          "gate-blocklist",
-        );
-      },
-    );
+    await withSetting("app.enable_public_subscription_page", false, async () => {
+      check((await visit("/subscription/form")).status === 404, "gate-form-page");
+      check(
+        (await post("/subscription/form", new URLSearchParams({ email: address("gate") })))
+          .status === 404,
+        "gate-form-post",
+      );
+      const api = await postJson("/api/public/subscription", {
+        email: address("gate"),
+        list_uuids: [single.uuid],
+      });
+      check(
+        api.status === 400 && JSON.parse(api.text).message === "That feature is not available.",
+        "gate-api",
+      );
+      check((await visit("/api/public/lists")).status === 200, "gate-lists-open");
+    });
+    await withSetting("security.trusted_urls", ["https://example.test/thanks"], async () => {
+      const trusted = await post(
+        "/subscription/form",
+        new URLSearchParams({
+          email: address("next"),
+          l: single.uuid,
+          next: "https://example.test/thanks",
+        }),
+      );
+      check(
+        trusted.status === 303 && trusted.headers.get("location") === "https://example.test/thanks",
+        "next-trusted",
+      );
+      const foreign = await post(
+        "/subscription/form",
+        new URLSearchParams({
+          email: address("next2"),
+          l: single.uuid,
+          next: "https://attacker.test/",
+        }),
+      );
+      check(foreign.status === 200 && !foreign.headers.get("location"), "next-foreign");
+      await adminSubscriber(`next-${marker}@example.test`);
+      await adminSubscriber(`next2-${marker}@example.test`);
+    });
+    await withSetting("privacy.domain_blocklist", ["blocked.example"], async () => {
+      const response = await postJson("/api/public/subscription", {
+        email: `someone-${marker}@blocked.example`,
+        list_uuids: [single.uuid],
+      });
+      check(
+        response.status === 400 &&
+          JSON.parse(response.text).message === "The e-mail domain is blocklisted.",
+        "gate-blocklist",
+      );
+    });
     await withSetting("privacy.allow_preferences", false, async () => {
       const off = await visit(`${prefs}?manage=true`);
       check(
@@ -1272,28 +1032,18 @@ export async function runPublicContract(target: {
         "gate-prefs-page",
       );
       check(
-        (await post(prefs, new URLSearchParams({ manage: "true", name: "X" })))
-          .status === 400,
+        (await post(prefs, new URLSearchParams({ manage: "true", name: "X" }))).status === 400,
         "gate-prefs-post",
       );
     });
     await withSetting("privacy.allow_export", false, async () => {
-      check(
-        (await post(`/subscription/export/${noa.uuid}`)).status === 400,
-        "gate-export",
-      );
+      check((await post(`/subscription/export/${noa.uuid}`)).status === 400, "gate-export");
       const withoutExport = await visit(`/subscription/${dummy}/${noa.uuid}`);
       check(!withoutExport.text.includes('value="export"'), "gate-export-page");
     });
     await withSetting("privacy.allow_wipe", false, async () => {
-      check(
-        (await post(`/subscription/wipe/${noa.uuid}`)).status === 400,
-        "gate-wipe",
-      );
-      check(
-        (await call(`/api/subscribers/${noa.id}`)).status === 200,
-        "gate-wipe-kept",
-      );
+      check((await post(`/subscription/wipe/${noa.uuid}`)).status === 400, "gate-wipe");
+      check((await call(`/api/subscribers/${noa.id}`)).status === 200, "gate-wipe-kept");
     });
     await withSetting("app.send_optin_confirmation", false, async () => {
       const email = address("quiet");
@@ -1316,8 +1066,7 @@ export async function runPublicContract(target: {
       // D-public-get-confirm: GET never confirms, even with the page setting off.
       check(
         direct.status === 200 &&
-          (await status(rae.id, double.id)) ===
-            (reference ? "confirmed" : "unconfirmed"),
+          (await status(rae.id, double.id)) === (reference ? "confirmed" : "unconfirmed"),
         "gate-optin-page",
       );
     });
@@ -1329,29 +1078,16 @@ export async function runPublicContract(target: {
         headers,
         body: "confirm=true",
       });
-      const stored = (await membership(sam.id, double.id))?.subscription_meta
-        ?.optin_ip;
+      const stored = (await membership(sam.id, double.id))?.subscription_meta?.optin_ip;
       // D-public-optin-ip: the transport peer, not a client-supplied header.
-      check(
-        stored === (reference ? "203.0.113.7" : "127.0.0.1"),
-        "gate-optin-ip",
-      );
+      check(stored === (reference ? "203.0.113.7" : "127.0.0.1"), "gate-optin-ip");
     });
     await withSetting("app.enable_public_archive", false, async () => {
       check((await visit("/archive")).status === 404, "gate-archive");
       check((await visit("/archive.xml")).status === 404, "gate-archive-xml");
-      check(
-        (await visit(`/archive/${campaign.uuid}`)).status === 404,
-        "gate-archive-one",
-      );
-      check(
-        (await visit("/archive/latest")).status === 404,
-        "gate-archive-latest",
-      );
-      check(
-        (await visit("/api/public/archive")).status === 404,
-        "gate-archive-api",
-      );
+      check((await visit(`/archive/${campaign.uuid}`)).status === 404, "gate-archive-one");
+      check((await visit("/archive/latest")).status === 404, "gate-archive-latest");
+      check((await visit("/api/public/archive")).status === 404, "gate-archive-api");
     });
 
     if (target.restart) {
@@ -1363,10 +1099,7 @@ export async function runPublicContract(target: {
     if (!reference) {
       let limited: Awaited<ReturnType<typeof post>> | undefined;
       for (let i = 0; i < 40 && !limited; i++) {
-        const response = await post(
-          "/subscription/form",
-          "email=bad&l=" + single.uuid,
-        );
+        const response = await post("/subscription/form", "email=bad&l=" + single.uuid);
         if (response.status === 429) limited = response;
       }
       check(limited?.headers.get("retry-after"), "rate-limit");
@@ -1375,17 +1108,14 @@ export async function runPublicContract(target: {
     for (const [key, value] of originals) await setSetting(key, value);
     for (const id of owned.campaigns) {
       const response = await call(`/api/campaigns/${id}`, "DELETE");
-      if (response.status !== 200 && response.status !== 400)
-        cleanupFailed = true;
+      if (response.status !== 200 && response.status !== 400) cleanupFailed = true;
     }
     for (const id of owned.subscribers) {
       const response = await call(`/api/subscribers/${id}`, "DELETE");
-      if (response.status !== 200 && response.status !== 400)
-        cleanupFailed = true;
+      if (response.status !== 200 && response.status !== 400) cleanupFailed = true;
     }
     for (const id of owned.lists)
-      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200)
-        cleanupFailed = true;
+      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
     for (const email of owned.addresses)
       for (const found of await mails(email).catch(() => []))
         await mailpit("/api/v1/messages", {
@@ -1405,8 +1135,7 @@ if (import.meta.main) {
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token)
-      throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
     await runPublicContract({
       mode: "reference",
       baseUrl,

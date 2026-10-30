@@ -10,8 +10,7 @@ import type { Database } from "bun:sqlite";
  */
 export function createSendAnonymizer(db: Database) {
   return (subscribers: { id: bigint; email: string }[]) => {
-    if (!db.inTransaction)
-      throw new Error("Sends are anonymized in the caller's transaction");
+    if (!db.inTransaction) throw new Error("Sends are anonymized in the caller's transaction");
     if (!subscribers.length) return;
     db.query(
       `UPDATE sends SET

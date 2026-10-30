@@ -52,7 +52,13 @@ export function registerPublicRoutes(
     const settings = deps.settings();
     return publicMessage(
       t,
-      { status, title, message: text, siteName: settings.siteName, site: settings },
+      {
+        status,
+        title,
+        message: text,
+        siteName: settings.siteName,
+        site: settings,
+      },
       headers,
     );
   };

@@ -197,7 +197,11 @@ async function main(): Promise<void> {
     const limit = (limit: number) =>
       rateLimited(clock, { limit, windowMs: 60_000, maxPeers: 10_000 }, () => pages().siteName);
     // Mail providers post one-click unsubscribes from shared addresses, hence the higher limit.
-    const limits = { subscribe: limit(30), optin: limit(60), privacy: limit(10) };
+    const limits = {
+      subscribe: limit(30),
+      optin: limit(60),
+      privacy: limit(10),
+    };
     const unsubscribeLimit = limit(300);
     runnerStore = createRunnerStore(db);
     sends = createSends({
@@ -394,7 +398,10 @@ async function main(): Promise<void> {
       conditions,
       settings: () => {
         const current = settings!.read();
-        return { fromEmail: current["app.from_email"][0] ?? "", marketing: marketing() };
+        return {
+          fromEmail: current["app.from_email"][0] ?? "",
+          marketing: marketing(),
+        };
       },
     });
     enrollments.onDue(() => scheduler!.wake());

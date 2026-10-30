@@ -58,7 +58,12 @@ export async function publicFixture() {
     logger: f.app.logger,
     settings,
   });
-  const signups = startSignupMail({ db: f.db, clock: f.clock, logger: f.app.logger, mail });
+  const signups = startSignupMail({
+    db: f.db,
+    clock: f.clock,
+    logger: f.app.logger,
+    mail,
+  });
   const limit = (limit: number) =>
     rateLimited(f.clock, { limit, windowMs: 60_000, maxPeers: 100 }, () => "Fixture");
   registerPublicRoutes(router, {
@@ -83,7 +88,13 @@ export async function publicFixture() {
     page: settings,
     limit: limit(5),
   });
-  registerArchiveRoutes(router, { store: campaigns, subscribers, templates, renderer, settings });
+  registerArchiveRoutes(router, {
+    store: campaigns,
+    subscribers,
+    templates,
+    renderer,
+    settings,
+  });
   const peer = (path: string, address: string, init: RequestInit = {}) =>
     router.handle(f.app, new Request(`http://fixture.test${path}`, init), address);
   const post = (path: string, body = "", address = "192.0.2.1") =>

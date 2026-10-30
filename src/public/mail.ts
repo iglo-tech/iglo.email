@@ -55,7 +55,11 @@ export function createSubscriberMail(deps: {
     html: string,
     extra: {
       headers?: Record<string, string>;
-      attachments?: { name: string; content: Uint8Array; contentType: string }[];
+      attachments?: {
+        name: string;
+        content: Uint8Array;
+        contentType: string;
+      }[];
     },
   ) =>
     deps.sends.enqueueRequest({
@@ -264,7 +268,11 @@ function boundedEvents(rows: EventRow[]) {
   for (const row of rows) {
     bytes += Buffer.byteLength(row.name) + Buffer.byteLength(row.data);
     if (bytes > exportEventBytes) break;
-    out.push({ name: row.name, data: JSON.parse(row.data), occurred_at: row.occurred_at });
+    out.push({
+      name: row.name,
+      data: JSON.parse(row.data),
+      occurred_at: row.occurred_at,
+    });
   }
   return out;
 }
