@@ -982,8 +982,11 @@ test("the outbox claims the lowest queued id that is new or due for retry (D24)"
     expect(claim()).toEqual([b]);
     f.clock.advance(999);
     expect(claim()).toEqual([c]);
+    // A newer row is still queued when the retry falls due: the lower-id retry goes first.
+    const d = enqueue();
     f.clock.advance(1);
     expect(claim()).toEqual([a]);
+    expect(claim()).toEqual([d]);
     expect(claim()).toEqual([]);
   } finally {
     f.close();
