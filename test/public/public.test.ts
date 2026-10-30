@@ -434,7 +434,15 @@ test("export mails native sections; the response holds nothing personal", async 
   const part = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(message!.data)![1]!;
   const data = JSON.parse(Buffer.from(part, "base64").toString("utf8"));
   expect(Object.keys(data).sort()).toEqual(
-    ["campaign_views", "events", "link_clicks", "profile", "sends", "subscriptions"].sort(),
+    [
+      "bounces",
+      "campaign_views",
+      "events",
+      "link_clicks",
+      "profile",
+      "sends",
+      "subscriptions",
+    ].sort(),
   );
   f.overrides.exportable = ["profile"];
   await f.fresh(`/subscription/export/${uuid}`);
