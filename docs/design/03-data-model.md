@@ -61,7 +61,7 @@ Changes to kept tables:
 | `subscribers` | add `external_id TEXT NULL UNIQUE` | Apps address subscribers by their own user ID instead of email |
 | `campaign_views`, `link_clicks` | add `send_id INTEGER NULL REFERENCES sends(id)`, make `campaign_id` nullable, `CHECK` that exactly one is set | Track opens and clicks of transactional and sequence messages |
 | `bounces` | add nullable `send_id`; permit a nullable `subscriber_id` | A transactional send can target an address without a subscriber, and its bounce must still be recordable |
-| `bounce_receipts` (M3.4, new) | `key`, `expires_at`: provider tokens and event IDs already handled | A repeated delivery must not count twice or be accepted after a restart ([Sending](04-sending.md#bounces)) |
+| `bounce_receipts` (M3.4, new) | `key`, `expires_at`: provider tokens and event IDs already handled | A repeated delivery must not count twice or be accepted after a restart ([D63](09-decisions.md#d63-bounce-receipts-and-retained-provider-text)) |
 | `templates` | `body` holds Liquid instead of Go template syntax | [Templates](06-templates.md) |
 
 ## New tables
