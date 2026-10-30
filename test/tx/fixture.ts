@@ -108,15 +108,13 @@ export async function txFixture(
       lists,
       subscriberEffects,
     ),
-    readonly = openReadOnly(db.filename),
-    runner = createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 }),
-    subscriberQuery = createSubscriberQuery({
-      db,
-      readonly,
-      clock,
-      runner,
-      effects: subscriberEffects,
-    }),
+    readonly = webhooks && openReadOnly(db.filename),
+    runner =
+      webhooks && createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 }),
+    subscriberQuery =
+      readonly &&
+      runner &&
+      createSubscriberQuery({ db, readonly, clock, runner, effects: subscriberEffects }),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const auth = await createAuthentication(
@@ -184,7 +182,8 @@ export async function txFixture(
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
-  registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
+  if (subscriberQuery)
+    registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
   if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
@@ -213,17 +212,19 @@ export async function txFixture(
     ...(options.effects ? { effects: options.effects } : {}),
     ...(options.page ? { page: options.page } : {}),
   });
-  // Only the public wipe is reachable here: it sends no mail and reads one setting.
-  const open: Middleware = (_context, next) => next();
-  registerPublicRoutes(router, {
-    db,
-    lists,
-    subscribers,
-    mail: {} as SubscriberMail,
-    settings: () => ({ allowWipe: true }) as PublicSettings,
-    limits: { subscribe: open, optin: open, privacy: open },
-    clientAddress: () => "127.0.0.1",
-  });
+  if (webhooks) {
+    // Only the public wipe is reached here: it sends no mail and reads one setting.
+    const open: Middleware = (_context, next) => next();
+    registerPublicRoutes(router, {
+      db,
+      lists,
+      subscribers,
+      mail: {} as SubscriberMail,
+      settings: () => ({ allowWipe: true }) as PublicSettings,
+      limits: { subscribe: open, optin: open, privacy: open },
+      clientAddress: () => "127.0.0.1",
+    });
+  }
   const blockPrivate = { value: false };
   const startDelivery = () =>
     webhooks
@@ -330,9 +331,9 @@ export async function txFixture(
       templateReferences.close();
       users.close();
       roles.close();
-      subscriberQuery.close();
-      await runner.close();
-      readonly.close();
+      subscriberQuery?.close();
+      await runner?.close();
+      readonly?.close();
       subscribers.close();
       listStore.close();
       counts.close();

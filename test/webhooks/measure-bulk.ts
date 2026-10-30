@@ -110,6 +110,7 @@ try {
         blocklist: { requestMs: blocklist.requestMs, longestHealthMs: blocklist.longestHealthMs },
         delete: { requestMs: remove.requestMs, longestHealthMs: remove.longestHealthMs },
         storedDeliveries: Number(count),
+        received,
         walBytes: statSync(`${path}-wal`, { throwIfNoEntry: false })?.size ?? 0,
       };
     },
