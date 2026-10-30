@@ -1,5 +1,7 @@
 // M2.6 outbound webhooks through the HTTP API, the injected clock and a local receiver.
 import { afterEach, expect, test } from "bun:test";
+import { createServer } from "node:https";
+import type { AddressInfo } from "node:net";
 import { writeTransaction } from "@/db/transaction";
 import { blockedAddress } from "@/webhooks/address";
 import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
@@ -990,6 +992,59 @@ test("the delivery budget does not touch bulk actions no webhook wants", async (
   expect(subscriberCount(f, "blocklisted")).toBe(MAX_BULK_DELIVERIES / 10);
   expect((await f.json("/api/subscribers/query/delete", "POST", { all: true })).status).toBe(200);
   expect(deliveryCount(f)).toBe(0);
+});
+
+test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad certificate", async () => {
+  const fixture = await Bun.file("test/messaging/tls-fixture.md").text();
+  const [cert, key] = [...fixture.matchAll(/```pem\n([\s\S]*?)```/g)].map((match) => match[1]!);
+  const seen: { sni: unknown; host: string | undefined }[] = [];
+  const server = createServer({ cert, key }, (request, response) => {
+    seen.push({
+      sni: (request.socket as unknown as { servername?: unknown }).servername,
+      host: request.headers.host,
+    });
+    request.resume();
+    response.end("ok");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  cleanups.push(() => new Promise((resolve) => server.close(resolve)));
+  server.unref();
+  const { port } = server.address() as AddressInfo;
+  let trust: string | undefined = cert;
+  const f = await open({
+    webhooks: {
+      lookup: async () => ["127.0.0.1"],
+      blocked: () => false,
+      // The certificate covers `localhost` and 127.0.0.1, so only a name check refuses others.
+      fetch: ((url: string | URL, init: RequestInit & { tls?: object }) =>
+        fetch(url, {
+          ...init,
+          tls: { ...init.tls, ...(trust ? { ca: trust } : {}) },
+        })) as typeof fetch,
+    },
+  });
+  f.blockPrivate.value = true;
+  const target = async (url: string) =>
+    (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
+      .id as number;
+  const valid = await target(`https://localhost:${port}/hook`);
+  await blocklist(f, await f.subscriber("a@example.test"));
+  await until(async () => (await deliveries(f, valid))[0]?.status === "delivered");
+  expect(seen).toEqual([{ sni: "localhost", host: `localhost:${port}` }]);
+  await f.json(`/api/webhooks/${valid}`, "DELETE");
+
+  const wrong = await target(`https://wrong.test:${port}/hook`);
+  await blocklist(f, await f.subscriber("b@example.test"));
+  await queued(f, wrong, 1);
+  expect((await deliveries(f, wrong))[0].last_error).toBe("network_error");
+  await f.json(`/api/webhooks/${wrong}`, "DELETE");
+
+  trust = undefined;
+  const untrusted = await target(`https://localhost:${port}/hook`);
+  await blocklist(f, await f.subscriber("c@example.test"));
+  await queued(f, untrusted, 1);
+  expect((await deliveries(f, untrusted))[0].last_error).toBe("network_error");
+  expect(seen.length).toBe(1);
 });
 
 test("non-public addresses are classified as blocked", () => {
