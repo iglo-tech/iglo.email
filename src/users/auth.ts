@@ -34,6 +34,7 @@ export const defaultAuthPolicy: AuthPolicy = Object.freeze({
 
 /** listmonk cmd/auth.go passwordResetTTL. */
 const resetTtlMs = 30 * 60_000;
+const resetMailIntervalMs = 5 * 60_000;
 
 function randomValue(): string {
   return randomBytes(32).toString("base64url");
@@ -120,7 +121,10 @@ export async function createAuthentication(
   // Only in-flight proofs have entries; completed operations leave no per-user history.
   const activeProofs = new Map<bigint, Set<{ valid: boolean }>>();
   // One live link per address, as in upstream's tmptokens; a restart drops them all.
-  const resets = new Map<string, { token: string; userId: bigint; expires: number }>();
+  const resets = new Map<
+    string,
+    { token: string; userId: bigint; expires: number; mailed: number }
+  >();
   let activeProofCount = 0;
   function beginProof(userId: bigint) {
     if (activeProofCount >= 4096) throw new HttpError(429, "Too many requests");
@@ -396,16 +400,26 @@ export async function createAuthentication(
     },
     /** A fresh install with no users has no one to log in as until it is provisioned (D26). */
     provisioned: () => store.count() !== 0n,
-    /** The address's reset link, or nothing when it cannot reset a password. */
+    /**
+     * The link to mail, or nothing when the address cannot reset a password or was just mailed.
+     * A live link is mailed again rather than replaced, so a stranger who knows the address can
+     * neither flood the mailbox nor retire the link its owner is about to use.
+     */
     issueReset(email: string): { user: UserRow; token: string } | null {
       const user = store.byEmail(email);
       if (!user || user.type !== "user" || user.status !== "enabled" || user.password_login === 0n)
         return null;
       const time = clock.now().getTime();
       for (const [key, entry] of resets) if (entry.expires <= time) resets.delete(key);
+      const live = resets.get(email);
+      if (live?.userId === user.id) {
+        if (time - live.mailed < resetMailIntervalMs) return null;
+        live.mailed = time;
+        return { user, token: live.token };
+      }
       if (resets.size >= policy.challengeCapacity && !resets.has(email)) return null;
       const token = randomValue();
-      resets.set(email, { token, userId: user.id, expires: time + resetTtlMs });
+      resets.set(email, { token, userId: user.id, expires: time + resetTtlMs, mailed: time });
       return { user, token };
     },
     resetValid: (email: string, token: string): boolean => !!resetEntry(email, token),

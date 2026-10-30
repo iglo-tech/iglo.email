@@ -64,7 +64,9 @@ export function sidebar(
   if (
     can(
       "campaigns:get",
+      "campaigns:get_all",
       "campaigns:manage",
+      "campaigns:manage_all",
       "campaigns:get_analytics",
       "media:get",
       "templates:get",

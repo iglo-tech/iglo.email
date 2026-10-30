@@ -106,16 +106,32 @@ test("a link expires on the injected clock and a wrong token is refused", async 
   expect(await expired.text()).toContain("Invalid or expired reset link");
 });
 
-test("a newer request or an identity change retires the earlier link", async () => {
-  await userWith(f, cookie, "reset-newer", []);
+test("repeat requests neither flood the mailbox nor retire the link", async () => {
+  await userWith(f, cookie, "reset-flood", []);
   const before = await mailCount();
-  await forgot("reset-newer@example.test");
-  const first = await resetLink("reset-newer@example.test");
-  await forgot("reset-newer@example.test");
-  while ((await mailCount()) < before + 2) await Bun.sleep(5);
-  const second = await resetLink("reset-newer@example.test", 1);
+  const unknown = await (await forgot("flood-nobody@example.test")).text();
+  await forgot("reset-flood@example.test");
+  const first = await resetLink("reset-flood@example.test");
+  for (let i = 0; i < 5; i++) {
+    const again = await forgot("reset-flood@example.test");
+    expect(again.status).toBe(200);
+    expect(await again.text()).toBe(unknown);
+  }
+  await Bun.sleep(20);
+  expect(await mailCount()).toBe(before + 1);
+  expect((await get(f, first)).status).toBe(200);
+  // After the interval the same link goes out again, keeping its 30 minutes.
+  await fetch(`${f.origin}/fixture/clock`, { method: "POST", body: String(5 * 60_000) });
+  await forgot("reset-flood@example.test");
+  expect(await resetLink("reset-flood@example.test", 1)).toBe(first);
+  await fetch(`${f.origin}/fixture/clock`, { method: "POST", body: String(25 * 60_000) });
   expect((await get(f, first)).status).toBe(400);
-  expect((await get(f, second)).status).toBe(200);
+});
+
+test("an identity change retires the link", async () => {
+  await userWith(f, cookie, "reset-newer", []);
+  await forgot("reset-newer@example.test");
+  const second = await resetLink("reset-newer@example.test");
   const { data } = (await (await get(f, "/api/users", cookie)).json()) as {
     data: { id: number; username: string }[];
   };
