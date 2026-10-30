@@ -325,3 +325,29 @@ test("failed deliveries do not count toward the cap", async () => {
   await f.until(c.id, "finished");
   expect(f.runnerStore.lastDelivery(BigInt(a.id))).toBeNull();
 });
+
+test("an unsubscribe or blocklist during a batch stops that subscriber's message", async () => {
+  f = await runnerFixture({ hold: true });
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const b = await f.member("b@x.test", [list]);
+  const c2 = await f.member("c@x.test", [list]);
+  await f.member("d@x.test", [list]);
+  const c = await f.campaign({ name: "u", subject: "s", lists: [list] });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  await f.status(c.id, "running");
+  f.start();
+  await f.drive(() => f.pushes.length === 1);
+  // The whole batch is claimed; b unsubscribes and c is blocklisted before their turn.
+  await f.json("/api/subscribers/lists", "PUT", {
+    ids: [b.id],
+    action: "unsubscribe",
+    target_list_ids: [list],
+  });
+  expect((await f.json("/api/subscribers/blocklist", "PUT", { ids: [c2.id] })).status).toBe(200);
+  f.control.hold = false;
+  f.pushes[0]!.settle();
+  await f.until(c.id, "finished");
+  expect(recipientsOf()).toEqual(["a@x.test", "d@x.test"]);
+  expect(f.runnerStore.lastDelivery(BigInt(b.id))).toBeNull();
+});

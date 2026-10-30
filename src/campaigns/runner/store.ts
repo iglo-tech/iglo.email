@@ -24,7 +24,7 @@ export interface RunnableCampaign {
   last_subscriber_id: bigint;
   max_subscriber_id: bigint;
 }
-export type DeliveryStatus = "sent" | "failed" | "unknown";
+export type DeliveryStatus = "sent" | "failed" | "unknown" | "skipped";
 
 export function createRunnerStore(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "campaigns/runner/store", sql }]);

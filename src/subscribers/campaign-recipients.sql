@@ -33,6 +33,20 @@ WHERE sl.subscriber_id > ?3 AND sl.subscriber_id <= ?4
 ORDER BY sl.subscriber_id
 LIMIT ?5;
 
+-- name: campaign-recipient-eligible
+-- Whether subscriber ?3 still qualifies, rechecked just before its message is pushed.
+SELECT EXISTS (
+  SELECT 1 FROM subscriber_lists sl
+  CROSS JOIN json_each(?1) l ON json_extract(l.value, '$.id') = sl.list_id
+  CROSS JOIN subscribers s ON s.id = sl.subscriber_id AND s.status != 'blocklisted'
+  WHERE sl.subscriber_id = ?3
+    AND CASE
+      WHEN ?2 = 'optin' THEN sl.status = 'unconfirmed' AND json_extract(l.value, '$.optin') = 'double'
+      WHEN json_extract(l.value, '$.optin') = 'double' THEN sl.status = 'confirmed'
+      ELSE sl.status != 'unsubscribed'
+    END
+) AS eligible;
+
 -- name: campaign-recipient
 SELECT id, uuid, email, name, attribs, external_id FROM subscribers
 WHERE id = ? AND status != 'blocklisted';

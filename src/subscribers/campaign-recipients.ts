@@ -45,6 +45,13 @@ export function createCampaignRecipients(db: Database) {
       const recipient = q.get("campaign-recipient");
       return ids.map(({ id }) => recipient.get(id) as CampaignRecipient);
     },
+    /** Whether the subscriber still qualifies (not unsubscribed or blocklisted since). */
+    eligible(audience: CampaignAudience, id: bigint): boolean {
+      const row = q.get("campaign-recipient-eligible").get(lists(audience), audience.type, id) as {
+        eligible: bigint;
+      };
+      return row.eligible === 1n;
+    },
     close: () => q.close(),
   };
 }

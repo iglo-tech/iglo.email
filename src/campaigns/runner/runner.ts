@@ -371,6 +371,11 @@ export function startCampaignRunner(deps: RunnerDeps) {
         while (slidingUntil > clock.now().getTime() && !stopping.signal.aborted)
           await sleep(slidingUntil - clock.now().getTime());
         if (stopped()) return;
+        // Consent is rechecked at the push: an unsubscribe or blocklist during the batch holds.
+        if (!deps.recipients.eligible(audience(c), sub.id)) {
+          outcomes.set(i, { status: "skipped", at: clock.now().getTime() });
+          continue;
+        }
         pushed.add(i);
         const dispatch = deps.emailer.push(message, { copies: false });
         if (sliding) {

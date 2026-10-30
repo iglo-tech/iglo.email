@@ -71,7 +71,7 @@ Changes to kept tables:
 
 ### `campaign_deliveries`
 
-`campaign_id` → campaigns, `subscriber_id` → subscribers (both cascade), `status` (`claimed`, `sent`, `failed`, `unknown`), `at`; primary key on the pair, index on (`subscriber_id`, `at`) (migration 7, M3.2). The runner inserts a `claimed` row for every subscriber of a batch in the transaction that advances the cursor, before sending, and settles it per batch. The key makes a second campaign message to the same subscriber impossible. `claimed` rows found when a runner takes over a campaign are from a crash and become `unknown`. `claimed`, `sent` and `unknown` rows count toward the marketing frequency cap from `at`.
+`campaign_id` → campaigns, `subscriber_id` → subscribers (both cascade), `status` (`claimed`, `sent`, `failed`, `unknown`, `skipped` when the subscriber lost eligibility before the push), `at`; primary key on the pair, index on (`subscriber_id`, `at`) (migration 7, M3.2). The runner inserts a `claimed` row for every subscriber of a batch in the transaction that advances the cursor, before sending, and settles it per batch. The key makes a second campaign message to the same subscriber impossible. `claimed` rows found when a runner takes over a campaign are from a crash and become `unknown`. `claimed`, `sent` and `unknown` rows count toward the marketing frequency cap from `at`.
 
 Migration 7 also adds `campaigns.runner_lease` and `runner_lease_until`: the runner holding the campaign and its lease expiry.
 
