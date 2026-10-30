@@ -9,6 +9,7 @@ import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings, type PublicSettings } from "@/public/settings";
 import { createRoles } from "@/roles/roles";
+import { createClientAddress } from "@/server/client-address";
 import { createSettings } from "@/settings/store";
 import { txFixture } from "@/test/tx/fixture";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
@@ -64,8 +65,14 @@ export async function publicFixture() {
     logger: f.app.logger,
     mail,
   });
+  const clientAddress = createClientAddress(() => settings().trustedProxies);
   const limit = (limit: number) =>
-    rateLimited(f.clock, { limit, windowMs: 60_000, maxPeers: 100 }, () => "Fixture");
+    rateLimited(
+      f.clock,
+      { limit, windowMs: 60_000, maxPeers: 100 },
+      () => "Fixture",
+      clientAddress,
+    );
   registerPublicRoutes(router, {
     db: f.db,
     lists,
@@ -73,6 +80,7 @@ export async function publicFixture() {
     mail,
     settings,
     limits: { subscribe: limit(5), optin: limit(5), privacy: limit(5) },
+    clientAddress,
   });
   registerCampaignPublicRoutes(router, {
     db: f.db,

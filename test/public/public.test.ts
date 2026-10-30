@@ -2,6 +2,7 @@
 // Upstream-compared results are in test/contract/public.ts.
 import { afterEach, expect, test } from "bun:test";
 import { createRateLimit, createThrottle } from "@/public/rate-limit";
+import { createClientAddress } from "@/server/client-address";
 import { publicFixture, type PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
 
@@ -39,11 +40,65 @@ test("each limit is per peer, answers 429 and reopens on the clock", async () =>
     method: "POST",
   });
   expect(json.status).toBe(429);
+  expect(json.headers.get("retry-after")).toBe("60");
   expect(await json.json()).toEqual({ message: "Too many requests" });
   // Another peer and the unsubscribe budget are unaffected.
   expect((await f.post("/subscription/form", bad, "192.0.2.8")).status).toBe(400);
   f.clock.advance(minute);
   expect((await f.post("/subscription/form", bad, "192.0.2.7")).status).toBe(400);
+});
+
+const forwarded = (f: PublicFixture, peer: string, chain: string) =>
+  f.peer("/api/public/subscription", peer, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": chain },
+    body: "{}",
+  });
+
+test("a forwarded header from an untrusted peer is ignored, however it varies", async () => {
+  const f = await open();
+  f.overrides.trustedProxies = ["10.0.0.0/8"];
+  for (let i = 0; i < 5; i++)
+    expect((await forwarded(f, "192.0.2.50", `203.0.113.${i}`)).status).toBe(400);
+  expect((await forwarded(f, "192.0.2.50", "203.0.113.99")).status).toBe(429);
+  expect((await forwarded(f, "192.0.2.51", "203.0.113.99")).status).toBe(400);
+});
+
+test("behind trusted proxies one visitor exhausts only their own budget", async () => {
+  const f = await open();
+  f.overrides.trustedProxies = ["10.0.0.0/8", "2001:db8::/32"];
+  for (let i = 0; i < 5; i++)
+    expect((await forwarded(f, "10.0.0.1", "203.0.113.1")).status).toBe(400);
+  expect((await forwarded(f, "10.0.0.1", "203.0.113.1")).status).toBe(429);
+  // Another visitor through the same proxy still has theirs.
+  expect((await forwarded(f, "10.0.0.1", "203.0.113.2")).status).toBe(400);
+  // A visitor can't escape by prepending entries: the walk stops at the first untrusted hop.
+  expect((await forwarded(f, "10.0.0.1", "8.8.8.8, 203.0.113.1")).status).toBe(429);
+  // Several trusted hops, in either family, and an IPv4-mapped transport peer.
+  expect((await forwarded(f, "10.0.0.2", "203.0.113.1, 10.0.0.1")).status).toBe(429);
+  expect((await forwarded(f, "2001:db8::1", "203.0.113.1, 10.9.9.9")).status).toBe(429);
+  expect((await forwarded(f, "::ffff:10.0.0.3", "203.0.113.1")).status).toBe(429);
+});
+
+test("the client is the nearest valid hop when a chain is unusable", () => {
+  const client = createClientAddress(() => ["10.0.0.0/8"]);
+  const at = (peer: string, chain: string | null) =>
+    client({
+      peerAddress: peer,
+      request: new Request(
+        "http://x/",
+        chain === null ? {} : { headers: { "x-forwarded-for": chain } },
+      ),
+    });
+  expect(at("10.0.0.1", null)).toBe("10.0.0.1");
+  expect(at("10.0.0.1", "")).toBe("10.0.0.1");
+  expect(at("10.0.0.1", "203.0.113.1, nonsense")).toBe("10.0.0.1");
+  expect(at("10.0.0.1", "nonsense, 203.0.113.1")).toBe("203.0.113.1");
+  expect(at("10.0.0.1", "203.0.113.1, nonsense, 10.0.0.2")).toBe("10.0.0.2");
+  expect(at("10.0.0.1", "10.0.0.3, 10.0.0.2")).toBe("10.0.0.3");
+  expect(at("10.0.0.1", "2001:DB8::1")).toBe("2001:db8::1");
+  expect(at("::ffff:192.0.2.1", "203.0.113.1")).toBe("192.0.2.1");
+  expect(at("unknown", "203.0.113.1")).toBe("unknown");
 });
 
 test("opt-in, unsubscribe and privacy POSTs are limited too", async () => {

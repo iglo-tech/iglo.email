@@ -17,6 +17,8 @@ export interface PublicSettings extends ShellSite {
   domainAllowlist: string[];
   domainBlocklist: string[];
   trustedUrls: string[];
+  trustedProxies: string[];
+  rateLimits: { subscribe: number; optin: number; unsubscribe: number; privacy: number };
   captcha: boolean;
   customCss: string;
   customJs: string;
@@ -46,6 +48,8 @@ export function publicSettings(current: Record<string, any>): PublicSettings {
     domainAllowlist: current["privacy.domain_allowlist"],
     domainBlocklist: current["privacy.domain_blocklist"],
     trustedUrls: current["security.trusted_urls"],
+    trustedProxies: current["security.trusted_proxies"],
+    rateLimits: current["security.public_rate_limit"],
     captcha: captcha.altcha.enabled || captcha.hcaptcha.enabled,
     customCss: current["appearance.public.custom_css"],
     customJs: current["appearance.public.custom_js"],

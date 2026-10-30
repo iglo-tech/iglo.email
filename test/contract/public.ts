@@ -1011,6 +1011,64 @@ export async function runPublicContract(target: {
       await adminSubscriber(`next-${marker}@example.test`);
       await adminSubscriber(`next2-${marker}@example.test`);
     });
+    if (!reference) {
+      // D60: forwarded addresses count only from a configured proxy, for public and login limits.
+      const signup = (client: string) =>
+        visit("/api/public/subscription", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-forwarded-for": client },
+          body: "{}",
+        });
+      const login = (client: string) =>
+        visit("/admin/login", {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "x-forwarded-for": client,
+          },
+          body: "username=nobody&password=wrong",
+        });
+      const budget = { subscribe: 3, optin: 60, unsubscribe: 300, privacy: 10 };
+      for (const bad of ["not-an-ip", "10.0.0.0/33", "0.0.0.0/0", "::/0", "1.2.3.4/8/8"])
+        check(
+          (await call("/api/settings/security.trusted_proxies", "PUT", [bad])).status === 400,
+          "proxy-invalid",
+        );
+      check(
+        (
+          await call("/api/settings/security.public_rate_limit", "PUT", {
+            ...budget,
+            subscribe: 0,
+          })
+        ).status === 400,
+        "budget-invalid",
+      );
+      await withSetting("security.public_rate_limit", budget, async () => {
+        await withSetting("security.trusted_proxies", ["127.0.0.0/8", "::1"], async () => {
+          for (let i = 0; i < 3; i++)
+            check((await signup("203.0.113.1")).status === 400, "proxy-own-budget");
+          const limited = await signup("203.0.113.1");
+          check(
+            limited.status === 429 && Number(limited.headers.get("retry-after")) > 0,
+            "proxy-limited",
+          );
+          check((await signup("203.0.113.2")).status === 400, "proxy-other-visitor");
+          check((await signup("9.9.9.9, 203.0.113.1")).status === 429, "proxy-spoofed-prefix");
+          for (let i = 0; i < 20; i++)
+            check((await login("203.0.113.3")).status !== 429, "proxy-login-budget");
+          const locked = await login("203.0.113.3");
+          check(
+            locked.status === 429 && Number(locked.headers.get("retry-after")) > 0,
+            "proxy-login-limited",
+          );
+          check((await login("203.0.113.4")).status !== 429, "proxy-login-other");
+        });
+        // Without a configured proxy the same header is only client input.
+        for (let i = 0; i < 3; i++)
+          check((await signup(`198.51.100.${i}`)).status === 400, "proxy-untrusted");
+        check((await signup("198.51.100.200")).status === 429, "proxy-untrusted-limited");
+      });
+    }
     await withSetting("privacy.domain_blocklist", ["blocked.example"], async () => {
       const response = await postJson("/api/public/subscription", {
         email: `someone-${marker}@blocked.example`,

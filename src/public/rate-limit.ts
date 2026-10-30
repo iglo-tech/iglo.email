@@ -1,13 +1,13 @@
-// Per-peer public rate limits (docs/design/07-api-and-ui.md) and the opt-in mail throttle
+// Per-client public rate limits (docs/design/07-api-and-ui.md) and the opt-in mail throttle
 // adapted from listmonk internal/throttle at 6fcd95f. Both are in memory, bounded and on the
 // injected clock.
 import type { Clock } from "@/clock";
 import { publicMessage } from "@/public/message";
 import { HttpError } from "@/server/response";
-import type { Middleware } from "@/server/context";
+import type { Middleware, RequestContext } from "@/server/context";
 
 export interface LimitPolicy {
-  /** Requests each peer may make per window. */
+  /** Requests each client may make per window; read on each request, so settings apply live. */
   limit: number;
   windowMs: number;
   /** Peers tracked at once; beyond it the oldest entry goes, so a flood locks nobody out. */
@@ -42,12 +42,19 @@ export function createRateLimit(clock: Clock, policy: LimitPolicy) {
 }
 
 /** Excess requests get 429: JSON under /api/, the public message page elsewhere. */
-export function rateLimited(clock: Clock, policy: LimitPolicy, siteName: () => string): Middleware {
+export function rateLimited(
+  clock: Clock,
+  policy: LimitPolicy,
+  siteName: () => string,
+  clientAddress: (context: RequestContext) => string,
+): Middleware {
   const check = createRateLimit(clock, policy);
   return (context, next) => {
-    const wait = check(context.peerAddress);
+    const wait = check(clientAddress(context));
     if (!wait) return next();
-    if (context.url.pathname.startsWith("/api/")) throw new HttpError(429, "Too many requests");
+    const headers = { "Retry-After": String(Math.ceil(wait / 1000)) };
+    if (context.url.pathname.startsWith("/api/"))
+      throw new HttpError(429, "Too many requests", headers);
     const t = context.app.i18n;
     return publicMessage(
       t,
@@ -57,7 +64,7 @@ export function rateLimited(clock: Clock, policy: LimitPolicy, siteName: () => s
         message: "Too many requests",
         siteName: siteName(),
       },
-      { "Retry-After": String(Math.ceil(wait / 1000)) },
+      headers,
     );
   };
 }

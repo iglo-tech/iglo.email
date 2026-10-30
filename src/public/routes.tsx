@@ -40,6 +40,7 @@ export function registerPublicRoutes(
     mail: SubscriberMail;
     settings: () => PublicSettings;
     limits: PublicLimits;
+    clientAddress: (context: RequestContext) => string;
   },
 ) {
   const message = (
@@ -295,7 +296,7 @@ export function registerPublicRoutes(
     const settings = deps.settings();
     if (post && (confirm || !settings.showOptinPage)) {
       const meta: Record<string, string> = settings.recordOptinIp
-        ? { optin_ip: context.peerAddress }
+        ? { optin_ip: deps.clientAddress(context) }
         : {};
       writeTransaction(deps.db, () =>
         deps.subscribers.confirmOptin(

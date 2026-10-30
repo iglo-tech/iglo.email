@@ -5,6 +5,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap } from "@/config/bootstrap";
+import { createClientAddress } from "@/server/client-address";
 import { startServer } from "@/server/server";
 import { createRouter } from "@/server/server";
 import { createListStore } from "@/lists/store";
@@ -133,8 +134,10 @@ async function main(): Promise<void> {
     campaigns = createCampaignListReferences(db);
     listStore = createListStore(db, clock, counts, campaigns);
     users = createUserStore(db, clock, roles);
+    const clientAddress = createClientAddress(() => settings!.read()["security.trusted_proxies"]);
     const auth = await createAuthentication(users, roles, clock, bootstrap.config.rootUrl, {
       ...defaultAuthPolicy,
+      clientAddress,
       get sessionDurationMs() {
         return sessionDuration(
           settings!.read()["security.session_duration"],
@@ -194,15 +197,26 @@ async function main(): Promise<void> {
     );
     const marketing = () => marketingSettings(settings!.read());
     const pages = () => publicSettings(settings!.read());
-    const limit = (limit: number) =>
-      rateLimited(clock, { limit, windowMs: 60_000, maxPeers: 10_000 }, () => pages().siteName);
-    // Mail providers post one-click unsubscribes from shared addresses, hence the higher limit.
+    const limit = (name: keyof ReturnType<typeof publicSettings>["rateLimits"]) =>
+      rateLimited(
+        clock,
+        {
+          get limit() {
+            return pages().rateLimits[name];
+          },
+          windowMs: 60_000,
+          maxPeers: 10_000,
+        },
+        () => pages().siteName,
+        clientAddress,
+      );
     const limits = {
-      subscribe: limit(30),
-      optin: limit(60),
-      privacy: limit(10),
+      subscribe: limit("subscribe"),
+      optin: limit("optin"),
+      privacy: limit("privacy"),
     };
-    const unsubscribeLimit = limit(300);
+    // Mail providers post one-click unsubscribes from shared addresses, hence its higher default.
+    const unsubscribeLimit = limit("unsubscribe");
     runnerStore = createRunnerStore(db);
     sends = createSends({
       db,
@@ -362,6 +376,7 @@ async function main(): Promise<void> {
       mail,
       settings: pages,
       limits,
+      clientAddress,
     });
     registerArchiveRoutes(router, {
       store: campaignStore,

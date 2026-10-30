@@ -20,6 +20,7 @@ export class HttpError extends Error {
   constructor(
     readonly status: number,
     message = "",
+    readonly headers: Record<string, string> = {},
   ) {
     super(message);
     this.name = "HttpError";
@@ -27,6 +28,12 @@ export class HttpError extends Error {
 }
 
 export function errorResponse(error: HttpError, method: string): Response {
-  if (method === "HEAD") return new Response(null, { status: error.status });
-  return json({ message: error.message || STATUS_CODES[error.status] || "" }, error.status);
+  if (method === "HEAD")
+    return new Response(null, { status: error.status, headers: error.headers });
+  const response = json(
+    { message: error.message || STATUS_CODES[error.status] || "" },
+    error.status,
+  );
+  for (const [name, value] of Object.entries(error.headers)) response.headers.set(name, value);
+  return response;
 }

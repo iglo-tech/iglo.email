@@ -62,9 +62,13 @@ export function registerSettingsRoutes(
       auth.revalidate(context, "settings:manage");
       settings.update((current) => {
         const next = bindFull(body, current["app.root_url"]);
-        // listmonk clients replace the full object without this native key; keep it.
-        const native = "marketing.min_interval";
-        if (!hasField(body, native)) next[native] = current[native];
+        // listmonk clients replace the full object without these native keys; keep them.
+        for (const native of [
+          "marketing.min_interval",
+          "security.trusted_proxies",
+          "security.public_rate_limit",
+        ])
+          if (!hasField(body, native)) next[native] = current[native];
         return next;
       });
       return ok(true);
