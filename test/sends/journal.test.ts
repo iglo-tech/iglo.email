@@ -957,3 +957,35 @@ test("live resend authority rejects disabled, deleted and revoked principals whi
     f.close();
   }
 });
+
+test("the outbox claims the lowest queued id that is new or due for retry (D24)", async () => {
+  const f = await fixture();
+  try {
+    const enqueue = () =>
+      Number(f.journal.enqueue({ source: "tx", kind: "transactional", message: message() }).id);
+    const claim = () => {
+      const now = f.clock.now();
+      return f.journal.claim(now, new Date(now.getTime() + 60_000)).map((row) => Number(row.id));
+    };
+    const [a, b, c] = [enqueue(), enqueue(), enqueue()];
+    const [first] = f.journal.claim(f.clock.now(), new Date(f.clock.now().getTime() + 60_000));
+    expect(Number(first!.id)).toEqual(a);
+    f.journal.finish(first!, {
+      messageId: first!.smtp_message_id!,
+      status: "proven-not-accepted",
+      stage: "setup",
+      accepted: [],
+      rejected: [],
+      retry: "transient",
+    });
+    // The retry waits one second; the next new row goes first meanwhile.
+    expect(claim()).toEqual([b]);
+    f.clock.advance(999);
+    expect(claim()).toEqual([c]);
+    f.clock.advance(1);
+    expect(claim()).toEqual([a]);
+    expect(claim()).toEqual([]);
+  } finally {
+    f.close();
+  }
+});
