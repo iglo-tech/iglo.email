@@ -5,6 +5,7 @@
 import { Icon } from "@/admin/layout/icon";
 import type { AdminView } from "@/admin/page";
 import { systemStats, type SystemStats } from "@/admin/system";
+import { Alert, EmptyState } from "@/admin/views/parts";
 import type { Translation } from "@/i18n/i18n";
 
 const statuses = ["draft", "scheduled", "running", "paused", "finished", "cancelled"];
@@ -15,18 +16,6 @@ const dayFormat = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-function Alert({ name }: { name: string }) {
-  return (
-    <div
-      role="alert"
-      data-variant="danger"
-      data-testid={name}
-      x-show={name}
-      x-text={name}
-      style="display: none"
-    ></div>
-  );
-}
 function StatMeta(props: { href: string; value: string; label: string }) {
   return (
     <div class="hstack gap-1">
@@ -86,14 +75,6 @@ function Chart(props: { id: string; title: string; empty: string }) {
           </template>
         </div>
       </article>
-    </div>
-  );
-}
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div class="empty-state">
-      <Icon name="sun" />
-      <p>{text}</p>
     </div>
   );
 }

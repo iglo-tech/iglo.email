@@ -2,19 +2,9 @@
 // arrives with its data; here each section reads /api/dashboard/* and shows its own refusal.
 import Alpine from 'alpinejs';
 import { lineChart } from '@/assets/admin/js/charts.js';
-import { i18n, urls } from '@/assets/admin/js/main.js';
+import { initials, read } from '@/assets/admin/js/listing.js';
+import { i18n } from '@/assets/admin/js/main.js';
 import * as u from '@/assets/admin/js/utils.js';
-
-// One read. A refused one (a busy reader answers 429, an oversized result 422) throws the
-// server's message for its section to show, instead of the global toast of api().
-async function read(uri) {
-  const resp = await fetch(`${urls.api}${uri}`, { headers: { Accept: 'application/json' } });
-  const out = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    throw new Error(out.message || resp.statusText);
-  }
-  return out.data;
-}
 
 function dashboardView() {
   return {
@@ -47,14 +37,7 @@ function dashboardView() {
       return u.formatNumber(path.split('.').reduce((o, key) => o?.[key], this.counts) ?? 0);
     },
 
-    // cmd/avatar.go makeInitials.
-    initials(name) {
-      const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean).map((w) => [...w]);
-      if (!words.length) {
-        return '?';
-      }
-      return (words[0][0] + (words[1]?.[0] ?? words[0][1] ?? '')).toUpperCase();
-    },
+    initials,
 
     statusLabel(c) {
       return i18n.t(`globals.terms.${c.status}`);

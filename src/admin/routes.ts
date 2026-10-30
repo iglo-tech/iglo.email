@@ -7,36 +7,57 @@
 import { createAdminPages, type AdminSite, type AdminView } from "@/admin/page";
 import { createPasswordReset, type ResetDeps } from "@/admin/password-reset";
 import { dashboardView } from "@/admin/views/dashboard";
+import { listView, newListView } from "@/admin/views/list";
+import { listsView } from "@/admin/views/lists";
 import { notYet } from "@/admin/views/not-yet";
 import { profileView } from "@/admin/views/profile";
+import { newSubscriberView, subscriberView } from "@/admin/views/subscriber";
+import { subscribersView } from "@/admin/views/subscribers";
 import type { Roles } from "@/roles/roles";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
+import { hasID } from "@/server/validation";
 
 export interface AdminDeps extends ResetDeps {
   roles: Roles;
   site: () => AdminSite;
 }
 
+/** The hasID middleware inside adminPage, so its 400 is the admin error page. */
+const checkedID =
+  (view: AdminView): AdminView =>
+  async (request) => {
+    await hasID(request.context, async () => new Response());
+    return view(request);
+  };
+
 export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   const { auth, roles, site } = deps;
   const { adminPage } = createAdminPages({ auth, roles, site });
   const page = (path: string, view: AdminView, ...permissions: string[]) =>
     router.route("GET", path, adminPage(view, ...permissions));
+  const withID = (path: string, view: AdminView, ...permissions: string[]) =>
+    page(path, checkedID(view), ...permissions);
 
   page("/admin", dashboardView);
   page("/admin/user/profile", profileView);
 
+  page("/admin/lists", listsView);
+  page("/admin/lists/new", newListView, "lists:manage_all");
+  withID("/admin/lists/:id", listView("list"));
+  withID("/admin/lists/:id/edit", listView("edit"));
+
   // Navigation targets that later M4 tasks port.
-  page("/admin/lists", notYet("lists.all", "globals.terms.lists"));
   page("/admin/lists/analytics", notYet("lists.analytics", "globals.terms.analytics"));
   page("/admin/lists/forms", notYet("lists.forms", "globals.terms.forms"));
   const anySubscribers = ["subscribers:get_all", "subscribers:get"];
-  page(
-    "/admin/subscribers",
-    notYet("subscribers.all", "globals.terms.subscribers"),
-    ...anySubscribers,
-  );
+  page("/admin/subscribers", subscribersView, ...anySubscribers);
+  page("/admin/subscribers/new", newSubscriberView, "subscribers:manage");
+  withID("/admin/subscribers/lists/:id", subscribersView, ...anySubscribers);
+  withID("/admin/subscribers/:id", subscriberView("activity"), ...anySubscribers);
+  withID("/admin/subscribers/:id/edit", subscriberView("edit"), ...anySubscribers);
+  withID("/admin/subscribers/:id/lists", subscriberView("lists"), ...anySubscribers);
+  withID("/admin/subscribers/:id/bounces", subscriberView("bounces"), ...anySubscribers);
   page(
     "/admin/subscribers/import",
     notYet("subscribers.import", "globals.terms.import"),
