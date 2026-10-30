@@ -50,6 +50,7 @@ export async function publicFixture() {
   const mail = createSubscriberMail({
     subscribers,
     sends: f.sends,
+    bounces: { forExport: () => [] },
     campaigns,
     tracking,
     events,

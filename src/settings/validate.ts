@@ -303,6 +303,11 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     if (!next["security.captcha"]?.hcaptcha) return fail();
     next["security.captcha"].hcaptcha.secret = current["security.captcha"].hcaptcha.secret;
   }
+  // A masked value read back keeps the key, as an empty one does.
+  const mailgun = next["bounce.mailgun"];
+  mailgun.key = trimSpace(mailgun.key);
+  if (!mailgun.key || /^•+$/.test(mailgun.key)) mailgun.key = current["bounce.mailgun"].key;
+  if (mailgun.enabled && !mailgun.key) return fail("A Mailgun signing key is required.");
   next["marketing.min_interval"] = trimSpace(next["marketing.min_interval"] ?? "");
   if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined)
     return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
@@ -374,6 +379,7 @@ export function masked(settings: Settings): Settings {
     ["bounce.postmark", "password"],
     ["bounce.forwardemail", "key"],
     ["bounce.lettermint", "key"],
+    ["bounce.mailgun", "key"],
     ["security.oidc", "client_secret"],
   ] as const)
     out[key][field!] = mask(out[key][field!]);

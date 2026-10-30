@@ -499,6 +499,22 @@ export function createSubscriberStore(
       consentChanged(id, newlyBlocklisted, changed);
       return changed;
     },
+    /**
+     * record-bounce's block1: the status alone, so memberships stay, unlike `blocklist`. Like
+     * upstream it leaves updated_at. The caller holds the write.
+     */
+    bounceBlocklist(id: bigint) {
+      q.get("subscriber-blocklist-only").run(id);
+      effects.blocklisted([id]);
+      consentChanged(id, true, []);
+    },
+    /** record-bounce's block2: every list, keeping the status. The caller holds the write. */
+    bounceUnsubscribe(id: bigint) {
+      const rows = q.get("membership-unsubscribe-all").all(clock.now().toISOString(), id);
+      const changed = (rows as { list_id: bigint }[]).map((row) => row.list_id);
+      if (changed.length) effects.unsubscribed([id], changed);
+      consentChanged(id, false, changed);
+    },
     /** JSON arrays of webhook data, read in one statement before the write they describe. */
     webhookUnsubscribed: (ids: bigint[], lists: bigint[] | null) =>
       webhookData("webhook-unsubscribed", json(ids), lists && json(lists)),

@@ -8,6 +8,18 @@ import type { Database } from "bun:sqlite";
  * without SMTP, and `failed` or `unknown` rows can no longer be resent. Send UUIDs and
  * idempotency keys stay, so a replayed producer request cannot send again.
  */
+/** Sends to these addresses with no subscriber; the anonymizer below clears them. */
+export function createUnlinkedSends(db: Database) {
+  return (emails: string[]) =>
+    db
+      .query<{ id: bigint }, [string]>(
+        `SELECT id FROM sends INDEXED BY idx_sends_unlinked_to WHERE subscriber_id IS NULL
+           AND to_email COLLATE NOCASE IN (SELECT value FROM json_each(?1))`,
+      )
+      .all(JSON.stringify(emails))
+      .map((row) => row.id);
+}
+
 export function createSendAnonymizer(db: Database) {
   return (subscribers: { id: bigint; email: string }[]) => {
     if (!db.inTransaction) throw new Error("Sends are anonymized in the caller's transaction");

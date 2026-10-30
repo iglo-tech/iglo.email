@@ -133,6 +133,11 @@ export function addressBlocklisted(subscribers: SubscriberStore, email: string) 
     "blocklisted"
   );
 }
+/** The send a bounce identifies. */
+export type BounceTarget = Pick<
+  PublicRow,
+  "id" | "uuid" | "source" | "kind" | "subscriber_id" | "list_id" | "to_email"
+>;
 export function createSends(options: {
   db: Database;
   clock: Clock;
@@ -759,6 +764,14 @@ export function createSends(options: {
           Pick<PublicRow, "id" | "uuid" | "kind" | "subscriber_id" | "list_id" | "status">,
           [string]
         >("SELECT id, uuid, kind, subscriber_id, list_id, status FROM sends WHERE uuid = ?")
+        .get(uuid);
+    },
+    /** What a bounce of this send links to. `to_email` is empty once anonymized. */
+    bounceTarget(uuid: string): BounceTarget | null {
+      return db
+        .query<BounceTarget, [string]>(
+          "SELECT id, uuid, source, kind, subscriber_id, list_id, to_email FROM sends WHERE uuid = ?",
+        )
         .get(uuid);
     },
     /**
