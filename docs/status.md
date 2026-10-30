@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.1 campaigns API, branch task/M3.1-campaigns, [brief](briefs/M3.1.md). One Opus medium worker dispatched; no reviewer active. Path to M6.1: M3.1, M3.2.
-Next: on worker handback, Sol xhigh round 1, lead disposition, merge, then M3.2.
+M3.1 campaigns API, [PR #27](https://github.com/iglo-tech/iglo.email/pull/27), head b597e77. Worker done; Sol xhigh round-1 review running. Path to M6.1: M3.1, M3.2.
+Next: lead disposition of round 1, merge, then M3.2.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
