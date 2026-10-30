@@ -33,7 +33,9 @@ UPDATE webhook_deliveries SET attempts = attempts + 1, next_attempt_at = ?1, cla
     WHERE webhook_id = ?2 AND status = 'queued' AND next_attempt_at <= ?3
     ORDER BY next_attempt_at, id LIMIT ?4
   )
-  RETURNING id, uuid, webhook_id, event, payload, attempts, created_at, claimed_until;
+  RETURNING id, uuid, webhook_id, event, attempts, created_at, claimed_until;
+-- name: delivery-claimed-payload
+SELECT payload FROM webhook_deliveries WHERE id = ? AND status = 'queued' AND claimed_until = ?;
 -- name: delivery-due
 SELECT id, created_at FROM webhook_deliveries
   WHERE webhook_id = ? AND status = 'queued' AND next_attempt_at <= ?

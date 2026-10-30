@@ -686,6 +686,71 @@ test("with blocking on, the request goes to the checked address, not a fresh loo
   expect(lookups).toBe(1);
 });
 
+test("a delivery held at DNS goes out cleared when its subscriber is deleted meanwhile", async () => {
+  let release = () => {};
+  let held = true;
+  const f = await open({
+    webhooks: {
+      lookup: async () => {
+        if (held) await new Promise<void>((resolve) => (release = resolve));
+        return ["127.0.0.1"];
+      },
+      blocked: () => false,
+    },
+  });
+  f.blockPrivate.value = true;
+  const r = receiver((_, count) => new Response("x", { status: count === 1 ? 503 : 200 }));
+  const { id, secret } = await hook(f, r, ["subscriber.blocklisted"]);
+  await f.json(`/api/webhooks/${id}`, "PUT", { url: `http://hold.test:${r.port}/hook` });
+  const subscriber = await f.subscriber("held@example.test", "H", { external_id: "app-held" });
+  await blocklist(f, subscriber);
+  await until(async () => (await deliveries(f, id))[0]?.claimed_until);
+
+  expect((await f.json(`/api/subscribers/${subscriber}`, "DELETE")).status).toBe(200);
+  held = false;
+  release();
+  await r.waitFor(1);
+  await queued(f, id, 1);
+  f.advanceWebhooks(30_000);
+  await r.waitFor(2);
+  await until(async () => (await deliveries(f, id)).every((d) => d.status === "delivered"));
+
+  const [first, retry] = r.received;
+  expect(first!.text).not.toContain("held@example.test");
+  expect(first!.text).not.toContain("app-held");
+  expect(first!.body.data.subscriber).toMatchObject({
+    id: subscriber,
+    email: "",
+    external_id: null,
+  });
+  expect(signatureValid(first!, secret)).toBe(true);
+  // Cleared bytes are the row's bytes from then on, so a retry repeats them exactly.
+  expect(retry!.text).toBe(first!.text);
+});
+
+test("a delivery held at DNS sends nothing when its row is gone", async () => {
+  let release = () => {};
+  const f = await open({
+    webhooks: {
+      lookup: async () => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return ["127.0.0.1"];
+      },
+      blocked: () => false,
+    },
+  });
+  f.blockPrivate.value = true;
+  const r = receiver();
+  const { id } = await hook(f, r, ["subscriber.blocklisted"]);
+  await f.json(`/api/webhooks/${id}`, "PUT", { url: `http://hold.test:${r.port}/hook` });
+  await blocklist(f, await f.subscriber("held@example.test"));
+  await until(async () => (await deliveries(f, id))[0]?.claimed_until);
+  await f.json(`/api/webhooks/${id}`, "DELETE");
+  release();
+  await Bun.sleep(100);
+  expect(r.received.length).toBe(0);
+});
+
 test("non-public addresses are classified as blocked", () => {
   for (const address of [
     "0.0.0.0",

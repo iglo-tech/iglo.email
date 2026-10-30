@@ -65,7 +65,6 @@ export interface ClaimedDelivery {
   id: bigint;
   uuid: string;
   event: string;
-  payload: string;
   attempts: bigint;
   created_at: string;
   claimed_until: string;
@@ -204,6 +203,16 @@ export function createWebhookStore(db: Database, clock: Clock) {
       if (!db.inTransaction) throw new Error("Deliveries are cleared in the caller's transaction");
       if (ids.length)
         q.get("delivery-clear-subscribers").run(iso(), JSON.stringify(ids.map(String)));
+    },
+    /**
+     * The body to send now, which a deletion may have cleared since the claim. Null when the
+     * row no longer holds this claim, as when its webhook was deleted.
+     */
+    claimedPayload(delivery: ClaimedDelivery) {
+      const row = q.get("delivery-claimed-payload").get(delivery.id, delivery.claimed_until) as {
+        payload: string;
+      } | null;
+      return row?.payload ?? null;
     },
     /** One process owns the table: a lease that survived a restart is an abandoned attempt. */
     recover() {

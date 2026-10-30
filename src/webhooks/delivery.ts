@@ -23,6 +23,8 @@ const RESPONSE_BYTES = 64 * 1024;
 /** A webhook's repeated failure is logged at most this often. */
 const FAILURE_LOG_MS = 3_600_000;
 const FAILURE_LOG_ATTEMPTS = 5;
+/** Nothing was sent and the row is not this attempt's to settle. */
+const CLAIM_GONE = "claim_gone";
 
 export interface WebhookTransport {
   /** Addresses of a hostname. */
@@ -121,6 +123,9 @@ export function startWebhookDelivery(options: {
     try {
       const url = new URL(delivery.target.url);
       const route = options.blockPrivate() ? await beforeAbort(pinned(url, transport)) : null;
+      // Read after the last wait: a deletion during DNS must not leave the claim's body to send.
+      const payload = webhooks.claimedPayload(delivery);
+      if (payload === null) return CLAIM_GONE;
       const unix = Math.floor(clock.now().getTime() / 1000);
       const response = await send(route?.url ?? url, {
         method: "POST",
@@ -131,9 +136,9 @@ export function startWebhookDelivery(options: {
           ...route?.headers,
           "Content-Type": "application/json",
           "User-Agent": "iglo.email",
-          "X-Iglo-Email-Signature": signature(delivery.target.secret, unix, delivery.payload),
+          "X-Iglo-Email-Signature": signature(delivery.target.secret, unix, payload),
         },
-        body: delivery.payload,
+        body: payload,
         ...route?.tls,
       });
       if (response.status >= 200 && response.status < 300) {
@@ -183,7 +188,7 @@ export function startWebhookDelivery(options: {
       active.set(id, (active.get(id) ?? 0) + 1);
       const run = attempt(delivery)
         .then((error) => {
-          if (!abandon.signal.aborted) finished.push({ delivery, error });
+          if (!abandon.signal.aborted && error !== CLAIM_GONE) finished.push({ delivery, error });
         })
         .finally(() => {
           const left = active.get(id)! - 1;
