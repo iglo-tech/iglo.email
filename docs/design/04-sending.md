@@ -46,6 +46,8 @@ Ported from listmonk's `internal/manager`:
 
 Delivery guarantee: **at-most-once per subscriber per campaign.** The cursor is advanced for a batch before the batch is sent. A crash mid-batch can skip at most one batch of recipients; it never sends a campaign twice to the same person. The skipped range is logged so it can be resent manually.
 
+M3.1 implements the campaigns API: CRUD, listmonk's status transitions (which only record the state; the runner is M3.2), archive settings, Markdown conversion, previews and test sends. A test send renders the campaign per recipient and pushes it directly to the emailer (no outbox, no `sends` row, no counters or cursor change) with listmonk's campaign URLs: `unsubscribe_url` and `List-Unsubscribe` are `<root>/subscription/<campaign-uuid>/<subscriber-uuid>`, tracked links `<root>/link/<link-uuid>/<campaign-uuid>/<subscriber-uuid>` and the pixel `<root>/campaign/<campaign-uuid>/<subscriber-uuid>/px.png` (the dummy subscriber UUID unless `privacy.individual_tracking`). Those three public routes exist: the unsubscribe page and its no-login POST unsubscribe the subscriber from the campaign's lists (or blocklist with `privacy.allow_blocklist`) and call the M2.4 `UnsubscribeEffects`; clicks and views are recorded against `campaign_id`. As upstream, the redirect accepts any registered link with an existing campaign; per-message link binding (as `/m/` sends do) is for M3.3.
+
 ## Transactional API
 
 `POST /api/tx`, compatible with listmonk's request body (`subscriber_email`, `subscriber_id`, `subscriber_emails`, `subscriber_ids`, `subscriber_mode`, `template_id`, `data`, `headers`, `messenger`, `subject`, `from_email`, `content_type`, multipart attachments).
