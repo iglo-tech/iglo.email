@@ -7,6 +7,7 @@ import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
 import type { ListReferences } from "@/lists/references";
 import { trimSpace } from "@/lists/store";
+import { publicCors } from "@/public/cors";
 import { parseBool, readFields, type Fields } from "@/public/form";
 import { PublicShell } from "@/public/layout";
 import type { SubscriberMail } from "@/public/mail";
@@ -142,6 +143,7 @@ export function registerPublicRoutes(
     return settings.sendOptin && lists.some((list) => list.optin === "double");
   }
 
+  router.use(publicCors(deps.settings));
   router.route("GET", "/api/public/lists", () =>
     Response.json(deps.lists.publicLists().map((list) => ({ uuid: list.uuid, name: list.name }))),
   );

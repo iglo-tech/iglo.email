@@ -1008,6 +1008,48 @@ export async function runPublicContract(target: {
         }),
       );
       check(foreign.status === 200 && !foreign.headers.get("location"), "next-foreign");
+      // Upstream's CORS for origins of trusted URLs, on the public API.
+      const origin = { origin: "https://example.test" };
+      const read = await visit("/api/public/lists", { headers: origin });
+      check(
+        read.status === 200 &&
+          read.headers.get("access-control-allow-origin") === "https://example.test" &&
+          read.headers.get("vary") === "Origin",
+        "cors-read",
+      );
+      const preflight = await visit("/api/public/subscription", {
+        method: "OPTIONS",
+        headers: { ...origin, "access-control-request-method": "POST" },
+      });
+      check(
+        preflight.status === 204 &&
+          preflight.headers.get("access-control-allow-origin") === "https://example.test" &&
+          preflight.headers.get("access-control-allow-methods") ===
+            "GET,HEAD,PUT,PATCH,POST,DELETE" &&
+          preflight.headers.get("access-control-allow-headers") ===
+            "Origin,Content-Type,Accept,Authorization" &&
+          preflight.headers.get("vary") ===
+            "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+        "cors-preflight",
+      );
+      const denied = await visit("/api/public/subscription", {
+        method: "OPTIONS",
+        headers: { origin: "https://evil.example", "access-control-request-method": "POST" },
+      });
+      check(
+        denied.status === 204 && !denied.headers.get("access-control-allow-origin"),
+        "cors-foreign",
+      );
+      const invalid = await visit("/api/public/subscription", {
+        method: "POST",
+        headers: { ...origin, "content-type": "application/json" },
+        body: "{}",
+      });
+      check(
+        invalid.status === 400 &&
+          invalid.headers.get("access-control-allow-origin") === "https://example.test",
+        "cors-error",
+      );
       await adminSubscriber(`next-${marker}@example.test`);
       await adminSubscriber(`next2-${marker}@example.test`);
     });

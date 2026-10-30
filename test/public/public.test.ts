@@ -101,6 +101,88 @@ test("the client is the nearest valid hop when a chain is unusable", () => {
   expect(at("unknown", "203.0.113.1")).toBe("unknown");
 });
 
+test("trusted origins can read and post to the public API, as upstream", async () => {
+  const f = await open();
+  const origin = { origin: "https://website.example.test" };
+  const preflight = {
+    ...origin,
+    "access-control-request-method": "POST",
+    "access-control-request-headers": "content-type",
+  };
+  const cors = (response: Response) =>
+    Object.fromEntries(
+      [...response.headers].filter(([name]) => /^(vary|access-control-)/.test(name)),
+    );
+  // Nothing without a trusted URL.
+  expect(
+    (await f.peer("/api/public/lists", "192.0.2.1", { headers: origin })).headers.get("vary"),
+  ).toBeNull();
+  expect(
+    (
+      await f.peer("/api/public/subscription", "192.0.2.1", {
+        method: "OPTIONS",
+        headers: preflight,
+      })
+    ).status,
+  ).toBe(404);
+
+  f.overrides.trustedUrls = [
+    "https://website.example.test/subscribe",
+    "http://Other.example:8080/x",
+  ];
+  const read = await f.peer("/api/public/lists", "192.0.2.1", { headers: origin });
+  expect(read.status).toBe(200);
+  expect(cors(read)).toEqual({
+    "access-control-allow-origin": "https://website.example.test",
+    vary: "Origin",
+  });
+  const allowed = await f.peer("/api/public/subscription", "192.0.2.1", {
+    method: "OPTIONS",
+    headers: preflight,
+  });
+  expect(allowed.status).toBe(204);
+  expect(cors(allowed)).toEqual({
+    "access-control-allow-origin": "https://website.example.test",
+    "access-control-allow-methods": "GET,HEAD,PUT,PATCH,POST,DELETE",
+    "access-control-allow-headers": "Origin,Content-Type,Accept,Authorization",
+    vary: "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+  });
+  // Origins match case-insensitively and answer in their configured spelling.
+  const spelled = await f.peer("/api/public/lists", "192.0.2.1", {
+    headers: { origin: "http://other.example:8080" },
+  });
+  expect(spelled.headers.get("access-control-allow-origin")).toBe("http://Other.example:8080");
+  // A rejected request still carries the headers, so a browser can read the error.
+  const rejected = await f.peer("/api/public/subscription", "192.0.2.1", {
+    method: "POST",
+    headers: { ...origin, "content-type": "application/json" },
+    body: "{}",
+  });
+  expect(rejected.status).toBe(400);
+  expect(rejected.headers.get("access-control-allow-origin")).toBe("https://website.example.test");
+  // Foreign and origin-less requests get no grant.
+  const foreign = await f.peer("/api/public/subscription", "192.0.2.1", {
+    method: "OPTIONS",
+    headers: { ...preflight, origin: "https://evil.example" },
+  });
+  expect(foreign.status).toBe(204);
+  expect(cors(foreign)).toEqual({ vary: "Origin" });
+  expect(cors(await f.peer("/api/public/lists", "192.0.2.1"))).toEqual({ vary: "Origin" });
+  // An OPTIONS that is not a preflight is routed normally.
+  expect(
+    (await f.peer("/api/public/lists", "192.0.2.1", { method: "OPTIONS", headers: origin })).status,
+  ).toBe(404);
+  f.overrides.trustedUrls = ["*"];
+  expect(
+    (await f.peer("/api/public/lists", "192.0.2.1", { headers: origin })).headers.get(
+      "access-control-allow-origin",
+    ),
+  ).toBe("*");
+  // Scoped to the public API: other routes gain no cross-origin surface.
+  expect(cors(await f.peer("/health", "192.0.2.1", { headers: origin }))).toEqual({});
+  expect(cors(await f.peer("/api/sends", "192.0.2.1", { headers: origin }))).toEqual({});
+});
+
 test("opt-in, unsubscribe and privacy POSTs are limited too", async () => {
   const f = await open();
   const missing = "11111111-1111-4111-8111-111111111111";
