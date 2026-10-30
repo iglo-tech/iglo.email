@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head c2d0ebe. Round-1 fixes pushed; Sol round-2 fix-only review running.
-Next: lead disposition of round 2, merge, then M6.1 or the next eligible task.
+M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head 414297a. Round 2: orphaned-claim recovery fixed by the lead; Sol round-3 (last) fix-only review running.
+Next: round 3 is final; lead decides any remaining disagreement, merges, then M6.1 or the next eligible task.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -59,4 +59,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - M5.1 perf: record source/executable hashes for each measured variant.
 - M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
 - Single-instance data-dir lock: D15 says one process per data dir but nothing enforces it; lease-based loops (outbox, scheduler, campaign runner) assume it. Bootstrap owner.
+- Cap lookup cost grows with long per-subscriber histories (~5 ms at 10k rows); add an indexed reservation/latest-delivery lookup ([M3.2 review](https://github.com/iglo-tech/iglo.email/pull/29#issuecomment-6514899358)).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
