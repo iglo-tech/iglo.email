@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head 45cf272. Worker done (10k exactly-once, crash runs, D22 mixed load met at 7×10/s); Sol xhigh round-1 review running.
-Next: lead disposition of round 1, merge, then M6.1 or the next eligible task.
+M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head 45cf272. Round 1: CHANGES (2 P1, 3 P2; one narrowed by the lead); one Opus fixer running.
+Next: Sol round-2 fix-only review, merge, then M6.1 or the next eligible task.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -58,4 +58,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Outbox send throughput: 50 msg/s not sustained even without events (one message at a time, two commits each); events at 100/s slow sending further ([M5.1 perf](https://github.com/iglo-tech/iglo.email/pull/20)). Owner: messaging, M3.2/M6.1 (D22). The outbox claim query sorts all queued rows per claim; delivery falls from ~370/s to ~150/s while a 10k sequence burst is queued ([M5.4 perf](https://github.com/iglo-tech/iglo.email/pull/25)). A `(status, id)` index or a split query is the likely fix.
 - M5.1 perf: record source/executable hashes for each measured variant.
 - M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
+- Single-instance data-dir lock: D15 says one process per data dir but nothing enforces it; lease-based loops (outbox, scheduler, campaign runner) assume it. Bootstrap owner.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
