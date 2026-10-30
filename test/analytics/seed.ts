@@ -9,6 +9,8 @@ export interface SeedSize {
   clicks: number;
   /** Extra views and clicks belonging to transactional and sequence sends. */
   sends: number;
+  /** Put every campaign event on the six newest campaigns, all finished: the dashboard card. */
+  recentLarge?: boolean;
 }
 const now = Date.parse("2026-10-30T12:00:00.000Z");
 const series = (count: number) =>
@@ -20,6 +22,10 @@ const at = (i: string, count: number) =>
 export function seed(db: Database, size: SeedSize) {
   const campaigns = 100;
   const lists = 20;
+  const newestSix = `${campaigns - 5} + i % 6`;
+  const owner = size.recentLarge
+    ? newestSix
+    : `CASE WHEN i % 2 = 0 THEN 90 ELSE 1 + i % ${campaigns} END`;
   db.run("DROP TRIGGER subscribers_fts_insert");
   db.run("PRAGMA synchronous = OFF");
   db.transaction(() => {
@@ -39,7 +45,7 @@ export function seed(db: Database, size: SeedSize) {
       FROM n WHERE i % 5 < 2 AND i % 50 != 1`);
     db.run(`${series(campaigns)} INSERT INTO campaigns (id, uuid, name, subject, from_email, body, messenger, status, sent, created_at, updated_at)
       SELECT i, 'camp-' || i, 'Campaign ' || i, 's', 'a@example.test', 'b', 'email',
-        CASE WHEN i > 90 THEN 'draft' ELSE 'finished' END, ${size.subscribers} / 2, ${at("i", campaigns)}, ${at("i", campaigns)} FROM n`);
+        CASE WHEN i > ${size.recentLarge ? campaigns : 90} THEN 'draft' ELSE 'finished' END, ${size.subscribers} / 2, ${at("i", campaigns)}, ${at("i", campaigns)} FROM n`);
     db.run(`${series(campaigns)} INSERT INTO campaign_lists (campaign_id, list_id, list_name)
       SELECT i, 1 + i % ${lists}, 'List' FROM n`);
     db.run(
@@ -47,13 +53,13 @@ export function seed(db: Database, size: SeedSize) {
     );
     // Half of all rows are on campaign 90, the realistic worst case of one big send.
     db.run(`${series(size.views)} INSERT INTO campaign_views (campaign_id, subscriber_id, created_at)
-      SELECT CASE WHEN i % 2 = 0 THEN 90 ELSE 1 + i % ${campaigns} END, 1 + (i * 7) % ${size.subscribers},
+      SELECT ${owner}, 1 + (i * 7) % ${size.subscribers},
         ${at("i", size.views)} FROM n`);
     db.run(`${series(size.clicks)} INSERT INTO link_clicks (campaign_id, link_id, subscriber_id, created_at)
-      SELECT CASE WHEN i % 2 = 0 THEN 90 ELSE 1 + i % ${campaigns} END, 1 + i % 50, 1 + (i * 11) % ${size.subscribers},
+      SELECT ${owner}, 1 + i % 50, 1 + (i * 11) % ${size.subscribers},
         ${at("i", size.clicks)} FROM n`);
     db.run(`${series(10_000)} INSERT INTO bounces (subscriber_id, campaign_id, created_at)
-      SELECT 1 + (i * 13) % ${size.subscribers}, 90, ${at("i", 10_000)} FROM n`);
+      SELECT 1 + (i * 13) % ${size.subscribers}, ${size.recentLarge ? newestSix : 90}, ${at("i", 10_000)} FROM n`);
     if (size.sends) {
       db.run(`INSERT INTO templates (id, name, type, subject, body) VALUES
         (1, 'One', 'tx', 's', 'b'), (2, 'Two', 'tx', 's', 'b'), (3, 'Three', 'tx', 's', 'b')`);

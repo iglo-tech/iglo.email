@@ -25,7 +25,7 @@ Decided 2026-10-27.
 
 ## D4. SQLite only
 
-- **Decision:** `bun:sqlite`, WAL mode, one database file, one process.
+- **Decision:** `bun:sqlite`, WAL mode, one database file, one writing process. Read-only helpers of the same executable may read that file ([D62](#d62-read-only-helper-processes-for-slow-reads)); they do not add a service, a writer or a release artifact.
 - **Why:** the expected load (thousands to hundreds of thousands of subscribers, tens of messages per second) fits SQLite with batched writes. No database server to run or back up separately.
 - **Considered:** keeping Postgres. Rejected, because it adds an external service for no needed capability.
 
@@ -571,3 +571,15 @@ Decided by agents on 2026-10-30, for owner review.
 - **Not chosen:** keeping the address until delivery would leave a wiped address in the database for a day. Omitting `external_id` on administrative deletes would leave apps that hold no `uuid` unable to match the event.
 - **Bulk budget:** a bulk action may queue at most 50,000 deliveries and is refused whole above that, before any write ([Sending](04-sending.md#outbound-webhooks), [perf](../perf/M2.6-webhooks.md)). Deliveries share the action's synchronous transaction, so the budget is what bounds its hold on the event loop. Rows are queued with one `INSERT … SELECT` per batch. **Not chosen:** splitting one action across transactions, which would give up its atomicity.
 - **At-least-once, not at-most-once:** D12 covers marketing email, where a duplicate harms a person. A duplicate webhook is deduped by `id`, and a lost one leaves an app's consent wrong.
+
+## D62. Read-only helper processes for slow reads
+
+Decided by agents on 2026-10-30, for owner review.
+
+- **Decision:** analytics reads run in short-lived child processes, as subscriber query reads do since M1.7, not on the server's thread. The compiled executable re-runs itself with an internal argument, so the single release artifact stays (D3). This refines "one process" in D4 and the [process model](02-architecture.md#process-model): one process writes and owns everything; a helper opens the file read-only with `query_only`, does one read in one snapshot and exits. D15 is about one audience per instance and is unaffected.
+- **Why:** `bun:sqlite` is synchronous and a running SQLite step cannot be stopped, while pixels, redirects and sends share the server's thread. At a million rows an in-process read stalled a pixel-sized write for 2.7 s, and even the six-row dashboard card held the thread for about 55 ms ([measurements](../perf/M3.3-analytics.md)). In a child the worst gap was about 10 ms, and a read can be killed.
+- **Budgets:** two children at once, 32 queued reads, 30 s to wait for a slot, 30 s for a child to run, 256 MiB resident per child, 32 MiB per response. Queued reads are refused rather than held, and a child over a limit is killed; the client gets a whole error ([07](07-api-and-ui.md)) and never partial JSON. The parent holds at most two responses of 32 MiB, and briefly a second copy of each as it joins them. After that a response belongs to the HTTP server until it is written or the connection times out; it is the one buffer the slots do not count.
+- **Streaming:** count rows are the only result that grows with the range, so the child streams them from an ordered query, holding one period at a time. The server cannot stream onward, because a child that fails midway must become an error.
+- **Cancellation and shutdown:** the server owns every child. Closing the reader stops admission, rejects queued reads, kills running children and waits for them to exit. A client disconnect removes a queued read or kills a running one. A cached dashboard read that starts a refresh does not cancel it on disconnect, because the refresh is shared and fills the rows for everyone.
+- **WAL:** a helper holds a read snapshot, so a checkpoint cannot pass it. The 30 s limit bounds one snapshot, not the WAL: readers that overlap continuously can keep it from resetting, and it grows until there is a gap. Two slots keep that to admin and reporting traffic, and any idle moment clears it. A deployment polling reports non-stop should turn on `app.cache_slow_queries`.
+- **Not chosen:** Bun Workers, because a running SQLite step cannot be stopped (M1.7). A long-lived helper pool, because a process per read is what gives kill, memory return and a fresh snapshot for about 150 ms of start-up. Unbounded `.all()` with a larger memory limit, because the budget would then depend on the data.

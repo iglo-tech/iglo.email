@@ -6,7 +6,6 @@ import { createRealClock } from "@/clock";
 import { analyticsChildArgument, createAnalyticsReader } from "@/analytics/reader";
 import { createAnalyticsStore } from "@/analytics/store";
 import { createSummaries } from "@/analytics/summaries";
-import { createCampaignStore } from "@/campaigns/store";
 import { writeTransaction } from "@/db/transaction";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
@@ -34,8 +33,14 @@ try {
   );
   const store = createAnalyticsStore(db);
   const counts = createListCounts(db);
-  const year = { from: "2025-10-30T00:00:00.000Z", to: "2026-10-31T00:00:00.000Z" };
-  const month = { from: "2026-09-30T00:00:00.000Z", to: "2026-10-31T00:00:00.000Z" };
+  const year = {
+    from: "2025-10-30T00:00:00.000Z",
+    to: "2026-10-31T00:00:00.000Z",
+  };
+  const month = {
+    from: "2026-09-30T00:00:00.000Z",
+    to: "2026-10-31T00:00:00.000Z",
+  };
   const big = ["90"];
   const all = Array.from({ length: 20 }, (_, i) => String(i + 1));
   const cases: [string, () => unknown][] = [
@@ -44,7 +49,10 @@ try {
     ["lists counts.all", () => counts.all()],
     ["summary", () => store.summary()],
     ["campaign views year day", () => [...store.campaignCounts("total_views", big, year, "day")]],
-    ["campaign views month hour", () => [...store.campaignCounts("total_views", big, month, "hour")]],
+    [
+      "campaign views month hour",
+      () => [...store.campaignCounts("total_views", big, month, "hour")],
+    ],
     ["campaign views unique year", () => [...store.campaignCounts("views", big, year, "day")]],
     ["campaign clicks year", () => [...store.campaignCounts("total_clicks", big, year, "day")]],
     ["campaign clicks unique year", () => [...store.campaignCounts("clicks", big, year, "day")]],
@@ -54,7 +62,10 @@ try {
     ["list views 20 lists", () => [...store.listCounts("total_views", all, year, "day")]],
     ["list views unique 20 lists", () => [...store.listCounts("views", all, year, "day")]],
     ["list links 20 lists", () => store.links("list", all, year, false)],
-    ["list subscriptions 20 lists", () => [...store.listCounts("subscriptions", all, year, "month")]],
+    [
+      "list subscriptions 20 lists",
+      () => [...store.listCounts("subscriptions", all, year, "month")],
+    ],
     ["list unsubscriptions 20", () => [...store.listCounts("unsubscriptions", all, year, "month")]],
     ["sends by template year", () => store.sends("template", year)],
     ["sends by step year", () => store.sends("step", year)],
@@ -102,7 +113,12 @@ try {
     ["list views unique 20 lists", () => reader.read("listCounts", ["views", all, year, "day"])],
     ["sends by template year", () => reader.read("sends", ["template", year])],
   ] as [string, () => Promise<unknown>][])
-    report({ name, in_child: true, compiled: existsSync(compiled), ...(await timed(read)) });
+    report({
+      name,
+      in_child: true,
+      compiled: existsSync(compiled),
+      ...(await timed(read)),
+    });
 
   // Summary refresh: the child's read, then the only part that holds the write lock.
   const clock = createRealClock();
@@ -115,7 +131,9 @@ try {
     refreshes.push(performance.now() - before);
     const body = await reader.read("summary", []);
     const hold = performance.now();
-    const { data } = JSON.parse(new TextDecoder().decode(body)) as { data: Record<string, unknown> };
+    const { data } = JSON.parse(new TextDecoder().decode(body)) as {
+      data: Record<string, unknown>;
+    };
     writeTransaction(db, () => {
       for (const [name, value] of Object.entries(data))
         db.query("UPDATE analytics_summaries SET data = ?, updated_at = ? WHERE name = ?").run(
@@ -127,7 +145,10 @@ try {
     holds.push(performance.now() - hold);
   }
   report({ name: "summary refresh total", ...stats(refreshes) });
-  report({ name: "summary write hold (includes FULL commit)", ...stats(holds) });
+  report({
+    name: "summary write hold (includes FULL commit)",
+    ...stats(holds),
+  });
 
   // The hot path while a read runs: a pixel-sized insert on this thread every millisecond.
   const insertView = db.query(
@@ -171,30 +192,6 @@ try {
     ...(await lagDuring(() => summaries.refresh())),
   });
 
-  // Dashboard campaigns stay in process: they are six rows.
-  const campaignStore = createCampaignStore(db, clock, {
-    templateExists: () => false,
-    defaultTemplate: () => null,
-    listName: () => null,
-  });
-  const scope = { all: true, ids: [] };
-  const filter = { query: "", tags: [], type: "" };
-  const board: number[] = [];
-  for (let run = 0; run < runs; run++) {
-    const before = performance.now();
-    campaignStore.query({ ...filter, statuses: ["scheduled"] }, scope, "created_at", "desc", 0, 6);
-    campaignStore.query(
-      { ...filter, statuses: ["draft", "running", "paused", "finished", "cancelled"] },
-      scope,
-      "created_at",
-      "desc",
-      0,
-      6,
-    );
-    board.push(performance.now() - before);
-  }
-  report({ name: "dashboard/campaigns in process", ...stats(board) });
-  campaignStore.close();
   summaries.close();
   await reader.close();
   counts.close();

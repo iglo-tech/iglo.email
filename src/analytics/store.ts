@@ -2,6 +2,9 @@
 // internal/core/lists.go and internal/core/dashboard.go at 6fcd95f. Times are UTC, like the
 // reference database's session, and stored created_at values order as text.
 import type { Database } from "bun:sqlite";
+import { projectCampaign } from "@/campaigns/routes";
+import { createCampaignStore } from "@/campaigns/store";
+import { createRealClock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { createListCounts } from "@/subscribers/list-counts";
 import eventsSql from "@/analytics/events.sql" with { type: "text" };
@@ -26,8 +29,15 @@ export interface Range {
   from: string;
   to: string;
 }
-type Row = { campaign_id?: bigint; list_id?: bigint; bucket: string; count: bigint };
+type Row = {
+  campaign_id?: bigint;
+  list_id?: bigint;
+  bucket: string;
+  count: bigint;
+};
 
+/** dashboardCampaignCount. */
+const DASHBOARD_CAMPAIGNS = 6;
 const prefix = { hour: 13, day: 10, week: 10, month: 7 } as const;
 
 /** The rest of DATE_TRUNC for a created_at cut to the interval's prefix. */
@@ -74,7 +84,10 @@ export function createAnalyticsStore(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "analytics", sql }]);
   const prepare = (table: string) =>
     prepareNamedQueries(db, [
-      { name: `analytics/${table}`, sql: eventsSql.replaceAll("%table%", table) },
+      {
+        name: `analytics/${table}`,
+        sql: eventsSql.replaceAll("%table%", table),
+      },
     ]);
   const events = {
     views: prepare("campaign_views"),
@@ -121,7 +134,10 @@ export function createAnalyticsStore(db: Database) {
     ): { url: string; count: number }[] {
       const found = q
         .get(`${resource}-link-${distinct ? "distinct-" : ""}counts`)
-        .all(idList(ids), range.from, range.to) as { url: string; count: bigint }[];
+        .all(idList(ids), range.from, range.to) as {
+        url: string;
+        count: bigint;
+      }[];
       return found.map((row) => ({ url: row.url, count: Number(row.count) }));
     },
     /** A send is one recipient, so unique counts are always available, by send. */
@@ -144,7 +160,9 @@ export function createAnalyticsStore(db: Database) {
         status: string;
         count: bigint;
       }[];
-      const { count: orphans } = q.get("subscriber-orphan-count").get() as { count: bigint };
+      const { count: orphans } = q.get("subscriber-orphan-count").get() as {
+        count: bigint;
+      };
       const lists = q.get("list-type-counts").get() as Record<string, bigint>;
       const campaigns = q.get("campaign-status-counts").all() as {
         status: string;
@@ -183,7 +201,46 @@ export function createAnalyticsStore(db: Database) {
           count: Number(row.count),
           date: row.date,
         }));
-      return { link_clicks: days("chart-clicks"), campaign_views: days("chart-views") };
+      return {
+        link_clicks: days("chart-clicks"),
+        campaign_views: days("chart-views"),
+      };
+    },
+    /**
+     * getDashboardCampaigns: scheduled ones on top, the bodies stripped. Each row counts its
+     * views, clicks and bounces, which at 1.5 million events holds a thread for 55 ms.
+     */
+    dashboardCampaigns(all: boolean, listIds: readonly string[]) {
+      // Nothing here writes, so the store's clock and references are never reached.
+      const campaigns = createCampaignStore(db, createRealClock(), {
+        templateExists: () => false,
+        defaultTemplate: () => null,
+        listName: () => null,
+      });
+      try {
+        const scope = { all, ids: listIds.map(BigInt) };
+        const newest = (statuses: string[], limit: number) =>
+          campaigns.query(
+            { query: "", statuses, tags: [], type: "" },
+            scope,
+            "created_at",
+            "desc",
+            0,
+            limit,
+          ).rows;
+        const rows = newest(["scheduled"], DASHBOARD_CAMPAIGNS);
+        const rest = DASHBOARD_CAMPAIGNS - rows.length;
+        if (rest > 0)
+          rows.push(...newest(["draft", "running", "paused", "finished", "cancelled"], rest));
+        if (!rows.length) return null;
+        return rows.map((row) => {
+          const out = projectCampaign(row, true);
+          out.body_source = null;
+          return out;
+        });
+      } finally {
+        campaigns.close();
+      }
     },
     /** Every summary row, from one read snapshot. */
     summary() {

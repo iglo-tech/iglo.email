@@ -2,6 +2,7 @@
 // src/subscribers/query-runner.ts. A read covers up to every view and click, bun:sqlite is
 // synchronous, and the pixel, redirect and send paths share the server's one thread, so at
 // a million rows an in-process read stalls them for seconds (docs/perf/M3.3-analytics.md).
+// Limits, cancellation and shutdown are recorded in docs/design/09-decisions.md D62.
 import { readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { createAnalyticsStore, type AnalyticsStore } from "@/analytics/store";
@@ -17,6 +18,7 @@ const methods = [
   "sends",
   "dashboardCounts",
   "dashboardCharts",
+  "dashboardCampaigns",
   "summary",
 ] as const;
 type Method = (typeof methods)[number];

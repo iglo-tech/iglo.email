@@ -98,9 +98,24 @@ test("periods are UTC DATE_TRUNC, with weeks from Monday", async () => {
     row("2026-02-01T00:00:00Z", 1),
   ]);
   expect(await rows("week", `lists/analytics/views?id=${list}`)).toEqual([
-    { list_id: list, campaign_id: 0, count: 1, timestamp: "2025-12-29T00:00:00Z" },
-    { list_id: list, campaign_id: 0, count: 2, timestamp: "2026-01-05T00:00:00Z" },
-    { list_id: list, campaign_id: 0, count: 1, timestamp: "2026-01-26T00:00:00Z" },
+    {
+      list_id: list,
+      campaign_id: 0,
+      count: 1,
+      timestamp: "2025-12-29T00:00:00Z",
+    },
+    {
+      list_id: list,
+      campaign_id: 0,
+      count: 2,
+      timestamp: "2026-01-05T00:00:00Z",
+    },
+    {
+      list_id: list,
+      campaign_id: 0,
+      count: 1,
+      timestamp: "2026-01-26T00:00:00Z",
+    },
   ]);
   // from and to are inclusive, at millisecond precision.
   const edge = "2026-01-05T03:04:05";
@@ -345,15 +360,21 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
     admissionMs: 10,
   });
   const first = slow.read("dashboardCounts", []);
-  await expect(slow.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "busy" });
+  await expect(slow.read("dashboardCounts", [])).rejects.toMatchObject({
+    kind: "busy",
+  });
   await expect(first).rejects.toMatchObject({ kind: "timeout" });
   const failed = createAnalyticsReader({ path: "x", command: ["false"] });
-  await expect(failed.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "failed" });
+  await expect(failed.read("dashboardCounts", [])).rejects.toMatchObject({
+    kind: "failed",
+  });
 
   const router = createRouter();
   let current = failed;
   registerAnalyticsRoutes(router, {
-    reader: { read: (method: "dashboardCounts") => current.read(method, []) } as never,
+    reader: {
+      read: (method: "dashboardCounts") => current.read(method, []),
+    } as never,
     summaries,
     campaigns: f.owners.store,
     roles: f.owners.roles,
@@ -363,7 +384,9 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
   const counts = () =>
     router.handle(
       f.app,
-      new Request("http://fixture.test/api/dashboard/counts", { headers: f.sessionHeaders }),
+      new Request("http://fixture.test/api/dashboard/counts", {
+        headers: f.sessionHeaders,
+      }),
     );
   expect((await counts()).status).toBe(500);
   expect(f.errors).toHaveLength(1);
@@ -372,6 +395,31 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
   expect((await counts()).status).toBe(429);
   await held;
   expect((await counts()).status).toBe(500); // Timed out, with a slot free again.
+});
+
+test("the dashboard campaigns card reads through the reader", async () => {
+  const list = await f.list("news");
+  await f.campaign({ name: "c", subject: "s", lists: [list] });
+  expect((await data("/api/dashboard/campaigns")).map((row: { name: string }) => row.name)).toEqual(
+    ["c"],
+  );
+  const failed = createAnalyticsReader({ path: "x", command: ["false"] });
+  const router = createRouter();
+  registerAnalyticsRoutes(router, {
+    reader: failed,
+    summaries,
+    campaigns: f.owners.store,
+    roles: f.owners.roles,
+    auth: f.owners.auth,
+    settings: () => ({ individualTracking: false, cacheSlowQueries: false }),
+  });
+  const card = await router.handle(
+    f.app,
+    new Request("http://fixture.test/api/dashboard/campaigns", {
+      headers: f.sessionHeaders,
+    }),
+  );
+  expect(card.status).toBe(500);
 });
 
 test("the cron interval follows the settings' spec forms", () => {
@@ -549,9 +597,11 @@ test("a send counts on the day it was delivered, not the day it was queued", asy
     )
     .run(template, step);
   const sends = async (from: string, to: string, group: string) =>
-    ((await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as {
-      sends: number;
-    }[]).map((row) => row.sends);
+    (
+      (await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as {
+        sends: number;
+      }[]
+    ).map((row) => row.sends);
   for (const group of ["template", "step"]) {
     expect(await sends("2026-01-02", "2026-01-03", group)).toEqual([1]);
     expect(await sends("2026-01-01", "2026-01-01T23:59:59Z", group)).toEqual([]);
@@ -587,9 +637,7 @@ const recorded = () => {
   return {
     command: ["sh", "-c", `echo $$ >> ${file}; exec sleep 30`],
     pids: () =>
-      existsSync(file)
-        ? readFileSync(file, "utf8").split("\n").filter(Boolean).map(Number)
-        : [],
+      existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map(Number) : [],
   };
 };
 const alive = (pid: number) => {
@@ -656,7 +704,11 @@ test("cancelling kills a running read and removes a queued one", async () => {
 
 test("a client that disconnects takes its read with it", async () => {
   const child = recorded();
-  const owned = createAnalyticsReader({ path: "x", command: child.command, timeoutMs: 2_000 });
+  const owned = createAnalyticsReader({
+    path: "x",
+    command: child.command,
+    timeoutMs: 2_000,
+  });
   const router = createRouter();
   registerAnalyticsRoutes(router, {
     reader: owned,
@@ -692,7 +744,9 @@ test("output over the cap is refused whole and the child is killed", async () =>
     maxOutputBytes: 1_000,
     timeoutMs: 300,
   });
-  await expect(big.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "limit" });
+  await expect(big.read("dashboardCounts", [])).rejects.toMatchObject({
+    kind: "limit",
+  });
   await big.close();
 
   const exact = createAnalyticsReader({
@@ -715,7 +769,9 @@ test("a child above the memory limit is killed", async () => {
     memoryBytes: 80 * 1048576,
     timeoutMs: 3_000,
   });
-  await expect(hungry.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "limit" });
+  await expect(hungry.read("dashboardCounts", [])).rejects.toMatchObject({
+    kind: "limit",
+  });
   await hungry.close();
 });
 
@@ -732,7 +788,9 @@ test("a queue past its bound is refused at once, without touching queued reads",
   const running = owned.read("dashboardCounts", []);
   let settled = false;
   const queued = owned.read("dashboardCounts", []).finally(() => (settled = true));
-  await expect(owned.read("dashboardCounts", [])).rejects.toMatchObject({ kind: "busy" });
+  await expect(owned.read("dashboardCounts", [])).rejects.toMatchObject({
+    kind: "busy",
+  });
   expect(settled).toBe(false);
   await Promise.allSettled([running, queued]);
   await owned.close();
@@ -755,7 +813,9 @@ test("a read over a limit is a clean error, never a partial body", async () => {
   });
   const response = await router.handle(
     f.app,
-    new Request("http://fixture.test/api/dashboard/counts", { headers: f.sessionHeaders }),
+    new Request("http://fixture.test/api/dashboard/counts", {
+      headers: f.sessionHeaders,
+    }),
   );
   expect(response.status).toBe(422);
   expect((await response.json()) as { message: string }).toMatchObject({

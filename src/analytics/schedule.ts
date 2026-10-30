@@ -61,7 +61,10 @@ function zoned(at: Date, format: Intl.DateTimeFormat | null) {
 }
 
 /** The zone prefix and the rest of a spec. No prefix and Local are the system zone. */
-function parts(input: string): { zone: Intl.DateTimeFormat | null; spec: string } {
+function parts(input: string): {
+  zone: Intl.DateTimeFormat | null;
+  spec: string;
+} {
   const spec = input.trim();
   if (!spec.startsWith("TZ=") && !spec.startsWith("CRON_TZ=")) return { zone: null, spec };
   const space = spec.indexOf(" ");

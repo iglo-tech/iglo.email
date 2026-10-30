@@ -55,6 +55,8 @@
     "contract:analytics": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned analytics",
     "contract:analytics:reference": "bun run reference:run -- bun test/contract/analytics.ts reference",
     "analytics:measure": "bun test/analytics/measure.ts",
+    "analytics:measure:card": "bun test/analytics/measure-card.ts",
+    "analytics:measure:report": "bun test/analytics/measure-report.ts",
     "contract:campaigns": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned campaigns",
     "contract:campaigns:reference": "bun run reference:run -- bun test/contract/campaigns.ts reference",
     "contract:templates": "bun run build && bun test/contract/cli.ts owned templates",

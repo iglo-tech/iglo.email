@@ -56,18 +56,24 @@ M3.1 implements the campaigns API: CRUD, listmonk's status transitions (which on
 
 New optional fields:
 
-| Field | Meaning |
-|---|---|
-| `subscriber_external_id` | Address the subscriber by the app's ID |
-| `kind` | `transactional` (default) or `marketing` |
-| `list_id` | For `marketing`: the list whose membership grants permission and which the unsubscribe link leaves |
-| `idempotency_key` | A repeated call with the same key returns the first result and sends nothing |
-| `async` | `true`: queue in the outbox and return immediately (default `false`: send before responding, as listmonk does) |
+| Field                    | Meaning                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `subscriber_external_id` | Address the subscriber by the app's ID                                                                         |
+| `kind`                   | `transactional` (default) or `marketing`                                                                       |
+| `list_id`                | For `marketing`: the list whose membership grants permission and which the unsubscribe link leaves             |
+| `idempotency_key`        | A repeated call with the same key returns the first result and sends nothing                                   |
+| `async`                  | `true`: queue in the outbox and return immediately (default `false`: send before responding, as listmonk does) |
 
 New response body (listmonk returns only `true`):
 
 ```json
-{ "data": { "sends": [{ "id": 123, "uuid": "…", "status": "sent", "smtp_message_id": "<…>" }] } }
+{
+  "data": {
+    "sends": [
+      { "id": 123, "uuid": "…", "status": "sent", "smtp_message_id": "<…>" }
+    ]
+  }
+}
 ```
 
 Rules:
@@ -137,7 +143,7 @@ M2.4 implements this for tx marketing sends. The producer fixes the send UUID be
 
 - View pixel and redirect links as in listmonk (`privacy.individual_tracking`, `privacy.disable_tracking`).
 - M2.4: `{{ url | track_link }}` registers the URL in `links` and renders `/m/<send-uuid>/link/<link-uuid>`; `{{ track_view }}` renders listmonk's hidden 1x1 image for `/m/<send-uuid>/px.png`. With `disable_tracking` both render as untracked and the routes record nothing. A redirect (307) requires that the link path was rendered into that send's stored message, so link UUIDs cannot be replayed on other sends (no open redirect). Clicks and views record `send_id`, and `subscriber_id` only with `individual_tracking`; the send row itself still names its recipient, so per-send analytics are inherently individual.
-- Sends from the outbox are tracked against `send_id`; campaign messages against `campaign_id`. Both appear in analytics, and sends are grouped by template and by sequence step.
+- Sends from the outbox are tracked against `send_id`; campaign messages against `campaign_id`. Both appear in analytics, and sends are grouped by template and by sequence step. A send counts when it was delivered (`sent_at`), not when it was queued.
 
 ## Bounces
 
@@ -150,13 +156,13 @@ M2.4 implements this for tx marketing sends. The producer fixes the send UUID be
 
 Signed `POST` requests to URLs configured in settings.
 
-| Event | When |
-|---|---|
-| `subscriber.unsubscribed` | Unsubscribed from one or more lists |
-| `subscriber.blocklisted` | Blocklisted by an admin, a bounce rule or the preferences page |
-| `subscriber.deleted` | Deleted (including by bounce rule or data wipe) |
-| `bounce.recorded` | Any bounce |
-| `send.failed` | A send ended as `failed` or `unknown` |
+| Event                     | When                                                           |
+| ------------------------- | -------------------------------------------------------------- |
+| `subscriber.unsubscribed` | Unsubscribed from one or more lists                            |
+| `subscriber.blocklisted`  | Blocklisted by an admin, a bounce rule or the preferences page |
+| `subscriber.deleted`      | Deleted (including by bounce rule or data wipe)                |
+| `bounce.recorded`         | Any bounce                                                     |
+| `send.failed`             | A send ended as `failed` or `unknown`                          |
 
 Body: `{ "id": "<delivery uuid>", "event": "…", "occurred_at": "…", "data": { … } }`, where `data` includes `subscriber.id`, `uuid`, `email`, `external_id` and the affected list IDs. Header `X-Iglo-Email-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">`. Receivers must treat deliveries as at-least-once and dedupe by `id`.
 

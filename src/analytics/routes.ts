@@ -5,7 +5,6 @@ import { parseBound } from "@/analytics/dates";
 import { ReaderError, type AnalyticsReader } from "@/analytics/reader";
 import type { CountType, Interval, Range } from "@/analytics/store";
 import type { Summaries, SummaryName } from "@/analytics/summaries";
-import { projectCampaign } from "@/campaigns/routes";
 import type { CampaignStore, Scope } from "@/campaigns/store";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
@@ -14,8 +13,6 @@ import type { Router } from "@/server/router";
 import { strHasLen } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 
-/** dashboardCampaignCount. */
-const DASHBOARD_CAMPAIGNS = 6;
 const intervals = ["hour", "day", "week", "month"];
 const campaignTypes = ["views", "clicks", "total_views", "total_clicks", "bounces"];
 const listTypes = [...campaignTypes, "subscriptions", "unsubscriptions"];
@@ -183,29 +180,11 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
           : reader.read(live, [], signal),
       );
 
-  /** getDashboardCampaigns: scheduled ones on top, the bodies stripped. */
+  /** getDashboardCampaigns. */
   const dashboardCampaigns: Handler = (context) => {
-    const allowed = scope(context);
-    const newest = (statuses: string[], limit: number) =>
-      campaigns.query(
-        { query: "", statuses, tags: [], type: "" },
-        allowed,
-        "created_at",
-        "desc",
-        0,
-        limit,
-      ).rows;
-    const rows = newest(["scheduled"], DASHBOARD_CAMPAIGNS);
-    const rest = DASHBOARD_CAMPAIGNS - rows.length;
-    if (rest > 0)
-      rows.push(...newest(["draft", "running", "paused", "finished", "cancelled"], rest));
-    if (!rows.length) return ok(null);
-    return ok(
-      rows.map((row) => {
-        const out = projectCampaign(row, true);
-        out.body_source = null;
-        return out;
-      }),
+    const { all, ids } = scope(context);
+    return served(context, (signal) =>
+      reader.read("dashboardCampaigns", [all, ids.map(String)], signal),
     );
   };
 
