@@ -25,6 +25,7 @@ import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createTemplateStore } from "@/templates/store";
+import type { PageOptions } from "@/public/preferences";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { registerTxRoutes, type TxPolicy } from "@/tx/routes";
@@ -45,6 +46,7 @@ export async function txFixture(
     emailHeaders?: Record<string, string>[];
     marketing?: Partial<MarketingSettings>;
     effects?: UnsubscribeEffects;
+    page?: () => PageOptions;
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -163,6 +165,7 @@ export async function txFixture(
     tracking,
     settings: () => marketing,
     ...(options.effects ? { effects: options.effects } : {}),
+    ...(options.page ? { page: options.page } : {}),
   });
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
@@ -215,6 +218,7 @@ export async function txFixture(
     sends,
     emailer,
     marketing,
+    owners: { router, lists, subscribers, tracking, renderer, templates, roles },
     get outbox() {
       return outbox;
     },

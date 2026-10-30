@@ -982,6 +982,16 @@ export async function runPublicContract(target: {
       await target.restart();
       check((await status(bobRow.id, double.id)) === "confirmed", "restart");
     }
+
+    // Excess public requests get 429 per peer; these bad addresses write nothing.
+    if (!reference) {
+      let limited: Awaited<ReturnType<typeof post>> | undefined;
+      for (let i = 0; i < 40 && !limited; i++) {
+        const response = await post("/subscription/form", "email=bad&l=" + single.uuid);
+        if (response.status === 429) limited = response;
+      }
+      check(limited?.headers.get("retry-after"), "rate-limit");
+    }
   } finally {
     for (const [key, value] of originals) await setSetting(key, value);
     for (const id of owned.campaigns) {

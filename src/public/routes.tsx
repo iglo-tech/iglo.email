@@ -98,7 +98,12 @@ export function registerPublicRoutes(
   /** processSubForm. Returns has_optin; the answer never depends on stored subscribers. */
   function subscribe(t: Translation, fields: Fields): boolean {
     const settings = deps.settings();
-    const uuids = fields.list("l", "list_uuids");
+    let uuids: string[];
+    try {
+      uuids = fields.list("l", "list_uuids");
+    } catch {
+      throw new HttpError(400, t.T("globals.messages.invalidData"));
+    }
     const email = fields.get("email") ?? "";
     const rawName = fields.get("name") ?? "";
     if (typeof email !== "string" || typeof rawName !== "string")
@@ -188,13 +193,7 @@ export function registerPublicRoutes(
               <h2>{t.T("globals.terms.lists")}</h2>
               {lists.map((list) => (
                 <li>
-                  <input
-                    checked
-                    id={`l-${list.uuid}`}
-                    type="checkbox"
-                    name="l"
-                    value={list.uuid}
-                  />{" "}
+                  <input checked id={`l-${list.uuid}`} type="checkbox" name="l" value={list.uuid} />{" "}
                   <label for={`l-${list.uuid}`}>{list.name}</label>
                   {list.description ? <p class="description">{list.description}</p> : null}
                 </li>
