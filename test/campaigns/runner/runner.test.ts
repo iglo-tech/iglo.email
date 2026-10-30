@@ -464,6 +464,32 @@ test("a batch still in flight holds the cap for messages sent late in the batch"
   }
 });
 
+test("claims a stopped runner left on a cancelled campaign stop holding the cap at restart", async () => {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  const b = await f.member("b@x.test", [list]);
+  const c = await f.campaign({ name: "gone", subject: "s", lists: [list] });
+  await f.status(c.id, "running");
+  expect((await f.status(c.id, "cancelled")).status).toBe(200);
+  // The state a crash leaves: a committed claim with no outcome, and no runner alive.
+  const claimedAt = new Date(f.clock.now().getTime()).toISOString();
+  f.db.run(
+    "INSERT INTO campaign_deliveries (campaign_id, subscriber_id, status, at) VALUES (?, ?, 'claimed', ?)",
+    [c.id, b.id, claimedAt],
+  );
+  const sends = capSends("PT1S");
+  try {
+    expect(sends.marketingReason(BigInt(b.id), BigInt(list))).toBe("frequency_cap");
+    f.start();
+    f.clock.advance(2_000);
+    expect(sends.marketingReason(BigInt(b.id), BigInt(list))).toBeNull();
+    expect(f.pushes.length).toBe(0);
+    expect(f.errors.map(String).join("\n")).toContain("may not have received the campaign");
+  } finally {
+    sends.close();
+  }
+});
+
 test("a runner whose heartbeat stalled keeps its campaign from a second pipe in the process", async () => {
   f = await runnerFixture({ hold: true });
   const c = await campaignOf(4);

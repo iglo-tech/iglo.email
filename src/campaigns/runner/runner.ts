@@ -158,6 +158,35 @@ export function startCampaignRunner(deps: RunnerDeps) {
     return own?.body ?? deps.templates.getDefault()?.body ?? "";
   }
 
+  /** Marks claims no live pipe owns as unknown and logs their range, so they stop holding the cap. */
+  function abandonClaims(id: bigint, now: number, name: string) {
+    const abandoned = store.abandon(id, iso(now));
+    if (abandoned.count)
+      log(
+        `${name}: ${abandoned.count} subscribers with IDs ${abandoned.first}-${abandoned.last} ` +
+          "were claimed before the runner stopped and may not have received the campaign. " +
+          "They are not sent again; resend to them manually if needed.",
+      );
+  }
+  /**
+   * One process per data directory (D15): at startup, claims that no pipe in this process owns
+   * were left by a stopped runner. A cancelled or paused campaign never reopens, so they are
+   * recovered here rather than only when their campaign is picked up again.
+   */
+  function recoverOrphans() {
+    const now = clock.now().getTime();
+    writeTransaction(db, () => {
+      for (const { id, name } of store.claimedCampaigns()) {
+        if (!registry.take(id, token)) continue;
+        try {
+          abandonClaims(id, now, `campaign ${id} (${name})`);
+        } finally {
+          registry.drop(id, token);
+        }
+      }
+    });
+  }
+
   /** newPipe and next-campaigns' pickup, inside the claim transaction. */
   function open(id: bigint, now: number, settings: RunnerSettings): void {
     // A pipe still alive in this process, even one whose lease lapsed, keeps the campaign.
@@ -171,13 +200,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
   function openPipe(id: bigint, now: number, settings: RunnerSettings): void {
     const campaign = store.acquire(id, token, iso(now + leaseMs), iso(now));
     if (!campaign) return;
-    const abandoned = store.abandon(id, iso(now));
-    if (abandoned.count)
-      log(
-        `${label(campaign)}: ${abandoned.count} subscribers with IDs ${abandoned.first}-${abandoned.last} ` +
-          "were claimed before the runner stopped and may not have received the campaign. " +
-          "They are not sent again; resend to them manually if needed.",
-      );
+    abandonClaims(id, now, label(campaign));
     if (!settings.messengers.includes(campaign.messenger)) {
       store.cancel(id, iso(now));
       store.release(id, token);
@@ -531,6 +554,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
     });
   }
 
+  recoverOrphans();
   const loop = startLoop<Batch>({
     db,
     clock,
@@ -544,9 +568,21 @@ export function startCampaignRunner(deps: RunnerDeps) {
       try {
         await process(batch);
       } catch (error) {
-        // The claims stay in place: the batch is skipped, never resent.
+        // The batch is skipped, never resent. Its workers have drained, so its claims are marked
+        // unknown now instead of holding the cap until the campaign reopens.
         deps.logger.error(error);
         drop(batch.pipe.campaign.id);
+        try {
+          writeTransaction(db, () =>
+            abandonClaims(
+              batch.pipe.campaign.id,
+              clock.now().getTime(),
+              label(batch.pipe.campaign),
+            ),
+          );
+        } catch {
+          /* Recovered at the next pickup or startup. */
+        }
         try {
           store.release(batch.pipe.campaign.id, token);
         } catch {

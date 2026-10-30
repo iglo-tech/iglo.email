@@ -67,6 +67,12 @@ WHERE campaign_id = ?1 AND subscriber_id = ?2 AND status = 'claimed';
 SELECT COUNT(*) AS count, MIN(subscriber_id) AS first, MAX(subscriber_id) AS last
 FROM campaign_deliveries WHERE campaign_id = ? AND status = 'claimed';
 
+-- name: claimed-campaigns
+-- Campaigns with claims still waiting for an outcome, whatever their status.
+SELECT DISTINCT d.campaign_id AS id, c.name AS name
+FROM campaign_deliveries d JOIN campaigns c ON c.id = d.campaign_id
+WHERE d.status = 'claimed' ORDER BY d.campaign_id;
+
 -- name: mark-abandoned
 -- The message may have gone out at any time up to now: the cap counts it from now.
 UPDATE campaign_deliveries SET status = 'unknown', at = ?2 WHERE campaign_id = ?1 AND status = 'claimed';

@@ -84,6 +84,9 @@ export function createRunnerStore(db: Database) {
       q.get("unclaim-delivery").run(id, subscriberId);
     },
     /** Marks claims left by a stopped runner as unknown and returns their range. */
+    claimedCampaigns(): { id: bigint; name: string }[] {
+      return q.get("claimed-campaigns").all() as { id: bigint; name: string }[];
+    },
     abandon(id: bigint, now: string): { count: number; first: bigint | null; last: bigint | null } {
       const found = q.get("abandoned-deliveries").get(id) as {
         count: bigint;
