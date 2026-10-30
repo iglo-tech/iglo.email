@@ -3,6 +3,7 @@
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createEventStore } from "@/events/store";
+import { createPublicImages } from "@/media/embed";
 import { registerArchiveRoutes } from "@/public/archive";
 import { createSubscriberMail, startSignupMail } from "@/public/mail";
 import { rateLimited } from "@/public/rate-limit";
@@ -30,7 +31,7 @@ export async function publicFixture() {
     throw new Error("unset");
   };
   const f = await txFixture({ effects, page: () => settings() });
-  const { router, lists, subscribers, tracking, renderer, templates } = f.owners;
+  const { router, lists, subscribers, tracking, renderer, templates, media, files } = f.owners;
   const roles = createRoles(f.db, lists);
   const store = createSettings(f.db, f.clock, "http://fixture.test", roles);
   settings = () => ({
@@ -104,6 +105,7 @@ export async function publicFixture() {
     templates,
     renderer,
     settings,
+    publicImages: createPublicImages(media, (name) => files.url(settings().rootUrl, name)),
   });
   const peer = (path: string, address: string, init: RequestInit = {}) =>
     router.handle(f.app, new Request(`http://fixture.test${path}`, init), address);

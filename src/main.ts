@@ -59,7 +59,7 @@ import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createAttachments } from "@/media/attachments";
 import { createFilesystem } from "@/media/filesystem";
-import { createEmbeds } from "@/media/embed";
+import { createEmbeds, createPublicImages } from "@/media/embed";
 import { registerMediaRoutes, uploadPathCheck } from "@/media/routes";
 import { createMediaStore } from "@/media/store";
 import { createRunnerStore } from "@/campaigns/runner/store";
@@ -496,6 +496,9 @@ async function main(): Promise<void> {
       templates,
       renderer,
       settings: pages,
+      publicImages: createPublicImages(media, (name) =>
+        files.url(settings!.read()["app.root_url"], name),
+      ),
     });
     sequences = createSequenceStore(db, clock, {
       templates,

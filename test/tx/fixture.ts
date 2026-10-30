@@ -41,6 +41,9 @@ import type { PageOptions } from "@/public/preferences";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { registerTxRoutes, type TxPolicy } from "@/tx/routes";
+import { createFilesystem } from "@/media/filesystem";
+import { registerMediaRoutes } from "@/media/routes";
+import { createMediaStore } from "@/media/store";
 import type { Clock } from "@/clock";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
@@ -223,6 +226,21 @@ export async function txFixture(
       limit: options.bounceLimit ?? ((_context, next) => next()),
     });
   }
+  const media = createMediaStore(db, clock);
+  const files = createFilesystem(directory, () => ({
+    uploadPath: "uploads",
+    uploadUri: "/uploads",
+  }));
+  registerMediaRoutes(router, {
+    store: media,
+    files,
+    auth,
+    settings: () => ({
+      provider: "filesystem",
+      extensions: ["*"],
+      rootUrl: "http://fixture.test",
+    }),
+  });
   registerTxRoutes(router, {
     auth,
     sends,
@@ -328,7 +346,7 @@ export async function txFixture(
     sends,
     emailer,
     marketing,
-    owners: { router, lists, subscribers, tracking, renderer, templates, roles },
+    owners: { router, lists, subscribers, tracking, renderer, templates, roles, media, files },
     get outbox() {
       return outbox;
     },
@@ -364,6 +382,7 @@ export async function txFixture(
       const stopped = outbox.stop();
       await emailer.close();
       await stopped;
+      media.close();
       sends.close();
       tracking.close();
       templates.close();

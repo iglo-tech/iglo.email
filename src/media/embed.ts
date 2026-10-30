@@ -110,3 +110,36 @@ export function createEmbeds(store: Pick<MediaStore, "byFilename">, logger: Erro
   };
 }
 export type EmbedImages = ReturnType<typeof createEmbeds>;
+
+/**
+ * ApplyArchiveImages: `cid:` cannot resolve on a web page, so a stored name becomes its public
+ * URL. These pages are anonymous, so a source with no row stays as written without a log line.
+ */
+export function createPublicImages(
+  store: Pick<MediaStore, "byFilename">,
+  url: (filename: string) => string,
+) {
+  return function publicImages<
+    C extends { content_type: string; body: string; templateBody: string },
+  >(c: C): C {
+    if (c.content_type === "plain") return c;
+    const urls = new Map<string, string | null>();
+    function urlOf(filename: string): string | null {
+      const known = urls.get(filename);
+      if (known !== undefined) return known;
+      if (urls.size >= MAX_LOOKUPS) return null;
+      const media = store.byFilename(filename);
+      // The result is template source inside an attribute, and a name is neither.
+      const found = media
+        ? url(media.filename).replace(/[{}&]/g, (char) => encodeURIComponent(char))
+        : null;
+      urls.set(filename, found);
+      return found;
+    }
+    const body = rewriteImages(c.body, urlOf);
+    const templateBody =
+      c.content_type === "visual" ? c.templateBody : rewriteImages(c.templateBody, urlOf);
+    return { ...c, body, templateBody };
+  };
+}
+export type PublicImages = ReturnType<typeof createPublicImages>;
