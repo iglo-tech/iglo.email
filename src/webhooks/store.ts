@@ -210,12 +210,15 @@ export function createWebhookStore(db: Database, clock: Clock) {
     subscribed,
     /**
      * D25: clear the address and external ID from every stored delivery of these subscribers,
-     * whatever its status. Pending rows stay and go out cleared.
+     * whatever its status, and on a subscriber's own wipe their list IDs too. Pending rows stay
+     * and go out cleared.
      */
-    clearSubscribers(ids: bigint[]) {
+    clearSubscribers(ids: bigint[], wipe = false) {
       if (!db.inTransaction) throw new Error("Deliveries are cleared in the caller's transaction");
-      if (ids.length)
-        q.get("delivery-clear-subscribers").run(iso(), JSON.stringify(ids.map(String)));
+      if (!ids.length) return;
+      const selected = JSON.stringify(ids.map(String));
+      q.get("delivery-clear-subscribers").run(iso(), selected);
+      if (wipe) q.get("delivery-clear-memberships").run(selected);
     },
     /**
      * The body to send now, which a deletion may have cleared since the claim. Null when the

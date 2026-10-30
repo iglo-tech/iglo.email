@@ -689,16 +689,19 @@ test("with blocking on, the request goes to the checked address, not a fresh loo
   expect(lookups).toBe(1);
 });
 
-test("a public wipe stores and delivers only the numeric ID and UUID", async () => {
+test("a public wipe stores and delivers only the numeric ID and UUID, on older rows too", async () => {
   const f = await open();
   const r = receiver(() => new Response("x", { status: 503 }));
   const { id } = await hook(f, r);
   const address = "wiped@example.test";
-  const subscriber = await f.subscriber(address, "W", { external_id: address });
+  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
+    .body.data.id;
+  const subscriber = await f.subscriber(address, "W", { external_id: address, lists: [list] });
   const { uuid } = (await f.json(`/api/subscribers/${subscriber}`)).body.data;
   await blocklist(f, subscriber);
-  await r.waitFor(1);
-  await queued(f, id, 1);
+  await r.waitFor(2);
+  await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
+  expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[list], [list]]);
 
   const wipe = await f.request(`/subscription/wipe/${uuid}`, { method: "POST" });
   expect(wipe.status).toBe(200);
@@ -709,18 +712,25 @@ test("a public wipe stores and delivers only the numeric ID and UUID", async () 
       .join("\n");
   expect(body()).not.toContain(address);
 
-  await r.waitFor(2);
+  await r.waitFor(3);
   await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
   f.advanceWebhooks(30_000);
-  await r.waitFor(3);
-  const [event] = r.received.filter((x) => x.body.event === "subscriber.deleted");
-  expect(event!.body.data).toEqual({
+  await r.waitFor(6);
+  await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
+  const cleared = {
     subscriber: { id: subscriber, uuid, email: "", external_id: null },
     list_ids: [],
-  });
-  await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
-  for (const received of r.received.slice(1)) expect(received.text).not.toContain(address);
+  };
+  const afterWipe = r.received.slice(2);
+  expect(afterWipe.map((x) => x.body.event).sort()).toEqual([
+    "subscriber.blocklisted",
+    "subscriber.deleted",
+    "subscriber.deleted",
+    "subscriber.unsubscribed",
+  ]);
+  for (const received of afterWipe) expect(received.body.data).toEqual(cleared);
   expect(body()).not.toContain(address);
+  expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[], [], []]);
 });
 
 test("a delivery held at DNS goes out cleared when its subscriber is deleted meanwhile", async () => {

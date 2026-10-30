@@ -99,12 +99,13 @@ export function createWebhookEffects(
      * D25. Every stored delivery loses the address and external ID. `subscriber.deleted` never
      * carries the address. An administrative delete keeps the external ID until the delivery
      * ends, because that is the key a receiver matches, and the delivery's end clears it. A
-     * subscriber's own wipe stores neither, since an external ID can hold personal data.
+     * subscriber's own wipe stores neither, since an external ID can hold personal data, and
+     * no list IDs on any delivery, since a membership tied to the kept UUID is personal too.
      */
     deleting(deleted: { id: bigint }[], wipe = false) {
       const ids = deleted.map(({ id }) => id);
       if (!ids.length) return;
-      webhooks.clearSubscribers(ids);
+      webhooks.clearSubscribers(ids, wipe);
       webhooks.queueMany("subscriber.deleted", () => subscribers().webhookDeleted(ids, wipe));
     },
     /** A send became `failed` or `unknown`. An unlinked address stays out of the payload. */

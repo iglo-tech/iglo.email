@@ -70,6 +70,9 @@ UPDATE webhook_deliveries SET status = ?1, last_error = ?2, next_attempt_at = NU
 -- name: delivery-recover
 UPDATE webhook_deliveries SET next_attempt_at = ?1, claimed_until = NULL, updated_at = ?1
   WHERE status = 'queued' AND claimed_until IS NOT NULL;
+-- name: delivery-clear-memberships
+UPDATE webhook_deliveries SET payload = json_set(payload, '$.data.list_ids', json('[]'))
+  WHERE subscriber_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?));
 -- name: delivery-clear-subscribers
 UPDATE webhook_deliveries SET updated_at = ?1,
     payload = json_set(payload, '$.data.subscriber.email', '', '$.data.subscriber.external_id', json('null'))
