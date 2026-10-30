@@ -229,8 +229,13 @@ export function registerCampaignPublicRoutes(
     const settings = deps.settings();
     const campUuid = context.params.campUUID!.toLowerCase();
     const subUuid = context.params.subUUID!.toLowerCase();
-    // Preview hits use the dummy UUID and are never recorded.
-    if (!settings.disableTracking && campUuid !== dummyUUID && subUuid !== dummyUUID) {
+    // Preview hits use the dummy campaign and are never recorded. Without individual tracking
+    // every emitted pixel names the dummy subscriber and counts as an anonymous view.
+    if (
+      !settings.disableTracking &&
+      campUuid !== dummyUUID &&
+      (!settings.individualTracking || subUuid !== dummyUUID)
+    ) {
       const campaign = deps.store.byUuid(campUuid);
       if (campaign)
         try {

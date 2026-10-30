@@ -399,3 +399,33 @@ test("custom header values are limited in number", async () => {
   expect(many.status).toBe(400);
   expect(many.body.message).toBe("Invalid fields: headers");
 });
+
+test("the emitted view pixel counts as an anonymous view without individual tracking", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  await f.subscriber("ada@example.test", [news]);
+  const c = await f.campaign({ name: "c", subject: "s", lists: [news] });
+  const sent = await f.json(`/api/campaigns/${c.id}/test`, "POST", {
+    name: "c",
+    subject: "s",
+    lists: [news],
+    messenger: "email",
+    content_type: "html",
+    body: "<p>hi</p>{{ track_view }}",
+    subscribers: ["ada@example.test"],
+  });
+  expect(sent.status).toBe(200);
+  const pixel = new RegExp(
+    `http://fixture\\.test(/campaign/${c.uuid}/[0-9a-f-]{36}/px\\.png)`,
+  ).exec(decode((await f.mail(1))[0]!.data))![1]!;
+  expect(pixel).toBe(`/campaign/${c.uuid}/00000000-0000-0000-0000-000000000000/px.png`);
+  expect((await f.request(pixel)).status).toBe(200);
+  expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(1);
+  // The dummy campaign (previews) never records; with individual tracking the dummy
+  // subscriber is a preview hit and records nothing either.
+  const dummy = "00000000-0000-0000-0000-000000000000";
+  expect((await f.request(`/campaign/${dummy}/${dummy}/px.png`)).status).toBe(200);
+  f.settings.individualTracking = true;
+  expect((await f.request(pixel)).status).toBe(200);
+  expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(1);
+});
