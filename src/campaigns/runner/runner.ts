@@ -477,7 +477,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
       } finally {
         if (pipes.size)
           writeTransaction(db, () => {
-            for (const pipe of [...pipes.values()]) release(pipe);
+            for (const pipe of pipes.values()) release(pipe);
           });
       }
     },
