@@ -11,6 +11,7 @@ import sendAttempts from "@/migrations/0003_send_attempts.sql" with { type: "tex
 import sequences from "@/migrations/0004_sequences.sql" with { type: "text" };
 import schedulerRetry from "@/migrations/0005_scheduler_retry.sql" with { type: "text" };
 import campaignLinks from "@/migrations/0006_campaign_links.sql" with { type: "text" };
+import campaignRunner from "@/migrations/0007_campaign_runner.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -25,6 +26,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 4, sql: sequences },
   { version: 5, sql: schedulerRetry },
   { version: 6, sql: campaignLinks },
+  { version: 7, sql: campaignRunner },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

@@ -55,6 +55,9 @@ import { startScheduler } from "@/scheduler/scheduler";
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
+import { createRunnerStore } from "@/campaigns/runner/store";
+import { startCampaignRunner } from "@/campaigns/runner/runner";
+import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 
 async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
@@ -91,6 +94,9 @@ async function main(): Promise<void> {
   let conditions: ReturnType<typeof createConditionEvaluator> | undefined;
   let scheduler: ReturnType<typeof startScheduler> | undefined;
   let campaignStore: ReturnType<typeof createCampaignStore> | undefined;
+  let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
+  let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
+  let runner: ReturnType<typeof startCampaignRunner> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -163,6 +169,7 @@ async function main(): Promise<void> {
       createSMTPTest(settings, emailer, app.i18n, renderer),
     );
     const marketing = () => marketingSettings(settings!.read());
+    runnerStore = createRunnerStore(db);
     sends = createSends({
       db,
       clock,
@@ -172,6 +179,7 @@ async function main(): Promise<void> {
         subscribers: subscriberStore,
         lists,
         settings: marketing,
+        campaignDeliveries: runnerStore,
       }),
     });
     tracking = createTracking(db, clock);
@@ -248,6 +256,42 @@ async function main(): Promise<void> {
       settings: campaignSettings,
       effects: enrollments.unsubscribeEffects,
     });
+    recipients = createCampaignRecipients(db);
+    const templateStore = templates;
+    runner = startCampaignRunner({
+      db,
+      clock,
+      logger: app.logger,
+      store: runnerStore,
+      campaigns: campaignStore,
+      recipients,
+      lists,
+      templates: {
+        get: (id) => templateStore.get(id),
+        getDefault: () => templateStore.getDefault(),
+      },
+      renderer,
+      tracking,
+      emailer,
+      settings: () => {
+        const current = settings!.read();
+        const campaign = campaignSettings();
+        return {
+          batchSize: current["app.batch_size"],
+          concurrency: current["app.concurrency"],
+          messageRate: current["app.message_rate"],
+          maxSendErrors: current["app.max_send_errors"],
+          slidingWindow: current["app.message_sliding_window"],
+          slidingWindowDuration: current["app.message_sliding_window_duration"],
+          slidingWindowRate: current["app.message_sliding_window_rate"],
+          rootUrl: campaign.rootUrl,
+          messengers: campaign.messengers,
+          unsubscribeHeader: campaign.unsubscribeHeader,
+          disableTracking: campaign.disableTracking,
+          individualTracking: campaign.individualTracking,
+        };
+      },
+    });
     events = createEventStore(db, subscriberStore, {
       emailAllowed: (email) => {
         const current = settings!.read();
@@ -300,13 +344,16 @@ async function main(): Promise<void> {
         closing = true;
         process.off("SIGTERM", onSignal);
         process.off("SIGINT", onSignal);
-        // Stop sequence claims first; the outbox then finishes what was already queued.
+        // Stop campaign and sequence claims first. The campaign batch in flight finishes or
+        // is abandoned by the emailer's drain deadline; its unsent rest returns to the cursor.
+        const runnerStop = runner!.stop();
         const schedulerStop = scheduler!.stop();
         const outboxStop = outbox!.stop();
         const retentionStop = retention!.stop();
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
         Promise.allSettled([
+          runnerStop,
           schedulerStop,
           outboxStop,
           retentionStop,
@@ -331,20 +378,26 @@ async function main(): Promise<void> {
       void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
       void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
+      void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
     });
   } finally {
     enrollments?.onDue(() => {});
+    const running = runner?.stop();
     const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
     const purging = retention?.stop();
     // A decision awaiting a condition finishes before the runner and connections close.
     await scheduling?.catch(() => {});
-    await emailer?.close();
+    const closing = emailer?.close();
+    await running?.catch(() => {});
+    await closing;
     await queryRunner?.close();
     conditions?.close();
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
     sequences?.close();
+    recipients?.close();
+    runnerStore?.close();
     campaignStore?.close();
     events?.close();
     sends?.close();
