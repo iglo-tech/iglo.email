@@ -4,8 +4,8 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M3.2 campaign runner, [PR #29](https://github.com/iglo-tech/iglo.email/pull/29), head 414297a. Round 2: orphaned-claim recovery fixed by the lead; Sol round-3 (last) fix-only review running.
-Next: round 3 is final; lead decides any remaining disagreement, merges, then M6.1 or the next eligible task.
+M6.1 performance against the targets, branch task/M6.1-performance, [brief](briefs/M6.1.md). One Opus medium worker dispatched; no reviewer active. Includes the outbox claim and cap lookup backlog fixes.
+Next: on worker handback, Sol xhigh round 1, lead disposition, merge. Then the remaining M2/M3/M4/M6 tasks.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
