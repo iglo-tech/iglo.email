@@ -7,6 +7,13 @@ DELETE FROM subscribers WHERE id IN (SELECT value FROM json_each(?));
 UPDATE subscribers SET status='blocklisted', updated_at=? WHERE id IN (SELECT value FROM json_each(?));
 -- name: blocklist-memberships-by-ids
 UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id IN (SELECT value FROM json_each(?));
+-- name: consent-by-ids
+SELECT id, status, (SELECT json_group_array(CAST(list_id AS TEXT)) FROM subscriber_lists
+    WHERE subscriber_id = subscribers.id AND status != 'unsubscribed') AS lists
+    FROM subscribers WHERE id IN (SELECT value FROM json_each(?));
+-- name: subscribed-memberships-by-ids
+SELECT subscriber_id, list_id FROM subscriber_lists WHERE status != 'unsubscribed'
+    AND subscriber_id IN (SELECT value FROM json_each(?)) AND list_id IN (SELECT value FROM json_each(?));
 -- name: add-memberships-by-ids
 INSERT INTO subscriber_lists (subscriber_id, list_id, status, created_at, updated_at)
     SELECT s.value, l.value, ?, ?, ? FROM json_each(?) s, json_each(?) l WHERE true

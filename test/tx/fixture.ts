@@ -36,6 +36,10 @@ import { startSink } from "@/test/tx/sink";
 import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
 import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery";
+import { createWebhookEffects } from "@/webhooks/effects";
+import { registerWebhookRoutes } from "@/webhooks/routes";
+import { createWebhookStore } from "@/webhooks/store";
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
@@ -48,6 +52,8 @@ export async function txFixture(
     marketing?: Partial<MarketingSettings>;
     effects?: UnsubscribeEffects;
     page?: () => PageOptions;
+    /** Wire the production webhook owners, with this transport. */
+    webhooks?: WebhookTransport;
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -74,10 +80,22 @@ export async function txFixture(
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
     listStore = createListStore(db, clock, counts, campaigns),
-    subscribers = createSubscriberStore(db, clock, lists, {
-      ...noSubscriberEffects,
-      deleting: createSendAnonymizer(db),
-    }),
+    webhooks = options.webhooks ? createWebhookStore(db, clock) : undefined,
+    webhookEffects = webhooks && createWebhookEffects(webhooks, () => subscribers),
+    anonymize = createSendAnonymizer(db),
+    subscribers: ReturnType<typeof createSubscriberStore> = createSubscriberStore(
+      db,
+      clock,
+      lists,
+      {
+        ...noSubscriberEffects,
+        ...(webhookEffects ? { changed: webhookEffects.consentChanged } : {}),
+        deleting(deleted) {
+          anonymize(deleted);
+          webhookEffects?.deleting(deleted);
+        },
+      },
+    ),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const auth = await createAuthentication(
@@ -136,6 +154,7 @@ export async function txFixture(
     clock,
     subscribers,
     rootUrl: () => "http://fixture.test",
+    ...(webhookEffects ? { ended: webhookEffects.sendEnded } : {}),
     marketingPolicy: createMarketingPolicy({ subscribers, lists, settings: () => marketing }),
   });
   const tracking = createTracking(db, clock);
@@ -146,6 +165,7 @@ export async function txFixture(
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
+  if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
   registerTxRoutes(router, {
     auth,
     sends,
@@ -171,6 +191,21 @@ export async function txFixture(
     ...(options.effects ? { effects: options.effects } : {}),
     ...(options.page ? { page: options.page } : {}),
   });
+  const blockPrivate = { value: false };
+  const startDelivery = () =>
+    webhooks
+      ? startWebhookDelivery({
+          db,
+          clock,
+          logger: app.logger,
+          webhooks,
+          blockPrivate: () => blockPrivate.value,
+          transport: options.webhooks!,
+        })
+      : undefined;
+  let delivery = startDelivery();
+  // The loop's zero-length yields need no time to pass, only a turn of the injected clock.
+  const pump = webhooks ? setInterval(() => testClock.advance(0), 1) : undefined;
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
     router.handle(app, new Request(`http://fixture.test${path}`, init));
@@ -213,6 +248,7 @@ export async function txFixture(
     session,
     sessionHeaders,
     sink,
+    directory,
     errors,
     request,
     json,
@@ -232,8 +268,26 @@ export async function txFixture(
     restartOutbox() {
       outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
     },
+    webhooks,
+    blockPrivate,
+    /** Move the injected clock, then let the delivery loop see it without its idle poll. */
+    advanceWebhooks(milliseconds: number) {
+      testClock.advance(milliseconds);
+      delivery?.wake();
+    },
+    /** Stop the loop and drop what it knew; a held attempt's row keeps only its lease. */
+    async crashWebhooks() {
+      await delivery?.halt();
+    },
+    /** A fresh loop over the same rows, as after a process restart. */
+    startWebhooks() {
+      delivery = startDelivery();
+    },
     count: () => Number((db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n),
     async close() {
+      await delivery?.halt();
+      clearInterval(pump);
+      webhooks?.close();
       const stopped = outbox.stop();
       await emailer.close();
       await stopped;

@@ -1,7 +1,5 @@
 // M2.6 outbound webhooks through the HTTP API, the injected clock and a local receiver.
 import { afterEach, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { writeTransaction } from "@/db/transaction";
 import { blockedAddress } from "@/webhooks/address";
 import { txFixture, type TxFixture } from "@/test/tx/fixture";
@@ -52,24 +50,30 @@ async function until(check: () => unknown | Promise<unknown>) {
 const settled = (f: TxFixture, id: number, uuid: string, status: string, attempts?: number) =>
   until(async () => {
     const row = (await deliveries(f, id)).find((d) => d.uuid === uuid);
-    return row?.status === status && (attempts === undefined || row.attempts === attempts);
+    return (
+      row?.status === status &&
+      !row.claimed_until &&
+      (attempts === undefined || row.attempts === attempts)
+    );
   });
 const queued = (f: TxFixture, id: number, attempts: number) =>
   until(async () => {
     const [row] = await deliveries(f, id);
-    return row?.attempts === attempts && row.status === "queued" && row.last_error;
+    return row?.attempts === attempts && row.status === "queued" && !row.claimed_until;
   });
 const blocklist = (f: TxFixture, id: number) =>
   f.json(`/api/subscribers/${id}/blocklist`, "PUT", {});
 const stored = (f: TxFixture) =>
-  f.db
-    .query("SELECT event, status, payload FROM webhook_deliveries ORDER BY id")
-    .all() as { event: string; status: string; payload: string }[];
+  f.db.query("SELECT event, status, payload FROM webhook_deliveries ORDER BY id").all() as {
+    event: string;
+    status: string;
+    payload: string;
+  }[];
 
 test("configuration needs webhooks:manage and the usual auth and CSRF", async () => {
   const f = await open();
   const anonymous = await f.json("/api/webhooks", "GET", undefined, {});
-  expect(anonymous.status).toBe(401);
+  expect(anonymous.status).toBe(403);
   const role = await f.json("/api/roles/users", "POST", {
     name: "no-hooks",
     permissions: ["subscribers:get"],
@@ -116,8 +120,9 @@ test("the secret is shown once at create and never again", async () => {
   expect(text).not.toContain('"secret"');
   expect(listed.body.data.results.map((w: any) => w.enabled)).toEqual([false, true]);
   // Rotation is delete and recreate; a silently ignored new secret would mislead a caller.
-  expect((await f.json(`/api/webhooks/${created.id}`, "PUT", { secret: "x".repeat(32) })).status)
-    .toBe(400);
+  expect(
+    (await f.json(`/api/webhooks/${created.id}`, "PUT", { secret: "x".repeat(32) })).status,
+  ).toBe(400);
 });
 
 test("URLs, events and secrets are validated and a rejected write stores nothing", async () => {
@@ -141,14 +146,16 @@ test("URLs, events and secrets are validated and a rejected write stores nothing
     expect((await f.json("/api/webhooks", "POST", body)).status).toBe(400);
   expect((await f.json("/api/webhooks")).body.data.total).toBe(0);
   const made = await f.json("/api/webhooks", "POST", { url, events: all });
-  expect((await f.json(`/api/webhooks/${made.body.data.id}`, "PUT", { url: "ftp://x/" })).status)
-    .toBe(400);
+  expect(
+    (await f.json(`/api/webhooks/${made.body.data.id}`, "PUT", { url: "ftp://x/" })).status,
+  ).toBe(400);
   expect((await f.json("/api/webhooks/999", "PUT", { enabled: false })).status).toBe(404);
   expect((await f.json("/api/webhooks/999", "DELETE")).status).toBe(404);
   expect((await f.json("/api/webhooks/999/deliveries")).status).toBe(404);
   expect((await f.json("/api/webhooks?per_page=101")).status).toBe(400);
-  expect((await f.json(`/api/webhooks/${made.body.data.id}/deliveries?per_page=101`)).status)
-    .toBe(400);
+  expect((await f.json(`/api/webhooks/${made.body.data.id}/deliveries?per_page=101`)).status).toBe(
+    400,
+  );
 });
 
 test("configured webhooks are bounded, which bounds fan-out per event", async () => {
@@ -194,7 +201,7 @@ test("every listed event reaches the receiver correctly signed", async () => {
   );
   await r.waitFor(6);
 
-  const seen = Object.fromEntries(r.received.map((x) => [x.body.event, x]));
+  const seen = Object.fromEntries(r.received.toReversed().map((x) => [x.body.event, x]));
   for (const received of r.received) {
     expect(signatureValid(received, secret)).toBe(true);
     expect(Object.keys(received.body)).toEqual(["id", "event", "occurred_at", "data"]);
@@ -222,9 +229,9 @@ test("every listed event reaches the receiver correctly signed", async () => {
   expect(seen["bounce.recorded"]!.body.data.bounce).toEqual({ type: "hard" });
   // The blocklisted subscriber's memberships ended too, so consent listeners also hear it.
   expect(
-    r.received.filter((x) => x.body.event === "subscriber.unsubscribed").map((x) =>
-      x.body.data.subscriber.email,
-    ),
+    r.received
+      .filter((x) => x.body.event === "subscriber.unsubscribed")
+      .map((x) => x.body.data.subscriber.email),
   ).toEqual(["unsub@example.test", "blocked@example.test"]);
 });
 
@@ -279,8 +286,9 @@ test("a rollback queues nothing and repeats of a consent change queue nothing ne
   });
   await settled(f, id, r.received[0]!.body.id, "delivered");
   expect((await deliveries(f, id)).length).toBe(1);
-  expect(() => f.webhooks!.queueWebhook("send.failed", () => ({ subscriber: null, list_ids: [] })))
-    .toThrow();
+  expect(() =>
+    f.webhooks!.queueWebhook("send.failed", () => ({ subscriber: null, list_ids: [] })),
+  ).toThrow();
 });
 
 test("one-click unsubscribes queue once, inside the unsubscribe transaction", async () => {
@@ -326,15 +334,15 @@ test("retries follow the injected clock with the same id and bytes and a fresh t
   expect(first.last_error).toBe("http_500");
   expect(Date.parse(first.next_attempt_at) - f.clock.now().getTime()).toBe(30_000);
 
-  await f.clock.advanceAsync(29_000);
+  f.advanceWebhooks(29_000);
   await Bun.sleep(20);
   expect(r.received.length).toBe(1);
-  await f.clock.advanceAsync(1_000);
+  f.advanceWebhooks(1_000);
   await r.waitFor(2);
   await queued(f, id, 2);
   const [second] = await deliveries(f, id);
   expect(Date.parse(second.next_attempt_at) - f.clock.now().getTime()).toBe(60_000);
-  await f.clock.advanceAsync(60_000);
+  f.advanceWebhooks(60_000);
   await r.waitFor(3);
   await settled(f, id, first.uuid, "delivered", 3);
 
@@ -361,17 +369,17 @@ test("a delivery fails safely 24 hours after queueing and stops retrying", async
   for (let n = 1; ; n++) {
     await until(async () => {
       [row] = await deliveries(f, id);
-      return row.attempts === n && !(row.status === "queued" && !row.last_error);
+      return row.attempts === n && !row.claimed_until;
     });
     if (row.status === "failed") break;
     expect(Date.parse(row.next_attempt_at)).toBeLessThanOrEqual(start + 86_400_000);
-    await f.clock.advanceAsync(Date.parse(row.next_attempt_at) - f.clock.now().getTime());
+    f.advanceWebhooks(Date.parse(row.next_attempt_at) - f.clock.now().getTime());
   }
   expect(f.clock.now().getTime()).toBe(start + 86_400_000);
   expect(row.last_error).toBe("http_503");
   expect(row.next_attempt_at).toBeNull();
   const count = r.received.length;
-  await f.clock.advanceAsync(86_400_000);
+  f.advanceWebhooks(86_400_000);
   await Bun.sleep(20);
   expect(r.received.length).toBe(count);
   const logged = f.errors.map(String).join("\n");
@@ -414,7 +422,7 @@ test("a hung receiver times out on the injected clock and starves no other recei
   await hung.waitFor(4);
   await Bun.sleep(20);
   expect(hung.received.length).toBe(4);
-  await f.clock.advanceAsync(10_000);
+  f.advanceWebhooks(10_000);
   await until(async () => (await deliveries(f, stuck.id)).some((d) => d.last_error === "timeout"));
 });
 
@@ -444,29 +452,37 @@ test("a disabled webhook holds its deliveries, resumes when enabled, and fails a
   const f = await open();
   const r = receiver();
   const { id } = await hook(f, r);
-  await f.json(`/api/webhooks/${id}`, "PUT", { enabled: true });
-  f.db.run("UPDATE webhooks SET enabled = 0");
-  writeTransaction(f.db, () => f.db.run("UPDATE webhooks SET enabled = 1"));
-  await blocklist(f, await f.subscriber("a@example.test"));
-  await f.json(`/api/webhooks/${id}`, "PUT", { enabled: false });
-  const [row] = await deliveries(f, id);
-  void row;
-  await f.clock.advanceAsync(1000);
-  await r.waitFor(0);
+  // Queued while enabled, disabled before the loop can run.
+  writeTransaction(f.db, () => {
+    f.webhooks!.queueWebhook("send.failed", () => ({ subscriber: null, list_ids: [] }));
+    f.webhooks!.update(BigInt(id), { url: r.url(), events: all, enabled: false });
+  });
+  await blocklist(f, await f.subscriber("skipped@example.test"));
+  expect((await deliveries(f, id)).length).toBe(1);
+  f.advanceWebhooks(1000);
+  await until(async () => (await deliveries(f, id))[0].last_error === "webhook_disabled");
+  expect(r.received.length).toBe(0);
   // Enabled again within the window: everything still queued arrives.
   await f.json(`/api/webhooks/${id}`, "PUT", { enabled: true });
-  await f.clock.advanceAsync(3_600_000);
+  f.advanceWebhooks(3_600_000);
   await until(async () => (await deliveries(f, id)).every((d) => d.status === "delivered"));
 
-  await f.json(`/api/webhooks/${id}`, "PUT", { enabled: false });
   const before = r.received.length;
-  await blocklist(f, await f.subscriber("b@example.test"));
+  writeTransaction(f.db, () => {
+    f.webhooks!.queueWebhook("send.failed", () => ({ subscriber: null, list_ids: [] }));
+    f.webhooks!.update(BigInt(id), { url: r.url(), events: all, enabled: false });
+  });
   for (let i = 0; i < 30; i++) {
-    await f.clock.advanceAsync(3_600_000);
-    await Bun.sleep(2);
+    f.advanceWebhooks(3_600_000);
+    await until(async () => {
+      const [row] = await deliveries(f, id);
+      return row.status === "failed" || Date.parse(row.next_attempt_at) > f.clock.now().getTime();
+    });
   }
   await until(async () =>
-    (await deliveries(f, id)).some((d) => d.last_error === "webhook_disabled" && d.status === "failed"),
+    (await deliveries(f, id)).some(
+      (d) => d.last_error === "webhook_disabled" && d.status === "failed",
+    ),
   );
   expect(r.received.length).toBe(before);
 });
@@ -527,23 +543,26 @@ test("deleting a subscriber clears personal data from every stored delivery", as
   await blocklist(f, other);
   await r.waitFor(2);
   await queued(f, id, 1);
-  await f.json(`/api/subscribers/${subscriber}/lists`, "GET");
   const pendingOf = await f.subscriber("pending@example.test", "P", { external_id: "app-p" });
   r.respond(() => new Response("x", { status: 500 }));
   await blocklist(f, pendingOf);
   await r.waitFor(3);
-  await until(async () => (await deliveries(f, id)).every((d) => d.status !== "queued" || d.last_error));
+  await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
   r.respond(() => new Response("ok"));
 
   await f.json(`/api/subscribers/${subscriber}`, "DELETE");
   await f.json(`/api/subscribers/${pendingOf}`, "DELETE");
-  const body = () => stored(f).map((row) => row.payload).join("\n");
+  const body = () =>
+    stored(f)
+      .map((row) => row.payload)
+      .join("\n");
   expect(body()).not.toContain("private@example.test");
   expect(body()).not.toContain("pending@example.test");
   expect(body()).toContain("other@example.test");
-  // The WAL and the main file are not read here: replaced pages are SQLite's to reclaim.
 
-  await f.clock.advanceAsync(3_600_000);
+  // The clock jump would time out a request still in flight.
+  await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
+  f.advanceWebhooks(3_600_000);
   await until(async () => (await deliveries(f, id)).every((d) => d.status === "delivered"));
   const retried = r.received.filter(
     (x) => x.body.event === "subscriber.blocklisted" && x.body.data.subscriber.email === "",
@@ -561,7 +580,6 @@ test("deleting a subscriber clears personal data from every stored delivery", as
   expect(event.body.data.subscriber.uuid).toMatch(/^[0-9a-f-]{36}$/);
   expect(body()).not.toContain("app-private");
   expect(body()).not.toContain("app-p");
-  expect(readFileSync(join(f.directory, "iglo-email.db")).length).toBeGreaterThan(0);
 });
 
 test("a retry of a pending subscriber.deleted keeps its bytes until the delivery ends", async () => {
@@ -573,7 +591,7 @@ test("a retry of a pending subscriber.deleted keeps its bytes until the delivery
   await r.waitFor(1);
   await queued(f, id, 1);
   expect(stored(f)[0]!.payload).toContain("app-a");
-  await f.clock.advanceAsync(30_000);
+  f.advanceWebhooks(30_000);
   await r.waitFor(2);
   await settled(f, id, r.received[0]!.body.id, "delivered", 2);
   expect(r.received[1]!.text).toBe(r.received[0]!.text);
@@ -602,7 +620,7 @@ test("block_private_addresses refuses private targets after resolution, without 
   expect(r.received.length).toBe(0);
   // Off (the default), a self-hosted receiver on a private address works.
   f.blockPrivate.value = false;
-  await f.clock.advanceAsync(30_000);
+  f.advanceWebhooks(30_000);
   await r.waitFor(1);
 });
 

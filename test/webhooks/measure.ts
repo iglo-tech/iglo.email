@@ -31,8 +31,8 @@ let received = 0;
 const receiver = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
-  fetch() {
-    received++;
+  fetch(request) {
+    if (request.method === "POST") received++;
     return new Response("ok");
   },
 });

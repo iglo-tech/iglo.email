@@ -62,6 +62,12 @@ export interface SubscriberEffects {
   unsubscribed(ids: bigint[], listIds: bigint[]): void;
   /** The subscribers are about to be deleted (D25: messaging anonymizes their sends). */
   deleting?(subscribers: { id: bigint; email: string }[]): void;
+  /**
+   * Consent that really changed, after the write: `blocklisted` when the subscriber was not
+   * blocklisted before, `listIds` for memberships that were not unsubscribed before. Unlike the
+   * effects above it stays silent on repeats, so a replayed request queues no webhook.
+   */
+  changed?(change: { id: bigint; blocklisted: boolean; listIds: bigint[] }): void;
 }
 export const noSubscriberEffects: SubscriberEffects = {
   blocklisted() {},
@@ -113,6 +119,13 @@ export function createSubscriberStore(
       return value;
     }),
   });
+  const subscribedLists = (id: bigint) =>
+    memberships(id)
+      .filter((m) => m.status !== "unsubscribed")
+      .map((m) => m.list_id);
+  const consentChanged = (id: bigint, blocklisted: boolean, listIds: bigint[]) => {
+    if (blocklisted || listIds.length) effects.changed?.({ id, blocklisted, listIds });
+  };
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
   const byEmail = (email: string) => q.get("subscriber-by-email").get(email) as Row | null;
   const conflict = (error: unknown): never => {
@@ -187,6 +200,7 @@ export function createSubscriberStore(
           input.preconfirm_subscriptions ?? false,
           now,
         );
+        consentChanged(row.id, status === "blocklisted", []);
         return get(row.id)!;
       } catch (error) {
         return conflict(error);
@@ -212,6 +226,7 @@ export function createSubscriberStore(
         if (existing && existing.id !== row.id)
           throw new HttpError(409, "External ID already exists");
       }
+      const subscribed = subscribedLists(row.id);
       try {
         q.get("subscriber-update").run(
           email,
@@ -235,6 +250,12 @@ export function createSubscriberStore(
         return conflict(error);
       }
       if (status === "blocklisted") effects.blocklisted([row.id]);
+      const remaining = new Map(memberships(row.id).map((m) => [m.list_id, m.status]));
+      consentChanged(
+        row.id,
+        status === "blocklisted" && row.status !== "blocklisted",
+        subscribed.filter((list) => remaining.get(list) === "unsubscribed"),
+      );
       return get(row.id)!;
     },
     remove(ids: bigint[]) {
@@ -244,8 +265,11 @@ export function createSubscriberStore(
     blocklist(ids: bigint[]) {
       const now = clock.now().toISOString();
       for (const id of ids) {
+        const previous = get(id);
+        const subscribed = subscribedLists(id);
         q.get("subscriber-blocklist").run(now, id);
         q.get("membership-blocklist").run(now, id);
+        if (previous) consentChanged(id, previous.status !== "blocklisted", subscribed);
       }
       effects.blocklisted(ids);
     },
@@ -258,13 +282,17 @@ export function createSubscriberStore(
             if (!existing)
               q.get("membership-insert").run(id, list, status || "unconfirmed", now, now);
             else if (status) q.get("membership-status").run(status, id, list);
-            if (status === "unsubscribed") effects.unsubscribed([id], [list]);
+            if (status === "unsubscribed") {
+              effects.unsubscribed([id], [list]);
+              if (existing && existing.status !== "unsubscribed") consentChanged(id, false, [list]);
+            }
           } else if (action === "remove") q.get("membership-delete").run(id, list);
           else if (action === "unsubscribe") {
             if (existing) q.get("membership-update").run("unsubscribed", now, id, list);
             // An absent membership stays absent, but the consent action still ends the
             // list's enrollments.
             effects.unsubscribed([id], [list]);
+            if (existing && existing.status !== "unsubscribed") consentChanged(id, false, [list]);
           }
         }
     },
@@ -432,7 +460,9 @@ export function createSubscriberStore(
     /** Adapted from unsubscribe-by-campaign with unsubAllUnconfirmed. Returns changed lists. */
     unsubscribeUnconfirmed(id: bigint): bigint[] {
       const rows = q.get("membership-unsubscribe-unconfirmed").all(clock.now().toISOString(), id);
-      return (rows as { list_id: bigint }[]).map((row) => row.list_id);
+      const changed = (rows as { list_id: bigint }[]).map((row) => row.list_id);
+      consentChanged(id, false, changed);
+      return changed;
     },
     membership: (id: bigint, list: bigint) =>
       q.get("membership-get").get(id, list) as Membership | null,
@@ -443,6 +473,7 @@ export function createSubscriberStore(
      */
     unsubscribe(id: bigint, list: bigint, blocklist: boolean): bigint[] {
       const now = clock.now().toISOString();
+      const newlyBlocklisted = blocklist && get(id)?.status !== "blocklisted";
       // Like upstream, the subscriber's status change does not touch updated_at.
       if (blocklist) q.get("subscriber-blocklist-only").run(id);
       const rows = (
@@ -450,7 +481,9 @@ export function createSubscriberStore(
           ? q.get("membership-unsubscribe-all").all(now, id)
           : q.get("membership-unsubscribe-list").all(now, id, list)
       ) as { list_id: bigint }[];
-      return rows.map((row) => row.list_id);
+      const changed = rows.map((row) => row.list_id);
+      consentChanged(id, newlyBlocklisted, changed);
+      return changed;
     },
     close: () => q.close(),
   };

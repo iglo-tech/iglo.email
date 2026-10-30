@@ -34,6 +34,8 @@ export const defaults = {
   "privacy.record_optin_ip": false,
   // Native: minimum ISO 8601 interval between marketing sends to one subscriber.
   "marketing.min_interval": "P7D",
+  // Native: refuse webhook targets outside public unicast, checked after DNS resolution.
+  "webhooks.block_private_addresses": false,
   "security.captcha": {
     altcha: {
       enabled: false,

@@ -22,6 +22,8 @@ export function startReceiver(
     hostname: "127.0.0.1",
     idleTimeout: 0,
     async fetch(request) {
+      // Other processes on a shared host can probe a loopback port.
+      if (request.method !== "POST") return new Response(null, { status: 404 });
       const text = await request.text();
       const entry: Received = {
         path: new URL(request.url).pathname,
