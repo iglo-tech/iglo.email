@@ -687,6 +687,40 @@ test("with blocking on, the request goes to the checked address, not a fresh loo
   expect(lookups).toBe(1);
 });
 
+test("a public wipe stores and delivers only the numeric ID and UUID", async () => {
+  const f = await open();
+  const r = receiver(() => new Response("x", { status: 503 }));
+  const { id } = await hook(f, r);
+  const address = "wiped@example.test";
+  const subscriber = await f.subscriber(address, "W", { external_id: address });
+  const { uuid } = (await f.json(`/api/subscribers/${subscriber}`)).body.data;
+  await blocklist(f, subscriber);
+  await r.waitFor(1);
+  await queued(f, id, 1);
+
+  const wipe = await f.request(`/subscription/wipe/${uuid}`, { method: "POST" });
+  expect(wipe.status).toBe(200);
+  // Nothing is stored from the commit on, while the receiver is still unavailable.
+  const body = () =>
+    stored(f)
+      .map((row) => row.payload)
+      .join("\n");
+  expect(body()).not.toContain(address);
+
+  await r.waitFor(2);
+  await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
+  f.advanceWebhooks(30_000);
+  await r.waitFor(3);
+  const [event] = r.received.filter((x) => x.body.event === "subscriber.deleted");
+  expect(event!.body.data).toEqual({
+    subscriber: { id: subscriber, uuid, email: "", external_id: null },
+    list_ids: [],
+  });
+  await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
+  for (const received of r.received.slice(1)) expect(received.text).not.toContain(address);
+  expect(body()).not.toContain(address);
+});
+
 test("a delivery held at DNS goes out cleared when its subscriber is deleted meanwhile", async () => {
   let release = () => {};
   let held = true;

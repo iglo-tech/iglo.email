@@ -61,7 +61,7 @@ export interface SubscriberEffects {
   /** The subscribers' memberships of `listIds` are now unsubscribed. */
   unsubscribed(ids: bigint[], listIds: bigint[]): void;
   /** The subscribers are about to be deleted (D25: messaging anonymizes their sends). */
-  deleting?(subscribers: { id: bigint; email: string }[]): void;
+  deleting?(subscribers: { id: bigint; email: string }[], wipe?: boolean): void;
   /**
    * Consent that really changed, after the write: `blocklisted` when the subscriber was not
    * blocklisted before, `listIds` for memberships that were not unsubscribed before. Unlike the
@@ -268,9 +268,13 @@ export function createSubscriberStore(
       );
       return get(row.id)!;
     },
-    remove(ids: bigint[]) {
+    /** `wipe` is the subscriber's own request (D61). */
+    remove(ids: bigint[], { wipe = false } = {}) {
       effects.admitBulk?.("delete", () => new Set(ids).size);
-      effects.deleting?.(ids.flatMap((id) => get(id) ?? []));
+      effects.deleting?.(
+        ids.flatMap((id) => get(id) ?? []),
+        wipe,
+      );
       for (const id of ids) q.get("subscriber-delete").run(id);
     },
     blocklist(ids: bigint[]) {
@@ -499,7 +503,8 @@ export function createSubscriberStore(
     webhookUnsubscribed: (ids: bigint[], lists: bigint[] | null) =>
       webhookData("webhook-unsubscribed", json(ids), lists && json(lists)),
     webhookBlocklisted: (ids: bigint[]) => webhookData("webhook-blocklisted", json(ids)),
-    webhookDeleted: (ids: bigint[]) => webhookData("webhook-deleted", json(ids)),
+    webhookDeleted: (ids: bigint[], wipe: boolean) =>
+      webhookData("webhook-deleted", json(ids), wipe ? 1 : 0),
     close: () => q.close(),
   };
 }

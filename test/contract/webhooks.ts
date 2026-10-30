@@ -191,8 +191,9 @@ export async function runWebhooksContract(target: {
     const failed = ofEvent("send.failed")[0]!.body.data;
     check(failed.subscriber.id === failing.id && failed.send.status === "failed", "send-failed");
 
-    // The public wipe and an admin delete: no address in anything stored afterwards.
-    const wiped = await subscriber("wiped", "app-wiped");
+    // The public wipe and an admin delete: no address in anything stored afterwards. A wipe
+    // carries no external ID either, which a retained `bulk` admin delete still does.
+    const wiped = await subscriber("wiped", "wiped@example.test");
     await call(`/api/subscribers/${wiped.id}/blocklist`, "PUT", {});
     await arrived("subscriber.blocklisted", 4);
     const wipe = await fetch(`${target.baseUrl}/subscription/wipe/${wiped.uuid}`, {
@@ -202,10 +203,12 @@ export async function runWebhooksContract(target: {
     await arrived("subscriber.deleted", 1);
     const gone = ofEvent("subscriber.deleted")[0]!.body.data.subscriber;
     check(gone.id === wiped.id && gone.uuid === wiped.uuid && gone.email === "", "deleted-data");
-    check(gone.external_id === "app-wiped", "deleted-external-id");
+    check(gone.external_id === null, "wiped-external-id");
+    check(!stored().includes("wiped@example.test"), "wiped-stored");
     check(signatureValid(ofEvent("subscriber.deleted")[0]!, secret), "deleted-signature");
     await call(`/api/subscribers/${bulk.id}`, "DELETE");
     await arrived("subscriber.deleted", 2);
+    check(ofEvent("subscriber.deleted")[1]!.body.data.subscriber.external_id, "admin-external-id");
     const settled = async () => {
       const deadline = Date.now() + 10_000;
       for (;;) {
@@ -219,7 +222,7 @@ export async function runWebhooksContract(target: {
     check(rows.length === receiver.received.length, "one-delivery-each");
     check(new Set(receiver.received.map((r) => r.body.id)).size === rows.length, "ids-unique");
     const bytes = stored();
-    for (const value of ["wiped@example.test", "bulk-a@example.test", "app-wiped"])
+    for (const value of ["wiped@example.test", "bulk-a@example.test"])
       check(!bytes.includes(value), `cleared-${value}`);
     check(bytes.includes("clicked@example.test"), "others-kept");
 
@@ -248,6 +251,31 @@ export async function runWebhooksContract(target: {
       "setting-kept",
     );
     await call("/api/settings/webhooks.block_private_addresses", "PUT", false);
+
+    // Deliberate difference (07): a bulk action over the delivery budget writes nothing.
+    const blockedBefore = (await call("/api/subscribers?per_page=1&status=blocklisted")).body.data
+      .total;
+    const writer = new Database(join(target.dataDir, "iglo-email.db"));
+    writer.run(
+      `WITH RECURSIVE i(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM i WHERE n < 50001)
+       INSERT INTO subscribers (uuid, email, name)
+       SELECT lower(hex(randomblob(16))), 'budget' || n || '@example.test', 'Budget' FROM i`,
+    );
+    writer.close();
+    const total = (await call("/api/subscribers?per_page=1")).body.data.total;
+    const over = await call("/api/subscribers/query/blocklist", "PUT", {
+      query: "subscribers.email LIKE 'budget%'",
+    });
+    check(over.status === 400 && over.body.message.includes("Narrow the selection"), "budget");
+    check(
+      (await call("/api/subscribers?per_page=1&status=blocklisted")).body.data.total ===
+        blockedBefore,
+      "budget-atomic",
+    );
+    check((await call("/api/subscribers?per_page=1")).body.data.total === total, "budget-total");
+    await call("/api/subscribers/query/delete", "POST", { query: "subscribers.id > 0" }).then(
+      (refused) => check(refused.status === 400, "budget-delete"),
+    );
 
     // Configuration and the secret survive a restart; the held row is retried in time by the
     // clock tests, so only the durable configuration is checked here.

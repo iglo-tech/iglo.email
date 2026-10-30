@@ -97,9 +97,9 @@ export async function txFixture(
     subscriberEffects: SubscriberEffects = {
       ...noSubscriberEffects,
       ...webhookEffects?.subscriberEffects,
-      deleting(deleted) {
+      deleting(deleted, wipe) {
         anonymize(deleted);
-        webhookEffects?.deleting(deleted);
+        webhookEffects?.deleting(deleted, wipe);
       },
     },
     subscribers: ReturnType<typeof createSubscriberStore> = createSubscriberStore(

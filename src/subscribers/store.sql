@@ -43,11 +43,12 @@ SELECT json_group_array(json_object(
     'list_ids', (SELECT json_group_array(list_id) FROM subscriber_lists WHERE subscriber_id = s.id))) AS data
   FROM subscribers s WHERE s.status != 'blocklisted' AND s.id IN (SELECT value FROM json_each(?));
 -- name: webhook-deleted
--- D61: never the address.
+-- D61: never the address, and no external ID for a subscriber's own wipe (?2).
 SELECT json_group_array(json_object(
-    'subscriber', json_object('id', s.id, 'uuid', s.uuid, 'email', '', 'external_id', s.external_id),
+    'subscriber', json_object('id', s.id, 'uuid', s.uuid, 'email', '',
+      'external_id', CASE WHEN ?2 THEN NULL ELSE s.external_id END),
     'list_ids', (SELECT json_group_array(list_id) FROM subscriber_lists WHERE subscriber_id = s.id))) AS data
-  FROM subscribers s WHERE s.id IN (SELECT value FROM json_each(?));
+  FROM subscribers s WHERE s.id IN (SELECT value FROM json_each(?1));
 -- name: membership-get
 SELECT * FROM subscriber_lists WHERE subscriber_id = ? AND list_id = ?;
 -- name: membership-unsubscribe-list

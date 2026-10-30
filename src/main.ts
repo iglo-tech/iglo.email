@@ -125,9 +125,9 @@ async function main(): Promise<void> {
     const subscriberEffects = {
       ...enrollments.subscriberEffects,
       ...webhookEffects.subscriberEffects,
-      deleting(deleted: { id: bigint; email: string }[]) {
+      deleting(deleted: { id: bigint; email: string }[], wipe?: boolean) {
         anonymizeSends(deleted);
-        webhookEffects.deleting(deleted);
+        webhookEffects.deleting(deleted, wipe);
       },
     };
     subscriberStore = createSubscriberStore(db, clock, lists, subscriberEffects);
