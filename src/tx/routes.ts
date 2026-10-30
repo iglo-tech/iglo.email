@@ -3,6 +3,7 @@
 // async and the response body follow docs/design/04-sending.md; marketing unsubscribe
 // links, headers and tracking come from src/unsubscribe (M2.4).
 import { createHash } from "node:crypto";
+import { dummyUUID } from "@/campaigns/render";
 import type { Message } from "@/messaging/email";
 import type { RequestedSend, Sends } from "@/messaging/sends";
 import type { startOutbox } from "@/messaging/outbox";
@@ -209,7 +210,9 @@ export function registerTxRoutes(
       }
       const contentType = m.contentType === "plain" ? "plain" : "html";
       const requested: RequestedSend[] = [];
-      const links = messageLinks(deps.marketing.settings(), deps.marketing.tracking);
+      const marketingSettings = deps.marketing.settings();
+      const links = messageLinks(marketingSettings, deps.marketing.tracking);
+      const root = marketingSettings.rootUrl.replace(/\/+$/, "");
       let total = 0;
       for (const recipient of recipients) {
         // The send UUID is fixed before rendering so its URLs can carry it.
@@ -218,7 +221,12 @@ export function registerTxRoutes(
         const unsubscribe = marketing
           ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
           : "";
-        const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}}`;
+        // Preferences for a known subscriber: scoped by the send when marketing, else general.
+        const preferences =
+          prepared.unsubscribeUrl ??
+          (recipient.row ? `${root}/subscription/${dummyUUID}/${recipient.row.uuid}` : "");
+        const manage = `,"manage_url":${JSON.stringify(preferences && `${preferences}?manage=true`)}`;
+        const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}${manage}}`;
         let rendered: { body: string; subject: string };
         let altBody = m.altBody;
         try {

@@ -591,6 +591,42 @@ test("admin subscriber deletion anonymizes sends as a wipe does", async () => {
   }
 });
 
+test("tx templates get manage_url for subscribers, and it opens preferences", async () => {
+  const f = await open();
+  const list = await f.list("News");
+  const template = await f.template("<p>[{{ manage_url }}]</p>");
+  const email = "manage@example.test";
+  const id = await f.subscriber(email, "Manage", {
+    lists: [list.id],
+    preconfirm_subscriptions: true,
+  });
+  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
+  const send = async (body: object) => (await f.tx({ template_id: template, ...body })).status;
+  const url = async (to: string) => {
+    await f.drain();
+    const text = f.mailTo(to).at(-1)!.data.replace(/=\r\n/g, "").replaceAll("=3D", "=");
+    return /\[(.*?)\]/.exec(text)![1]!;
+  };
+  expect(await send({ subscriber_id: id })).toBe(200);
+  const manage = await url(email);
+  expect(manage).toBe(`http://fixture.test/subscription/${dummy}/${uuid}?manage=true`);
+  const page = await f.peer(manage.replace("http://fixture.test", ""), "192.0.2.60");
+  expect(page.status).toBe(200);
+  expect(await page.text()).toContain("News");
+
+  expect(await send({ subscriber_id: id, kind: "marketing", list_id: list.id })).toBe(200);
+  const scoped = await url(email);
+  expect(scoped).toMatch(
+    /^http:\/\/fixture\.test\/m\/[0-9a-f-]+\/unsubscribe\/[0-9a-f-]+\?manage=true$/,
+  );
+
+  // No subscriber, no preferences.
+  expect(
+    await send({ subscriber_mode: "external", subscriber_emails: ["stranger@example.test"] }),
+  ).toBe(200);
+  expect(await url("stranger@example.test")).toBe("");
+});
+
 test("view in browser writes nothing and escapes subscriber data", async () => {
   const f = await open();
   const list = await f.list("News");
