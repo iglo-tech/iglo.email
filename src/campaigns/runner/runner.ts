@@ -10,6 +10,7 @@ import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import { startLoop } from "@/loops/loop";
 import type { ListReferences } from "@/lists/references";
+import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message, Outcome } from "@/messaging/email";
 import { goDuration } from "@/settings/duration";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
@@ -58,6 +59,9 @@ export interface RunnerDeps {
     push(message: Message, delivery?: { copies?: boolean }): { result: Promise<Outcome> };
   };
   settings: () => RunnerSettings;
+  /** Reads a campaign's files, so never inside the claim transaction. */
+  attachments(ids: bigint[], inline: InlineImage[]): Promise<Attachments>;
+  embedImages: EmbedImages;
   /**
    * Campaigns with a live pipe in this process. Runners sharing a data directory share it
    * (D15: one process per data directory), so no campaign gets a second pipe while one
@@ -72,10 +76,16 @@ export interface RunnerDeps {
 interface Pipe {
   campaign: RunnableCampaign;
   compiled: ReturnType<typeof compileCampaign>;
+  /** The files of the pipe, by ID. Their bytes are loaded for each batch and kept by no pipe. */
+  media: bigint[];
+  images: InlineImage[];
+  /** Why the campaign's images cannot be embedded: found when it compiles, reported as `attach`. */
+  embedProblem: string | null;
   /** Tracked links seen in the current batch; campaign_links is the lasting record. */
   links: Map<string, string | null>;
   errors: number;
 }
+type Attachments = NonNullable<Message["attachments"]>;
 interface Batch {
   pipe: Pipe;
   recipients: CampaignRecipient[];
@@ -209,8 +219,9 @@ export function startCampaignRunner(deps: RunnerDeps) {
       return;
     }
     let compiled;
+    let embedded;
     try {
-      compiled = compileCampaign(deps.renderer, {
+      embedded = deps.embedImages({
         name: campaign.name,
         subject: campaign.subject,
         from_email: campaign.from_email,
@@ -222,6 +233,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
         uuid: campaign.uuid,
         templateBody: templateBody(campaign),
       });
+      compiled = compileCampaign(deps.renderer, embedded.campaign);
     } catch (error) {
       store.release(id, token);
       retryAt.set(id, now + (deps.scanIntervalMs ?? scanInterval));
@@ -238,7 +250,15 @@ export function startCampaignRunner(deps: RunnerDeps) {
     const started = store.start(id, token, measured.count, measured.max, iso(now));
     if (!started) return;
     retryAt.delete(id);
-    pipes.set(id, { campaign, compiled, links: new Map(), errors: 0 });
+    pipes.set(id, {
+      campaign,
+      compiled,
+      media: store.mediaIds(id),
+      images: embedded.images,
+      embedProblem: embedded.problem,
+      links: new Map(),
+      errors: 0,
+    });
   }
 
   /** NextSubscribers: claims the next batch and commits its cursor, or ends the pipe. */
@@ -319,7 +339,12 @@ export function startCampaignRunner(deps: RunnerDeps) {
     }
   }
 
-  async function render(pipe: Pipe, sub: CampaignRecipient, settings: RunnerSettings) {
+  async function render(
+    pipe: Pipe,
+    sub: CampaignRecipient,
+    settings: RunnerSettings,
+    attachments: Attachments,
+  ) {
     const c = pipe.campaign;
     const root = settings.rootUrl.replace(/\/+$/, "");
     const unsubscribeUrl = `${root}/subscription/${c.uuid}/${sub.uuid}`;
@@ -382,6 +407,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
           body: Buffer.from(out.body),
           ...(out.altBody !== null ? { altBody: Buffer.from(out.altBody) } : {}),
           headers,
+          ...(attachments.length ? { attachments } : {}),
           messenger: c.messenger,
           messageId: `<${c.uuid}.${sub.uuid}@${domain}>`,
         };
@@ -395,10 +421,36 @@ export function startCampaignRunner(deps: RunnerDeps) {
     }
   }
 
+  /**
+   * attachMedia, for one batch. A campaign does not go out without its files, and a missing file
+   * does not come back by itself, so this pauses the campaign rather than retrying each scan as
+   * listmonk does. Nothing of the batch was pushed: every claim returns to the cursor for the
+   * resume. A crash before that leaves the batch claimed, so it is skipped as unknown.
+   */
+  async function attach({ pipe, recipients }: Batch): Promise<Attachments | null> {
+    const c = pipe.campaign;
+    try {
+      if (pipe.embedProblem) throw new Error(pipe.embedProblem);
+      return await deps.attachments(pipe.media, pipe.images);
+    } catch (error) {
+      log(`error fetching attachments on ${label(c)}: ${errorText(error)}. Pausing the campaign.`);
+    }
+    const now = iso(clock.now().getTime());
+    writeTransaction(db, () => {
+      for (const sub of recipients) store.unclaim(c.id, sub.id);
+      if (recipients.length) store.rewind(c.id, token, recipients[0]!.id - 1n, now);
+      store.pause(c.id, now);
+      release(pipe);
+    });
+    return null;
+  }
+
   /** The campaign's message workers for one batch (Manager.worker and pipe flow). */
   async function process(batch: Batch): Promise<void> {
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
+    const attachments = await attach(batch);
+    if (!attachments) return;
     const settings = deps.settings();
     const concurrency = settings.concurrency >= 1 ? Math.floor(settings.concurrency) : 1;
     const rate = settings.messageRate >= 1 ? Math.floor(settings.messageRate) : 1;
@@ -451,7 +503,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
         const sub = recipients[i]!;
         let message: Message;
         try {
-          message = await render(pipe, sub, settings);
+          message = await render(pipe, sub, settings, attachments);
         } catch (error) {
           // listmonk logs a render error and moves on; the subscriber is not retried.
           log(`error rendering message (${c.name}) (${sub.email}): ${errorText(error)}`);

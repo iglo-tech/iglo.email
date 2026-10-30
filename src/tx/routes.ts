@@ -9,6 +9,9 @@ import type { RequestedSend, Sends } from "@/messaging/sends";
 import type { startOutbox } from "@/messaging/outbox";
 import { parseAddress } from "@/settings/mail";
 import type { ListReferences } from "@/lists/references";
+import type { Attachments } from "@/media/attachments";
+import type { EmbedImages } from "@/media/embed";
+import { UploadRootError } from "@/media/filesystem";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -24,6 +27,7 @@ import type { Tracking } from "@/unsubscribe/tracking";
 const MAX_RECIPIENTS = 100;
 /** Aggregate prepared bytes for one request; each payload is also bounded by messaging. */
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+const MAX_DISPATCHING_BYTES = 64 * 1024 * 1024;
 const MAX_KEY_BYTES = 255;
 const MAX_HEADERS = 64;
 const headerName = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -79,8 +83,11 @@ export function registerTxRoutes(
     lists: ListReferences;
     policy: () => TxPolicy;
     marketing: { settings: () => MarketingSettings; tracking: Tracking };
+    attachments: Attachments;
+    embedImages: EmbedImages;
   },
 ) {
+  let dispatching = 0;
   router.route(
     "POST",
     "/api/tx",
@@ -162,6 +169,22 @@ export function registerTxRoutes(
           t.Ts("globals.messages.notFound", "name", `template ${m.templateId}`),
         );
 
+      // upstream's CacheTpl embeds once. Here a template has no cached form: its images are found
+      // for each request and the bytes come through the attachment cache, which checks the file,
+      // so a media change applies to the next send. The journal keeps what each send carried.
+      // Files are read before the recipients, so nothing awaits between those and the journal.
+      const embedded = deps.embedImages({
+        content_type: "html",
+        body: template.body,
+        templateBody: "",
+      });
+      if (embedded.problem)
+        throw new HttpError(400, t.Ts("templates.errorRendering", "error", embedded.problem));
+      const inline = await deps.attachments([], embedded.images).catch((error) => {
+        const reason = error instanceof UploadRootError ? error.message : "embedded image";
+        throw new HttpError(500, t.Ts("templates.errorRendering", "error", reason));
+      });
+
       // Resolve every recipient before rendering or writing anything.
       const recipients: Array<{ row: SubscriberRow | null; email: string }> = [];
       const notFound = (label: string) =>
@@ -196,7 +219,7 @@ export function registerTxRoutes(
       try {
         body = deps.renderer.compile({
           ...transactional,
-          body: template.body,
+          body: embedded.campaign.body,
           subject: m.subject || template.subject,
         });
         if (m.altBody && /\{\{|\{%/.test(m.altBody))
@@ -213,6 +236,15 @@ export function registerTxRoutes(
       const marketingSettings = deps.marketing.settings();
       const links = messageLinks(marketingSettings, deps.marketing.tracking);
       const root = marketingSettings.rootUrl.replace(/\/+$/, "");
+      const attachments = [
+        ...m.attachments.map((a) => ({
+          name: a.name,
+          content: a.content,
+          contentType: a.contentType,
+        })),
+        ...inline,
+      ];
+      const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.byteLength, 0);
       let total = 0;
       for (const recipient of recipients) {
         // The send UUID is fixed before rendering so its URLs can carry it.
@@ -247,16 +279,9 @@ export function registerTxRoutes(
           ...(altBody ? { altBody: Buffer.from(altBody) } : {}),
           // The generated List-Unsubscribe pair replaces caller values of the same name.
           headers: { ...headers, ...prepared.headers },
-          attachments: m.attachments.map((a) => ({
-            name: a.name,
-            content: a.content,
-            contentType: a.contentType,
-          })),
+          attachments,
         };
-        total +=
-          message.body.byteLength +
-          (message.altBody?.byteLength ?? 0) +
-          m.attachments.reduce((sum, a) => sum + a.content.byteLength, 0);
+        total += message.body.byteLength + (message.altBody?.byteLength ?? 0) + attachmentBytes;
         if (total > MAX_REQUEST_BYTES) throw new HttpError(413);
         requested.push({
           send: {
@@ -272,6 +297,14 @@ export function registerTxRoutes(
         });
       }
 
+      // A template's image costs a small JSON request nothing, but each synchronous send decodes
+      // its own copy from the journal and holds it until SMTP answers.
+      const held = !m.async && inline.length ? attachmentBytes * requested.length : 0;
+      if (held && dispatching + held > MAX_DISPATCHING_BYTES)
+        throw new HttpError(429, "Too many sends with embedded images in progress.", {
+          "Retry-After": "1",
+        });
+
       let result: ReturnType<Sends["enqueueRequest"]>;
       try {
         result = deps.sends.enqueueRequest({
@@ -286,7 +319,12 @@ export function registerTxRoutes(
       }
       // Synchronously after commit, so the outbox loop cannot claim these rows first.
       if (!m.async && result.queued.length) {
-        await deps.outbox.dispatch(result.queued);
+        dispatching += held;
+        try {
+          await deps.outbox.dispatch(result.queued);
+        } finally {
+          dispatching -= held;
+        }
         const current = result.ids.map((id, i) => deps.sends.summary(id) ?? result.sends[i]!);
         return ok({ sends: current });
       }

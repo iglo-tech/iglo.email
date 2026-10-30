@@ -1,6 +1,8 @@
 // Campaign HTTP endpoints adapted from listmonk cmd/campaigns.go and the /api/campaigns
 // routes in cmd/handlers.go at 6fcd95f. Analytics and running stats are M3.3; sending to
 // lists is the M3.2 runner: status changes here only record the state.
+import type { EmbedImages, InlineImage } from "@/media/embed";
+import { UploadRootError } from "@/media/filesystem";
 import type { Message } from "@/messaging/email";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
@@ -67,6 +69,9 @@ export interface CampaignDeps {
     push(message: Message, delivery?: { copies?: boolean }): { result: Promise<unknown> };
   };
   settings: () => CampaignSettings;
+  /** Reads files, so a caller holds no transaction. */
+  attachments(ids: bigint[], inline: InlineImage[]): Promise<NonNullable<Message["attachments"]>>;
+  embedImages: EmbedImages;
 }
 
 const idValue = (id: bigint | null) =>
@@ -602,7 +607,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     );
     return ok(true);
   };
+  /** Test sends admitted and not yet settled. Each holds at most TEST_SEND_BYTES. */
   let testing = 0;
+  const MAX_TEST_SENDS = 4;
   /** Aggregate bounds for one test-send request, checked before a message is retained. */
   const TEST_SEND_BYTES = 32 * 1024 * 1024;
   const TEST_SEND_WORK = 1_000_000;
@@ -637,17 +644,20 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     if (!recipients.length) throw new HttpError(400, t(context).T("campaigns.noKnownSubsToTest"));
     const stored = row(context, id);
     const templateId = atoi(context.url.searchParams.get("template_id"));
-    if (testing >= 4) throw new HttpError(429, "Too many test sends in progress.");
+    if (testing >= MAX_TEST_SENDS)
+      throw new HttpError(429, "Too many test sends in progress.", { "Retry-After": "1" });
     testing++;
+    let queued = false;
     try {
       const settings = deps.settings();
       const root = settings.rootUrl.replace(/\/+$/, "");
-      const campaign: MessageCampaign = {
+      // LoadInlineImages comes first: what is compiled is the rewritten source.
+      const { campaign, images, problem } = deps.embedImages<MessageCampaign>({
         ...value,
         name: value.name,
         uuid: stored.uuid,
         templateBody: templateBody(templateId > 0 ? BigInt(templateId) : stored.template_id),
-      };
+      });
       const sendError = (error: unknown): never => {
         if (error instanceof RenderCapacityError)
           throw new HttpError(429, "Too many template renders in progress.");
@@ -666,6 +676,14 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       } catch (error) {
         return sendError(error);
       }
+      if (problem)
+        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", problem));
+      // As listmonk, the request names the media of a test send.
+      const attachments = await deps.attachments(input.media ?? [], images).catch((error) => {
+        const reason = error instanceof UploadRootError ? error.message : "attachment";
+        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", reason));
+      });
+      const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
       const messages: Message[] = [];
       const links = new Map<string, string | null>();
       let totalBytes = 0;
@@ -707,6 +725,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         const size = (value: string) => Buffer.byteLength(value);
         totalWork += budget.work;
         totalBytes += size(out.body) + size(out.altBody ?? "") + size(out.subject) + size(out.from);
+        totalBytes += attachmentBytes;
         for (const set of out.headers)
           for (const [name, header] of Object.entries(set)) totalBytes += size(name) + size(header);
         // Nothing is queued until every message is rendered, so a refusal sends nothing.
@@ -736,18 +755,23 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           body: Buffer.from(out.body),
           ...(out.altBody !== null ? { altBody: Buffer.from(out.altBody) } : {}),
           headers,
+          ...(attachments.length ? { attachments } : {}),
           messenger: value.messenger,
         });
       }
       auth.revalidate(context);
-      // As listmonk, test messages are queued to the messenger; delivery is not awaited.
-      for (const message of messages)
-        void deps.emailer
+      // As listmonk, test messages are queued to the messenger; delivery is not awaited. Their
+      // bytes stay in the emailer's queue, so the slot does too, until every message settles.
+      const results = messages.map((message) =>
+        deps.emailer
           .push(message, { copies: false })
-          .result.catch((error) => context.app.logger.error(error));
+          .result.catch((error) => context.app.logger.error(error)),
+      );
+      queued = true;
+      void Promise.all(results).finally(() => testing--);
       return ok(true);
     } finally {
-      testing--;
+      if (!queued) testing--;
     }
   };
 

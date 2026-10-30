@@ -216,6 +216,7 @@ export function createAnalyticsStore(db: Database) {
         templateExists: () => false,
         defaultTemplate: () => null,
         listName: () => null,
+        mediaFilename: () => null,
       });
       try {
         const scope = { all, ids: listIds.map(BigInt) };

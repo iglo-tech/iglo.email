@@ -77,9 +77,8 @@ DELETE FROM campaign_lists WHERE campaign_id = ? AND list_id IS NOT NULL
   AND list_id NOT IN (SELECT value FROM json_each(?));
 
 -- name: insert-campaign-media
--- The media table has no owner module until M3.5; this keeps upstream's ID filter.
 INSERT INTO campaign_media (campaign_id, media_id, filename)
-SELECT ?1, id, filename FROM media WHERE id = ?2
+VALUES (?, ?, ?)
 ON CONFLICT (campaign_id, media_id) DO NOTHING;
 
 -- name: delete-other-campaign-media

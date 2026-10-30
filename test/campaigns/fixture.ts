@@ -30,14 +30,28 @@ import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import { createAttachments } from "@/media/attachments";
+import { createFilesystem } from "@/media/filesystem";
+import { createEmbeds } from "@/media/embed";
+import { registerMediaRoutes, uploadPathCheck } from "@/media/routes";
+import { createMediaStore } from "@/media/store";
+import { createSettings } from "@/settings/store";
+import { registerSettingsRoutes } from "@/settings/routes";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
 
-export async function campaignsFixture() {
-  const sink = await startSink({});
+export async function campaignsFixture(
+  options: {
+    attachmentCacheBytes?: number;
+    smtpPort?: number;
+    sinkPauseMs?: number;
+    dkim?: { domain_name: string; key_selector: string; private_key: string };
+  } = {},
+) {
+  const sink = await startSink(options.sinkPauseMs ? { pauseMs: options.sinkPauseMs } : {});
   const directory = mkdtempSync(join(tmpdir(), "iglo-campaigns-"));
   const clock = new TestClock();
   const db = openDatabase(directory);
@@ -81,7 +95,7 @@ export async function campaignsFixture() {
           enabled: true,
           exclude_from_default: false,
           host: "127.0.0.1",
-          port: sink.port,
+          port: options.smtpPort ?? sink.port,
           hello_hostname: "fixture.test",
           max_conns: 4,
           idle_timeout: "2s",
@@ -92,6 +106,7 @@ export async function campaignsFixture() {
           tls_skip_verify: false,
           email_headers: [{ Bcc: "copy@fixture.test" }],
           from_addresses: [],
+          ...(options.dkim ? { dkim: options.dkim } : {}),
         },
       ],
     }),
@@ -108,12 +123,31 @@ export async function campaignsFixture() {
     individualTracking: false,
   };
   const unsubscribed: unknown[] = [];
+  const media = createMediaStore(db, clock);
+  // Media settings are the real ones, so that tests reach them through the settings API.
+  const stored = createSettings(db, clock, root, roles);
+  const mediaSettings = () => {
+    const current = stored.read();
+    return {
+      provider: current["upload.provider"],
+      extensions: current["upload.extensions"],
+      rootUrl: root,
+      uploadPath: current["upload.filesystem.upload_path"],
+      uploadUri: current["upload.filesystem.upload_uri"],
+    };
+  };
+  const files = createFilesystem(directory, mediaSettings);
+  const attachments = createAttachments(media, files, options.attachmentCacheBytes);
+  const embedImages = createEmbeds(media, app.logger);
   const store = createCampaignStore(db, clock, {
     templateExists: (id) => templates.get(id) !== null,
     defaultTemplate: () => templates.getDefault()?.id ?? null,
     listName: (id) => lists.name(id),
+    mediaFilename: (id) => media.filename(id),
   });
   const router = createRouter();
+  registerSettingsRoutes(router, stored, auth, undefined, uploadPathCheck(directory, media));
+  registerMediaRoutes(router, { store: media, files, auth, settings: mediaSettings });
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
@@ -129,6 +163,8 @@ export async function campaignsFixture() {
     tracking,
     emailer,
     settings: () => settings,
+    attachments,
+    embedImages,
   });
   registerCampaignPublicRoutes(router, {
     db,
@@ -195,6 +231,7 @@ export async function campaignsFixture() {
     sink,
     errors,
     settings,
+    directory,
     unsubscribed,
     sessionHeaders,
     request,
@@ -204,11 +241,25 @@ export async function campaignsFixture() {
     campaign,
     mail,
     /** Production owners, for wiring the campaign runner as src/main.ts does. */
-    owners: { store, templates, renderer, tracking, lists, subscribers, emailer, roles, auth },
+    owners: {
+      store,
+      templates,
+      renderer,
+      tracking,
+      lists,
+      subscribers,
+      emailer,
+      roles,
+      auth,
+      attachments,
+      embedImages,
+    },
     router,
     async close() {
       await emailer.close();
       store.close();
+      media.close();
+      stored.close();
       tracking.close();
       templates.close();
       templateReferences.close();

@@ -40,6 +40,9 @@ export function createRunnerStore(db: Database) {
     listIds(id: bigint): bigint[] {
       return (q.get("campaign-list-ids").all(id) as { list_id: bigint }[]).map((r) => r.list_id);
     },
+    mediaIds(id: bigint): bigint[] {
+      return (q.get("campaign-media-ids").all(id) as { media_id: bigint }[]).map((r) => r.media_id);
+    },
     /** Records to_send and max_subscriber_id and sets the campaign running. */
     start(id: bigint, token: string, toSend: bigint, max: bigint, now: string) {
       return q.get("start-campaign").get(id, toSend, max, now, token) as {

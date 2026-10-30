@@ -7,6 +7,7 @@ import { writable } from "@/campaigns/routes";
 import type { CampaignRow, CampaignStore } from "@/campaigns/store";
 import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
+import type { PublicImages } from "@/media/embed";
 import { PublicShell } from "@/public/layout";
 import { publicMessage, publicNotFound } from "@/public/message";
 import { noIndex, uuidPattern } from "@/public/routes";
@@ -60,6 +61,7 @@ export function registerArchiveRoutes(
     templates: Pick<TemplateStore, "get" | "getDefault">;
     renderer: TemplateRenderer;
     settings: () => PublicSettings;
+    publicImages: PublicImages;
   },
 ) {
   const message = (
@@ -88,11 +90,12 @@ export function registerArchiveRoutes(
     "";
   const renderMessage = (row: CampaignRow, templateId: bigint | null, sub: CampaignSubscriber) => {
     const root = deps.settings().rootUrl;
-    return compileCampaign(deps.renderer, {
+    const source = deps.publicImages({
       ...writable(row),
       uuid: row.uuid,
       templateBody: templateBody(templateId),
-    }).render(sub, {
+    });
+    return compileCampaign(deps.renderer, source).render(sub, {
       rootUrl: root,
       unsubscribeUrl: `${root}/subscription/${row.uuid}/${sub.uuid}`,
     });

@@ -7,6 +7,7 @@ import { runPublicContract } from "@/test/contract/public";
 import { runEventsContract } from "@/test/contract/events";
 import { runSequencesContract } from "@/test/contract/sequences";
 import { runBouncesContract } from "@/test/contract/bounces";
+import { runMediaContract } from "@/test/contract/media";
 import { runWebhooksContract } from "@/test/contract/webhooks";
 import { runTemplateAuthorization } from "@/test/templates/auth-contract";
 import { runDKIMSettings } from "@/test/contract/messaging-dkim";
@@ -117,6 +118,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "sequences" ||
       args[1] === "webhooks" ||
       args[1] === "bounces" ||
+      args[1] === "media" ||
       args[1] === "analytics" ||
       args[1] === "campaigns")
   ) {
@@ -138,6 +140,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "sequences" ||
         args[1] === "webhooks" ||
         args[1] === "bounces" ||
+        args[1] === "media" ||
         args[1] === "analytics" ||
         args[1] === "campaigns") &&
       Object.keys(values).length
@@ -167,6 +170,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         if (args[1] === "bounces") {
           await runBouncesContract({ mode: "normal", baseUrl, credentials, restart, dataDir });
           process.stdout.write("PASS bounces production contract\n");
+          return true;
+        }
+        if (args[1] === "media") {
+          await runMediaContract({ mode: "normal", baseUrl, credentials, restart, dataDir });
+          process.stdout.write("PASS media production contract\n");
           return true;
         }
         if (args[1] === "webhooks") {

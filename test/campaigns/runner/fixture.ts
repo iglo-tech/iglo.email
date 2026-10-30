@@ -5,6 +5,7 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import {
   createCampaignRunnerRegistry,
   startCampaignRunner,
+  type RunnerDeps,
   type RunnerSettings,
 } from "@/campaigns/runner/runner";
 import type { Clock } from "@/clock";
@@ -18,8 +19,10 @@ export interface Push {
   settle(status?: Outcome["status"]): void;
 }
 
-export async function runnerFixture(options: { hold?: boolean } = {}) {
-  const f = await campaignsFixture();
+export async function runnerFixture(
+  options: { hold?: boolean; realEmailer?: boolean } & Parameters<typeof campaignsFixture>[0] = {},
+) {
+  const f = await campaignsFixture(options);
   const store = createRunnerStore(f.db);
   const recipients = createCampaignRecipients(f.db);
   const pushes: Push[] = [];
@@ -83,8 +86,10 @@ export async function runnerFixture(options: { hold?: boolean } = {}) {
       templates: f.owners.templates,
       renderer: f.owners.renderer,
       tracking: f.owners.tracking,
-      emailer,
+      emailer: options.realEmailer ? (f.owners.emailer as RunnerDeps["emailer"]) : emailer,
       settings: () => settings,
+      attachments: f.owners.attachments,
+      embedImages: f.owners.embedImages,
       leaseMs,
     });
     runners.push(runner);

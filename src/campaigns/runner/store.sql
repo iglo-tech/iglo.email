@@ -21,6 +21,10 @@ RETURNING id, uuid, type, name, subject, from_email, body, altbody, content_type
 -- name: campaign-list-ids
 SELECT list_id FROM campaign_lists WHERE campaign_id = ? AND list_id IS NOT NULL ORDER BY id;
 
+-- name: campaign-media-ids
+-- attachMedia: media deleted since has a NULL ID and is no longer attached (next-campaigns).
+SELECT media_id FROM campaign_media WHERE campaign_id = ? AND media_id IS NOT NULL ORDER BY rowid;
+
 -- name: start-campaign
 -- next-campaigns: to_send and max_subscriber_id for every pickup; a scheduled campaign runs.
 UPDATE campaigns SET to_send = ?2, max_subscriber_id = ?3,

@@ -37,6 +37,7 @@ try {
     templateExists: () => false,
     defaultTemplate: () => null,
     listName: () => null,
+    mediaFilename: () => null,
   });
   const scope = { all: true, ids: [] };
   const filter = { query: "", tags: [], type: "" };

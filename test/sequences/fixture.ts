@@ -33,6 +33,7 @@ import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { registerTxRoutes } from "@/tx/routes";
+import { createEmbeds } from "@/media/embed";
 import { createEventStore } from "@/events/store";
 import { registerEventRoutes } from "@/events/routes";
 import { createEnrollments } from "@/sequences/enrollments";
@@ -182,6 +183,8 @@ export async function sequencesFixture() {
       domainBlocklist: [],
     }),
     marketing: { settings: () => marketing, tracking },
+    attachments: async () => [],
+    embedImages: createEmbeds({ byFilename: () => null }, app.logger),
   });
   registerUnsubscribeRoutes(router, {
     db,

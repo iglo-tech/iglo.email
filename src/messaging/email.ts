@@ -272,7 +272,8 @@ function build(
       throw new Error("Invalid attachment");
     return {
       filename: a.name,
-      content: Buffer.from(a.content),
+      // A view: a campaign's messages share one buffer, which nothing here writes to.
+      content: Buffer.from(a.content.buffer, a.content.byteOffset, a.content.byteLength),
       ...(a.cid ? { cid: a.cid } : {}),
       ...(a.contentType ? { contentType: a.contentType } : {}),
       contentDisposition:

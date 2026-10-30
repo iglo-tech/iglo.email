@@ -106,6 +106,7 @@ export interface CampaignReferences {
   templateExists(id: bigint): boolean;
   defaultTemplate(): bigint | null;
   listName(id: bigint): string | null;
+  mediaFilename(id: bigint): string | null;
 }
 
 export function createCampaignStore(db: Database, clock: Clock, refs: CampaignReferences) {
@@ -126,7 +127,11 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
   };
   const setMedia = (id: bigint, mediaIds: bigint[]) => {
     q.get("delete-other-campaign-media").run(id, ids(mediaIds));
-    for (const media of mediaIds) q.get("insert-campaign-media").run(id, media);
+    // Upstream's ID filter: an ID that names no media is left out.
+    for (const media of mediaIds) {
+      const filename = refs.mediaFilename(media);
+      if (filename !== null) q.get("insert-campaign-media").run(id, media, filename);
+    }
   };
   const values = (c: WritableCampaign) => ({
     headers: JSON.stringify(c.headers),

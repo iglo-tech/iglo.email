@@ -3,6 +3,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { createRateLimit, createThrottle } from "@/public/rate-limit";
 import { createClientAddress } from "@/server/client-address";
+import { imagePng } from "@/test/media/images";
 import { publicFixture, type PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
 
@@ -676,6 +677,51 @@ test("view in browser writes nothing and escapes subscriber data", async () => {
   expect(archived).not.toContain("script&gt;");
   expect(counts()).toEqual(before);
   expect(campaign.id).toBeGreaterThan(0n);
+});
+
+test("embedded images are public media URLs on the campaign page and the archive", async () => {
+  const f = await open();
+  const list = await f.list("News");
+  const email = "reader@example.test";
+  await api(f, email, list.uuid);
+  const reader = f.owners.subscribers.byEmail(email)!;
+  for (const name of ["logo.png", "header.png"]) {
+    const body = new FormData();
+    body.append("file", new File([imagePng], name, { type: "image/png" }));
+    const stored = await f.request("/api/media", {
+      method: "POST",
+      headers: f.sessionHeaders,
+      body,
+    });
+    expect(stored.status).toBe(200);
+  }
+  const template = await f.template(
+    `<img src="header.png" data-embed="true">{{ content | raw }}`,
+    "Subject",
+    "campaign",
+  );
+  const uuid = "33333333-3333-4333-8333-333333333333";
+  f.db.run(
+    `INSERT INTO campaigns (uuid, name, subject, from_email, body, content_type, status, type, messenger, max_subscriber_id, last_subscriber_id, template_id, archive, archive_template_id, archive_slug, archive_meta)
+     VALUES (?, 'c', 'Hello', 'a@b.test', ?, 'html', 'finished', 'regular', 'email', 0, 0, ?, 1, ?, 'embedded', '{}')`,
+    [
+      uuid,
+      `<img src="logo.png" data-embed="true"><img src="https://cdn.example.test/other.png" data-embed="true">`,
+      template,
+      template,
+    ],
+  );
+  const pages = [`/campaign/${uuid}/${reader.uuid}`, "/archive/embedded"];
+  for (const path of pages) {
+    const page = await (await f.peer(path, "192.0.2.41")).text();
+    expect({ path, page }).toEqual({
+      path,
+      page: expect.stringContaining(`src="http://fixture.test/uploads/logo.png"`),
+    });
+    expect(page).toContain(`src="http://fixture.test/uploads/header.png"`);
+    expect(page).toContain(`src="https://cdn.example.test/other.png"`);
+  }
+  expect((await f.peer("/uploads/logo.png", "192.0.2.41")).status).toBe(200);
 });
 
 test("malformed public input fails safely with no write", async () => {
