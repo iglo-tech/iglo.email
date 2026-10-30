@@ -195,7 +195,7 @@ describe("GET /api/subscribers", () => {
         "INSERT INTO lists (uuid, name, type) VALUES ('x', 'x', 'private')",
         "UPDATE subscribers SET name = 'x'",
         "DELETE FROM subscribers",
-        "PRAGMA user_version = 7",
+        "PRAGMA user_version = 99",
         "PRAGMA journal_mode = DELETE",
         "CREATE TABLE stolen (x)",
       ])
@@ -205,14 +205,14 @@ describe("GET /api/subscribers", () => {
     } finally {
       db.close();
     }
-    expect(f.db.query("PRAGMA user_version").get()).not.toEqual({ user_version: 7n });
+    expect(f.db.query("PRAGMA user_version").get()).not.toEqual({ user_version: 99n });
   });
 
   test("the child runs only checked SELECTs", async () => {
     for (const sql of [
       "DELETE FROM subscribers",
       "ATTACH ':memory:' AS x",
-      "PRAGMA user_version = 7",
+      "PRAGMA user_version = 99",
       "SELECT id FROM users",
       "SELECT id FROM subscribers WHERE id = ?",
     ])

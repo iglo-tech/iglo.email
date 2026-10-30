@@ -342,7 +342,7 @@ describe("compiled executable", () => {
         };
       };
       expect(result).toMatchObject({
-        version: "6",
+        version: "7",
         integrity: "ok",
         foreignKeyErrors: [],
         backups: [],

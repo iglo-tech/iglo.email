@@ -28,7 +28,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     const installed = await call(fixture.origin, "migrate");
     expect(installed.status).toBe(200);
     expect(installed.result).toMatchObject({
-      version: "6",
+      version: "7",
       integrity: "ok",
       foreignKeyErrors: [],
       journal: "wal",
@@ -106,12 +106,15 @@ test("fresh installation, persistence, constraints, deletion and transactional F
         "started_at",
         "created_at",
         "updated_at",
+        "runner_lease",
+        "runner_lease_until",
       ],
       campaign_lists: ["id", "campaign_id", "list_id", "list_name"],
       campaign_views: ["id", "campaign_id", "send_id", "subscriber_id", "created_at"],
       media: ["id", "uuid", "provider", "filename", "content_type", "thumb", "meta", "created_at"],
       campaign_media: ["campaign_id", "media_id", "filename"],
       campaign_links: ["campaign_id", "link_id"],
+      campaign_deliveries: ["campaign_id", "subscriber_id", "status", "at"],
       links: ["id", "uuid", "url", "created_at"],
       link_clicks: ["id", "campaign_id", "send_id", "link_id", "subscriber_id", "created_at"],
       settings: ["key", "value", "updated_at"],
@@ -293,7 +296,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     await fixture.close();
     fixture = startSchemaFixture(directory);
     expect((await call(fixture.origin, "migrate")).result).toMatchObject({
-      version: "6",
+      version: "7",
       integrity: "ok",
       foreignKeyErrors: [],
       backups: [],
@@ -323,7 +326,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "6",
+      version: "7",
     });
   } finally {
     await fixture.close();
@@ -355,7 +358,7 @@ test("deleted identities never resolve to replacement accounts or entities after
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "6",
+      version: "7",
       backups: [],
     });
   } finally {
