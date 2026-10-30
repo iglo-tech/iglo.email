@@ -6,13 +6,24 @@ import { createApp } from "@/app";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
+import type { SubscriberMail } from "@/public/mail";
+import { registerPublicRoutes } from "@/public/routes";
+import type { PublicSettings } from "@/public/settings";
+import type { Middleware } from "@/server/context";
 import { createListReferences } from "@/lists/references";
 import { createListStore } from "@/lists/store";
 import { registerListRoutes } from "@/lists/routes";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
-import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
+import {
+  createSubscriberStore,
+  noSubscriberEffects,
+  type SubscriberEffects,
+} from "@/subscribers/store";
+import { createSubscriberQuery } from "@/subscribers/query";
+import { registerSubscriberQueryRoutes } from "@/subscribers/query-routes";
+import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createRoles } from "@/roles/roles";
 import { createRouter } from "@/server/server";
@@ -36,6 +47,10 @@ import { startSink } from "@/test/tx/sink";
 import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
 import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery";
+import { createWebhookEffects } from "@/webhooks/effects";
+import { registerWebhookRoutes } from "@/webhooks/routes";
+import { createWebhookStore } from "@/webhooks/store";
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
@@ -48,6 +63,8 @@ export async function txFixture(
     marketing?: Partial<MarketingSettings>;
     effects?: UnsubscribeEffects;
     page?: () => PageOptions;
+    /** Wire the production webhook owners, with this transport. */
+    webhooks?: WebhookTransport;
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -74,10 +91,30 @@ export async function txFixture(
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
     listStore = createListStore(db, clock, counts, campaigns),
-    subscribers = createSubscriberStore(db, clock, lists, {
+    webhooks = options.webhooks ? createWebhookStore(db, clock) : undefined,
+    webhookEffects = webhooks && createWebhookEffects(webhooks, () => subscribers),
+    anonymize = createSendAnonymizer(db),
+    subscriberEffects: SubscriberEffects = {
       ...noSubscriberEffects,
-      deleting: createSendAnonymizer(db),
-    }),
+      ...webhookEffects?.subscriberEffects,
+      deleting(deleted, wipe) {
+        anonymize(deleted);
+        webhookEffects?.deleting(deleted, wipe);
+      },
+    },
+    subscribers: ReturnType<typeof createSubscriberStore> = createSubscriberStore(
+      db,
+      clock,
+      lists,
+      subscriberEffects,
+    ),
+    readonly = webhooks && openReadOnly(db.filename),
+    runner =
+      webhooks && createQueryRunner({ path: db.filename, timeoutMs: 10_000, concurrency: 2 }),
+    subscriberQuery =
+      readonly &&
+      runner &&
+      createSubscriberQuery({ db, readonly, clock, runner, effects: subscriberEffects }),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const auth = await createAuthentication(
@@ -136,6 +173,7 @@ export async function txFixture(
     clock,
     subscribers,
     rootUrl: () => "http://fixture.test",
+    ...(webhookEffects ? { ended: webhookEffects.sendEnded } : {}),
     marketingPolicy: createMarketingPolicy({ subscribers, lists, settings: () => marketing }),
   });
   const tracking = createTracking(db, clock);
@@ -144,8 +182,11 @@ export async function txFixture(
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
+  if (subscriberQuery)
+    registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
+  if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
   registerTxRoutes(router, {
     auth,
     sends,
@@ -171,6 +212,34 @@ export async function txFixture(
     ...(options.effects ? { effects: options.effects } : {}),
     ...(options.page ? { page: options.page } : {}),
   });
+  if (webhooks) {
+    // Only the public wipe is reached here: it sends no mail and reads one setting.
+    const open: Middleware = (_context, next) => next();
+    registerPublicRoutes(router, {
+      db,
+      lists,
+      subscribers,
+      mail: {} as SubscriberMail,
+      settings: () => ({ allowWipe: true }) as PublicSettings,
+      limits: { subscribe: open, optin: open, privacy: open },
+      clientAddress: () => "127.0.0.1",
+    });
+  }
+  const blockPrivate = { value: false };
+  const startDelivery = () =>
+    webhooks
+      ? startWebhookDelivery({
+          db,
+          clock,
+          logger: app.logger,
+          webhooks,
+          blockPrivate: () => blockPrivate.value,
+          transport: options.webhooks!,
+        })
+      : undefined;
+  let delivery = startDelivery();
+  // The loop's zero-length yields need no time to pass, only a turn of the injected clock.
+  const pump = webhooks ? setInterval(() => testClock.advance(0), 1) : undefined;
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
     router.handle(app, new Request(`http://fixture.test${path}`, init));
@@ -213,6 +282,7 @@ export async function txFixture(
     session,
     sessionHeaders,
     sink,
+    directory,
     errors,
     request,
     json,
@@ -232,8 +302,26 @@ export async function txFixture(
     restartOutbox() {
       outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
     },
+    webhooks,
+    blockPrivate,
+    /** Move the injected clock, then let the delivery loop see it without its idle poll. */
+    advanceWebhooks(milliseconds: number) {
+      testClock.advance(milliseconds);
+      delivery?.wake();
+    },
+    /** Stop the loop and drop what it knew; a held attempt's row keeps only its lease. */
+    async crashWebhooks() {
+      await delivery?.halt();
+    },
+    /** A fresh loop over the same rows, as after a process restart. */
+    startWebhooks() {
+      delivery = startDelivery();
+    },
     count: () => Number((db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n),
     async close() {
+      await delivery?.halt();
+      clearInterval(pump);
+      webhooks?.close();
       const stopped = outbox.stop();
       await emailer.close();
       await stopped;
@@ -243,6 +331,9 @@ export async function txFixture(
       templateReferences.close();
       users.close();
       roles.close();
+      subscriberQuery?.close();
+      await runner?.close();
+      readonly?.close();
       subscribers.close();
       listStore.close();
       counts.close();

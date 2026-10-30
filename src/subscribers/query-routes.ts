@@ -19,7 +19,7 @@ import {
 } from "@/subscribers/query-filter";
 import { RunnerError } from "@/subscribers/query-runner";
 import type { SubscriberQuery } from "@/subscribers/query";
-import type { Scope, SubscriberStore } from "@/subscribers/store";
+import type { BulkAction, Scope, SubscriberStore } from "@/subscribers/store";
 
 interface Types {
   get: boolean;
@@ -401,9 +401,14 @@ export function registerSubscriberQueryRoutes(
         throw new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", "query"));
       sqlPermission(c, fragment);
       let act: Action;
-      if (kind === "delete") act = (_input, ids) => query.remove(ids);
-      else if (kind === "blocklist") act = (_input, ids) => query.blocklist(ids);
-      else if (input.action === "add") {
+      let fanOut: BulkAction | null = null;
+      if (kind === "delete") {
+        act = (_input, ids) => query.remove(ids);
+        fanOut = "delete";
+      } else if (kind === "blocklist") {
+        act = (_input, ids) => query.blocklist(ids);
+        fanOut = "blocklist";
+      } else if (input.action === "add") {
         if (input.status && !subscriptionStatuses.includes(input.status))
           throw new HttpError(
             400,
@@ -412,9 +417,10 @@ export function registerSubscriberQueryRoutes(
         act = (value, ids, targets) => query.addLists(ids, targets, value.status);
       } else if (input.action === "remove")
         act = (_input, ids, targets) => query.removeLists(ids, targets);
-      else if (input.action === "unsubscribe")
+      else if (input.action === "unsubscribe") {
         act = (_input, ids, targets) => query.unsubscribeLists(ids, targets);
-      else throw new HttpError(400, c.app.i18n.T("globals.messages.invalidAction"));
+        fanOut = "unsubscribe";
+      } else throw new HttpError(400, c.app.i18n.T("globals.messages.invalidAction"));
       auth.revalidate(c, "subscribers:manage");
       sqlPermission(c, fragment);
       const select = (i: Identity): SubscriberFilter => ({
@@ -460,7 +466,9 @@ export function registerSubscriberQueryRoutes(
           query.transaction(() => {
             const i = identity(c);
             const targets = filterLists(i, MANAGE, input.target_list_ids);
-            query.apply(select(i), candidates, (ids) => act(input, ids, targets));
+            const filter = select(i);
+            if (fanOut) query.admitBulk(fanOut, filter, candidates);
+            query.apply(filter, candidates, (ids) => act(input, ids, targets));
           });
         } catch (e) {
           return failed(e);

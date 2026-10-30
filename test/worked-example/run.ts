@@ -10,6 +10,7 @@ import {
   type Api,
   type Mailbox,
 } from "@/test/worked-example/harness";
+import { signatureValid, startReceiver, type Receiver } from "@/test/webhooks/receiver";
 
 /** Every shortened `P3D`/`P5D`/`P45D` wait. */
 const WAIT = "PT10S";
@@ -49,12 +50,14 @@ const email = (name: string) => `${name}-${run}@worked.example.test`;
 
 const production = await startProduction();
 const mailbox = await startMailbox();
+/** The app's webhook endpoint: its consent field follows these deliveries. */
+const appEndpoint = startReceiver();
 /** Every message the run expects, exactly once. */
 const expected: [string, string][] = [];
 let failure: unknown;
 try {
   const api = await apiClient(production.origin);
-  await scenario(api, mailbox, expected);
+  await scenario(api, mailbox, expected, appEndpoint);
 } catch (error) {
   failure = error;
 } finally {
@@ -65,6 +68,7 @@ try {
   }
   await production.close();
   await mailbox.close();
+  appEndpoint.close();
 }
 if (failure) {
   if (production.errors()) console.error(`production stderr:\n${production.errors()}`);
@@ -72,7 +76,7 @@ if (failure) {
 }
 log(`worked example passed: ${expected.length} emails, each received exactly once`);
 
-async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
+async function scenario(api: Api, mail: Mailbox, expected: [string, string][], app: Receiver) {
   const { ok } = api;
 
   // --- Setup: SMTP to the sink, a short cap, templates, a marketing list and the sequences.
@@ -91,6 +95,10 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
     },
   ]);
   await ok("/api/settings/marketing.min_interval", "PUT", CAP);
+  const { secret } = await ok("/api/webhooks", "POST", {
+    url: app.url(),
+    events: ["subscriber.unsubscribed"],
+  });
   const list = (
     await ok("/api/lists", "POST", { name: "Product news", type: "public", optin: "single" })
   ).id as number;
@@ -415,6 +423,22 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][]) {
     );
     check(failed?.status === "active", `${name}: Payment failed (no list) enrollment continues`);
   }
+  await app.waitFor(2);
+  check(
+    app.received.every((delivery) => signatureValid(delivery, secret)),
+    "the app's subscriber.unsubscribed deliveries are correctly signed",
+  );
+  check(
+    ["u1", "u2"].every((name) =>
+      app.received.some(
+        (delivery) =>
+          delivery.body.event === "subscriber.unsubscribed" &&
+          delivery.body.data.subscriber.email === email(name) &&
+          delivery.body.data.list_ids.includes(list),
+      ),
+    ),
+    "the app heard both unsubscribes and can sync its consent field",
+  );
   log("unsubscribe: link form and one-click both exited the list-tied enrollments");
 
   // 6. Restart. The barrier is a pause through the API, not the 15-second tick: Payment failed

@@ -11,6 +11,7 @@ import { trimSpace } from "@/lists/store";
 import { parseAddress } from "@/settings/mail";
 import { HttpError } from "@/server/response";
 import { createHash } from "node:crypto";
+import type { EndedSend } from "@/webhooks/effects";
 
 export type SendSource = "tx" | "sequence";
 export type SendKind = "transactional" | "marketing";
@@ -138,8 +139,13 @@ export function createSends(options: {
   subscribers: SubscriberStore;
   rootUrl: () => string;
   marketingPolicy?: MarketingPolicy;
+  /** A send became `failed` or `unknown`, inside that write's transaction. */
+  ended?: (send: EndedSend) => void;
 }) {
   const { db, clock, subscribers } = options;
+  const ended = (row: Row, status: string, error: string, changes: number) => {
+    if (changes) options.ended?.({ ...row, status, error });
+  };
   let wake = () => {};
   const get = (id: bigint) => db.query<Row, [bigint]>("SELECT * FROM sends WHERE id = ?").get(id);
   const getPublic = (id: bigint) =>
@@ -230,10 +236,11 @@ export function createSends(options: {
       if (!row.payload) throw new Error();
       payload = decodePayload(row.payload);
     } catch {
-      db.run(
+      const { changes } = db.run(
         "UPDATE sends SET status='failed', error='payload_unavailable', claimed_until=NULL WHERE id=? AND status='sending'",
         [row.id],
       );
+      ended(row, "failed", "payload_unavailable", changes);
       return null;
     }
     const reason = eligibility(row, payload.subscriberUuid);
@@ -259,22 +266,26 @@ export function createSends(options: {
         "UPDATE sends SET status='sent', sent_at=?, error=?, claimed_until=NULL WHERE id=? AND status='sending'",
         [at, outcome.rejected.length ? "partial_acceptance" : null, row.id],
       );
-    else if (outcome.status === "ambiguous")
-      db.run(
+    else if (outcome.status === "ambiguous") {
+      const { changes } = db.run(
         "UPDATE sends SET status='unknown', error='uncertain', claimed_until=NULL WHERE id=? AND status='sending'",
         [row.id],
       );
-    else if (row.kind === "transactional" && outcome.retry === "transient" && row.attempts < 5n) {
+      ended(row, "unknown", "uncertain", changes);
+    } else if (row.kind === "transactional" && outcome.retry === "transient" && row.attempts < 5n) {
       const delay = 1000 * 2 ** (Number(row.attempts) - 1);
       db.run(
         "UPDATE sends SET status='queued', error='temporary_rejection', next_attempt_at=?, claimed_until=NULL WHERE id=? AND status='sending'",
         [new Date(clock.now().getTime() + delay).toISOString(), row.id],
       );
-    } else
-      db.run(
+    } else {
+      const error = outcome.retry === "transient" ? "temporary_rejection" : "not_accepted";
+      const { changes } = db.run(
         "UPDATE sends SET status='failed', error=?, claimed_until=NULL WHERE id=? AND status='sending'",
-        [outcome.retry === "transient" ? "temporary_rejection" : "not_accepted", row.id],
+        [error, row.id],
       );
+      ended(row, "failed", error, changes);
+    }
   }
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /**
@@ -809,11 +820,14 @@ export function createSends(options: {
       );
     },
     recover() {
-      writeTransaction(db, () =>
-        db.run(
-          "UPDATE sends SET status='unknown', error='interrupted', claimed_until=NULL, next_attempt_at=NULL WHERE status='sending'",
-        ),
-      );
+      writeTransaction(db, () => {
+        const interrupted = db
+          .query<Row, []>(
+            "UPDATE sends SET status='unknown', error='interrupted', claimed_until=NULL, next_attempt_at=NULL WHERE status='sending' RETURNING *",
+          )
+          .all();
+        for (const row of interrupted) ended(row, "unknown", "interrupted", 1);
+      });
     },
     /** Claim the lowest due row inside the caller's write transaction. */
     claim(time: Date, lease: Date): Row[] {

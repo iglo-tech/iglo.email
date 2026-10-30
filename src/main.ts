@@ -65,6 +65,10 @@ import { createSubscriberMail, startSignupMail, type SubscriberMail } from "@/pu
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings } from "@/public/settings";
+import { startWebhookDelivery } from "@/webhooks/delivery";
+import { createWebhookEffects } from "@/webhooks/effects";
+import { registerWebhookRoutes } from "@/webhooks/routes";
+import { createWebhookStore } from "@/webhooks/store";
 
 async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
@@ -106,6 +110,8 @@ async function main(): Promise<void> {
   let runner: ReturnType<typeof startCampaignRunner> | undefined;
   let mail: SubscriberMail | undefined;
   let signups: ReturnType<typeof startSignupMail> | undefined;
+  let webhooks: ReturnType<typeof createWebhookStore> | undefined;
+  let deliveries: ReturnType<typeof startWebhookDelivery> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -113,9 +119,16 @@ async function main(): Promise<void> {
     settings = createSettings(db, clock, bootstrap.config.rootUrl, roles);
     counts = createListCounts(db);
     enrollments = createEnrollments(db, clock);
+    webhooks = createWebhookStore(db, clock);
+    const webhookEffects = createWebhookEffects(webhooks, () => subscriberStore!);
+    const anonymizeSends = createSendAnonymizer(db);
     const subscriberEffects = {
       ...enrollments.subscriberEffects,
-      deleting: createSendAnonymizer(db),
+      ...webhookEffects.subscriberEffects,
+      deleting(deleted: { id: bigint; email: string }[], wipe?: boolean) {
+        anonymizeSends(deleted);
+        webhookEffects.deleting(deleted, wipe);
+      },
     };
     subscriberStore = createSubscriberStore(db, clock, lists, subscriberEffects);
     readonly = openReadOnly(db.filename);
@@ -223,6 +236,7 @@ async function main(): Promise<void> {
       clock,
       subscribers: subscriberStore,
       rootUrl: () => settings!.read()["app.root_url"],
+      ended: webhookEffects.sendEnded,
       marketingPolicy: createMarketingPolicy({
         subscribers: subscriberStore,
         lists,
@@ -232,6 +246,7 @@ async function main(): Promise<void> {
     });
     tracking = createTracking(db, clock);
     registerSendRoutes(router, sends, auth);
+    registerWebhookRoutes(router, { webhooks, auth });
     outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
     registerTxRoutes(router, {
       auth,
@@ -420,6 +435,13 @@ async function main(): Promise<void> {
       },
     });
     enrollments.onDue(() => scheduler!.wake());
+    deliveries = startWebhookDelivery({
+      db,
+      clock,
+      logger: app.logger,
+      webhooks,
+      blockPrivate: () => settings!.read()["webhooks.block_private_addresses"],
+    });
     const server = startServer(app, router);
     await new Promise<void>((resolve, reject) => {
       let closing = false;
@@ -435,6 +457,7 @@ async function main(): Promise<void> {
         const outboxStop = outbox!.stop();
         const retentionStop = retention!.stop();
         const signupStop = signups!.stop();
+        const deliveryStop = deliveries!.stop();
         const messagingClose = emailer!.close();
         const httpStop = server.stop();
         Promise.allSettled([
@@ -443,6 +466,7 @@ async function main(): Promise<void> {
           outboxStop,
           retentionStop,
           signupStop,
+          deliveryStop,
           messagingClose,
           httpStop,
         ]).then((results) => {
@@ -463,6 +487,7 @@ async function main(): Promise<void> {
       process.once("SIGINT", onSignal);
       void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
       void signups!.done.catch(() => shutdown(new Error("Opt-in mail failed")));
+      void deliveries!.done.catch(() => shutdown(new Error("Webhook delivery failed")));
       void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
       void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
@@ -474,6 +499,7 @@ async function main(): Promise<void> {
     const stopped = outbox?.stop();
     const purging = retention?.stop();
     const signing = signups?.stop();
+    const delivering = deliveries?.stop();
     // A decision awaiting a condition finishes before the runner and connections close.
     await scheduling?.catch(() => {});
     const closing = emailer?.close();
@@ -484,6 +510,8 @@ async function main(): Promise<void> {
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
     await signing?.catch(() => {});
+    await delivering?.catch(() => {});
+    webhooks?.close();
     sequences?.close();
     recipients?.close();
     runnerStore?.close();

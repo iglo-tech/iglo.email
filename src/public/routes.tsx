@@ -365,7 +365,7 @@ export function registerPublicRoutes(
       const sub = subscriber(context);
       if (sub instanceof Response) return sub;
       if (!deps.settings().allowWipe) return failed(t, 400, t.T("public.invalidFeature"));
-      writeTransaction(deps.db, () => deps.subscribers.remove([sub.id]));
+      writeTransaction(deps.db, () => deps.subscribers.remove([sub.id], { wipe: true }));
       return message(t, 200, t.T("public.dataRemovedTitle"), t.T("public.dataRemoved"));
     },
     deps.limits.privacy,

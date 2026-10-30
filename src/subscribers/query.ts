@@ -14,7 +14,7 @@ import {
   type SubscriberFilter,
 } from "@/subscribers/query-filter";
 import type { QueryRunner, RunnerError } from "@/subscribers/query-runner";
-import { noSubscriberEffects, type SubscriberEffects } from "@/subscribers/store";
+import { noSubscriberEffects, type BulkAction, type SubscriberEffects } from "@/subscribers/store";
 import querySql from "@/subscribers/query.sql" with { type: "text" };
 import exportSql from "@/subscribers/export.sql" with { type: "text" };
 
@@ -149,6 +149,14 @@ export function createSubscriberQuery(options: {
         after = ids.at(-1)!;
       }
     },
+    /** In the action's transaction, before its first write. */
+    admitBulk(action: BulkAction, filter: SubscriberFilter, candidates: bigint[] | null) {
+      effects.admitBulk?.(action, () => {
+        if (candidates) return candidates.length;
+        const count = countSQL({ ...filter, fragment: "" });
+        return Number(column(db, count.sql, count.args)[0] ?? 0n);
+      });
+    },
     transaction(fn: () => void): void {
       writeTransaction(db, fn);
     },
@@ -162,6 +170,7 @@ export function createSubscriberQuery(options: {
       writes.get("delete-by-ids").run(json(ids));
     },
     blocklist(ids: bigint[]) {
+      effects.blocklisting?.(ids);
       const now = clock.now().toISOString();
       writes.get("blocklist-by-ids").run(now, json(ids));
       writes.get("blocklist-memberships-by-ids").run(now, json(ids));
@@ -187,6 +196,7 @@ export function createSubscriberQuery(options: {
       writes.get("delete-memberships-by-ids").run(json(ids), json(lists));
     },
     unsubscribeLists(ids: bigint[], lists: bigint[]) {
+      effects.unsubscribing?.(ids, lists);
       writes
         .get("unsubscribe-memberships-by-ids")
         .run(clock.now().toISOString(), json(ids), json(lists));

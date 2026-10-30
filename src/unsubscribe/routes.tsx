@@ -22,8 +22,8 @@ import type { Tracking } from "@/unsubscribe/tracking";
  * Effects of an unsubscribe request, called inside its write transaction on every POST,
  * including repeats. `listId` is the requested send's list; `listIds` are the memberships
  * whose status changed. M5 cancels active enrollments in sequences tied to `listId` and
- * `listIds` (exit_reason `unsubscribed`) and M2.6 queues `subscriber.unsubscribed` /
- * `subscriber.blocklisted` webhooks here.
+ * `listIds` (exit_reason `unsubscribed`). Webhooks queue from the subscriber store's `changed`
+ * effect, which only sees real changes.
  */
 export interface UnsubscribeEffects {
   unsubscribed(event: {
