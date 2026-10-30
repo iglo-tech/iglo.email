@@ -4,7 +4,7 @@ Updated 2026-10-29. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.1 performance, [PR #31](https://github.com/iglo-tech/iglo.email/pull/31), head e679343. Outbox claim 4.0→0.14 ms and cap lookup 11.3→0.02 ms fixed; target 1 met; mixed-load target 2 not met (campaign 48.9/s, events 3–4× slower). Sol xhigh round-1 review running.
+M6.1 performance, [PR #31](https://github.com/iglo-tech/iglo.email/pull/31), head e6a9c20. Outbox claim and cap lookup fixed; target 1 met; mixed-load target 2 not met. Round 1 report/test corrections done by the lead; Sol round-2 review running.
 Next: merge, then M6.1b to close the mixed-load gap (outbox batching, campaign pacing; FULL sync stays per D22).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
