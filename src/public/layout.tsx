@@ -52,8 +52,12 @@ export function PublicShell({
           rel="stylesheet"
           type="text/css"
         />
-        <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
-        <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
+        {site ? (
+          <>
+            <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
+            <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
+          </>
+        ) : null}
         {site?.faviconUrl ? (
           <link rel="icon" href={site.faviconUrl} type="image/x-icon" />
         ) : (
@@ -64,12 +68,16 @@ export function PublicShell({
         <div class="container wrap">
           <header class="header">
             <div class="logo">
-              <a href={site?.subscriptionPage ? `${site.rootUrl}/subscription/form` : ""}>
-                <img
-                  src={site?.logoUrl || `/public/static/logo.svg?v=${assetVersion}`}
-                  alt={siteName}
-                />
-              </a>
+              {site ? (
+                <a href={site.subscriptionPage ? `${site.rootUrl}/subscription/form` : ""}>
+                  <img
+                    src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`}
+                    alt={siteName}
+                  />
+                </a>
+              ) : (
+                <img src={`/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />
+              )}
             </div>
           </header>
           {children}
