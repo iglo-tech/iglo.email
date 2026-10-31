@@ -342,7 +342,7 @@ test.describe("Subscribers: create, edit & delete", () => {
       new RegExp(`/api/subscribers/${seed.ANON}/export$`),
     );
     const res = await page.request.get(`/api/subscribers/${seed.ANON}/export`);
-    expect((await res.json()).profile[0].name).toBe(SUB_NAMES.anon);
+    expect((await res.json()).profile[0].email).toBe(SUB_NAMES.anon);
   });
 
   test("deletes a subscriber from the row menu", async ({ page }) => {
