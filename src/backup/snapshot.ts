@@ -18,6 +18,7 @@
 // (docs/perf/M6.2-backup.md). It ends with stdin, so it cannot outlive a killed backup.
 import { Database } from "bun:sqlite";
 import {
+  chmodSync,
   closeSync,
   constants,
   copyFileSync,
@@ -38,16 +39,12 @@ import {
 import { open } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Clock } from "@/clock";
-import { prepareNamedQueries } from "@/db/queries";
 import { uploadRoot } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
-import { defaults } from "@/settings/defaults";
-import { parseStoredJson } from "@/settings/json";
-import settingsSql from "@/settings/queries.sql" with { type: "text" };
+import { storedUploadPath } from "@/settings/stored";
 
 const DATABASE = "iglo-email.db";
 const MANIFEST = "iglo-email-backup.json";
-const UPLOAD_PATH = "upload.filesystem.upload_path";
 /** Never a backup: `backup --verify` refuses this name and `backup` reports it left behind. */
 export const PARTIAL = ".iglo-email-backup-partial-";
 const REPLACED = ".iglo-email-backup-replaced-";
@@ -68,19 +65,6 @@ export interface Inspection {
 
 function single<T>(db: Database, pragma: string): T {
   return (db.query(`PRAGMA ${pragma}`).get() as Record<string, T>)[pragma]!;
-}
-
-/** The setting through the settings module's own query; its store seeds, and this one reads. */
-function uploadPath(db: Database): string {
-  const queries = prepareNamedQueries(db, [{ name: "settings", sql: settingsSql }]);
-  try {
-    const rows = queries.get("all").all() as { key: string; value: string }[];
-    const stored = rows.find(({ key }) => key === UPLOAD_PATH);
-    const value = stored ? parseStoredJson(stored.value) : defaults[UPLOAD_PATH];
-    return typeof value === "string" ? value : defaults[UPLOAD_PATH];
-  } finally {
-    queries.close();
-  }
 }
 
 /** The directory's files as uploads keep them: visible regular names, and no symlink (D64). */
@@ -274,7 +258,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     db.run("PRAGMA busy_timeout = 5000");
     if (single<bigint>(db, "user_version") === 0n)
       throw new Error(`${databasePath} has no schema yet; start the server once`);
-    const liveUploads = uploadRoot(data, uploadPath(db));
+    const liveUploads = uploadRoot(data, storedUploadPath(db));
     if (inside(output, liveUploads))
       throw new Error(`The output ${output} is inside the upload directory`);
     const pages = single<bigint>(db, "page_count") - single<bigint>(db, "freelist_count");
@@ -307,13 +291,14 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     const reader = openSnapshot(snapshot);
     let source: string;
     try {
-      source = uploadRoot(data, uploadPath(reader));
+      source = uploadRoot(data, storedUploadPath(reader));
     } finally {
       reader.close(true);
     }
     const uploads = relative(data, source);
     const target = join(partial, uploads);
-    mkdirSync(target, { recursive: true });
+    mkdirSync(target, { recursive: true, mode: 0o700 });
+    chmodSync(target, 0o700);
     for (const { name } of uploadedFiles(source)) {
       try {
         copyFileSync(join(source, name), join(target, name), constants.COPYFILE_EXCL);
@@ -321,6 +306,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
         if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
         throw error;
       }
+      chmodSync(join(target, name), 0o600);
       sync(join(target, name));
     }
     const manifest = join(partial, MANIFEST);

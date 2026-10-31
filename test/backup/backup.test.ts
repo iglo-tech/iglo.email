@@ -9,6 +9,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -301,6 +302,18 @@ test("an upload directory named by the settings is backed up at its place", asyn
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.stdout).toContain("Uploads: 1 files");
   expect(verified.stderr).toBe("");
+});
+
+test("backed-up media is closed to everyone but its owner", async () => {
+  const client = await live();
+  await uploadFile(client, "private.txt", "private");
+  chmodSync(join(dataDir, "uploads", "private.txt"), 0o664);
+  const output = join(base, "backup");
+  expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
+    0,
+  );
+  expect(statSync(join(output, "uploads")).mode & 0o777).toBe(0o700);
+  expect(statSync(join(output, "uploads", "private.txt")).mode & 0o777).toBe(0o600);
 });
 
 test("a newer executable migrates a restored backup", async () => {
