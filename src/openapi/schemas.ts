@@ -31,10 +31,15 @@ const input = (properties: Record<string, Schema>, required: string[] = []): Sch
   properties,
   ...(required.length ? { required } : {}),
 });
-/** The paged collection of `item`. Upstream's collections also echo `search` and `query`. */
-export const page = (item: Schema, echoed = false): Schema =>
+/**
+ * The paged collection of `item`. Upstream's collections also echo `search` and `query`. Where
+ * a page past the end is null rather than empty, `pastEnd` says so.
+ */
+export const page = (item: Schema, echoed = false, pastEnd = false): Schema =>
   object({
-    results: array(item),
+    results: pastEnd
+      ? { ...nullable(array(item)), description: "Null for a page past the last one." }
+      : array(item),
     ...(echoed ? { search: string, query: string } : {}),
     total: integer,
     per_page: { ...integer, description: "0 for `per_page=all`." },
@@ -877,7 +882,11 @@ export const schemas: Record<string, Schema> = {
   ListCount: object({ list_id: integer, campaign_id: integer, count: integer, timestamp: time }),
   LinkCount: object({ url: string, count: integer }),
   DashboardCounts: object({
-    subscribers: object({ total: integer, blocklisted: nullable(integer), orphans: integer }),
+    subscribers: object({
+      total: { ...nullable(integer), description: "Null with no subscribers." },
+      blocklisted: nullable(integer),
+      orphans: integer,
+    }),
     lists: object({
       total: integer,
       private: integer,
@@ -885,8 +894,11 @@ export const schemas: Record<string, Schema> = {
       optin_single: integer,
       optin_double: integer,
     }),
-    campaigns: object({ total: integer, by_status: map(integer) }),
-    messages: integer,
+    campaigns: object({
+      total: integer,
+      by_status: { ...nullable(map(integer)), description: "Null with no campaigns." },
+    }),
+    messages: { ...nullable(integer), description: "Null with no campaigns." },
   }),
   DashboardCharts: object({
     link_clicks: array(object({ count: integer, date: { type: "string", format: "date" } })),

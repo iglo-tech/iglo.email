@@ -142,6 +142,17 @@ export async function runOpenApiContract(target: {
     return `Basic ${btoa(`${name}:${user.password}`)}`;
   };
 
+  const paged = [
+    "GET /api/lists",
+    "GET /api/subscribers",
+    "GET /api/campaigns",
+    "GET /api/sequences",
+    "GET /api/enrollments",
+    "GET /api/sends",
+    "GET /api/media",
+    "GET /api/bounces",
+    "GET /api/webhooks",
+  ];
   const seen = new Map<string, Set<number>>();
   /** Components that met a real value: an empty array proves nothing about its items. */
   const checked = new Set<string>();
@@ -251,6 +262,18 @@ export async function runOpenApiContract(target: {
     await op("GET /health", { auth: null });
 
     await op("GET /api/health");
+    // Nothing to show yet: a new installation, and a role that sees no list.
+    for (const key of paged) await op(key);
+    await op("GET /api/dashboard/campaigns");
+    await op("GET /api/dashboard/charts");
+    await op("GET /api/dashboard/counts");
+    await op("GET /api/public/lists", { auth: null });
+    await op("GET /api/public/archive", { auth: null });
+    await op("GET /api/lists", { query: "?minimal=true" });
+    await op("GET /api/lists", {
+      query: "?minimal=true",
+      auth: await credential("blind", ["subscribers:get"]),
+    });
     await op("GET /api/profile");
     await op("PUT /api/profile", { body: { name: "OpenAPI contract" } });
 
@@ -1136,6 +1159,15 @@ export async function runOpenApiContract(target: {
     await op("DELETE /api/subscribers/{id}", { params: { id: other.id } });
     await op("DELETE /api/subscribers", { query: `?id=${subscriber.id}` });
     await op("DELETE /api/templates/{id}", { params: { id: txTemplate.id } });
+
+    // Past the last page.
+    for (const key of paged) await op(key, { query: "?page=999" });
+    await op("GET /api/public/archive", { auth: null, query: "?page=999" });
+    for (const tab of ["subscriber-events", "enrollments", "sends"])
+      await op(`GET /api/subscribers/{id}/${tab}`, {
+        params: { id: shared.id },
+        query: "?page=999",
+      });
 
     // Dropped in 07: each is a plain 404, not a hidden route.
     for (const path of ["/api/config", "/api/lang/en", "/api/about", "/api/events"])

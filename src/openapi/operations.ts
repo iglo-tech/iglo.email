@@ -300,7 +300,12 @@ const lists: Operation[] = [
       ...sorted,
       ...paging,
     ],
-    data: page(ref("List"), true),
+    data: {
+      oneOf: [
+        page(ref("List"), true),
+        { type: "array", maxItems: 0, description: "`minimal=true` with no list to show." },
+      ],
+    },
   },
   {
     route: "POST /api/lists",
@@ -359,7 +364,7 @@ const subscribers: Operation[] = [
     tag: "Subscribers",
     summary: "Query subscribers, under the list scope.",
     query: [...subscriberSelection, ...sorted, ...paging],
-    data: page(ref("Subscriber"), true),
+    data: page(ref("Subscriber"), true, true),
   },
   {
     route: "POST /api/subscribers",
