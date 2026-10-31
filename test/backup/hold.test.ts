@@ -26,6 +26,7 @@ setDefaultTimeout(120_000);
 /** Longer than the campaign runner's scan and every sending loop's poll. */
 const QUIET_MS = 6_500;
 const ACKNOWLEDGE = "--consent-reconciled";
+const HOLD_HEADER = "x-iglo-email-hold";
 let executable = "";
 let build = "";
 let base = "";
@@ -213,7 +214,8 @@ test("a restored install sends nothing to someone who opted out after the backup
     (await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")])).stdout,
   ).toMatch(/Hold: released at /);
   await restart(authorization);
-  expect(await (await fetch(server!.health)).json()).toEqual({ data: true });
+  const open = await fetch(server!.health);
+  expect(open.headers.get(HOLD_HEADER)).toBeNull();
   await until(() => recipients("Once only").length === 3, "the released campaign");
   expect(recipients("Once only")).toEqual([
     "alice@example.test",
@@ -222,6 +224,27 @@ test("a restored install sends nothing to someone who opted out after the backup
   ]);
   await Bun.sleep(QUIET_MS);
   expect(recipients("Once only")).toHaveLength(3);
+});
+
+test("a held /health answers the same bytes, with the hold in a header", async () => {
+  const { authorization } = await stack();
+  const plain = await fetch(server!.health);
+  const before = await plain.text();
+  expect(plain.headers.get(HOLD_HEADER)).toBeNull();
+  const output = join(base, "backup");
+  await backupTo(output);
+  await stopServer();
+  restoreInto(output, dataDir);
+  await restart(authorization);
+
+  const held = await fetch(server!.health);
+  expect(held.status).toBe(200);
+  expect(held.headers.get("content-type")).toBe(plain.headers.get("content-type"));
+  expect(await held.text()).toBe(before);
+  const since = held.headers.get(HOLD_HEADER);
+  expect((await runBackup(executable, ["--verify", output])).stdout).toContain(
+    `Hold: held since ${since};`,
+  );
 });
 
 test("while held every path is stopped, what was queued stays, and a refusal still lands", async () => {
@@ -366,12 +389,10 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   expect(sink!.messages.length).toBe(before);
   expect(hooks).toEqual([]);
 
-  const health = (await (await fetch(server!.health)).json()) as {
-    data: boolean;
-    hold: { since: string; reason: string };
-  };
-  expect(health.data).toBe(true);
-  expect(health.hold.reason).toContain("backup");
+  const health = await fetch(server!.health);
+  expect(await health.json()).toEqual({ data: true });
+  const since = health.headers.get(HOLD_HEADER);
+  expect(since).not.toBeNull();
   const login = await held("/admin");
   expect(await login.text()).toContain("restore-hold");
 
@@ -384,7 +405,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   const second = join(base, "second");
   await backupTo(second);
   const report = await runBackup(executable, ["--verify", second]);
-  expect(report.stdout).toContain(`Hold: held since ${health.hold.since}`);
+  expect(report.stdout).toContain(`Hold: held since ${since}`);
   await stopServer();
 
   // A release lets the waiting work go, and the refused requests left nothing behind.

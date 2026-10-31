@@ -395,9 +395,11 @@ restore the backup from step 1, and put back the old executable.
 
 ## Monitoring
 
-- `GET /health` is public and answers `200` and `{"data":true}` once the server is listening, with
-  a `hold` object beside it on a [held](#restore) install. Alert on that: nothing is being sent. It
-  reads that one row and does not exercise the sending loops. `GET /api/health` needs an API user.
+- `GET /health` is public and answers `200` and `{"data":true}` once the server is listening. On a
+  [held](#restore) install the body is byte for byte the same, so a balancer that matches it keeps
+  routing unsubscribes here, and the response adds `X-Iglo-Email-Hold: <since>`. Alert on that
+  header: nothing is being sent. Every signed-in admin page gives the reason. `/health` reads that
+  one row and does not exercise the sending loops. `GET /api/health` needs an API user.
 - A loop that fails for good stops the whole process, with a nonzero exit, so a supervisor with
   `Restart=on-failure` restarts it. Alert on restarts.
 - Watch free disk on the data directory and on the backup destination, and the age of the newest

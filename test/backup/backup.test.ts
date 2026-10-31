@@ -36,6 +36,7 @@ import {
 
 setDefaultTimeout(60_000);
 const PARTIAL = ".iglo-email-backup-partial-";
+const HOLD_HEADER = "x-iglo-email-hold";
 const version = productionMigrations.length;
 let executable = "";
 let publishEntry = "";
@@ -513,8 +514,7 @@ test("a newer executable migrates a restored backup", async () => {
   const lists = await (await client("/api/lists")).json();
   expect(JSON.stringify(lists)).toContain('"kept"');
   // The migration keeps the restore hold the backup placed.
-  const health = (await (await fetch(server.health)).json()) as { hold?: unknown };
-  expect(health.hold).toBeDefined();
+  expect((await fetch(server.health)).headers.get(HOLD_HEADER)).not.toBeNull();
   await stopped();
   expect(names(join(dataDir, "backups"))).toHaveLength(1);
   const after = await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")]);

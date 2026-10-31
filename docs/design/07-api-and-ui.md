@@ -172,7 +172,7 @@ unsafe API requests, including logout, send the `csrf` cookie value as
 API clients do not need CSRF cookies. The default login limit is 20 POSTs per
 client per minute, with at most 4,096 live records. Forwarded IP headers are
 ignored unless the transport peer is in `security.trusted_proxies` (D60). Invalid explicit Authorization never falls back to a cookie.
-Public `/health` remains public; `/api/health` requires a real identity. On a held install `/health` adds a `hold` object beside `data`, with `since` and `reason`, and every signed-in admin page shows the reason. A request that would send now is a 503 that gives it ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)). Reading, and writes that record a person's wish, are unaffected.
+Public `/health` remains public; `/api/health` requires a real identity. On a held install `/health` keeps its exact body and status, because probes match them, and adds an `X-Iglo-Email-Hold` header with the time the hold began; every signed-in admin page shows the reason. A request that would send now is a 503 that gives it ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)). Reading, and writes that record a person's wish, are unaffected.
 
 ## Admin UI
 
