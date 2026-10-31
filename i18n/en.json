@@ -639,6 +639,7 @@
     "settings.smtp.setCustomHeaders": "Set custom headers",
     "settings.smtp.testEnterEmail": "Re-enter password to test",
     "settings.smtp.toEmail": "To e-mail",
+    "settings.security.captchaUnavailable": "Not available in this version. If a stored value enables a CAPTCHA, public subscription forms are refused until it is turned off through PUT /api/settings.",
     "settings.unavailable": "Not available in this version. The stored values are kept, have no effect and cannot be edited here.",
     "settings.unavailableTitle": "Not available",
     "settings.updateAvailable": "A new update {version} is available.",

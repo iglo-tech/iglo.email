@@ -39,7 +39,7 @@ UPDATE users SET password = ?, updated_at = ? WHERE id = ? RETURNING *;
 UPDATE users SET loggedin_at = ? WHERE id = ?;
 
 -- name: remaining-super-admins
-SELECT count(*) AS count FROM users WHERE type = 'user' AND status = 'enabled' AND user_role_id = 1 AND id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?));
+SELECT count(*) AS count FROM users WHERE type = 'user' AND status = 'enabled' AND user_role_id = 1 AND password_login = 1 AND password IS NOT NULL AND id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?));
 
 -- name: delete-users
 DELETE FROM users WHERE id IN (SELECT CAST(value AS INTEGER) FROM json_each(?));

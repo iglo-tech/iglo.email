@@ -113,14 +113,20 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         // Resolve omitted fields only after obtaining the current row and the
         // write lock. Password hashing must already have finished outside here.
         const fields = resolve(previous);
-        if (
+        // A Super Admin who cannot log in does not count: nothing else can repair the install.
+        const canAdminister =
           previous.type === "user" &&
           previous.status === "enabled" &&
           previous.user_role_id === 1n &&
-          (fields.type !== "user" || fields.status !== "enabled" || fields.userRoleId !== 1n) &&
-          remaining([id]) === 0n
-        )
-          return null;
+          previous.password_login === 1n &&
+          previous.password !== null;
+        const stillCan =
+          fields.type === "user" &&
+          fields.status === "enabled" &&
+          fields.userRoleId === 1n &&
+          fields.passwordLogin &&
+          fields.password !== null;
+        if (canAdminister && !stillCan && remaining([id]) === 0n) return null;
         const updated = queries
           .get("update-user")
           .get(

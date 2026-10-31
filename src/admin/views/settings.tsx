@@ -99,11 +99,17 @@ function TextField(props: {
   );
 }
 /** Settings that are stored but do nothing in this build: shown, and not editable. */
-function Unavailable(props: { t: Translation; legend: string; keywords: string; children: Child }) {
+function Unavailable(props: {
+  t: Translation;
+  legend: string;
+  keywords: string;
+  note?: string;
+  children: Child;
+}) {
   return (
     <fieldset class="card" disabled data-unavailable="" data-keywords={props.keywords}>
       <legend>{props.legend}</legend>
-      <p class="text-light">{props.t.T("settings.unavailable")}</p>
+      <p class="text-light">{props.note ?? props.t.T("settings.unavailable")}</p>
       {props.children}
     </fieldset>
   );
@@ -489,6 +495,7 @@ function Security({ t }: { t: Translation }) {
         t={t}
         legend={t.T("settings.security.enableCaptcha")}
         keywords="captcha altcha hcaptcha spam bot protection public form verification"
+        note={t.T("settings.security.captchaUnavailable")}
       >
         <Switch model="form['security.captcha'].altcha.enabled" label="ALTCHA" />
         <Switch model="form['security.captcha'].hcaptcha.enabled" label="hCaptcha" />
