@@ -88,6 +88,8 @@ const externalSelector: Parameter = {
 };
 const html = { "text/html": { type: "string" } };
 const csv = { "text/csv": { type: "string" } };
+/** A campaign renders as text when its content type is `plain`. */
+const rendered = { ...html, "text/plain": { type: "string" } };
 const form: Schema = { type: "object", additionalProperties: true };
 const countResult = object({ count: integer });
 
@@ -1073,7 +1075,7 @@ const campaigns: Operation[] = [
     ...(route.startsWith("POST")
       ? { bodyType: "application/x-www-form-urlencoded", body: form }
       : {}),
-    answer: html,
+    answer: route.endsWith("/archive") ? html : rendered,
   })),
   {
     route: "GET /api/dashboard/counts",

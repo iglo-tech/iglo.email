@@ -764,6 +764,43 @@ export async function runOpenApiContract(target: {
       params: { id: campaign.id },
       body: { body: "# t", from: "markdown", to: "html", content_type: "markdown" },
     });
+    // A plain campaign previews as text, stored or posted; its archive page is still HTML.
+    const plain = (
+      await op("POST /api/campaigns", {
+        body: {
+          name: "plain",
+          subject: "Plain",
+          lists: [list.id],
+          content_type: "plain",
+          body: "plain {{ subscriber.name }}",
+          template_id: campaignTemplate.id,
+        },
+      })
+    ).body.data;
+    check(
+      (await op("GET /api/campaigns/{id}/preview", { params: { id: plain.id } })).type ===
+        "text/plain",
+      "plain-preview",
+    );
+    const plainForm = () => new URLSearchParams({ body: "plain", content_type: "plain" });
+    check(
+      (await op("POST /api/campaigns/{id}/preview", { params: { id: plain.id }, raw: plainForm() }))
+        .type === "text/plain",
+      "plain-posted-preview",
+    );
+    await op("POST /api/campaigns/{id}/text", { params: { id: plain.id }, raw: plainForm() });
+    check(
+      (
+        await op("POST /api/campaigns/{id}/preview/archive", {
+          params: { id: plain.id },
+          raw: new URLSearchParams({
+            template_id: String(campaignTemplate.id),
+            archive_meta: "{}",
+          }),
+        })
+      ).type === "text/html",
+      "plain-archive-preview",
+    );
     await op("POST /api/campaigns/{id}/test", {
       params: { id: campaign.id },
       body: {
