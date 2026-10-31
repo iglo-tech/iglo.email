@@ -4,7 +4,7 @@ import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
-import { helpText, parseBootstrap } from "@/config/bootstrap";
+import { helpText, parseBootstrap, versionText } from "@/config/bootstrap";
 import { createClientAddress } from "@/server/client-address";
 import type { Router } from "@/server/router";
 import { startServer } from "@/server/server";
@@ -109,6 +109,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
     process.stdout.write(helpText + backupHelp + resetPasswordHelp);
+    return;
+  }
+  if (bootstrap.version) {
+    process.stdout.write(versionText);
     return;
   }
 

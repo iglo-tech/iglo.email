@@ -1,5 +1,6 @@
 // Bootstrap flags and configuration are adapted from listmonk's cmd/init.go and cmd/main.go.
 import { isIP } from "node:net";
+import { version } from "@/../package.json";
 
 export interface BootstrapConfig {
   port: number;
@@ -12,10 +13,16 @@ export interface BootstrapConfig {
 type Environment = Record<string, string | undefined>;
 type OptionName = "--port" | "--host" | "--data-dir" | "--root-url";
 
-type BootstrapResult = { help: true } | { help: false; config: BootstrapConfig };
+type BootstrapResult =
+  | { help: true }
+  | { help: false; version: true }
+  | { help: false; version: false; config: BootstrapConfig };
 
 const removedFlags = new Set(["--install", "--upgrade", "--config", "--new-config"]);
 const optionNames = new Set<string>(["--port", "--host", "--data-dir", "--root-url"]);
+
+// Bun inlines package.json at build time, so the compiled executable carries this value.
+export const versionText = `${version}\n`;
 
 export const helpText = `Usage: iglo.email [serve] [options]
 
@@ -25,6 +32,7 @@ Start the HTTP server. Bootstrap options override their environment equivalents:
   --data-dir <path>      IGLO_EMAIL_DATA_DIR   Data directory (default: ./data)
   --root-url <url>       IGLO_EMAIL_ROOT_URL   Public root URL (default: http://<host>:<port>)
   --help                                        Show this help
+  --version                                     Print the version
 
 IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD initialize the first admin
 only when no users exist. Without them public health is available but login is denied.
@@ -34,6 +42,7 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
   const options: Partial<Record<OptionName, string>> = {};
   let sawCommand = false;
   let help = false;
+  let printVersion = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
@@ -50,6 +59,10 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
     }
     if (name === "--help" && equals === -1) {
       help = true;
+      continue;
+    }
+    if (name === "--version" && equals === -1) {
+      printVersion = true;
       continue;
     }
     if (!optionNames.has(name)) throw new Error(`Unknown flag: ${name}`);
@@ -69,6 +82,7 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
   }
 
   if (help) return { help: true };
+  if (printVersion) return { help: false, version: true };
 
   const portValue = options["--port"] ?? env.IGLO_EMAIL_PORT ?? "9000";
   if (!/^[0-9]+$/.test(portValue))
@@ -90,6 +104,7 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
 
   return {
     help: false,
+    version: false,
     config: {
       port,
       host,
