@@ -1,6 +1,7 @@
 // Campaign HTTP endpoints adapted from listmonk cmd/campaigns.go and the /api/campaigns
 // routes in cmd/handlers.go at 6fcd95f. Analytics are M3.3; sending to lists is the M3.2
 // runner: status changes here only record the state.
+import { refuseWhileHeld } from "@/settings/hold";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import type { Message } from "@/messaging/email";
@@ -545,6 +546,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     const input = bindCampaign(await readCampaignBody(context.request));
     recheck(context, "campaigns:send");
     checkCampaign(context, true, id);
+    if (input.status === "running" || input.status === "scheduled") refuseWhileHeld(context.app.db);
     try {
       return ok(projectCampaign(store.updateStatus(id, input.status ?? "")));
     } catch (error) {
@@ -647,6 +649,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const test: Handler = async (context) => {
     const id = BigInt(getID(context));
     checkCampaign(context, true, id);
+    refuseWhileHeld(context.app.db);
     const input: CampaignRequest = bindCampaign(await readCampaignBody(context.request));
     recheck(context, "campaigns:manage_all", "campaigns:manage");
     checkCampaign(context, true, id);

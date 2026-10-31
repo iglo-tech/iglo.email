@@ -12,8 +12,8 @@ function json(value: unknown, status: number): Response {
   return new Response(`${body}\n`, { status, headers: { "Content-Type": "application/json" } });
 }
 
-export function ok(data: unknown, status = 200): Response {
-  return json({ data }, status);
+export function ok(data: unknown, status = 200, extra: Record<string, unknown> = {}): Response {
+  return json({ data, ...extra }, status);
 }
 
 export class HttpError extends Error {

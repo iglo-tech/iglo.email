@@ -7,6 +7,7 @@ import { HttpError, ok } from "@/server/response";
 import { getID, strHasLen } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
+import { validPassword } from "@/users/password";
 import { projectUser, type Identity } from "@/users/models";
 import type { UserFields, UserStore } from "@/users/store";
 
@@ -178,7 +179,7 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
   const createUser: Handler = async (context) => {
     const input = await readJSON(context.request);
     validateCommon(context, input, true);
-    if (input.type === "user" && input.passwordLogin && !strHasLen(input.password, 8, 2000))
+    if (input.type === "user" && input.passwordLogin && !validPassword(input.password))
       invalid(context, "password");
     if (
       !roles.hasRole(input.userRoleId, "user") ||
@@ -225,7 +226,7 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       input.type !== "api" &&
       input.passwordLogin &&
       input.password &&
-      !strHasLen(input.password, 8, 2000)
+      !validPassword(input.password)
     )
       invalid(context, "password");
     const previous = store.byId(id);
@@ -318,7 +319,7 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     const previous = principal.user;
     if (previous.type === "user" && previous.password_login !== 0n) {
       if (!validEmail(input.email)) invalid(context, "email");
-      if (input.password && !strHasLen(input.password, 8, 2000)) invalid(context, "password");
+      if (input.password && !validPassword(input.password)) invalid(context, "password");
     }
     const hash =
       previous.type === "user" && previous.password_login !== 0n && input.password

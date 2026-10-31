@@ -334,6 +334,8 @@ export function createEmailer(options: {
   id?: () => string;
   /** Delivery policy for Cc/Bcc mailboxes, applied to message and server headers. */
   copyAllowed?: (address: string) => boolean;
+  /** Throws to stop a message before it reaches a pool: the restore hold (D67). */
+  refuse?: () => void;
 }) {
   const pools = new Map<string, Pool>();
   const retired = new Set<Pool>();
@@ -593,6 +595,7 @@ export function createEmailer(options: {
    * server's `email_headers` are dropped. Marketing sends use it (one admitted recipient).
    */
   function push(message: Message, delivery: { copies?: boolean } = {}): Dispatch {
+    options.refuse?.();
     const startedAt = options.clock.now().getTime();
     const copies = delivery.copies ?? true;
     if (closed) return dispatch(undefined, message, "", false, startedAt, copies);
@@ -622,6 +625,7 @@ export function createEmailer(options: {
   return {
     push,
     test: (server: SMTPServer, message: Message, rootUrl: string) => {
+      options.refuse?.();
       const startedAt = options.clock.now().getTime();
       return dispatch(structuredClone(server), message, rootUrl, true, startedAt);
     },

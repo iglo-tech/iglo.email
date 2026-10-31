@@ -438,7 +438,7 @@ describe("compiled executable", () => {
 
   test("rejects unknown commands, flags, and missing option values", async () => {
     for (const [args, message] of [
-      [["backup"], "Unknown command"],
+      [["restore"], "Unknown command"],
       [["serve", "--mystery"], "Unknown flag"],
       [["serve", "--port"], "--port"],
       [["serve", "--port", "--host", "127.0.0.1"], "--port"],

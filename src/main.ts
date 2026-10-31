@@ -26,11 +26,13 @@ import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
+import { resetPasswordHelp, runResetPassword } from "@/users/cli";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
@@ -59,6 +61,8 @@ import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createImporter } from "@/subscribers/import/importer";
 import { registerImportRoutes } from "@/subscribers/import/routes";
+import { backupHelp, runBackup } from "@/backup/cli";
+import { flushChildArgument, runFlushChild } from "@/backup/snapshot";
 import { createAttachments } from "@/media/attachments";
 import { createFilesystem } from "@/media/filesystem";
 import { createEmbeds, createPublicImages } from "@/media/embed";
@@ -94,9 +98,13 @@ async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
   if (process.argv[2] === childArgument) return runQueryChild();
   if (process.argv[2] === analyticsChildArgument) return runAnalyticsChild();
+  if (process.argv[2] === flushChildArgument) return runFlushChild();
+  if (process.argv[2] === "backup") return runBackup(process.argv.slice(3), process.env);
+  if (process.argv[2] === "reset-password")
+    return runResetPassword(process.argv.slice(3), process.env);
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
-    process.stdout.write(helpText);
+    process.stdout.write(helpText + backupHelp + resetPasswordHelp);
     return;
   }
 
@@ -217,7 +225,7 @@ async function main(): Promise<void> {
     templateReferences = createCampaignTemplateReferences(db);
     templates = createTemplateStore(db, clock, renderer, templateReferences);
     templates.initialize();
-    const router = createRouter();
+    const router = createRouter(() => restoreHold(db));
     registerTemplateRoutes(router, templates, renderer, auth);
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
@@ -271,6 +279,8 @@ async function main(): Promise<void> {
         return { smtp: current.smtp, rootUrl: current["app.root_url"] };
       },
       copyAllowed: (address) => !addressBlocklisted(subscriberStore!, address),
+      // Past every loop's and route's own check: nothing reaches SMTP from a held install (D67).
+      refuse: () => refuseWhileHeld(db),
     });
     mediaStore = createMediaStore(db, clock);
     const media = mediaStore;

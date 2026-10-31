@@ -1,5 +1,6 @@
 // Adapted from listmonk cmd/auth.go (ForgotPage, ResetPage, doForgotPassword, doResetPassword)
 // and static/public/templates/{forgot,reset}-password.html at 6fcd95f.
+import { restoreHold } from "@/settings/hold";
 import type { ErrorLogger } from "@/app";
 import { render, type Child } from "@/jsx/render";
 import type { Dispatch, Message } from "@/messaging/email";
@@ -9,11 +10,11 @@ import { publicMessage } from "@/public/message";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
-import { strHasLen } from "@/server/validation";
 import { systemTemplates } from "@/templates/builtins";
 import type { TemplateRenderer } from "@/templates/renderer";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
+import { validPassword } from "@/users/password";
 
 export interface ResetSettings {
   siteName: string;
@@ -125,6 +126,9 @@ export function createPasswordReset(deps: ResetDeps) {
     );
   };
   const postForgot: Handler = async (context) => {
+    // Refused for every address alike, so this says nothing about any of them.
+    const hold = restoreHold(context.app.db);
+    if (hold) return message(context, 503, `Sending is held. ${hold.reason}`);
     const fields = await formFields(context);
     const email = (fields.get("email") ?? "").trim().toLowerCase();
     // The answer leaves first, so neither it nor its timing depends on the address.
@@ -182,7 +186,7 @@ export function createPasswordReset(deps: ResetDeps) {
     if (!auth.resetValid(email, token)) return invalidLink(context);
     const t = context.app.i18n;
     const password = fields.get("password") ?? "";
-    if (!strHasLen(password, 8, 2000))
+    if (!validPassword(password))
       return resetForm(
         context,
         token,

@@ -5,6 +5,7 @@ import type { ErrorLogger } from "@/app";
 import type { Claimed, Sends } from "@/messaging/sends";
 import type { createEmailer } from "@/messaging/email";
 import { startLoop } from "@/loops/loop";
+import { sendingHeld } from "@/settings/hold";
 
 // A marketing send has exactly one SMTP recipient, its admitted subscriber.
 const copies = (row: { kind: string }) => ({ copies: row.kind !== "marketing" });
@@ -30,7 +31,7 @@ export function startOutbox(options: {
     deadline?.abort();
     deadline = undefined;
     const due = options.sends.nextDue();
-    if (!due || stopped) return;
+    if (!due || stopped || sendingHeld(options.db)) return;
     const delay = Math.max(0, Date.parse(due) - options.clock.now().getTime());
     const controller = new AbortController();
     deadline = controller;
@@ -63,6 +64,7 @@ export function startOutbox(options: {
     batchSize: 1,
     // One loop item is a batch: its claims and admissions committed together before SMTP.
     claim: (now, lease) => {
+      if (sendingHeld(options.db)) return [];
       const batch = options.sends.claimBatch(now, lease, batchSize);
       return batch.length ? [batch] : [];
     },
@@ -105,7 +107,7 @@ export function startOutbox(options: {
      * unclaimed rows stay with the loop.
      */
     dispatch(ids: bigint[]): Promise<void> {
-      if (stopped) return Promise.resolve();
+      if (stopped || sendingHeld(options.db)) return Promise.resolve();
       const now = options.clock.now();
       const lease = new Date(now.getTime() + 60000);
       const batch = options.sends.claimQueued(ids, now, lease);

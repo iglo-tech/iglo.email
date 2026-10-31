@@ -122,6 +122,14 @@ A journal created without a policy still fails marketing closed
 only as at-most-once component evidence. Transactional linked subscribers
 are rechecked before sending, including blocklist and identity replacement.
 
+### Restore hold
+
+Every sending path stops on a database restored from a backup, until an operator releases it
+([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)).
+The loops claim nothing, so queued rows stay queued and nothing is marked failed. A request that
+would send now gets a 503 that says why. At-most-once is a promise about one database history, and
+a restore starts another.
+
 ## Unsubscribe
 
 - **Campaigns:** as in listmonk. `unsubscribe_url` in templates, plus `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers (RFC 8058) when `privacy.unsubscribe_header` is on.

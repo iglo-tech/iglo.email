@@ -10,6 +10,7 @@ import { parseDuration } from "@/conditions/duration";
 import { writeTransaction } from "@/db/transaction";
 import type { EventStore } from "@/events/store";
 import { startLoop } from "@/loops/loop";
+import { sendingHeld } from "@/settings/hold";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Message } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
@@ -342,7 +343,9 @@ export function startScheduler(options: {
     batchSize: BATCH,
     signal: options.signal,
     claim: (now, lease, batch) =>
-      enrollments.claimDue(now, lease, batch).map((id) => ({ id, lease: lease.toISOString() })),
+      sendingHeld(db)
+        ? []
+        : enrollments.claimDue(now, lease, batch).map((id) => ({ id, lease: lease.toISOString() })),
     async process(item) {
       try {
         await decide(item);

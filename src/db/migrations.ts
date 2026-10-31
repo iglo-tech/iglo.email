@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Clock } from "@/clock";
 import { maskSql } from "@/db/sql";
 import { writeTransaction } from "@/db/transaction";
+import { placeRestoreHold } from "@/settings/hold";
 import initial from "@/migrations/0001_init.sql" with { type: "text" };
 import outbox from "@/migrations/0002_outbox.sql" with { type: "text" };
 import sendAttempts from "@/migrations/0003_send_attempts.sql" with { type: "text" };
@@ -108,6 +109,19 @@ function userVersion(db: Database): number {
   return Number(value);
 }
 
+/** A snapshot is a recovery artifact, so it starts held (D67). The live database gets no row. */
+function holdSnapshot(path: string, clock: Clock, version: number): void {
+  const snapshot = new Database(path, { strict: true, safeIntegers: true });
+  try {
+    snapshot.run("PRAGMA journal_mode = DELETE");
+    // Version 0 is not this application's schema, whatever its tables are called.
+    if (version > 0 && snapshot.query("SELECT 1 FROM sqlite_schema WHERE name = 'settings'").get())
+      placeRestoreHold(snapshot, clock.now().toISOString());
+  } finally {
+    snapshot.close(true);
+  }
+}
+
 function createSnapshot(db: Database, dataDir: string, clock: Clock, version: number): string {
   const backups = join(dataDir, "backups");
   mkdirSync(backups, { recursive: true });
@@ -117,6 +131,7 @@ function createSnapshot(db: Database, dataDir: string, clock: Clock, version: nu
   const destination = join(backups, `iglo-email-${timestamp}-${crypto.randomUUID()}.db`);
   try {
     db.run("VACUUM INTO ?", [temporary]);
+    holdSnapshot(temporary, clock, version);
     const snapshot = new Database(temporary, { readonly: true, safeIntegers: true });
     try {
       const integrity = snapshot

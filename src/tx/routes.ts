@@ -2,6 +2,7 @@
 // and models/messages.go (TxMessage.Render) at 6fcd95f. Recipient rules, idempotency,
 // async and the response body follow docs/design/04-sending.md; marketing unsubscribe
 // links, headers and tracking come from src/unsubscribe (M2.4).
+import { refuseWhileHeld } from "@/settings/hold";
 import { createHash } from "node:crypto";
 import { dummyUUID } from "@/campaigns/render";
 import type { Message } from "@/messaging/email";
@@ -102,6 +103,8 @@ export function registerTxRoutes(
         if (error instanceof TxInputError) throw invalid(error.field);
         throw error;
       }
+      // An async message is a row that waits with the rest of the queue; this one would not.
+      if (!m.async) refuseWhileHeld(context.app.db);
       const policy = deps.policy();
       const requestedFrom = m.fromEmail;
       const { emails, ids, mode } = validate(m, policy, invalid, {

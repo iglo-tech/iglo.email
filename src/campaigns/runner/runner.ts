@@ -9,6 +9,7 @@ import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import { startLoop } from "@/loops/loop";
+import { sendingHeld } from "@/settings/hold";
 import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
@@ -301,6 +302,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
   }
 
   function claim(nowDate: Date): Batch[] {
+    if (sendingHeld(db)) return [];
     const now = nowDate.getTime();
     const settings = deps.settings();
     // Another runner in this process is sending a batch: wait for it.

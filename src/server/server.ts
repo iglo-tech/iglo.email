@@ -2,10 +2,19 @@
 import type { App } from "@/app";
 import { ok } from "@/server/response";
 import { Router } from "@/server/router";
+import type { RestoreHold } from "@/settings/hold";
 
-export function createRouter(): Router {
+/** Names when a hold began. The body stays the same, since probes match it (D67). */
+const HOLD_HEADER = "X-Iglo-Email-Hold";
+
+export function createRouter(hold: () => RestoreHold | null = () => null): Router {
   const router = new Router();
-  router.route("GET", "/health", () => ok(true));
+  router.route("GET", "/health", () => {
+    const response = ok(true);
+    const held = hold();
+    if (held) response.headers.set(HOLD_HEADER, held.since);
+    return response;
+  });
   return router;
 }
 

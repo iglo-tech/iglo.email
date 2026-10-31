@@ -1,6 +1,7 @@
 // Public subscriber pages and APIs, adapted from listmonk cmd/public.go, cmd/handlers.go
 // (public routes, hasUUID, hasSub, noIndex, serveCustomAppearance) and
 // static/public/templates (optin.html, subscription-form.html) at 6fcd95f.
+import { sendingHeld } from "@/settings/hold";
 import type { Database } from "bun:sqlite";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
@@ -346,6 +347,7 @@ export function registerPublicRoutes(
       const sub = subscriber(context);
       if (sub instanceof Response) return sub;
       if (!deps.settings().allowExport) return failed(t, 400, t.T("public.invalidFeature"));
+      if (sendingHeld(context.app.db)) return failed(t, 503, t.T("public.errorProcessingRequest"));
       try {
         deps.mail.exportData(sub);
       } catch (error) {

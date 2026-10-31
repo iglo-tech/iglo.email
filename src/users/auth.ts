@@ -5,6 +5,7 @@ import type { Roles } from "@/roles/roles";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Identity, UserRow } from "@/users/models";
+import { hashPassword } from "@/users/password";
 import type { UserStore } from "@/users/store";
 import { verifyTOTP } from "@/users/totp";
 
@@ -115,7 +116,7 @@ export async function createAuthentication(
     throw new Error("Invalid authentication policy");
   const root = new URL(rootUrl);
   const work = new PasswordWork(policy);
-  const dummy = await work.run(() => Bun.password.hash(randomValue(), { algorithm: "argon2id" }));
+  const dummy = await work.run(() => hashPassword(randomValue()));
   const attempts = new Map<string, { start: number; count: number }>();
   const challenges = new Map<string, { user: UserRow; expires: number; failed: number }>();
   // Only in-flight proofs have entries; completed operations leave no per-user history.
@@ -335,7 +336,7 @@ export async function createAuthentication(
       return [setCookie("session", "", true, 0), setCookie("csrf", "", false, 0)];
     },
     async hash(password: string): Promise<string> {
-      return work.run(() => Bun.password.hash(password, { algorithm: "argon2id" }));
+      return work.run(() => hashPassword(password));
     },
     async login(
       username: string,
@@ -433,7 +434,7 @@ export async function createAuthentication(
       password: string,
     ): Promise<{ id: string; csrf: string; duration: number } | { token: string } | null> {
       if (!resetEntry(email, token)) return null;
-      const hash = await work.run(() => Bun.password.hash(password, { algorithm: "argon2id" }));
+      const hash = await work.run(() => hashPassword(password));
       const entry = resetEntry(email, token);
       if (!entry) return null;
       resets.delete(email);

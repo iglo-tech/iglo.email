@@ -2,6 +2,7 @@
 import type { Sends, SendFilter } from "@/messaging/sends";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
+import { refuseWhileHeld } from "@/settings/hold";
 import { getID, hasID } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
@@ -67,6 +68,7 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
     "POST",
     "/api/sends/:id/resend",
     async (context) => {
+      refuseWhileHeld(context.app.db);
       const body = await readBody(context.request);
       if (
         body &&

@@ -33,6 +33,8 @@ The port must be an integer from 1 to 65535; the host must be a hostname or IP a
 
 `IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD` are recognized as initial-admin inputs but are not used yet. User creation is planned for M1.3; credentials are not required to start the skeleton. The listmonk flags `--install`, `--upgrade`, `--config` and `--new-config` are not supported: see the [scope](docs/design/01-scope.md).
 
+To run it in production, including backups and restores, follow the [operations guide](docs/operations.md).
+
 ## Local checks
 
 ```sh

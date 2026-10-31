@@ -627,3 +627,36 @@ Decided by agents on 2026-10-31, for owner review.
 - **What a save changes:** nothing until someone edits in the rich-text editor. The editor mounts the sanitized copy and the form keeps the stored body, so a save without an edit, a preview or a switch to another format uses the original. An edit there replaces the body with the editor's copy, and a warning above the editor names what was left out and says to change the format to raw HTML first to keep it. That warning also lists what a paste lost. Raw HTML, Markdown and plain text are unchanged: their editors show text, and mail sending never uses this code.
 - **Accepted limits:** `style` is kept as written, because a newsletter needs it, so a body can restyle or cover part of the page it is mounted in, without running anything. Images load from their stored address in the editor, as before; the no-fetch policy is the preview's (D54). `id` is kept for anchors and can define a `window` name, which no admin code reads. An orphan `<td>` or `<tr>` loses its tags when parsed as a document. Squire keeps normalising what it mounts, as `strong` to `b`; that is the editor's behaviour, not this list's. Squire's `root.innerHTML` for undo only ever sees this output, which holds no raw-text or foreign elements to reparse differently, and its paste fallback needs a browser without `clipboardData.items`.
 - **Not chosen:** DOMPurify, which is a sound option but a runtime dependency for a list this short, and whose defaults keep SVG, which nothing here needs. Isolating the editor in a sandboxed frame, which Squire and the page's toolbars, dialogs and media picker do not support without a rewrite. Rewriting the stored body on load, which would change what is sent without the author doing anything.
+
+## D67. A restored database holds all sending until an operator releases it
+
+Decided by agents on 2026-10-31, for owner review.
+
+- **Decision:** `backup` and the migration runner write a hold into their snapshot itself, after `VACUUM INTO`. A database with a hold sends nothing, by any path, until `iglo.email backup --release-hold --consent-reconciled` ends it on a stopped server. `/health`, reading the admin and API, and every write that records a person's wish keep working. `/health` answers the same bytes, since a balancer's body match would otherwise drop a held instance and the unsubscribes behind it; the hold is an `X-Iglo-Email-Hold` header there and the reason is in the admin shell.
+- **Why:** a restore loses the deliveries and opt-outs after the snapshot, so admission checks have nothing to refuse with. A review reproduced a scheduled campaign reaching someone who had unsubscribed, twice, through the documented procedure. At-most-once holds only within one database history, and pausing running campaigns by hand missed scheduled ones, queued mail and sequences. Safety that needs an operator step fails when the step is missed, so the data carries it: a restored database starts held however it was copied.
+- **Storage:** a `restore.hold` row in `settings`, which is in every schema version a backup can have, so no migration is needed and none can clear it. `defaults` does not name it, so `GET` and `PUT /api/settings` neither show nor write it. The row stays after a release, with `released_at`, as the record of it. A row that cannot be read counts as a hold. `backup` of a held install keeps the row, so the hold keeps the date its gap began.
+- **Sending paths.** One owner, `src/settings/hold.ts`. These are all the ways a message reaches the emailer or a webhook reaches the network, and each has a case in `test/backup/hold.test.ts`:
+
+| Path | While held |
+|---|---|
+| Campaign runner, running and scheduled | Claims nothing; the status stays |
+| Outbox loop, marketing and transactional, and its retries | Claims nothing; rows stay `queued` |
+| Outbox dispatch of `POST /api/tx` | Refused with 503 before a row exists. `async` messages queue instead |
+| `POST /api/sends/:id/resend` | 503 |
+| `POST /api/campaigns/:id/test` | 503 |
+| `PUT /api/campaigns/:id/status` to `running` or `scheduled` | 503; pausing and cancelling work |
+| `POST /api/settings/smtp/test` | 503 |
+| Sequence scheduler | Claims nothing; enrollments wait |
+| `POST /api/enrollments` with `test` | 503 |
+| `POST /api/subscribers/:id/optin` | 503 |
+| Opt-in mail from an admin write or a public signup | The write lands; the mail is a row that stays `queued` |
+| `POST /subscription/export/:subUUID` | 503 page |
+| `POST /admin/forgot` | 503 page, for every address alike |
+| Webhook delivery | Claims nothing; deliveries stay pending |
+
+- **Last gate:** `emailer.push` and `emailer.test` make the same check and throw, so a path added later and missing from this list fails closed. It stands behind the loops rather than replacing them, since a refused push would mark rows failed.
+- **Release:** refused without the acknowledgement flag, and refused while anything has the database open, which an EXCLUSIVE lock attempt detects. The server reads the row and never writes it. A hold stops duplicates and sends on stale consent. It does not recover a lost opt-out: the operator does that during the hold, as [the guide](../operations.md#restore) sets out.
+- **Account recovery:** a restored database has old passwords and `/admin/forgot` is refused, so `iglo.email reset-password --data-dir <path> --user <name>` sets a password locally. It reads the password from stdin, on a stopped server detected as a release is, and uses the users owner's rule, hash and `setPassword`, which ends that user's sessions. It leaves the hold in place and the second factor required (D30), so getting back in never needs a release. A challenge still follows for a TOTP user. Control of the machine proves the same as the mailbox did, and no more.
+- **Pre-migration snapshots:** the application creates them for going back, so they are held like a backup: an avoidable gap otherwise. The hold goes in the snapshot and never in the live database. The runner has no restoring rollback: a failed migration rolls back its own transaction and startup stops, so the live database stays at its version, unheld, and the snapshot stays in `backups/`. An unversioned database is not this application's schema, whatever its tables are called, and gets no hold.
+- **Accepted limits:** the hold is in what `backup` and the migration runner write. A disk image or a hand copy does not add one, though a copy of a held database keeps its row, and a pre-migration snapshot from before this rule has none. A running install that takes a backup is not held itself. Rows queued during a hold go out at release, with their consent checked then.
+- **Not chosen:** a `--restored` start flag or a procedure of SQL statements, which fail open when forgotten. A new table, which older snapshots lack and which would need `backup` to create it. A hold in the settings API, where one saved form could clear it.

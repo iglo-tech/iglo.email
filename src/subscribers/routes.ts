@@ -1,4 +1,5 @@
 // Adapted from listmonk cmd/subscribers.go and cmd/handlers.go at 6fcd95f.
+import { refuseWhileHeld } from "@/settings/hold";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -310,6 +311,7 @@ export function registerSubscriberRoutes(
         const id = BigInt(getID(c));
         allowed(c, [id], "manage");
         const row = required(c, id);
+        refuseWhileHeld(c.app.db);
         try {
           optin.send(row);
         } catch (error) {
