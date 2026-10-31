@@ -2,13 +2,14 @@
 import type { App } from "@/app";
 import { ok } from "@/server/response";
 import { Router } from "@/server/router";
-import { restoreHold } from "@/settings/hold";
+import type { RestoreHold } from "@/settings/hold";
 
-export function createRouter(): Router {
+/** `hold` is D67's state, which the public health answer shows beside `data`. */
+export function createRouter(hold: () => RestoreHold | null = () => null): Router {
   const router = new Router();
-  router.route("GET", "/health", (context) => {
-    const hold = restoreHold(context.app.db);
-    return ok(true, 200, hold ? { hold } : {});
+  router.route("GET", "/health", () => {
+    const held = hold();
+    return ok(true, 200, held ? { hold: held } : {});
   });
   return router;
 }

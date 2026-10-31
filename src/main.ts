@@ -31,7 +31,7 @@ import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
-import { refuseWhileHeld } from "@/settings/hold";
+import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
@@ -222,7 +222,7 @@ async function main(): Promise<void> {
     templateReferences = createCampaignTemplateReferences(db);
     templates = createTemplateStore(db, clock, renderer, templateReferences);
     templates.initialize();
-    const router = createRouter();
+    const router = createRouter(() => restoreHold(db));
     registerTemplateRoutes(router, templates, renderer, auth);
     registerUserRoutes(router, users, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
