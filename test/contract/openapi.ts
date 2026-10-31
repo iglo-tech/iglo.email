@@ -549,6 +549,59 @@ export async function runOpenApiContract(target: {
     await op("GET /api/enrollments/{id}", { params: { id: enrollment.id } });
     await op("GET /api/enrollments/{id}/timeline", { params: { id: enrollment.id } });
     await op("DELETE /api/enrollments/{id}", { params: { id: enrollment.id } });
+    // An editor sends the IDs back: a step without one would be replaced, not updated.
+    const stored = (await op("GET /api/sequences/{id}", { params: { id: sequence.id } })).body.data;
+    const kept = (
+      await op("PUT /api/sequences/{id}", {
+        params: { id: sequence.id },
+        body: {
+          ...definition,
+          steps: stored.steps.map(({ id, wait, kind, template_id }: Record<string, unknown>) => ({
+            id,
+            wait,
+            kind,
+            template_id,
+          })),
+        },
+      })
+    ).body.data;
+    check(
+      kept.steps.every(({ id }: { id: number }, index: number) => id === stored.steps[index].id),
+      "sequence-step-ids",
+    );
+    const forced = (
+      await op("POST /api/enrollments", {
+        body: { sequence_id: sequence.id, subscriber_id: subscriber.id, force: true },
+      })
+    ).body.data;
+    await op("POST /api/enrollments", {
+      body: { sequence_id: sequence.id, subscriber_id: subscriber.id, force: true },
+    });
+    await op("GET /api/enrollments/{id}", { params: { id: forced.id } });
+    // A step outlives its template, and then has none.
+    const passing = (
+      await op("POST /api/templates", {
+        body: { name: "passing", type: "tx", subject: "x", body: "<p>x</p>" },
+      })
+    ).body.data;
+    const orphan = (
+      await op("POST /api/sequences", {
+        body: {
+          name: "orphan",
+          status: "draft",
+          trigger: { event: "orphan" },
+          reentry: "never",
+          list_id: list.id,
+          steps: [{ wait: "PT1H", kind: "transactional", template_id: passing.id }],
+        },
+      })
+    ).body.data;
+    await op("DELETE /api/templates/{id}", { params: { id: passing.id } });
+    check(
+      (await op("GET /api/sequences/{id}", { params: { id: orphan.id } })).body.data.steps[0]
+        .template_id === null,
+      "sequence-step-without-template",
+    );
     const immediate = (
       await op("POST /api/sequences", {
         body: {

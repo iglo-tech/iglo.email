@@ -76,18 +76,16 @@ const listFields = {
 };
 const roleList = object({ id: integer, name: string, permissions: array(listPermission) });
 const trigger = input({ event: string, where: free }, ["event"]);
-const step = (write: boolean) => ({
+const step = {
   wait: { ...string, description: "ISO 8601 duration." },
   kind: stepKind,
-  template_id: integer,
   subject: nullable(string),
   condition: nullable(ref("Condition")),
   on_false: choice("skip", "exit"),
   cap_policy: choice("defer", "skip"),
   max_late: nullable(string),
-  ...(write ? {} : { id: integer, uuid, position: integer, created_at: time, updated_at: time }),
-});
-const sequenceFields = (write: boolean) => ({
+};
+const sequenceFields = () => ({
   name: string,
   status: choice("draft", "active", "paused", "archived"),
   trigger,
@@ -473,13 +471,33 @@ export const schemas: Record<string, Schema> = {
       "Exactly one of `all`, `any`, `not`, `event`, `attr`, `list` or `sql`. See docs/design/05-sequences.md.",
   },
   SequenceStep: object({
-    ...step(false),
+    id: integer,
+    uuid,
+    position: integer,
+    ...step,
+    template_id: {
+      ...nullable(integer),
+      description: "Null once the template is deleted.",
+    },
+    created_at: time,
+    updated_at: time,
   }),
-  StepInput: input(step(true), ["wait", "kind", "template_id"]),
+  StepInput: input(
+    {
+      id: {
+        ...nullable(integer),
+        description:
+          "An active step of this sequence, which is then updated. A step without one is new, and an active step left out is deleted.",
+      },
+      ...step,
+      template_id: integer,
+    },
+    ["wait", "kind", "template_id"],
+  ),
   SequenceSummary: object({
     id: integer,
     uuid,
-    ...sequenceFields(false),
+    ...sequenceFields(),
     created_at: time,
     updated_at: time,
     active_enrollments: integer,
@@ -487,7 +505,7 @@ export const schemas: Record<string, Schema> = {
   Sequence: object({
     id: integer,
     uuid,
-    ...sequenceFields(false),
+    ...sequenceFields(),
     created_at: time,
     updated_at: time,
     active_enrollments: integer,
@@ -495,7 +513,7 @@ export const schemas: Record<string, Schema> = {
   }),
   SequenceInput: input(
     {
-      ...sequenceFields(true),
+      ...sequenceFields(),
       steps: array(ref("StepInput")),
     },
     ["name", "trigger"],
@@ -536,10 +554,19 @@ export const schemas: Record<string, Schema> = {
     },
     ["subscriber_email"],
   ),
-  EnrollmentInput: input({ sequence_id: integer, subscriber_id: integer, test: boolean }, [
-    "sequence_id",
-    "subscriber_id",
-  ]),
+  EnrollmentInput: input(
+    {
+      sequence_id: integer,
+      subscriber_id: integer,
+      test: boolean,
+      force: {
+        ...boolean,
+        description:
+          "Enroll whatever `reentry` says, replacing a running enrollment. Not with `test`.",
+      },
+    },
+    ["sequence_id", "subscriber_id"],
+  ),
   TimelineEntry: {
     oneOf: [
       object({ type: { const: "trigger" }, at: time, name: string, data: free }),
