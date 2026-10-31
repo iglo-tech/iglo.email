@@ -64,6 +64,9 @@ function build(operation: Operation): Record<string, unknown> {
     ...(operation.anonymous ? { security: [] } : {}),
     ...(operation.session ? { security: [{ SessionCookie: [] }] } : {}),
     ...(operation.permissions ? { "x-required-permissions": operation.permissions } : {}),
+    ...(operation.alsoPermissions
+      ? { "x-also-required-permissions": operation.alsoPermissions }
+      : {}),
     ...(operation.native ? { "x-native": true } : {}),
     ...(named.length ? { "x-differences": named } : {}),
     parameters: [
@@ -109,7 +112,7 @@ export function buildDocument(): string {
       title: "iglo.email",
       version: packageJson.version,
       description:
-        "The API of iglo.email. Ported endpoints keep listmonk v7.0.0-beta.1's contract except for the differences in `x-deliberate-differences`; an operation names those that touch it in `x-differences`. `x-native` marks endpoints listmonk does not have. `x-required-permissions` holds the permissions of which any one is enough. Mutations by session cookie also need the `X-CSRF-Token` header. Rows beyond the caller's list role are left out of answers.",
+        "The API of iglo.email. Ported endpoints keep listmonk v7.0.0-beta.1's contract except for the differences in `x-deliberate-differences`; an operation names those that touch it in `x-differences`. `x-native` marks endpoints listmonk does not have. `x-required-permissions` holds the permissions of which any one is enough, and every operation with a permission has it; `list:get` and `list:manage` there are grants on that list in the caller's list role. `x-also-required-permissions` holds further groups, one of each needed as well. Mutations by session cookie also need the `X-CSRF-Token` header. Rows beyond the caller's list role are left out of answers.",
       license: { name: "AGPL-3.0", url: "https://www.gnu.org/licenses/agpl-3.0.html" },
     },
     servers: [{ url: "/" }],

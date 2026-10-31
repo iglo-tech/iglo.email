@@ -20,8 +20,13 @@ export interface Operation {
   anonymous?: boolean;
   /** A browser session only: API credentials are refused. */
   session?: boolean;
-  /** Any one of these; the first is the one a refusal names. */
+  /**
+   * Any one of these; the first is the one a refusal names. `list:get` and `list:manage` are
+   * grants on the list in question, from the caller's list role.
+   */
   permissions?: string[];
+  /** Needed on top of `permissions`: any one of each group. */
+  alsoPermissions?: string[][];
   query?: Parameter[];
   /** A JSON schema, or a named media type with its schema. */
   body?: Schema;
@@ -92,6 +97,9 @@ const csv = { "text/csv": { type: "string" } };
 const rendered = { ...html, "text/plain": { type: "string" } };
 const form: Schema = { type: "object", additionalProperties: true };
 const countResult = object({ count: integer });
+const readSubscribers = ["subscribers:get", "subscribers:get_all"];
+const readList = ["list:get", "lists:get_all"];
+const manageList = ["list:manage", "lists:manage_all"];
 
 const health: Operation[] = [
   {
@@ -321,6 +329,7 @@ const lists: Operation[] = [
     id: "deleteLists",
     tag: "Lists",
     summary: "Delete lists by ID or query.",
+    permissions: manageList,
     query: [ids, ...q("query", "type", "optin", "status"), tags, { name: "all", schema: boolean }],
     data: yes,
     errors: [400],
@@ -330,6 +339,7 @@ const lists: Operation[] = [
     id: "getListById",
     tag: "Lists",
     summary: "One list, under the list scope.",
+    permissions: readList,
     data: ref("List"),
   },
   {
@@ -337,6 +347,7 @@ const lists: Operation[] = [
     id: "updateListById",
     tag: "Lists",
     summary: "Update a list, under the list scope.",
+    permissions: manageList,
     body: ref("ListInput"),
     data: ref("List"),
   },
@@ -345,6 +356,7 @@ const lists: Operation[] = [
     id: "deleteListById",
     tag: "Lists",
     summary: "Delete a list, under the list scope.",
+    permissions: manageList,
     data: yes,
   },
   {
@@ -352,6 +364,10 @@ const lists: Operation[] = [
     id: "getListAnalytics",
     tag: "Analytics",
     summary: "Counts per list.",
+    description:
+      "`subscriptions` and `unsubscriptions` need only the list. The campaign permissions are for the other types.",
+    permissions: readList,
+    alsoPermissions: [["campaigns:get", "campaigns:get_all"], ["campaigns:get_analytics"]],
     query: analytics,
     data: array({ anyOf: [ref("ListCount"), ref("LinkCount")] }),
   },
@@ -363,6 +379,7 @@ const subscribers: Operation[] = [
     id: "getSubscribers",
     tag: "Subscribers",
     summary: "Query subscribers, under the list scope.",
+    permissions: readSubscribers,
     query: [...subscriberSelection, ...sorted, ...paging],
     data: page(ref("Subscriber"), true, true),
   },
@@ -389,6 +406,7 @@ const subscribers: Operation[] = [
     id: "exportSubscribers",
     tag: "Subscribers",
     summary: "Export a selection as CSV.",
+    permissions: readSubscribers,
     query: [
       { ...ids, description: "Only these subscribers, as `id=1&id=2`." },
       ...subscriberSelection,
@@ -454,6 +472,7 @@ const subscribers: Operation[] = [
     id: "getSubscriberById",
     tag: "Subscribers",
     summary: "One subscriber, under the list scope.",
+    permissions: readSubscribers,
     data: ref("Subscriber"),
   },
   {
@@ -519,7 +538,7 @@ const subscribers: Operation[] = [
     id: "getSubscriberActivity",
     tag: "Subscribers",
     summary: "A subscriber's views by campaign and clicks by link, under the list scope.",
-    permissions: ["subscribers:get", "subscribers:get_all"],
+    permissions: readSubscribers,
     data: ref("SubscriberActivity"),
   },
   {
@@ -536,7 +555,7 @@ const subscribers: Operation[] = [
     id: "exportSubscriberData",
     tag: "Subscribers",
     summary: "A subscriber's data as a `data.json` download, under the list scope.",
-    permissions: ["subscribers:get", "subscribers:get_all"],
+    permissions: readSubscribers,
     answer: { "application/json": ref("SubscriberExport") },
   },
   {
@@ -545,6 +564,7 @@ const subscribers: Operation[] = [
     tag: "Subscribers",
     summary: "A subscriber's events, newest first.",
     native: true,
+    permissions: readSubscribers,
     query: nativePaging,
     data: page(ref("SubscriberEvent")),
   },
@@ -552,8 +572,10 @@ const subscribers: Operation[] = [
     route: "GET /api/subscribers/{id}/enrollments",
     id: "getSubscriberEnrollments",
     tag: "Subscribers",
-    summary: "A subscriber's enrollments; also needs `sequences:get`.",
+    summary: "A subscriber's enrollments.",
     native: true,
+    permissions: readSubscribers,
+    alsoPermissions: [["sequences:get"]],
     query: nativePaging,
     data: page(ref("Enrollment")),
   },
@@ -561,8 +583,10 @@ const subscribers: Operation[] = [
     route: "GET /api/subscribers/{id}/sends",
     id: "getSubscriberSends",
     tag: "Subscribers",
-    summary: "A subscriber's sends; also needs `sends:get`.",
+    summary: "A subscriber's sends.",
     native: true,
+    permissions: readSubscribers,
+    alsoPermissions: [["sends:get"]],
     query: nativePaging,
     data: page(ref("Send")),
   },
@@ -576,6 +600,7 @@ const subscribers: Operation[] = [
         tag: "Subscribers",
         summary: "One subscriber by app ID.",
         native: true,
+        permissions: readSubscribers,
         query,
         data: ref("Subscriber"),
       },

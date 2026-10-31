@@ -84,7 +84,7 @@ describe("document", () => {
 
   test("is OpenAPI 3.1 with the size the design states", () => {
     expect(document.openapi).toBe("3.1.0");
-    expect(buildDocument().length).toBeLessThan(256 * 1024);
+    expect(Buffer.byteLength(buildDocument())).toBeLessThan(256 * 1024);
   });
   test("is the same on every build and names no instance", () => {
     expect(buildDocument()).toBe(buildDocument());

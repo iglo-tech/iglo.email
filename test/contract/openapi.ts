@@ -1189,7 +1189,8 @@ export async function runOpenApiContract(target: {
     for (const { key } of secured)
       await op(key, { ...placeholders(key, "999999"), auth: null, expect: 403 });
 
-    // And names its permission to a caller without one.
+    // And names its permission to a caller without one. An operation refused for a permission
+    // has to document it: the annotation is not optional.
     const none = (
       await send("POST", "/api/roles/users", { body: { name: "none", permissions: [] } })
     ).body.data;
@@ -1199,11 +1200,69 @@ export async function runOpenApiContract(target: {
       })
     ).body.data;
     const denied = `Basic ${btoa(`none:${caller.password}`)}`;
-    for (const { key, operation } of operations) {
+    const refusal = (reply: Reply) =>
+      reply.status === 403 && /^permission denied/.test(reply.body?.message ?? "");
+    /** The query an operation cannot be reached without. */
+    const needed = (operation: any) => {
+      const query = (operation.parameters as { in: string; name: string; required?: boolean }[])
+        .filter(({ in: at, name, required }) => at === "query" && (required || name === "id"))
+        .map(({ name }) => `${name}=${name === "id" ? "999999" : "2020-01-01"}`);
+      return query.length ? `?${query.join("&")}` : "";
+    };
+    const filled = (key: string) =>
+      key.split(" ")[1]!.replace(/\{(\w+)\}/g, (_, name) => (name === "id" ? "999999" : "x"));
+    const reachable = operations.filter(
+      ({ operation }) =>
+        operation.security?.length !== 0 && !operation.security?.[0]?.SessionCookie,
+    );
+    for (const { key, operation } of reachable) {
       const permissions = operation["x-required-permissions"] as string[] | undefined;
-      if (!permissions) continue;
-      const reply = await op(key, { ...placeholders(key, "999999"), auth: denied, expect: 403 });
-      check(reply.body.message === `permission denied: ${permissions[0]}`, `permission-${key}`);
+      const query = needed(operation);
+      if (permissions) {
+        const reply = await op(key, {
+          ...placeholders(key, "999999"),
+          query,
+          auth: denied,
+          expect: 403,
+        });
+        // A grant on a list is refused without naming it, as upstream's list checks are.
+        const named = permissions[0]!.startsWith("list:")
+          ? "permission denied"
+          : `permission denied: ${permissions[0]}`;
+        check(reply.body.message === named, `permission-${key}`);
+      } else {
+        const reply = await send(key.split(" ")[0]!, filled(key), { query, auth: denied });
+        check(!refusal(reply), `unannotated-permission-${key}`);
+      }
+    }
+
+    // What an operation documents is enough, and each conjunction is needed: this is what a
+    // least-privilege role is built from. Reads only, so nothing changes.
+    const holders = new Map<string, string>();
+    const holding = async (permissions: string[]) => {
+      const name = permissions.join(",");
+      if (!holders.has(name))
+        holders.set(name, await credential(`holder-${holders.size}`, permissions));
+      return holders.get(name)!;
+    };
+    for (const { key, operation } of reachable) {
+      const permissions = (operation["x-required-permissions"] ?? []) as string[];
+      const also = (operation["x-also-required-permissions"] ?? []) as string[][];
+      const query = needed(operation);
+      if (!key.startsWith("GET ")) continue;
+      const grants = permissions.filter((permission) => !permission.startsWith("list:"));
+      for (const grant of grants) {
+        const reply = await send("GET", filled(key), {
+          query,
+          auth: await holding([grant, ...also.map((group) => group[0]!)]),
+        });
+        check(!refusal(reply), `permission-enough-${key}-${grant}`);
+      }
+      if (also.length && grants[0])
+        check(
+          refusal(await send("GET", filled(key), { query, auth: await holding([grants[0]]) })),
+          `permission-conjunction-${key}`,
+        );
     }
 
     // A malformed ID, and a well-formed one nothing has.
