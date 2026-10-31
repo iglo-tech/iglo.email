@@ -1356,7 +1356,6 @@ const settings: Operation[] = [
     id: "exportAnalytics",
     tag: "Maintenance",
     summary: "Export `views` or `clicks` since a date as CSV.",
-    native: true,
     permissions: ["settings:maintain"],
     query: [{ name: "since", required: true, schema: { type: "string", format: "date-time" } }],
     answer: csv,
