@@ -220,6 +220,22 @@ test("list analytics has the subscription chart, and a preset keeps the selectio
   await expect(page.getByTestId("chart-subscriptions").locator(".title")).toContainText("(1)");
 });
 
+test("a month preset counts from today, when the rounded end falls in the next month", async ({
+  page,
+}) => {
+  const list = await makeList(page);
+  await page.clock.setFixedTime(new Date("2026-10-31T23:59:30Z"));
+  await page.goto(`/admin/lists/analytics?id=${list.id}`);
+  await page.locator('[popovertarget="analytics-dates"]').click();
+  await Promise.all([
+    page.waitForURL(/interval=/),
+    page.getByRole("menuitem", { name: "6 Months" }).click(),
+  ]);
+  const query = new URL(page.url()).searchParams;
+  expect(query.get("from")).toMatch(/^2026-04-30T23:59/);
+  expect(query.get("to")).toMatch(/^2026-11-01T00:00/);
+});
+
 for (const [status, message] of [
   [429, "Too many analytics reads in progress."],
   [422, "Analytics result too large. Narrow the range, the IDs or the interval."],

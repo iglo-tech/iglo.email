@@ -356,17 +356,17 @@ function analyticsView() {
     },
 
     onDateRange(amount, unit) {
-      const to = new Date();
-      const from = new Date(to);
+      const now = new Date();
+      const from = new Date(now);
       // The form holds minutes: round up, or the current minute is left out.
-      to.setTime(to.getTime() + 60 * 1000);
+      const to = new Date(now.getTime() + 60 * 1000);
       if (unit === 'month') {
         // Clamp to the last day when the target month is short.
         from.setUTCDate(1);
         from.setUTCMonth(from.getUTCMonth() - amount);
 
         const lastDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0)).getUTCDate();
-        from.setUTCDate(Math.min(to.getUTCDate(), lastDay));
+        from.setUTCDate(Math.min(now.getUTCDate(), lastDay));
       } else if (unit === 'day') {
         from.setUTCDate(from.getUTCDate() - amount);
       } else {
