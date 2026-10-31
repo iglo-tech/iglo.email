@@ -417,6 +417,52 @@ test("persists bounce actions and the Mailgun key; other providers stay read-onl
   expect((await post(signature)).status()).toBe(200);
 });
 
+// With the Mailgun key of the test above: the API keeps a stored key, so a test that set its own
+// would change what that test finds.
+test("a Mailgun bounce appears on the bounces screen like any other", async ({ page }) => {
+  await api(page, "/api/settings", "PUT", {
+    ...before,
+    "bounce.enabled": true,
+    "bounce.webhooks_enabled": true,
+    "bounce.mailgun": { enabled: true, key: "" },
+  });
+  const list = await api(page, "/api/lists", "POST", { name: unique("mailgun"), type: "private" });
+  const email = `${unique("mailgun")}@example.com`;
+  const sub = await api(page, "/api/subscribers", "POST", {
+    email,
+    name: email,
+    status: "enabled",
+    lists: [list.body.data.id],
+  });
+  expect(sub.status).toBe(200);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const token = unique("token");
+  const signature = createHmac("sha256", "mailgun-signing-key")
+    .update(`${timestamp}${token}`)
+    .digest("hex");
+  const message = `<img src=x onerror="window.pwned=1"> ${unique("delivery")}`;
+  const posted = await api(page, "/webhooks/bounce/mailgun", "POST", {
+    signature: { timestamp, token, signature },
+    "event-data": {
+      id: token,
+      event: "failed",
+      severity: "permanent",
+      reason: "bounce",
+      recipient: email,
+      "delivery-status": { code: 550, message },
+    },
+  });
+  expect(posted.status).toBe(200);
+  await page.goto("/admin/subscribers/bounces?source=mailgun");
+  const row = page.getByTestId("bounce-row").filter({ hasText: email });
+  await expect(row).toContainText("mailgun");
+  await row.getByRole("button", { name: "More" }).click();
+  await row.getByTestId("btn-meta").click();
+  await expect(page.locator("dialog[open] pre")).toContainText("onerror");
+  await expect(page.locator("dialog[open] img")).toHaveCount(0);
+  expect(await page.evaluate(() => window.pwned)).toBeUndefined();
+});
+
 test("saves independent admin and public appearance editors", async ({ page }) => {
   await tab(page, "Appearance").click();
   await expect(page.getByTestId("appearance-warning")).toContainText("every signed-in admin page");

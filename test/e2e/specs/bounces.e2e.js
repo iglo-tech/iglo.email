@@ -2,12 +2,10 @@
 // and a unique source instead of resetDB, so counts are read through a source filter. The bounce
 // settings are read live here, so a test turns them on through the API. resetDB's complaint action
 // is set the same way. Differences beside the cases below, with their rows in 07-api-and-ui.md.
-import { createHmac, randomBytes } from "node:crypto";
 import { expect } from "@playwright/test";
 import { api, confirm, createUser, login, logout, openMenu, test, unique } from "../helpers.js";
 
 const BOUNCES = "/admin/subscribers/bounces";
-const MAILGUN_KEY = "e2e-mailgun-signing-key";
 
 function bounceRow(page, email) {
   const rows = page.getByTestId("bounce-row");
@@ -20,8 +18,10 @@ async function ok(page, path, method = "GET", body = undefined) {
   return res.body.data;
 }
 
+let before;
 async function enableBounces(page) {
   const settings = await ok(page, "/api/settings");
+  before = settings;
   await ok(page, "/api/settings", "PUT", {
     ...settings,
     "bounce.enabled": true,
@@ -31,7 +31,6 @@ async function enableBounces(page) {
       hard: { count: 2, action: "blocklist" },
       complaint: { count: 1, action: "delete" },
     },
-    "bounce.mailgun": { enabled: true, key: MAILGUN_KEY },
   });
 }
 
@@ -63,6 +62,18 @@ async function subStatus(page, id) {
 test.beforeEach(async ({ page }) => {
   await login(page);
   await enableBounces(page);
+});
+// The run shares one database: a later spec expects bounces as this one found them.
+test.afterEach(async ({ page }) => {
+  await page.goto("/admin");
+  const current = await ok(page, "/api/settings");
+  const { "bounce.enabled": enabled, "bounce.webhooks_enabled": webhooks } = before;
+  await ok(page, "/api/settings", "PUT", {
+    ...current,
+    "bounce.enabled": enabled,
+    "bounce.webhooks_enabled": webhooks,
+    "bounce.actions": before["bounce.actions"],
+  });
 });
 
 test("applies bounce actions by type and lists what was recorded", async ({ page }) => {
@@ -149,34 +160,6 @@ test("source, type and campaign link to their filters, with paging", async ({ pa
   await expect(page).toHaveURL(`${BOUNCES}?campaign_id=${campaign.id}`);
   await bounceRow(page).first().getByRole("link", { name: "Soft" }).click();
   await expect(page).toHaveURL(`${BOUNCES}?type=soft`);
-});
-
-test("a Mailgun bounce appears like any other", async ({ page }) => {
-  const list = await makeList(page);
-  const sub = await makeSub(page, list.id);
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const token = randomBytes(16).toString("hex");
-  const signature = createHmac("sha256", MAILGUN_KEY).update(`${timestamp}${token}`).digest("hex");
-  const message = `<img src=x onerror="window.pwned=1"> ${unique("delivery")}`;
-  await ok(page, "/webhooks/bounce/mailgun", "POST", {
-    signature: { timestamp, token, signature },
-    "event-data": {
-      id: token,
-      event: "failed",
-      severity: "permanent",
-      reason: "bounce",
-      recipient: sub.email,
-      "delivery-status": { code: 550, message },
-    },
-  });
-  await page.goto(`${BOUNCES}?source=mailgun`);
-  const row = bounceRow(page, sub.email);
-  await expect(row).toContainText("mailgun");
-  await openMenu(row);
-  await row.getByTestId("btn-meta").click();
-  await expect(page.locator("dialog[open] pre")).toContainText("onerror");
-  await expect(page.locator("dialog[open] img")).toHaveCount(0);
-  expect(await page.evaluate(() => window.pwned)).toBeUndefined();
 });
 
 test("hostile sources, meta and addresses render as text and stay exact filters", async ({

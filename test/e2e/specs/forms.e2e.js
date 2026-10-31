@@ -180,8 +180,10 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
   const status = (s, list) => s.lists.find((l) => l.id === list.id).subscription_status;
   const first = await sub(a);
   const second = await sub(b);
-  expect(first.lists).toHaveLength(2);
-  expect(second.lists).toHaveLength(2);
+  // The form offers every public list checked, so a shared server adds others to these two.
+  for (const s of [first, second]) {
+    expect(s.lists.map((l) => l.id)).toEqual(expect.arrayContaining([optin.id, single.id]));
+  }
 
   // Unsubscribe from the campaign's list only.
   const url = `/subscription/${campaign.uuid}/${first.uuid}`;
