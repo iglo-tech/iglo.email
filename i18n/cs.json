@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Metadata kampaně",
     "campaigns.archiveMetaHelp": "Použít ukázková (dummy) data odběratele ve veřejné zprávě, včetně jména, e-mailu a volitelných atributů použitých v textu kampaně nebo šabloně.",
     "campaigns.archiveSlugHelp": "Krátký název stránky používaný v URL. Například: moje-novinky-edice-2",
-    "campaigns.attribsHelp": "Vlastní atributy objektu JSON {} pro tuto kampaň. Použijte v šabloně s {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Vlastní atributy objektu JSON {} pro tuto kampaň. Použijte v šabloně s {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Nelze aktualizovat spuštěnou nebo dokončenou kampaň.",
     "campaigns.confirmSchedule": "Tato kampaň se spustí automaticky v naplánované datum a čas. Naplánovat nyní?",
     "campaigns.customHeadersHelp": "Pole volitelných hlaviček k odchozím zprávám, například: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"value\"}]",

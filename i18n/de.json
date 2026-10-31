@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Metadaten der Kampagne ",
     "campaigns.archiveMetaHelp": "Dummy-Abonnentendaten, die in der öffentlichen Nachricht verwendet werden sollen, einschließlich Name, E-Mail und alle optionalen Attribute, die in der Kampagnennachricht oder -vorlage verwendet werden.",
     "campaigns.archiveSlugHelp": "Ein kurzer Name für die Seite, der in der öffentlichen URL verwendet wird. z. B.: meine-newsletter-ausgabe-2",
-    "campaigns.attribsHelp": "Benutzerdefiniertes JSON-Objekt {} Attribute für diese Kampagne. Verwenden Sie in der Vorlage mit {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Benutzerdefiniertes JSON-Objekt {} Attribute für diese Kampagne. Verwenden Sie in der Vorlage mit {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Eine laufende oder abgeschlossene Kampagne kann nicht verändert werden.",
     "campaigns.confirmSchedule": "Diese Kampagne startet zu einem konfigurierten Zeitpunkt. Jetzt starten?",
     "campaigns.customHeadersHelp": "Liste von benutzerdefinierten Headern, welche in ausgehenden Nachrichten gesetzt werden sollen . Beispiel: [{\"X-Header\": \"wert\"}, {\"X-Header2\": \"wert\"}]",

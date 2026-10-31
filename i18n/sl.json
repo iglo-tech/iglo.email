@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Metapodatki oglaševalske akcije",
     "campaigns.archiveMetaHelp": "Navidezni naročniški podatki za uporabo v javnem sporočilu, vključno z imenom, e-pošto in vsemi neobveznimi atributi, uporabljenimi v sporočilu ali predlogi oglaševalske akcije.",
     "campaigns.archiveSlugHelp": "Kratko ime za stran, ki bo uporabljena v javnem URL-ju. Npr.: my-newsletter-edition-2",
-    "campaigns.attribsHelp": "Po meri definirani JSON {} atributi za to kampanjo. Uporabite v predlogi z {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Po meri definirani JSON {} atributi za to kampanjo. Uporabite v predlogi z {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Ne morem posodobiti tekoče ali končane akcije.",
     "campaigns.confirmSchedule": "Ta akcija se bo začela samodejno ob načrtovanem datumu in uri. Načrtovati zdaj?",
     "campaigns.customHeadersHelp": "Dodatne glave [Headers], ki se pošljejo pri vseh sporočilih poslenih s tega strežnika. Npr.: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"vrednost\" }]",

@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Metadados da campanha",
     "campaigns.archiveMetaHelp": "Dados de assinante fictício para utilizar na mensagem publica incluindo nome, email e qualquer atributo opcional usado na mensagem ou template da campanha.",
     "campaigns.archiveSlugHelp": "Um nome curto para a página a ser usada no URL público. Ex: edicao-minha-newsletter-2",
-    "campaigns.attribsHelp": "Atributos do objeto JSON {} customizado para esta campanha. Use no template com {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Atributos do objeto JSON {} customizado para esta campanha. Use no template com {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Não é possível atualizar uma campanha em execução ou finalizada.",
     "campaigns.confirmSchedule": "A campanha irá começar automaticamente na data e hora agendadas. Agendar agora?",
     "campaigns.customHeadersHelp": "Array de cabeçalhos personalizados para anexar nas mensagens. eg: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"value\"}]",

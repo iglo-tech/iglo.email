@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Kampanjemetadata",
     "campaigns.archiveMetaHelp": "Dummy-abonnentdata som brukes i den offentlige meldingen, inkludert navn, e-post og eventuelle valgfrie attributter brukt i kampanjemeldingen eller malen.",
     "campaigns.archiveSlugHelp": "Et kort navn for siden som brukes i den offentlige URL-en, f.eks.: min-nyhetsbrev-utgave-2",
-    "campaigns.attribsHelp": "Egendefinert JSON-objekt {} attributter for denne kampanjen. Bruk i mal med {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Egendefinert JSON-objekt {} attributter for denne kampanjen. Bruk i mal med {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Kan ikke oppdatere en kampanje som kjører eller er fullført.",
     "campaigns.confirmSchedule": "Denne kampanjen starter automatisk på planlagt dato og tidspunkt. Planlegg nå?",
     "campaigns.customHeadersHelp": "Array av egendefinerte overskrifter som skal legges til utgående meldinger, f.eks.: [{\"X-Custom\": \"verdi\"}, {\"X-Custom2\": \"verdi\"}]",

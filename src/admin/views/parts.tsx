@@ -123,11 +123,22 @@ export function AvatarLink(props: { kind: string; name: string; href: string; ti
     </a>
   );
 }
-export function Breadcrumbs(props: { parent: string; href: string | null; current: Child }) {
+export function Breadcrumbs(props: {
+  parent: string;
+  href: string | null;
+  current: Child;
+  /** A level above `parent`. */
+  root?: { label: string; href: string | null };
+}) {
+  const { root } = props;
   return (
     <nav class="breadcrumbs" aria-label="Breadcrumb">
       <ol>
+        {root ? (
+          <li>{root.href ? <a href={root.href}>{root.label}</a> : <span>{root.label}</span>}</li>
+        ) : null}
         <li>
+          {root ? <span aria-hidden="true">/</span> : null}
           {props.href ? <a href={props.href}>{props.parent}</a> : <span>{props.parent}</span>}
         </li>
         <li>
@@ -140,16 +151,23 @@ export function Breadcrumbs(props: { parent: string; href: string | null; curren
     </nav>
   );
 }
-export function ListSelector(props: { model: string; id: string; label?: string; t: Translation }) {
-  const { model, id, label, t } = props;
+export function ListSelector(props: {
+  model: string;
+  id: string;
+  label?: string;
+  placeholder?: string;
+  disabled?: string;
+  t: Translation;
+}) {
+  const { model, id, label, placeholder, disabled, t } = props;
   const complete = "listAutocomplete($el)";
   return (
     <label data-field="">
       {label ?? null}
-      <ot-taginput x-model={model}>
+      <ot-taginput x-model={model} {...(disabled ? { "x-bind:disabled": disabled } : {})}>
         <input
           list={id}
-          placeholder={t.T("subscribers.listsPlaceholder")}
+          placeholder={placeholder ?? t.T("subscribers.listsPlaceholder")}
           x-on:input={complete}
           x-on:pointerdown={complete}
           x-on:focus={complete}
@@ -173,6 +191,34 @@ export function Preconfirm(props: { model: string; enabled: string; t: Translati
       {t.T("subscribers.preconfirm")}
       <small data-hint="">{t.T("subscribers.preconfirmHelp")}</small>
     </label>
+  );
+}
+/**
+ * partials/campaign-preview.html and template-preview.html. The frame is sandboxed with nothing
+ * allowed, unlike upstream's: an email needs no script, so its HTML cannot run on this origin.
+ */
+export function PreviewDialog({ t }: { t: Translation }) {
+  return (
+    <dialog class="preview-modal" x-ref="previewDialog" x-on:close="onPreviewClose">
+      <div class="dialog-card">
+        <header class="dialog-head hstack justify-between">
+          <h4 class="dialog-title" x-text="preview.title"></h4>
+        </header>
+        <section class="dialog-body preview" x-bind:aria-busy="preview.loading">
+          <iframe
+            sandbox=""
+            x-ref="previewFrame"
+            title={t.T("globals.buttons.preview")}
+            x-on:load="preview.loading = false"
+          ></iframe>
+        </section>
+        <footer class="dialog-foot align-right">
+          <button type="button" class="outline" autofocus x-on:click="$refs.previewDialog.close()">
+            {t.T("globals.buttons.close")}
+          </button>
+        </footer>
+      </div>
+    </dialog>
   );
 }
 /** partials/manage-lists-form.html. */

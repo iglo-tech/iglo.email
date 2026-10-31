@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Kampanya meta verisi",
     "campaigns.archiveMetaHelp": "Ad, e-posta ve kampanya mesajında veya şablonunda kullanılan tüm isteğe bağlı öznitelikler dahil olmak üzere genel mesajda kullanılacak kukla abone verileri.",
     "campaigns.archiveSlugHelp": "Halka açık URL'de kullanılacak kısa bir ad. örn: benim-bülten-baskısı-2",
-    "campaigns.attribsHelp": "Bu kampanya için özel JSON nesnesi {} nitelikleri. Şablonda {{ .Campaign.Attribs.$key }} ile kullanın",
+    "campaigns.attribsHelp": "Bu kampanya için özel JSON nesnesi {} nitelikleri. Şablonda {{ campaign.attribs.$key }} ile kullanın",
     "campaigns.cantUpdate": "Gönderilmekte olan veya gönderilmiş kampaynalar güncellenemez.",
     "campaigns.confirmSchedule": "Bu kampanya belirtilen tarihte otomatik olarak başlar. Şimdi ayarla?",
     "campaigns.customHeadersHelp": "Giden iletilere eklenecek özel başlıkların dizisi. örn: [{\"X-Custom\": \"value\"}, {\"X-Custom2\": \"value\"}]",

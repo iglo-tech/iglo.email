@@ -15,7 +15,7 @@
     "campaigns.archiveMeta": "Metadata för kampanj",
     "campaigns.archiveMetaHelp": "Dummy prenumerantdata att använda i det offentliga meddelandet, inklusive namn, e-postadress och eventuella valfria attribut som används i kampanjmeddelandet eller mallen.",
     "campaigns.archiveSlugHelp": "Ett kort namn för sidan som används i den offentliga URL-adressen. t.ex: min-nyhetsbrev-upplaga-2",
-    "campaigns.attribsHelp": "Anpassad JSON-objekt {} attribut för denna kampanj. Använd i mall med {{ .Campaign.Attribs.$key }}",
+    "campaigns.attribsHelp": "Anpassad JSON-objekt {} attribut för denna kampanj. Använd i mall med {{ campaign.attribs.$key }}",
     "campaigns.cantUpdate": "Kan inte uppdatera en pågående eller avslutad kampanj.",
     "campaigns.confirmSchedule": "Denna kampanj kommer att starta automatiskt vid den schemalagda datumen och tiden. Schemalägg nu?",
     "campaigns.customHeadersHelp": "Array av anpassade header-filer att bifoga i utgående meddelanden. t.ex: [{\"X-Anpassad\": \"värde\"}, {\"X-Anpassad2\": \"värde\"}]",

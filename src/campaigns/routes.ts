@@ -1,6 +1,6 @@
 // Campaign HTTP endpoints adapted from listmonk cmd/campaigns.go and the /api/campaigns
-// routes in cmd/handlers.go at 6fcd95f. Analytics and running stats are M3.3; sending to
-// lists is the M3.2 runner: status changes here only record the state.
+// routes in cmd/handlers.go at 6fcd95f. Analytics are M3.3; sending to lists is the M3.2
+// runner: status changes here only record the state.
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import type { Message } from "@/messaging/email";
@@ -348,6 +348,37 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       per_page: perPage,
       page: perPage ? page : 1,
     });
+  };
+  /**
+   * GetRunningCampaignStats, scoped as the collection is. There is no live pipe to read, so `rate`
+   * is the rate since the start (per minute), as `net_rate`.
+   */
+  const running: Handler = (context) => {
+    const scope = can(context, "campaigns:get_all")
+      ? { all: true, ids: [] }
+      : permitted(context, false);
+    return ok(
+      store
+        .running()
+        .filter((c) => scope.all || store.hasLists(c.id, scope.ids))
+        .map((c) => {
+          const [sent, toSend] = [Number(c.sent), Number(c.to_send)];
+          const started = Date.parse(c.started_at ?? "");
+          const minutes = Math.floor((Date.parse(c.updated_at ?? "") - started) / 60_000);
+          let rate = Number.isNaN(minutes) ? 0 : Math.floor(sent / Math.max(minutes, 1));
+          if (rate > sent || rate > toSend) rate = sent;
+          return {
+            id: idValue(c.id),
+            status: c.status,
+            to_send: toSend,
+            sent,
+            started_at: c.started_at,
+            updated_at: c.updated_at,
+            rate,
+            net_rate: rate,
+          };
+        }),
+    );
   };
   const one: Handler = (context) => {
     const id = BigInt(getID(context));
@@ -778,6 +809,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const get = any("campaigns:get_all", "campaigns:get");
   const manage = any("campaigns:manage_all", "campaigns:manage");
   router.route("GET", "/api/campaigns", collection, auth.middleware(), get);
+  router.route("GET", "/api/campaigns/running/stats", running, auth.middleware(), get);
   router.route("GET", "/api/campaigns/:id", one, auth.middleware(), get, hasID);
   router.route("GET", "/api/campaigns/:id/preview", preview, auth.middleware(), get, hasID);
   router.route("POST", "/api/campaigns/:id/preview", preview, auth.middleware(), get, hasID);

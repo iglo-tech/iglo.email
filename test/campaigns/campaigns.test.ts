@@ -505,3 +505,19 @@ test("order_by=status follows upstream's status enum rank across pages", async (
   const desc = [...(await page("desc", 1)), ...(await page("desc", 2)), ...(await page("desc", 3))];
   expect(desc).toEqual([...rank].reverse());
 });
+
+test("running stats report running campaigns with a rate since the start", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const running = await f.campaign({ name: "run", subject: "s", lists: [news] });
+  await f.campaign({ name: "draft", subject: "s", lists: [news] });
+  expect((await f.json("/api/campaigns/running/stats")).body).toEqual({ data: [] });
+  const status = { status: "running" };
+  expect((await f.json(`/api/campaigns/${running.id}/status`, "PUT", status)).status).toBe(200);
+  const { body } = await f.json("/api/campaigns/running/stats");
+  expect(body.data).toHaveLength(1);
+  expect(Object.keys(body.data[0]).join()).toBe(
+    "id,status,to_send,sent,started_at,updated_at,rate,net_rate",
+  );
+  expect(body.data[0]).toMatchObject({ id: running.id, status: "running", sent: 0, rate: 0 });
+});

@@ -88,7 +88,7 @@ function listenErrorEvents() {
 }
 
 // The session's CSRF token: cookie-authenticated unsafe requests send it as a header.
-function csrfToken() {
+export function csrfToken() {
   const part = document.cookie.split('; ').find((c) => c.startsWith('csrf='));
   return part ? part.slice('csrf='.length) : '';
 }

@@ -12,7 +12,7 @@ import { HttpError } from "@/server/response";
 import type { Authentication } from "@/users/auth";
 import type { Identity } from "@/users/models";
 
-type ConfigValue = string | number | boolean | null;
+type ConfigValue = string | number | boolean | null | readonly string[];
 
 /** The settings every admin page reads for each request. */
 export interface AdminSite {
@@ -21,6 +21,9 @@ export interface AdminSite {
   readonly rootUrl: string;
   readonly lang: string;
   readonly cacheSlowQueries: boolean;
+  /** The configured from addresses, the default first. */
+  readonly fromEmails: readonly string[];
+  readonly messengers: readonly string[];
 }
 export interface AdminPage {
   readonly title: string;
@@ -44,7 +47,10 @@ export interface AdminRequest {
   /** The lists this user holds a list permission on. */
   listScope(permission: "list:get" | "list:manage"): { all: boolean; ids: bigint[] };
 }
-export type AdminView = (request: AdminRequest) => AdminPage | Promise<AdminPage>;
+/** A view answers with a page, or a Response for what is not one (a redirect). */
+export type AdminView = (
+  request: AdminRequest,
+) => AdminPage | Response | Promise<AdminPage | Response>;
 
 const htmlHeaders = { "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store" };
 
@@ -137,6 +143,7 @@ export function createAdminPages(deps: {
         const listScope: AdminRequest["listScope"] = (permission) =>
           roles.listScope(identity.role, identity.user.list_role_id, permission);
         const page = await view({ context, identity, site: current, can, listScope });
+        if (page instanceof Response) return page;
         const html = renderAdminShell({
           title: page.title,
           siteName: current.siteName,

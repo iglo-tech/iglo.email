@@ -166,6 +166,17 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       ).map((row) => ({ campaign: row.campaign, views: Number(row.views) })),
     listIds: (id: bigint) =>
       (q.get("campaign-list-ids").all(id) as { list_id: bigint }[]).map((r) => r.list_id),
+    /** GetRunningCampaignStats. */
+    running() {
+      return q.get("running-campaigns").all() as {
+        id: bigint;
+        status: CampaignStatus;
+        to_send: bigint;
+        sent: bigint;
+        started_at: string | null;
+        updated_at: string | null;
+      }[];
+    },
     hasLists(id: bigint, listIds: bigint[]): boolean {
       return (q.get("campaign-has-lists").get(id, ids(listIds)) as { has: bigint }).has === 1n;
     },
