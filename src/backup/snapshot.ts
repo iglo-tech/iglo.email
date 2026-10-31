@@ -31,6 +31,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statfsSync,
   statSync,
@@ -219,18 +220,42 @@ function checkDestination(output: string, data: string, force: boolean): void {
   if (!replaceable) throw new Error(`${output} does not look like a backup; not replacing it`);
 }
 
-function publish(partial: string, output: string): void {
+/**
+ * Takes the destination, which may have appeared since the first check. A backup reserves nothing
+ * while it runs, so a killed one leaves no name that could pass for a backup. `mkdir` is the atomic
+ * no-replace step: whoever makes the directory owns the path, and a rename then replaces only that
+ * empty directory. A file put in it in that moment fails the rename rather than being lost.
+ */
+function publish(partial: string, output: string, data: string, force: boolean): void {
   const parent = dirname(output);
-  // Rename cannot replace a directory that holds files, so the old backup steps aside first and
-  // goes only once the new one has its name.
+  checkDestination(output, data, force);
+  // Rename cannot replace a directory that holds files, so a forced old backup steps aside first
+  // and goes only once the new one has its name.
   const aside = lstatSync(output, { throwIfNoEntry: false })
     ? join(parent, `${REPLACED}${crypto.randomUUID()}`)
     : undefined;
   if (aside) renameSync(output, aside);
+  let reserved = false;
   try {
+    mkdirSync(output, { mode: 0o700 });
+    reserved = true;
     renameSync(partial, output);
   } catch (error) {
-    if (aside) renameSync(aside, output);
+    if (reserved) {
+      try {
+        rmdirSync(output);
+      } catch {
+        /* Something was put in it meanwhile, and stays. */
+      }
+    }
+    if (aside) {
+      // Another forced backup that took the path meanwhile replaced this one as well.
+      if (lstatSync(output, { throwIfNoEntry: false })) rmSync(aside, { recursive: true });
+      else renameSync(aside, output);
+    }
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "EEXIST" || code === "ENOTEMPTY")
+      throw new Error(`${output} already exists; pass --force to replace it`);
     throw error;
   }
   sync(parent);
@@ -316,7 +341,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       sync(directory);
 
     const inspection = inspect(partial, clock, options.supportedVersion);
-    publish(partial, output);
+    publish(partial, output, data, options.force ?? false);
     partial = undefined;
     return { ...inspection, path: output };
   } finally {

@@ -316,6 +316,48 @@ test("backed-up media is closed to everyone but its owner", async () => {
   expect(statSync(join(output, "uploads", "private.txt")).mode & 0o777).toBe(0o600);
 });
 
+test("overlapping backups to one path: one wins, and neither replaces the other", async () => {
+  await live();
+  await stopped();
+  seedSubscribers(dataDir, 20_000);
+  server = await startServer(executable, dataDir);
+  const output = join(base, "backup");
+  const args = ["--data-dir", dataDir, "--output", output];
+  const results = await Promise.all([runBackup(executable, args), runBackup(executable, args)]);
+  expect(results.map(({ exitCode }) => exitCode).sort()).toEqual([0, 1]);
+  expect(results.find(({ exitCode }) => exitCode === 1)!.stderr).toContain("--force");
+  expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
+  expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+});
+
+test("a path taken while the backup runs is not replaced, and --force still checks it", async () => {
+  await live();
+  const output = join(base, "backup");
+  const claimed = () => {
+    mkdirSync(output);
+    writeFileSync(join(output, "precious.txt"), "someone else's");
+    return Number.MAX_SAFE_INTEGER;
+  };
+  const backup = (force: boolean) =>
+    createBackup({
+      dataDir,
+      output,
+      force,
+      clock: createRealClock(),
+      supportedVersion: version,
+      available: claimed,
+      warn() {},
+    });
+  expect(() => backup(false)).toThrow("already exists");
+  expect(readFileSync(join(output, "precious.txt"), "utf8")).toBe("someone else's");
+  expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+  rmSync(output, { recursive: true });
+  // Claiming the path again fails inside the callback only if it is there: start from nothing.
+  expect(() => backup(true)).toThrow("does not look like a backup");
+  expect(readFileSync(join(output, "precious.txt"), "utf8")).toBe("someone else's");
+  expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+});
+
 test("a newer executable migrates a restored backup", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");
