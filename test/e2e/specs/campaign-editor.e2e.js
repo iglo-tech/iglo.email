@@ -4,7 +4,7 @@
 // 6fcd95f; docs/design/09-decisions.md#d66 lists what the sanitizer keeps.
 import { createServer } from "node:http";
 import { expect } from "@playwright/test";
-import { api, confirm, login, ORIGIN, test, unique } from "../helpers.js";
+import { api, confirm, createUser, login, ORIGIN, PASSWORD, test, unique } from "../helpers.js";
 
 const CAMPAIGNS = "/admin/campaigns";
 const EDITOR = 'richtext-editor [contenteditable="true"]';
@@ -380,4 +380,52 @@ test("an unrelated save keeps the instant of a schedule, and the control still c
   expect((await save).status()).toBe(200);
   const local = await page.evaluate(() => new Date("2036-05-04T03:02").getTime());
   expect(Date.parse((await stored(page, c.id)).send_at)).toBe(local);
+});
+
+test("a role that can send and not manage starts a saved campaign from the form", async ({
+  page,
+  browser,
+}) => {
+  await login(page);
+  const c = await create(page);
+  const sender = await createUser(page, [
+    "campaigns:get_all",
+    "campaigns:send",
+    "lists:get_all",
+    "lists:manage_all",
+  ]);
+  const context = await browser.newContext({ baseURL: ORIGIN });
+  const other = await context.newPage();
+  try {
+    await other.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.201" });
+    await login(other, sender.username, PASSWORD);
+    const writes = [];
+    other.on("request", (r) => {
+      if (r.method() !== "GET") writes.push(new URL(r.url()).pathname);
+    });
+    await other.goto(`${CAMPAIGNS}/${c.id}`);
+    await expect(other.locator('input[name="name"]')).toHaveValue(c.name);
+    const name = await other.locator('input[name="name"]').isDisabled();
+    await button(other, "Start campaign").click();
+    await confirm(other);
+    await expect(other).toHaveURL(/\/admin\/campaigns$/);
+    expect(writes).toEqual([`/api/campaigns/${c.id}/status`]);
+    expect((await stored(page, c.id)).status).not.toBe("draft");
+    expect(name).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a role that can manage still saves its edits before starting", async ({ page }) => {
+  await login(page);
+  const c = await create(page);
+  await page.goto(`${CAMPAIGNS}/${c.id}`);
+  await page.locator('input[name="name"]').fill(`${c.name} edited`);
+  await button(page, "Start campaign").click();
+  await confirm(page);
+  await expect(page).toHaveURL(/\/admin\/campaigns$/);
+  const saved = await stored(page, c.id);
+  expect(saved.name).toBe(`${c.name} edited`);
+  expect(saved.status).not.toBe("draft");
 });

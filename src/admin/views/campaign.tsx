@@ -827,6 +827,7 @@ function view(isNew: boolean): AdminView {
       config: {
         ...campaignConfig(request),
         from_emails: site.fromEmails,
+        can_manage: canManage,
         can_templates: can("templates:get"),
         can_media: can("media:get"),
         ...(isNew ? { is_new: true } : { campaign_id: id }),

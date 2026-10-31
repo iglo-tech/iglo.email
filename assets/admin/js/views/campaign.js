@@ -184,8 +184,13 @@ function component() {
         || this.form.lists.some((l) => manageable.has(l.id));
     },
 
+    // Only the update routes take the manage permission as well. A role may send without it.
+    get canUpdate() {
+      return !!config.can_manage && this.canManage;
+    },
+
     get canEdit() {
-      return this.canManage && (this.isNew || ['draft', 'scheduled', 'paused'].includes(this.form.status));
+      return this.canUpdate && (this.isNew || ['draft', 'scheduled', 'paused'].includes(this.form.status));
     },
 
     get canSend() {
@@ -206,7 +211,7 @@ function component() {
     },
 
     get canArchive() {
-      return this.canManage && this.form.status !== 'cancelled' && this.form.type !== 'optin';
+      return this.canUpdate && this.form.status !== 'cancelled' && this.form.type !== 'optin';
     },
 
     get showEditorSpinner() {
@@ -439,7 +444,8 @@ function component() {
       }
 
       try {
-        if (status !== 'draft' && !(await this._save())) {
+        // A saved campaign starts on the right to send alone; only edits need saving first.
+        if (status !== 'draft' && this.canEdit && !(await this._save())) {
           this.changing = false;
           return;
         }
