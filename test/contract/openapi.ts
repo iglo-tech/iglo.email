@@ -155,6 +155,14 @@ export async function runOpenApiContract(target: {
       check(value !== undefined, `param-${key}-${name}`);
       return encodeURIComponent(String(value));
     });
+    const declared = new Set(
+      (operationOf(key).parameters as { in: string; name: string }[])
+        .filter((parameter) => parameter.in === "query")
+        .map(({ name }) => name),
+    );
+    for (const name of new URLSearchParams(options.query).keys())
+      if (!declared.has(name))
+        throw new Error(`FAIL openapi-query ${key}: ${name} is undocumented`);
     if (options.body !== undefined) accepted(key, options.body);
     const reply = await send(method, path, options);
     const expected = options.expect ?? 200;
@@ -412,6 +420,15 @@ export async function runOpenApiContract(target: {
       body: { email: external.email, name: "Three c", status: "enabled" },
     });
     await op("GET /api/subscribers/export", { query: `?list_id=${list.id}` });
+    const selected = await op("GET /api/subscribers/export", {
+      query: `?id=${subscriber.id}&id=${other.id}`,
+    });
+    check(
+      selected.text.includes(subscriber.uuid) &&
+        selected.text.includes(other.uuid) &&
+        !selected.text.includes(external.uuid),
+      "export-by-id",
+    );
     await op("PUT /api/subscribers/lists", {
       body: { ids: [other.id], action: "add", target_list_ids: [list.id], status: "confirmed" },
     });

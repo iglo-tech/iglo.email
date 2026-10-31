@@ -382,7 +382,10 @@ const subscribers: Operation[] = [
     id: "exportSubscribers",
     tag: "Subscribers",
     summary: "Export a selection as CSV.",
-    query: subscriberSelection,
+    query: [
+      { ...ids, description: "Only these subscribers, as `id=1&id=2`." },
+      ...subscriberSelection,
+    ],
     answer: csv,
   },
   {
