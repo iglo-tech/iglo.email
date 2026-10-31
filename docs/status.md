@@ -4,7 +4,7 @@ Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M5.5 sequence screens, subscriber tabs, test mode: [brief](briefs/M5.5.md); one Opus worker running. D26 stands: no public first-account form.
+M5.5 sequence screens, subscriber tabs, test mode, [PR #45](https://github.com/iglo-tech/iglo.email/pull/45), head 7b53fdf. Local checks pass; Sol round-1 review running. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
 Next: M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
