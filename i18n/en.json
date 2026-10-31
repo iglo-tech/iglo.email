@@ -419,7 +419,7 @@
     "maintenance.help": "Some actions may take a while to complete depending on the amount of data.",
     "maintenance.maintenance.unconfirmedOptins": "Unconfirmed opt-in subscriptions",
     "maintenance.orphanHelp": "Orphans = subscribers with no lists",
-    "maintenance.webhookBudget": "Refused, with nothing deleted, when it would queue more webhook deliveries than one bulk action may. Delete in smaller selections from the subscribers page instead.",
+    "maintenance.webhookBudget": "Refused, with nothing deleted, when it would queue more webhook deliveries than one bulk action may. Delete in smaller selections from the subscribers page instead. If webhooks change during a delete it can stop partway: what it already deleted stays, and running it again continues.",
     "media.errorResizing": "Error resizing image: {error}",
     "media.errorSavingThumbnail": "Error saving thumbnail: {error}",
     "media.uploadHelp": "Click or drag one or more images here",

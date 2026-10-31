@@ -74,7 +74,9 @@ export interface SubscriberEffects {
   /** May refuse a bulk action, by throwing, before its first write. */
   admitBulk?(action: BulkAction, selected: () => number): void;
   /** The same for one batch of an import: adds what it will queue to `spent`, or refuses it. */
-  admitImportBatch?(spent: ImportSpend, batch: { unsubscribed: number; blocklisted: number }): void;
+  admitImportBatch?(spent: BulkSpend, batch: { unsubscribed: number; blocklisted: number }): void;
+  /** The same for one batch of a maintenance delete of `selected` subscribers. */
+  admitDeleteBatch?(spent: BulkSpend, selected: number): void;
 }
 /** A row of a CSV import, validated. `attribs` is JSON. */
 export interface ImportRow {
@@ -82,8 +84,8 @@ export interface ImportRow {
   name: string;
   attribs: string;
 }
-/** Webhook deliveries an import has queued so far, across its batches. */
-export interface ImportSpend {
+/** Webhook deliveries an action of many batches has queued so far. */
+export interface BulkSpend {
   deliveries: number;
 }
 export interface ImportSubscribe {
@@ -332,9 +334,9 @@ export function createSubscriberStore(
       );
       return get(row.id)!;
     },
-    /** `wipe` is the subscriber's own request (D61). `spent` is what earlier batches removed. */
-    remove(ids: bigint[], { wipe = false, spent = 0 } = {}) {
-      effects.admitBulk?.("delete", () => spent + new Set(ids).size);
+    /** `wipe` is the subscriber's own request (D61). */
+    remove(ids: bigint[], { wipe = false } = {}) {
+      effects.admitBulk?.("delete", () => new Set(ids).size);
       effects.deleting?.(
         ids.flatMap((id) => get(id) ?? []),
         wipe,
@@ -584,7 +586,7 @@ export function createSubscriberStore(
      * as an API write, so it exits enrollments and queues the webhook in this transaction. The
      * batch is admitted first, against what memberships and webhooks are now.
      */
-    importSubscribe(rows: ImportRow[], options: ImportSubscribe, spent: ImportSpend) {
+    importSubscribe(rows: ImportRow[], options: ImportSubscribe, spent: BulkSpend) {
       writeTransaction(db, () => {
         if (options.overwriteStatus)
           effects.admitImportBatch?.(spent, {
@@ -641,7 +643,7 @@ export function createSubscriberStore(
       });
     },
     /** One batch of a blocklist import: new addresses are created and all go through `blocklist`. */
-    importBlocklist(rows: ImportRow[], spent: ImportSpend) {
+    importBlocklist(rows: ImportRow[], spent: BulkSpend) {
       writeTransaction(db, () => {
         const emails = [...new Set(rows.map((row) => row.email))];
         const known = q.get("import-blocklisting").get(JSON.stringify(emails)) as {
@@ -692,13 +694,19 @@ export function createSubscriberStore(
     maintenancePage(type: MaintenanceType, after: bigint) {
       return q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as MaintenanceRow[];
     },
-    /** One batch of a maintenance delete, through `remove`. `null` when none are left. */
-    maintenanceRemove(type: MaintenanceType, after: bigint, spent: number) {
+    /**
+     * One batch of a maintenance delete, through `remove`. `null` when none are left. It is
+     * admitted first, against what the batches before it queued and what webhooks are now.
+     */
+    maintenanceRemove(type: MaintenanceType, after: bigint, spent: BulkSpend) {
       return writeTransaction(db, () => {
         const page = q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as MaintenanceRow[];
         const batch = maintenanceBatch(page, MAINTENANCE_SUBSCRIBERS);
         if (!batch) return null;
-        if (batch.ids.length) store.remove(batch.ids, { spent });
+        if (batch.ids.length) {
+          effects.admitDeleteBatch?.(spent, batch.ids.length);
+          store.remove(batch.ids);
+        }
         return { last: batch.last, removed: batch.ids.length };
       });
     },

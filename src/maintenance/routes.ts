@@ -121,14 +121,13 @@ export function registerMaintenanceRoutes(
     const type = c.params.type;
     if (type !== "orphan" && type !== "blocklisted") throw invalidData(c);
     let after = 0n;
-    let spent = 0;
+    const spent = { deliveries: 0 };
     const count = await operation(
       c,
       () => {
         const batch = subscribers.maintenanceRemove(type, after, spent);
         if (!batch) return null;
         after = batch.last;
-        spent += batch.removed;
         return batch.removed;
       },
       () => admitDelete(type),

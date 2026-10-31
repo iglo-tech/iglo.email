@@ -1,7 +1,7 @@
 // Native: the state changes that queue outbound webhooks, called inside their own write
 // transactions (docs/design/04-sending.md#outbound-webhooks).
 import { HttpError } from "@/server/response";
-import type { BulkAction, ImportSpend, SubscriberStore } from "@/subscribers/store";
+import type { BulkAction, BulkSpend, SubscriberStore } from "@/subscribers/store";
 import {
   webhookID,
   type WebhookEvent,
@@ -112,7 +112,7 @@ export function createWebhookEffects(
        * One batch of an import, with the budget of one bulk action across all its batches. The
        * webhooks of the batches before it are committed, so they stay and the import ends here.
        */
-      admitImportBatch(spent: ImportSpend, batch: { unsubscribed: number; blocklisted: number }) {
+      admitImportBatch(spent: BulkSpend, batch: { unsubscribed: number; blocklisted: number }) {
         const deliveries =
           spent.deliveries +
           batch.unsubscribed * webhooks.subscribed("subscriber.unsubscribed") +
@@ -121,6 +121,21 @@ export function createWebhookEffects(
           throw new HttpError(
             400,
             `This import would reach ${deliveries.toLocaleString("en-US")} webhook deliveries, ` +
+              `over the limit of ${MAX_BULK_DELIVERIES.toLocaleString("en-US")} per bulk action. ` +
+              "It stopped before this batch: earlier batches stay, with their webhooks.",
+          );
+        spent.deliveries = deliveries;
+      },
+      /**
+       * One batch of a maintenance delete, with the budget of one bulk action across all its
+       * batches, as for an import. A later batch can only stop it, never undo what is committed.
+       */
+      admitDeleteBatch(spent: BulkSpend, selected: number) {
+        const deliveries = spent.deliveries + selected * webhooks.subscribed("subscriber.deleted");
+        if (deliveries > MAX_BULK_DELIVERIES)
+          throw new HttpError(
+            400,
+            `This delete would reach ${deliveries.toLocaleString("en-US")} webhook deliveries, ` +
               `over the limit of ${MAX_BULK_DELIVERIES.toLocaleString("en-US")} per bulk action. ` +
               "It stopped before this batch: earlier batches stay, with their webhooks.",
           );
