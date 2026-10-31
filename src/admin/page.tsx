@@ -6,6 +6,7 @@ import { renderAdminShell, type JSONValue } from "@/admin/layout/shell";
 import { sidebar } from "@/admin/layout/sidebar";
 import { render, type Child } from "@/jsx/render";
 import type { Roles } from "@/roles/roles";
+import { restoreHold } from "@/settings/hold";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
@@ -153,6 +154,7 @@ export function createAdminPages(deps: {
           roles.listScope(identity.role, identity.user.list_role_id, permission);
         const page = await view({ context, identity, site: current, can, listScope });
         if (page instanceof Response) return page;
+        const hold = restoreHold(context.app.db);
         const html = renderAdminShell({
           title: page.title,
           siteName: current.siteName,
@@ -166,6 +168,7 @@ export function createAdminPages(deps: {
           ...(current.faviconUrl ? { faviconUrl: current.faviconUrl } : {}),
           ...(page.script ? { script: page.script } : {}),
           ...(page.bare ? { bare: true } : {}),
+          ...(hold ? { hold: hold.reason } : {}),
           duration: `${Math.round(performance.now() - started)}ms`,
           children: page.body,
         });

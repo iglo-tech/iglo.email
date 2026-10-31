@@ -3,6 +3,7 @@
 // also needs that subscriber's own read rule; writes need `sequences:manage` and are revalidated
 // and validated inside their write transaction, so a permission or definition change cannot
 // interleave with them.
+import { refuseWhileHeld } from "@/settings/hold";
 import { writeTransaction } from "@/db/transaction";
 import { parseJson, readBounded } from "@/events/input";
 import type { EventStore } from "@/events/store";
@@ -302,6 +303,7 @@ export function registerSequenceRoutes(
       const test = value.test === true;
       // A test never replaces anything, which is what `force` asks for.
       if (test && force) throw invalid(c, "force");
+      if (test) refuseWhileHeld(c.app.db);
       const outcome = writeTransaction(c.app.db, () => {
         auth.revalidate(c, MANAGE);
         const subscriber = subscribers.get(subscriberId);

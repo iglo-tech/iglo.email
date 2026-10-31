@@ -208,8 +208,9 @@ Rules from [D64](design/09-decisions.md#d64-the-upload-directory-is-a-fixed-boun
 ## Backups
 
 ```sh
-iglo.email backup --data-dir /var/lib/iglo.email --output /var/backups/iglo.email/monday
-iglo.email backup --verify /var/backups/iglo.email/monday
+runuser -u iglo-email -- iglo.email backup --data-dir /var/lib/iglo.email \
+  --output /var/backups/iglo.email/monday
+runuser -u iglo-email -- iglo.email backup --verify /var/backups/iglo.email/monday
 ```
 
 Run it as the service user, while the server runs or while it is stopped: files in the backup
@@ -225,10 +226,14 @@ A backup is a directory shaped like a data directory:
 
 ```text
 monday/                    mode 0700
-  iglo-email.db            mode 0600, the snapshot
-  iglo-email-backup.json   the relative path of the upload directory
-  uploads/                 copies of the uploaded files
+  iglo-email.db            mode 0600, the snapshot, with the restore hold in it
+  iglo-email-backup.json   mode 0600, the relative path of the upload directory
+  uploads/                 mode 0700, copies of the uploaded files, each mode 0600
 ```
+
+If the upload directory is reached through a symlink inside the data directory, which D64 allows,
+the backup holds the real directory and its `upload_path` names it. The symlink is not kept and is
+not needed after a restore.
 
 **It holds everything the data directory does:** SMTP passwords, API tokens, password hashes,
 secrets and personal data, in the clear. That is why it has these modes. Keep them, and encrypt
@@ -298,21 +303,70 @@ Restoring goes back to the moment of the snapshot, and this matters more for ema
 data:
 
 - Anyone who unsubscribed after the snapshot is subscribed again, and subscribers added since are
-  gone. Reapply unsubscribes from your provider's records before sending.
+  gone.
 - Marketing is at-most-once only within one database history. Messages sent after the snapshot
-  are not on record, so a campaign running in the snapshot would send them again. The procedure
-  below pauses such campaigns. Mail queued in the snapshot and sequence steps then due still go
-  out on start.
+  are not on record, so a campaign, a queued message or a sequence step would send them again.
+
+So every backup carries a **hold**, written into its database. A server started on it sends
+nothing until you release it, however the files were copied. There is no step to remember.
 
 ```sh
 systemctl stop iglo.email
-iglo.email backup --verify /var/backups/iglo.email/monday
+runuser -u iglo-email -- iglo.email backup --verify /var/backups/iglo.email/monday
 mv /var/lib/iglo.email /var/lib/iglo.email.before-restore
 cp -a /var/backups/iglo.email/monday /var/lib/iglo.email
-python3 -c 'import sqlite3, sys; db = sqlite3.connect(sys.argv[1]); print(db.execute("UPDATE campaigns SET status = '"'"'paused'"'"' WHERE status = '"'"'running'"'"'").rowcount, "paused"); db.commit()' /var/lib/iglo.email/iglo-email.db
 systemctl start iglo.email
 curl -fsS http://127.0.0.1:9000/health
 ```
+
+`--verify` prints `Hold: held since <time>`. `/health` answers `200` with `"hold"` beside
+`"data":true`, and the admin shows the reason on every page.
+
+**While held.** The admin and the API can be read, and paused or cancelled work stays so. Public
+unsubscribe, opt-out and preference pages work, and so do bounce webhooks, because a person's
+refusal must always land. Nothing leaves:
+
+- Campaigns, scheduled ones too, do not start or continue. Their status stays as it was.
+- Queued marketing and transactional mail stays `queued`, and no row is marked failed. A row the
+  snapshot caught mid-send becomes `unknown` on start, as after any crash, and is not retried.
+- Sequences take no steps, and outbound webhooks are not delivered.
+- A request that would send now gets a 503 that says why: `POST /api/tx`, resends, test sends,
+  starting or scheduling a campaign, SMTP tests, sequence test runs, the opt-in resend, a public
+  data export and the password reset. An `async` `POST /api/tx`, opt-in mail from a signup and
+  webhook events queue and wait.
+
+**What a hold does not do.** It does not recover a lost unsubscribe. A person who opted out in
+the app after the snapshot may be on no provider's list at all. Before releasing, look for what
+happened since, in this order:
+
+1. The newer database, with its WAL, in `/var/lib/iglo.email.before-restore`, if it survived.
+2. A consumer of the `subscriber.unsubscribed` webhook, or anything else that kept these events.
+3. Your provider's own suppressions, bounces and complaints.
+
+Put each one back through the public unsubscribe link, the admin or the API, which work during the
+hold. Then compare what was sent with what is queued, and pause or cancel what must not repeat.
+
+If none of those records survives, keep marketing to the restored audience off: stay held, or
+release only after every campaign and marketing sequence is paused and the audience has been
+reconciled or has consented again. Stale consent is not consent.
+
+**Release** is one command on a stopped server. It is refused without the flag, and while anything
+has the database open. It records the time, and `--verify` then prints `Hold: released at <time>`.
+
+```sh
+systemctl stop iglo.email
+runuser -u iglo-email -- iglo.email backup --release-hold --consent-reconciled \
+  --data-dir /var/lib/iglo.email
+systemctl start iglo.email
+```
+
+What is left then goes out: scheduled and running campaigns continue from the restored cursor,
+queued mail is checked against current consent and sent, sequences catch up within their
+`max_late`, and webhooks deliver. A recipient whose opt-out you did not put back gets mail, and one
+who already received a campaign after the snapshot gets it again. That is what the flag states you
+have dealt with.
+
+A backup of a held install is held too, and keeps the original time. Upgrading keeps the hold.
 
 From an archive, first unpack it with `tar -xzf` and verify what came out.
 
@@ -341,8 +395,9 @@ restore the backup from step 1, and put back the old executable.
 
 ## Monitoring
 
-- `GET /health` is public and answers `200` and `{"data":true}` once the server is listening. It
-  does not exercise the database or the sending loops. `GET /api/health` needs an API user.
+- `GET /health` is public and answers `200` and `{"data":true}` once the server is listening, with
+  a `hold` object beside it on a [held](#restore) install. Alert on that: nothing is being sent. It
+  reads that one row and does not exercise the sending loops. `GET /api/health` needs an API user.
 - A loop that fails for good stops the whole process, with a nonzero exit, so a supervisor with
   `Restart=on-failure` restarts it. Alert on restarts.
 - Watch free disk on the data directory and on the backup destination, and the age of the newest
@@ -396,6 +451,8 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 - Translations other than English have not been reviewed.
 - Supported PDF viewers for attachments.
 
-Known limits rather than unknowns: nothing enforces one server per data directory; admin pages set
+Known limits rather than unknowns: nothing enforces one server per data directory; a [hold](#restore)
+is in what `backup` writes, so a pre-migration snapshot, a disk image or a hand copy put back has
+none and must not be started without the same review; admin pages set
 no Content-Security-Policy yet, so review that before exposing the admin UI publicly; and delivered
 webhook rows and expired sessions are not yet purged, so the database grows with them.

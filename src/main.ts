@@ -31,6 +31,7 @@ import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { refuseWhileHeld } from "@/settings/hold";
 import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
@@ -275,6 +276,8 @@ async function main(): Promise<void> {
         return { smtp: current.smtp, rootUrl: current["app.root_url"] };
       },
       copyAllowed: (address) => !addressBlocklisted(subscriberStore!, address),
+      // Past every loop's and route's own check: nothing reaches SMTP from a held install (D67).
+      refuse: () => refuseWhileHeld(db),
     });
     mediaStore = createMediaStore(db, clock);
     const media = mediaStore;

@@ -121,7 +121,7 @@ test("a backup under write load restores, opens and holds what was committed", a
 
   restoreInto(output, dataDir);
   server = await startServer(executable, dataDir);
-  expect(await (await fetch(server.health)).json()).toEqual({ data: true });
+  expect(((await (await fetch(server.health)).json()) as { data: boolean }).data).toBe(true);
   const restored = apiClient(server.origin, authorization);
   const total = await subscriberTotal(restored);
   expect(total).toBeGreaterThanOrEqual(20 + acknowledged);
@@ -437,6 +437,9 @@ test("a newer executable migrates a restored backup", async () => {
   const client = apiClient(server.origin, await provisionAuthorization(server.origin));
   const lists = await (await client("/api/lists")).json();
   expect(JSON.stringify(lists)).toContain('"kept"');
+  // The migration keeps the restore hold the backup placed.
+  const health = (await (await fetch(server.health)).json()) as { hold?: unknown };
+  expect(health.hold).toBeDefined();
   await stopped();
   expect(names(join(dataDir, "backups"))).toHaveLength(1);
   const after = await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")]);

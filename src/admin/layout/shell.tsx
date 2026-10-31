@@ -38,6 +38,8 @@ export interface AdminShellProps {
   readonly customAssets?: boolean;
   /** Page render time, as upstream's footer shows it. */
   readonly duration?: string;
+  /** Why nothing is being sent (D67), on every signed-in page while it holds. */
+  readonly hold?: string;
   /** The page alone, for an iframe: no sidebar or top bar, as upstream's media fragment. */
   readonly bare?: boolean;
   readonly children?: Child;
@@ -216,6 +218,11 @@ function Chrome(props: AdminShellProps) {
             </ot-dropdown>
           )}
         </header>
+        {props.hold ? (
+          <div role="alert" data-variant="danger" data-testid="restore-hold">
+            {props.hold}
+          </div>
+        ) : null}
         <div class="container">{children}</div>
       </main>
     </div>

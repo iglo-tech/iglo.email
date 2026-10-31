@@ -17,9 +17,9 @@
 // one synchronous statement, so a helper process syncs its output every 200 ms while it runs
 // (docs/perf/M6.2-backup.md). It ends with stdin, so it cannot outlive a killed backup.
 //
-// The finished snapshot is then written to once, before anything can read it: it gets an upload
-// path that resolves to the copied files if the live one went through an alias, which a backup does
-// not keep.
+// The finished snapshot is then written to once, before anything can read it: it gets the restore
+// hold (D67), and an upload path that resolves to the copied files if the live one went through an
+// alias, which a backup does not keep.
 import { Database } from "bun:sqlite";
 import {
   chmodSync,
@@ -46,6 +46,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import type { Clock } from "@/clock";
 import { uploadRoot } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
+import { holdRecord, placeRestoreHold, releaseRestoreHold, type HoldRecord } from "@/settings/hold";
 import { storedUploadPath, writeUploadPath } from "@/settings/stored";
 
 const DATABASE = "iglo-email.db";
@@ -66,6 +67,7 @@ export interface Inspection {
   uploadBytes: number;
   /** Stored names a media row of the snapshot has and the uploads lack. */
   missing: string[];
+  hold: HoldRecord | null;
 }
 
 function single<T>(db: Database, pragma: string): T {
@@ -141,6 +143,7 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
       uploadFiles: 0,
       uploadBytes: 0,
       missing: [] as string[],
+      hold: schemaVersion === 0 ? null : holdRecord(db),
     };
     // A bare snapshot has no uploads, and a schema ahead of this executable cannot be read by it.
     if (!stats.isDirectory() || schemaVersion === 0 || schemaVersion > supportedVersion)
@@ -269,13 +272,16 @@ function publish(partial: string, output: string, data: string, force: boolean):
 }
 
 /** The snapshot's one write: see the header. It leaves no journal or WAL beside the file. */
-function sealSnapshot(path: string, data: string): string {
+function sealSnapshot(path: string, since: string, data: string): string {
   const db = new Database(path, { strict: true, safeIntegers: true });
   try {
     db.run("PRAGMA journal_mode = DELETE");
     const stored = storedUploadPath(db);
     const source = uploadRoot(data, stored);
-    if (resolve(data, stored) !== source) writeUploadPath(db, relative(data, source));
+    db.transaction(() => {
+      placeRestoreHold(db, since);
+      if (resolve(data, stored) !== source) writeUploadPath(db, relative(data, source));
+    })();
     return source;
   } finally {
     db.close(true);
@@ -327,9 +333,10 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       stdout: "ignore",
       stderr: "ignore",
     });
+    const since = clock.now().toISOString();
     db.run("VACUUM INTO ?", [snapshot]);
     flusher.kill();
-    const source = sealSnapshot(snapshot, data);
+    const source = sealSnapshot(snapshot, since, data);
     sync(snapshot);
 
     // The database comes first. A file that arrives after it is one no row names, which nothing
@@ -362,5 +369,47 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     flusher?.kill();
     db.close(true);
     if (partial) rmSync(partial, { recursive: true, force: true });
+  }
+}
+
+export interface ReleaseOptions {
+  dataDir: string;
+  clock: Clock;
+  supportedVersion: number;
+}
+
+/**
+ * Ends a restore hold, on a stopped server. EXCLUSIVE locking fails while any other connection has
+ * the database open, which is how the server is told apart from nothing running: a release under a
+ * running server would change what it reads between two claims.
+ */
+export function releaseHold(options: ReleaseOptions): HoldRecord | null {
+  const path = join(resolve(options.dataDir), DATABASE);
+  if (!statSync(path, { throwIfNoEntry: false })) throw new Error(`No database at ${path}`);
+  const db = new Database(path, { readwrite: true, strict: true, safeIntegers: true });
+  try {
+    // Before the first read: a connection that has read keeps its shared-memory locking.
+    db.run("PRAGMA busy_timeout = 0");
+    db.run("PRAGMA locking_mode = EXCLUSIVE");
+    try {
+      db.run("BEGIN IMMEDIATE");
+    } catch {
+      throw new Error(`${path} is in use: stop the server first`);
+    }
+    const version = Number(single<bigint>(db, "user_version"));
+    if (version === 0) throw new Error(`${path} has no schema yet; start the server once`);
+    if (version > options.supportedVersion)
+      throw new Error(`Database version ${version} is ahead of this executable`);
+    const record = holdRecord(db);
+    if (!record || record.releasedAt !== null) {
+      db.run("ROLLBACK");
+      return null;
+    }
+    const at = options.clock.now().toISOString();
+    releaseRestoreHold(db, record, at);
+    db.run("COMMIT");
+    return { since: record.since, releasedAt: at };
+  } finally {
+    db.close(true);
   }
 }

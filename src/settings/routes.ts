@@ -1,4 +1,5 @@
 // Settings endpoints adapted from listmonk cmd/settings.go and cmd/handlers.go at 6fcd95f.
+import { refuseWhileHeld } from "@/settings/hold";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import { readBodyBytes } from "@/users/input";
@@ -129,6 +130,7 @@ export function registerSettingsRoutes(
       }
       auth.revalidate(context, "settings:manage");
       if (!smtpTest) throw new HttpError(501, "SMTP test is unavailable");
+      refuseWhileHeld(context.app.db);
       await smtpTest(body, () => auth.revalidate(context, "settings:manage"));
       return ok([]);
     },

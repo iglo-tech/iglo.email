@@ -2,10 +2,14 @@
 import type { App } from "@/app";
 import { ok } from "@/server/response";
 import { Router } from "@/server/router";
+import { restoreHold } from "@/settings/hold";
 
 export function createRouter(): Router {
   const router = new Router();
-  router.route("GET", "/health", () => ok(true));
+  router.route("GET", "/health", (context) => {
+    const hold = restoreHold(context.app.db);
+    return ok(true, 200, hold ? { hold } : {});
+  });
   return router;
 }
 

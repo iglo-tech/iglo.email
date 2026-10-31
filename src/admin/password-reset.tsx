@@ -1,5 +1,6 @@
 // Adapted from listmonk cmd/auth.go (ForgotPage, ResetPage, doForgotPassword, doResetPassword)
 // and static/public/templates/{forgot,reset}-password.html at 6fcd95f.
+import { restoreHold } from "@/settings/hold";
 import type { ErrorLogger } from "@/app";
 import { render, type Child } from "@/jsx/render";
 import type { Dispatch, Message } from "@/messaging/email";
@@ -125,6 +126,9 @@ export function createPasswordReset(deps: ResetDeps) {
     );
   };
   const postForgot: Handler = async (context) => {
+    // Refused for every address alike, so this says nothing about any of them.
+    const hold = restoreHold(context.app.db);
+    if (hold) return message(context, 503, `Sending is held. ${hold.reason}`);
     const fields = await formFields(context);
     const email = (fields.get("email") ?? "").trim().toLowerCase();
     // The answer leaves first, so neither it nor its timing depends on the address.

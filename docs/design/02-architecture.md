@@ -163,7 +163,9 @@ manifest, then starts HTTP. It closes the connection after HTTP shutdown or a
 startup failure. A nonempty database with pending migrations gets one verified
 SQLite `VACUUM INTO` snapshot before the batch. `iglo.email backup` takes a live
 snapshot from a separate read-only process, with a short-lived helper that syncs its
-output ([operations guide](../operations.md#backups)). Continuous replication
+output ([operations guide](../operations.md#backups)). A backup carries a
+restore hold: a database restored from one sends nothing until an operator
+releases it ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)). Continuous replication
 (for example Litestream) is an operator choice, not built in.
 
 ## Dependencies

@@ -9,6 +9,7 @@ import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import { startLoop } from "@/loops/loop";
+import { sendingHeld } from "@/settings/hold";
 import { blockedAddress } from "@/webhooks/address";
 import type { ClaimedDelivery, WebhookStore } from "@/webhooks/store";
 import { MAX_WEBHOOKS } from "@/webhooks/store";
@@ -186,6 +187,7 @@ export function startWebhookDelivery(options: {
     batchSize: MAX_WEBHOOKS * WEBHOOK_CONCURRENCY,
     claim(now, lease) {
       settleFinished();
+      if (sendingHeld(options.db)) return [];
       return webhooks.claim(lease, now, (id) => WEBHOOK_CONCURRENCY - (active.get(id) ?? 0));
     },
     // Requests run beside the loop, so it keeps claiming for receivers with free slots.
