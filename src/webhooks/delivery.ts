@@ -168,13 +168,19 @@ export function startWebhookDelivery(options: {
     if (last !== undefined && now - last < FAILURE_LOG_MS) return;
     logged.set(id, now);
     // Only the webhook's ID and a safe code: its URL can hold a token and bodies are foreign.
-    options.logger.error(new Error(`Webhook ${id} deliveries are failing: ${error}`));
+    options.logger.error(
+      new Error(`Webhook ${id} deliveries are failing: ${error}`),
+      "Webhook deliveries are failing",
+    );
   }
 
   const loop = startLoop<ClaimedDelivery>({
     db: options.db,
     clock,
-    logger: { error: () => options.logger.error(new Error("Webhook delivery failed")) },
+    logger: {
+      error: () =>
+        options.logger.error(new Error("Webhook delivery failed"), "Webhook delivery failed"),
+    },
     intervalMs: POLL_MS,
     leaseMs: LEASE_MS,
     batchSize: MAX_WEBHOOKS * WEBHOOK_CONCURRENCY,

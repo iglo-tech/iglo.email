@@ -139,6 +139,32 @@ test("logs show as text and a refused read shows its message", async ({ page }) 
   await expect(page.getByTestId("error")).toHaveText("permission denied");
 });
 
+test("a real failure shows what failed, without what a campaign held", async ({ page }) => {
+  const list = await makeList(page);
+  const subscriber = await makeSub(page, [list.id]);
+  const input = {
+    name: unique("embeds"),
+    subject: "S",
+    lists: [list.id],
+    type: "regular",
+    content_type: "richtext",
+    messenger: "email",
+    body: '<img data-embed src="Ada%20Lovelace.png">',
+    from_email: "Fixture <noreply@example.test>",
+  };
+  const campaign = await ok(page, "/api/campaigns", "POST", input);
+  await ok(page, `/api/campaigns/${campaign.id}/test`, "POST", {
+    ...input,
+    subscribers: [subscriber.email],
+  });
+  await page.goto("/admin/settings/logs");
+  await expect(page.getByTestId("logs-help")).toContainText("full error");
+  await expect(page.locator(".log-view .line").last().locator(".log-message")).toHaveText(
+    "inline image not embedded: no such media (Error)",
+  );
+  await expect(page.locator(".log-view")).not.toContainText("Lovelace");
+});
+
 test("an empty log says so", async ({ page }) => {
   await page.route("**/api/logs", (route) => route.fulfill({ json: { data: [] } }));
   await page.goto("/admin/settings/logs");

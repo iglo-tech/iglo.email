@@ -22,6 +22,9 @@ export const logsView: AdminView = ({ context }) => {
             <h1 class="page-title">{t.T("globals.terms.logs")}</h1>
           </header>
           <div class="card page-content">
+            <p class="text-light" data-testid="logs-help">
+              {t.T("logs.help")}
+            </p>
             <Alert name="error" />
             <div data-testid="no-logs" x-show="ready && !lines.length" style="display: none">
               <EmptyState text={t.T("globals.messages.emptyState")} />

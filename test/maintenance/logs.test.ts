@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createAnalyticsPurge } from "@/analytics/purge";
 import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
-import { createLogBuffer, type LogBuffer } from "@/maintenance/log-buffer";
+import { createLogBuffer, type LogBuffer, type SafeMessage } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createErrorLogger } from "@/app";
 
@@ -9,8 +9,12 @@ let f: CampaignsFixture;
 let logs: LogBuffer;
 let purge: ReturnType<typeof createAnalyticsPurge>;
 beforeEach(async () => {
-  f = await campaignsFixture();
-  logs = createLogBuffer(f.clock, 3);
+  f = await campaignsFixture({
+    logger: (clock) => {
+      logs = createLogBuffer(clock, 3);
+      return createErrorLogger(logs);
+    },
+  });
   purge = createAnalyticsPurge(f.db, f.db);
   registerMaintenanceRoutes(f.router, {
     subscribers: f.owners.subscribers,
@@ -32,11 +36,11 @@ const lines = async () => {
   expect(response.status).toBe(200);
   return response.body.data as string[];
 };
-const logged = (error: unknown) => {
+const logged = (error: unknown, safe?: SafeMessage) => {
   const error_ = console.error;
   console.error = () => {};
   try {
-    createErrorLogger(logs).error(error);
+    createErrorLogger(logs).error(error, safe);
   } finally {
     console.error = error_;
   }
@@ -44,12 +48,15 @@ const logged = (error: unknown) => {
 
 test("a line has upstream's shape, and the oldest lines go first", async () => {
   expect(await lines()).toEqual([]);
-  for (const name of ["one", "two", "three", "four", "five", "six", "seven"])
-    logged(new Error(`failed ${name}`));
+  logged(new Error("first"), "Outbox failed");
+  logged(new Error("second"), "Outbox failed");
+  logged(new TypeError("third"));
+  logged(new RangeError("fourth"));
+  logged(new Error("fifth"), "error sending campaign message");
   expect(await lines()).toEqual([
-    "2026/01/02 03:04:05.000000 *: failed five",
-    "2026/01/02 03:04:05.000000 *: failed six",
-    "2026/01/02 03:04:05.000000 *: failed seven",
+    "2026/01/02 03:04:05.000000 *: unexpected error (TypeError)",
+    "2026/01/02 03:04:05.000000 *: unexpected error (RangeError)",
+    "2026/01/02 03:04:05.000000 *: error sending campaign message (Error)",
   ]);
 });
 
@@ -93,13 +100,16 @@ test("nothing secret or personal reaches a reader of the buffer", async () => {
     ])
       expect(line).not.toContain(value);
   }
+  logs = createLogBuffer(f.clock, 4);
   logged(new Error("first\nsecond\tthird"));
   logged(Object.assign(new Error("short"), { cause: new Error("ada@example.com") }));
   logged("ada@example.com");
-  const [multiline, withCause, notAnError] = logs.lines().slice(-3);
-  expect(multiline).toEndWith("first second third");
-  expect(withCause).toEndWith("short");
-  expect(notAnError).toEndWith("Non-error value logged");
+  logged(new Error("ada@example.com"), "ada@example.com" as SafeMessage);
+  const [multiline, withCause, notAnError, unknownMark] = logs.lines().slice(-4);
+  expect(multiline).toEndWith("*: unexpected error (Error)");
+  expect(withCause).toEndWith("*: unexpected error (Error)");
+  expect(notAnError).toEndWith("*: unexpected error (not an Error)");
+  expect(unknownMark).toEndWith("*: unexpected error (Error)");
 });
 
 test("a line is bounded, and a logger keeps its stderr copy whole", async () => {
@@ -113,7 +123,82 @@ test("a line is bounded, and a logger keeps its stderr copy whole", async () => 
     console.error = error_;
   }
   expect(seen).toEqual([failure]);
-  expect((await lines())[0]!.length).toBeLessThan(540);
+  expect((await lines())[0]).toEndWith("*: unexpected error (Error)");
+});
+
+/** What the API user given only `settings:get` reads, and all that stderr received meanwhile. */
+const brokenImage = async (filename: string) => {
+  const role = await f.json("/api/roles/users", "POST", {
+    name: "log-reader",
+    permissions: ["settings:get"],
+  });
+  const user = await f.json("/api/users", "POST", {
+    username: "log-reader",
+    type: "api",
+    status: "enabled",
+    name: "reader",
+    user_role_id: role.body.data.id,
+  });
+  const authorization = `Basic ${btoa(`log-reader:${user.body.data.password}`)}`;
+  const list = await f.list("embeds");
+  await f.subscriber("test@example.com", [list]);
+  const input = {
+    name: "Embeds",
+    subject: "S",
+    lists: [list],
+    content_type: "richtext",
+    type: "regular",
+    messenger: "fixture",
+    body: `<img data-embed src="${filename}">`,
+    from_email: "Fixture <noreply@fixture.test>",
+  };
+  const campaign = await f.campaign(input);
+  const stderr: unknown[] = [];
+  const error_ = console.error;
+  console.error = (...args: unknown[]) => stderr.push(...args);
+  try {
+    const sent = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", {
+      ...input,
+      subscribers: ["test@example.com"],
+    });
+    expect(sent.status).toBe(200);
+  } finally {
+    console.error = error_;
+  }
+  const read = await f.json("/api/logs", "GET", undefined, { authorization });
+  expect(read.status).toBe(200);
+  return { lines: read.body.data as string[], stderr: stderr.map(String).join(" ") };
+};
+
+test("a settings:get reader sees that an image is missing, not whose it was", async () => {
+  const { lines, stderr } = await brokenImage("Ada%20Lovelace.png");
+  expect(lines).toEqual([
+    "2026/01/02 03:04:05.000000 *: inline image not embedded: no such media (Error)",
+  ]);
+  expect(stderr).toContain("Ada Lovelace.png");
+});
+
+test("the line of a very long file name is the line of any other", async () => {
+  const name = "a".repeat(40 * 1024);
+  const { lines, stderr } = await brokenImage(name);
+  expect(lines).toEqual([
+    "2026/01/02 03:04:05.000000 *: inline image not embedded: no such media (Error)",
+  ]);
+  expect(stderr).toContain(name);
+});
+
+test("the buffer reads no text of an error, so its work cannot grow with one", () => {
+  const read: string[] = [];
+  const failure = new Error("unused");
+  for (const key of ["message", "stack", "cause"])
+    Object.defineProperty(failure, key, {
+      get: () => {
+        read.push(key);
+        return "x".repeat(1024);
+      },
+    });
+  logs.add(failure);
+  expect(read).toEqual([]);
 });
 
 test("the route needs settings:get", async () => {

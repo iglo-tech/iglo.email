@@ -10,6 +10,7 @@ import { parseDuration } from "@/conditions/duration";
 import { writeTransaction } from "@/db/transaction";
 import type { EventStore } from "@/events/store";
 import { startLoop } from "@/loops/loop";
+import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Message } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
 import {
@@ -83,9 +84,9 @@ export function startScheduler(options: {
   signal?: AbortSignal;
 }) {
   const { db, clock, logger, enrollments, sends } = options;
-  const attention = (message: string, cause?: unknown) => {
+  const attention = (safe: SafeMessage, message: string, cause?: unknown) => {
     try {
-      logger.error(cause === undefined ? new Error(message) : new Error(message, { cause }));
+      logger.error(cause === undefined ? new Error(message) : new Error(message, { cause }), safe);
     } catch {
       /* Logging never changes a decision. */
     }
@@ -194,6 +195,7 @@ export function startScheduler(options: {
         const lateMs = clock.now().getTime() - Date.parse(row.due_at);
         const backoff = Math.min(BACKOFF_MAX_MS, Math.max(BACKOFF_MIN_MS, lateMs));
         attention(
+          "Sequence condition failed: retrying later",
           `Sequence condition failed for enrollment ${row.id} at step ${row.step_id} (${result.error.kind}); retrying later`,
         );
         return retry(claim, backoff);
@@ -208,6 +210,7 @@ export function startScheduler(options: {
       // decision, released and decided again.
       if (skipped(claim, subscriber.email, "template_unavailable"))
         attention(
+          "Sequence step has no transactional template: skipped",
           `Sequence step ${row.step_id} has no transactional template; enrollment ${row.id} skipped it`,
         );
       return;
@@ -282,6 +285,7 @@ export function startScheduler(options: {
       if (error instanceof RenderCapacityError) return retry(claim, BUSY_MS);
       if (skipped(claim, subscriber.email, "render_failed"))
         attention(
+          "Sequence step could not be rendered: skipped",
           `Sequence step ${row.step_id} could not be rendered for enrollment ${row.id}; skipped`,
         );
       return;
@@ -330,7 +334,7 @@ export function startScheduler(options: {
   const loop = startLoop<{ id: bigint; lease: string }>({
     db,
     clock,
-    logger: { error: () => attention("Sequence scheduler failed") },
+    logger: { error: () => attention("Sequence scheduler failed", "Sequence scheduler failed") },
     intervalMs: SCHEDULER_INTERVAL_MS,
     leaseMs: LEASE_MS,
     batchSize: BATCH,
@@ -343,7 +347,11 @@ export function startScheduler(options: {
       } catch (error) {
         // One failed decision never stops the scheduler: log it and release the claim for a
         // later retry. A broken database still surfaces through the next claim.
-        attention(`Sequence decision failed for enrollment ${item.id}; retrying later`, error);
+        attention(
+          "Sequence decision failed: retrying later",
+          `Sequence decision failed for enrollment ${item.id}; retrying later`,
+          error,
+        );
         try {
           writeTransaction(db, () =>
             enrollments.release(item, new Date(clock.now().getTime() + BACKOFF_MIN_MS)),
