@@ -4,15 +4,16 @@ Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.2 backup command and operations guide, [PR #47](https://github.com/iglo-tech/iglo.email/pull/47), head d683b3e. Local checks pass; Sol round-1 review running. D26 stands: no public first-account form.
+M6.3 release workflow: [brief](briefs/M6.3.md); one Opus worker running. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M6.3, M6.4, then the before-1.0 backlog items. Owner to verify: one real Mailgun event and a retry (D63).
+Next: M6.4, then the before-1.0 backlog items. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
 
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one Sol xhigh reviewer; lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
+[D67](design/09-decisions.md) (agents, for owner review): every backup carries a restore hold that stops all sending until released.
 [D66](design/09-decisions.md) (agents, for owner review): authored HTML passes an allow-list before the admin editor; `style` is kept.
 [D65](design/09-decisions.md) (agents, for owner review): `@playwright/test` as a dev dependency for adapted specs.
 [D64](design/09-decisions.md) (agents, for owner review): the upload root must be inside the data directory; a bad root refuses media only.
@@ -33,6 +34,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M6.2         | [#47](https://github.com/iglo-tech/iglo.email/pull/47) | e191856 | Backup, restore hold (D67), reset-password, operations guide |
 | M5.5         | [#45](https://github.com/iglo-tech/iglo.email/pull/45) | 25bf1f4 | Sequence screens, subscriber tabs, test mode               |
 | M4.6         | [#44](https://github.com/iglo-tech/iglo.email/pull/44) | bbb6570 | Analytics, maintenance, logs; log buffer holds safe fields |
 | M4.5         | [#43](https://github.com/iglo-tech/iglo.email/pull/43) | 6481e54 | Bounces, media, import, forms screens                      |
@@ -82,6 +84,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Tests: no contract case for a nonempty messenger lifecycle (M4.4).
 - Before 1.0: automatic bounded retention of delivered webhook rows and expired sessions; send analytics need a history-retention decision first.
 - Sequences: "reschedule active enrollments" and live condition validation deferred (M5.5); both need a write or validate endpoint.
+- Intermittent under load: `CLI cancellation interrupts an in-flight request` and `subscribers.e2e.js:272` navigation race (both M6.2, once each, clean on rerun).
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.

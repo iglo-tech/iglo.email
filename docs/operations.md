@@ -260,7 +260,7 @@ and refuses if there is too little.
 
 **Failure.** The backup is built in `.iglo-email-backup-partial-<random>` beside its destination,
 synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and
-removes that directory. A killed one leaves it, and nothing at the final name, so a retry of the
+removes that directory. A killed one leaves it, and nothing at the final name, so a retry of the A kill after the final rename, before the command reports success, leaves a complete backup at that name: check it with `--verify` before you retry, since a retry refuses the existing destination.
 same `--output` works. `--verify` refuses it, and it can never be mistaken for a backup. The next
 `backup` in that place warns about it and does not delete it, as it could be running. When none
 is running, remove it:
