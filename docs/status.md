@@ -4,9 +4,9 @@ Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M4.6 analytics, maintenance, logs, [PR #44](https://github.com/iglo-tech/iglo.email/pull/44), head 454790c. Local checks pass; Sol round-1 review running. D26 stands: no public first-account form.
+M5.5 sequence screens, subscriber tabs, test mode: [brief](briefs/M5.5.md); one Opus worker running. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
+Next: M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -33,6 +33,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M4.6         | [#44](https://github.com/iglo-tech/iglo.email/pull/44) | bbb6570 | Analytics, maintenance, logs; log buffer holds safe fields |
 | M4.5         | [#43](https://github.com/iglo-tech/iglo.email/pull/43) | 6481e54 | Bounces, media, import, forms screens                      |
 | M4.4         | [#42](https://github.com/iglo-tech/iglo.email/pull/42) | 39e710c | Settings, users, roles, profile; usable last admin         |
 | M4.3         | [#41](https://github.com/iglo-tech/iglo.email/pull/41) | e54fe8c | Templates and campaigns screens; HTML allow-list D66       |
@@ -78,6 +79,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Before public release: admin pages set no CSP; add one and contain the editor surface (M4.3). The sanitizer has had a design review and browser probes, no dedicated hostile test; consider DOMPurify.
 - Editor: head content missing from the removal warning; keep a foreign-content and undo regression corpus; inline message for refused URLs.
 - Tests: no contract case for a nonempty messenger lifecycle (M4.4).
+- Before 1.0: automatic bounded retention of delivered webhook rows and expired sessions; send analytics need a history-retention decision first.
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
