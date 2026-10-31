@@ -1,7 +1,8 @@
 // What the enrollment explorer shows of one enrollment (docs/design/05-sequences.md#admin-ui); no
-// upstream source. The scheduler records a step's decision only when it writes a send, so a step
-// passed without one (a false condition with `on_false: skip`) is inferred from the enrollment's
-// position. An enrollment that ended keeps no position, so its last step is the end entry.
+// upstream source. The scheduler records a step's decision only when it writes a send, so sends are
+// the only step entries: the current definition cannot say what an enrollment did, since a step may
+// have been added or moved since. It only names a sent step's position and the step being waited
+// for. `event` is null for a viewer who may not read the subscriber.
 import type { EventRow } from "@/events/store";
 import type { EnrollmentSend } from "@/messaging/sends";
 import { numberID, type EnrollmentRow, type Enrollments } from "@/sequences/enrollments";
@@ -14,26 +15,25 @@ export function timeline(
   steps: Step[],
   sends: EnrollmentSend[],
 ) {
-  const stepEntry = (step: Step, send: EnrollmentSend | undefined) => ({
-    type: "step",
-    at: send ? (send.sent_at ?? send.created_at) : null,
-    step_id: numberID(step.id),
-    position: Number(step.position),
-    kind: send?.kind ?? step.kind,
-    decision: send?.status ?? "passed",
-    reason: send?.skip_reason ?? null,
-    send_id: send ? numberID(send.id) : null,
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const current = row.step_id === null ? undefined : byId.get(row.step_id);
+  const recorded = sends.flatMap((send) => {
+    const step = send.step_id === null ? undefined : byId.get(send.step_id);
+    return step
+      ? [
+          {
+            type: "step",
+            at: send.sent_at ?? send.created_at,
+            step_id: numberID(step.id),
+            position: Number(step.position),
+            kind: send.kind,
+            decision: send.status,
+            reason: send.skip_reason,
+            send_id: numberID(send.id),
+          },
+        ]
+      : [];
   });
-  const current = steps.find((step) => step.id === row.step_id);
-  const passed = (step: Step) =>
-    step.status === "active" &&
-    (row.status === "completed" || (current !== undefined && step.position < current.position));
-  const bySend = new Map(sends.map((send) => [send.step_id, send]));
-  const reached = steps.flatMap((step) => {
-    const send = bySend.get(step.id);
-    return send || passed(step) ? [stepEntry(step, send)] : [];
-  });
-  reached.sort((a, b) => a.position - b.position);
   return [
     ...(event
       ? [
@@ -46,7 +46,7 @@ export function timeline(
         ]
       : []),
     { type: "enrolled", at: row.created_at },
-    ...reached,
+    ...recorded,
     ...(row.status === "active"
       ? [
           {

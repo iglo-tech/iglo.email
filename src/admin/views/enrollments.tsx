@@ -12,7 +12,6 @@ const keys = [
   ...sequenceStatusKeys,
   "globals.messages.confirm",
   "sequences.decision.failed",
-  "sequences.decision.passed",
   "sequences.decision.queued",
   "sequences.decision.sending",
   "sequences.decision.sent",
@@ -289,7 +288,6 @@ export const enrollmentView: AdminView = ({ context, can }) => {
   const t = context.app.i18n;
   const id = String(getID(context));
   const parent = t.T("sequences.enrollments");
-  const canSubscriber = can("subscribers:get", "subscribers:get_all");
   return {
     title: `${t.T("sequences.enrollment")} ${id}`,
     pageId: "sequences.enrollments",
@@ -312,14 +310,15 @@ export const enrollmentView: AdminView = ({ context, can }) => {
                 <StatusBadge /> <TestBadge t={t} />
               </h1>
               <div class="text-light">
-                {canSubscriber ? (
+                <template x-if="e.subscriber_email">
                   <a
                     x-bind:href="`/admin/subscribers/${e.subscriber_id}`"
-                    x-text="e.subscriber_email ?? `#${e.subscriber_id}`"
+                    x-text="e.subscriber_email"
                   ></a>
-                ) : (
-                  <span x-text="e.subscriber_email ?? `#${e.subscriber_id}`"></span>
-                )}
+                </template>
+                <template x-if="!e.subscriber_email">
+                  <span x-text="`#${e.subscriber_id}`"></span>
+                </template>
               </div>
             </div>
             <div class="col-4 hstack justify-end buttons">
@@ -352,6 +351,15 @@ export const enrollmentView: AdminView = ({ context, can }) => {
                 </li>
               </template>
             </ol>
+            <small class="text-light" data-testid="timeline-note">
+              {t.T("sequences.timelineNote")}
+            </small>
+            <template x-if="!e.subscriber_email">
+              <small class="text-light" data-testid="timeline-hidden">
+                {" "}
+                {t.T("sequences.timelineHidden")}
+              </small>
+            </template>
           </div>
         </div>
       </section>

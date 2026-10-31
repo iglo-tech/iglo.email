@@ -247,6 +247,16 @@ export function createSubscriberStore(
     byEmail,
     memberships,
     project,
+    /** The addresses of those of `ids` with a membership in `scope`, in one query. */
+    readable(ids: bigint[], scope: Scope) {
+      const rows = q
+        .get("subscribers-readable")
+        .all(`[${ids.join(",")}]`, scope.all, `[${scope.ids.join(",")}]`) as Pick<
+        Row,
+        "id" | "email"
+      >[];
+      return new Map(rows.map((row) => [row.id, row.email]));
+    },
     transaction(fn: () => Response): Response {
       return writeTransaction(db, fn);
     },

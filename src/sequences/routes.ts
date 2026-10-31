@@ -1,7 +1,8 @@
 // Native sequences and enrollments API (docs/design/05-sequences.md, 07-api-and-ui.md);
-// no upstream endpoint. Reads need `sequences:get`; writes need `sequences:manage` and are
-// revalidated and validated inside their write transaction, so a permission or definition
-// change cannot interleave with them.
+// no upstream endpoint. Reads need `sequences:get`, and what an enrollment shows of its subscriber
+// also needs that subscriber's own read rule; writes need `sequences:manage` and are revalidated
+// and validated inside their write transaction, so a permission or definition change cannot
+// interleave with them.
 import { writeTransaction } from "@/db/transaction";
 import { parseJson, readBounded } from "@/events/input";
 import type { EventStore } from "@/events/store";
@@ -27,6 +28,7 @@ import type { RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
+import { readableSubscribers } from "@/subscribers/routes";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 
@@ -45,7 +47,7 @@ export function registerSequenceRoutes(
   deps: {
     sequences: SequenceStore;
     enrollments: Enrollments;
-    subscribers: Pick<SubscriberStore, "get">;
+    subscribers: Pick<SubscriberStore, "get" | "readable">;
     events: Pick<EventStore, "get">;
     sends: Pick<Sends, "marketingReason" | "enrollmentSends">;
     roles: Roles;
@@ -119,13 +121,14 @@ export function registerSequenceRoutes(
     };
   };
   const maxID = 9223372036854775807n;
-  /** Enrollments name their subscriber by ID; the address needs the permission that reads it. */
-  const addressed = (c: RequestContext) => {
-    const shown = roles.can(identity(c).role, "subscribers:get_all");
-    return (row: EnrollmentRow) => ({
-      ...project(row),
-      ...(shown ? { subscriber_email: subscribers.get(row.subscriber_id)?.email ?? null } : {}),
-    });
+  /** Enrollments name their subscriber by ID; anything of the person follows the owner's rule. */
+  const readable = (c: RequestContext, rows: EnrollmentRow[]) =>
+    readableSubscribers(roles, subscribers, identity(c), [
+      ...new Set(rows.map((row) => row.subscriber_id)),
+    ]);
+  const addressed = (row: EnrollmentRow, addresses: Map<bigint, string>) => {
+    const email = addresses.get(row.subscriber_id);
+    return { ...project(row), ...(email === undefined ? {} : { subscriber_email: email }) };
   };
 
   router.route(
@@ -236,7 +239,12 @@ export function registerSequenceRoutes(
       if (subscriberId !== undefined) filter.subscriberId = subscriberId;
       if (status !== undefined) filter.status = status;
       if (exitReason !== undefined) filter.exitReason = exitReason;
-      return ok(enrollments.list(filter, addressed(c)));
+      return ok(
+        enrollments.list(filter, (rows) => {
+          const addresses = readable(c, rows);
+          return rows.map((row) => addressed(row, addresses));
+        }),
+      );
     },
     auth.middleware(GET),
   );
@@ -246,7 +254,7 @@ export function registerSequenceRoutes(
     (c) => {
       const row = enrollments.get(BigInt(getID(c)));
       if (!row) throw new HttpError(404, "Enrollment not found");
-      return ok(addressed(c)(row));
+      return ok(addressed(row, readable(c, [row])));
     },
     auth.middleware(GET),
     hasID,
@@ -257,11 +265,14 @@ export function registerSequenceRoutes(
     (c) => {
       const row = enrollments.get(BigInt(getID(c)));
       if (!row) throw new HttpError(404, "Enrollment not found");
+      const addresses = readable(c, [row]);
       return ok({
-        enrollment: addressed(c)(row),
+        enrollment: addressed(row, addresses),
         entries: timeline(
           row,
-          row.trigger_event_id === null ? null : events.get(row.trigger_event_id),
+          row.trigger_event_id !== null && addresses.has(row.subscriber_id)
+            ? events.get(row.trigger_event_id)
+            : null,
           enrollments.steps(row.sequence_id),
           sends.enrollmentSends(row.id),
         ),

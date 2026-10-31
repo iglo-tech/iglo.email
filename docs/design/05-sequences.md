@@ -178,7 +178,7 @@ M5.4 implements this in `src/scheduler/scheduler.ts`, with enrollment SQL in `sr
 - Subscriber page: events, enrollments and sends for that person.
 - Test mode: "enroll a test subscriber with every wait shortened to 1 minute".
 
-M5.5 builds these screens in `src/admin/views` ([what they read](07-api-and-ui.md#sequence-screens-m55)). A timeline shows what the journal holds: the scheduler records a decision only when it writes a send, so a step passed without one reads "passed", inferred from the enrollment's position, and an enrollment that ended on a false condition shows that as its end. "Reschedule active enrollments" from the guarantees above is not built: it needs a write that M5.5 was not given, so the editor says that scheduled times are kept.
+M5.5 builds these screens in `src/admin/views` ([what they read](07-api-and-ui.md#sequence-screens-m55)). A timeline shows what the journal holds: the scheduler records a decision only when it writes a send, so a step without a send is not listed and the page says that its outcome is unknown. Nothing is inferred from the enrollment's position or the current definition, which may have gained or moved steps since; an enrollment that ended on a false condition shows that as its end. The subscriber's address and the trigger event appear only to a viewer who could open that subscriber ([rule](07-api-and-ui.md#sequence-screens-m55)). "Reschedule active enrollments" from the guarantees above is not built: it needs a write that M5.5 was not given, so the editor says that scheduled times are kept.
 
 ### Test mode
 

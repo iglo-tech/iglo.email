@@ -7,6 +7,13 @@ SELECT * FROM subscribers WHERE external_id = ?;
 SELECT * FROM subscribers WHERE email = ?;
 -- name: subscriber-memberships
 SELECT * FROM subscriber_lists WHERE subscriber_id = ? ORDER BY created_at, list_id;
+-- name: subscribers-readable
+SELECT s.id, s.email FROM subscribers s
+  WHERE s.id IN (SELECT value FROM json_each(?1))
+    AND (?2 OR EXISTS (
+      SELECT 1 FROM subscriber_lists m
+      WHERE m.subscriber_id = s.id AND m.list_id IN (SELECT value FROM json_each(?3))
+    ));
 -- name: subscriber-insert
 INSERT INTO subscribers (uuid,email,name,status,attribs,external_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) RETURNING id;
 -- name: subscriber-update

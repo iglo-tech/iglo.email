@@ -1,7 +1,17 @@
 // Native screens with no upstream spec (docs/design/05-sequences.md#admin-ui). Test mode runs the
 // compiled executable's real scheduler to the SMTP sink, so its one-minute wait is a real minute.
 import { expect } from "@playwright/test";
-import { api, confirm, createUser, login, logout, mailFor, test, unique } from "../helpers.js";
+import {
+  api,
+  confirm,
+  createUser,
+  login,
+  logout,
+  mailFor,
+  PASSWORD,
+  test,
+  unique,
+} from "../helpers.js";
 
 const hostile = (kind) =>
   `<img src=x onerror="window.pwned='${kind}'"> "'\` {{ 7*7 }} x-on:click="window.pwned=1" ${unique(kind)}`;
@@ -337,6 +347,43 @@ test("hostile names, event data and attributes render as text", async ({ page })
   await page.goto(`/admin/subscribers/${subscriberID}/edit`);
   await expect(page.locator('textarea[name="attribs"]')).toHaveValue(/onerror/);
   await clean();
+});
+
+test("an enrollment hides its person from a viewer who can't read them", async ({ page }) => {
+  await login(page);
+  const seq = await sequence(page, {
+    steps: [{ wait: "P1D", kind: "transactional", template_id: (await template(page)).id }],
+  });
+  const email = `${unique("private")}@example.com`;
+  const street = unique("street");
+  const made = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: { email },
+    name: seq.trigger.event,
+    data: { address: street },
+  });
+  expect(made.status).toBe(200);
+  const enrollment = made.body.data.enrollments.started[0].id;
+  await page.goto(`/admin/sequences/enrollments/${enrollment}`);
+  await expect(page.getByTestId("timeline-data")).toContainText(street);
+  await expect(
+    page.locator(`a[href="/admin/subscribers/${made.body.data.subscriber_id}"]`),
+  ).toHaveText(email);
+  await expect(page.getByTestId("timeline-note")).toContainText("Only sends are recorded");
+  await expect(page.getByTestId("timeline-hidden")).toHaveCount(0);
+
+  const viewer = await createUser(page, ["sequences:get"]);
+  await logout(page);
+  await login(page, viewer.username, PASSWORD, `/admin/sequences/enrollments/${enrollment}`);
+  await expect(page.getByTestId("timeline")).toContainText("Waiting for step 1");
+  await expect(page.getByTestId("timeline-hidden")).toContainText("can't read this subscriber");
+  await expect(page.getByTestId("timeline-data")).toHaveCount(0);
+  await expect(page.locator("section.enrollments")).not.toContainText(email);
+  await expect(page.locator("section.enrollments")).not.toContainText(street);
+  await page.goto(`/admin/sequences/enrollments?sequence_id=${seq.id}`);
+  await expect(page.getByTestId("enrollment-row")).toContainText(
+    `#${made.body.data.subscriber_id}`,
+  );
+  await expect(page.getByTestId("enrollment-row")).not.toContainText(email);
 });
 
 test("template previews stay in the sandboxed frame", async ({ page }) => {

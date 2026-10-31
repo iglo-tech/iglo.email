@@ -327,7 +327,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     get: byId,
     list<T = ReturnType<typeof project>>(
       filter: EnrollmentFilter,
-      view: (row: EnrollmentRow) => T = project as (row: EnrollmentRow) => T,
+      view: (rows: EnrollmentRow[]) => T[] = (rows) => rows.map(project) as T[],
     ) {
       const { statements, args } = listStatement(filter);
       const rows = statements.rows.all(
@@ -337,7 +337,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       ) as EnrollmentRow[];
       const total = (statements.total.get(...args) as { n: bigint }).n;
       return {
-        results: rows.map(view),
+        results: view(rows),
         total: numberID(total),
         page: filter.page,
         per_page: filter.perPage,

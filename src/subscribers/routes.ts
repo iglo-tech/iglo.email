@@ -17,6 +17,7 @@ import type { SubscriberStore, Scope } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 
 type SubscriberRow = NonNullable<ReturnType<SubscriberStore["get"]>>;
+type Reader = NonNullable<RequestContext["identity"]>;
 
 /** One page of what a subscriber did or received, from the module that owns it. */
 type ActivityPage = (id: bigint, page: number, perPage: number) => unknown;
@@ -25,6 +26,29 @@ export interface SubscriberActivity {
   enrollments: ActivityPage;
   sends: ActivityPage;
 }
+
+const canRead = (roles: Roles, identity: Reader) =>
+  roles.can(identity.role, "subscribers:get") || roles.can(identity.role, "subscribers:get_all");
+const listScope = (roles: Roles, i: Reader, kind: "get" | "manage"): Scope => {
+  const get = roles.listScope(i.role, i.user.list_role_id, "list:get"),
+    manage = roles.listScope(i.role, i.user.list_role_id, "list:manage");
+  if (kind === "manage") return manage;
+  if (get.all || manage.all) return { all: true, ids: [] };
+  return get.ids.length ? get : manage;
+};
+/**
+ * GET /api/subscribers/:id's rule for a bounded page of IDs, for routes that show a subscriber
+ * they do not own: the address of each one this reader could open, and no others.
+ */
+export const readableSubscribers = (
+  roles: Roles,
+  store: Pick<SubscriberStore, "readable">,
+  reader: Reader,
+  ids: bigint[],
+) =>
+  canRead(roles, reader)
+    ? store.readable(ids, listScope(roles, reader, "get"))
+    : new Map<bigint, string>();
 
 export function registerSubscriberRoutes(
   router: Router,
@@ -47,14 +71,8 @@ export function registerSubscriberRoutes(
     if (!c.identity) throw new Error("Identity required");
     return c.identity;
   };
-  const scope = (c: RequestContext, kind: "get" | "manage"): Scope => {
-    const i = identity(c);
-    const get = roles.listScope(i.role, i.user.list_role_id, "list:get"),
-      manage = roles.listScope(i.role, i.user.list_role_id, "list:manage");
-    if (kind === "manage") return manage;
-    if (get.all || manage.all) return { all: true, ids: [] };
-    return get.ids.length ? get : manage;
-  };
+  const scope = (c: RequestContext, kind: "get" | "manage"): Scope =>
+    listScope(roles, identity(c), kind);
   const maskScope = (c: RequestContext): Scope => {
     const i = identity(c);
     const a = roles.listScope(i.role, i.user.list_role_id, "list:get"),
@@ -276,15 +294,11 @@ export function registerSubscriberRoutes(
     };
   // GET accepts either subscriber read permission, as in listmonk.
   const canGet: Handler = (c) => {
-    const i = identity(c);
-    if (!roles.can(i.role, "subscribers:get") && !roles.can(i.role, "subscribers:get_all"))
-      throw new HttpError(403, "permission denied");
+    if (!canRead(roles, identity(c))) throw new HttpError(403, "permission denied");
     return get(false)(c);
   };
   const canExternal: Handler = (c) => {
-    const i = identity(c);
-    if (!roles.can(i.role, "subscribers:get") && !roles.can(i.role, "subscribers:get_all"))
-      throw new HttpError(403, "permission denied");
+    if (!canRead(roles, identity(c))) throw new HttpError(403, "permission denied");
     return get(true)(c);
   };
   router.route("POST", "/api/subscribers", create, auth.middleware("subscribers:manage"));
@@ -313,10 +327,9 @@ export function registerSubscriberRoutes(
     const paged =
       (read: ActivityPage, permission?: string): Handler =>
       (c) => {
-        const { role } = identity(c);
-        if (!roles.can(role, "subscribers:get") && !roles.can(role, "subscribers:get_all"))
-          throw new HttpError(403, "permission denied");
-        if (permission && !roles.can(role, permission))
+        const i = identity(c);
+        if (!canRead(roles, i)) throw new HttpError(403, "permission denied");
+        if (permission && !roles.can(i.role, permission))
           throw new HttpError(403, "permission denied");
         const id = BigInt(getID(c));
         allowed(c, [id], "get");

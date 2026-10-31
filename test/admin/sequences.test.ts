@@ -35,6 +35,13 @@ test("the test dialog says it sends real mail and what it needs", async () => {
   expect(html).toContain("not blocklisted");
 });
 
+test("the timeline says why a step without a send is not listed", async () => {
+  const html = await (await get(f, "/admin/sequences/enrollments/7", cookie)).text();
+  expect(html).toContain("Only sends are recorded");
+  expect(html).toContain("its outcome is unknown");
+  expect(html).not.toContain("its condition was false");
+});
+
 test("each route asks for its endpoint's permission", async () => {
   const none = await userWith(f, cookie, "m55-nothing", ["lists:get_all"]);
   for (const path of [
