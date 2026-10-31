@@ -438,17 +438,20 @@ describe("one server", () => {
   });
 
   test("the temporary file goes on finish, stop and failure", async () => {
+    // The status is published just before the file goes.
+    const gone = async () => {
+      for (let i = 0; i < 400 && leftovers().length; i++) await Bun.sleep(5);
+      expect(leftovers()).toEqual([]);
+    };
     await c.run(subscribe(), "email\ntemp1@example.test\n");
-    expect(leftovers()).toEqual([]);
+    await gone();
     await c.run(subscribe(), "name\nA\n");
-    expect(leftovers()).toEqual([]);
+    await gone();
     expect((await c.post(subscribe(), rows("temp-stop", 3000))).status).toBe(200);
     await c.call("/api/import/subscribers", "DELETE");
     await c.settled();
     await c.call("/api/import/subscribers", "DELETE");
-    // The status is published just before the file goes.
-    for (let i = 0; i < 400 && leftovers().length; i++) await Bun.sleep(5);
-    expect(leftovers()).toEqual([]);
+    await gone();
   });
 
   test("a stop lands between batches: the count and the rows agree", async () => {
