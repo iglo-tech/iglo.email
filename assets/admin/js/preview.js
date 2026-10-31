@@ -2,16 +2,16 @@
 // static/admin/assets/js/views/templates.js at 6fcd95f. Upstream posts a form into the frame. A
 // cookie POST here needs its CSRF header, so the page fetches the HTML and writes it to the frame's
 // srcdoc. The sandbox attribute gives that document no script and no origin; a srcdoc has no
-// response headers, so the API's preview CSP goes in as the first thing in it.
+// response headers, so the API's preview CSP goes first, in a head opened ahead of every authored
+// character. Text there would start the body, where a parser ignores the policy.
 import { csrfToken } from '@/assets/admin/js/main.js';
 import * as u from '@/assets/admin/js/utils.js';
 
 const policy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
-const policyTag = `<meta http-equiv="Content-Security-Policy" content="${policy}">`;
+const policyHead = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${policy}">`;
 
 function frameDocument(text, type) {
-  const html = type.startsWith('text/plain') ? `<pre>${u.escapeHTML(text)}</pre>` : text;
-  return html.replace(/^\s*(?:<!doctype[^>]*>)?/i, (doctype) => `${doctype}${policyTag}`);
+  return policyHead + (type.startsWith('text/plain') ? `<pre>${u.escapeHTML(text)}</pre>` : text);
 }
 
 export function previewMixin() {

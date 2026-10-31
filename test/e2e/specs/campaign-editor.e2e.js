@@ -2,6 +2,8 @@
 // path, a posted preview fetches nothing whatever its first character is, a save keeps what it did
 // not change, and starting a campaign takes only the right to send. listmonk has no such spec at
 // 6fcd95f; docs/design/09-decisions.md#d66 lists what the sanitizer keeps.
+import { createServer } from "node:http";
+import { createServer } from "node:http";
 import { expect } from "@playwright/test";
 import { api, confirm, login, ORIGIN, test, unique } from "../helpers.js";
 
@@ -263,4 +265,78 @@ test("an ordinary newsletter comes through the rich-text editor unchanged", asyn
   expect(saved).toContain("<li>Ones</li>");
   expect(saved.replace("<li>Ones</li>", "<li>One</li>")).toContain('href="{{ unsubscribe_url }}"');
   await expect(notice(page)).toBeHidden();
+});
+
+// The address gets the request or it does not; the browser's own events can miss a blocked one.
+// Only the paths count: anything on this host may probe a new port.
+async function receiver() {
+  const hits = [];
+  const server = createServer((request, response) => {
+    hits.push(request.url);
+    response.writeHead(204, { "Access-Control-Allow-Origin": "*" }).end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    hits,
+    url: `http://127.0.0.1:${server.address().port}`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+// The image in the frame has settled, and a request the page makes afterwards arrives.
+async function nothingFetched(page, place) {
+  const image = page.frameLocator(".preview-modal iframe").locator("img");
+  await expect(image).toHaveCount(1);
+  await expect.poll(() => image.evaluate((el) => el.complete)).toBe(true);
+  await page.evaluate((url) => fetch(`${url}/control`, { mode: "no-cors" }), place.url);
+  await expect.poll(() => place.hits.includes("/control")).toBe(true);
+  expect(place.hits.filter((hit) => hit.startsWith("/pixel"))).toEqual([]);
+}
+
+for (const start of [" ", " ", "﻿", "text ", "<!-- a -->", ""]) {
+  const label = [...start].map((ch) => ch.codePointAt(0).toString(16)).join(" ") || "nothing";
+  test(`a template preview starting with ${label} reaches no receiver`, async ({ page }) => {
+    await login(page);
+    const place = await receiver();
+    try {
+      const t = await ok(page, "/api/templates", "POST", {
+        name: unique("Preview"),
+        type: "tx",
+        subject: "Preview",
+        body: `${start}<!doctype html><html><body><img src="${place.url}/pixel.gif"></body></html>`,
+      });
+      await page.goto(`/admin/templates/${t.id}`);
+      await page.getByTestId("btn-preview").first().click();
+      await nothingFetched(page, place);
+    } finally {
+      await place.close();
+    }
+  });
+}
+
+test("the campaign and archive previews reach no receiver either", async ({ page }) => {
+  await login(page);
+  const place = await receiver();
+  try {
+    const t = await ok(page, "/api/templates", "POST", {
+      name: unique("Preview"),
+      type: "campaign",
+      subject: "",
+      body: ` <!doctype html><img src="${place.url}/pixel.gif">{{ content | raw }}`,
+    });
+    const c = await create(page, { content_type: "html", template_id: t.id });
+    await page.goto(`${CAMPAIGNS}/${c.id}`);
+    await button(page.locator(".page-header"), "Preview").click();
+    await nothingFetched(page, place);
+    await button(page.locator(".preview-modal"), "Close").click();
+    place.hits.length = 0;
+
+    await page.getByRole("tab", { name: "Archive", exact: true }).click();
+    await page.getByRole("switch").filter({ visible: true }).check();
+    await page.locator(".campaign select").filter({ visible: true }).first().selectOption(t.name);
+    await button(page.getByRole("tabpanel").filter({ hasText: "Slug" }), "Preview").click();
+    await nothingFetched(page, place);
+  } finally {
+    await place.close();
+  }
 });
