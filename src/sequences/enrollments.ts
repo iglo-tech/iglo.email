@@ -18,6 +18,8 @@ import sql from "@/sequences/enrollments.sql" with { type: "text" };
 /** Compiled trigger filters kept per store; the least recently used is finalized beyond it. */
 const CACHE = 64;
 const MIN_TIME = Date.UTC(1000, 0, 1);
+/** Test mode shortens every wait to at most this (docs/design/05-sequences.md#test-mode). */
+export const TEST_WAIT_MS = 60_000;
 
 export interface EnrollmentRow {
   id: bigint;
@@ -31,6 +33,8 @@ export interface EnrollmentRow {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+  test: bigint | number;
+  sequence_name?: string | null;
 }
 export interface EnrollmentFilter {
   sequenceId?: bigint;
@@ -60,14 +64,19 @@ export function project(row: EnrollmentRow) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     finished_at: row.finished_at,
+    test: Boolean(row.test),
+    ...(row.sequence_name === undefined ? {} : { sequence_name: row.sequence_name }),
   };
 }
 
-/** `wait` after `from`, in the stored ISO format. Waits were validated when saved. */
-function after(from: string, wait: string): string {
+/**
+ * When a step is due: `wait` after `from`, in the stored ISO format. The one place a test
+ * enrollment's waits are shortened. Waits were validated when saved.
+ */
+function after(from: string, wait: string, test: boolean): string {
   const ms = parseDuration(wait);
   if (ms === undefined) throw new Error("Stored step wait is invalid");
-  return new Date(Date.parse(from) + ms).toISOString();
+  return new Date(Date.parse(from) + (test ? Math.min(ms, TEST_WAIT_MS) : ms)).toISOString();
 }
 
 /** A claimed enrollment with its current sequence and step definition (M5.4 scheduler). */
@@ -82,6 +91,7 @@ export interface SchedulerContext {
   claimed_until: string | null;
   created_at: string;
   updated_at: string;
+  test: bigint | number;
   sequence_name: string;
   sequence_status: string;
   list_id: bigint | null;
@@ -101,7 +111,10 @@ export interface SchedulerContext {
 export interface Claim {
   id: bigint;
   lease: string;
-  step: Pick<SchedulerContext, "sequence_id" | "step_id" | "position" | "step_status" | "due_at">;
+  step: Pick<
+    SchedulerContext,
+    "sequence_id" | "step_id" | "position" | "step_status" | "due_at" | "test"
+  >;
 }
 
 export type EnrollOutcome =
@@ -109,6 +122,10 @@ export type EnrollOutcome =
   | {
       error: "sequence_missing" | "sequence_inactive" | "no_steps" | "reentry";
     };
+export type TestOutcome =
+  | EnrollOutcome
+  | { error: "test_running" }
+  | { error: "no_consent"; reason: string };
 
 export function createEnrollments(db: Database, clock: Clock) {
   const q = prepareNamedQueries(db, [{ name: "sequences/enrollments", sql }]);
@@ -184,12 +201,13 @@ export function createEnrollments(db: Database, clock: Clock) {
     first: { id: bigint; wait: string },
     from: string,
     now: string,
+    test = false,
   ): bigint {
-    const dueAt = after(from, first.wait);
+    const dueAt = after(from, first.wait, test);
     const id = (
       q
         .get("enrollment-insert")
-        .get(sequenceId, subscriberId, triggerEventId, first.id, dueAt, now, now) as {
+        .get(sequenceId, subscriberId, triggerEventId, first.id, dueAt, now, now, test ? 1 : 0) as {
         id: bigint;
       }
     ).id;
@@ -287,7 +305,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     if (!statements) {
       statements = {
         rows: db.prepare(
-          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at, test, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         ),
         total: db.prepare(`SELECT count(*) AS n FROM enrollments${where}`),
       };
@@ -307,7 +325,10 @@ export function createEnrollments(db: Database, clock: Clock) {
     subscriberEffects,
     unsubscribeEffects,
     get: byId,
-    list(filter: EnrollmentFilter) {
+    list<T = ReturnType<typeof project>>(
+      filter: EnrollmentFilter,
+      view: (rows: EnrollmentRow[]) => T[] = (rows) => rows.map(project) as T[],
+    ) {
       const { statements, args } = listStatement(filter);
       const rows = statements.rows.all(
         ...args,
@@ -316,7 +337,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       ) as EnrollmentRow[];
       const total = (statements.total.get(...args) as { n: bigint }).n;
       return {
-        results: rows.map(project),
+        results: view(rows),
         total: numberID(total),
         page: filter.page,
         per_page: filter.perPage,
@@ -356,6 +377,43 @@ export function createEnrollments(db: Database, clock: Clock) {
       }
       const id = start(sequenceId, subscriberId, null, first, now, now);
       return { enrollment: byId(id)! };
+    },
+    /**
+     * Test mode (05-sequences.md#test-mode): enroll beside any real enrollment, with waits
+     * shortened by `after`. It needs what a normal enrollment needs and, when a step is marketing,
+     * current consent on the sequence's list, as `consent` reports it (null or `frequency_cap`,
+     * which delays a step and is not consent). It writes nothing else: reentry neither stops it
+     * nor counts it. The caller holds the write transaction.
+     */
+    enrollTest(
+      sequenceId: bigint,
+      subscriberId: bigint,
+      consent: (listId: bigint | null) => string | null,
+    ): TestOutcome {
+      const sequence = q.get("sequence-for-enroll").get(sequenceId) as { status: string } | null;
+      if (!sequence) return { error: "sequence_missing" };
+      if (sequence.status !== "active") return { error: "sequence_inactive" };
+      const first = q.get("first-step").get(sequenceId) as { id: bigint; wait: string } | null;
+      if (!first) return { error: "no_steps" };
+      if (q.get("active-test").get(subscriberId, sequenceId)) return { error: "test_running" };
+      const marketing = q.get("test-list").get(sequenceId) as { list_id: bigint | null } | null;
+      if (marketing) {
+        const reason = consent(marketing.list_id);
+        if (reason && reason !== "frequency_cap") return { error: "no_consent", reason };
+      }
+      const now = at();
+      return {
+        enrollment: byId(start(sequenceId, subscriberId, null, first, now, now, true))!,
+      };
+    },
+    /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */
+    steps(sequenceId: bigint) {
+      return q.get("enrollment-steps").all(sequenceId) as {
+        id: bigint;
+        position: bigint;
+        kind: string;
+        status: string;
+      }[];
     },
     /** Cancel an active enrollment (canceled, manual). The caller holds the write. */
     cancel(id: bigint): EnrollmentRow | "missing" | "inactive" {
@@ -399,6 +457,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     advance(claim: Claim, now: Date): "advanced" | "completed" {
       const { step } = claim;
       const deleted = step.step_status === "deleted";
+      const test = Boolean(step.test);
       const next = (
         deleted
           ? q.get("next-after-deleted").get(step.sequence_id, step.position)
@@ -409,7 +468,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         q.get("claimed-complete").run(at, at, claim.id, claim.lease);
         return "completed";
       }
-      const dueAt = deleted ? step.due_at : after(at, next.wait);
+      const dueAt = deleted ? step.due_at : after(at, next.wait, test);
       // A deleted step keeps the previous step time; claimed-advance sets updated_at.
       const updated = deleted ? (byId(claim.id)?.updated_at ?? at) : at;
       q.get("claimed-advance").run(next.id, dueAt, updated, claim.id, claim.lease);

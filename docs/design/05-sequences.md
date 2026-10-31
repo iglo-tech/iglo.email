@@ -178,6 +178,18 @@ M5.4 implements this in `src/scheduler/scheduler.ts`, with enrollment SQL in `sr
 - Subscriber page: events, enrollments and sends for that person.
 - Test mode: "enroll a test subscriber with every wait shortened to 1 minute".
 
+M5.5 builds these screens in `src/admin/views` ([what they read](07-api-and-ui.md#sequence-screens-m55)). A timeline shows what the journal holds: the scheduler records a decision only when it writes a send, so a step without a send is not listed and the page says that its outcome is unknown. A sent step is named by its stable ID and marked once removed, since a position is only the scheduler's cursor and changes with the definition. Nothing is inferred from the enrollment's position or the current definition, which may have gained or moved steps since; an enrollment that ended on a false condition shows that as its end. The subscriber's address and the trigger event appear only to a viewer who could open that subscriber ([rule](07-api-and-ui.md#sequence-screens-m55)). "Reschedule active enrollments" from the guarantees above is not built: it needs a write that M5.5 was not given, so the editor says that scheduled times are kept.
+
+### Test mode
+
+`POST /api/enrollments` with `test: true` starts a test enrollment, marked `test` in every enrollment response. It goes through the real scheduler and sends real mail to that subscriber.
+
+- **Waits.** Every wait is at most 1 minute (`after` in `src/sequences/enrollments.ts`, the one place this happens). A shorter wait stays as it is, so `PT0S` is still immediate. A saved wait, a condition, a template and everything else about the definition stay as they are, and `max_late` still applies.
+- **Who it can reach.** What a normal enrollment needs: the sequence is active and has a step, and the subscriber exists and is not blocklisted. If any current step is marketing, the subscriber must also hold consent on the sequence's list now, or the request is refused with 409 and the reason. A full frequency cap is not refusal: the cap applies as it does to anyone, so a marketing step can wait, and a test's sends count towards the cap. Consent lost later ends the enrollment as usual.
+- **Other enrollments.** A test runs beside a real enrollment and does not end or replace it. One test of a sequence can run per subscriber (409 otherwise). `reentry` neither stops a test nor counts one, so a later real trigger behaves as if the test never happened. `force` is refused with it (400), because forcing is replacing.
+- **Exits.** `exit_on` events, archiving, unsubscribing, blocklisting and cancelling end a test enrollment as they end any other.
+- **Marks.** Mail subjects start with `[Test] `. The explorer and the subscriber tab show a label. `active_enrollments` and `/api/sequences/counts` leave tests out. Their sends stay in the send log and in `GET /api/sends/analytics`, which counts mail delivered, and the list page says so.
+
 ## Worked example
 
 A SaaS app with prepaid packs and a subscription. The app sends `order_paid`, `subscription_created`, `subscription_canceled`, `subscription_past_due`, `payment_succeeded`, `download_finished` and `feedback_given` events, and keeps `plan` and `first_name` in `attribs`.

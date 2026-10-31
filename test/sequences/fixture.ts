@@ -199,6 +199,8 @@ export async function sequencesFixture() {
     sequences,
     enrollments,
     subscribers,
+    events,
+    sends,
     roles,
     auth,
   });

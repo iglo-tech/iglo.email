@@ -16,6 +16,8 @@ import type { Authentication } from "@/users/auth";
 const intervals = ["hour", "day", "week", "month"];
 const campaignTypes = ["views", "clicks", "total_views", "total_clicks", "bounces"];
 const listTypes = [...campaignTypes, "subscriptions", "unsubscriptions"];
+/** A page of the sequence list. */
+const MAX_SEQUENCE_IDS = 100;
 
 export interface AnalyticsSettings {
   individualTracking: boolean;
@@ -196,6 +198,13 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
     return served(context, (signal) => reader.read("sends", [group, range], signal));
   };
 
+  /** Native: the counts of a page of sequences; 07-api-and-ui.md. */
+  const sequenceCounts: Handler = (context) => {
+    const ids = parseIDs(context);
+    if (ids.length > MAX_SEQUENCE_IDS) throw invalidData(context);
+    return served(context, (signal) => reader.read("sequenceCounts", [ids.map(String)], signal));
+  };
+
   router.route(
     "GET",
     "/api/dashboard/counts",
@@ -217,4 +226,5 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   );
   router.route("GET", "/api/lists/analytics/:type", analytics("list"), auth.middleware());
   router.route("GET", "/api/sends/analytics", sendAnalytics, auth.middleware("sends:get"));
+  router.route("GET", "/api/sequences/counts", sequenceCounts, auth.middleware("sequences:get"));
 }

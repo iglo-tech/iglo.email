@@ -1,6 +1,8 @@
 -- Native sequence enrollments (docs/design/05-sequences.md, 03-data-model.md#enrollments); no upstream source.
 -- name: enrollment-by-id
-SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at FROM enrollments WHERE id = ?;
+SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at, test,
+    (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name
+  FROM enrollments WHERE id = ?;
 -- name: exit-by-event
 -- Events API step 2: the subscriber's active enrollments in active sequences that exit on the event.
 UPDATE enrollments SET status = 'exited', exit_reason = ?, step_id = NULL, due_at = NULL, finished_at = ?, updated_at = ?
@@ -14,12 +16,21 @@ SELECT id, status, reentry FROM sequences WHERE id = ?;
 -- name: first-step
 SELECT id, wait FROM sequence_steps WHERE sequence_id = ? AND status = 'active' ORDER BY position LIMIT 1;
 -- name: active-enrollment
-SELECT id FROM enrollments WHERE subscriber_id = ? AND sequence_id = ? AND status = 'active';
+SELECT id FROM enrollments WHERE subscriber_id = ? AND sequence_id = ? AND status = 'active' AND test = 0;
+-- name: active-test
+SELECT id FROM enrollments WHERE subscriber_id = ? AND sequence_id = ? AND status = 'active' AND test = 1;
 -- name: any-enrollment
-SELECT 1 FROM enrollments WHERE subscriber_id = ? AND sequence_id = ? LIMIT 1;
+-- Reentry counts real enrollments: a test leaves no history a later real trigger has to pass.
+SELECT 1 FROM enrollments WHERE subscriber_id = ? AND sequence_id = ? AND test = 0 LIMIT 1;
 -- name: enrollment-insert
-INSERT INTO enrollments (sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, 'active', ?, ?) RETURNING id;
+INSERT INTO enrollments (sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, created_at, updated_at, test)
+  VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?) RETURNING id;
+-- name: test-list
+-- Consent is checked for this list when any current step is marketing.
+SELECT list_id FROM sequences WHERE id = ?1
+  AND EXISTS (SELECT 1 FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active' AND kind = 'marketing');
+-- name: enrollment-steps
+SELECT id, position, kind, status FROM sequence_steps WHERE sequence_id = ? ORDER BY status, position;
 -- name: enrollment-end
 UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active';
@@ -46,7 +57,7 @@ UPDATE enrollments SET claimed_until = ?1
   RETURNING id, coalesce(retry_at, due_at) AS run_at;
 -- name: scheduler-context
 SELECT e.id, e.sequence_id, e.subscriber_id, e.trigger_event_id, e.step_id, e.due_at, e.status,
-    e.claimed_until, e.created_at, e.updated_at,
+    e.claimed_until, e.created_at, e.updated_at, e.test,
     s.name AS sequence_name, s.status AS sequence_status, s.list_id,
     st.uuid AS step_uuid, st.position, st.kind, st.template_id, st.subject, st.condition,
     st.on_false, st.cap_policy, st.max_late, st.status AS step_status, st.updated_at AS step_updated_at

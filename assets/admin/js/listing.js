@@ -21,6 +21,21 @@ export async function read(uri) {
   return out.data;
 }
 
+// A subscriber's ID from what was typed in a form: an ID as it is, or an exact address through the
+// subscribers API, which applies the viewer's own scope.
+export async function subscriberID(text) {
+  const value = text.trim();
+  if (/^[1-9]\d*$/.test(value)) {
+    return Number(value);
+  }
+  const data = await read(`/subscribers?${new URLSearchParams({ search: value, per_page: 20 })}`);
+  const found = (data.results || []).find((s) => s.email === value.toLowerCase());
+  if (!found) {
+    throw new Error(i18n.t('sequences.subscriberNotFound'));
+  }
+  return found.id;
+}
+
 // cmd/avatar.go makeInitials.
 export function initials(name) {
   const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean).map((w) => [...w]);

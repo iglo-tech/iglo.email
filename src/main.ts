@@ -239,6 +239,11 @@ async function main(): Promise<void> {
           mail!.optin(row);
         },
       },
+      {
+        events: (id, page, perPage) => events!.page(id, page, perPage),
+        enrollments: (id, page, perPage) => enrollments!.list({ subscriberId: id, page, perPage }),
+        sends: (id, page, perPage) => sends!.list({ subscriberId: id, page, perPage }),
+      },
     );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
     const touchLists = listStore.touch;
@@ -539,6 +544,8 @@ async function main(): Promise<void> {
       sequences,
       enrollments,
       subscribers: subscriberStore,
+      events,
+      sends,
       roles,
       auth,
     });

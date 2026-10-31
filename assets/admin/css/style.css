@@ -295,7 +295,8 @@ a:has(> .badge:only-child) {
     }
 
     &.status-running,
-    &.status-subscribed {
+    &.status-subscribed,
+    &.status-active {
         --badge-fg: var(--tone-blue);
         --badge-bg: var(--tone-blue-bg);
     }
@@ -315,6 +316,7 @@ a:has(> .badge:only-child) {
     }
 
     &.status-finished,
+    &.status-completed,
     &.status-confirmed,
     &.status-enabled,
     &.optin,
@@ -324,6 +326,8 @@ a:has(> .badge:only-child) {
     }
 
     &.status-cancelled,
+    &.status-canceled,
+    &.status-exited,
     &.bounce-hard,
     &.status-unsubscribed {
         --badge-fg: var(--tone-rose);
@@ -1754,6 +1758,41 @@ section.users {
 }
 
 /* Bounces */
+section.sequences {
+    .step-counts {
+        font-size: var(--text-8, 0.8rem);
+        margin: 0;
+
+        th,
+        td {
+            padding: 0 var(--space-2);
+        }
+    }
+
+    .table-wrapper > p {
+        padding: var(--space-3) var(--space-6);
+    }
+
+    .step-card code-editor {
+        min-height: 6rem;
+    }
+
+    .enrollment-filters {
+        align-items: end;
+    }
+
+    .timeline {
+        li {
+            margin-block-end: var(--space-3);
+        }
+
+        pre {
+            max-height: 16rem;
+            overflow: auto;
+        }
+    }
+}
+
 .bounces {
     tr.details td,
     tr.detail td {

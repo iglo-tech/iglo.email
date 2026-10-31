@@ -71,6 +71,9 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
     created_at: now,
     updated_at: now,
     finished_at: null,
+    test: false,
+    sequence_name: expect.any(String),
+    subscriber_email: expect.any(String),
   });
   expect((await f.json(`/api/enrollments/${enrollment!.id}`)).body.data).toEqual(enrollment);
   expect(draft.id).not.toBe(seq.id);

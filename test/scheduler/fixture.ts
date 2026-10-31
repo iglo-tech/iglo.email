@@ -216,7 +216,11 @@ export async function schedulerFixture() {
   const router = createRouter();
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
-  registerSubscriberRoutes(router, subscribers, roles, auth);
+  registerSubscriberRoutes(router, subscribers, roles, auth, undefined, undefined, {
+    events: (id, page, perPage) => events.page(id, page, perPage),
+    enrollments: (id, page, perPage) => enrollments.list({ subscriberId: id, page, perPage }),
+    sends: (id, page, perPage) => sends.list({ subscriberId: id, page, perPage }),
+  });
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
   registerUnsubscribeRoutes(router, {
@@ -232,6 +236,8 @@ export async function schedulerFixture() {
     sequences,
     enrollments,
     subscribers,
+    events,
+    sends,
     roles,
     auth,
   });
@@ -257,6 +263,28 @@ export async function schedulerFixture() {
     });
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+  /** An API user with exactly `permissions`, and list grants like `{ id, permissions }`. */
+  const apiUser = async (name: string, permissions: string[], lists?: object[]) => {
+    const role = await json("/api/roles/users", "POST", { name, permissions });
+    if (role.status !== 200) throw new Error(`role ${JSON.stringify(role.body)}`);
+    const listRole = lists && (await json("/api/roles/lists", "POST", { name, lists }));
+    if (listRole && listRole.status !== 200)
+      throw new Error(`list role ${JSON.stringify(listRole.body)}`);
+    const user = await json("/api/users", "POST", {
+      username: name,
+      type: "api",
+      status: "enabled",
+      user_role_id: role.body.data.id,
+      ...(listRole ? { list_role_id: listRole.body.data.id } : {}),
+    });
+    if (user.status !== 200) throw new Error(`user ${JSON.stringify(user.body)}`);
+    const authorization = `Basic ${btoa(`${name}:${user.body.data.password}`)}`;
+    return async (path: string) => {
+      const response = await request(path, { headers: { authorization } });
+      const text = await response.text();
+      return { status: response.status, body: text ? JSON.parse(text) : null };
+    };
   };
   /** Yield to I/O, releasing zero-length clock sleeps, until `check` holds. */
   async function until(check: () => boolean | Promise<boolean>, label = "condition") {
@@ -340,6 +368,7 @@ export async function schedulerFixture() {
     scheduler,
     request,
     json,
+    apiUser,
     until,
     pass,
     template,

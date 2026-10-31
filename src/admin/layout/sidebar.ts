@@ -86,6 +86,13 @@ export function sidebar(
           link("campaigns.analytics", t.T("globals.terms.analytics"), "/admin/campaigns/analytics"),
       ]),
     );
+  if (can("sequences:get"))
+    items.push(
+      group("sequences", "activity", t.T("globals.terms.sequences"), [
+        link("sequences.all", t.T("menu.allSequences"), "/admin/sequences"),
+        link("sequences.enrollments", t.T("sequences.enrollments"), "/admin/sequences/enrollments"),
+      ]),
+    );
   if (can("users:get", "users:manage", "roles:get", "roles:manage"))
     items.push(
       group("users", "users", t.T("globals.terms.users"), [

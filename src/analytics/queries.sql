@@ -129,3 +129,25 @@ LEFT JOIN sent ON sent.step_id = g.step_id
 LEFT JOIN views ON views.step_id = g.step_id
 LEFT JOIN clicks ON clicks.step_id = g.step_id
 ORDER BY st.sequence_id, st.position;
+-- name: sequence-enrollment-counts
+-- Native (M5.5): the sequence list's counts for one page of IDs, without test enrollments.
+SELECT sequence_id, status, COUNT(*) AS count FROM enrollments
+WHERE sequence_id IN (SELECT value FROM json_each(?1)) AND test = 0
+GROUP BY sequence_id, status;
+-- name: sequence-step-counts
+-- Reached through each sequence's enrollments, so a test's sends stay out and no scan of sends runs.
+WITH real AS (
+  SELECT s.id, s.step_id, s.status FROM enrollments e
+  JOIN sends s ON s.enrollment_id = e.id
+  WHERE e.sequence_id IN (SELECT value FROM json_each(?1)) AND e.test = 0 AND s.step_id IS NOT NULL
+), counts AS (
+  SELECT step_id, SUM(status = 'sent') AS sent, SUM(status = 'skipped') AS skipped,
+    SUM(EXISTS (SELECT 1 FROM campaign_views v WHERE v.send_id = real.id)) AS opened,
+    SUM(EXISTS (SELECT 1 FROM link_clicks c WHERE c.send_id = real.id)) AS clicked
+  FROM real GROUP BY step_id
+)
+SELECT st.sequence_id, st.id AS step_id, st.position, COALESCE(c.sent, 0) AS sent,
+  COALESCE(c.skipped, 0) AS skipped, COALESCE(c.opened, 0) AS opened, COALESCE(c.clicked, 0) AS clicked
+FROM sequence_steps st LEFT JOIN counts c ON c.step_id = st.id
+WHERE st.sequence_id IN (SELECT value FROM json_each(?1)) AND st.status = 'active'
+ORDER BY st.sequence_id, st.position;

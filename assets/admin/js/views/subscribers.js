@@ -13,6 +13,13 @@ const pageKeys = [
   'page', 'order', 'order_by', 'search', 'query', 'status', 'subscription_status', 'list_id',
 ];
 
+// The tabs that read one page of the subscriber's records.
+const activityPaths = {
+  events: 'subscriber-events',
+  enrollments: 'enrollments',
+  sends: 'sends',
+};
+
 function component() {
   const params = new URLSearchParams(window.location.search);
   const listIDs = config.list_id ? [Number(config.list_id)] : params.getAll('list_id').filter(Boolean).map(Number);
@@ -58,6 +65,8 @@ function component() {
     loading: true,
     error: '',
     ready: false,
+    activity: [],
+    activityPages: [],
     currentList: null,
     bounces: [],
 
@@ -129,6 +138,16 @@ function component() {
         this.subscriptions = Array.isArray(sub.lists) ? sub.lists : [];
         if (config.tab === 'bounces') {
           this.bounces = (await read(`/subscribers/${config.subscriber_id}/bounces`)) || [];
+        }
+        const activityPath = activityPaths[config.tab];
+        if (activityPath) {
+          const query = new URLSearchParams();
+          if (params.get('page')) {
+            query.set('page', params.get('page'));
+          }
+          const data = await read(`/subscribers/${config.subscriber_id}/${activityPath}?${query}`);
+          this.activity = data.results || [];
+          this.activityPages = pageLinks(params, data.page, data.per_page, data.total);
         }
         this.ready = true;
       } catch (e) {

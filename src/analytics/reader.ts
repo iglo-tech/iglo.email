@@ -16,6 +16,7 @@ const methods = [
   "listCounts",
   "links",
   "sends",
+  "sequenceCounts",
   "dashboardCounts",
   "dashboardCharts",
   "dashboardCampaigns",

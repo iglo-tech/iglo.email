@@ -1,9 +1,12 @@
 // Native sequences and enrollments API (docs/design/05-sequences.md, 07-api-and-ui.md);
-// no upstream endpoint. Reads need `sequences:get`; writes need `sequences:manage` and are
-// revalidated and validated inside their write transaction, so a permission or definition
-// change cannot interleave with them.
+// no upstream endpoint. Reads need `sequences:get`, and what an enrollment shows of its subscriber
+// also needs that subscriber's own read rule; writes need `sequences:manage` and are revalidated
+// and validated inside their write transaction, so a permission or definition change cannot
+// interleave with them.
 import { writeTransaction } from "@/db/transaction";
 import { parseJson, readBounded } from "@/events/input";
+import type { EventStore } from "@/events/store";
+import type { Sends } from "@/messaging/sends";
 import type { Roles } from "@/roles/roles";
 import {
   idValue,
@@ -13,12 +16,19 @@ import {
   sequenceStatuses,
 } from "@/sequences/input";
 import type { SequenceStatus } from "@/sequences/input";
-import { project, type EnrollmentFilter, type Enrollments } from "@/sequences/enrollments";
+import {
+  project,
+  type EnrollmentFilter,
+  type EnrollmentRow,
+  type Enrollments,
+} from "@/sequences/enrollments";
 import { SequenceConflict, type SequenceStore } from "@/sequences/store";
+import { timeline } from "@/sequences/timeline";
 import type { RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
+import { readableSubscribers } from "@/subscribers/routes";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 
@@ -37,12 +47,14 @@ export function registerSequenceRoutes(
   deps: {
     sequences: SequenceStore;
     enrollments: Enrollments;
-    subscribers: Pick<SubscriberStore, "get">;
+    subscribers: Pick<SubscriberStore, "get" | "readable">;
+    events: Pick<EventStore, "get">;
+    sends: Pick<Sends, "marketingReason" | "enrollmentSends">;
     roles: Roles;
     auth: Authentication;
   },
 ) {
-  const { sequences, enrollments, subscribers, roles, auth } = deps;
+  const { sequences, enrollments, subscribers, events, sends, roles, auth } = deps;
   const invalid = (c: RequestContext, field: string, detail?: string) =>
     new HttpError(
       400,
@@ -109,6 +121,15 @@ export function registerSequenceRoutes(
     };
   };
   const maxID = 9223372036854775807n;
+  /** Enrollments name their subscriber by ID; anything of the person follows the owner's rule. */
+  const readable = (c: RequestContext, rows: EnrollmentRow[]) =>
+    readableSubscribers(roles, subscribers, identity(c), [
+      ...new Set(rows.map((row) => row.subscriber_id)),
+    ]);
+  const addressed = (row: EnrollmentRow, addresses: Map<bigint, string>) => {
+    const email = addresses.get(row.subscriber_id);
+    return { ...project(row), ...(email === undefined ? {} : { subscriber_email: email }) };
+  };
 
   router.route(
     "GET",
@@ -218,7 +239,12 @@ export function registerSequenceRoutes(
       if (subscriberId !== undefined) filter.subscriberId = subscriberId;
       if (status !== undefined) filter.status = status;
       if (exitReason !== undefined) filter.exitReason = exitReason;
-      return ok(enrollments.list(filter));
+      return ok(
+        enrollments.list(filter, (rows) => {
+          const addresses = readable(c, rows);
+          return rows.map((row) => addressed(row, addresses));
+        }),
+      );
     },
     auth.middleware(GET),
   );
@@ -228,7 +254,29 @@ export function registerSequenceRoutes(
     (c) => {
       const row = enrollments.get(BigInt(getID(c)));
       if (!row) throw new HttpError(404, "Enrollment not found");
-      return ok(project(row));
+      return ok(addressed(row, readable(c, [row])));
+    },
+    auth.middleware(GET),
+    hasID,
+  );
+  router.route(
+    "GET",
+    "/api/enrollments/:id/timeline",
+    (c) => {
+      const row = enrollments.get(BigInt(getID(c)));
+      if (!row) throw new HttpError(404, "Enrollment not found");
+      const addresses = readable(c, [row]);
+      return ok({
+        enrollment: addressed(row, addresses),
+        entries: timeline(
+          row,
+          row.trigger_event_id !== null && addresses.has(row.subscriber_id)
+            ? events.get(row.trigger_event_id)
+            : null,
+          enrollments.steps(row.sequence_id),
+          sends.enrollmentSends(row.id),
+        ),
+      });
     },
     auth.middleware(GET),
     hasID,
@@ -249,20 +297,35 @@ export function registerSequenceRoutes(
       if (sequenceId === undefined) throw invalid(c, "sequence_id");
       if (subscriberId === undefined) throw invalid(c, "subscriber_id");
       if (value.force !== undefined && typeof value.force !== "boolean") throw invalid(c, "force");
+      if (value.test !== undefined && typeof value.test !== "boolean") throw invalid(c, "test");
       const force = value.force === true;
+      const test = value.test === true;
+      // A test never replaces anything, which is what `force` asks for.
+      if (test && force) throw invalid(c, "force");
       const outcome = writeTransaction(c.app.db, () => {
         auth.revalidate(c, MANAGE);
         const subscriber = subscribers.get(subscriberId);
         if (!subscriber) throw new HttpError(404, "Subscriber not found");
         if (subscriber.status === "blocklisted")
           throw new HttpError(409, "The subscriber is blocklisted.");
-        return enrollments.enroll(sequenceId, subscriberId, force);
+        return test
+          ? enrollments.enrollTest(sequenceId, subscriberId, (list) =>
+              sends.marketingReason(subscriberId, list),
+            )
+          : enrollments.enroll(sequenceId, subscriberId, force);
       });
       if ("enrollment" in outcome) return ok(project(outcome.enrollment));
       if (outcome.error === "sequence_missing") throw new HttpError(404, "Sequence not found");
       if (outcome.error === "sequence_inactive")
         throw new HttpError(409, "The sequence is not active.");
       if (outcome.error === "no_steps") throw new HttpError(409, "The sequence has no steps.");
+      if (outcome.error === "test_running")
+        throw new HttpError(409, "A test of this sequence is already running for this subscriber.");
+      if (outcome.error === "no_consent")
+        throw new HttpError(
+          409,
+          `The subscriber can't receive this sequence's marketing steps (${outcome.reason}).`,
+        );
       throw new HttpError(409, "The sequence's reentry rule does not allow this enrollment.");
     },
     auth.middleware(MANAGE),

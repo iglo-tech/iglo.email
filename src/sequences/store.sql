@@ -1,7 +1,7 @@
 -- Native sequence definitions (docs/design/05-sequences.md#sequence-definition, 03-data-model.md); no upstream source.
 -- name: sequence-by-id
 SELECT id, uuid, name, status, trigger, exit_on, reentry, list_id, created_at, updated_at,
-  (SELECT count(*) FROM enrollments WHERE sequence_id = sequences.id AND status = 'active') AS active_enrollments
+  (SELECT count(*) FROM enrollments WHERE sequence_id = sequences.id AND status = 'active' AND test = 0) AS active_enrollments
   FROM sequences WHERE id = ?;
 -- name: steps-by-sequence
 SELECT id, uuid, position, wait, kind, template_id, subject, condition, on_false, cap_policy, max_late, status, created_at, updated_at
@@ -39,7 +39,7 @@ DELETE FROM sequence_steps WHERE sequence_id = ?;
 DELETE FROM sequences WHERE id = ?;
 -- name: sequences-page
 SELECT id, uuid, name, status, trigger, exit_on, reentry, list_id, created_at, updated_at,
-  (SELECT count(*) FROM enrollments WHERE sequence_id = sequences.id AND status = 'active') AS active_enrollments
+  (SELECT count(*) FROM enrollments WHERE sequence_id = sequences.id AND status = 'active' AND test = 0) AS active_enrollments
   FROM sequences WHERE ?1 IS NULL OR status = ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3;
 -- name: sequences-count
 SELECT count(*) AS n FROM sequences WHERE ?1 IS NULL OR status = ?1;
