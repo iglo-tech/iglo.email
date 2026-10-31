@@ -360,3 +360,24 @@ test("an unrelated save keeps hidden archive metadata", async ({ page }) => {
   expect(saved.archive).toBe(false);
   expect(saved.archive_meta).toEqual(archive_meta);
 });
+
+test("an unrelated save keeps the instant of a schedule, and the control still changes it", async ({
+  page,
+}) => {
+  await login(page);
+  const at = new Date(Date.now() + 7 * 86_400_000);
+  at.setUTCSeconds(9, 152);
+  const c = await create(page, { send_at: at.toISOString() });
+  expect(Date.parse((await stored(page, c.id)).send_at)).toBe(at.getTime());
+  const saved = await saveName(page, c);
+  expect(saved.name).toBe(`${c.name} renamed`);
+  expect(Date.parse(saved.send_at)).toBe(at.getTime());
+
+  // A changed control sends what it shows, and so does turning it off.
+  await page.locator('input[name="send_at"]').fill("2036-05-04T03:02");
+  const save = page.waitForResponse((r) => r.request().method() === "PUT");
+  await button(page.locator(".page-header"), "Save changes").click();
+  expect((await save).status()).toBe(200);
+  const local = await page.evaluate(() => new Date("2036-05-04T03:02").getTime());
+  expect(Date.parse((await stored(page, c.id)).send_at)).toBe(local);
+});

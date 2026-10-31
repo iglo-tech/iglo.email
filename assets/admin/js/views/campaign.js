@@ -332,7 +332,7 @@ function component() {
         messenger: this.form.messenger,
         type: 'regular',
         tags: this.form.tags,
-        send_at: (this.form.sendLater && this.form.sendAtLocal) ? new Date(this.form.sendAtLocal).toISOString() : null,
+        send_at: this._sendAt(),
         headers,
         attribs,
         template_id: this.form.template_id,
@@ -346,6 +346,15 @@ function component() {
         archive_meta: archiveMeta,
         media: this.form.media.filter((m) => m.id).map((m) => m.id),
       };
+    },
+
+    // The control shows minutes. Unchanged, it sends the stored instant, not that truncation.
+    _sendAt() {
+      if (!this.form.sendLater || !this.form.sendAtLocal) {
+        return null;
+      }
+      return this.form.sendAtLocal === toLocalInput(this.saved.send_at)
+        ? this.saved.send_at : new Date(this.form.sendAtLocal).toISOString();
     },
 
     async onCreate() {
