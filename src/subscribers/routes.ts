@@ -18,6 +18,14 @@ import type { Authentication } from "@/users/auth";
 
 type SubscriberRow = NonNullable<ReturnType<SubscriberStore["get"]>>;
 
+/** One page of what a subscriber did or received, from the module that owns it. */
+type ActivityPage = (id: bigint, page: number, perPage: number) => unknown;
+export interface SubscriberActivity {
+  events: ActivityPage;
+  enrollments: ActivityPage;
+  sends: ActivityPage;
+}
+
 export function registerSubscriberRoutes(
   router: Router,
   store: SubscriberStore,
@@ -33,6 +41,7 @@ export function registerSubscriberRoutes(
     /** SubscriberSendOptin: enqueue now, throwing on failure. */
     send(row: SubscriberRow): void;
   },
+  activity?: SubscriberActivity,
 ) {
   const identity = (c: RequestContext) => {
     if (!c.identity) throw new Error("Identity required");
@@ -299,6 +308,32 @@ export function registerSubscriberRoutes(
       hasID,
     );
   router.route("GET", "/api/subscribers/:id", canGet, auth.middleware(), hasID);
+  if (activity) {
+    // Native (07-api-and-ui.md): the subscriber's own check, then each record's permission.
+    const paged =
+      (read: ActivityPage, permission?: string): Handler =>
+      (c) => {
+        const { role } = identity(c);
+        if (!roles.can(role, "subscribers:get") && !roles.can(role, "subscribers:get_all"))
+          throw new HttpError(403, "permission denied");
+        if (permission && !roles.can(role, permission))
+          throw new HttpError(403, "permission denied");
+        const id = BigInt(getID(c));
+        allowed(c, [id], "get");
+        required(c, id);
+        const number = (key: string, fallback: number, limit: number) => {
+          const value = c.url.searchParams.get(key) ?? String(fallback);
+          if (!/^[1-9]\d{0,6}$/.test(value) || Number(value) > limit) throw new HttpError(400);
+          return Number(value);
+        };
+        return ok(read(id, number("page", 1, 1_000_000), number("per_page", 20, 100)));
+      };
+    const route = (path: string, handler: Handler) =>
+      router.route("GET", `/api/subscribers/:id/${path}`, handler, auth.middleware(), hasID);
+    route("subscriber-events", paged(activity.events));
+    route("enrollments", paged(activity.enrollments, "sequences:get"));
+    route("sends", paged(activity.sends, "sends:get"));
+  }
   router.route(
     "PUT",
     "/api/subscribers/:id",

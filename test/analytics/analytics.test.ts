@@ -281,6 +281,83 @@ test("sends group by template and by sequence step; only sent ones count as send
   expect(await data("/api/sends/analytics?from=2099-01-01&to=2099-01-02")).toEqual([]);
 });
 
+test("sequence counts are per page of IDs, per step, and leave test enrollments out", async () => {
+  const { db } = f;
+  const owners = f.owners;
+  const at = "2026-01-02T00:00:00.000Z";
+  const one = (sql: string, ...args: (string | number | bigint | null)[]) =>
+    (db.query(sql).get(...args) as { id: bigint }).id;
+  const subscriber = await f.subscriber("counts@example.test", []);
+  const other = await f.subscriber("counts-other@example.test", []);
+  const template = one(
+    "INSERT INTO templates (name, type, subject, body) VALUES ('t', 'tx', 's', 'b') RETURNING id",
+  );
+  const sequence = one(
+    "INSERT INTO sequences (uuid, name, status, trigger) VALUES ('counted', 'Counted', 'active', '{\"event\":\"e\"}') RETURNING id",
+  );
+  const step = (uuid: string, position: number) =>
+    one(
+      "INSERT INTO sequence_steps (uuid, sequence_id, position, wait, kind, template_id) VALUES (?, ?, ?, 'PT0S', 'transactional', ?) RETURNING id",
+      uuid,
+      sequence,
+      position,
+      template,
+    );
+  const first = step("step-a", 0);
+  const second = step("step-b", 1);
+  const enrollment = (who: number, status: string, test: number) =>
+    one(
+      "INSERT INTO enrollments (sequence_id, subscriber_id, status, test) VALUES (?, ?, ?, ?) RETURNING id",
+      sequence,
+      who,
+      status,
+      test,
+    );
+  const real = enrollment(subscriber.id, "completed", 0);
+  enrollment(subscriber.id, "active", 0);
+  enrollment(other.id, "exited", 0);
+  const trial = enrollment(subscriber.id, "active", 1);
+  let n = 0;
+  const send = (owner: bigint, stepId: bigint, status: string) =>
+    one(
+      "INSERT INTO sends (uuid, source, kind, to_email, enrollment_id, step_id, status, created_at, sent_at) VALUES (?, 'sequence', 'transactional', 'a@example.test', ?, ?, ?, ?, ?) RETURNING id",
+      `count-${++n}`,
+      owner,
+      stepId,
+      status,
+      at,
+      at,
+    );
+  const sent = send(real, first, "sent");
+  send(real, second, "skipped");
+  const hidden = send(trial, first, "sent");
+  const link = owners.tracking.get(owners.tracking.link("https://example.test/")!)!.id;
+  for (const id of [sent, sent, hidden]) owners.tracking.view(id, null);
+  owners.tracking.click(sent, link, null);
+
+  const counts = await data(`/api/sequences/counts?id=${sequence}`);
+  const byStatus = Object.fromEntries(
+    (counts.enrollments as { status: string; count: number }[]).map((r) => [r.status, r.count]),
+  );
+  expect(byStatus).toEqual({ active: 1, completed: 1, exited: 1 });
+  const row = (id: bigint, position: number, sentCount: number, skipped: number, seen: number) => ({
+    sequence_id: Number(sequence),
+    step_id: Number(id),
+    position,
+    sent: sentCount,
+    skipped,
+    opened: seen,
+    clicked: seen,
+  });
+  expect(counts.steps).toEqual([row(first, 0, 1, 0, 1), row(second, 1, 0, 1, 0)]);
+
+  expect((await f.json("/api/sequences/counts", "GET", undefined, headers)).status).toBe(400);
+  const many = Array.from({ length: 101 }, (_, i) => `id=${i + 1}`).join("&");
+  expect((await f.json(`/api/sequences/counts?${many}`, "GET", undefined, headers)).status).toBe(
+    400,
+  );
+});
+
 test("the refresh loop runs on the interval and keeps numbers still between runs", async () => {
   options.cacheSlowQueries = true;
   const logged: unknown[] = [];

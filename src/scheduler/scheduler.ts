@@ -38,6 +38,8 @@ const BACKOFF_MAX_MS = 3_600_000;
 const DEFER_MIN_MS = 60_000;
 /** Renderer capacity is shared with the HTTP producers; a full renderer retries soon. */
 const BUSY_MS = SCHEDULER_INTERVAL_MS;
+/** A test enrollment's mail says so to whoever receives it. */
+const TEST_SUBJECT = "[Test] ";
 /** Compiled step templates kept by the scheduler; the least recently used is dropped. */
 const COMPILED = 64;
 /**
@@ -261,7 +263,7 @@ export function startScheduler(options: {
       const message: Message = {
         from: settings.fromEmail,
         to: [subscriber.email],
-        subject: rendered.subject,
+        subject: row.test ? `${TEST_SUBJECT}${rendered.subject}` : rendered.subject,
         contentType: "html",
         body: Buffer.from(rendered.body),
         headers: { ...links.headers },

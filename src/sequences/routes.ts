@@ -4,6 +4,8 @@
 // change cannot interleave with them.
 import { writeTransaction } from "@/db/transaction";
 import { parseJson, readBounded } from "@/events/input";
+import type { EventStore } from "@/events/store";
+import type { Sends } from "@/messaging/sends";
 import type { Roles } from "@/roles/roles";
 import {
   idValue,
@@ -13,8 +15,14 @@ import {
   sequenceStatuses,
 } from "@/sequences/input";
 import type { SequenceStatus } from "@/sequences/input";
-import { project, type EnrollmentFilter, type Enrollments } from "@/sequences/enrollments";
+import {
+  project,
+  type EnrollmentFilter,
+  type EnrollmentRow,
+  type Enrollments,
+} from "@/sequences/enrollments";
 import { SequenceConflict, type SequenceStore } from "@/sequences/store";
+import { timeline } from "@/sequences/timeline";
 import type { RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -38,11 +46,13 @@ export function registerSequenceRoutes(
     sequences: SequenceStore;
     enrollments: Enrollments;
     subscribers: Pick<SubscriberStore, "get">;
+    events: Pick<EventStore, "get">;
+    sends: Pick<Sends, "marketingReason" | "enrollmentSends">;
     roles: Roles;
     auth: Authentication;
   },
 ) {
-  const { sequences, enrollments, subscribers, roles, auth } = deps;
+  const { sequences, enrollments, subscribers, events, sends, roles, auth } = deps;
   const invalid = (c: RequestContext, field: string, detail?: string) =>
     new HttpError(
       400,
@@ -109,6 +119,14 @@ export function registerSequenceRoutes(
     };
   };
   const maxID = 9223372036854775807n;
+  /** Enrollments name their subscriber by ID; the address needs the permission that reads it. */
+  const addressed = (c: RequestContext) => {
+    const shown = roles.can(identity(c).role, "subscribers:get_all");
+    return (row: EnrollmentRow) => ({
+      ...project(row),
+      ...(shown ? { subscriber_email: subscribers.get(row.subscriber_id)?.email ?? null } : {}),
+    });
+  };
 
   router.route(
     "GET",
@@ -218,7 +236,7 @@ export function registerSequenceRoutes(
       if (subscriberId !== undefined) filter.subscriberId = subscriberId;
       if (status !== undefined) filter.status = status;
       if (exitReason !== undefined) filter.exitReason = exitReason;
-      return ok(enrollments.list(filter));
+      return ok(enrollments.list(filter, addressed(c)));
     },
     auth.middleware(GET),
   );
@@ -228,7 +246,26 @@ export function registerSequenceRoutes(
     (c) => {
       const row = enrollments.get(BigInt(getID(c)));
       if (!row) throw new HttpError(404, "Enrollment not found");
-      return ok(project(row));
+      return ok(addressed(c)(row));
+    },
+    auth.middleware(GET),
+    hasID,
+  );
+  router.route(
+    "GET",
+    "/api/enrollments/:id/timeline",
+    (c) => {
+      const row = enrollments.get(BigInt(getID(c)));
+      if (!row) throw new HttpError(404, "Enrollment not found");
+      return ok({
+        enrollment: addressed(c)(row),
+        entries: timeline(
+          row,
+          row.trigger_event_id === null ? null : events.get(row.trigger_event_id),
+          enrollments.steps(row.sequence_id),
+          sends.enrollmentSends(row.id),
+        ),
+      });
     },
     auth.middleware(GET),
     hasID,
@@ -249,20 +286,35 @@ export function registerSequenceRoutes(
       if (sequenceId === undefined) throw invalid(c, "sequence_id");
       if (subscriberId === undefined) throw invalid(c, "subscriber_id");
       if (value.force !== undefined && typeof value.force !== "boolean") throw invalid(c, "force");
+      if (value.test !== undefined && typeof value.test !== "boolean") throw invalid(c, "test");
       const force = value.force === true;
+      const test = value.test === true;
+      // A test never replaces anything, which is what `force` asks for.
+      if (test && force) throw invalid(c, "force");
       const outcome = writeTransaction(c.app.db, () => {
         auth.revalidate(c, MANAGE);
         const subscriber = subscribers.get(subscriberId);
         if (!subscriber) throw new HttpError(404, "Subscriber not found");
         if (subscriber.status === "blocklisted")
           throw new HttpError(409, "The subscriber is blocklisted.");
-        return enrollments.enroll(sequenceId, subscriberId, force);
+        return test
+          ? enrollments.enrollTest(sequenceId, subscriberId, (list) =>
+              sends.marketingReason(subscriberId, list),
+            )
+          : enrollments.enroll(sequenceId, subscriberId, force);
       });
       if ("enrollment" in outcome) return ok(project(outcome.enrollment));
       if (outcome.error === "sequence_missing") throw new HttpError(404, "Sequence not found");
       if (outcome.error === "sequence_inactive")
         throw new HttpError(409, "The sequence is not active.");
       if (outcome.error === "no_steps") throw new HttpError(409, "The sequence has no steps.");
+      if (outcome.error === "test_running")
+        throw new HttpError(409, "A test of this sequence is already running for this subscriber.");
+      if (outcome.error === "no_consent")
+        throw new HttpError(
+          409,
+          `The subscriber can't receive this sequence's marketing steps (${outcome.reason}).`,
+        );
       throw new HttpError(409, "The sequence's reentry rule does not allow this enrollment.");
     },
     auth.middleware(MANAGE),

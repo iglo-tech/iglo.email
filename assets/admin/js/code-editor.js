@@ -17,6 +17,8 @@ import { editorExtensions } from '@/assets/admin/js/editor-theme.js';
 
 const LANGS = {
   html, css, javascript, markdown,
+  // JSON highlights as a JavaScript expression; the server is what validates it.
+  json: javascript,
 };
 
 class CodeEditor extends HTMLElement {

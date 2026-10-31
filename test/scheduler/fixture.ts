@@ -216,7 +216,11 @@ export async function schedulerFixture() {
   const router = createRouter();
   registerUserRoutes(router, users, roles, auth);
   registerListRoutes(router, listStore, roles, auth);
-  registerSubscriberRoutes(router, subscribers, roles, auth);
+  registerSubscriberRoutes(router, subscribers, roles, auth, undefined, undefined, {
+    events: (id, page, perPage) => events.page(id, page, perPage),
+    enrollments: (id, page, perPage) => enrollments.list({ subscriberId: id, page, perPage }),
+    sends: (id, page, perPage) => sends.list({ subscriberId: id, page, perPage }),
+  });
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
   registerUnsubscribeRoutes(router, {
@@ -232,6 +236,8 @@ export async function schedulerFixture() {
     sequences,
     enrollments,
     subscribers,
+    events,
+    sends,
     roles,
     auth,
   });

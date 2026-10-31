@@ -88,6 +88,17 @@ export interface Claimed {
 const publicColumns = `id, uuid, source, kind, subscriber_id, to_email, template_id,
   enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, error,
   attempts, retry_of, next_attempt_at, created_at, sent_at`;
+/** More than the steps of a sequence, which a reorder can revisit. */
+const ENROLLMENT_SENDS = 200;
+export interface EnrollmentSend {
+  id: bigint;
+  step_id: bigint | null;
+  kind: string;
+  status: string;
+  skip_reason: string | null;
+  created_at: string;
+  sent_at: string | null;
+}
 export interface SendFilter {
   page: number;
   perPage: number;
@@ -788,6 +799,14 @@ export function createSends(options: {
       return [row.body, row.alt].some(
         (value) => typeof value === "string" && Buffer.from(value, "base64").includes(text),
       );
+    },
+    /** What an enrollment's timeline shows of its sends: no address, oldest first. */
+    enrollmentSends(enrollmentId: bigint) {
+      return db
+        .query<EnrollmentSend, [bigint, number]>(
+          "SELECT id, step_id, kind, status, skip_reason, created_at, sent_at FROM sends WHERE enrollment_id = ? ORDER BY id LIMIT ?",
+        )
+        .all(enrollmentId, ENROLLMENT_SENDS);
     },
     get(id: bigint) {
       const row = getPublic(id);

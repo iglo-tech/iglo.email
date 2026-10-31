@@ -154,6 +154,23 @@ export function createAnalyticsStore(db: Database) {
         ),
       );
     },
+    /** Native: enrollments by status and sends by step, for one page of sequence IDs. */
+    sequenceCounts(ids: string[]) {
+      const list = `[${ids.join(",")}]`;
+      const plain = (row: Record<string, bigint | string>) =>
+        Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [
+            key,
+            typeof value === "bigint" ? Number(value) : value,
+          ]),
+        );
+      return {
+        enrollments: (
+          q.get("sequence-enrollment-counts").all(list) as Record<string, bigint | string>[]
+        ).map(plain),
+        steps: (q.get("sequence-step-counts").all(list) as Record<string, bigint>[]).map(plain),
+      };
+    },
     /** mat_dashboard_counts. SUM and subqueries over no rows stay JSON null. */
     dashboardCounts() {
       const subscribers = q.get("subscriber-status-counts").all() as {

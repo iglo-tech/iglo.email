@@ -1,7 +1,9 @@
 // Adapted from listmonk static/admin/views/subscriber.html, partials/subscriber-form.html,
 // subscriber-info.html, subscriber-lists.html and bounces-table.html at 6fcd95f. The subscriber
 // arrives from /api/subscribers/:id, which owns its permission check and list masking. The API has
-// no activity or chart endpoint yet, so the overview tab shows the record without them.
+// no activity or chart endpoint yet, so the overview tab shows the record without them. The events,
+// enrollments and sends tabs are native (docs/design/05-sequences.md#admin-ui): their rows come from
+// /api/subscribers/:id/*, under the same list scope, and reach the page through x-text.
 import { Icon } from "@/admin/layout/icon";
 import type { AdminRequest, AdminView } from "@/admin/page";
 import {
@@ -18,7 +20,20 @@ import type { Translation } from "@/i18n/i18n";
 import { HttpError } from "@/server/response";
 import { getID } from "@/server/validation";
 
-export type SubscriberTab = "activity" | "edit" | "lists" | "bounces";
+export type SubscriberTab =
+  | "activity"
+  | "edit"
+  | "lists"
+  | "bounces"
+  | "events"
+  | "enrollments"
+  | "sends";
+/** What a tab needs beyond reading the subscriber. */
+const tabPermission: Partial<Record<SubscriberTab, string>> = {
+  bounces: "bounces:get",
+  enrollments: "sequences:get",
+  sends: "sends:get",
+};
 
 function Fields({ t }: { t: Translation }) {
   return (
@@ -326,6 +341,140 @@ function Bounces({ t }: { t: Translation }) {
     </div>
   );
 }
+function Pages() {
+  return (
+    <nav class="pagination" aria-label="Pagination" x-show="activityPages.length > 1">
+      <template x-for="p in activityPages" x-bind:key="p.key">
+        <a
+          x-bind:href="p.href"
+          x-bind:class="{ 'pg-selected': p.current }"
+          x-bind:aria-current="p.current ? 'page' : null"
+          x-text="p.label"
+        ></a>
+      </template>
+    </nav>
+  );
+}
+function Events({ t }: { t: Translation }) {
+  const data = t.T("subscribers.eventData");
+  return (
+    <div class="card page-content has-table">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>{t.T("globals.fields.name")}</th>
+              <th>{data}</th>
+              <th>{t.T("subscribers.occurredAt")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in activity" x-bind:key="row.id">
+              <tr data-testid="event-row">
+                <td data-label={t.T("globals.fields.name")} x-text="row.name"></td>
+                <td data-label={data}>
+                  <pre x-text="JSON.stringify(row.data, null, 2)"></pre>
+                </td>
+                <td
+                  data-label={t.T("subscribers.occurredAt")}
+                  x-text="niceDate(row.occurred_at, true)"
+                ></td>
+              </tr>
+            </template>
+            <EmptyRow when="!activity.length" colspan={3} t={t} />
+          </tbody>
+        </table>
+        <Pages />
+      </div>
+    </div>
+  );
+}
+function Enrollments({ t }: { t: Translation }) {
+  const sequence = t.T("sequences.sequence");
+  return (
+    <div class="card page-content has-table">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>{t.T("sequences.enrollment")}</th>
+              <th>{sequence}</th>
+              <th>{t.T("globals.fields.status")}</th>
+              <th>{t.T("sequences.exitReason")}</th>
+              <th>{t.T("globals.fields.createdAt")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in activity" x-bind:key="row.id">
+              <tr data-testid="enrollment-row">
+                <td>
+                  <a
+                    x-bind:href="`/admin/sequences/enrollments/${row.id}`"
+                    x-text="`#${row.id}`"
+                  ></a>{" "}
+                  <template x-if="row.test">
+                    <span class="badge" data-variant="warning">
+                      {t.T("sequences.testBadge")}
+                    </span>
+                  </template>
+                </td>
+                <td data-label={sequence} x-text="row.sequence_name"></td>
+                <td data-label={t.T("globals.fields.status")}>
+                  <span class="badge enum" x-text="row.status"></span>
+                </td>
+                <td data-label={t.T("sequences.exitReason")} x-text="row.exit_reason ?? ''"></td>
+                <td
+                  data-label={t.T("globals.fields.createdAt")}
+                  x-text="niceDate(row.created_at, true)"
+                ></td>
+              </tr>
+            </template>
+            <EmptyRow when="!activity.length" colspan={5} t={t} />
+          </tbody>
+        </table>
+        <Pages />
+      </div>
+    </div>
+  );
+}
+function Sends({ t }: { t: Translation }) {
+  return (
+    <div class="card page-content has-table">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>{t.T("globals.fields.id")}</th>
+              <th>{t.T("subscribers.sendTo")}</th>
+              <th>{t.T("globals.fields.type")}</th>
+              <th>{t.T("globals.fields.status")}</th>
+              <th>{t.T("subscribers.sentAt")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in activity" x-bind:key="row.id">
+              <tr data-testid="send-row">
+                <td x-text="row.id"></td>
+                <td data-label={t.T("subscribers.sendTo")} x-text="row.to_email"></td>
+                <td data-label={t.T("globals.fields.type")} x-text="row.kind"></td>
+                <td data-label={t.T("globals.fields.status")}>
+                  <span class="badge enum" x-text="row.status"></span>{" "}
+                  <span class="text-light" x-text="row.skip_reason ?? ''"></span>
+                </td>
+                <td
+                  data-label={t.T("subscribers.sentAt")}
+                  x-text="niceDate(row.sent_at ?? row.created_at, true)"
+                ></td>
+              </tr>
+            </template>
+            <EmptyRow when="!activity.length" colspan={5} t={t} />
+          </tbody>
+        </table>
+        <Pages />
+      </div>
+    </div>
+  );
+}
 function Tabs({
   id,
   tab,
@@ -356,6 +505,19 @@ function Tabs({
       {can("bounces:get") ? (
         <a role="tab" href={`${base}/bounces`} {...selected("bounces")}>
           <Icon name="corner-right-down" /> {t.T("globals.terms.bounces")}
+        </a>
+      ) : null}
+      <a role="tab" href={`${base}/events`} {...selected("events")}>
+        <Icon name="activity" /> {t.T("subscribers.events")}
+      </a>
+      {can("sequences:get") ? (
+        <a role="tab" href={`${base}/enrollments`} {...selected("enrollments")}>
+          <Icon name="clock" /> {t.T("sequences.enrollments")}
+        </a>
+      ) : null}
+      {can("sends:get") ? (
+        <a role="tab" href={`${base}/sends`} {...selected("sends")}>
+          <Icon name="mail" /> {t.T("globals.terms.sends")}
         </a>
       ) : null}
     </div>
@@ -400,8 +562,9 @@ export const newSubscriberView: AdminView = ({ context, can }) => {
 export function subscriberView(tab: SubscriberTab): AdminView {
   return ({ context, can }) => {
     const t = context.app.i18n;
-    if (tab === "bounces" && !can("bounces:get"))
-      throw new HttpError(403, t.Ts("globals.messages.permissionDenied", "name", "bounces:get"));
+    const needed = tabPermission[tab];
+    if (needed && !can(needed))
+      throw new HttpError(403, t.Ts("globals.messages.permissionDenied", "name", needed));
     const id = String(getID(context));
     const canSave = can("subscribers:manage");
     return {
@@ -487,6 +650,9 @@ export function subscriberView(tab: SubscriberTab): AdminView {
             {tab === "lists" ? <Subscriptions t={t} canSave={canSave} /> : null}
             {tab === "bounces" ? <Bounces t={t} /> : null}
             {tab === "activity" ? <Overview t={t} /> : null}
+            {tab === "events" ? <Events t={t} /> : null}
+            {tab === "enrollments" ? <Enrollments t={t} /> : null}
+            {tab === "sends" ? <Sends t={t} /> : null}
           </div>
         </section>
       ),

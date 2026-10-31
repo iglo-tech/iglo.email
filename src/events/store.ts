@@ -254,6 +254,25 @@ export function createEventStore(
     list(subscriberId: bigint, limit = 1000): EventRow[] {
       return q.get("events-by-subscriber").all(subscriberId, limit) as EventRow[];
     },
+    /** One page of a subscriber's events, newest first, for the admin screens. */
+    page(subscriberId: bigint, page: number, perPage: number) {
+      const rows = q
+        .get("events-page")
+        .all(subscriberId, perPage, (page - 1) * perPage) as EventRow[];
+      const total = (q.get("events-count").get(subscriberId) as { n: bigint }).n;
+      return {
+        results: rows.map((row) => ({
+          id: numberID(row.id),
+          name: row.name,
+          data: JSON.parse(row.data) as unknown,
+          occurred_at: row.occurred_at,
+          created_at: row.created_at,
+        })),
+        total: numberID(total),
+        page,
+        per_page: perPage,
+      };
+    },
     /**
      * Delete expired events among the `window` oldest IDs. The caller holds the write
      * transaction. Returns the deleted IDs; none means the oldest window is current.

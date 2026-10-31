@@ -32,6 +32,7 @@
     "e2e:browser:settings": "bun run build && bun test/e2e/browser-settings.ts",
     "e2e:browser:media": "bun run build && bun test/e2e/browser-media.ts",
     "e2e:browser:analytics": "bun run build && bun test/e2e/browser-analytics.ts",
+    "e2e:browser:sequences": "bun run build && bun test/e2e/browser-sequences.ts",
     "ui:verify": "bun run assets:build && bun test/ui/verify.ts",
     "runtime:spike:liquid": "bun test/perf/runtime-compat/liquid-bench.ts",
     "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",
@@ -100,6 +101,7 @@
     "runner:crash": "bun run build && bun test/campaigns/runner/measure.ts crash",
     "runner:measure": "bun run build && bun test/campaigns/runner/measure.ts",
     "sequences:measure": "bun run build && bun test/sequences/measure.ts",
+    "sequences:measure:counts": "bun test/sequences/measure-counts.ts",
     "templates:compiled": "bun test/templates/compiled-check.ts",
     "perf:mixed": "bun run build && bun test/perf/m61/mixed.ts",
     "worked-example": "bun run build && bun test/worked-example/run.ts"
