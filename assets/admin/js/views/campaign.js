@@ -76,6 +76,8 @@ function component() {
     activeTab: 'campaign',
     contentReady: false,
     editorReady: false,
+    // What the rich-text editor left out of the body, by name.
+    editorRemoved: [],
     // A status change is in flight, or asking: a second click starts nothing.
     changing: false,
     _mediaTarget: null,
@@ -214,6 +216,10 @@ function component() {
       // event wouldn't clear the spinner.
       const { contentReady, editorReady } = this;
       return contentReady && this.form.content_type !== 'plain' && !editorReady;
+    },
+
+    get editorNotice() {
+      return i18n.ts('editor.removed', { items: this.editorRemoved.join(', ') });
     },
 
     get archiveURL() {

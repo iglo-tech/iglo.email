@@ -1,5 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/content.js at 6fcd95f.
 // Different content conversions for campaign bodies, eg: html -> plaintext
+import { inertElement } from '@/assets/admin/js/richtext/sanitize.js';
 
 // Trim multilines and optionally remove empty lines.
 function trimLines(str, removeEmptyLines) {
@@ -157,8 +158,7 @@ class HTMLToMarkdown {
     'ul', 'ol', 'li', 'p', 'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 
   convert(html) {
-    const div = document.createElement('div');
-    div.innerHTML = html || '';
+    const div = inertElement(html);
 
     // Drop trailing spaces before paragraph breaks (keeps Markdown's "  \n" hard
     // breaks intact) and compress blank lines.
@@ -533,8 +533,7 @@ class MarkdownToHTML {
 // A simple HTML to plaintext converter and converts links to "text (url)".
 class HTMLToText {
   convert(html) {
-    const div = document.createElement('div');
-    div.innerHTML = html || '';
+    const div = inertElement(html);
     return trimLines(this._walk(div), true).trim();
   }
 
@@ -660,18 +659,14 @@ class ContentConverter {
     let isHTML = false;
     if (from === 'richtext' || from === 'html' || from === 'visual') {
       // Normalize the source HTML.
-      const d = document.createElement('div');
-      d.innerHTML = out;
-      out = d.innerHTML.trim();
+      out = inertElement(out).innerHTML.trim();
       isHTML = true;
     }
 
     if (isHTML) {
       switch (to) {
         case 'plain': {
-          const d = document.createElement('div');
-          d.innerHTML = out;
-          out = trimLines(d.innerText.trim(), true);
+          out = trimLines(inertElement(out).innerText.trim(), true);
           break;
         }
 

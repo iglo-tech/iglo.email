@@ -30,6 +30,7 @@ export const campaignKeys = [
   "editor.contentType.visual",
   "editor.findCount",
   "editor.heading",
+  "editor.removed",
   "editor.paragraph",
   "editor.words",
   "globals.buttons.filter",

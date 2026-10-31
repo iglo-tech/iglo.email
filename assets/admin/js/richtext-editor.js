@@ -2,6 +2,7 @@
 // <richtext-editor> is a WebComponent wrapping Squire (squire-rte).
 import Squire from 'squire-rte';
 import { beautifyHTML } from '@/assets/admin/js/content.js';
+import { sanitizeHTML, safeURL } from '@/assets/admin/js/richtext/sanitize.js';
 import { setupTable } from '@/assets/admin/js/richtext/table.js';
 import {
   i18n, t, closestInSelection, PALETTE, EMOJIS, CHARS,
@@ -22,12 +23,6 @@ const TOGGLES = {
   ol: ['OL', 'makeOrderedList', 'removeList'],
 };
 
-const sanitizeToDOMFragment = (html) => {
-  const tpl = document.createElement('template');
-  tpl.innerHTML = html || '';
-  return document.importNode(tpl.content, true);
-};
-
 class RichtextEditor extends HTMLElement {
   editor = null;
   #source = null;
@@ -38,6 +33,19 @@ class RichtextEditor extends HTMLElement {
   #resizeObs = null;
   #clearFind = null;
   #refreshFind = null;
+  #removed = new Set();
+
+  // Every way HTML enters goes through Squire's setHTML or insertHTML, so through here: load,
+  // value changes, paste, drop, and the source and insert dialogs.
+  #sanitize(html) {
+    const { fragment, removed } = sanitizeHTML(html);
+    removed.forEach((name) => this.#removed.add(name));
+    this.dispatchEvent(new CustomEvent('richtext-removed', {
+      bubbles: true,
+      detail: { removed: [...this.#removed] },
+    }));
+    return fragment;
+  }
 
   connectedCallback() {
     if (Object.hasOwn(this, 'value')) {
@@ -54,7 +62,10 @@ class RichtextEditor extends HTMLElement {
     }
 
     this.content.setAttribute('spellcheck', 'true');
-    this.editor = new Squire(this.content, { blockTag: 'P', sanitizeToDOMFragment });
+    this.editor = new Squire(this.content, {
+      blockTag: 'P',
+      sanitizeToDOMFragment: (html) => this.#sanitize(html),
+    });
     this.editor.setHTML(this.#source?.value ?? this.#pending ?? this.getAttribute('value') ?? '');
 
     const disabled = this.hasAttribute('disabled');
@@ -142,6 +153,7 @@ class RichtextEditor extends HTMLElement {
       this.#pending = v;
     } else if (v !== this.editor.getHTML()) {
       this.#mute = true;
+      this.#removed.clear();
       this.editor.setHTML(v);
       this.#mute = false;
       this.#refreshFind?.();
@@ -391,7 +403,7 @@ class RichtextEditor extends HTMLElement {
 
     d.querySelector('[data-rte-act="submit"]').onclick = () => {
       let url = f.url.value.trim();
-      if (!url) {
+      if (!url || !safeURL(url)) {
         d.close();
         return;
       }
@@ -534,7 +546,7 @@ class RichtextEditor extends HTMLElement {
         return;
       }
       const src = f.src.value.trim();
-      if (!src) {
+      if (!src || !safeURL(src, true)) {
         d.close();
         return;
       }

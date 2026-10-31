@@ -95,6 +95,7 @@
     "editor.paragraph": "Paragraph",
     "editor.removeFormat": "Clear formatting",
     "editor.removeLink": "Remove link",
+    "editor.removed": "The rich-text editor leaves out: {items}. The stored content keeps them until you edit it here. To keep them, change the format to Raw HTML before editing.",
     "editor.rowAbove": "Insert row above",
     "editor.rowBelow": "Insert row below",
     "editor.rowDelete": "Delete row",

@@ -282,9 +282,18 @@ function CampaignContent({ t }: { t: Translation }) {
     "x-on:campaign-save.window": "onSave",
     "x-on:campaign-preview.window": "onPreviewContent",
     "x-on:richtext-media": "onEditorMedia($event)",
+    "x-on:richtext-removed": "editorRemoved = $event.detail.removed",
   };
   return (
     <div class="page-content content editor">
+      <div
+        role="alert"
+        data-variant="warning"
+        data-testid="editor-removed"
+        style="display: none"
+        x-show="canEdit && form.content_type === 'richtext' && editorRemoved.length > 0"
+        x-text="editorNotice"
+      ></div>
       <fieldset class="card editor-box">
         <div class="editor-body" x-bind:class="{ 'is-loading': showEditorSpinner }" {...editor}>
           <template x-if="ready && contentReady && form.content_type === 'richtext'" data-editor="">
