@@ -4,9 +4,9 @@ Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.4 OpenAPI, [PR #49](https://github.com/iglo-tech/iglo.email/pull/49), head 6b0bca6. Local checks pass; Sol round-1 review running. M6.3 [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) waits on the owner adding the token scope: `gh auth refresh -h github.com -s workflow`. D26 stands: no public first-account form.
+M6.3 [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) waits on the owner adding the token scope: `gh auth refresh -h github.com -s workflow`. Then: commit the workflow, dry run, test tag `v0.1.0-rc.1`. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: finish M6.3, then the before-1.0 backlog items. Owner to verify: one real Mailgun event and a retry (D63).
+Next: finish M6.3. All other plan tasks are merged. Owner to verify: one real Mailgun event and a retry (D63); D58-D67 for review; the before-1.0 backlog.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -34,6 +34,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M6.4         | [#49](https://github.com/iglo-tech/iglo.email/pull/49) | 21e5bea | OpenAPI, subscriber export and activity routes             |
 | M6.2         | [#47](https://github.com/iglo-tech/iglo.email/pull/47) | e191856 | Backup, restore hold (D67), reset-password, operations guide |
 | M5.5         | [#45](https://github.com/iglo-tech/iglo.email/pull/45) | 25bf1f4 | Sequence screens, subscriber tabs, test mode               |
 | M4.6         | [#44](https://github.com/iglo-tech/iglo.email/pull/44) | bbb6570 | Analytics, maintenance, logs; log buffer holds safe fields |
