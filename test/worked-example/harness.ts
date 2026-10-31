@@ -88,6 +88,7 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
   await start();
   return {
     origin,
+    dataDir: join(directory, "data"),
     start,
     stop,
     errors: () => errors,

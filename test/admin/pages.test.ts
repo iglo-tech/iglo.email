@@ -56,7 +56,7 @@ test("navigation is filtered by permission and a denied view says why", async ()
   const denied = await get(f, "/admin/settings", limited);
   expect(denied.status).toBe(403);
   expect(await denied.text()).toContain("settings:get");
-  expect((await get(f, "/admin/lists/forms", limited)).status).toBe(501);
+  expect((await get(f, "/admin/lists/analytics", limited)).status).toBe(501);
 });
 
 test("every navigation link answers, and an unported one says so", async () => {

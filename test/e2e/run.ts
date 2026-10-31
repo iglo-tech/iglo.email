@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { root, withStack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 
-process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
+process.exitCode = await withStack(async ({ origin, dataDir, blankOrigin, mailbox }) => {
   // The specs run in their own process and read the sink over HTTP.
   const mail = Bun.serve({
     hostname: "127.0.0.1",
@@ -30,6 +30,7 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
         env: {
           ...process.env,
           E2E_ORIGIN: origin,
+          E2E_DATA_DIR: dataDir,
           E2E_BLANK_ORIGIN: blankOrigin,
           E2E_MAIL: `http://127.0.0.1:${mail.port}`,
           E2E_ADMIN_USER: admin.user,

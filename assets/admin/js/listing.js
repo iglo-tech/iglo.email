@@ -92,6 +92,18 @@ export function pageLinks(params, page, perPage, total) {
   return out;
 }
 
+// The extension a file gallery shows in place of an image.
+export function fileExt(filename) {
+  const i = (filename || '').lastIndexOf('.');
+  return i > 0 ? filename.slice(i + 1).toUpperCase() : '';
+}
+
+// Whether a gallery may put this file in an <img>. `thumb_url` can be the original of an SVG, which
+// stays out of the admin page; a raster image, whatever it claims inside, is decoded as one.
+export function rasterThumb(m) {
+  return /\.(gif|png|jpe?g)$/i.test(m.thumb_url || '');
+}
+
 export function viewTitle(name) {
   return `${i18n.t('globals.buttons.view')} ${name}`;
 }

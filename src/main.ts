@@ -596,6 +596,8 @@ async function main(): Promise<void> {
           cacheSlowQueries: settings!.read()["app.cache_slow_queries"],
           fromEmails: settings!.read()["app.from_email"],
           messengers: campaignSettings().messengers,
+          publicSubscription: current.subscriptionPage,
+          trustedUrls: current.trustedUrls,
           customCss: settings!.read()["appearance.admin.custom_css"],
           customJs: settings!.read()["appearance.admin.custom_js"],
         };

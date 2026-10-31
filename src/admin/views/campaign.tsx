@@ -3,8 +3,7 @@
 // and cmd/campaigns.go (ViewCampaign, ViewNewCampaign) at 6fcd95f. The campaign, lists and templates
 // arrive from the API, so a body or name only reaches the page through x-text, x-bind and the
 // editors' values. Visual editing is deferred (D54): the format is offered only for a campaign that
-// already has it, whose HTML is shown in the code editor. The media picker is a dialog over
-// /api/media until M4.5 ports the media screens.
+// already has it, whose HTML is shown in the code editor.
 import { Icon } from "@/admin/layout/icon";
 import type { AdminRequest, AdminView } from "@/admin/page";
 import { campaignConfig, campaignKeys } from "@/admin/views/campaigns";
@@ -364,10 +363,10 @@ function Attachment({ t }: { t: Translation }) {
         rel="noopener noreferrer"
         x-bind:title="m.filename"
       >
-        <template x-if="m.thumb_url">
+        <template x-if="rasterThumb(m)">
           <img x-bind:src="m.thumb_url" x-bind:alt="m.filename" />
         </template>
-        <template x-if="!m.thumb_url">
+        <template x-if="!rasterThumb(m)">
           <span class="ext" x-text="fileExt(m.filename)"></span>
         </template>
       </a>
@@ -670,62 +669,16 @@ function TestSend({ t }: { t: Translation }) {
     </ot-dropdown>
   );
 }
-function MediaPicker({ t, canUpload }: { t: Translation; canUpload: boolean }) {
+/** partials/media-picker.html: the media fragment posts the picked file to this page. */
+function MediaPicker({ t }: { t: Translation }) {
   return (
     <dialog class="media-picker-modal" x-ref="mediaDialog" x-on:close="onMediaClose">
       <div class="dialog-card">
         <header class="dialog-head hstack justify-between">
           <h4 class="dialog-title">{t.T("globals.terms.media")}</h4>
         </header>
-        <section class="dialog-body attachments" style="padding: 1rem">
-          <div class="hstack gap-2 mb-4">
-            <input
-              type="search"
-              aria-label="Search"
-              placeholder="Search"
-              x-model="mediaQuery"
-              {...{ "x-on:input.debounce.300ms": "fetchMedia" }}
-            />
-            {canUpload ? (
-              <form class="hstack gap-2" {...{ "x-on:submit.prevent": "onUploadMedia" }}>
-                <input type="file" name="file" x-ref="mediaFile" required />
-                <button
-                  type="submit"
-                  class="outline"
-                  x-bind:disabled="mediaBusy"
-                  x-bind:aria-busy="mediaBusy"
-                  data-spinner="small"
-                >
-                  <Icon name="upload" /> {t.T("globals.buttons.upload")}
-                </button>
-              </form>
-            ) : null}
-          </div>
-          <Alert name="mediaError" />
-          <ul class="unstyled gallery">
-            <template x-for="m in mediaItems" x-bind:key="m.id">
-              <li>
-                <figure class="card">
-                  <a
-                    class="thumb"
-                    x-bind:href="m.url"
-                    x-bind:title="m.filename"
-                    {...{ "x-on:click.prevent": "onPickMedia(m)" }}
-                  >
-                    <template x-if="m.thumb_url">
-                      <img x-bind:src="m.thumb_url" x-bind:alt="m.filename" />
-                    </template>
-                    <template x-if="!m.thumb_url">
-                      <span class="ext" x-text="fileExt(m.filename)"></span>
-                    </template>
-                  </a>
-                  <figcaption>
-                    <span class="filename" x-bind:title="m.filename" x-text="m.filename"></span>
-                  </figcaption>
-                </figure>
-              </li>
-            </template>
-          </ul>
+        <section class="dialog-body">
+          <iframe x-ref="mediaFrame" title={t.T("globals.terms.media")}></iframe>
         </section>
         <footer class="dialog-foot align-right">
           <button type="button" class="outline" autofocus x-on:click="$refs.mediaDialog.close()">
@@ -853,7 +806,7 @@ function view(isNew: boolean): AdminView {
               )}
             </div>
             <PreviewDialog t={t} />
-            {isNew ? null : <MediaPicker t={t} canUpload={can("media:manage")} />}
+            {isNew ? null : <MediaPicker t={t} />}
           </section>
           {isNew ? null : (
             <>

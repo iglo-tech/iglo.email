@@ -126,6 +126,8 @@ export async function startUserFixture(
         cacheSlowQueries: settings.read()["app.cache_slow_queries"],
         fromEmails: ["Fixture <fixture@example.test>", "Other <other@example.test>"],
         messengers: ["email"],
+        publicSubscription: settings.read()["app.enable_public_subscription_page"],
+        trustedUrls: settings.read()["security.trusted_urls"],
         customCss: settings.read()["appearance.admin.custom_css"],
         customJs: settings.read()["appearance.admin.custom_js"],
       }),
