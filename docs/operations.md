@@ -3,7 +3,9 @@
 How to run iglo.email in production. The commands here were run on 2026-10-31 on Debian 13, with
 a build of this branch, synthetic data and paths under a temporary directory in place of
 `/usr/local/bin`, `/var/lib` and `/var/backups`. What was not run is listed under
-[Unverified](#unverified).
+[Unverified](#unverified). The account, ownership and restore commands ran as written, as root in a
+throwaway user and mount namespace, so `/etc`, `/var/lib` and `/var/backups` there were temporary
+copies.
 
 ## Install
 
@@ -16,10 +18,20 @@ bun run build
 install -m 0755 dist/iglo.email /usr/local/bin/iglo.email
 ```
 
-Create the data directory, owned by the service user and closed to everyone else:
+Create the service account, and the data and backup directories it owns, closed to everyone else.
+Run this as root:
 
 ```sh
-install -d -m 0700 /var/lib/iglo.email
+groupadd --system iglo-email
+useradd --system --gid iglo-email --home-dir /var/lib/iglo.email --shell /usr/sbin/nologin iglo-email
+install -d -o iglo-email -g iglo-email -m 0700 /var/lib/iglo.email /var/backups/iglo.email
+install -d -o root -g iglo-email -m 0750 /etc/iglo.email
+```
+
+Run every `iglo.email` command below as that account, so what it creates keeps that owner:
+
+```sh
+runuser -u iglo-email -- iglo.email backup --help
 ```
 
 The first start creates the first administrator from `IGLO_EMAIL_ADMIN_USER` and
@@ -48,8 +60,9 @@ UMask=0077
 WantedBy=multi-user.target
 ```
 
-Put the two admin variables in `/etc/iglo.email/env`, mode 0600, and remove them after the first
-start.
+Put the two admin variables in `/etc/iglo.email/env`, owned by root, mode 0640, group `iglo-email`,
+and remove them after the first start. systemd reads this file as root; a shell run as the account
+needs the group.
 
 Run one server per data directory. Nothing enforces this yet, and the sending loops depend on it:
 two servers on one directory can send a message twice. A backup, and the helpers the server
@@ -124,11 +137,21 @@ Set SMTP servers in Settings > SMTP, then send a test from there. The defaults a
 Most providers sign for you. To sign here, add `dkim` to a server. The admin UI keeps it but does
 not show it, so this goes through the API. A masked password sent back unchanged is kept.
 
+The private key passes through two files. Keep them in a private directory, created under a
+restrictive umask before either exists, and removed even if a command fails. Run this in a
+subshell so the umask and trap end with it:
+
 ```sh
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out dkim.pem
-openssl pkey -in dkim.pem -pubout -outform DER | openssl base64 -A
-curl -fsS -u "$API" http://127.0.0.1:9000/api/settings -o settings.json
-python3 - settings.json dkim.pem example.com mail <<'PY'
+(
+umask 077
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT
+set -e
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$staging/dkim.pem"
+openssl pkey -in "$staging/dkim.pem" -pubout -outform DER | openssl base64 -A
+echo
+curl -fsS -u "$API" http://127.0.0.1:9000/api/settings -o "$staging/settings.json"
+python3 - "$staging/settings.json" "$staging/dkim.pem" example.com mail <<'PY'
 import json, sys
 path, key, domain, selector = sys.argv[1:]
 settings = json.load(open(path))["data"]
@@ -140,12 +163,14 @@ settings["smtp"][0]["dkim"] = {
 json.dump(settings, open(path, "w"))
 PY
 curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
-  -d @settings.json http://127.0.0.1:9000/api/settings
+  -d @"$staging/settings.json" http://127.0.0.1:9000/api/settings
+)
 ```
 
-The second command prints the public key for the DNS record
-`mail._domainkey.example.com TXT "v=DKIM1; k=rsa; p=<key>"`. Remove `dkim.pem` and `settings.json`
-afterwards: the key now lives in the database.
+It prints the public key for the DNS record
+`mail._domainkey.example.com TXT "v=DKIM1; k=rsa; p=<key>"`. The trap removes the staging directory
+on success and on failure: the key now lives in the database. Exposing `$API` on a command line
+shows it to local process listings, so keep that token to a host you trust or use a netrc file.
 
 ## Mailgun bounces
 
@@ -188,10 +213,13 @@ iglo.email backup --verify /var/backups/iglo.email/monday
 ```
 
 Run it as the service user, while the server runs or while it is stopped: files in the backup
-keep that owner through a restore. With no `--output` the backup goes to
+keep that owner through a restore. The parent directory must exist and be writable by that user,
+as [Install](#install) sets up. With no `--output` the backup goes to
 `backups/iglo-email-<time>` in the data directory. That is not off-site, so copy it away.
 `--force` replaces an earlier backup, and only something that looks like one: never another
-directory or the data directory. Without it, an existing path is refused.
+directory or the data directory. Without it, an existing path is refused, also one that appears
+while the backup runs: of two overlapping backups to one path, the second to finish exits nonzero
+and the first stays.
 
 A backup is a directory shaped like a data directory:
 
@@ -242,7 +270,7 @@ and symlinks in the upload directory, which uploads never create.
 
 ### Nightly schedule
 
-A script for cron or a systemd timer, kept to 14 days:
+A script for the service user's cron or a systemd timer, kept to 14 days:
 
 ```sh
 #!/bin/sh
@@ -257,7 +285,8 @@ find "$root" -mindepth 1 -maxdepth 1 -name 'iglo-email-*' -mtime +13 -exec rm -r
 ```
 
 ```cron
-20 3 * * * /usr/local/bin/iglo-email-nightly
+# /etc/cron.d/iglo-email
+20 3 * * * iglo-email /usr/local/bin/iglo-email-nightly
 ```
 
 Then send `$name.tar.gz` off-site, encrypted, with the tool you already use. A cron job's failure
