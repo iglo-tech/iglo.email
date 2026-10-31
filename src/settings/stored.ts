@@ -13,8 +13,18 @@ export function storedValue(db: Database, key: string): string | null {
   return row?.value ?? null;
 }
 
+export function writeStoredValue(db: Database, key: string, value: unknown): void {
+  db.query(
+    `INSERT INTO settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(key, JSON.stringify(value));
+}
+
 export function storedUploadPath(db: Database): string {
   const value = storedValue(db, UPLOAD_PATH);
   const path = value === null ? defaults[UPLOAD_PATH] : parseStoredJson(value);
   return typeof path === "string" ? path : defaults[UPLOAD_PATH];
 }
+
+export const writeUploadPath = (db: Database, path: string) =>
+  writeStoredValue(db, UPLOAD_PATH, path);

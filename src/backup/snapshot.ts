@@ -16,6 +16,10 @@
 // commit for 1.5-1.8 s at 1,000,000 subscribers, and that time grows with the database. VACUUM is
 // one synchronous statement, so a helper process syncs its output every 200 ms while it runs
 // (docs/perf/M6.2-backup.md). It ends with stdin, so it cannot outlive a killed backup.
+//
+// The finished snapshot is then written to once, before anything can read it: it gets an upload
+// path that resolves to the copied files if the live one went through an alias, which a backup does
+// not keep.
 import { Database } from "bun:sqlite";
 import {
   chmodSync,
@@ -38,11 +42,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { open } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Clock } from "@/clock";
 import { uploadRoot } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
-import { storedUploadPath } from "@/settings/stored";
+import { storedUploadPath, writeUploadPath } from "@/settings/stored";
 
 const DATABASE = "iglo-email.db";
 const MANIFEST = "iglo-email-backup.json";
@@ -146,7 +150,9 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf8")) as {
       uploads: string;
     };
-    const uploads = uploadedFiles(join(target, directory));
+    // What a restored server will serve: a relative setting says where, whatever the manifest says.
+    const restored = storedUploadPath(db);
+    const uploads = uploadedFiles(join(target, isAbsolute(restored) ? directory : restored));
     const held = new Set(uploads.map(({ name }) => name));
     report.uploadFiles = uploads.length;
     report.uploadBytes = uploads.reduce((sum, { size }) => sum + size, 0);
@@ -262,6 +268,20 @@ function publish(partial: string, output: string, data: string, force: boolean):
   if (aside) rmSync(aside, { recursive: true, force: true });
 }
 
+/** The snapshot's one write: see the header. It leaves no journal or WAL beside the file. */
+function sealSnapshot(path: string, data: string): string {
+  const db = new Database(path, { strict: true, safeIntegers: true });
+  try {
+    db.run("PRAGMA journal_mode = DELETE");
+    const stored = storedUploadPath(db);
+    const source = uploadRoot(data, stored);
+    if (resolve(data, stored) !== source) writeUploadPath(db, relative(data, source));
+    return source;
+  } finally {
+    db.close(true);
+  }
+}
+
 export function createBackup(options: BackupOptions): Inspection & { path: string } {
   const { clock, warn } = options;
   const dataDir = resolve(options.dataDir);
@@ -309,17 +329,11 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     });
     db.run("VACUUM INTO ?", [snapshot]);
     flusher.kill();
+    const source = sealSnapshot(snapshot, data);
     sync(snapshot);
 
     // The database comes first. A file that arrives after it is one no row names, which nothing
     // serves. A file deleted after it is a row without a file, reported below.
-    const reader = openSnapshot(snapshot);
-    let source: string;
-    try {
-      source = uploadRoot(data, storedUploadPath(reader));
-    } finally {
-      reader.close(true);
-    }
     const uploads = relative(data, source);
     const target = join(partial, uploads);
     mkdirSync(target, { recursive: true, mode: 0o700 });

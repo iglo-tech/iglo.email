@@ -304,6 +304,61 @@ test("an upload directory named by the settings is backed up at its place", asyn
   expect(verified.stderr).toBe("");
 });
 
+test("an upload directory reached through an alias is served after a restore", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  mkdirSync(join(dataDir, "media"), { recursive: true });
+  symlinkSync("media", join(dataDir, "uploads"));
+  server = await startServer(executable, dataDir);
+  authorization = await provisionAuthorization(server.origin);
+  const client = apiClient(server.origin, authorization);
+  expect((await uploadFile(client, "aliased.txt", "aliased")).status).toBe(200);
+  expect(await (await fetch(`${server.origin}/uploads/aliased.txt`)).text()).toBe("aliased");
+  await stopped();
+
+  const output = join(base, "backup");
+  expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
+    0,
+  );
+  const verified = await runBackup(executable, ["--verify", output]);
+  expect(verified.stdout).toContain("Uploads: 1 files");
+  expect(verified.stderr).toBe("");
+  restoreInto(output, dataDir);
+  server = await startServer(executable, dataDir);
+  const restored = await fetch(`${server.origin}/uploads/aliased.txt`);
+  expect(restored.status).toBe(200);
+  expect(await restored.text()).toBe("aliased");
+  const again = await uploadFile(apiClient(server.origin, authorization), "new.txt", "new");
+  expect(again.status).toBe(200);
+  expect(await (await fetch(`${server.origin}/uploads/new.txt`)).text()).toBe("new");
+});
+
+test("--verify looks where the restored setting does, not only where the manifest says", async () => {
+  const client = await live();
+  mkdirSync(join(dataDir, "media"));
+  const moved = await client("/api/settings/upload.filesystem.upload_path", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify("media"),
+  });
+  expect(moved.status).toBe(200);
+  await stopped();
+  server = await startServer(executable, dataDir);
+  await uploadFile(apiClient(server.origin, authorization), "placed.txt", "placed");
+  const output = join(base, "backup");
+  expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
+    0,
+  );
+  // The shape an alias used to leave: the files in one place, the setting naming another.
+  const snapshot = new Database(join(output, "iglo-email.db"));
+  snapshot
+    .query("UPDATE settings SET value = ? WHERE key = ?")
+    .run(JSON.stringify("uploads"), "upload.filesystem.upload_path");
+  snapshot.close();
+  const verified = await runBackup(executable, ["--verify", output]);
+  expect(verified.stderr).toContain("placed.txt");
+});
+
 test("backed-up media is closed to everyone but its owner", async () => {
   const client = await live();
   await uploadFile(client, "private.txt", "private");
