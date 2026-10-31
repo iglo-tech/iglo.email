@@ -161,7 +161,7 @@ data/
 Startup opens `iglo-email.db`, validates and applies the embedded migration
 manifest, then starts HTTP. It closes the connection after HTTP shutdown or a
 startup failure. A nonempty database with pending migrations gets one verified
-SQLite `VACUUM INTO` snapshot before the batch. `iglo.email backup` takes a live
+SQLite `VACUUM INTO` snapshot before the batch, held as a backup is. `iglo.email backup` takes a live
 snapshot from a separate read-only process, with a short-lived helper that syncs its
 output ([operations guide](../operations.md#backups)). A backup carries a
 restore hold: a database restored from one sends nothing until an operator

@@ -1,8 +1,8 @@
 // The restore hold (D67). Not ported: listmonk has no backup command. A row in the settings table
 // that `defaults` does not name, so the settings API neither shows nor writes it and every schema
-// a backup can hold has its table. It is placed in the snapshot itself: a restored database starts
-// held however it was copied. The server reads it and never changes it; only the stopped-server
-// release does (src/backup/snapshot.ts).
+// a backup can hold has its table. It is placed in the snapshot itself, by `backup` and by the
+// migration runner: a restored database starts held however it was copied. The server reads it and
+// never changes it; only the stopped-server release does (src/backup/snapshot.ts).
 import type { Database } from "bun:sqlite";
 import { HttpError } from "@/server/response";
 import { parseStoredJson } from "@/settings/json";

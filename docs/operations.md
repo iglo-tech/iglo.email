@@ -409,7 +409,7 @@ and the data directory moved, media is refused until the path is right again.
 Executable and backup versions:
 
 - A newer executable restores an older backup: `--verify` says it will migrate, and the first
-  start takes a pre-migration snapshot in `backups/` and runs the migrations.
+  start takes a pre-migration snapshot in `backups/` and runs the migrations. The hold stays.
 - An older executable refuses a newer backup. `--verify` exits nonzero, and `serve` exits with
   `Database version N is ahead of this executable`. Restore with that version or a newer one.
 
@@ -423,6 +423,13 @@ Migrations run at startup and are forward-only. With migrations pending, startup
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
 restore the backup from step 1, and put back the old executable.
+
+A pre-migration snapshot carries a [hold](#restore), like a backup, and everything in Restore
+applies if you put one back: it is an older moment, and it sends nothing until you release it. A
+snapshot taken before this rule existed has no hold and must not be started without the same
+review; `--verify` prints no `Hold:` line for it. The install the snapshot came from is not held.
+A migration that fails rolls its own transaction back and the server exits: the live database
+stays at its previous version, without a hold, and nothing is restored from the snapshot.
 
 ## Monitoring
 
@@ -485,7 +492,7 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 - Supported PDF viewers for attachments.
 
 Known limits rather than unknowns: nothing enforces one server per data directory; a [hold](#restore)
-is in what `backup` writes, so a pre-migration snapshot, a disk image or a hand copy put back has
-none and must not be started without the same review; admin pages set
-no Content-Security-Policy yet, so review that before exposing the admin UI publicly; and delivered
+is in what `backup` and the migration runner write, so a disk image or a hand copy does not add
+one (it keeps the row of a database already held) and must not be started without the same
+review; admin pages set no Content-Security-Policy yet, so review that before exposing the admin UI publicly; and delivered
 webhook rows and expired sessions are not yet purged, so the database grows with them.

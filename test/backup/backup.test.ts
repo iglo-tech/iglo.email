@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -487,6 +488,51 @@ test("a kill at publication leaves nothing at the name, and a retry works", asyn
   expect(retry.stderr + retry.stdout).toContain("interrupted backup");
   expect(retry.exitCode).toBe(0);
   expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
+});
+
+test("a pre-migration snapshot is held, and the install it came from is not", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  const older = openDatabase(dataDir);
+  runMigrations(older, dataDir, createRealClock(), productionMigrations.slice(0, version - 1));
+  older.close(true);
+
+  server = await startServer(executable, dataDir);
+  expect((await fetch(server.health)).headers.get(HOLD_HEADER)).toBeNull();
+  await stopped();
+  const [snapshot] = names(join(dataDir, "backups"));
+  const path = join(dataDir, "backups", snapshot!);
+  expect((await runBackup(executable, ["--verify", path])).stdout).toMatch(/Hold: held since /);
+
+  // Put back as the guide says, it starts held and keeps migrating.
+  copyFileSync(path, join(base, "snapshot.db"));
+  removeDirectory(dataDir);
+  mkdirSync(dataDir);
+  copyFileSync(join(base, "snapshot.db"), join(dataDir, "iglo-email.db"));
+  server = await startServer(executable, dataDir);
+  expect((await fetch(server.health)).headers.get(HOLD_HEADER)).not.toBeNull();
+});
+
+test("a migration that fails rolls back on its own: the live database stays unheld", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  const db = openDatabase(dataDir);
+  const clock = createRealClock();
+  const before = productionMigrations.slice(0, version - 1);
+  runMigrations(db, dataDir, clock, before);
+  expect(() =>
+    runMigrations(db, dataDir, clock, [
+      ...before,
+      { version, sql: "CREATE TABLE half_done (id INTEGER); INSERT INTO nowhere VALUES (1);" },
+    ]),
+  ).toThrow();
+  db.close(true);
+  const [snapshot] = names(join(dataDir, "backups"));
+  const report = await runBackup(executable, ["--verify", join(dataDir, "backups", snapshot!)]);
+  expect(report.stdout).toMatch(/Hold: held since /);
+  const live = await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")]);
+  expect(live.stdout).not.toContain("Hold:");
+  expect(live.stdout).toContain(`Schema version: ${version - 1}`);
 });
 
 test("a newer executable migrates a restored backup", async () => {
