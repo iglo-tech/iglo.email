@@ -1,6 +1,6 @@
 {
   "name": "iglo.email",
-  "version": "0.0.0",
+  "version": "0.1.0-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -105,7 +105,9 @@
     "sequences:measure:counts": "bun test/sequences/measure-counts.ts",
     "templates:compiled": "bun test/templates/compiled-check.ts",
     "perf:mixed": "bun run build && bun test/perf/m61/mixed.ts",
-    "worked-example": "bun run build && bun test/worked-example/run.ts"
+    "worked-example": "bun run build && bun test/worked-example/run.ts",
+    "release:verify": "bun scripts/release.ts verify dist/iglo.email",
+    "release:package": "bun scripts/release.ts package dist/iglo.email dist/release"
   },
   "dependencies": {
     "liquidjs": "10.30.0",

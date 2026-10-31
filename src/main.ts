@@ -4,7 +4,7 @@ import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
-import { helpText, parseBootstrap } from "@/config/bootstrap";
+import { helpText, parseBootstrap, versionText } from "@/config/bootstrap";
 import { createClientAddress } from "@/server/client-address";
 import { startServer } from "@/server/server";
 import { createRouter } from "@/server/server";
@@ -105,6 +105,10 @@ async function main(): Promise<void> {
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
     process.stdout.write(helpText + backupHelp + resetPasswordHelp);
+    return;
+  }
+  if (bootstrap.version) {
+    process.stdout.write(versionText);
     return;
   }
 
