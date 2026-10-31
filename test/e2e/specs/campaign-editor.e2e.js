@@ -3,7 +3,6 @@
 // not change, and starting a campaign takes only the right to send. listmonk has no such spec at
 // 6fcd95f; docs/design/09-decisions.md#d66 lists what the sanitizer keeps.
 import { createServer } from "node:http";
-import { createServer } from "node:http";
 import { expect } from "@playwright/test";
 import { api, confirm, login, ORIGIN, test, unique } from "../helpers.js";
 
@@ -339,4 +338,25 @@ test("the campaign and archive previews reach no receiver either", async ({ page
   } finally {
     await place.close();
   }
+});
+
+async function saveName(page, c) {
+  await page.goto(`${CAMPAIGNS}/${c.id}`);
+  await expect(page.locator('input[name="name"]')).toHaveValue(c.name);
+  await page.locator('input[name="name"]').fill(`${c.name} renamed`);
+  const save = page.waitForResponse((r) => r.request().method() === "PUT");
+  await button(page.locator(".page-header"), "Save changes").click();
+  expect((await save).status()).toBe(200);
+  return stored(page, c.id);
+}
+
+test("an unrelated save keeps hidden archive metadata", async ({ page }) => {
+  await login(page);
+  const archive_meta = { name: "Keep me", attribs: { city: "Warsaw" } };
+  const c = await create(page, { archive: false, archive_meta });
+  expect((await stored(page, c.id)).archive_meta).toEqual(archive_meta);
+  const saved = await saveName(page, c);
+  expect(saved.name).toBe(`${c.name} renamed`);
+  expect(saved.archive).toBe(false);
+  expect(saved.archive_meta).toEqual(archive_meta);
 });

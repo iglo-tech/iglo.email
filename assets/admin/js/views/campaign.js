@@ -311,9 +311,17 @@ function component() {
         try { attribs = JSON.parse(as); } catch (e) { u.toast(`${i18n.t('subscribers.invalidJSON')}: ${e}`, 'danger'); return null; }
       }
 
-      let archiveMeta = {};
-      if (this.form.archive && this.form.archiveMetaStr) {
-        try { archiveMeta = JSON.parse(this.form.archiveMetaStr); } catch (e) { u.toast(`${i18n.t('subscribers.invalidJSON')}: ${e}`, 'danger'); return null; }
+      // Hidden while the archive is off, and kept: only a visible field stops a save.
+      let archiveMeta = (!this.form.archive && this.saved.archive_meta) || {};
+      if (this.form.archiveMetaStr) {
+        try {
+          archiveMeta = JSON.parse(this.form.archiveMetaStr);
+        } catch (e) {
+          if (this.form.archive) {
+            u.toast(`${i18n.t('subscribers.invalidJSON')}: ${e}`, 'danger');
+            return null;
+          }
+        }
       }
 
       return {
