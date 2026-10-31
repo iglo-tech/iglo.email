@@ -155,14 +155,15 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 data/
   iglo-email.db        (+ -wal, -shm)
   uploads/             media files
-  backups/             automatic pre-migration snapshots when needed
+  backups/             pre-migration snapshots, and `backup` output by default
 ```
 
 Startup opens `iglo-email.db`, validates and applies the embedded migration
 manifest, then starts HTTP. It closes the connection after HTTP shutdown or a
 startup failure. A nonempty database with pending migrations gets one verified
-SQLite `VACUUM INTO` snapshot before the batch. M0.4 has no public backup command;
-M6.2 owns the future backup command and operator guide. Continuous replication
+SQLite `VACUUM INTO` snapshot before the batch. `iglo.email backup` takes a live
+snapshot from a separate read-only process, with a short-lived helper that syncs its
+output ([operations guide](../operations.md#backups)). Continuous replication
 (for example Litestream) is an operator choice, not built in.
 
 ## Dependencies

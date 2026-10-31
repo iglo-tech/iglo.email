@@ -159,6 +159,19 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const)
     child.kill(signal);
     expect(await child.exited).not.toBe(0);
 
+    // The helper that syncs the snapshot goes with it.
+    const helperRunning = () =>
+      readdirSync("/proc").some((entry) => {
+        try {
+          return readFileSync(`/proc/${entry}/cmdline`, "utf8").includes(partial!);
+        } catch {
+          return false;
+        }
+      });
+    for (const deadline = Date.now() + 5_000; helperRunning() && Date.now() < deadline;)
+      await Bun.sleep(25);
+    expect(helperRunning()).toBe(false);
+
     expect(existsSync(output)).toBe(false);
     expect(names(destination)).toEqual([partial!]);
     const refused = await runBackup(executable, ["--verify", join(destination, partial!)]);

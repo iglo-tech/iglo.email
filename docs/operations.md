@@ -1,0 +1,372 @@
+# Operations guide
+
+How to run iglo.email in production. The commands here were run on 2026-10-31 on Debian 13, with
+a build of this branch, synthetic data and paths under a temporary directory in place of
+`/usr/local/bin`, `/var/lib` and `/var/backups`. What was not run is listed under
+[Unverified](#unverified).
+
+## Install
+
+There are no release artifacts yet (M6.3). Build the one executable on a machine with Bun 1.4 or
+newer and copy it to the server, which needs neither Bun nor a checkout:
+
+```sh
+bun install --frozen-lockfile
+bun run build
+install -m 0755 dist/iglo.email /usr/local/bin/iglo.email
+```
+
+Create the data directory, owned by the service user and closed to everyone else:
+
+```sh
+install -d -m 0700 /var/lib/iglo.email
+```
+
+The first start creates the first administrator from `IGLO_EMAIL_ADMIN_USER` and
+`IGLO_EMAIL_ADMIN_PASSWORD`. They are read only while no users exist, and there is no public
+first-account form. Without them `/health` works and login is denied.
+
+A systemd unit (`systemd-analyze verify` accepts it; it was not run as a service):
+
+```ini
+[Unit]
+Description=iglo.email
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=iglo-email
+Environment=IGLO_EMAIL_DATA_DIR=/var/lib/iglo.email
+Environment=IGLO_EMAIL_ROOT_URL=https://news.example.com
+EnvironmentFile=-/etc/iglo.email/env
+ExecStart=/usr/local/bin/iglo.email serve
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Put the two admin variables in `/etc/iglo.email/env`, mode 0600, and remove them after the first
+start.
+
+Run one server per data directory. Nothing enforces this yet, and the sending loops depend on it:
+two servers on one directory can send a message twice. A backup, and the helpers the server
+starts itself, are read-only and do not count.
+
+## Environment variables
+
+| Flag | Variable | Default |
+|---|---|---|
+| `--port` | `IGLO_EMAIL_PORT` | `9000` |
+| `--host` | `IGLO_EMAIL_HOST` | `127.0.0.1` |
+| `--data-dir` | `IGLO_EMAIL_DATA_DIR` | `./data` |
+| `--root-url` | `IGLO_EMAIL_ROOT_URL` | `http://<host>:<port>` |
+| | `IGLO_EMAIL_ADMIN_USER` | none |
+| | `IGLO_EMAIL_ADMIN_PASSWORD` | none |
+
+Flags win over variables. The root URL goes into every link in every email: set it to the public
+URL. It is the one setting that needs a restart. Everything else is in the admin UI under
+Settings, or `PUT /api/settings`, and applies at once.
+
+## Data directory
+
+```text
+/var/lib/iglo.email/
+  iglo-email.db         the database, with -wal and -shm while it is open
+  uploads/              media files
+  backups/              pre-migration snapshots, and backups with no --output
+  .iglo-email-import/   the file of a running import
+```
+
+The database holds SMTP passwords, API tokens, password hashes, webhook secrets, the Mailgun key
+and subscriber data, stored as given. Protect the directory with the host's permissions and disk
+encryption. Never copy `iglo-email.db` of a running server by hand: use `backup`.
+
+## Reverse proxy and TLS
+
+iglo.email serves plain HTTP. Keep it on `127.0.0.1` and terminate TLS in a reverse proxy. An
+example for nginx, not run here:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name news.example.com;
+    ssl_certificate     /etc/letsencrypt/live/news.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/news.example.com/privkey.pem;
+    client_max_body_size 64m;
+
+    location / {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+Behind a proxy every visitor arrives from the proxy's address, so one client's rate limit would
+stop all of them. List the proxy in `security.trusted_proxies` ([D60](design/09-decisions.md#d60-explicit-trusted-proxies-for-client-addresses)).
+It is empty by default, and `X-Forwarded-For` is ignored until it is set. It takes IPs or CIDRs and
+refuses a zero prefix. In Settings > Security, or:
+
+```sh
+curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
+  -d '["127.0.0.1"]' http://127.0.0.1:9000/api/settings/security.trusted_proxies
+```
+
+`API` is `username:token` of an API user, created under Users. Public rate limits, login limits
+and `privacy.record_optin_ip` all use the address found this way.
+
+## SMTP and DKIM
+
+Set SMTP servers in Settings > SMTP, then send a test from there. The defaults are placeholders.
+Most providers sign for you. To sign here, add `dkim` to a server. The admin UI keeps it but does
+not show it, so this goes through the API. A masked password sent back unchanged is kept.
+
+```sh
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out dkim.pem
+openssl pkey -in dkim.pem -pubout -outform DER | openssl base64 -A
+curl -fsS -u "$API" http://127.0.0.1:9000/api/settings -o settings.json
+python3 - settings.json dkim.pem example.com mail <<'PY'
+import json, sys
+path, key, domain, selector = sys.argv[1:]
+settings = json.load(open(path))["data"]
+settings["smtp"][0]["dkim"] = {
+    "domain_name": domain,
+    "key_selector": selector,
+    "private_key": open(key).read(),
+}
+json.dump(settings, open(path, "w"))
+PY
+curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
+  -d @settings.json http://127.0.0.1:9000/api/settings
+```
+
+The second command prints the public key for the DNS record
+`mail._domainkey.example.com TXT "v=DKIM1; k=rsa; p=<key>"`. Remove `dkim.pem` and `settings.json`
+afterwards: the key now lives in the database.
+
+## Mailgun bounces
+
+Copy the HTTP webhook signing key from your Mailgun account, then turn on all three settings, in
+Settings > Bounces or:
+
+```sh
+for setting in bounce.enabled bounce.webhooks_enabled; do
+  curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
+    -d 'true' "http://127.0.0.1:9000/api/settings/$setting"
+done
+curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
+  -d '{"enabled":true,"key":"<signing key>"}' \
+  http://127.0.0.1:9000/api/settings/bounce.mailgun
+```
+
+In Mailgun, point the webhooks for failures and complaints at
+`https://news.example.com/webhooks/bounce/mailgun`. Delivered, opened and other events are
+acknowledged and ignored. A request with a bad signature answers 406,
+which is what a forged one got in this check. The server's clock must be right: a signature older
+than 15 minutes is refused as stale.
+
+## Uploads
+
+Rules from [D64](design/09-decisions.md#d64-the-upload-directory-is-a-fixed-boundary-inside-the-data-directory):
+
+- The real path of `upload.filesystem.upload_path` must be a directory inside the real data
+  directory, with every symlink resolved. For other storage, mount it at that directory.
+- A refused directory stops media and nothing else. The reason is logged at startup and shown in
+  the API error, and campaigns with media pause.
+- Only a file with a `media` row of that exact name is served.
+- The path cannot change while any media row exists. To move media, delete it first.
+- A crash can leave a file with no row. It is never served and is safe to delete or keep.
+
+## Backups
+
+```sh
+iglo.email backup --data-dir /var/lib/iglo.email --output /var/backups/iglo.email/monday
+iglo.email backup --verify /var/backups/iglo.email/monday
+```
+
+Run it as the service user, while the server runs or while it is stopped: files in the backup
+keep that owner through a restore. With no `--output` the backup goes to
+`backups/iglo-email-<time>` in the data directory. That is not off-site, so copy it away.
+`--force` replaces an earlier backup, and only something that looks like one: never another
+directory or the data directory. Without it, an existing path is refused.
+
+A backup is a directory shaped like a data directory:
+
+```text
+monday/                    mode 0700
+  iglo-email.db            mode 0600, the snapshot
+  iglo-email-backup.json   the relative path of the upload directory
+  uploads/                 copies of the uploaded files
+```
+
+**It holds everything the data directory does:** SMTP passwords, API tokens, password hashes,
+secrets and personal data, in the clear. That is why it has these modes. Keep them, and encrypt
+anything that leaves the host. A deletion or wipe of a subscriber does not reach backups already
+taken, so keep them only as long as your privacy policy says.
+
+**How it works.** `backup` is a separate process that opens the database with
+`SQLITE_OPEN_READONLY` and runs `VACUUM INTO`, which needs only a read transaction on the source.
+It takes no write lock, the server keeps committing, and the snapshot is exactly the committed
+state when it began. This is safe beside a running server for the reason D62's read helpers are:
+WAL mode allows readers in other processes, and a read-only connection cannot change the database
+file, take a lease or send anything, so the one-server rule is untouched. It cannot use
+`query_only`, as those helpers do, because that also refuses the writes to the output file. A
+short-lived helper syncs the output while it is written: that keeps the disk flush from holding the
+server's commits, which one flush at the end did for up to 1.9 s.
+
+**Checkpoints and disk.** While the snapshot runs, a checkpoint cannot pass it, so the WAL grows
+with the writes of that time. It was 7.5 MiB at about 80 writes a second, and the WAL is reused
+afterwards. The WAL file keeps its size until the server stops. `backup` needs room for the live
+pages of the database and the uploads, about the size of the data directory. It checks this first
+and refuses if there is too little.
+
+**Failure.** The backup is built in `.iglo-email-backup-partial-<random>` beside its destination,
+synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and
+removes that directory. A killed one leaves it, `--verify` refuses it, and it can never be
+mistaken for a backup. The next `backup` in that place warns about it and does not delete it, as
+it could be running. When none is running, remove it:
+
+```sh
+rm -rf /var/backups/iglo.email/.iglo-email-backup-partial-*
+```
+
+**Media.** The database is copied first and the files after it. An upload that lands in between
+is a file with no row, which nothing serves. A file deleted in between is a row with no file:
+`backup` and `--verify` name it on stderr and exit 0. It behaves as a missing attachment does
+anywhere: a 404 at its URL, and a campaign that attaches it pauses. An upload in progress and the
+file of a running import are not included, and neither are the `backups` directory or subdirectories
+and symlinks in the upload directory, which uploads never create.
+
+### Nightly schedule
+
+A script for cron or a systemd timer, kept to 14 days:
+
+```sh
+#!/bin/sh
+set -eu
+root=/var/backups/iglo.email
+name="iglo-email-$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+iglo.email backup --data-dir /var/lib/iglo.email --output "$root/$name"
+iglo.email backup --verify "$root/$name"
+umask 077
+tar -C "$root" -czf "$root/$name.tar.gz" "$name"
+find "$root" -mindepth 1 -maxdepth 1 -name 'iglo-email-*' -mtime +13 -exec rm -rf {} +
+```
+
+```cron
+20 3 * * * /usr/local/bin/iglo-email-nightly
+```
+
+Then send `$name.tar.gz` off-site, encrypted, with the tool you already use. A cron job's failure
+needs to reach someone: the script exits nonzero on any failed step.
+
+## Restore
+
+Restoring goes back to the moment of the snapshot, and this matters more for email than for most
+data:
+
+- Anyone who unsubscribed after the snapshot is subscribed again, and subscribers added since are
+  gone. Reapply unsubscribes from your provider's records before sending.
+- Marketing is at-most-once only within one database history. Messages sent after the snapshot
+  are not on record, so a campaign running in the snapshot would send them again. The procedure
+  below pauses such campaigns. Mail queued in the snapshot and sequence steps then due still go
+  out on start.
+
+```sh
+systemctl stop iglo.email
+iglo.email backup --verify /var/backups/iglo.email/monday
+mv /var/lib/iglo.email /var/lib/iglo.email.before-restore
+cp -a /var/backups/iglo.email/monday /var/lib/iglo.email
+python3 -c 'import sqlite3, sys; db = sqlite3.connect(sys.argv[1]); print(db.execute("UPDATE campaigns SET status = '"'"'paused'"'"' WHERE status = '"'"'running'"'"'").rowcount, "paused"); db.commit()' /var/lib/iglo.email/iglo-email.db
+systemctl start iglo.email
+curl -fsS http://127.0.0.1:9000/health
+```
+
+From an archive, first unpack it with `tar -xzf` and verify what came out.
+
+Move the whole directory, as here. A new database beside an old `iglo-email.db-wal` is corrupted by
+it. If the upload directory is a mount, restore into it with `cp -a monday/uploads/. <mount>/`. The
+extra `iglo-email-backup.json` in a restored directory is harmless. If `upload_path` is absolute
+and the data directory moved, media is refused until the path is right again.
+
+Executable and backup versions:
+
+- A newer executable restores an older backup: `--verify` says it will migrate, and the first
+  start takes a pre-migration snapshot in `backups/` and runs the migrations.
+- An older executable refuses a newer backup. `--verify` exits nonzero, and `serve` exits with
+  `Database version N is ahead of this executable`. Restore with that version or a newer one.
+
+## Upgrades
+
+1. Take and verify a backup.
+2. Stop the server, replace the executable, start it.
+3. Check `/health`.
+
+Migrations run at startup and are forward-only. With migrations pending, startup first writes a
+verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
+`.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
+restore the backup from step 1, and put back the old executable.
+
+## Monitoring
+
+- `GET /health` is public and answers `200` and `{"data":true}` once the server is listening. It
+  does not exercise the database or the sending loops. `GET /api/health` needs an API user.
+- A loop that fails for good stops the whole process, with a nonzero exit, so a supervisor with
+  `Restart=on-failure` restarts it. Alert on restarts.
+- Watch free disk on the data directory and on the backup destination, and the age of the newest
+  backup.
+
+## Logs
+
+The server writes only errors and things that need attention, to stderr, with the whole error
+there: journald, with the unit above. Treat that log as sensitive. `GET /api/logs` and the Logs
+screen hold the last 5,000 lines in memory, each only a time, a fixed message and an error class,
+because `settings:get` readers see them. For the detail, go to stderr.
+
+## Sizes and capacity
+
+Measured on one shared 6 vCPU VM with SQLite on ext4. These are observations, not guarantees.
+
+| Measure | Result | Source |
+|---|---|---|
+| Campaign sending | 79.7 messages/s, 78.8/s under mixed load, against a target of 50 | [M6.1b](perf/M6.1b-throughput.md) |
+| Events API | 100 events/s, p95 22 ms alone and 51 ms under mixed load | [M6.1b](perf/M6.1b-throughput.md) |
+| Server memory | 106-119 MiB resident in those runs | [M6.1b](perf/M6.1b-throughput.md) |
+| Read helpers | up to two at a time, 256 MiB each at most | [D62](design/09-decisions.md#d62-read-only-helper-processes-for-slow-reads) |
+| Database, 1,000,000 subscribers | 600 MiB with memberships; 822 MiB with a year of views, clicks and sends | [M6.2](perf/M6.2-backup.md), [M4.6](perf/M4.6-maintenance.md) |
+| Backup, 1,000,000 subscribers | 16-18 s in all, 2.7 s of it the snapshot; 73 MiB resident; server write stall up to 0.45 s | [M6.2](perf/M6.2-backup.md) |
+
+Plan for a disk of at least twice the data directory, for the backup that is built beside it, plus
+what is kept. With `app.cache_slow_queries` on, dashboard reads stop holding the WAL open
+([D62](design/09-decisions.md#d62-read-only-helper-processes-for-slow-reads)).
+
+## Defaults for open questions
+
+From [Open questions](design/10-open-questions.md), until the owner decides otherwise:
+
+| Question | Default in effect |
+|---|---|
+| Where does the first instance run? | A VPS with a persistent volume, behind the existing reverse proxy, with the nightly `backup` above sent off-site. Litestream is not recommended or tested; replication is the operator's choice. |
+| Public subscription forms in v1? | The pages are there, with no CAPTCHA. The first consumer adds people through the API. Open forms attract signup spam, so keep lists private until CAPTCHA arrives. |
+| Existing listmonk data? | None is imported. There is no listmonk importer. |
+| Public repository? | Public, under the AGPL-3.0. |
+
+## Unverified
+
+- Real Mailgun events have not reached this code: only synthetic signed requests have. Whether
+  Mailgun re-signs a retry is unknown. If it repeats a signature past 15 minutes, after a 429 or
+  5xx here, that bounce is refused as stale and lost ([D63](design/09-decisions.md#d63-bounce-receipts-and-retained-provider-text)).
+- Delivery through a real SMTP provider, and DKIM against real receivers. Tests use a local sink
+  only.
+- The systemd unit as a running service, the nginx example, TLS, a mounted upload directory, and a
+  restore from real off-site storage.
+- Behaviour on Linux arm64 or macOS. Only Linux x86-64 was used.
+- Translations other than English have not been reviewed.
+- Supported PDF viewers for attachments.
+
+Known limits rather than unknowns: nothing enforces one server per data directory; admin pages set
+no Content-Security-Policy yet, so review that before exposing the admin UI publicly; and delivered
+webhook rows and expired sessions are not yet purged, so the database grows with them.
