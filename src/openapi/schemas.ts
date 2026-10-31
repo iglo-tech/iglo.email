@@ -71,8 +71,6 @@ const listFields = {
   type: listType,
   optin: listOptin,
   status: listStatus,
-  tags: array(string),
-  description: string,
 };
 const roleList = object({ id: integer, name: string, permissions: array(listPermission) });
 const trigger = input({ event: string, where: free }, ["event"]);
@@ -176,6 +174,8 @@ export const schemas: Record<string, Schema> = {
   ),
   List: object({
     ...listFields,
+    tags: array(string),
+    description: string,
     subscriber_count: integer,
     subscriber_statuses: nullable(map(integer)),
     subscription_created_at: nullable(time),
@@ -192,13 +192,24 @@ export const schemas: Record<string, Schema> = {
     },
     ["name"],
   ),
-  SubscriberList: object({
-    subscription_status: subscriptionStatus,
-    subscription_created_at: time,
-    subscription_updated_at: time,
-    subscription_meta: free,
-    ...listFields,
-  }),
+  SubscriberList: object(
+    {
+      subscription_status: subscriptionStatus,
+      subscription_created_at: time,
+      subscription_updated_at: time,
+      subscription_meta: free,
+      ...listFields,
+      name: { ...string, description: "`*Unknown` on a restricted membership." },
+      tags: { ...nullable(array(string)), description: "Null for a list made without tags." },
+      description: { ...string, description: "Absent on a restricted membership." },
+      restricted: {
+        type: "boolean",
+        const: true,
+        description: "Only on a membership of a list outside the caller's list role.",
+      },
+    },
+    ["description", "restricted"],
+  ),
   Subscriber: object({
     id: integer,
     created_at: time,

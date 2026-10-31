@@ -123,6 +123,25 @@ export async function runOpenApiContract(target: {
     };
   };
 
+  /** An API user with these permissions and per-list grants. */
+  const credential = async (name: string, permissions: string[], lists: unknown[] = []) => {
+    const role = (await send("POST", "/api/roles/users", { body: { name, permissions } })).body
+      .data;
+    const listRole = (await send("POST", "/api/roles/lists", { body: { name, lists } })).body.data;
+    const user = (
+      await send("POST", "/api/users", {
+        body: {
+          username: name,
+          type: "api",
+          status: "enabled",
+          user_role_id: role.id,
+          list_role_id: listRole.id,
+        },
+      })
+    ).body.data;
+    return `Basic ${btoa(`${name}:${user.password}`)}`;
+  };
+
   const seen = new Map<string, Set<number>>();
   /** Components that met a real value: an empty array proves nothing about its items. */
   const checked = new Set<string>();
@@ -351,6 +370,32 @@ export async function runOpenApiContract(target: {
     await op("GET /api/subscribers");
     await op("GET /api/subscribers", { query: `?per_page=all&list_id=${list.id}` });
     await op("GET /api/subscribers/{id}", { params: { id: subscriber.id } });
+    // A membership outside the caller's lists is masked, and a list made without tags has none.
+    const bare = (
+      await op("POST /api/lists", { body: { name: "bare", type: "public", optin: "single" } })
+    ).body.data;
+    const shared = (
+      await op("POST /api/subscribers", {
+        body: {
+          email: "shared@fixture.test",
+          name: "Shared",
+          status: "enabled",
+          lists: [list.id, bare.id],
+          preconfirm_subscriptions: true,
+        },
+      })
+    ).body.data;
+    const narrow = await credential(
+      "narrow",
+      ["subscribers:get"],
+      [{ id: list.id, permissions: ["list:get"] }],
+    );
+    const masked = (
+      await op("GET /api/subscribers/{id}", { params: { id: shared.id }, auth: narrow })
+    ).body.data.lists.find(({ id }: { id: number }) => id === bare.id);
+    check(masked.restricted === true && masked.name === "*Unknown", "subscriber-masked-list");
+    await op("GET /api/subscribers", { query: `?list_id=${list.id}`, auth: narrow });
+    await op("GET /api/subscribers/{id}", { params: { id: shared.id } });
     await op("PUT /api/subscribers/{id}", {
       params: { id: other.id },
       body: { email: other.email, name: "Two b", status: "enabled", lists: [list.id] },
