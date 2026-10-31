@@ -6,11 +6,15 @@
 // and loaded by returning `script: "<name>"` from the view.
 import { createAdminPages, type AdminSite, type AdminView } from "@/admin/page";
 import { createPasswordReset, type ResetDeps } from "@/admin/password-reset";
+import { bouncesView } from "@/admin/views/bounces";
 import { campaignView, newCampaignView } from "@/admin/views/campaign";
 import { campaignsView } from "@/admin/views/campaigns";
 import { dashboardView } from "@/admin/views/dashboard";
+import { formsView } from "@/admin/views/forms";
+import { importView } from "@/admin/views/import";
 import { listView, newListView } from "@/admin/views/list";
 import { listsView } from "@/admin/views/lists";
+import { mediaFragmentView, mediaView } from "@/admin/views/media";
 import { notYet } from "@/admin/views/not-yet";
 import { profileView } from "@/admin/views/profile";
 import { listRoleView, userRoleView } from "@/admin/views/role";
@@ -73,7 +77,7 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
 
   // Navigation targets that later M4 tasks port.
   page("/admin/lists/analytics", notYet("lists.analytics", "globals.terms.analytics"));
-  page("/admin/lists/forms", notYet("lists.forms", "globals.terms.forms"));
+  page("/admin/lists/forms", formsView);
   const anySubscribers = ["subscribers:get_all", "subscribers:get"];
   page("/admin/subscribers", subscribersView, ...anySubscribers);
   page("/admin/subscribers/new", newSubscriberView, "subscribers:manage");
@@ -82,22 +86,15 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   withID("/admin/subscribers/:id/edit", subscriberView("edit"), ...anySubscribers);
   withID("/admin/subscribers/:id/lists", subscriberView("lists"), ...anySubscribers);
   withID("/admin/subscribers/:id/bounces", subscriberView("bounces"), ...anySubscribers);
-  page(
-    "/admin/subscribers/import",
-    notYet("subscribers.import", "globals.terms.import"),
-    "subscribers:import",
-  );
-  page(
-    "/admin/subscribers/bounces",
-    notYet("subscribers.bounces", "globals.terms.bounces"),
-    "bounces:get",
-  );
+  page("/admin/subscribers/import", importView, "subscribers:import");
+  page("/admin/subscribers/bounces", bouncesView, "bounces:get");
   const anyCampaigns = ["campaigns:get_all", "campaigns:get"];
   page("/admin/campaigns", campaignsView, ...anyCampaigns);
   page("/admin/campaigns/new", newCampaignView, "campaigns:manage_all", "campaigns:manage");
   withID("/admin/campaigns/:id", campaignView, ...anyCampaigns);
   withID("/admin/campaigns/:id/:tab", campaignView, ...anyCampaigns);
-  page("/admin/campaigns/media", notYet("campaigns.media", "globals.terms.media"), "media:get");
+  page("/admin/campaigns/media", mediaView, "media:get");
+  page("/admin/campaigns/media/fragment", mediaFragmentView, "media:get");
   page(
     "/admin/campaigns/analytics",
     notYet("campaigns.analytics", "globals.terms.analytics"),

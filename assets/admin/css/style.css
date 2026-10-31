@@ -1572,6 +1572,14 @@ section.import {
 }
 
 /* Media */
+.media-fragment {
+    background: var(--body);
+
+    .container {
+        padding-block: var(--space-2);
+    }
+}
+
 .media-files,
 .attachments {
     .gallery {
@@ -1596,9 +1604,9 @@ section.import {
         overflow: hidden;
 
         img {
-            max-height: 100%;
-            max-width: 100%;
-            object-fit: cover;
+            height: 100%;
+            object-fit: contain;
+            width: 100%;
         }
     }
 

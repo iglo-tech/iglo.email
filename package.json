@@ -30,6 +30,7 @@
     "e2e:browser:lists": "bun run build && bun test/e2e/browser-lists.ts",
     "e2e:browser:campaigns": "bun run build && bun test/e2e/browser-campaigns.ts",
     "e2e:browser:settings": "bun run build && bun test/e2e/browser-settings.ts",
+    "e2e:browser:media": "bun run build && bun test/e2e/browser-media.ts",
     "ui:verify": "bun run assets:build && bun test/ui/verify.ts",
     "runtime:spike:liquid": "bun test/perf/runtime-compat/liquid-bench.ts",
     "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",

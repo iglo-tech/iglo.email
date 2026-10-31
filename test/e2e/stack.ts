@@ -14,6 +14,7 @@ export const root = resolve(import.meta.dir, "../..");
 
 export interface Stack {
   origin: string;
+  dataDir: string;
   blankOrigin: string;
   mailbox: Mailbox;
 }
@@ -46,7 +47,8 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
     return await withProduction(
       resolve(root, "dist/iglo.email"),
       new AbortController().signal,
-      (blankOrigin) => run({ origin: production.origin, blankOrigin, mailbox }),
+      (blankOrigin) =>
+        run({ origin: production.origin, dataDir: production.dataDir, blankOrigin, mailbox }),
       undefined,
       1_200_000,
     );

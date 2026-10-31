@@ -1,11 +1,12 @@
 // Adapted from listmonk static/admin/assets/js/views/campaign.js at 6fcd95f. Upstream's page arrives
-// with its campaign, lists and templates; here this module reads them from the API. The media
-// picker is a dialog over /api/media, where upstream frames a media page (M4.5).
+// with its campaign, lists and templates; here this module reads them from the API.
 import Alpine from 'alpinejs';
 import { convert, htmlToText } from '@/assets/admin/js/content.js';
-import { initials, read, viewTitle } from '@/assets/admin/js/listing.js';
 import {
-  api, config, csrfToken, i18n, ListTag, urls,
+  fileExt, initials, rasterThumb, read, viewTitle,
+} from '@/assets/admin/js/listing.js';
+import {
+  api, config, i18n, ListTag, urls,
 } from '@/assets/admin/js/main.js';
 import { previewMixin } from '@/assets/admin/js/preview.js';
 import * as u from '@/assets/admin/js/utils.js';
@@ -81,10 +82,6 @@ function component() {
     // A status change is in flight, or asking: a second click starts nothing.
     changing: false,
     _mediaTarget: null,
-    mediaItems: [],
-    mediaQuery: '',
-    mediaError: '',
-    mediaBusy: false,
     form: makeForm({}),
 
     async init() {
@@ -93,6 +90,15 @@ function component() {
         this.activeTab = 'content';
         this.contentReady = true;
       }
+      // Listen for the media picker selections pushed from the dialog.
+      window.addEventListener('message', (e) => {
+        if (e.origin !== window.location.origin || e.source !== this.$refs.mediaFrame?.contentWindow) {
+          return;
+        }
+        if (e.data?.type === 'media-select') {
+          this.onPickMedia(e.data.media);
+        }
+      });
       this.$root.addEventListener('ot-tab-change', (e) => {
         if (e.detail?.tab?.id) {
           this.activeTab = e.detail.tab.id;
@@ -541,20 +547,9 @@ function component() {
 
     // ===============
     // Media picker.
-    async fetchMedia() {
-      try {
-        const query = new URLSearchParams({ per_page: 100, query: this.mediaQuery });
-        const data = await read(`/media?${query}`);
-        this.mediaItems = data.results || [];
-        this.mediaError = '';
-      } catch (e) {
-        this.mediaError = e.message;
-      }
-    },
-
     onOpenMedia(target) {
       this._mediaTarget = target;
-      this.fetchMedia();
+      this.$refs.mediaFrame.src = `${urls.admin}/campaigns/media/fragment?t=${Date.now()}`;
       this.$refs.mediaDialog.showModal();
     },
 
@@ -564,33 +559,6 @@ function component() {
 
     onMediaClose() {
       this._mediaTarget = null;
-    },
-
-    async onUploadMedia(e) {
-      const file = this.$refs.mediaFile.files[0];
-      if (!file || this.mediaBusy) {
-        return;
-      }
-
-      this.mediaBusy = true;
-      try {
-        const body = new FormData();
-        body.append('file', file);
-        const resp = await fetch(`${urls.api}/media`, {
-          method: 'POST',
-          headers: { Accept: 'application/json', 'X-CSRF-Token': csrfToken() },
-          body,
-        });
-        const out = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
-          throw new Error(out.message || resp.statusText);
-        }
-        e.target.reset();
-        await this.fetchMedia();
-      } catch (err) {
-        this.mediaError = err.message;
-      }
-      this.mediaBusy = false;
     },
 
     onPickMedia(m) {
@@ -606,10 +574,8 @@ function component() {
       this.$refs.mediaDialog.close();
     },
 
-    fileExt(filename) {
-      const i = (filename || '').lastIndexOf('.');
-      return i > 0 ? filename.slice(i + 1).toUpperCase() : '';
-    },
+    fileExt,
+    rasterThumb,
 
     // Used for the attachment gallery captions to match the media gallery.
     niceDate: u.niceDate,

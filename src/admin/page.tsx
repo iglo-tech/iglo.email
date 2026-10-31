@@ -22,6 +22,10 @@ export interface AdminSite {
   /** The configured from addresses, the default first. */
   readonly fromEmails: readonly string[];
   readonly messengers: readonly string[];
+  /** app.enable_public_subscription_page. */
+  readonly publicSubscription: boolean;
+  /** security.trusted_urls: where a public form may send a subscriber afterwards. */
+  readonly trustedUrls: readonly string[];
   /** appearance.admin.*: what /admin/custom.css and /admin/custom.js answer. */
   readonly customCss: string;
   readonly customJs: string;
@@ -38,6 +42,8 @@ export interface AdminPage {
   readonly translationKeys?: readonly string[];
   /** Added to `window._LM_CONFIG` for that module. */
   readonly config?: Readonly<Record<string, JSONValue>>;
+  /** Without the sidebar and top bar, for an iframe. */
+  readonly bare?: boolean;
 }
 export interface AdminRequest {
   readonly context: RequestContext;
@@ -157,6 +163,7 @@ export function createAdminPages(deps: {
           customAssets: true,
           ...(current.faviconUrl ? { faviconUrl: current.faviconUrl } : {}),
           ...(page.script ? { script: page.script } : {}),
+          ...(page.bare ? { bare: true } : {}),
           duration: `${Math.round(performance.now() - started)}ms`,
           children: page.body,
         });

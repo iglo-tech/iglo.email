@@ -127,7 +127,7 @@ process.exitCode = await withStack(async ({ origin }) => {
     );
     settle();
     shot("media-picker");
-    see("media picker", text(".media-picker-modal"));
+    see("media picker", value(`document.querySelector(".media-picker-modal iframe").src`));
     return 0;
   } finally {
     try {

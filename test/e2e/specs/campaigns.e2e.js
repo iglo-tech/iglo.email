@@ -555,15 +555,17 @@ test("uploads an attachment, persists it and delivers it when starting from the 
   await tab(page, "Attachments").click();
   await button(page, "Add attachments").click();
   const picker = page.locator(".media-picker-modal");
-  await picker.locator('input[type="file"]').setInputFiles({
+  const frame = picker.frameLocator("iframe");
+  await frame.getByTestId("btn-upload-menu").click();
+  await frame.locator('input[type="file"]').setInputFiles({
     name: filename,
     mimeType: "application/pdf",
     buffer: Buffer.from("%PDF-1.4 attachment"),
   });
-  await button(picker, "Upload").click();
-  await picker
+  await frame.getByTestId("btn-upload").click();
+  await frame
     .locator("a.thumb")
-    .and(picker.getByTitle(filename, { exact: true }))
+    .and(frame.getByTitle(filename, { exact: true }))
     .click();
   await expect(picker).not.toBeVisible();
   await save(page, c.id);
@@ -657,6 +659,7 @@ test("an image can embed as an inline part or stay a URL after reload", async ({
     await button(dialog, "Media").click();
     await page
       .locator(".media-picker-modal")
+      .frameLocator("iframe")
       .getByTitle(media.filename, { exact: true })
       .first()
       .click();

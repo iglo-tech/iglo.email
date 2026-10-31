@@ -38,6 +38,8 @@ export interface AdminShellProps {
   readonly customAssets?: boolean;
   /** Page render time, as upstream's footer shows it. */
   readonly duration?: string;
+  /** The page alone, for an iframe: no sidebar or top bar, as upstream's media fragment. */
+  readonly bare?: boolean;
   readonly children?: Child;
 }
 
@@ -129,9 +131,99 @@ const themeModes = [
 ] as const;
 const themeScript = `(function(){try{var t=localStorage.getItem('theme');if(t)document.documentElement.style.colorScheme=t;}catch(e){}})();`;
 
+/** The sidebar and top bar around a page's content. */
+function Chrome(props: AdminShellProps) {
+  const { siteName, assetVersion, i18n, navigation, profile, duration, children } = props;
+  const base = `/admin/static`;
+  return (
+    <div id="app" data-sidebar-layout="">
+      <aside data-sidebar="">
+        <header class="sidebar-branding">
+          <a href="/admin">
+            <img src={`${base}/logo.svg?v=${assetVersion}`} alt={siteName} />
+          </a>
+        </header>
+        {navigation && <Navigation items={navigation} />}
+        <footer id="footer">
+          {duration ? (
+            <span class="text-light text-8" title="Page render time">
+              {duration}
+            </span>
+          ) : null}
+        </footer>
+      </aside>
+      <main>
+        <header class="main-bar">
+          <div class="mobile-branding">
+            <button
+              data-sidebar-toggle=""
+              type="button"
+              aria-label="Toggle sidebar menu"
+              class="small"
+            >
+              <Icon name="menu" />
+            </button>
+            <a href="/admin">
+              <img src={`${base}/favicon.png?v=${assetVersion}`} alt={siteName} />
+            </a>
+          </div>
+          {profile && (
+            <ot-dropdown>
+              <button
+                popovertarget="user-menu"
+                type="button"
+                class="user-nav-button ghost small user-trigger"
+              >
+                <span class="avatar">
+                  <span class="avatar-icon avatar-user">
+                    <span class="avatar-initials" aria-hidden="true">
+                      {initials(profile.name)}
+                    </span>
+                  </span>
+                  <span class="avatar-label user-label">{profile.name}</span>
+                </span>
+              </button>
+              <menu popover="" id="user-menu">
+                <a href="/admin/user/profile" role="menuitem" class="button ghost">
+                  <Icon name="user" /> {i18n.T("globals.terms.profile")}
+                </a>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="ghost"
+                  {...{ "@click": "onLogout('/api/logout', '/admin/login')" }}
+                >
+                  <Icon name="log-out" /> {i18n.T("globals.buttons.logout")}
+                </button>
+                <hr />
+                <div class="theme-switch" role="group" aria-label="Theme">
+                  {themeModes.map(([mode, icon, label]) => (
+                    <button
+                      type="button"
+                      class="ghost small"
+                      title={i18n.T(label)}
+                      {...{
+                        "@click": `setTheme('${mode}')`,
+                        ":class": `{ 'is-active': theme === '${mode}' }`,
+                        ":aria-pressed": `theme === '${mode}'`,
+                      }}
+                    >
+                      <Icon name={icon} />
+                    </button>
+                  ))}
+                </div>
+              </menu>
+            </ot-dropdown>
+          )}
+        </header>
+        <div class="container">{children}</div>
+      </main>
+    </div>
+  );
+}
 function AdminShell(props: AdminShellProps) {
-  const { title, siteName, assetVersion, i18n, config, navigation, profile, children } = props;
-  const { faviconUrl, script, duration, customAssets } = props;
+  const { title, siteName, assetVersion, i18n, config, children } = props;
+  const { faviconUrl, script, customAssets } = props;
   if (script !== undefined && !/^[a-z][a-z0-9-]*$/.test(script))
     throw new TypeError("Invalid view script");
   if (!/^[a-f0-9]{10}$/.test(assetVersion)) throw new TypeError("Invalid asset version");
@@ -173,90 +265,8 @@ function AdminShell(props: AdminShellProps) {
         )}
         <script>{raw(bootstrap)}</script>
       </head>
-      <body x-data="adminApp">
-        <div id="app" data-sidebar-layout="">
-          <aside data-sidebar="">
-            <header class="sidebar-branding">
-              <a href="/admin">
-                <img src={`${base}/logo.svg?v=${assetVersion}`} alt={siteName} />
-              </a>
-            </header>
-            {navigation && <Navigation items={navigation} />}
-            <footer id="footer">
-              {duration ? (
-                <span class="text-light text-8" title="Page render time">
-                  {duration}
-                </span>
-              ) : null}
-            </footer>
-          </aside>
-          <main>
-            <header class="main-bar">
-              <div class="mobile-branding">
-                <button
-                  data-sidebar-toggle=""
-                  type="button"
-                  aria-label="Toggle sidebar menu"
-                  class="small"
-                >
-                  <Icon name="menu" />
-                </button>
-                <a href="/admin">
-                  <img src={`${base}/favicon.png?v=${assetVersion}`} alt={siteName} />
-                </a>
-              </div>
-              {profile && (
-                <ot-dropdown>
-                  <button
-                    popovertarget="user-menu"
-                    type="button"
-                    class="user-nav-button ghost small user-trigger"
-                  >
-                    <span class="avatar">
-                      <span class="avatar-icon avatar-user">
-                        <span class="avatar-initials" aria-hidden="true">
-                          {initials(profile.name)}
-                        </span>
-                      </span>
-                      <span class="avatar-label user-label">{profile.name}</span>
-                    </span>
-                  </button>
-                  <menu popover="" id="user-menu">
-                    <a href="/admin/user/profile" role="menuitem" class="button ghost">
-                      <Icon name="user" /> {i18n.T("globals.terms.profile")}
-                    </a>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="ghost"
-                      {...{ "@click": "onLogout('/api/logout', '/admin/login')" }}
-                    >
-                      <Icon name="log-out" /> {i18n.T("globals.buttons.logout")}
-                    </button>
-                    <hr />
-                    <div class="theme-switch" role="group" aria-label="Theme">
-                      {themeModes.map(([mode, icon, label]) => (
-                        <button
-                          type="button"
-                          class="ghost small"
-                          title={i18n.T(label)}
-                          {...{
-                            "@click": `setTheme('${mode}')`,
-                            ":class": `{ 'is-active': theme === '${mode}' }`,
-                            ":aria-pressed": `theme === '${mode}'`,
-                          }}
-                        >
-                          <Icon name={icon} />
-                        </button>
-                      ))}
-                    </div>
-                  </menu>
-                </ot-dropdown>
-              )}
-            </header>
-            <div class="container">{children}</div>
-          </main>
-        </div>
+      <body x-data="adminApp" {...(props.bare ? { class: "media-fragment" } : {})}>
+        {props.bare ? <div class="container">{children}</div> : <Chrome {...props} />}
         <template id="confirm-dialog-template">
           <dialog class="confirm-dialog">
             <div class="dialog-card content">

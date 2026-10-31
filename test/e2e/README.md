@@ -14,7 +14,8 @@ One file: `bun run e2e test/e2e/specs/login.e2e.js`. Arguments go to Playwright.
 password reset and the dashboard against the same servers and prints what each
 page said. `bun run e2e:browser:lists` does the same for the subscribers and lists
 screens, `bun run e2e:browser:campaigns` for the templates and campaigns screens, and
-`bun run e2e:browser:settings` for the settings, users, roles and profile screens.
+`bun run e2e:browser:settings` for the settings, users, roles and profile screens,
+and `bun run e2e:browser:media` for the bounces, media, import and forms screens.
 `E2E_SHOTS=<directory>` keeps screenshots.
 
 Credentials are the synthetic ones in `test/worked-example/harness.ts`; each
