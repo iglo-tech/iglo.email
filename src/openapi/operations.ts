@@ -1324,7 +1324,7 @@ const settings: Operation[] = [
     tag: "Settings",
     summary: "Replace all settings.",
     permissions: ["settings:manage"],
-    body: ref("Settings"),
+    body: ref("SettingsInput"),
     data: yes,
   },
   {

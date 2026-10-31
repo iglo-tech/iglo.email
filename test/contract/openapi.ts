@@ -1,7 +1,7 @@
 // Production-only: the document is native. Every documented operation runs on the compiled
 // executable through real HTTP, and each answer is checked against the document it was served.
 import { Database } from "bun:sqlite";
-import { createHmac } from "node:crypto";
+import { createHmac, generateKeyPairSync } from "node:crypto";
 import { join } from "node:path";
 import { validate, type Document } from "@/test/openapi/schema";
 import type { Credentials } from "@/test/contract/types";
@@ -1032,6 +1032,52 @@ export async function runOpenApiContract(target: {
         email: "smtp-test@fixture.test",
       },
     });
+    // A configured instance: fields that exist only once set come back, with the secrets masked.
+    const current = (await op("GET /api/settings")).body.data;
+    const added = { ...current["bounce.mailboxes"][0] };
+    delete added.uuid;
+    await op("PUT /api/settings", {
+      body: {
+        ...current,
+        smtp: [
+          {
+            ...current.smtp[0],
+            dkim: {
+              domain_name: "fixture.test",
+              key_selector: "s1",
+              private_key: generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({
+                type: "pkcs8",
+                format: "pem",
+              }),
+            },
+          },
+        ],
+        "upload.s3.aws_secret_access_key": "s3-secret",
+        "bounce.sendgrid_key": "sendgrid-secret",
+        "bounce.mailboxes": [
+          { ...current["bounce.mailboxes"][0], password: "" },
+          { ...added, password: "mailbox-secret" },
+        ],
+      },
+    });
+    const configured = (await op("GET /api/settings")).body.data;
+    check(
+      /^•+$/.test(configured.smtp[0].dkim.private_key) &&
+        /^•+$/.test(configured["upload.s3.aws_secret_access_key"]) &&
+        /^•+$/.test(configured["bounce.sendgrid_key"]),
+      "settings-masked",
+    );
+    // A client leaves the masked key out of its save by blanking it.
+    await op("PUT /api/settings", {
+      body: {
+        ...configured,
+        smtp: [{ ...configured.smtp[0], dkim: { ...configured.smtp[0].dkim, private_key: "" } }],
+      },
+    });
+    check(
+      (await op("GET /api/settings")).body.data.smtp[0].dkim.domain_name === "fixture.test",
+      "settings-dkim-kept",
+    );
     await op("GET /api/logs");
 
     // Session-only: a human's second factor, then logout.
