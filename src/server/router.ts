@@ -91,6 +91,11 @@ export class Router {
     this.missing.push({ prefix, handler });
   }
 
+  /** Every registered route, in no particular order. Read-only: the document's coverage test. */
+  list(): readonly { method: string; path: string }[] {
+    return this.routes.map(({ method, path }) => ({ method, path }));
+  }
+
   use(...middleware: Middleware[]): void {
     this.middleware.push(...middleware);
   }

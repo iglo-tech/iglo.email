@@ -6,6 +6,7 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap } from "@/config/bootstrap";
 import { createClientAddress } from "@/server/client-address";
+import type { Router } from "@/server/router";
 import { startServer } from "@/server/server";
 import { createRouter } from "@/server/server";
 import { createListStore } from "@/lists/store";
@@ -93,8 +94,10 @@ import { registerAdminRoutes } from "@/admin/routes";
 import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
+import { registerOpenApiRoutes } from "@/openapi/routes";
 
-async function main(): Promise<void> {
+/** `inspect` sees the composed router before anything listens; a test may throw to stop there. */
+export async function main(inspect?: (router: Router) => void): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
   if (process.argv[2] === childArgument) return runQueryChild();
   if (process.argv[2] === analyticsChildArgument) return runAnalyticsChild();
@@ -640,6 +643,7 @@ async function main(): Promise<void> {
       },
       settings: pages,
     });
+    registerOpenApiRoutes(router, auth);
     summaryRefresh = startSummaryRefresh({
       clock,
       logger: app.logger,
@@ -652,6 +656,7 @@ async function main(): Promise<void> {
         };
       },
     });
+    inspect?.(router);
     server = startServer(app, router);
     const listening = server;
     await new Promise<void>((resolve, reject) => {
@@ -766,7 +771,8 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "Failed to start server");
-  process.exitCode = 1;
-});
+if (import.meta.main)
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : "Failed to start server");
+    process.exitCode = 1;
+  });

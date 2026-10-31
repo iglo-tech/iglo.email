@@ -1,0 +1,118 @@
+// Routes the document leaves out, each with why. The coverage test holds this list to the router.
+export interface Excluded {
+  /** Exact "METHOD /path" routes, or a `/prefix/*` the router does not own. */
+  routes: string[];
+  reason: string;
+}
+
+const adminPages = [
+  "/admin",
+  "/admin/campaigns",
+  "/admin/campaigns/:id",
+  "/admin/campaigns/:id/:tab",
+  "/admin/campaigns/analytics",
+  "/admin/campaigns/media",
+  "/admin/campaigns/media/fragment",
+  "/admin/campaigns/new",
+  "/admin/lists",
+  "/admin/lists/:id",
+  "/admin/lists/:id/edit",
+  "/admin/lists/analytics",
+  "/admin/lists/forms",
+  "/admin/lists/new",
+  "/admin/sequences",
+  "/admin/sequences/:id",
+  "/admin/sequences/enrollments",
+  "/admin/sequences/enrollments/:id",
+  "/admin/sequences/new",
+  "/admin/settings",
+  "/admin/settings/logs",
+  "/admin/settings/maintenance",
+  "/admin/subscribers",
+  "/admin/subscribers/:id",
+  "/admin/subscribers/:id/bounces",
+  "/admin/subscribers/:id/edit",
+  "/admin/subscribers/:id/enrollments",
+  "/admin/subscribers/:id/events",
+  "/admin/subscribers/:id/lists",
+  "/admin/subscribers/:id/sends",
+  "/admin/subscribers/bounces",
+  "/admin/subscribers/import",
+  "/admin/subscribers/lists/:id",
+  "/admin/subscribers/new",
+  "/admin/templates",
+  "/admin/templates/:id",
+  "/admin/templates/new",
+  "/admin/user/profile",
+  "/admin/users",
+  "/admin/users/:id",
+  "/admin/users/new",
+  "/admin/users/roles",
+  "/admin/users/roles/:id",
+  "/admin/users/roles/lists",
+  "/admin/users/roles/lists/:id",
+  "/admin/users/roles/lists/new",
+  "/admin/users/roles/new",
+];
+
+export const excluded: Excluded[] = [
+  {
+    routes: adminPages.map((path) => `GET ${path}`),
+    reason: "Admin pages: server-rendered HTML for a browser session, not an API.",
+  },
+  {
+    routes: [
+      "GET /admin/login",
+      "POST /admin/login",
+      "GET /admin/login/twofa",
+      "POST /admin/login/twofa",
+      "GET /admin/forgot",
+      "POST /admin/forgot",
+      "GET /admin/reset",
+      "POST /admin/reset",
+    ],
+    reason: "Login and password reset: HTML forms with a nonce, for a browser.",
+  },
+  {
+    routes: [
+      "GET /admin/custom.css",
+      "GET /admin/custom.js",
+      "GET /public/custom.css",
+      "GET /public/custom.js",
+    ],
+    reason: "Operator CSS and JavaScript from the appearance settings, served to the pages.",
+  },
+  {
+    routes: [
+      "GET /archive",
+      "GET /archive.xml",
+      "GET /archive/latest",
+      "GET /archive/:id",
+      "GET /campaign/:campUUID/:subUUID",
+      "GET /subscription/form",
+      "POST /subscription/form",
+      "GET /subscription/optin/:subUUID",
+      "POST /subscription/optin/:subUUID",
+      "GET /subscription/:campUUID/:subUUID",
+      "POST /subscription/:campUUID/:subUUID",
+      "POST /subscription/export/:subUUID",
+      "POST /subscription/wipe/:subUUID",
+      "GET /m/:sendUUID/unsubscribe/:subUUID",
+      "POST /m/:sendUUID/unsubscribe/:subUUID",
+    ],
+    reason: "Public pages: HTML, RSS and forms that mail links to, for subscribers.",
+  },
+  {
+    routes: [
+      "GET /campaign/:campUUID/:subUUID/px.png",
+      "GET /link/:linkUUID/:campUUID/:subUUID",
+      "GET /m/:sendUUID/px.png",
+      "GET /m/:sendUUID/link/:linkUUID",
+    ],
+    reason: "Tracking pixels and link redirects inside sent mail.",
+  },
+  {
+    routes: ["/public/static/*", "/admin/static/*", "/uploads/*"],
+    reason: "Static assets and uploaded files: no JSON, and not router routes.",
+  },
+];
