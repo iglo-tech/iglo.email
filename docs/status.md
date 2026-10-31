@@ -4,9 +4,9 @@ Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M4.4 settings, users, roles, profile screens, [PR #42](https://github.com/iglo-tech/iglo.email/pull/42), head 3f5ce39. Local checks pass; Sol round-1 review running. D26 stands: no public first-account form.
+M4.5 bounces, media, import, forms screens: [brief](briefs/M4.5.md); one Opus worker running. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M4.5, M4.6, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
+Next: M4.6, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -33,6 +33,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M4.4         | [#42](https://github.com/iglo-tech/iglo.email/pull/42) | 39e710c | Settings, users, roles, profile; usable last admin         |
 | M4.3         | [#41](https://github.com/iglo-tech/iglo.email/pull/41) | e54fe8c | Templates and campaigns screens; HTML allow-list D66       |
 | M4.2         | [#40](https://github.com/iglo-tech/iglo.email/pull/40) | b7ab730 | Subscribers and lists screens                              |
 | M4.1         | [#39](https://github.com/iglo-tech/iglo.email/pull/39) | 68defb0 | Admin shell, auth screens, dashboard, e2e harness; D65     |
@@ -75,6 +76,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Tests: contract coverage of multi-list actions and exports (M4.2 dropped two API-only cases); `availablePort()` free-port race in the contract harness.
 - Before public release: admin pages set no CSP; add one and contain the editor surface (M4.3). The sanitizer has had a design review and browser probes, no dedicated hostile test; consider DOMPurify.
 - Editor: head content missing from the removal warning; keep a foreign-content and undo regression corpus; inline message for refused URLs.
+- Tests: no contract case for a nonempty messenger lifecycle (M4.4).
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Expired session rows need bounded cleanup; denial already enforced.
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
