@@ -83,8 +83,11 @@ import {
   createAnalyticsReader,
   runAnalyticsChild,
 } from "@/analytics/reader";
+import { createAnalyticsPurge } from "@/analytics/purge";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { registerAdminRoutes } from "@/admin/routes";
+import { createLogBuffer } from "@/maintenance/log-buffer";
+import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
 
 async function main(): Promise<void> {
@@ -135,6 +138,8 @@ async function main(): Promise<void> {
   let analyticsReader: ReturnType<typeof createAnalyticsReader> | undefined;
   let summaries: ReturnType<typeof createSummaries> | undefined;
   let summaryRefresh: ReturnType<typeof startSummaryRefresh> | undefined;
+  let analyticsPurge: ReturnType<typeof createAnalyticsPurge> | undefined;
+  let maintenance: ReturnType<typeof registerMaintenanceRoutes> | undefined;
   let importer: ReturnType<typeof createImporter> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
@@ -200,11 +205,12 @@ async function main(): Promise<void> {
       },
     });
     await bootstrapAdmin(users, auth, bootstrap.config.initialAdmin);
+    const logs = createLogBuffer(clock);
     const app = createApp({
       bootstrap: bootstrap.config,
       clock,
       db,
-      logger: createErrorLogger(),
+      logger: createErrorLogger(logs),
       i18n: createTranslation(),
     });
     const renderer = createRenderer(clock, app.i18n);
@@ -580,6 +586,17 @@ async function main(): Promise<void> {
         };
       },
     });
+    analyticsPurge = createAnalyticsPurge(db, readonly);
+    let server: ReturnType<typeof startServer> | undefined;
+    maintenance = registerMaintenanceRoutes(router, {
+      subscribers: subscriberStore,
+      analytics: analyticsPurge,
+      logs,
+      auth,
+      clock,
+      keepOpen: (request) => server?.timeout(request, 0),
+      individualTracking: () => settings!.read()["privacy.individual_tracking"],
+    });
     registerAdminRoutes(router, {
       auth,
       roles,
@@ -594,6 +611,8 @@ async function main(): Promise<void> {
           rootUrl: current.rootUrl,
           lang: settings!.read()["app.lang"],
           cacheSlowQueries: settings!.read()["app.cache_slow_queries"],
+          disableTracking: settings!.read()["privacy.disable_tracking"],
+          individualTracking: settings!.read()["privacy.individual_tracking"],
           fromEmails: settings!.read()["app.from_email"],
           messengers: campaignSettings().messengers,
           publicSubscription: current.subscriptionPage,
@@ -616,7 +635,8 @@ async function main(): Promise<void> {
         };
       },
     });
-    const server = startServer(app, router);
+    server = startServer(app, router);
+    const listening = server;
     await new Promise<void>((resolve, reject) => {
       let closing = false;
       const shutdown = (failure?: unknown) => {
@@ -626,6 +646,7 @@ async function main(): Promise<void> {
         process.off("SIGINT", onSignal);
         // An import stops at its next batch and uploads end, so nothing new reaches the writer.
         const importStop = importer!.close();
+        const maintenanceStop = maintenance!.close();
         // Stop campaign and sequence claims first. The campaign batch in flight finishes or
         // is abandoned by the emailer's drain deadline; its unsent rest returns to the cursor.
         const runnerStop = runner!.stop();
@@ -637,9 +658,10 @@ async function main(): Promise<void> {
         const summaryStop = summaryRefresh!.stop();
         const readerClose = analyticsReader!.close();
         const messagingClose = emailer!.close();
-        const httpStop = server.stop();
+        const httpStop = listening.stop();
         Promise.allSettled([
           importStop,
+          maintenanceStop,
           runnerStop,
           schedulerStop,
           outboxStop,
@@ -677,6 +699,7 @@ async function main(): Promise<void> {
   } finally {
     enrollments?.onDue(() => {});
     await importer?.close();
+    await maintenance?.close();
     const running = runner?.stop();
     const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
@@ -698,6 +721,7 @@ async function main(): Promise<void> {
     await delivering?.catch(() => {});
     await summarizing?.catch(() => {});
     summaries?.close();
+    analyticsPurge?.close();
     bounces?.close();
     webhooks?.close();
     sequences?.close();

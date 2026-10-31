@@ -99,6 +99,12 @@ function component() {
       return ['finished', 'stopped', 'failed'].includes(this.status.status);
     },
 
+    // The API's status stays `finished` after a stop; its log says so.
+    get wasStopped() {
+      return this.status.status === 'finished'
+        && this.logLines.some((l) => l.message.includes('stop request received'));
+    },
+
     get canUpload() {
       return !!this.form.file && !(this.form.mode === 'subscribe' && this.form.lists.length === 0);
     },

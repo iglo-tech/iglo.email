@@ -19,6 +19,8 @@ export interface AdminSite {
   readonly rootUrl: string;
   readonly lang: string;
   readonly cacheSlowQueries: boolean;
+  readonly disableTracking: boolean;
+  readonly individualTracking: boolean;
   /** The configured from addresses, the default first. */
   readonly fromEmails: readonly string[];
   readonly messengers: readonly string[];

@@ -193,6 +193,14 @@ function Status({ t }: { t: Translation }) {
         <footer>
           <progress value="0" x-bind:value="progress" max="100"></progress>
           <small class="text-light" x-text="recordsLabel"></small>
+          <p
+            class="text-danger mt-2"
+            data-testid="stopped-hint"
+            x-show="wasStopped"
+            style="display: none"
+          >
+            {t.T("import.stoppedHint")}
+          </p>
         </footer>
       </article>
 

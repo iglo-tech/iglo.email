@@ -1,7 +1,6 @@
 {
     "_.code": "en",
     "_.name": "English (en)",
-    "admin.notYet": "This screen is not available yet.",
     "analytics.invalidDates": "Invalid `from` or `to` dates.",
     "analytics.showUnique": "Show unique counts?",
     "analytics.trackingDisabled": "E-mail tracking is globally disabled. No new views or clicks are being recorded.",
@@ -401,6 +400,7 @@
     "import.pollStopped": "Stopped watching this import. Reload the page to see its status.",
     "import.recordsCount": "{num} / {total} records",
     "import.stopImport": "Stop import",
+    "import.stoppedHint": "This import was stopped before the end of the file. Its status stays finished, and the rows imported so far are kept.",
     "import.subscribeWarning": "Overwriting will re-subscribe unsubscribed e-mails. Continue?",
     "import.title": "Import subscribers",
     "lists.archivedHelp": "Archiving hides the lists from the lists page, campaigns, and public forms. It can be unarchived anytime. It is useful for hiding old and rarely used lists.",
@@ -418,6 +418,7 @@
     "maintenance.help": "Some actions may take a while to complete depending on the amount of data.",
     "maintenance.maintenance.unconfirmedOptins": "Unconfirmed opt-in subscriptions",
     "maintenance.orphanHelp": "Orphans = subscribers with no lists",
+    "maintenance.webhookBudget": "Refused, with nothing deleted, when it would queue more webhook deliveries than one bulk action may. Delete in smaller selections from the subscribers page instead.",
     "media.errorResizing": "Error resizing image: {error}",
     "media.errorSavingThumbnail": "Error saving thumbnail: {error}",
     "media.uploadHelp": "Click or drag one or more images here",

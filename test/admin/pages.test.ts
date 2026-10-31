@@ -56,18 +56,17 @@ test("navigation is filtered by permission and a denied view says why", async ()
   const denied = await get(f, "/admin/settings", limited);
   expect(denied.status).toBe(403);
   expect(await denied.text()).toContain("settings:get");
-  expect((await get(f, "/admin/lists/analytics", limited)).status).toBe(501);
+  expect((await get(f, "/admin/lists/analytics", limited)).status).toBe(200);
 });
 
-test("every navigation link answers, and an unported one says so", async () => {
+test("every navigation link answers", async () => {
   const html = await (await get(f, "/admin", cookie)).text();
   const nav = html.slice(html.indexOf("<nav>"), html.indexOf("</nav>"));
   const links = [...nav.matchAll(/href="(\/admin[^"]*)"/g)].map((match) => match[1]!);
   expect(links.length).toBeGreaterThan(15);
   for (const link of links) {
     const response = await get(f, link.replaceAll("&amp;", "&"), cookie);
-    expect([200, 501]).toContain(response.status);
-    if (response.status === 501) expect(await response.text()).toContain("not available yet");
+    expect(response.status).toBe(200);
   }
 });
 

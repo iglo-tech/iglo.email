@@ -124,6 +124,8 @@ export async function startUserFixture(
         rootUrl: "http://fixture.test",
         lang: "en",
         cacheSlowQueries: settings.read()["app.cache_slow_queries"],
+        disableTracking: settings.read()["privacy.disable_tracking"],
+        individualTracking: settings.read()["privacy.individual_tracking"],
         fromEmails: ["Fixture <fixture@example.test>", "Other <other@example.test>"],
         messengers: ["email"],
         publicSubscription: settings.read()["app.enable_public_subscription_page"],

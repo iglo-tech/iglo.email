@@ -92,6 +92,29 @@ export interface ImportSubscribe {
   overwriteUserInfo: boolean;
   overwriteStatus: boolean;
 }
+/** What a maintenance delete selects. */
+export type MaintenanceType = "orphan" | "blocklisted";
+interface MaintenanceRow {
+  id: bigint;
+  hit: number;
+}
+/**
+ * Rows one maintenance batch looks at, and of those, how many it removes: what bounds its write
+ * (docs/perf/M4.6-maintenance.md). A subscriber costs far more than a membership.
+ */
+export const MAINTENANCE_PAGE = 2000;
+export const MAINTENANCE_SUBSCRIBERS = 100;
+export const MAINTENANCE_MEMBERSHIPS = 500;
+/** The first `limit` hits of a page, and where the next batch starts. */
+function maintenanceBatch(page: MaintenanceRow[], limit: number) {
+  const last = page.at(-1);
+  if (!last) return null;
+  const ids = page
+    .filter((row) => row.hit)
+    .slice(0, limit)
+    .map((row) => row.id);
+  return { ids, last: ids.length === limit ? ids.at(-1)! : last.id };
+}
 /** A bulk action that can queue webhooks. */
 export type BulkAction = "delete" | "blocklist" | "unsubscribe";
 export const noSubscriberEffects: SubscriberEffects = {
@@ -216,7 +239,7 @@ export function createSubscriberStore(
     }
     effects.blocklisted(ids);
   };
-  return {
+  const store = {
     get,
     external,
     byEmail,
@@ -309,9 +332,9 @@ export function createSubscriberStore(
       );
       return get(row.id)!;
     },
-    /** `wipe` is the subscriber's own request (D61). */
-    remove(ids: bigint[], { wipe = false } = {}) {
-      effects.admitBulk?.("delete", () => new Set(ids).size);
+    /** `wipe` is the subscriber's own request (D61). `spent` is what earlier batches removed. */
+    remove(ids: bigint[], { wipe = false, spent = 0 } = {}) {
+      effects.admitBulk?.("delete", () => spent + new Set(ids).size);
       effects.deleting?.(
         ids.flatMap((id) => get(id) ?? []),
         wipe,
@@ -659,9 +682,40 @@ export function createSubscriberStore(
     admitImport(action: BulkAction, selected: number) {
       effects.admitBulk?.(action, () => selected);
     },
+    /** The same, for a selection counted only if a webhook wants it. */
+    admitBulk(action: BulkAction, selected: () => number) {
+      effects.admitBulk?.(action, selected);
+    },
     webhookDeleted: (ids: bigint[], wipe: boolean) =>
       webhookData("webhook-deleted", json(ids), wipe ? 1 : 0),
+    /** A bounded page of a maintenance delete after the row `after`, in row order. */
+    maintenancePage(type: MaintenanceType, after: bigint) {
+      return q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as MaintenanceRow[];
+    },
+    /** One batch of a maintenance delete, through `remove`. `null` when none are left. */
+    maintenanceRemove(type: MaintenanceType, after: bigint, spent: number) {
+      return writeTransaction(db, () => {
+        const page = q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as MaintenanceRow[];
+        const batch = maintenanceBatch(page, MAINTENANCE_SUBSCRIBERS);
+        if (!batch) return null;
+        if (batch.ids.length) store.remove(batch.ids, { spent });
+        return { last: batch.last, removed: batch.ids.length };
+      });
+    },
+    /** A batch of delete-unconfirmed-subscriptions: no consent existed, so no webhook either. */
+    removeUnconfirmed(after: bigint, before: string) {
+      return writeTransaction(db, () => {
+        const page = q
+          .get("maintenance-unconfirmed")
+          .all(after, MAINTENANCE_PAGE, before) as MaintenanceRow[];
+        const batch = maintenanceBatch(page, MAINTENANCE_MEMBERSHIPS);
+        if (!batch) return null;
+        if (batch.ids.length) q.get("maintenance-unconfirmed-delete").run(json(batch.ids));
+        return { last: batch.last, removed: batch.ids.length };
+      });
+    },
     close: () => q.close(),
   };
+  return store;
 }
 export type SubscriberStore = ReturnType<typeof createSubscriberStore>;

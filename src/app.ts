@@ -20,6 +20,12 @@ export function createApp(dependencies: App): App {
   return { ...dependencies };
 }
 
-export function createErrorLogger(): ErrorLogger {
-  return { error: (error) => console.error("Unexpected request error:", error) };
+/** `buffer` keeps a redacted copy for GET /api/logs; the process's stderr keeps the original. */
+export function createErrorLogger(buffer?: { add(error: unknown): void }): ErrorLogger {
+  return {
+    error(error) {
+      console.error("Unexpected request error:", error);
+      buffer?.add(error);
+    },
+  };
 }
