@@ -20,6 +20,7 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import {
   apiClient,
   buildExecutable,
+  buildPublishEntry,
   createSubscriber,
   provisionAuthorization,
   removeDirectory,
@@ -37,6 +38,7 @@ setDefaultTimeout(60_000);
 const PARTIAL = ".iglo-email-backup-partial-";
 const version = productionMigrations.length;
 let executable = "";
+let publishEntry = "";
 let build = "";
 let base = "";
 let dataDir = "";
@@ -46,6 +48,7 @@ let server: Server | undefined;
 beforeAll(async () => {
   build = temporaryDirectory();
   executable = await buildExecutable(build);
+  publishEntry = await buildPublishEntry(build);
 }, 120_000);
 afterAll(() => removeDirectory(build));
 afterEach(async () => {
@@ -411,6 +414,78 @@ test("a path taken while the backup runs is not replaced, and --force still chec
   expect(() => backup(true)).toThrow("does not look like a backup");
   expect(readFileSync(join(output, "precious.txt"), "utf8")).toBe("someone else's");
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+});
+
+const publishing = async (action: string, path: string, ...args: string[]) => {
+  const child = Bun.spawn([publishEntry, action, path, ...args], {
+    env: { PATH: "" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return { exitCode, stdout, stderr, signal: child.signalCode };
+};
+
+test("a directory that appears at the last moment survives with its content", async () => {
+  await live();
+  const output = join(base, "backup");
+  const race = await publishing("claim", output, "--data-dir", dataDir, "--output", output);
+  expect(race.stderr).toContain("already exists");
+  expect(race.exitCode).toBe(1);
+  expect(readdirSync(output)).toEqual(["precious.txt"]);
+  expect(readFileSync(join(output, "precious.txt"), "utf8")).toBe("someone else's");
+  expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+});
+
+test("a file that appears at the last moment survives, and an empty directory gives way", async () => {
+  await live();
+  const output = join(base, "backup");
+  const race = await publishing("file", output, "--data-dir", dataDir, "--output", output);
+  expect(race.exitCode).toBe(1);
+  expect(readFileSync(output, "utf8")).toBe("someone else's");
+  expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+
+  const empty = join(base, "empty");
+  const replaced = await publishing("empty", empty, "--data-dir", dataDir, "--output", empty);
+  expect(replaced.exitCode).toBe(0);
+  expect((await runBackup(executable, ["--verify", empty])).exitCode).toBe(0);
+});
+
+test("--force checks the target it actually moves, and puts back what it should not", async () => {
+  await live();
+  const output = join(base, "backup");
+  const args = ["--data-dir", dataDir, "--output", output];
+  expect((await runBackup(executable, args)).exitCode).toBe(0);
+  const directory = await publishing("claim", output, ...args, "--force");
+  expect(directory.stderr).toContain("does not look like a backup");
+  expect(directory.exitCode).toBe(1);
+  expect(readdirSync(output)).toEqual(["precious.txt"]);
+  expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+
+  rmSync(output, { recursive: true });
+  expect((await runBackup(executable, args)).exitCode).toBe(0);
+  const file = await publishing("file", output, ...args, "--force");
+  expect(file.stderr).toContain("does not look like a backup");
+  expect(file.exitCode).toBe(1);
+  expect(readFileSync(output, "utf8")).toBe("someone else's");
+  expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
+});
+
+test("a kill at publication leaves nothing at the name, and a retry works", async () => {
+  await live();
+  const output = join(base, "backup");
+  const args = ["--data-dir", dataDir, "--output", output];
+  const killed = await publishing("kill", output, ...args);
+  expect(killed.signal).toBe("SIGKILL");
+  expect(existsSync(output)).toBe(false);
+  const retry = await runBackup(executable, args);
+  expect(retry.stderr + retry.stdout).toContain("interrupted backup");
+  expect(retry.exitCode).toBe(0);
+  expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
 });
 
 test("a newer executable migrates a restored backup", async () => {

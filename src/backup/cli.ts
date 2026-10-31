@@ -1,6 +1,12 @@
 // The `backup` command. Not ported: listmonk has no backup command.
 import { createRealClock } from "@/clock";
-import { createBackup, inspectBackup, releaseHold, type Inspection } from "@/backup/snapshot";
+import {
+  createBackup,
+  inspectBackup,
+  releaseHold,
+  type BackupOptions,
+  type Inspection,
+} from "@/backup/snapshot";
 import { productionMigrations } from "@/db/migrations";
 
 export const backupHelp = `
@@ -83,7 +89,11 @@ function print(report: Inspection): void {
     process.stderr.write(`A media row names a file the backup lacks: ${name}\n`);
 }
 
-export function runBackup(args: string[], env: Environment): void {
+export function runBackup(
+  args: string[],
+  env: Environment,
+  hooks: Pick<BackupOptions, "beforePublish"> = {},
+): void {
   const parsed = parseArguments(args);
   if (parsed.help) {
     process.stdout.write(backupHelp);
@@ -127,6 +137,7 @@ export function runBackup(args: string[], env: Environment): void {
     force: parsed.force,
     clock,
     supportedVersion,
+    ...hooks,
     warn: (message) => process.stderr.write(`${message}\n`),
   });
   process.stdout.write(`Backup: ${report.path}\n`);

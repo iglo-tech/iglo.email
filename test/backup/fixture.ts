@@ -22,6 +22,17 @@ export async function buildExecutable(directory: string): Promise<string> {
   return executable;
 }
 
+/** The `backup` command with an action at publication; see test/backup/publish-entry.ts. */
+export async function buildPublishEntry(directory: string): Promise<string> {
+  const entry = join(directory, "publish-entry");
+  const build = Bun.spawn(
+    [process.execPath, "build", "--compile", "test/backup/publish-entry.ts", "--outfile", entry],
+    { cwd: repository, env: { PATH: process.env.PATH ?? "" }, stdout: "pipe", stderr: "pipe" },
+  );
+  if ((await build.exited) !== 0) throw new Error(await new Response(build.stderr).text());
+  return entry;
+}
+
 export function temporaryDirectory(base = tmpdir()): string {
   return mkdtempSync(join(base, "iglo-backup-"));
 }

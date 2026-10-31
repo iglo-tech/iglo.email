@@ -27,6 +27,7 @@ import {
   constants,
   copyFileSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -35,7 +36,6 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
-  rmdirSync,
   rmSync,
   statfsSync,
   statSync,
@@ -207,6 +207,8 @@ export interface BackupOptions {
   supportedVersion: number;
   /** Writable bytes at a path; a test's way to fill a disk. */
   available?: (path: string) => number;
+  /** Runs at the moment of publication; a test's way to race it. The command line never sets it. */
+  beforePublish?: () => void;
   warn(message: string): void;
 }
 
@@ -215,59 +217,72 @@ function freeBytes(path: string): number {
   return Number(stats.bavail) * Number(stats.bsize);
 }
 
+/** What a forced publication may replace: a directory that holds a backup or nothing. */
+function replaceable(path: string): boolean {
+  const existing = lstatSync(path, { throwIfNoEntry: false });
+  return (
+    !!existing?.isDirectory() &&
+    (readdirSync(path).length === 0 || !!statSync(join(path, DATABASE), { throwIfNoEntry: false }))
+  );
+}
+
 /** Refuses what no flag may replace; a forced replacement must hold a backup or nothing. */
 function checkDestination(output: string, data: string, force: boolean): void {
   if (inside(data, output))
     throw new Error(`The output ${output} would replace the data directory`);
-  const existing = lstatSync(output, { throwIfNoEntry: false });
-  if (!existing) return;
+  if (!lstatSync(output, { throwIfNoEntry: false })) return;
   if (!force) throw new Error(`${output} already exists; pass --force to replace it`);
-  const replaceable =
-    existing.isDirectory() &&
-    (readdirSync(output).length === 0 ||
-      statSync(join(output, DATABASE), { throwIfNoEntry: false }));
-  if (!replaceable) throw new Error(`${output} does not look like a backup; not replacing it`);
+  if (!replaceable(output))
+    throw new Error(`${output} does not look like a backup; not replacing it`);
+}
+
+/** Back where it was. Neither step replaces what took the name meanwhile, unless it is empty. */
+function putBack(aside: string, output: string): void {
+  try {
+    if (lstatSync(aside).isDirectory()) renameSync(aside, output);
+    else {
+      linkSync(aside, output);
+      rmSync(aside);
+    }
+  } catch {
+    throw new Error(`${output} was taken meanwhile; what stood there is now ${aside}`);
+  }
 }
 
 /**
- * Takes the destination, which may have appeared since the first check. A backup reserves nothing
- * while it runs, so a killed one leaves no name that could pass for a backup. `mkdir` is the atomic
- * no-replace step: whoever makes the directory owns the path, and a rename then replaces only that
- * empty directory. A file put in it in that moment fails the rename rather than being lost.
+ * Rename cannot replace a directory that holds files, so a forced old backup steps aside and goes
+ * only once the new one has its name. The check comes after the move, so it is of what moved.
  */
-function publish(partial: string, output: string, data: string, force: boolean): void {
-  const parent = dirname(output);
-  checkDestination(output, data, force);
-  // Rename cannot replace a directory that holds files, so a forced old backup steps aside first
-  // and goes only once the new one has its name.
-  const aside = lstatSync(output, { throwIfNoEntry: false })
-    ? join(parent, `${REPLACED}${crypto.randomUUID()}`)
-    : undefined;
-  if (aside) renameSync(output, aside);
-  let reserved = false;
+function stepAside(output: string): string | undefined {
+  const aside = join(dirname(output), `${REPLACED}${crypto.randomUUID()}`);
   try {
-    mkdirSync(output, { mode: 0o700 });
-    reserved = true;
+    renameSync(output, aside);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  if (replaceable(aside)) return aside;
+  putBack(aside, output);
+  throw new Error(`${output} does not look like a backup; not replacing it`);
+}
+
+/**
+ * One rename is the whole publication, and its result is the answer. It refuses a directory that
+ * holds anything and a file, atomically, so nothing is moved or deleted, and there is no earlier
+ * step for a kill to leave behind. It does replace an empty directory, which loses nothing.
+ */
+function publish(partial: string, output: string, force: boolean): void {
+  const aside = force ? stepAside(output) : undefined;
+  try {
     renameSync(partial, output);
   } catch (error) {
-    if (reserved) {
-      try {
-        rmdirSync(output);
-      } catch {
-        /* Something was put in it meanwhile, and stays. */
-      }
-    }
-    if (aside) {
-      // Another forced backup that took the path meanwhile replaced this one as well.
-      if (lstatSync(output, { throwIfNoEntry: false })) rmSync(aside, { recursive: true });
-      else renameSync(aside, output);
-    }
+    if (aside) putBack(aside, output);
     const { code } = error as NodeJS.ErrnoException;
-    if (code === "EEXIST" || code === "ENOTEMPTY")
+    if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR")
       throw new Error(`${output} already exists; pass --force to replace it`);
     throw error;
   }
-  sync(parent);
+  sync(dirname(output));
   if (aside) rmSync(aside, { recursive: true, force: true });
 }
 
@@ -322,6 +337,8 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     for (const entry of readdirSync(parent))
       if (entry.startsWith(PARTIAL))
         warn(`${join(parent, entry)} is left from an interrupted backup or is one still running`);
+      else if (entry.startsWith(REPLACED))
+        warn(`${join(parent, entry)} is a backup that a forced backup did not finish replacing`);
 
     // The directory is 0700 from mkdtemp and the database 0600 from its first byte: SQLite writes
     // into an empty file it finds and keeps its mode.
@@ -362,7 +379,8 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       sync(directory);
 
     const inspection = inspect(partial, clock, options.supportedVersion);
-    publish(partial, output, data, options.force ?? false);
+    options.beforePublish?.();
+    publish(partial, output, options.force ?? false);
     partial = undefined;
     return { ...inspection, path: output };
   } finally {
