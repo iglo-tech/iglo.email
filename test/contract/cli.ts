@@ -7,6 +7,7 @@ import { runPublicContract } from "@/test/contract/public";
 import { runEventsContract } from "@/test/contract/events";
 import { runSequencesContract } from "@/test/contract/sequences";
 import { runBouncesContract } from "@/test/contract/bounces";
+import { runMaintenanceContract } from "@/test/contract/maintenance";
 import { runMediaContract } from "@/test/contract/media";
 import { runImportContract } from "@/test/contract/import";
 import { runWebhooksContract } from "@/test/contract/webhooks";
@@ -119,6 +120,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "sequences" ||
       args[1] === "webhooks" ||
       args[1] === "bounces" ||
+      args[1] === "maintenance" ||
       args[1] === "media" ||
       args[1] === "import" ||
       args[1] === "analytics" ||
@@ -142,6 +144,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "sequences" ||
         args[1] === "webhooks" ||
         args[1] === "bounces" ||
+        args[1] === "maintenance" ||
         args[1] === "media" ||
         args[1] === "import" ||
         args[1] === "analytics" ||
@@ -173,6 +176,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         if (args[1] === "bounces") {
           await runBouncesContract({ mode: "normal", baseUrl, credentials, restart, dataDir });
           process.stdout.write("PASS bounces production contract\n");
+          return true;
+        }
+        if (args[1] === "maintenance") {
+          await runMaintenanceContract({ mode: "normal", baseUrl, credentials, dataDir });
+          process.stdout.write("PASS maintenance production contract\n");
           return true;
         }
         if (args[1] === "media") {

@@ -113,8 +113,22 @@ test("a list link preselects the list, and stop ends a running import", async ({
   // Stopping ends "finished", as upstream: the log says it was asked to stop.
   await expect(page.locator(".status .title").first()).toHaveText("finished", { timeout: 40_000 });
   await expect(page.getByTestId("import-logs")).toContainText("stop request received");
+  await expect(page.getByTestId("stopped-hint")).toContainText("stopped before the end");
   await finishImport(page);
   expect(await countOf(page, domain)).toBeLessThan(500_000);
+});
+
+test("a whole import shows no stopped hint", async ({ page }) => {
+  const list = await makeList(page);
+  await page.goto(`${IMPORT}?list_id=${list.id}`);
+  await page
+    .locator("input[type=file]")
+    .setInputFiles(fileOf(csv(`${unique("whole")}.example.com`, 3)));
+  await page.getByTestId("btn-upload").click();
+  await expect(page.locator(".status .title").first()).toHaveText("finished");
+  await expect(page.getByTestId("import-logs")).toContainText("imported finished");
+  await expect(page.getByTestId("stopped-hint")).toBeHidden();
+  await finishImport(page);
 });
 
 test("a refused file shows the API's message and keeps the form", async ({ page }) => {

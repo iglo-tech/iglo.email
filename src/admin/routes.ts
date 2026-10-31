@@ -1,11 +1,12 @@
 // Route registration adapted from listmonk cmd/handlers.go at 6fcd95f.
 //
 // To add a view: write src/admin/views/<name>.tsx exporting an AdminView, then give it one
-// `page` line below with upstream's path and permissions (any one of them is enough). Replace
-// its `notYet` line if it has one. A module in assets/admin/js/views/<name>.js is built by itself
-// and loaded by returning `script: "<name>"` from the view.
+// `page` line below with upstream's path and permissions (any one of them is enough). A module in
+// assets/admin/js/views/<name>.js is built by itself and loaded by returning `script: "<name>"`
+// from the view.
 import { createAdminPages, type AdminSite, type AdminView } from "@/admin/page";
 import { createPasswordReset, type ResetDeps } from "@/admin/password-reset";
+import { analyticsView } from "@/admin/views/analytics";
 import { bouncesView } from "@/admin/views/bounces";
 import { campaignView, newCampaignView } from "@/admin/views/campaign";
 import { campaignsView } from "@/admin/views/campaigns";
@@ -14,8 +15,9 @@ import { formsView } from "@/admin/views/forms";
 import { importView } from "@/admin/views/import";
 import { listView, newListView } from "@/admin/views/list";
 import { listsView } from "@/admin/views/lists";
+import { logsView } from "@/admin/views/logs";
+import { maintenanceView } from "@/admin/views/maintenance";
 import { mediaFragmentView, mediaView } from "@/admin/views/media";
-import { notYet } from "@/admin/views/not-yet";
 import { profileView } from "@/admin/views/profile";
 import { listRoleView, userRoleView } from "@/admin/views/role";
 import { rolesView } from "@/admin/views/roles";
@@ -75,8 +77,7 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   withID("/admin/lists/:id", listView("list"));
   withID("/admin/lists/:id/edit", listView("edit"));
 
-  // Navigation targets that later M4 tasks port.
-  page("/admin/lists/analytics", notYet("lists.analytics", "globals.terms.analytics"));
+  page("/admin/lists/analytics", analyticsView("lists"));
   page("/admin/lists/forms", formsView);
   const anySubscribers = ["subscribers:get_all", "subscribers:get"];
   page("/admin/subscribers", subscribersView, ...anySubscribers);
@@ -95,11 +96,7 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   withID("/admin/campaigns/:id/:tab", campaignView, ...anyCampaigns);
   page("/admin/campaigns/media", mediaView, "media:get");
   page("/admin/campaigns/media/fragment", mediaFragmentView, "media:get");
-  page(
-    "/admin/campaigns/analytics",
-    notYet("campaigns.analytics", "globals.terms.analytics"),
-    "campaigns:get_analytics",
-  );
+  page("/admin/campaigns/analytics", analyticsView("campaigns"), "campaigns:get_analytics");
   page("/admin/templates", templatesView, "templates:get");
   page("/admin/templates/new", newTemplateView, "templates:manage");
   withID("/admin/templates/:id", editTemplateView, "templates:get");
@@ -113,12 +110,8 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   withID("/admin/users/roles/:id", userRoleView(roles, false), "roles:get");
   withID("/admin/users/:id", userView(roles, false), "users:get");
   page("/admin/settings", settingsView, "settings:get");
-  page("/admin/settings/logs", notYet("settings.logs", "globals.terms.logs"), "settings:get");
-  page(
-    "/admin/settings/maintenance",
-    notYet("settings.maintenance", "globals.terms.maintenance"),
-    "settings:maintain",
-  );
+  page("/admin/settings/logs", logsView, "settings:get");
+  page("/admin/settings/maintenance", maintenanceView, "settings:maintain");
 
   const reset = createPasswordReset(deps);
   router.route("GET", "/admin/forgot", reset.getForgot);

@@ -10,6 +10,7 @@ import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import { startLoop } from "@/loops/loop";
 import type { ListReferences } from "@/lists/references";
+import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message, Outcome } from "@/messaging/email";
 import { goDuration } from "@/settings/duration";
@@ -143,7 +144,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
   let slidingUntil = 0;
 
   const iso = (ms: number) => new Date(ms).toISOString();
-  const log = (message: string) => deps.logger.error(new Error(message));
+  const log = (safe: SafeMessage, message: string) => deps.logger.error(new Error(message), safe);
   const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
 
   /** Ends the pipe. Its batch has drained: nothing it pushed is still outstanding. */
@@ -174,6 +175,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
     const abandoned = store.abandon(id, iso(now));
     if (abandoned.count)
       log(
+        "campaign claims abandoned after the runner stopped: resend manually if needed",
         `${name}: ${abandoned.count} subscribers with IDs ${abandoned.first}-${abandoned.last} ` +
           "were claimed before the runner stopped and may not have received the campaign. " +
           "They are not sent again; resend to them manually if needed.",
@@ -215,7 +217,10 @@ export function startCampaignRunner(deps: RunnerDeps) {
     if (!settings.messengers.includes(campaign.messenger)) {
       store.cancel(id, iso(now));
       store.release(id, token);
-      log(`unknown messenger ${campaign.messenger} on ${label(campaign)}`);
+      log(
+        "unknown messenger on campaign: campaign cancelled",
+        `unknown messenger ${campaign.messenger} on ${label(campaign)}`,
+      );
       return;
     }
     let compiled;
@@ -237,7 +242,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
     } catch (error) {
       store.release(id, token);
       retryAt.set(id, now + (deps.scanIntervalMs ?? scanInterval));
-      log(`error processing ${label(campaign)}: ${errorText(error)}`);
+      log("error processing campaign", `error processing ${label(campaign)}: ${errorText(error)}`);
       return;
     }
     const measured = deps.recipients.measure(audience(campaign));
@@ -433,7 +438,10 @@ export function startCampaignRunner(deps: RunnerDeps) {
       if (pipe.embedProblem) throw new Error(pipe.embedProblem);
       return await deps.attachments(pipe.media, pipe.images);
     } catch (error) {
-      log(`error fetching attachments on ${label(c)}: ${errorText(error)}. Pausing the campaign.`);
+      log(
+        "error fetching campaign attachments: campaign paused",
+        `error fetching attachments on ${label(c)}: ${errorText(error)}. Pausing the campaign.`,
+      );
     }
     const now = iso(clock.now().getTime());
     writeTransaction(db, () => {
@@ -506,7 +514,10 @@ export function startCampaignRunner(deps: RunnerDeps) {
           message = await render(pipe, sub, settings, attachments);
         } catch (error) {
           // listmonk logs a render error and moves on; the subscriber is not retried.
-          log(`error rendering message (${c.name}) (${sub.email}): ${errorText(error)}`);
+          log(
+            "error rendering campaign message",
+            `error rendering message (${c.name}) (${sub.email}): ${errorText(error)}`,
+          );
           outcomes.set(i, { status: "failed", at: clock.now().getTime() });
           continue;
         }
@@ -531,6 +542,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
         if (current !== "eligible") {
           if (current === "changed")
             log(
+              "campaign subscriber changed after its claim: message not sent",
               `${label(c)}: subscriber ${sub.id} changed its UUID or email after the batch was ` +
                 "claimed; the message was not sent. Resend to them manually if needed.",
             );
@@ -574,12 +586,16 @@ export function startCampaignRunner(deps: RunnerDeps) {
         // No automatic retry: a proven rejection fails, anything uncertain is unknown (D24).
         outcomes.set(i, { status: outcome.status === "ambiguous" ? "unknown" : "failed", at });
         log(
+          "error sending campaign message",
           `error sending message in campaign ${c.name}: subscriber ${sub.id}: ${outcome.status} at ${outcome.stage}`,
         );
         // OnError: pause the campaign when the error threshold is met.
         if (settings.maxSendErrors >= 1 && ++pipe.errors >= settings.maxSendErrors && !stop) {
           stop = "errors";
-          log(`error count exceeded ${settings.maxSendErrors}. pausing campaign ${c.name}`);
+          log(
+            "error count limit reached: campaign paused",
+            `error count exceeded ${settings.maxSendErrors}. pausing campaign ${c.name}`,
+          );
         }
       }
     };

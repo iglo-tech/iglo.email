@@ -24,7 +24,7 @@ import {
   EVENT_ATTRIBS_BYTES,
   nameFromEmail,
   type ImportRow,
-  type ImportSpend,
+  type BulkSpend,
   type SubscriberStore,
 } from "@/subscribers/store";
 
@@ -249,7 +249,7 @@ export function createImporter(deps: {
     policy: { allow: string[]; block: string[] },
   ) {
     let sinceProgress = 0;
-    const spent: ImportSpend = { deliveries: 0 };
+    const spent: BulkSpend = { deliveries: 0 };
     const commit = (rows: ImportRow[]) => {
       if (options.mode === "blocklist") store.importBlocklist(rows, spent);
       else store.importSubscribe(rows, options, spent);

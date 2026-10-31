@@ -204,6 +204,34 @@ test("hostile sources, meta and addresses render as text and stay exact filters"
   expect(errors).toEqual([]);
 });
 
+test("select all across pages sends a source with its spaces, untrimmed", async ({ page }) => {
+  const list = await makeList(page);
+  const marker = unique("spaced");
+  const source = `  ${marker}  `;
+  // More than a page of the spaced source, and a bounce of the same source without its spaces.
+  for (let i = 0; i < 23; i += 1) {
+    const sub = await makeSub(page, list.id);
+    await postBounce(page, { source, type: "soft", email: sub.email });
+  }
+  const other = await makeSub(page, list.id);
+  await postBounce(page, { source: marker, type: "soft", email: other.email });
+
+  await page.goto(`${BOUNCES}?source=${encodeURIComponent(source)}`);
+  await expect(bounceRow(page)).toHaveCount(20);
+  await page.locator("thead input[type=checkbox]").check();
+  await page.getByTestId("btn-bulk-actions").click();
+  await page.getByTestId("select-all-bounces").click();
+  const sent = page.waitForRequest(
+    (r) => r.method() === "DELETE" && r.url().includes("/api/bounces"),
+  );
+  await page.getByTestId("btn-delete-bounces").click();
+  await confirm(page);
+  expect(new URL((await sent).url()).searchParams.get("source")).toBe(source);
+  await expect(bounceRow(page)).toHaveCount(0);
+  expect((await ok(page, `/api/bounces?source=${encodeURIComponent(source)}`)).total).toBe(0);
+  expect((await ok(page, `/api/bounces?source=${encodeURIComponent(marker)}`)).total).toBe(1);
+});
+
 test("a viewer sees no destructive action and the route needs bounces:get", async ({ page }) => {
   const list = await makeList(page);
   const sub = await makeSub(page, list.id);

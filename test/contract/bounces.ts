@@ -501,6 +501,17 @@ export async function runBouncesContract(target: {
     check(byID.status === 200 && byID.body.data === true, "blocklist-id");
     const kimRow = (await call(`/api/subscribers/${kim.id}`)).body.data;
     check(kimRow.status === "blocklisted", "blocklist-id-status");
+    // An API user with only bounce permissions, by Basic credentials.
+    const bouncer = await apiUser("bouncer", ["bounces:get", "bounces:manage"]);
+    const [leeBounce] = await ids("b2");
+    const byUser = await call(`/api/bounces/blocklist?id=${leeBounce}`, "PUT", undefined, bouncer);
+    check(byUser.status === 200 && byUser.body.data === true, "blocklist-api-user");
+    const blockedByUser = (await call(`/api/bounces/${leeBounce}`)).body.data;
+    check(blockedByUser.subscriber_status === "blocklisted", "blocklist-api-user-status");
+    await call(`/api/subscribers/${blockedByUser.subscriber_id}`, "PUT", {
+      ...(await call(`/api/subscribers/${blockedByUser.subscriber_id}`)).body.data,
+      status: "enabled",
+    });
     check(kimRow.lists[0].subscription_status === "unsubscribed", "blocklist-id-lists");
     check((await call(`/api/subscribers/${lee.id}`)).body.data.status === "enabled", "bl-others");
     check(

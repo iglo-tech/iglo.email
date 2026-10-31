@@ -4,7 +4,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApp } from "@/app";
+import { createApp, type ErrorLogger } from "@/app";
+import type { Clock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
@@ -49,6 +50,8 @@ export async function campaignsFixture(
     smtpPort?: number;
     sinkPauseMs?: number;
     dkim?: { domain_name: string; key_selector: string; private_key: string };
+    /** The app's logger, for a test of what it keeps. */
+    logger?: (clock: Clock) => ErrorLogger;
   } = {},
 ) {
   const sink = await startSink(options.sinkPauseMs ? { pauseMs: options.sinkPauseMs } : {});
@@ -68,7 +71,7 @@ export async function campaignsFixture(
     db,
     clock,
     i18n: createTranslation(),
-    logger: { error: (error) => errors.push(error) },
+    logger: options.logger?.(clock) ?? { error: (error) => errors.push(error) },
   });
   const lists = createListReferences(db),
     counts = createListCounts(db),

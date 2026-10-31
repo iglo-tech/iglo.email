@@ -85,3 +85,18 @@ SELECT count(*) AS known, coalesce(sum(s.status != 'blocklisted'), 0) AS enabled
     coalesce(sum(EXISTS (SELECT 1 FROM subscriber_lists m
       WHERE m.subscriber_id = s.id AND m.status != 'unsubscribed')), 0) AS members
   FROM subscribers s WHERE s.email IN (SELECT value FROM json_each(?));
+-- name: maintenance-blocklisted
+-- Adapted from delete-blocklisted-subscribers: one page of the selection, by the status index.
+SELECT id, 1 AS hit FROM subscribers WHERE status = 'blocklisted' AND id > ?1 ORDER BY id LIMIT ?2;
+-- name: maintenance-orphan
+-- Adapted from delete-orphan-subscribers. No index holds the orphans, so a page is of subscribers:
+-- a LIMIT on the orphans alone would walk the whole table when there are few.
+SELECT id, NOT EXISTS (SELECT 1 FROM subscriber_lists m WHERE m.subscriber_id = s.id) AS hit
+  FROM subscribers s WHERE id > ?1 ORDER BY id LIMIT ?2;
+-- name: maintenance-unconfirmed
+-- Adapted from delete-unconfirmed-subscriptions: a page of unconfirmed rows, by the status index.
+SELECT m.rowid AS id, (m.created_at < ?3 AND l.optin = 'double') AS hit
+  FROM subscriber_lists m JOIN lists l ON l.id = m.list_id
+  WHERE m.status = 'unconfirmed' AND m.rowid > ?1 ORDER BY m.rowid LIMIT ?2;
+-- name: maintenance-unconfirmed-delete
+DELETE FROM subscriber_lists WHERE rowid IN (SELECT value FROM json_each(?));

@@ -139,7 +139,7 @@ export function createSubscriberMail(deps: {
         overflowed = false;
       } else if (!overflowed) {
         overflowed = true;
-        deps.logger.error(new Error("Opt-in mail queue is full"));
+        deps.logger.error(new Error("Opt-in mail queue is full"), "Opt-in mail queue is full");
       }
     },
     queued: () => signups.size,
@@ -245,7 +245,9 @@ export function startSignupMail(deps: {
   const loop = startLoop({
     db: deps.db,
     clock: deps.clock,
-    logger: { error: () => deps.logger.error(new Error("Opt-in mail failed")) },
+    logger: {
+      error: () => deps.logger.error(new Error("Opt-in mail failed"), "Opt-in mail failed"),
+    },
     intervalMs: signupIntervalMs,
     leaseMs: signupIntervalMs,
     batchSize: 1,

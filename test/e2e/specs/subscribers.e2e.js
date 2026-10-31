@@ -259,6 +259,8 @@ test.describe("Subscribers: create, edit & delete", () => {
       ),
       form.getByTestId("btn-save").click(),
     ]);
+    // The page moves on to the list by itself; a goto during that move is aborted.
+    await page.waitForURL(/\/admin\/subscribers$/);
 
     await page.goto(SUBSCRIBERS);
     const row = subRow(page, "created@example.com");
