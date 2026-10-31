@@ -353,6 +353,8 @@ for (const filter of [
         page.waitForResponse(
           (r) => r.request().method() === (action === "delete" ? "DELETE" : "PUT"),
         ),
+        // The screen reloads after a success; a read during that would lose its page.
+        page.waitForEvent("load"),
         confirm(page),
       ]);
       expect(res.ok()).toBeTruthy();
