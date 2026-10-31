@@ -375,6 +375,9 @@ test("--verify reports a damaged file and changes nothing", async () => {
   expect(result.stderr).not.toBe("");
 
   expect((await runBackup(executable, ["--verify", join(base, "absent")])).exitCode).toBe(1);
+  const live = await runBackup(executable, ["--verify", dataDir]);
+  expect(live.exitCode).toBe(1);
+  expect(live.stderr).toContain("not a backup");
 });
 
 test("nothing is created for a directory without a database or a bad command line", async () => {

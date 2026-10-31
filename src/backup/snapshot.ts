@@ -156,6 +156,8 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     // A bare snapshot has no uploads, and a schema ahead of this executable cannot be read by it.
     if (!stats.isDirectory() || schemaVersion === 0 || schemaVersion > supportedVersion)
       return report;
+    if (!statSync(join(target, MANIFEST), { throwIfNoEntry: false }))
+      throw new Error(`No ${MANIFEST} in ${target}: not a backup`);
     const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf8")) as {
       uploads: string;
     };
