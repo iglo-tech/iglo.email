@@ -4,9 +4,9 @@ Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.3 release workflow, [PR #48](https://github.com/iglo-tech/iglo.email/pull/48), head e610b3f; Sol round-1 review running. The workflow file cannot be pushed until the owner adds the token scope: `gh auth refresh -h github.com -s workflow`. D26 stands: no public first-account form.
+M6.4 OpenAPI: [brief](briefs/M6.4.md); one Opus worker running. M6.3 [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) waits on the owner adding the token scope: `gh auth refresh -h github.com -s workflow`. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M6.4, then the before-1.0 backlog items. Owner to verify: one real Mailgun event and a retry (D63).
+Next: finish M6.3, then the before-1.0 backlog items. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
