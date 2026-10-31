@@ -132,7 +132,13 @@ async function verify(source: string): Promise<void> {
   }
 }
 
+/** The WebKit revision Bun pins; a new Bun needs a new one, which packaging checks. */
+const runtime = { bun: "1.4.4", webkit: "d6375c72affe0f70222cdcb45012b10f0bf3a9d5" };
+
 async function notices(): Promise<string> {
+  if (Bun.version !== runtime.bun)
+    throw new Error(`Update the WebKit revision in notices() for Bun ${Bun.version}`);
+  const license = (name: string) => Bun.file(join(root, "assets/licenses", name)).text();
   const sections = [
     `iglo.email ${version} third-party notices
 
@@ -143,13 +149,30 @@ executable from it, also against a modified Bun.
 `,
     `----- Bun ${Bun.version}, the runtime inside the executable -----
 
-${await Bun.file(join(root, "assets/licenses/bun-LICENSE.txt")).text()}`,
+${await license("bun-LICENSE.txt")}`,
+    `----- Bun and JavaScriptCore sources for this release -----
+
+The executable contains Bun ${runtime.bun}, which statically links JavaScriptCore and WebCore, under
+the LGPL. The exact sources are public, and they are the source route for this release:
+
+  Bun     https://github.com/oven-sh/bun/tree/bun-v${runtime.bun}
+  WebKit  https://github.com/oven-sh/WebKit/tree/${runtime.webkit}
+
+To use a modified JavaScriptCore, check out both, apply your change, and follow the relinking steps
+above to build a native \`bun\`. Then run \`bun install --frozen-lockfile\` and \`bun run build\` with
+that \`bun\` in a checkout of the iglo.email source named above, which gives you this executable
+linked against your library.
+`,
+    `----- GNU Lesser General Public License, version 2 -----\n\n${await license("LGPL-2.0.txt")}`,
+    `----- GNU Lesser General Public License, version 2.1 -----\n\n${await license("LGPL-2.1.txt")}`,
   ];
   for (const name of (await readdir(licenses)).sort()) {
     if (name === projectLicense) continue;
     const text = await Bun.file(join(licenses, name)).text();
     sections.push(`----- ${name.replace(/\.txt$/, "")} -----\n\n${text}`);
   }
+  const fonts = await Bun.file(join(licenses, "../fonts/LICENSE.txt")).text();
+  sections.push(`----- Geist fonts -----\n\n${fonts}`);
   return sections.join("\n");
 }
 

@@ -112,6 +112,11 @@ describe("release package", () => {
     const notices = await Bun.file(join(output, "THIRD-PARTY-NOTICES.txt")).text();
     expect(notices).toContain(`/tree/v${version}`);
     expect(notices).toContain("JavaScriptCore");
+    expect(notices).toContain("GNU LESSER GENERAL PUBLIC LICENSE");
+    expect(notices).toContain("Version 2.1, February 1999");
+    expect(notices).toContain("tree/bun-v1.4.4");
+    expect(notices).toContain("d6375c72affe0f70222cdcb45012b10f0bf3a9d5");
+    expect(notices).toContain("SIL OPEN FONT LICENSE");
     expect(notices).toContain("liquidjs@");
     expect(notices).toContain("alpinejs@");
   });
