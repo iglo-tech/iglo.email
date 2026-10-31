@@ -26,6 +26,7 @@ import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
+import { resetPasswordHelp, runResetPassword } from "@/users/cli";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
@@ -99,9 +100,11 @@ async function main(): Promise<void> {
   if (process.argv[2] === analyticsChildArgument) return runAnalyticsChild();
   if (process.argv[2] === flushChildArgument) return runFlushChild();
   if (process.argv[2] === "backup") return runBackup(process.argv.slice(3), process.env);
+  if (process.argv[2] === "reset-password")
+    return runResetPassword(process.argv.slice(3), process.env);
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
-    process.stdout.write(helpText + backupHelp);
+    process.stdout.write(helpText + backupHelp + resetPasswordHelp);
     return;
   }
 

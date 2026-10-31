@@ -1,7 +1,7 @@
 // Connection responsibility adapted from listmonk's cmd/init.go: initDB.
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 export function openDatabase(dataDir: string): Database {
   mkdirSync(dataDir, { recursive: true });
@@ -37,5 +37,39 @@ export function openDatabase(dataDir: string): Database {
   } catch (error) {
     db.close(true);
     throw error;
+  }
+}
+
+/**
+ * Work that only a stopped server allows. EXCLUSIVE locking fails while any other connection has
+ * the database open, which is how the server is told apart from nothing running, and holds until
+ * this connection closes.
+ */
+export function withStoppedDatabase<T>(
+  dataDir: string,
+  supportedVersion: number,
+  work: (db: Database) => T,
+): T {
+  const path = join(resolve(dataDir), "iglo-email.db");
+  if (!statSync(path, { throwIfNoEntry: false })) throw new Error(`No database at ${path}`);
+  const db = new Database(path, { readwrite: true, strict: true, safeIntegers: true });
+  try {
+    // Before the first read: a connection that has read keeps its shared-memory locking.
+    db.run("PRAGMA busy_timeout = 0");
+    db.run("PRAGMA locking_mode = EXCLUSIVE");
+    try {
+      db.run("BEGIN IMMEDIATE");
+    } catch {
+      throw new Error(`${path} is in use: stop the server first`);
+    }
+    const version = db.query<{ user_version: bigint }, []>("PRAGMA user_version").get();
+    db.run("ROLLBACK");
+    if (version?.user_version === 0n)
+      throw new Error(`${path} has no schema yet; start the server once`);
+    if (Number(version?.user_version) > supportedVersion)
+      throw new Error(`Database version ${version?.user_version} is ahead of this executable`);
+    return work(db);
+  } finally {
+    db.close(true);
   }
 }

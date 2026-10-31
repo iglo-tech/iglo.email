@@ -2,6 +2,7 @@
 import type { BootstrapConfig } from "@/config/bootstrap";
 import { strHasLen } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
+import { validPassword } from "@/users/password";
 import type { UserStore } from "@/users/store";
 
 export async function bootstrapAdmin(
@@ -19,7 +20,7 @@ export async function bootstrapAdmin(
     );
   if (!strHasLen(username, 3, 2000) || !/^[a-zA-Z0-9_\-.@]+$/.test(username))
     throw new Error("Invalid initial administrator username");
-  if (!strHasLen(password, 8, 2000)) throw new Error("Invalid initial administrator password");
+  if (!validPassword(password)) throw new Error("Invalid initial administrator password");
   const hash = await auth.hash(password);
   store.bootstrap(username, hash);
 }

@@ -218,9 +218,11 @@ keep that owner through a restore. The parent directory must exist and be writab
 as [Install](#install) sets up. With no `--output` the backup goes to
 `backups/iglo-email-<time>` in the data directory. That is not off-site, so copy it away.
 `--force` replaces an earlier backup, and only something that looks like one: never another
-directory or the data directory. Without it, an existing path is refused, also one that appears
-while the backup runs: of two overlapping backups to one path, the second to finish exits nonzero
-and the first stays.
+directory or the data directory, and it checks what it actually moved. Without it, an existing
+path is refused, also one that appears while the backup runs: publishing is one rename, which
+refuses a directory holding anything and a file, so of two overlapping backups to one path the
+second to finish exits nonzero and the first stays. An empty directory that appears in that moment
+is replaced, which loses nothing.
 
 A backup is a directory shaped like a data directory:
 
@@ -258,13 +260,18 @@ and refuses if there is too little.
 
 **Failure.** The backup is built in `.iglo-email-backup-partial-<random>` beside its destination,
 synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and
-removes that directory. A killed one leaves it, `--verify` refuses it, and it can never be
-mistaken for a backup. The next `backup` in that place warns about it and does not delete it, as
-it could be running. When none is running, remove it:
+removes that directory. A killed one leaves it, and nothing at the final name, so a retry of the
+same `--output` works. `--verify` refuses it, and it can never be mistaken for a backup. The next
+`backup` in that place warns about it and does not delete it, as it could be running. When none
+is running, remove it:
 
 ```sh
 rm -rf /var/backups/iglo.email/.iglo-email-backup-partial-*
 ```
+
+A `--force` run killed while publishing can leave the old backup as
+`.iglo-email-backup-replaced-<random>`, with nothing at the final name. The next `backup` there
+warns about that too. Move it back, or remove it once the new backup is verified.
 
 **Media.** The database is copied first and the files after it. An upload that lands in between
 is a file with no row, which nothing serves. A file deleted in between is a row with no file:
@@ -316,11 +323,11 @@ runuser -u iglo-email -- iglo.email backup --verify /var/backups/iglo.email/mond
 mv /var/lib/iglo.email /var/lib/iglo.email.before-restore
 cp -a /var/backups/iglo.email/monday /var/lib/iglo.email
 systemctl start iglo.email
-curl -fsS http://127.0.0.1:9000/health
+curl -fsSi http://127.0.0.1:9000/health
 ```
 
-`--verify` prints `Hold: held since <time>`. `/health` answers `200` with `"hold"` beside
-`"data":true`, and the admin shows the reason on every page.
+`--verify` prints `Hold: held since <time>`. `/health` answers `200` and its usual body, with an
+`X-Iglo-Email-Hold: <time>` header, and the admin shows the reason on every page.
 
 **While held.** The admin and the API can be read, and paused or cancelled work stays so. Public
 unsubscribe, opt-out and preference pages work, and so do bounce webhooks, because a person's
@@ -332,7 +339,7 @@ refusal must always land. Nothing leaves:
 - Sequences take no steps, and outbound webhooks are not delivered.
 - A request that would send now gets a 503 that says why: `POST /api/tx`, resends, test sends,
   starting or scheduling a campaign, SMTP tests, sequence test runs, the opt-in resend, a public
-  data export and the password reset. An `async` `POST /api/tx`, opt-in mail from a signup and
+  data export and the [password reset](#locked-out-of-a-restored-install). An `async` `POST /api/tx`, opt-in mail from a signup and
   webhook events queue and wait.
 
 **What a hold does not do.** It does not recover a lost unsubscribe. A person who opted out in
@@ -367,6 +374,30 @@ who already received a campaign after the snapshot gets it again. That is what t
 have dealt with.
 
 A backup of a held install is held too, and keeps the original time. Upgrading keeps the hold.
+
+### Locked out of a restored install
+
+A restored database has the passwords and sessions of its snapshot, and a held install sends no
+reset mail. If nobody can log in to do the review above, set a password locally. Do not release
+the hold for this: that starts what you have not reviewed yet.
+
+```sh
+systemctl stop iglo.email
+read -rs password
+printf '%s\n' "$password" | runuser -u iglo-email -- iglo.email reset-password \
+  --data-dir /var/lib/iglo.email --user admin
+unset password
+systemctl start iglo.email
+```
+
+The password comes from stdin, so it never appears in a process list or in shell history; `printf`
+is a shell builtin. It follows the same rule as everywhere else, 8 to 2000 bytes. The command
+refuses while anything has the database open, and refuses a disabled account, an API user and one
+with password login off.
+
+It changes that one account: the hold stays, and all of the user's sessions end. A second factor
+stays required, so a user with TOTP gets the challenge after the new password. Control of the
+machine does not replace the device. The command works the same on an install with no hold.
 
 From an archive, first unpack it with `tar -xzf` and verify what came out.
 

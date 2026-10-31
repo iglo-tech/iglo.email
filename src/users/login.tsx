@@ -8,6 +8,7 @@ import { HttpError } from "@/server/response";
 import { strHasLen } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
+import { validPassword } from "@/users/password";
 
 function unsafeCharacters(value: string): boolean {
   return [...value].some((character) => {
@@ -123,7 +124,7 @@ export function createLoginHandlers(auth: Authentication) {
         next,
         context.app.i18n.Ts("globals.messages.invalidFields", "name", "username"),
       );
-    if (!strHasLen(password, 8, 2000))
+    if (!validPassword(password))
       return page(
         context,
         auth,

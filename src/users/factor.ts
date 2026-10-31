@@ -2,10 +2,11 @@
 import QRCode from "qrcode";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
-import { getID, strHasLen } from "@/server/validation";
+import { getID } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
 import type { Identity } from "@/users/models";
+import { validPassword } from "@/users/password";
 import type { UserStore } from "@/users/store";
 import { newSecret, verifyTOTP } from "@/users/totp";
 
@@ -101,7 +102,7 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
       const password = typeof value.password === "string" ? value.password : "";
       if (identity.user.twofa_type !== "totp")
         throw new HttpError(400, context.app.i18n.T("users.twoFANotEnabled"));
-      if (!strHasLen(password, 8, 2000))
+      if (!validPassword(password))
         throw new HttpError(
           400,
           context.app.i18n.Ts("globals.messages.invalidFields", "name", "password"),

@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from 
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
+  admin,
   apiClient,
   buildExecutable,
   provisionAuthorization,
@@ -73,6 +74,31 @@ const recipients = (subject: string) =>
 async function until(condition: () => boolean, what: string, ms = 30_000) {
   for (const deadline = Date.now() + ms; !condition(); await Bun.sleep(25))
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
+}
+async function logIn(username: string, password: string) {
+  const page = await fetch(`${server!.origin}/admin/login`);
+  const cookie = page.headers.getSetCookie()[0]!.split(";")[0]!;
+  const nonce = /name="nonce" value="([^"]+)"/.exec(await page.text())![1]!;
+  return fetch(`${server!.origin}/admin/login`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ nonce, username, password, next: "/admin" }).toString(),
+  });
+}
+async function resetPassword(stdin: string, ...args: string[]) {
+  const child = Bun.spawn([executable, "reset-password", "--data-dir", dataDir, ...args], {
+    env: { PATH: "" },
+    stdin: Buffer.from(stdin),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return { exitCode, stdout, stderr };
 }
 const stopServer = async () => {
   await server!.stop();
@@ -245,6 +271,81 @@ test("a held /health answers the same bytes, with the hold in a header", async (
   expect((await runBackup(executable, ["--verify", output])).stdout).toContain(
     `Hold: held since ${since};`,
   );
+});
+
+test("a locked-out operator resets a password on a stopped, held install", async () => {
+  const { authorization, client } = await stack();
+  await data(
+    await client(
+      "/api/users",
+      json({
+        username: "second-admin",
+        email: "second@example.test",
+        name: "Second",
+        password: admin.password,
+        password_login: true,
+        type: "user",
+        status: "enabled",
+        user_role_id: 1,
+      }),
+    ),
+  );
+  const session = await logIn(admin.user, admin.password);
+  expect(session.status).toBe(302);
+  const cookies = session.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .join("; ");
+  const signedIn = () =>
+    fetch(`${server!.origin}/admin`, { headers: { cookie: cookies }, redirect: "manual" });
+  expect((await signedIn()).status).toBe(200);
+  const output = join(base, "backup");
+  await backupTo(output);
+  await stopServer();
+  restoreInto(output, dataDir);
+  const seeded = new Database(join(dataDir, "iglo-email.db"));
+  seeded
+    .query("UPDATE users SET twofa_type = 'totp', twofa_key = ? WHERE username = 'second-admin'")
+    .run("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP");
+  seeded.close();
+  const fresh = "a-new-password-of-the-operator";
+
+  // A running server, a bad password, an unknown user and a password on the command line.
+  await restart(authorization);
+  const running = await resetPassword(`${fresh}\n`, "--user", admin.user);
+  expect(running.exitCode).toBe(1);
+  expect(running.stderr).toContain("stop");
+  await stopServer();
+  const short = await resetPassword("short\n", "--user", admin.user);
+  expect(short.exitCode).toBe(1);
+  expect(short.stderr).toContain("8");
+  const unknown = await resetPassword(`${fresh}\n`, "--user", "nobody");
+  expect(unknown.exitCode).toBe(1);
+  expect(unknown.stderr).toContain("nobody");
+  expect((await resetPassword(fresh, "--password", fresh)).exitCode).toBe(1);
+  expect((await resetPassword(fresh)).exitCode).toBe(1);
+
+  const reset = await resetPassword(`${fresh}\n`, "--user", admin.user);
+  expect(reset.stderr).toBe("");
+  expect(reset.exitCode).toBe(0);
+  expect(reset.stdout).not.toContain(fresh);
+  const second = await resetPassword(`${fresh}\r\n`, "--user", "second-admin");
+  expect(second.exitCode).toBe(0);
+
+  const verified = await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")]);
+  expect(verified.stdout).toMatch(/Hold: held since /);
+  await restart(authorization);
+  expect((await fetch(server!.health)).headers.get(HOLD_HEADER)).not.toBeNull();
+  expect((await signedIn()).status).not.toBe(200);
+  expect((await logIn(admin.user, admin.password)).status).toBe(200);
+  const entered = await logIn(admin.user, fresh);
+  expect(entered.status).toBe(302);
+  expect(entered.headers.get("location")).toBe("/admin");
+  const challenged = await logIn("second-admin", fresh);
+  expect(challenged.status).toBe(302);
+  expect(challenged.headers.get("location")).toStartWith("/admin/login/twofa?");
+  expect(challenged.headers.getSetCookie().join()).not.toContain("session=");
+  expect(sink!.messages).toEqual([]);
 });
 
 test("while held every path is stopped, what was queued stays, and a refusal still lands", async () => {

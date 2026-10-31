@@ -10,11 +10,11 @@ import { publicMessage } from "@/public/message";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
-import { strHasLen } from "@/server/validation";
 import { systemTemplates } from "@/templates/builtins";
 import type { TemplateRenderer } from "@/templates/renderer";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
+import { validPassword } from "@/users/password";
 
 export interface ResetSettings {
   siteName: string;
@@ -186,7 +186,7 @@ export function createPasswordReset(deps: ResetDeps) {
     if (!auth.resetValid(email, token)) return invalidLink(context);
     const t = context.app.i18n;
     const password = fields.get("password") ?? "";
-    if (!strHasLen(password, 8, 2000))
+    if (!validPassword(password))
       return resetForm(
         context,
         token,

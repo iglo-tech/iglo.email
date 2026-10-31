@@ -44,6 +44,8 @@ import {
 import { open } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Clock } from "@/clock";
+import { withStoppedDatabase } from "@/db/connection";
+import { writeTransaction } from "@/db/transaction";
 import { uploadRoot } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
 import { holdRecord, placeRestoreHold, releaseRestoreHold, type HoldRecord } from "@/settings/hold";
@@ -396,38 +398,15 @@ export interface ReleaseOptions {
   supportedVersion: number;
 }
 
-/**
- * Ends a restore hold, on a stopped server. EXCLUSIVE locking fails while any other connection has
- * the database open, which is how the server is told apart from nothing running: a release under a
- * running server would change what it reads between two claims.
- */
+/** Ends a restore hold, on a stopped server: otherwise it changes what one reads between claims. */
 export function releaseHold(options: ReleaseOptions): HoldRecord | null {
-  const path = join(resolve(options.dataDir), DATABASE);
-  if (!statSync(path, { throwIfNoEntry: false })) throw new Error(`No database at ${path}`);
-  const db = new Database(path, { readwrite: true, strict: true, safeIntegers: true });
-  try {
-    // Before the first read: a connection that has read keeps its shared-memory locking.
-    db.run("PRAGMA busy_timeout = 0");
-    db.run("PRAGMA locking_mode = EXCLUSIVE");
-    try {
-      db.run("BEGIN IMMEDIATE");
-    } catch {
-      throw new Error(`${path} is in use: stop the server first`);
-    }
-    const version = Number(single<bigint>(db, "user_version"));
-    if (version === 0) throw new Error(`${path} has no schema yet; start the server once`);
-    if (version > options.supportedVersion)
-      throw new Error(`Database version ${version} is ahead of this executable`);
-    const record = holdRecord(db);
-    if (!record || record.releasedAt !== null) {
-      db.run("ROLLBACK");
-      return null;
-    }
-    const at = options.clock.now().toISOString();
-    releaseRestoreHold(db, record, at);
-    db.run("COMMIT");
-    return { since: record.since, releasedAt: at };
-  } finally {
-    db.close(true);
-  }
+  return withStoppedDatabase(options.dataDir, options.supportedVersion, (db) =>
+    writeTransaction(db, () => {
+      const record = holdRecord(db);
+      if (!record || record.releasedAt !== null) return null;
+      const at = options.clock.now().toISOString();
+      releaseRestoreHold(db, record, at);
+      return { since: record.since, releasedAt: at };
+    }),
+  );
 }

@@ -165,7 +165,9 @@ SQLite `VACUUM INTO` snapshot before the batch. `iglo.email backup` takes a live
 snapshot from a separate read-only process, with a short-lived helper that syncs its
 output ([operations guide](../operations.md#backups)). A backup carries a
 restore hold: a database restored from one sends nothing until an operator
-releases it ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)). Continuous replication
+releases it ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)).
+`iglo.email reset-password` sets a password on a stopped server, reading it from
+stdin, so a locked-out operator need not end a hold to log in. Continuous replication
 (for example Litestream) is an operator choice, not built in.
 
 ## Dependencies
