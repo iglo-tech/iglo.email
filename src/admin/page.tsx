@@ -2,7 +2,7 @@
 // static/admin/views/message.html at 6fcd95f. A view is one function from a checked request to
 // a page; see src/admin/routes.ts for how one is added.
 import { STATUS_CODES } from "node:http";
-import { renderAdminShell } from "@/admin/layout/shell";
+import { renderAdminShell, type JSONValue } from "@/admin/layout/shell";
 import { sidebar } from "@/admin/layout/sidebar";
 import { render, type Child } from "@/jsx/render";
 import type { Roles } from "@/roles/roles";
@@ -11,8 +11,6 @@ import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Authentication } from "@/users/auth";
 import type { Identity } from "@/users/models";
-
-type ConfigValue = string | number | boolean | null | readonly string[];
 
 /** The settings every admin page reads for each request. */
 export interface AdminSite {
@@ -24,6 +22,9 @@ export interface AdminSite {
   /** The configured from addresses, the default first. */
   readonly fromEmails: readonly string[];
   readonly messengers: readonly string[];
+  /** appearance.admin.*: what /admin/custom.css and /admin/custom.js answer. */
+  readonly customCss: string;
+  readonly customJs: string;
 }
 export interface AdminPage {
   readonly title: string;
@@ -36,7 +37,7 @@ export interface AdminPage {
   /** Keys that module reads through `i18n.t`. */
   readonly translationKeys?: readonly string[];
   /** Added to `window._LM_CONFIG` for that module. */
-  readonly config?: Readonly<Record<string, ConfigValue>>;
+  readonly config?: Readonly<Record<string, JSONValue>>;
 }
 export interface AdminRequest {
   readonly context: RequestContext;
@@ -153,6 +154,7 @@ export function createAdminPages(deps: {
           config: { root_url: current.rootUrl, lang: current.lang, ...page.config },
           navigation: sidebar(page.pageId, i18n, can, context.app.clock.now()),
           profile: { name: identity.user.username },
+          customAssets: true,
           ...(current.faviconUrl ? { faviconUrl: current.faviconUrl } : {}),
           ...(page.script ? { script: page.script } : {}),
           duration: `${Math.round(performance.now() - started)}ms`,

@@ -13,10 +13,15 @@ import { listView, newListView } from "@/admin/views/list";
 import { listsView } from "@/admin/views/lists";
 import { notYet } from "@/admin/views/not-yet";
 import { profileView } from "@/admin/views/profile";
+import { listRoleView, userRoleView } from "@/admin/views/role";
+import { rolesView } from "@/admin/views/roles";
+import { settingsView } from "@/admin/views/settings";
 import { newSubscriberView, subscriberView } from "@/admin/views/subscriber";
 import { subscribersView } from "@/admin/views/subscribers";
 import { editTemplateView, newTemplateView } from "@/admin/views/template";
 import { templatesView } from "@/admin/views/templates";
+import { userView } from "@/admin/views/user";
+import { usersView } from "@/admin/views/users";
 import type { Roles } from "@/roles/roles";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -43,6 +48,21 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   const withID = (path: string, view: AdminView, ...permissions: string[]) =>
     page(path, checkedID(view), ...permissions);
 
+  // Appearance settings as authored: only pages behind this session check load them.
+  const custom =
+    (type: string, value: (site: AdminSite) => string): AdminView =>
+    ({ site: current }) =>
+      new Response(value(current), {
+        headers: { "Content-Type": `${type}; charset=utf-8`, "Cache-Control": "no-store" },
+      });
+  page(
+    "/admin/custom.css",
+    custom("text/css", (current) => current.customCss),
+  );
+  page(
+    "/admin/custom.js",
+    custom("application/javascript", (current) => current.customJs),
+  );
   page("/admin", dashboardView);
   page("/admin/user/profile", profileView);
 
@@ -86,10 +106,16 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   page("/admin/templates", templatesView, "templates:get");
   page("/admin/templates/new", newTemplateView, "templates:manage");
   withID("/admin/templates/:id", editTemplateView, "templates:get");
-  page("/admin/users", notYet("users.users", "globals.terms.users"), "users:get");
-  page("/admin/users/roles", notYet("users.user-roles", "users.userRoles"), "roles:get");
-  page("/admin/users/roles/lists", notYet("users.list-roles", "users.listRoles"), "roles:get");
-  page("/admin/settings", notYet("settings.all", "globals.terms.settings"), "settings:get");
+  page("/admin/users", usersView(roles), "users:get");
+  page("/admin/users/new", userView(roles, true), "users:manage");
+  page("/admin/users/roles", rolesView("user"), "roles:get");
+  page("/admin/users/roles/new", userRoleView(roles, true), "roles:manage");
+  page("/admin/users/roles/lists", rolesView("list"), "roles:get");
+  page("/admin/users/roles/lists/new", listRoleView(roles, true), "roles:manage");
+  withID("/admin/users/roles/lists/:id", listRoleView(roles, false), "roles:get");
+  withID("/admin/users/roles/:id", userRoleView(roles, false), "roles:get");
+  withID("/admin/users/:id", userView(roles, false), "users:get");
+  page("/admin/settings", settingsView, "settings:get");
   page("/admin/settings/logs", notYet("settings.logs", "globals.terms.logs"), "settings:get");
   page(
     "/admin/settings/maintenance",

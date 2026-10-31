@@ -1,5 +1,4 @@
-// Adapted from the 2FA section of listmonk static/admin/views/profile.html at 6fcd95f. M4.4 ports
-// the rest of the profile page around it.
+// Adapted from listmonk static/admin/views/profile.html at 6fcd95f.
 import { Icon } from "@/admin/layout/icon";
 import type { AdminView } from "@/admin/page";
 import type { Translation } from "@/i18n/i18n";
@@ -112,25 +111,95 @@ function Setup({ t }: { t: Translation }) {
 
 export const profileView: AdminView = ({ context, identity }) => {
   const t = context.app.i18n;
-  const { user } = identity;
+  const { user, role } = identity;
+  const passwordLogin = user.password_login !== 0n;
   return {
     title: t.T("globals.terms.profile"),
     pageId: "profile",
     script: "profile",
-    config: { user_id: String(user.id) },
+    config: { user_id: String(user.id), user_name: user.name, user_email: user.email },
     translationKeys: [
       "users.twoFAEnabled",
+      "users.passwordMismatch",
       "globals.messages.done",
       "globals.messages.invalidValue",
       "globals.messages.invalidFields",
+      "globals.messages.updated",
       "globals.fields.password",
     ],
     body: (
-      <section x-data="profileView">
+      <section class="user-profile" x-data="profileView">
         <header class="page-header">
-          <h3 class="page-title">{t.T("globals.terms.profile")}</h3>
+          <div class="hstack gap-1">
+            <h1 class="page-title">{t.T("globals.terms.profile")}</h1>
+            {role.name ? <span class="badge">{role.name}</span> : null}
+          </div>
         </header>
-        {user.password_login !== 0n && identity.transport === "session" ? (
+        <div class="card page-content content">
+          <form method="post" {...{ "x-on:submit.prevent": "onSubmit" }}>
+            <section class="dialog-body">
+              <h4 class="mb-6">@{user.username}</h4>
+              {user.type !== "api" ? (
+                <label data-field="">
+                  {t.T("globals.fields.email")}
+                  <input
+                    name="email"
+                    type="email"
+                    maxlength="200"
+                    required
+                    disabled={!passwordLogin}
+                    x-model="form.email"
+                    autofocus
+                  />
+                </label>
+              ) : null}
+              <label data-field="">
+                {t.T("globals.fields.name")}
+                <input name="name" maxlength="200" x-model="form.name" />
+              </label>
+              {passwordLogin ? (
+                <>
+                  <div class="row">
+                    <label data-field="" class="col-6">
+                      {t.T("globals.fields.password")}
+                      <input
+                        type="password"
+                        name="password"
+                        minlength="8"
+                        maxlength="200"
+                        autocomplete="new-password"
+                        x-model="form.password"
+                      />
+                    </label>
+                    <label data-field="" class="col-6">
+                      {t.T("globals.fields.passwordRepeat")}
+                      <input
+                        type="password"
+                        name="password2"
+                        minlength="8"
+                        maxlength="200"
+                        autocomplete="new-password"
+                        x-model="form.password2"
+                      />
+                    </label>
+                  </div>
+                  <small data-hint="">{t.T("users.passwordSessions")}</small>
+                </>
+              ) : null}
+            </section>
+            <footer class="dialog-foot hstack justify-end mt-6">
+              <button
+                type="submit"
+                data-variant="primary"
+                x-bind:disabled="isLoading('profile.save')"
+                x-bind:aria-busy="isLoading('profile.save')"
+              >
+                {t.T("globals.buttons.save")}
+              </button>
+            </footer>
+          </form>
+        </div>
+        {passwordLogin && identity.transport === "session" ? (
           <section class="twofa-app-section mt-6">
             {user.twofa_type === "totp" ? <Enabled t={t} /> : <Setup t={t} />}
           </section>

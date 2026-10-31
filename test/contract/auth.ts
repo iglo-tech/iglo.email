@@ -976,6 +976,62 @@ async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> 
       );
     }
   }
+  // 07: upstream takes both, which leaves nobody who can log in.
+  if (target.mode !== "reference") {
+    const needSuper =
+      "User(s) couldn't be updated. There has to be at least one active Super Admin user.";
+    const noLogin = await request(target, `/api/users/${admin.id}`, {
+      method: "PUT",
+      auth: basic,
+      body: {
+        username: admin.username,
+        name: admin.name,
+        email: admin.email,
+        type: "user",
+        status: "enabled",
+        user_role_id: 1,
+        password_login: false,
+      },
+    });
+    check(noLogin.status === 400, "last-admin-password-login-off-refused");
+    check(
+      ((await noLogin.json()) as { message: string }).message === needSuper,
+      "last-admin-password-login-off-message",
+    );
+    const placeholder = await request(target, "/api/users", {
+      method: "POST",
+      auth: basic,
+      body: {
+        username: "no-login-admin",
+        name: "No Login",
+        email: "no-login-admin@example.test",
+        type: "user",
+        status: "enabled",
+        user_role_id: 1,
+        password_login: false,
+      },
+    });
+    const replacement = await user(placeholder);
+    const disabled = await request(target, `/api/users/${admin.id}`, {
+      method: "PUT",
+      auth: basic,
+      body: {
+        username: admin.username,
+        name: admin.name,
+        email: admin.email,
+        type: "user",
+        status: "disabled",
+        user_role_id: 1,
+        password_login: true,
+      },
+    });
+    check(disabled.status === 400, "last-admin-no-login-replacement-refused");
+    const gone = await request(target, `/api/users/${replacement.id}`, {
+      method: "DELETE",
+      auth: basic,
+    });
+    check(gone.status === 200, "last-admin-no-login-replacement-removed");
+  }
   const login = await form(target, target.admin.user, target.admin.password);
   check(login.response.status === 302 && !!login.session, "last-admin-password-login-preserved");
 }

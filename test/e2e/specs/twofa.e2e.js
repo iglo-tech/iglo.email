@@ -39,7 +39,7 @@ test("enrols, is challenged at login, and disables", async ({ page }) => {
 
   await page.goto("/admin/user/profile");
   await page.getByRole("switch", { name: "Two-factor authentication" }).uncheck();
-  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByTestId("twofa-enabled").getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Disable" }).click();
   await expect(page.getByTestId("twofa-enabled")).toHaveCount(0);
   await expect(page.getByRole("switch", { name: "Two-factor authentication" })).not.toBeChecked();
