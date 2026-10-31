@@ -1,8 +1,9 @@
 // What the enrollment explorer shows of one enrollment (docs/design/05-sequences.md#admin-ui); no
 // upstream source. The scheduler records a step's decision only when it writes a send, so sends are
 // the only step entries: the current definition cannot say what an enrollment did, since a step may
-// have been added or moved since. It only names a sent step's position and the step being waited
-// for. `event` is null for a viewer who may not read the subscriber.
+// have been added or moved since. A sent step is named by its ID, since its position changes with
+// the definition; only the step being waited for has one. `event` is null for a viewer who may not
+// read the subscriber.
 import type { EventRow } from "@/events/store";
 import type { EnrollmentSend } from "@/messaging/sends";
 import { numberID, type EnrollmentRow, type Enrollments } from "@/sequences/enrollments";
@@ -25,7 +26,7 @@ export function timeline(
             type: "step",
             at: send.sent_at ?? send.created_at,
             step_id: numberID(step.id),
-            position: Number(step.position),
+            removed: step.status === "deleted",
             kind: send.kind,
             decision: send.status,
             reason: send.skip_reason,

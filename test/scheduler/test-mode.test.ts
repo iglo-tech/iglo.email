@@ -186,7 +186,7 @@ test("the timeline shows the trigger, recorded decisions, the wait and the end, 
   });
   // The skipped first step wrote nothing, so the timeline claims nothing about it.
   expect(running.slice(2).map((e) => [e.type, e.position, e.decision])).toEqual([
-    ["step", 1, expect.stringMatching(/queued|sending|sent/)],
+    ["step", undefined, expect.stringMatching(/queued|sending|sent/)],
     ["waiting", 2, undefined],
   ]);
   expect(running[2]!.step_id).toBe(sequence.steps[1]!.id);
@@ -198,6 +198,27 @@ test("the timeline shows the trigger, recorded decisions, the wait and the end, 
     reason: "event:stop",
   });
   expect((await f.json("/api/enrollments/999999/timeline")).status).toBe(404);
+});
+
+test("a send keeps naming its own step after that step is replaced", async () => {
+  const f = await open();
+  const template = await f.template();
+  const sequence = await f.sequence({ steps: [step(template, "PT0S")] });
+  const done = (await f.event("replaced@example.test")).enrollments.started[0]!.id;
+  await f.pass(0);
+  await f.until(async () => (await f.enrollment(done)).status === "completed", "completion");
+  const original = sequence.steps[0]!.id;
+  const replaced = await f.json(`/api/sequences/${sequence.id}`, "PUT", {
+    name: "Onboarding",
+    status: "active",
+    trigger: { event: "order_paid" },
+    reentry: "always",
+    steps: [step(template, "PT0S")],
+  });
+  expect(replaced.status).toBe(200);
+  expect(replaced.body.data.steps[0].id).not.toBe(original);
+  const entry = (await entries(f, done)).find((e) => e.type === "step");
+  expect(entry).toMatchObject({ step_id: original, removed: true });
 });
 
 test("a timeline never reads history from the current definition", async () => {
@@ -226,7 +247,9 @@ test("a timeline never reads history from the current definition", async () => {
   expect(ended[2]).toMatchObject({
     step_id: kept[0],
     decision: expect.stringMatching(/queued|sending|sent/),
+    removed: false,
   });
+  expect(ended[2]).not.toHaveProperty("position");
 
   // Nor is a step inserted ahead of an active enrollment's current position.
   const waiting = (await f.event("waiting@example.test")).enrollments.started[0]!.id;
@@ -287,7 +310,8 @@ async function expectAnonymous(
   }
   const found = timeline.body.data.entries as Record<string, any>[];
   expect(found.map((e) => e.type)).toEqual(["enrolled", "step", "waiting"]);
-  expect(found[1]).toMatchObject({ position: 0, kind: "transactional" });
+  expect(found[1]).toMatchObject({ removed: false, kind: "transactional" });
+  expect(found[1]).not.toHaveProperty("position");
   const text = JSON.stringify([row, detail.body, timeline.body]);
   for (const secret of ["example.test", "Hidden Street", "order_paid"])
     expect(text).not.toContain(secret);

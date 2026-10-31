@@ -22,6 +22,8 @@ const keys = [
   "sequences.entry.enrolled",
   "sequences.entry.step",
   "sequences.entry.stepReason",
+  "sequences.entry.stepRemoved",
+  "sequences.entry.stepRemovedReason",
   "sequences.entry.trigger",
   "sequences.entry.waiting",
   "sequences.kind.marketing",

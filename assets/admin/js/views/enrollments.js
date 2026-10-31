@@ -152,17 +152,16 @@ function enrollmentView() {
           ? i18n.ts('sequences.entry.endedReason', { status, reason: entry.reason })
           : i18n.ts('sequences.entry.ended', { status });
       }
-      const position = (entry.position ?? 0) + 1;
       const kind = entry.kind ? i18n.t(`sequences.kind.${entry.kind}`) : '';
       if (entry.type === 'waiting') {
-        return i18n.ts('sequences.entry.waiting', { position, kind });
+        return i18n.ts('sequences.entry.waiting', { position: (entry.position ?? 0) + 1, kind });
       }
+      const id = entry.step_id;
       const decision = i18n.t(`sequences.decision.${entry.decision}`);
+      const key = entry.removed ? 'stepRemoved' : 'step';
       return entry.reason
-        ? i18n.ts('sequences.entry.stepReason', {
-          position, kind, decision, reason: entry.reason,
-        })
-        : i18n.ts('sequences.entry.step', { position, kind, decision });
+        ? i18n.ts(`sequences.entry.${key}Reason`, { id, kind, decision, reason: entry.reason })
+        : i18n.ts(`sequences.entry.${key}`, { id, kind, decision });
     },
 
     async onCancel(id) {

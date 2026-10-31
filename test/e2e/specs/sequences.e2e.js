@@ -72,7 +72,7 @@ test("test mode advances on the timeline, to the sink, leaving the definition al
   const id = page.url().split("/").pop();
   await expect(page.getByTestId("test-badge")).toBeVisible();
   const timeline = page.getByTestId("timeline");
-  await expect(timeline).toContainText("Step 1 (Transactional)", { timeout: 30_000 });
+  await expect(timeline).toContainText(/Step #\d+ \(Transactional\)/, { timeout: 30_000 });
   await expect(timeline).toContainText("Waiting for step 2");
   const [first] = await mailFor(person.email);
   expect(first.subject).toBe("[Test] Welcome");
