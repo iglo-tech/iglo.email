@@ -60,6 +60,7 @@ import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createImporter } from "@/subscribers/import/importer";
 import { registerImportRoutes } from "@/subscribers/import/routes";
 import { backupHelp, runBackup } from "@/backup/cli";
+import { flushChildArgument, runFlushChild } from "@/backup/snapshot";
 import { createAttachments } from "@/media/attachments";
 import { createFilesystem } from "@/media/filesystem";
 import { createEmbeds, createPublicImages } from "@/media/embed";
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
   if (process.argv[2] === childArgument) return runQueryChild();
   if (process.argv[2] === analyticsChildArgument) return runAnalyticsChild();
+  if (process.argv[2] === flushChildArgument) return runFlushChild();
   if (process.argv[2] === "backup") return runBackup(process.argv.slice(3), process.env);
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {

@@ -111,6 +111,8 @@ try {
       const latencies = { before: [] as number[], during: [] as number[], after: [] as number[] };
       let writing = true;
       let next = 0;
+      let backupBegun = 0;
+      const stalls: { atSeconds: number; ms: number }[] = [];
       const writers = [0, 1, 2, 3].map(async () => {
         while (writing) {
           const begun = performance.now();
@@ -119,7 +121,13 @@ try {
             `r${run}-${next++}-${crypto.randomUUID()}`,
           );
           if (status !== 200) throw new Error(`write ${status}`);
-          latencies[phase].push(performance.now() - begun);
+          const elapsed = performance.now() - begun;
+          latencies[phase].push(elapsed);
+          if (phase === "during" && elapsed > 300)
+            stalls.push({
+              atSeconds: +((begun - backupBegun) / 1000).toFixed(2),
+              ms: Math.round(elapsed),
+            });
           // About 100 writes a second over the four clients.
           await Bun.sleep(40);
         }
@@ -137,6 +145,7 @@ try {
       phase = "during";
       const freeBefore = available();
       const begun = performance.now();
+      backupBegun = begun;
       const child = Bun.spawn([executable, "backup", "--data-dir", dataDir, "--output", output], {
         env: { PATH: "" },
         stdout: "pipe",
@@ -209,6 +218,7 @@ try {
         walAfterMiB: mb(walAfter),
         diskUsedMiB: mb(freeBefore - lowestFree),
         writeLockWaitMs: lockWaitMs,
+        stalls,
         before: summary(latencies.before),
         during: summary(latencies.during),
         after: summary(latencies.after),

@@ -11,6 +11,11 @@
 // then needs only a read transaction on the source: it takes no write lock, the server keeps
 // committing, and the snapshot is the committed state when it began. While it runs, a checkpoint
 // cannot pass it, so the WAL grows with the writes of that time and is reused afterwards.
+//
+// The disk is what the two share. Syncing a whole snapshot at its end held the server's next
+// commit for 1.5-1.8 s at 1,000,000 subscribers, and that time grows with the database. VACUUM is
+// one synchronous statement, so a helper process syncs its output every 200 ms while it runs
+// (docs/perf/M6.2-backup.md). It ends with stdin, so it cannot outlive a killed backup.
 import { Database } from "bun:sqlite";
 import {
   closeSync,
@@ -30,6 +35,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { open } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
@@ -45,6 +51,9 @@ const UPLOAD_PATH = "upload.filesystem.upload_path";
 /** Never a backup: `backup --verify` refuses this name and `backup` reports it left behind. */
 export const PARTIAL = ".iglo-email-backup-partial-";
 const REPLACED = ".iglo-email-backup-replaced-";
+/** The internal argument of the helper; see the header. */
+export const flushChildArgument = "__backup-flush";
+const FLUSH_INTERVAL_MS = 200;
 
 export interface Inspection {
   schemaVersion: number;
@@ -169,6 +178,21 @@ export function inspectBackup(path: string, clock: Clock, supportedVersion: numb
   return inspect(target, clock, supportedVersion);
 }
 
+/** Child entry: sync a file until stdin closes. Failing only makes the final sync larger. */
+export async function runFlushChild(): Promise<void> {
+  const file = await open(process.argv[3]!, "r");
+  let running = true;
+  void (async () => {
+    for await (const _ of Bun.stdin.stream());
+    running = false;
+  })();
+  while (running) {
+    await file.sync();
+    await Bun.sleep(FLUSH_INTERVAL_MS);
+  }
+  process.exit(0);
+}
+
 function backupName(clock: Clock): string {
   return `iglo-email-${clock.now().toISOString().replaceAll(":", "-")}`;
 }
@@ -243,6 +267,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
 
   const db = new Database(databasePath, { readonly: true, strict: true, safeIntegers: true });
   let partial: string | undefined;
+  let flusher: Bun.Subprocess | undefined;
   try {
     db.run("PRAGMA busy_timeout = 5000");
     if (single<bigint>(db, "user_version") === 0n)
@@ -266,7 +291,13 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     partial = mkdtempSync(join(parent, PARTIAL));
     const snapshot = join(partial, DATABASE);
     closeSync(openSync(snapshot, "wx", 0o600));
+    flusher = Bun.spawn([process.execPath, flushChildArgument, snapshot], {
+      stdin: "pipe",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
     db.run("VACUUM INTO ?", [snapshot]);
+    flusher.kill();
     sync(snapshot);
 
     // The database comes first. A file that arrives after it is one no row names, which nothing
@@ -301,6 +332,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     partial = undefined;
     return { ...inspection, path: output };
   } finally {
+    flusher?.kill();
     db.close(true);
     if (partial) rmSync(partial, { recursive: true, force: true });
   }
