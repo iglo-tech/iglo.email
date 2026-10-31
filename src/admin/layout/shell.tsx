@@ -3,7 +3,7 @@ import { Icon } from "@/admin/layout/icon";
 import type { Translation } from "@/i18n/i18n";
 import { raw, render, type Child } from "@/jsx/render";
 
-type JSONValue =
+export type JSONValue =
   | string
   | number
   | boolean
@@ -34,6 +34,8 @@ export interface AdminShellProps {
   readonly faviconUrl?: string;
   /** Module under /admin/static/js/views, without its extension. */
   readonly script?: string;
+  /** Load appearance.admin.custom_css and custom_js: signed-in pages only, as upstream. */
+  readonly customAssets?: boolean;
   /** Page render time, as upstream's footer shows it. */
   readonly duration?: string;
   readonly children?: Child;
@@ -129,7 +131,7 @@ const themeScript = `(function(){try{var t=localStorage.getItem('theme');if(t)do
 
 function AdminShell(props: AdminShellProps) {
   const { title, siteName, assetVersion, i18n, config, navigation, profile, children } = props;
-  const { faviconUrl, script, duration } = props;
+  const { faviconUrl, script, duration, customAssets } = props;
   if (script !== undefined && !/^[a-z][a-z0-9-]*$/.test(script))
     throw new TypeError("Invalid view script");
   if (!/^[a-f0-9]{10}$/.test(assetVersion)) throw new TypeError("Invalid asset version");
@@ -161,6 +163,9 @@ function AdminShell(props: AdminShellProps) {
         />
         <link href={`${base}/oat.min.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
         <link href={`${base}/style.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
+        {customAssets ? (
+          <link href={`/admin/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
+        ) : null}
         {faviconUrl ? (
           <link href={faviconUrl} rel="icon" type="image/x-icon" />
         ) : (
@@ -279,6 +284,7 @@ function AdminShell(props: AdminShellProps) {
           ></script>
         ) : null}
         <script type="module" src={`${base}/js/main.js?v=${assetVersion}`} defer></script>
+        {customAssets ? <script src={`/admin/custom.js?v=${assetVersion}`} defer></script> : null}
       </body>
     </html>
   );

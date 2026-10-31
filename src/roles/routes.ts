@@ -9,7 +9,7 @@ import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
 import type { UserStore } from "@/users/store";
 
-const validPermissions = new Set<string>([
+export const validPermissions = new Set<string>([
   ...permissions,
   "sequences:get",
   "sequences:manage",

@@ -1,4 +1,4 @@
-// The 2FA half of listmonk static/admin/assets/js/views/profile.js at 6fcd95f.
+// Adapted from listmonk static/admin/assets/js/views/profile.js at 6fcd95f.
 import Alpine from 'alpinejs';
 import { api, config, i18n } from '@/assets/admin/js/main.js';
 import * as u from '@/assets/admin/js/utils.js';
@@ -8,6 +8,13 @@ function profileView() {
   const id = config.user_id;
 
   return {
+    form: {
+      name: config.user_name || '',
+      email: config.user_email || '',
+      password: '',
+      password2: '',
+    },
+
     // TOTP enable flow.
     showTotpSetup: false,
     totpQR: null,
@@ -17,6 +24,24 @@ function profileView() {
     // TOTP disable flow.
     showDisableTotp: false,
     disablePassword: '',
+
+    async onSubmit() {
+      const payload = { name: this.form.name, email: this.form.email };
+
+      if (this.form.password) {
+        if (this.form.password !== this.form.password2) {
+          u.toast(i18n.t('users.passwordMismatch'), 'danger');
+          return;
+        }
+        payload.password = this.form.password;
+        payload.password2 = this.form.password2;
+      }
+
+      const data = await api('profile.save', '/profile', 'PUT', payload);
+      this.form.password = '';
+      this.form.password2 = '';
+      u.toast(i18n.ts('globals.messages.updated', { name: data.username }));
+    },
 
     // ===============
     // TOTP on/off flow.

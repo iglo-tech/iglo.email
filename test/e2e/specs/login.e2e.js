@@ -11,7 +11,7 @@ test.describe("Login", () => {
     await page.getByLabel("Password").fill(ADMIN.password);
     await page.getByRole("button", { name: "Login" }).click();
     await page.waitForURL("**/admin/users");
-    await expect(page.getByTestId("not-yet")).toBeVisible();
+    await expect(page.getByTestId("user-row").first()).toBeVisible();
   });
 
   test("refuses a wrong password without saying which field was wrong", async ({ page }) => {
