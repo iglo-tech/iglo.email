@@ -64,8 +64,10 @@ test.beforeEach(async ({ page }) => {
   await enableBounces(page);
 });
 // The run shares one database: a later spec expects bounces as this one found them.
-test.afterEach(async ({ page }) => {
-  await page.goto("/admin");
+test.afterEach(async ({ page, context }) => {
+  // A test may end as a user who cannot write settings.
+  await context.clearCookies();
+  await login(page);
   const current = await ok(page, "/api/settings");
   const { "bounce.enabled": enabled, "bounce.webhooks_enabled": webhooks } = before;
   await ok(page, "/api/settings", "PUT", {
