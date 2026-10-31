@@ -198,6 +198,8 @@ test("the picker frames the gallery and uploads inside it", async ({ page }) => 
     buffer: Buffer.from(SVG),
   });
   await frame.getByTestId("btn-upload").click();
+  // The upload reloads the frame, which would clear a query typed before it.
+  await expect(frame.getByTestId("media-item").filter({ hasText: name })).toBeVisible();
   await frame.getByTestId("query").fill(name);
   await frame.getByTestId("btn-query").click();
   await expect(frame.getByTestId("media-item")).toHaveCount(1);

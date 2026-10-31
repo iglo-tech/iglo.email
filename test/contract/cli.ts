@@ -11,6 +11,7 @@ import { runMaintenanceContract } from "@/test/contract/maintenance";
 import { runMediaContract } from "@/test/contract/media";
 import { runImportContract } from "@/test/contract/import";
 import { runWebhooksContract } from "@/test/contract/webhooks";
+import { runOpenApiContract } from "@/test/contract/openapi";
 import { runTemplateAuthorization } from "@/test/templates/auth-contract";
 import { runDKIMSettings } from "@/test/contract/messaging-dkim";
 import { runMessagingContract } from "@/test/contract/messaging";
@@ -124,6 +125,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "media" ||
       args[1] === "import" ||
       args[1] === "analytics" ||
+      args[1] === "openapi" ||
       args[1] === "campaigns")
   ) {
     const values = argumentsForRun(args.slice(2));
@@ -148,6 +150,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "media" ||
         args[1] === "import" ||
         args[1] === "analytics" ||
+        args[1] === "openapi" ||
         args[1] === "campaigns") &&
       Object.keys(values).length
     )
@@ -161,6 +164,11 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         if (args[1] === "analytics") {
           await runAnalyticsContract({ mode: "normal", baseUrl, credentials, restart, dataDir });
           process.stdout.write("PASS analytics production contract\n");
+          return true;
+        }
+        if (args[1] === "openapi") {
+          await runOpenApiContract({ baseUrl, credentials, admin, dataDir });
+          process.stdout.write("PASS openapi production contract\n");
           return true;
         }
         if (args[1] === "campaigns") {

@@ -179,7 +179,7 @@ export function registerSubscriberQueryRoutes(
   const canRead = (c: RequestContext) => {
     const i = identity(c);
     if (!roles.can(i.role, "subscribers:get") && !roles.can(i.role, "subscribers:get_all"))
-      throw new HttpError(403, "permission denied");
+      throw new HttpError(403, "permission denied: subscribers:get");
     return i;
   };
   const sqlPermission = (c: RequestContext, fragment: string) => {

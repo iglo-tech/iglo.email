@@ -6,6 +6,7 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap } from "@/config/bootstrap";
 import { createClientAddress } from "@/server/client-address";
+import type { Router } from "@/server/router";
 import { startServer } from "@/server/server";
 import { createRouter } from "@/server/server";
 import { createListStore } from "@/lists/store";
@@ -88,13 +89,16 @@ import {
   runAnalyticsChild,
 } from "@/analytics/reader";
 import { createAnalyticsPurge } from "@/analytics/purge";
+import { createSubscriberTracking } from "@/analytics/subscriber";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { registerAdminRoutes } from "@/admin/routes";
 import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
+import { registerOpenApiRoutes } from "@/openapi/routes";
 
-async function main(): Promise<void> {
+/** `inspect` sees the composed router before anything listens; a test may throw to stop there. */
+export async function main(inspect?: (router: Router) => void): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
   if (process.argv[2] === childArgument) return runQueryChild();
   if (process.argv[2] === analyticsChildArgument) return runAnalyticsChild();
@@ -127,6 +131,7 @@ async function main(): Promise<void> {
   let templates: ReturnType<typeof createTemplateStore> | undefined;
   let outbox: ReturnType<typeof startOutbox> | undefined;
   let tracking: ReturnType<typeof createTracking> | undefined;
+  let subscriberTracking: ReturnType<typeof createSubscriberTracking> | undefined;
   let events: ReturnType<typeof createEventStore> | undefined;
   let retention: ReturnType<typeof startEventRetention> | undefined;
   let enrollments: ReturnType<typeof createEnrollments> | undefined;
@@ -252,6 +257,11 @@ async function main(): Promise<void> {
         enrollments: (id, page, perPage) => enrollments!.list({ subscriberId: id, page, perPage }),
         sends: (id, page, perPage) => sends!.list({ subscriberId: id, page, perPage }),
       },
+      {
+        activity: (id) => subscriberTracking!.activity(id),
+        clearActivity: (id, type) => subscriberTracking!.clear(id, type),
+        exportSections: (row) => mail!.exportSections(row),
+      },
     );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
     const touchLists = listStore.touch;
@@ -338,6 +348,7 @@ async function main(): Promise<void> {
       }),
     });
     tracking = createTracking(db, clock);
+    subscriberTracking = createSubscriberTracking(db);
     registerSendRoutes(router, sends, auth);
     registerWebhookRoutes(router, { webhooks, auth });
     outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
@@ -640,6 +651,7 @@ async function main(): Promise<void> {
       },
       settings: pages,
     });
+    registerOpenApiRoutes(router, auth);
     summaryRefresh = startSummaryRefresh({
       clock,
       logger: app.logger,
@@ -652,6 +664,7 @@ async function main(): Promise<void> {
         };
       },
     });
+    inspect?.(router);
     server = startServer(app, router);
     const listening = server;
     await new Promise<void>((resolve, reject) => {
@@ -749,6 +762,7 @@ async function main(): Promise<void> {
     events?.close();
     sends?.close();
     tracking?.close();
+    subscriberTracking?.close();
     templates?.close();
     templateReferences?.close();
     settings?.close();
@@ -766,7 +780,8 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "Failed to start server");
-  process.exitCode = 1;
-});
+if (import.meta.main)
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : "Failed to start server");
+    process.exitCode = 1;
+  });

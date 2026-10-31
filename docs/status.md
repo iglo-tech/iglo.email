@@ -94,4 +94,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. Lowering it needs shared write batching across loops, or an owner decision on D22 durability.
 - `finishAll`: add permanent regressions for mixed retry outcomes, same-subscriber batch caps and COMMIT rollback ([#32 review](https://github.com/iglo-tech/iglo.email/pull/32#issuecomment-6517645045)).
 - Webhook delivery rows are never purged; add retention ([#34](https://github.com/iglo-tech/iglo.email/pull/34)).
+- Subscriber activity tab with its clear buttons: upstream's page over `GET` and `DELETE /api/subscribers/:id/activity`, which M6.4 ported without a screen.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
