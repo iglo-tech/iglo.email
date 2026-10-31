@@ -333,18 +333,16 @@ test.describe("Subscribers: create, edit & delete", () => {
     expect(page.url()).toContain(`${SUBSCRIBERS}/${seed.ANON}/edit`);
   });
 
-  // Upstream links /api/subscribers/:id/export, which has no port yet. The collection export takes
-  // an ID and gives the same record's row.
   test("exposes a per-row data download link", async ({ page }) => {
     await page.goto(SUBSCRIBERS);
     const row = subRow(page, SUB_NAMES.anon);
     await openMenu(row);
     await expect(row.getByTestId("btn-download")).toHaveAttribute(
       "href",
-      new RegExp(`/api/subscribers/export\\?id=${seed.ANON}$`),
+      new RegExp(`/api/subscribers/${seed.ANON}/export$`),
     );
-    const res = await page.request.get(`/api/subscribers/export?id=${seed.ANON}`);
-    expect(await res.text()).toContain(SUB_NAMES.anon);
+    const res = await page.request.get(`/api/subscribers/${seed.ANON}/export`);
+    expect((await res.json()).profile[0].name).toBe(SUB_NAMES.anon);
   });
 
   test("deletes a subscriber from the row menu", async ({ page }) => {

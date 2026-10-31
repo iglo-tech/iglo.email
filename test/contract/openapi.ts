@@ -690,6 +690,11 @@ export async function runOpenApiContract(target: {
     const link = db.query("SELECT uuid FROM links ORDER BY id DESC LIMIT 1").get() as {
       uuid: string;
     };
+    const sendLink = db
+      .query("SELECT uuid FROM links WHERE url = 'https://example.test/t'")
+      .get() as {
+      uuid: string;
+    };
     db.close();
     await send("GET", `/campaign/${campaign.uuid}/${subscriber.uuid}/px.png`, { auth: null });
     await send("GET", `/link/${link.uuid}/${campaign.uuid}/${subscriber.uuid}`, { auth: null });
@@ -703,6 +708,42 @@ export async function runOpenApiContract(target: {
         params: { type },
         query: `?id=${list.id}&from=2020-01-01&to=2099-01-01`,
       });
+    // A send's view and click have no campaign. Every tracked row is shown, and cleared.
+    await send("GET", `/m/${send0.uuid}/px.png`, { auth: null });
+    await send("GET", `/m/${send0.uuid}/link/${sendLink.uuid}`, { auth: null });
+    const tracked = (
+      await op("GET /api/subscribers/{id}/activity", { params: { id: subscriber.id } })
+    ).body.data;
+    check(
+      tracked.campaign_views.some((row: { id: unknown }) => row.id === null) &&
+        tracked.campaign_views.some((row: { id: unknown }) => row.id === campaign.id) &&
+        tracked.link_clicks.some((row: { campaign_id: unknown }) => row.campaign_id === null) &&
+        tracked.link_clicks.some(
+          (row: { campaign_id: unknown }) => row.campaign_id === campaign.id,
+        ),
+      "activity-of-sends",
+    );
+    const exported = await op("GET /api/subscribers/{id}/export", {
+      params: { id: subscriber.id },
+    });
+    check(exported.body.sends.length && exported.body.events.length, "export-native-sections");
+    await op("GET /api/subscribers/{id}/activity", { params: { id: other.id } });
+    for (const type of ["campaign_views", "link_clicks"])
+      await op("DELETE /api/subscribers/{id}/activity/{type}", {
+        params: { id: subscriber.id, type },
+      });
+    await op("DELETE /api/subscribers/{id}/activity/{type}", {
+      params: { id: subscriber.id, type: "views" },
+      expect: 400,
+    });
+    check(
+      JSON.stringify(
+        (await op("GET /api/subscribers/{id}/activity", { params: { id: subscriber.id } })).body
+          .data,
+      ) === '{"campaign_views":[],"link_clicks":[]}',
+      "activity-cleared",
+    );
+
     await op("GET /api/dashboard/counts");
     await op("GET /api/dashboard/charts");
     await op("GET /api/dashboard/campaigns");
@@ -897,6 +938,10 @@ export async function runOpenApiContract(target: {
     await op("DELETE /api/subscribers/{id}", { params: { id: other.id } });
     await op("DELETE /api/subscribers", { query: `?id=${subscriber.id}` });
     await op("DELETE /api/templates/{id}", { params: { id: txTemplate.id } });
+
+    // Dropped in 07: each is a plain 404, not a hidden route.
+    for (const path of ["/api/config", "/api/lang/en", "/api/about", "/api/events"])
+      check((await send("GET", path)).status === 404, `dropped-${path}`);
 
     // Every protected operation refuses without a credential, in the error envelope.
     const operations = Object.entries(document.paths).flatMap(([template, item]) =>

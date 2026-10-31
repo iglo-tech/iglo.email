@@ -131,7 +131,7 @@ function RowMenu({ t, manage, bounces }: { t: Translation; manage: boolean; boun
         {manage ? (
           <>
             <a
-              x-bind:href="`/api/subscribers/export?id=${s.id}`"
+              x-bind:href="`/api/subscribers/${s.id}/export`"
               role="menuitem"
               class="button ghost"
               data-testid="btn-download"

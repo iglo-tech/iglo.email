@@ -588,6 +588,42 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Subscriber activity (M6.4)",
+    summary:
+      "`GET /api/subscribers/:id/activity` adds views and clicks of transactional and sequence sends, which upstream does not have, as rows whose campaign fields are null, and each array stops at 5,000 rows. `DELETE /api/subscribers/:id/activity/:type` clears those rows too.",
+    applies: ["/api/subscribers/{id}/activity"],
+  },
+  {
+    area: "Subscriber data export (M6.4)",
+    summary:
+      "`GET /api/subscribers/:id/export` adds the native sections of the mailed export: `sends` and `bounces` with `campaign_views`, `events` with `link_clicks`, under the same limits. A subscriber that does not exist is a 400 instead of upstream's 500.",
+    applies: ["GET /api/subscribers/{id}/export"],
+  },
+  {
+    area: "Dropped `GET /api/config`",
+    summary:
+      "404. The admin pages get what they need in the `window._LM_CONFIG` of each page, and each setting has its own API.",
+    applies: [],
+  },
+  {
+    area: "Dropped `GET /api/lang/:lang`",
+    summary:
+      "404. Translations are rendered on the server, and a page embeds the keys its scripts use as `window._LM_I18N`.",
+    applies: [],
+  },
+  {
+    area: "Dropped `GET /api/about`",
+    summary:
+      "404. Its Go runtime report and update information mean nothing for this executable: `GET /api/health` answers for liveness and `GET /api/openapi.json` names the version.",
+    applies: [],
+  },
+  {
+    area: "Dropped `GET /api/events`",
+    summary:
+      "404. The stream of live errors gives way to polling the sanitized `GET /api/logs`, which the logs page does.",
+    applies: [],
+  },
+  {
     area: "Dropped features",
     summary:
       "Their endpoints return 404: `/api/admin/reload`, OIDC routes, update checks, and anything listed as dropped in Scope.",

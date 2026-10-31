@@ -30,6 +30,8 @@ export interface Operation {
   data?: Schema;
   /** A whole 200 answer that has no envelope, by media type. */
   answer?: Record<string, Schema>;
+  /** Path parameters that are not a plain string or numeric ID. */
+  path?: Record<string, Schema>;
   /** Refusals worth naming, on top of 400 for a bad ID and 403 for a missing credential. */
   errors?: number[];
 }
@@ -501,6 +503,31 @@ const subscribers: Operation[] = [
     summary: "Delete a subscriber's bounces.",
     permissions: ["bounces:manage"],
     data: yes,
+  },
+  {
+    route: "GET /api/subscribers/{id}/activity",
+    id: "getSubscriberActivity",
+    tag: "Subscribers",
+    summary: "A subscriber's views by campaign and clicks by link, under the list scope.",
+    permissions: ["subscribers:get", "subscribers:get_all"],
+    data: ref("SubscriberActivity"),
+  },
+  {
+    route: "DELETE /api/subscribers/{id}/activity/{type}",
+    id: "deleteSubscriberActivity",
+    tag: "Subscribers",
+    summary: "Clear a subscriber's views or clicks; the subscriber and its consent stay.",
+    permissions: ["subscribers:manage"],
+    path: { type: { type: "string", enum: ["campaign_views", "link_clicks"] } },
+    data: yes,
+  },
+  {
+    route: "GET /api/subscribers/{id}/export",
+    id: "exportSubscriberData",
+    tag: "Subscribers",
+    summary: "A subscriber's data as a `data.json` download, under the list scope.",
+    permissions: ["subscribers:get", "subscribers:get_all"],
+    answer: { "application/json": ref("SubscriberExport") },
   },
   {
     route: "GET /api/subscribers/{id}/subscriber-events",

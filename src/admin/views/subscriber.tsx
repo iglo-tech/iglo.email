@@ -1,7 +1,7 @@
 // Adapted from listmonk static/admin/views/subscriber.html, partials/subscriber-form.html,
 // subscriber-info.html, subscriber-lists.html and bounces-table.html at 6fcd95f. The subscriber
 // arrives from /api/subscribers/:id, which owns its permission check and list masking. The API has
-// no activity or chart endpoint yet, so the overview tab shows the record without them. The events,
+// no chart endpoint and activity has no screen yet, so the overview tab shows the record. The events,
 // enrollments and sends tabs are native (docs/design/05-sequences.md#admin-ui): their rows come from
 // /api/subscribers/:id/*, under the same list scope, and reach the page through x-text.
 import { Icon } from "@/admin/layout/icon";

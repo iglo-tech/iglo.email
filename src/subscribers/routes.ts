@@ -27,9 +27,21 @@ export interface SubscriberActivity {
   enrollments: ActivityPage;
   sends: ActivityPage;
 }
+/** A subscriber's tracked history and data export, from the modules that own them. */
+export interface SubscriberRecords {
+  activity(id: bigint): unknown;
+  /** False for an unknown type. */
+  clearActivity(id: bigint, type: string): boolean;
+  /** The sections of a data export, as the emailed one has them. */
+  exportSections(row: SubscriberRow): unknown;
+}
 
 const canRead = (roles: Roles, identity: Reader) =>
   roles.can(identity.role, "subscribers:get") || roles.can(identity.role, "subscribers:get_all");
+/** Either grant reads a subscriber; upstream's refusal names the last one it tries. */
+const requireRead = (roles: Roles, identity: Reader) => {
+  if (!canRead(roles, identity)) throw new HttpError(403, "permission denied: subscribers:get");
+};
 const listScope = (roles: Roles, i: Reader, kind: "get" | "manage"): Scope => {
   const get = roles.listScope(i.role, i.user.list_role_id, "list:get"),
     manage = roles.listScope(i.role, i.user.list_role_id, "list:manage");
@@ -67,6 +79,7 @@ export function registerSubscriberRoutes(
     send(row: SubscriberRow): void;
   },
   activity?: SubscriberActivity,
+  records?: SubscriberRecords,
 ) {
   const identity = (c: RequestContext) => {
     if (!c.identity) throw new Error("Identity required");
@@ -295,11 +308,11 @@ export function registerSubscriberRoutes(
     };
   // GET accepts either subscriber read permission, as in listmonk.
   const canGet: Handler = (c) => {
-    if (!canRead(roles, identity(c))) throw new HttpError(403, "permission denied");
+    requireRead(roles, identity(c));
     return get(false)(c);
   };
   const canExternal: Handler = (c) => {
-    if (!canRead(roles, identity(c))) throw new HttpError(403, "permission denied");
+    requireRead(roles, identity(c));
     return get(true)(c);
   };
   router.route("POST", "/api/subscribers", create, auth.middleware("subscribers:manage"));
@@ -330,9 +343,9 @@ export function registerSubscriberRoutes(
       (read: ActivityPage, permission?: string): Handler =>
       (c) => {
         const i = identity(c);
-        if (!canRead(roles, i)) throw new HttpError(403, "permission denied");
+        requireRead(roles, i);
         if (permission && !roles.can(i.role, permission))
-          throw new HttpError(403, "permission denied");
+          throw new HttpError(403, `permission denied: ${permission}`);
         const id = BigInt(getID(c));
         allowed(c, [id], "get");
         required(c, id);
@@ -348,6 +361,54 @@ export function registerSubscriberRoutes(
     route("subscriber-events", paged(activity.events));
     route("enrollments", paged(activity.enrollments, "sequences:get"));
     route("sends", paged(activity.sends, "sends:get"));
+  }
+  if (records) {
+    // hasSubPerm reads with either list permission; the subscriber need not exist.
+    const scoped = (c: RequestContext) => {
+      requireRead(roles, identity(c));
+      const id = BigInt(getID(c));
+      allowed(c, [id], "get");
+      return id;
+    };
+    router.route(
+      "GET",
+      "/api/subscribers/:id/activity",
+      (c) => ok(records.activity(scoped(c))),
+      auth.middleware(),
+      hasID,
+    );
+    // ExportSubscriberData. Upstream answers a 500 for a missing subscriber: this is a bad ID.
+    router.route(
+      "GET",
+      "/api/subscribers/:id/export",
+      (c) =>
+        new Response(
+          JSON.stringify(records.exportSections(required(c, scoped(c), true)), null, 2),
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-cache",
+              "Content-Disposition": 'attachment; filename="data.json"',
+            },
+          },
+        ),
+      auth.middleware(),
+      hasID,
+    );
+    router.route(
+      "DELETE",
+      "/api/subscribers/:id/activity/:type",
+      (c) =>
+        store.transaction(() => {
+          const id = BigInt(getID(c));
+          allowed(c, [id], "manage");
+          if (!records.clearActivity(id, c.params.type ?? ""))
+            throw new HttpError(400, "Invalid activity type.");
+          return ok(true);
+        }),
+      auth.middleware("subscribers:manage"),
+      hasID,
+    );
   }
   router.route(
     "PUT",

@@ -89,6 +89,7 @@ import {
   runAnalyticsChild,
 } from "@/analytics/reader";
 import { createAnalyticsPurge } from "@/analytics/purge";
+import { createSubscriberTracking } from "@/analytics/subscriber";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { registerAdminRoutes } from "@/admin/routes";
 import { createLogBuffer } from "@/maintenance/log-buffer";
@@ -130,6 +131,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   let templates: ReturnType<typeof createTemplateStore> | undefined;
   let outbox: ReturnType<typeof startOutbox> | undefined;
   let tracking: ReturnType<typeof createTracking> | undefined;
+  let subscriberTracking: ReturnType<typeof createSubscriberTracking> | undefined;
   let events: ReturnType<typeof createEventStore> | undefined;
   let retention: ReturnType<typeof startEventRetention> | undefined;
   let enrollments: ReturnType<typeof createEnrollments> | undefined;
@@ -255,6 +257,11 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         enrollments: (id, page, perPage) => enrollments!.list({ subscriberId: id, page, perPage }),
         sends: (id, page, perPage) => sends!.list({ subscriberId: id, page, perPage }),
       },
+      {
+        activity: (id) => subscriberTracking!.activity(id),
+        clearActivity: (id, type) => subscriberTracking!.clear(id, type),
+        exportSections: (row) => mail!.exportSections(row),
+      },
     );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
     const touchLists = listStore.touch;
@@ -341,6 +348,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       }),
     });
     tracking = createTracking(db, clock);
+    subscriberTracking = createSubscriberTracking(db);
     registerSendRoutes(router, sends, auth);
     registerWebhookRoutes(router, { webhooks, auth });
     outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
@@ -754,6 +762,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     events?.close();
     sends?.close();
     tracking?.close();
+    subscriberTracking?.close();
     templates?.close();
     templateReferences?.close();
     settings?.close();

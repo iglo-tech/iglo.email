@@ -234,6 +234,84 @@ export const schemas: Record<string, Schema> = {
     lists: array(integer),
     preconfirm_subscriptions: boolean,
   }),
+  SubscriberCampaignView: object({
+    id: nullable(integer),
+    uuid: nullable(uuid),
+    name: nullable(string),
+    subject: nullable(string),
+    view_count: integer,
+    last_viewed_at: time,
+  }),
+  SubscriberLinkClick: object({
+    link_id: integer,
+    url: string,
+    campaign_id: nullable(integer),
+    campaign_uuid: nullable(uuid),
+    campaign_name: nullable(string),
+    campaign_subject: nullable(string),
+    click_count: integer,
+    last_clicked_at: time,
+  }),
+  SubscriberActivity: object({
+    campaign_views: {
+      ...array(ref("SubscriberCampaignView")),
+      description: "The campaign fields are null on the row of views of sends.",
+    },
+    link_clicks: {
+      ...array(ref("SubscriberLinkClick")),
+      description: "The campaign fields are null on the rows of clicks of sends.",
+    },
+  }),
+  SubscriberExport: {
+    ...input({
+      profile: array(
+        object({
+          id: integer,
+          uuid,
+          email: string,
+          name: string,
+          attribs: free,
+          status: subscriberStatus,
+          created_at: time,
+          updated_at: time,
+        }),
+      ),
+      subscriptions: array(
+        object({
+          subscription_status: subscriptionStatus,
+          name: { ...string, description: "`Private list` for a private list." },
+          type: listType,
+          created_at: time,
+        }),
+      ),
+      campaign_views: array(object({ campaign: string, views: integer })),
+      link_clicks: array(object({ url: string, clicks: integer })),
+      sends: array(
+        object({
+          uuid,
+          source: choice("tx", "sequence"),
+          kind: sendKind,
+          status: sendStatus,
+          skip_reason: nullable(string),
+          to_email: string,
+          created_at: time,
+          sent_at: nullable(time),
+        }),
+      ),
+      events: array(object({ name: string, data: free, occurred_at: time })),
+      bounces: array(
+        object({
+          type: bounceType,
+          source: string,
+          meta: free,
+          created_at: time,
+          campaign: nullable(string),
+        }),
+      ),
+    }),
+    description:
+      "Only the sections `privacy.exportable` allows: `sends` and `bounces` go with `campaign_views`, `events` with `link_clicks`.",
+  },
   SubscriberIds: input({ ids: array(integer) }, ["ids"]),
   MembershipInput: input(
     {

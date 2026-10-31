@@ -28,12 +28,12 @@ function applies(entry: string, operation: Operation): boolean {
   return operation.route.includes(entry) && !/^[A-Z]+ /.test(entry);
 }
 
-const pathParameters = ({ route }: Operation) =>
+const pathParameters = ({ route, path }: Operation) =>
   [...route.matchAll(/\{(\w+)\}/g)].map(([, name]) => ({
     name,
     in: "path",
     required: true,
-    schema: name === "id" ? { type: "integer", minimum: 1 } : { type: "string" },
+    schema: path?.[name!] ?? (name === "id" ? { type: "integer", minimum: 1 } : { type: "string" }),
   }));
 
 function build(operation: Operation): Record<string, unknown> {

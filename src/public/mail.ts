@@ -50,6 +50,50 @@ export function createSubscriberMail(deps: {
   const throttle = createThrottle(deps.clock, optinThrottleTTL, optinThrottleCap);
   const signups = new Set<bigint>();
   let overflowed = false;
+  /** The sections `privacy.exportable` allows, for the emailed file and the admin download. */
+  const exportSections = (sub: Subscriber) => {
+    const allowed = new Set(deps.settings().exportable);
+    const views = allowed.has("campaign_views");
+    const clicks = allowed.has("link_clicks");
+    return {
+      profile: allowed.has("profile")
+        ? [
+            {
+              id: Number(sub.id),
+              uuid: sub.uuid,
+              email: sub.email,
+              name: sub.name,
+              attribs: JSON.parse(sub.attribs),
+              status: sub.status,
+              created_at: sub.created_at,
+              updated_at: sub.updated_at,
+            },
+          ]
+        : undefined,
+      subscriptions: allowed.has("subscriptions")
+        ? deps.subscribers.exportSubscriptions(sub.id)
+        : undefined,
+      campaign_views: views ? deps.campaigns.subscriberViews(sub.id) : undefined,
+      link_clicks: clicks ? deps.tracking.subscriberClicks(sub.id) : undefined,
+      // Native sections, with the activity they sit beside (07-api-and-ui.md).
+      sends: views
+        ? deps.sends
+            .list({ page: 1, perPage: exportRows, subscriberId: sub.id })
+            .results.map((send) => ({
+              uuid: send.uuid,
+              source: send.source,
+              kind: send.kind,
+              status: send.status,
+              skip_reason: send.skip_reason,
+              to_email: send.to_email,
+              created_at: send.created_at,
+              sent_at: send.sent_at,
+            }))
+        : undefined,
+      events: clicks ? boundedEvents(deps.events.list(sub.id, exportRows)) : undefined,
+      bounces: views ? deps.bounces.forExport(sub.id, exportRows) : undefined,
+    };
+  };
   const enqueue = (
     sub: Subscriber,
     settings: PublicSettings,
@@ -159,50 +203,10 @@ export function createSubscriberMail(deps: {
       if (!pending.length) return;
       if (throttle(sub.email.trim().toLowerCase())) quietly(() => optin(sub, pending.map(BigInt)));
     },
+    exportSections,
     /** SelfExportSubscriberData: the file goes to the subscriber, never into the response. */
     exportData(sub: Subscriber) {
       const settings = deps.settings();
-      const allowed = new Set(settings.exportable);
-      const views = allowed.has("campaign_views");
-      const clicks = allowed.has("link_clicks");
-      const data = {
-        profile: allowed.has("profile")
-          ? [
-              {
-                id: Number(sub.id),
-                uuid: sub.uuid,
-                email: sub.email,
-                name: sub.name,
-                attribs: JSON.parse(sub.attribs),
-                status: sub.status,
-                created_at: sub.created_at,
-                updated_at: sub.updated_at,
-              },
-            ]
-          : undefined,
-        subscriptions: allowed.has("subscriptions")
-          ? deps.subscribers.exportSubscriptions(sub.id)
-          : undefined,
-        campaign_views: views ? deps.campaigns.subscriberViews(sub.id) : undefined,
-        link_clicks: clicks ? deps.tracking.subscriberClicks(sub.id) : undefined,
-        // Native sections, with the activity they sit beside (07-api-and-ui.md).
-        sends: views
-          ? deps.sends
-              .list({ page: 1, perPage: exportRows, subscriberId: sub.id })
-              .results.map((send) => ({
-                uuid: send.uuid,
-                source: send.source,
-                kind: send.kind,
-                status: send.status,
-                skip_reason: send.skip_reason,
-                to_email: send.to_email,
-                created_at: send.created_at,
-                sent_at: send.sent_at,
-              }))
-          : undefined,
-        events: clicks ? boundedEvents(deps.events.list(sub.id, exportRows)) : undefined,
-        bounces: views ? deps.bounces.forExport(sub.id, exportRows) : undefined,
-      };
       const html = deps.renderer.renderSync({
         body: systemTemplates.subscriberData,
         mode: "html",
@@ -212,7 +216,7 @@ export function createSubscriberMail(deps: {
         attachments: [
           {
             name: "data.json",
-            content: Buffer.from(JSON.stringify(data, null, 2)),
+            content: Buffer.from(JSON.stringify(exportSections(sub), null, 2)),
             contentType: "application/json",
           },
         ],
