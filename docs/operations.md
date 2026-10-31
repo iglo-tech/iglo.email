@@ -11,7 +11,7 @@ copies.
 
 Each release on [GitHub](https://github.com/iglo-tech/iglo.email/releases) has one Linux x86-64
 executable, `SHA256SUMS`, `LICENSE` and `THIRD-PARTY-NOTICES.txt`. The server needs glibc and an
-x86-64 CPU with AVX2, and neither Bun nor a checkout. Download the four files of the version you
+x86-64 CPU with SSE4.2 (Nehalem or newer, as Bun 1.4.4 targets), and neither Bun nor a checkout. Download the four files of the version you
 want into an empty directory, then:
 
 ```sh
