@@ -110,12 +110,12 @@ function userVersion(db: Database): number {
 }
 
 /** A snapshot is a recovery artifact, so it starts held (D67). The live database gets no row. */
-function holdSnapshot(path: string, clock: Clock): void {
+function holdSnapshot(path: string, clock: Clock, version: number): void {
   const snapshot = new Database(path, { strict: true, safeIntegers: true });
   try {
     snapshot.run("PRAGMA journal_mode = DELETE");
-    // An unversioned schema that predates this application has nothing to hold.
-    if (snapshot.query("SELECT 1 FROM sqlite_schema WHERE name = 'settings'").get())
+    // Version 0 is not this application's schema, whatever its tables are called.
+    if (version > 0 && snapshot.query("SELECT 1 FROM sqlite_schema WHERE name = 'settings'").get())
       placeRestoreHold(snapshot, clock.now().toISOString());
   } finally {
     snapshot.close(true);
@@ -131,7 +131,7 @@ function createSnapshot(db: Database, dataDir: string, clock: Clock, version: nu
   const destination = join(backups, `iglo-email-${timestamp}-${crypto.randomUUID()}.db`);
   try {
     db.run("VACUUM INTO ?", [temporary]);
-    holdSnapshot(temporary, clock);
+    holdSnapshot(temporary, clock, version);
     const snapshot = new Database(temporary, { readonly: true, safeIntegers: true });
     try {
       const integrity = snapshot
