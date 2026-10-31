@@ -4,9 +4,9 @@ Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M4.5 bounces, media, import, forms screens, [PR #43](https://github.com/iglo-tech/iglo.email/pull/43), head 32c08fd. Local checks pass; Sol round-1 review running. D26 stands: no public first-account form.
+M4.6 analytics, maintenance, logs: [brief](briefs/M4.6.md); one Opus worker running. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: M4.6, M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
+Next: M5.5, M6.2-M6.4. Owner to verify: one real Mailgun event and a retry (D63).
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -33,6 +33,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M4.5         | [#43](https://github.com/iglo-tech/iglo.email/pull/43) | 6481e54 | Bounces, media, import, forms screens                      |
 | M4.4         | [#42](https://github.com/iglo-tech/iglo.email/pull/42) | 39e710c | Settings, users, roles, profile; usable last admin         |
 | M4.3         | [#41](https://github.com/iglo-tech/iglo.email/pull/41) | e54fe8c | Templates and campaigns screens; HTML allow-list D66       |
 | M4.2         | [#40](https://github.com/iglo-tech/iglo.email/pull/40) | b7ab730 | Subscribers and lists screens                              |
