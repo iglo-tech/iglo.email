@@ -949,6 +949,55 @@ export async function runCampaignsContract(target: {
       "permission denied: campaigns:get",
       "perm-running-stats",
     );
+    // Two running campaigns on different lists. Empty lists, as for status-start, so neither ends
+    // mid-test. Upstream gives every running campaign to anyone with campaigns:get (07).
+    const statsList = async (label: string) => {
+      const response = await call("/api/lists", "POST", {
+        name: `${marker} ${label}`,
+        type: "private",
+        optin: "single",
+      });
+      check(response.status === 200, `running-stats-${label}`);
+      owned.lists.push(response.body.data.id);
+      return response.body.data.id as number;
+    };
+    const [statsMine, statsOther] = [await statsList("stats mine"), await statsList("stats other")];
+    const statsReader = await apiUser(
+      "statsreader",
+      ["campaigns:get"],
+      [{ id: statsMine, permissions: ["list:get"] }],
+    );
+    const statsCampaign = (label: string, list: number) =>
+      create({ name: `${marker} ${label}`, subject: "s", lists: [list] }, `running-${label}`);
+    const mine = await statsCampaign("stats mine", statsMine);
+    const theirs = await statsCampaign("stats other", statsOther);
+    await expectStatus(mine.id, "running", "running", "running-stats-start");
+    await expectStatus(theirs.id, "running", "running", "running-stats-start-other");
+    const scoped = (await call("/api/campaigns/running/stats", "GET", undefined, statsReader)).body
+      .data as Record<string, unknown>[];
+    const everything = (await call("/api/campaigns/running/stats")).body.data as {
+      id: number;
+    }[];
+    await expectStatus(mine.id, "paused", "paused", "running-stats-pause");
+    await expectStatus(theirs.id, "paused", "paused", "running-stats-pause-other");
+    check(
+      [mine.id, theirs.id].every((id) => everything.some((c) => c.id === id)),
+      "running-stats-all",
+    );
+    const row = scoped.find((c) => c.id === mine.id);
+    check(row, "running-stats-reader-own");
+    check(reference || !scoped.some((c) => c.id === theirs.id), "running-stats-reader-scope");
+    check(
+      Object.keys(row ?? {})
+        .sort()
+        .join() === "id,net_rate,rate,sent,started_at,status,to_send,updated_at" &&
+        row?.status === "running" &&
+        row?.sent === 0 &&
+        row?.to_send === 0 &&
+        row?.rate === 0 &&
+        row?.net_rate === 0,
+      "running-stats-shape",
+    );
     check(
       (await call(`/api/campaigns/${scopeNews.id}`, "GET", undefined, reader)).status === 200,
       "perm-get",
