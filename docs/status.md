@@ -4,7 +4,7 @@ Updated 2026-11-01. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.3 [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) waits on the owner adding the token scope: `gh auth refresh -h github.com -s workflow`. Then: commit the workflow, dry run, test tag `v0.1.0-rc.1`. D26 stands: no public first-account form.
+M6.3 [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) is approved at `b646fae` and waits on the owner adding the token scope: `gh auth refresh -h github.com -s workflow`. Then: commit the workflow unchanged, `bun run check`, merge, dry run, test tag `v0.1.0-rc.1`. D26 stands: no public first-account form.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
 Next: finish M6.3. All other plan tasks are merged. Owner to verify: one real Mailgun event and a retry (D63); D58-D67 for review; the before-1.0 backlog.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
