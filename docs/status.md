@@ -4,10 +4,9 @@ Updated 2026-11-01. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.3 release proof: [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) is merged and the dry run passed. Test tag `v0.1.0-rc.1` is pushed at `2013ada`; its Release run must produce a draft prerelease that downloads, checks and reports its version.
-Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: collect that run. All 44 plan tasks are merged. Owner to verify: one real Mailgun event and a retry (D63); D58-D67 for review; the before-1.0 backlog.
-Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
+All 44 plan tasks are merged. M6.3 is proven: test tag `v0.1.0-rc.1` at `2013ada` built a draft prerelease whose download passes its checksums and prints `0.1.0-rc.1`. The draft stays unpublished.
+Next: owner items only. One real Mailgun event and a retry (D63); D58-D68 for review; decide CAPTCHA for public forms; the before-1.0 backlog; publish the draft or replace it with a real release.
+The hourly schedule is paused because no plan work remains. Enable it again to run backlog work.
 
 ## Owner decisions
 
@@ -27,7 +26,7 @@ Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next
 
 ## Automation and capacity
 
-Existing enabled schedule scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280 stays unbound. Continuous run starts2026-10-28T20:34:55.959528+00:00; no task/session cutoff.
+Paused schedule scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280 stays unbound and is resumed by the owner. Continuous run starts2026-10-28T20:34:55.959528+00:00; no task/session cutoff.
 Project default is Opus5.5 medium; Scheduler API has no per-task model selector; prompt/default can be aligned, separately pinned scheduler model cannot be claimed.
 Host disk/memory are constrained; no protected cache/worktree/export cleanup or VM policy changes. One role verifies at a time. Healthy redundant check-ins settle only themselves.
 

@@ -10,7 +10,7 @@ License: AGPL-3.0, inherited from listmonk. Do not add code under incompatible l
 
 ## Current state
 
-The M0.1–M0.6 skeleton, shared HTTP contracts, SQLite primitives, loop lifecycle helper, JSX renderer, page shells and embedded browser assets are in place. Version 1 installs the schema and version 2 adds outbox scheduling and resend lineage; M1.3 supplies users, real authentication and a functional password-login form; M1.4 adds role administration and TOTP login; M1.5 adds authenticated list CRUD with live counts; M1.6 adds numeric/external subscriber lifecycle and ID-selected bulk actions. M1.2 adds persisted validated settings, creation-time session expiry and live subscriber domain policy. M2.1 adds SMTP pools, message composition and outcomes, DKIM and real protected SMTP diagnostics. M2.2 adds an instance-owned journal, outbox and native send-log routes; transactional and sequence producers and the marketing policy remain later tasks. M1.8 template routes and Liquid rendering are under implementation on this branch; Local acceptance and measurements have been run; exact-head hosted checks and independent review remain pending. Collection/search/export, other domains and full admin screens remain later tasks. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
+The MVP work plan (M0 to M6) is complete and merged: subscribers, lists, campaigns, sending, sequences, transactional mail, webhooks, media, the admin UI, the public pages, the OpenAPI document and the tag-driven release workflow. Remaining work is in the backlog in `docs/status.md`. Read `docs/design/README.md` first. When code and design disagree, fix one of them in the same change.
 
 ## Stack
 
