@@ -518,6 +518,25 @@ Plan for a disk of at least twice the data directory, for the backup that is bui
 what is kept. With `app.cache_slow_queries` on, dashboard reads stop holding the WAL open
 ([D62](design/09-decisions.md#d62-read-only-helper-processes-for-slow-reads)).
 
+## Retention
+
+These run by themselves and have no settings
+([D70](design/09-decisions.md#d70-send-history-is-kept-and-its-bodies-are-dropped-retention-shares-one-paced-loop)):
+
+| What | When | What stays |
+|---|---|---|
+| Expired sessions | Within an hour of expiry | Sessions still valid |
+| Finished webhook deliveries | 30 days after their last change | Pending deliveries, always |
+| The message body of a finished send | 30 days after the send was created | The row, its links, and all analytics |
+| Events | 400 days after receipt | Newer events |
+
+- After 30 days a `failed` or `unknown` send can no longer be resent: `POST /api/sends/:id/resend` answers 409.
+- After an upgrade from a version without this, the first start works through what has built up
+  at about 120 rows a second per table, while sending goes on. A million rows take a few hours,
+  and nothing needs watching ([measurements](perf/B2-retention.md)).
+- Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
+- `sends` rows are kept for good. Their size is small, and old links and analytics read them.
+
 ## Defaults for open questions
 
 From [Open questions](design/10-open-questions.md), until the owner decides otherwise:
@@ -547,5 +566,4 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 Known limits rather than unknowns: a [hold](#restore)
 is in what `backup` and the migration runner write, so a disk image or a hand copy does not add
 one (it keeps the row of a database already held) and must not be started without the same
-review; admin pages set no Content-Security-Policy yet, so review that before exposing the admin UI publicly; and delivered
-webhook rows and expired sessions are not yet purged, so the database grows with them.
+review; and admin pages set no Content-Security-Policy yet, so review that before exposing the admin UI publicly.

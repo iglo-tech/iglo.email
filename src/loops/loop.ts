@@ -11,6 +11,8 @@ export interface LoopOptions<T> {
   readonly intervalMs: number;
   readonly leaseMs: number;
   readonly batchSize: number;
+  /** The wait after a nonempty batch, for loops that must leave the writer to others. */
+  readonly pauseMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
   claim(now: Date, leaseUntil: Date, batchSize: number): readonly T[];
   process(item: T): Promise<void> | void;
@@ -31,6 +33,9 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
     if (!Number.isSafeInteger(value) || value < 1 || value > max)
       throw new RangeError(`Invalid ${name}`);
   }
+  const pauseMs = options.pauseMs ?? 0;
+  if (!Number.isSafeInteger(pauseMs) || pauseMs < 0 || pauseMs > 2_147_483_647)
+    throw new RangeError("Invalid pauseMs");
   if (Object.prototype.toString.call(options.claim) === "[object AsyncFunction]") {
     throw new TypeError("Claim callback must be synchronous");
   }
@@ -73,9 +78,11 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
             wakeInterrupted = false;
             wakeable = items.length === 0;
             const abortIdle = () => idle?.abort();
-            controller.signal.addEventListener("abort", abortIdle, { once: true });
+            controller.signal.addEventListener("abort", abortIdle, {
+              once: true,
+            });
             try {
-              await options.clock.sleep(items.length ? 0 : options.intervalMs, idle.signal);
+              await options.clock.sleep(items.length ? pauseMs : options.intervalMs, idle.signal);
             } finally {
               controller.signal.removeEventListener("abort", abortIdle);
               idle = undefined;

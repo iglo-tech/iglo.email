@@ -92,7 +92,7 @@ Async transactional sends and all sequence sends go through the `sends` table:
 1. Insert with `status = 'queued'`.
 2. The outbox loop claims rows, sets `status = 'sending'`, then sends with no transaction open. Since M6.1b it claims up to ten due rows per commit, in id order, and runs each row's admission (payload, eligibility, marketing cap, dropped copies) in that same commit, so every claim and every skip is durable before any SMTP call. The batch's messages are pushed in parallel on the pool and all their outcomes are journaled in one commit once every push has settled. A crash or kill anywhere in between leaves the whole batch `sending`, which recovery turns into `unknown` (step 4). A synchronous tx dispatch claims and admits its rows the same way.
 3. On success: `sent`, with `sent_at`. On proven permanent non-acceptance: `failed`. Only transactional messages with proven non-acceptance may return to `queued` with backoff, up to 5 attempts. Marketing messages are never retried automatically; ambiguous acceptance becomes `unknown` ([D24](09-decisions.md#d24-disable-library-requeues-and-classify-smtp-outcomes-before-retry)).
-4. A row found in `sending` after a restart becomes `unknown` and is **not retried**. For marketing, a duplicate is worse than a missed email. An admin can resend it from the send log.
+4. A row found in `sending` after a restart becomes `unknown` and is **not retried**. For marketing, a duplicate is worse than a missed email. An admin can resend it from the send log for 30 days, while the row keeps its message ([D70](09-decisions.md#d70-send-history-is-kept-and-its-bodies-are-dropped-retention-shares-one-paced-loop)).
 
 ### M2.2 durable boundary and staged callers
 

@@ -786,16 +786,18 @@ export function createSends(options: {
         .get(uuid);
     },
     /**
-     * Whether the prepared HTML or plain body of a send contains `text`. Tracked-link
-     * redirects use it so only links rendered into that message can redirect.
+     * Whether the prepared HTML or plain body of a send contains `text`, or, once retention
+     * has dropped the body, its kept link paths do. Tracked-link redirects use it so only
+     * links rendered into that message can redirect.
      */
     bodyIncludes(id: bigint, text: string): boolean {
       const row = db
-        .query<{ body: string | null; alt: string | null }, [bigint]>(
-          "SELECT json_extract(payload, '$.message.body') AS body, json_extract(payload, '$.message.altBody') AS alt FROM sends WHERE id = ? AND json_valid(payload)",
+        .query<{ body: string | null; alt: string | null; links: string | null }, [bigint]>(
+          "SELECT json_extract(payload, '$.message.body') AS body, json_extract(payload, '$.message.altBody') AS alt, tracked_links AS links FROM sends WHERE id = ?",
         )
         .get(id);
       if (!row) return false;
+      if (row.links?.includes(text)) return true;
       return [row.body, row.alt].some(
         (value) => typeof value === "string" && Buffer.from(value, "base64").includes(text),
       );

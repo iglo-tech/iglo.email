@@ -313,6 +313,10 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     deleteSession(id: string): void {
       queries.get("delete-session").run(id);
     },
+    /** Delete up to `limit` sessions expired at `now`. */
+    purgeSessions(now: Date, limit: number) {
+      return queries.get("purge-expired-sessions").all(now.getTime(), limit);
+    },
     close: () => queries.close(),
   };
 }

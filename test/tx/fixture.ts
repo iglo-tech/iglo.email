@@ -357,7 +357,18 @@ export async function txFixture(
     sends,
     emailer,
     marketing,
-    owners: { router, lists, subscribers, tracking, renderer, templates, roles, media, files },
+    owners: {
+      router,
+      lists,
+      subscribers,
+      tracking,
+      renderer,
+      templates,
+      roles,
+      users,
+      media,
+      files,
+    },
     get outbox() {
       return outbox;
     },

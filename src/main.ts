@@ -41,6 +41,7 @@ import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
+import { createSendCompaction } from "@/messaging/retention";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
 import { createTemplateStore } from "@/templates/store";
@@ -57,6 +58,7 @@ import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
 import { startEventRetention } from "@/events/retention";
+import { startPurge } from "@/loops/purge";
 import { createConditionEvaluator } from "@/conditions/evaluate";
 import { startScheduler } from "@/scheduler/scheduler";
 import { createCampaignStore } from "@/campaigns/store";
@@ -148,6 +150,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   let subscriberTracking: ReturnType<typeof createSubscriberTracking> | undefined;
   let events: ReturnType<typeof createEventStore> | undefined;
   let retention: ReturnType<typeof startEventRetention> | undefined;
+  let purge: ReturnType<typeof startPurge> | undefined;
   let enrollments: ReturnType<typeof createEnrollments> | undefined;
   let sequences: ReturnType<typeof createSequenceStore> | undefined;
   let conditions: ReturnType<typeof createConditionEvaluator> | undefined;
@@ -585,6 +588,12 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       auth,
     });
     retention = startEventRetention({ db, clock, logger: app.logger, events });
+    purge = startPurge({
+      db,
+      clock,
+      logger: app.logger,
+      purges: [users.purgeSessions, webhooks.purge, createSendCompaction(db)],
+    });
     conditions = createConditionEvaluator({ readonly, runner: queryRunner });
     scheduler = startScheduler({
       db,
@@ -697,6 +706,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         const schedulerStop = scheduler!.stop();
         const outboxStop = outbox!.stop();
         const retentionStop = retention!.stop();
+        const purgeStop = purge!.stop();
         const signupStop = signups!.stop();
         const deliveryStop = deliveries!.stop();
         const summaryStop = summaryRefresh!.stop();
@@ -710,6 +720,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           schedulerStop,
           outboxStop,
           retentionStop,
+          purgeStop,
           signupStop,
           deliveryStop,
           summaryStop,
@@ -736,6 +747,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       void signups!.done.catch(() => shutdown(new Error("Opt-in mail failed")));
       void deliveries!.done.catch(() => shutdown(new Error("Webhook delivery failed")));
       void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
+      void purge!.done.catch(() => shutdown(new Error("Retention failed")));
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
       void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
       void summaryRefresh!.done.catch(() => shutdown(new Error("Summary refresh failed")));
@@ -748,6 +760,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
     const purging = retention?.stop();
+    const retaining = purge?.stop();
     const signing = signups?.stop();
     const delivering = deliveries?.stop();
     const summarizing = summaryRefresh?.stop();
@@ -761,6 +774,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     conditions?.close();
     await stopped?.catch(() => {});
     await purging?.catch(() => {});
+    await retaining?.catch(() => {});
     await signing?.catch(() => {});
     await delivering?.catch(() => {});
     await summarizing?.catch(() => {});

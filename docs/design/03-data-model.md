@@ -138,7 +138,8 @@ One row per individual message that is not part of a campaign: transactional API
 | `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed` |
 | `smtp_message_id` | TEXT NULL | Stable `Message-ID` assigned before enqueue commit |
 | `error` | TEXT NULL | |
-| `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes |
+| `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes. NULL once retention or a deletion has dropped it |
+| `tracked_links` | TEXT NULL | The tracked link paths of a compacted message, one per line (migration 14, D70) |
 | `attempts` | INTEGER NOT NULL DEFAULT 0 | |
 | `claimed_until` | TEXT NULL | Outbox lease; expiry does not authorize replay |
 | `next_attempt_at` | TEXT NULL | Proven transient transactional retry deadline |
@@ -146,15 +147,17 @@ One row per individual message that is not part of a campaign: transactional API
 | `attempted_at` | TEXT NULL | Latest outbox claim, committed with `sending` before SMTP and kept through `unknown` recovery (migration 3, M2.4) |
 | `created_at`, `sent_at` | TEXT | |
 
-Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the frequency cap (M2.4). `idx_sends_unlinked_to` (`to_email COLLATE NOCASE`, partial on `subscriber_id IS NULL`, migration 9) finds a deleted subscriber's unlinked rows.
+Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the frequency cap (M2.4). `idx_sends_unlinked_to` (`to_email COLLATE NOCASE`, partial on `subscriber_id IS NULL`, migration 9) finds a deleted subscriber's unlinked rows. `idx_sends_compactable` (`created_at`, partial on finished rows that still hold a `payload`, migration 14) finds what retention takes next.
 
-Deleting a subscriber anonymizes their sends in the same transaction (D25), whichever route deletes them: `to_email` becomes `''` and `payload` NULL on every row linked to the subscriber and on unlinked rows to the same address. Counts, statuses, timings and the send UUID stay. A `queued` row becomes `skipped` with `subscriber_unavailable`. A `sending` row settles by its SMTP outcome, and a retry of it fails with `payload_unavailable` without SMTP. `failed` and `unknown` rows can no longer be resent. A tracked link in a wiped message stops redirecting, because the redirect is checked against the prepared body. `idempotency_key` stays so a replayed producer request can't send again; it holds only digests.
+Rows are kept. Thirty days after creation a finished row (`sent`, `failed`, `skipped`, `unknown`) loses its `payload`, and `tracked_links` keeps what the link redirect checks, so an old email's links, unsubscribe, pixel and bounce match, the frequency cap, at-most-once and analytics all work as before. Afterwards a `failed` or `unknown` row can no longer be resent ([D70](09-decisions.md#d70-send-history-is-kept-and-its-bodies-are-dropped-retention-shares-one-paced-loop)).
+
+Deleting a subscriber anonymizes their sends in the same transaction (D25), whichever route deletes them: `to_email` becomes `''` and `payload` NULL on every row linked to the subscriber and on unlinked rows to the same address, and `tracked_links` is cleared with them. Counts, statuses, timings and the send UUID stay. A `queued` row becomes `skipped` with `subscriber_unavailable`. A `sending` row settles by its SMTP outcome, and a retry of it fails with `payload_unavailable` without SMTP. `failed` and `unknown` rows can no longer be resent. A tracked link in a wiped message stops redirecting, because the redirect is checked against the prepared body. `idempotency_key` stays so a replayed producer request can't send again; it holds only digests.
 
 ### `webhooks`, `webhook_deliveries`
 
 `webhooks`: `id`, `url`, `secret`, `events` (JSON array), `enabled`, timestamps.
 
-`webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload` (the exact body, fixed at queueing and changed only by a deletion clearing it), `subscriber_id` (no foreign key, so the row outlives the subscriber; it finds the rows to clear on deletion), `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error` (a safe code, never a response body), `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`. At most 20 webhooks can be configured. Rows are not purged yet.
+`webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload` (the exact body, fixed at queueing and changed only by a deletion clearing it), `subscriber_id` (no foreign key, so the row outlives the subscriber; it finds the rows to clear on deletion), `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error` (a safe code, never a response body), `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`. At most 20 webhooks can be configured. `delivered` and `failed` rows are deleted 30 days after their last change, found through the partial `idx_webhook_deliveries_finished` (migration 14, D70). `queued` rows are never deleted.
 
 ## Migrations
 
