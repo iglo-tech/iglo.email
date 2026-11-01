@@ -574,7 +574,7 @@ function SmtpTest({ t }: { t: Translation }) {
             type="email"
             required
             placeholder="email@site.com"
-            x-bind:class="`test-email-${n}`"
+            x-bind:class="'test-email-' + n"
             x-model="testEmail"
           />
           <button
@@ -614,7 +614,7 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
               <div class="row">
                 <div class="col-5">
                   <div class="hstack">
-                    <span class="text-light" x-text="`#${n + 1}`"></span>
+                    <span class="text-light" x-text="'#' + (n + 1)"></span>
                     <span
                       class="text-light"
                       x-show="item.name || item.host"
@@ -701,7 +701,7 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
                     label={t.T("globals.fields.username")}
                     maxlength="200"
                     placeholder="mysmtp"
-                    class="`smtp-username-${n}`"
+                    class="'smtp-username-' + n"
                     disabled={none}
                   />
                   <TextField
@@ -710,7 +710,7 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
                     label={t.T("globals.fields.password")}
                     hint={t.T("globals.messages.passwordChange")}
                     maxlength="200"
-                    class="`smtp-password-${n}`"
+                    class="'smtp-password-' + n"
                     disabled={none}
                   />
                 </fieldset>
@@ -816,7 +816,7 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
                       role="switch"
                       x-model="item.exclude_from_default"
                       x-bind:disabled="!item.name"
-                      x-effect="if (!item.name) item.exclude_from_default = false"
+                      x-effect="clearDefaultExclusion(item)"
                     />{" "}
                     {t.T("settings.smtp.excludeFromDefault")}
                     <Hint>{t.T("settings.smtp.excludeFromDefaultHelp")}</Hint>
@@ -865,7 +865,7 @@ function Bounces({ t }: { t: Translation }) {
       <template x-if="form['bounce.enabled']">
         <div class="settings-items">
           {(["soft", "hard", "complaint"] as const).map((type) => (
-            <template x-if={`form['bounce.actions']?.${type}`}>
+            <template x-if={`form['bounce.actions'] && form['bounce.actions'].${type}`}>
               <fieldset
                 class="card"
                 data-keywords={`bounce ${type} action count threshold unsubscribe blocklist delete`}
@@ -982,7 +982,7 @@ function Appearance({ t }: { t: Translation }) {
       <legend>{legend}</legend>
       <code-editor
         lang={lang}
-        x-init={`$el.value = form['appearance.${key}']`}
+        x-init={`setValue($el, form['appearance.${key}'])`}
         x-on:input={`form['appearance.${key}'] = $event.target.value`}
       ></code-editor>
     </fieldset>

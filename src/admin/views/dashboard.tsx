@@ -243,7 +243,7 @@ export const dashboardView: AdminView = ({ context, site, can }) => {
                 <div class="table-wrapper" x-bind:aria-busy="campaigns === null && !campaignsError">
                   <table>
                     <tbody>
-                      <template x-for="c in campaigns ?? []" x-bind:key="c.id">
+                      <template x-for="c in campaigns || []" x-bind:key="c.id">
                         <tr data-testid="campaign-row">
                           <td width="55%">
                             <div
@@ -252,7 +252,7 @@ export const dashboardView: AdminView = ({ context, site, can }) => {
                             >
                               <a
                                 class="unstyled avatar-icon avatar-campaign"
-                                x-bind:href="`/admin/campaigns/${c.id}`"
+                                x-bind:href="'/admin/campaigns/' + c.id"
                                 x-bind:title="viewTitle(c)"
                                 x-bind:aria-label="viewTitle(c)"
                               >
@@ -265,7 +265,7 @@ export const dashboardView: AdminView = ({ context, site, can }) => {
                               <div class="avatar-label">
                                 <a
                                   class="unstyled"
-                                  x-bind:href="`/admin/campaigns/${c.id}`"
+                                  x-bind:href="'/admin/campaigns/' + c.id"
                                   x-text="c.name"
                                 ></a>
                               </div>
@@ -273,10 +273,10 @@ export const dashboardView: AdminView = ({ context, site, can }) => {
                           </td>
                           <td width="20%">
                             <a
-                              x-bind:href="`/admin/campaigns?status=${c.status}`"
+                              x-bind:href="'/admin/campaigns?status=' + c.status"
                               x-bind:title="filterTitle(c)"
                             >
-                              <span class="badge enum" x-bind:class="`status-${c.status}`">
+                              <span class="badge enum" x-bind:class="'status-' + c.status">
                                 <span class="dot">●</span> <span x-text="statusLabel(c)"></span>
                               </span>
                             </a>
@@ -291,7 +291,7 @@ export const dashboardView: AdminView = ({ context, site, can }) => {
                           </td>
                         </tr>
                       </template>
-                      <tr x-show="campaigns?.length === 0" style="display: none">
+                      <tr x-show="campaigns && campaigns.length === 0" style="display: none">
                         <td colspan="4">
                           <EmptyState text={t.T("globals.messages.emptyState")} />
                         </td>

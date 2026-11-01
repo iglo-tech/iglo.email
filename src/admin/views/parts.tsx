@@ -209,7 +209,6 @@ export function PreviewDialog({ t }: { t: Translation }) {
             sandbox=""
             x-ref="previewFrame"
             title={t.T("globals.buttons.preview")}
-            x-on:load="preview.loading = false"
           ></iframe>
         </section>
         <footer class="dialog-foot align-right">

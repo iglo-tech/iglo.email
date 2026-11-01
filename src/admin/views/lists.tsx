@@ -49,16 +49,16 @@ function Menu(props: { t: Translation; campaigns: boolean; canImport: boolean })
     <ot-dropdown>
       <button
         popovertarget=""
-        x-bind:popovertarget="`list-actions-${l.id}`"
+        x-bind:popovertarget="'list-actions-' + l.id"
         type="button"
         class="ghost more icon"
         aria-label={t.T("globals.buttons.more")}
       >
         <Icon name="more-vertical" />
       </button>
-      <menu popover="" x-bind:id="`list-actions-${l.id}`">
+      <menu popover="" x-bind:id="'list-actions-' + l.id">
         <a
-          x-bind:href="`/admin/lists/${l.id}`"
+          x-bind:href="'/admin/lists/' + l.id"
           role="menuitem"
           class="button ghost"
           data-testid="btn-view"
@@ -76,7 +76,7 @@ function Menu(props: { t: Translation; campaigns: boolean; canImport: boolean })
         {campaigns || canImport ? <hr /> : null}
         <template x-if="canManage(l.id)">
           <a
-            x-bind:href="`/admin/lists/${l.id}/edit`"
+            x-bind:href="'/admin/lists/' + l.id + '/edit'"
             role="menuitem"
             class="button ghost"
             data-testid="btn-edit"
@@ -86,7 +86,7 @@ function Menu(props: { t: Translation; campaigns: boolean; canImport: boolean })
         </template>
         {canImport ? (
           <a
-            x-bind:href="`/admin/subscribers/import?list_id=${l.id}`"
+            x-bind:href="'/admin/subscribers/import?list_id=' + l.id"
             role="menuitem"
             class="button ghost"
             data-testid="btn-import"
@@ -111,7 +111,7 @@ function Menu(props: { t: Translation; campaigns: boolean; canImport: boolean })
           <>
             <hr />
             <a
-              x-bind:href="`/admin/campaigns/new?list_id=${l.id}`"
+              x-bind:href="'/admin/campaigns/new?list_id=' + l.id"
               role="menuitem"
               class="button ghost"
               data-testid="btn-campaign"
@@ -143,7 +143,7 @@ function Counts({ t, subscribers }: { t: Translation; subscribers: boolean }) {
       {subscribers ? (
         <a
           class="subscriber-total"
-          x-bind:href="`/admin/subscribers/lists/${l.id}`"
+          x-bind:href="'/admin/subscribers/lists/' + l.id"
           title={`${t.T("globals.buttons.view")} ${total}`}
           x-text="formatNumber(l.subscriber_count)"
         ></a>
@@ -154,11 +154,11 @@ function Counts({ t, subscribers }: { t: Translation; subscribers: boolean }) {
         <div class="subscriber-meters" role="group" x-bind:aria-label="metersLabel(l)">
           <template x-for="m in stats(l)" x-bind:key="m.status">
             <meter
-              x-bind:class="`status-${m.status}`"
+              x-bind:class="'status-' + m.status"
               min="0"
               x-bind:max="m.total"
               x-bind:value="m.count"
-              x-bind:style="`width: ${m.percent}%`"
+              x-bind:style="'width: ' + m.percent + '%'"
               x-bind:aria-label="m.label"
               x-bind:aria-valuetext="m.title"
               x-bind:title="m.title"
@@ -170,11 +170,11 @@ function Counts({ t, subscribers }: { t: Translation; subscribers: boolean }) {
           <template x-for="m in stats(l)" x-bind:key="m.status">
             <a
               class="unstyled text-grey"
-              x-bind:href="`/admin/subscribers/lists/${l.id}?subscription_status=${m.status}`"
+              x-bind:href="'/admin/subscribers/lists/' + l.id + '?subscription_status=' + m.status"
               x-bind:title="m.title"
               x-bind:aria-label="m.title"
             >
-              <span class="status-icon" x-bind:class="`status-${m.status}`" aria-hidden="true">
+              <span class="status-icon" x-bind:class="'status-' + m.status" aria-hidden="true">
                 <template x-if="m.status === 'unconfirmed'">
                   <span>?</span>
                 </template>
@@ -184,7 +184,7 @@ function Counts({ t, subscribers }: { t: Translation; subscribers: boolean }) {
                   </svg>
                 </template>
               </span>{" "}
-              <span x-text="`${Math.round(m.percent)}%`"></span>
+              <span x-text="'' + round(m.percent) + '%'"></span>
             </a>
           </template>
         </div>
@@ -209,11 +209,11 @@ function Row(props: {
           <AvatarLink
             kind="list"
             name="l.name"
-            href="`/admin/lists/${l.id}`"
+            href="'/admin/lists/' + l.id"
             title="viewTitle(l.name)"
           />
           <div class="avatar-label">
-            <a x-bind:href="`/admin/lists/${l.id}`" class="unstyled" x-text="l.name"></a>
+            <a x-bind:href="'/admin/lists/' + l.id" class="unstyled" x-text="l.name"></a>
             <template x-if="l.description">
               <div
                 class="description text-light text-8"
@@ -226,7 +226,7 @@ function Row(props: {
                 <a
                   x-bind:href="tagLink(tag)"
                   x-bind:title="filterTitle(tag)"
-                  x-text="`#${tag}`"
+                  x-text="'#' + tag"
                 ></a>
               </template>
             </div>
@@ -236,10 +236,10 @@ function Row(props: {
       <td>
         <div class="hstack">
           <a
-            x-bind:href="`/admin/lists?type=${l.type}`"
+            x-bind:href="'/admin/lists?type=' + l.type"
             x-bind:title="filterTitle(typeLabel(l.type))"
           >
-            <span class="badge enum" x-bind:class="`type-${l.type}`">
+            <span class="badge enum" x-bind:class="'type-' + l.type">
               <svg class="icon">
                 <use x-bind:href="typeIcon(l.type)"></use>
               </svg>{" "}
@@ -247,7 +247,7 @@ function Row(props: {
             </span>
           </a>
           <a
-            x-bind:href="`/admin/lists?optin=${l.optin}`"
+            x-bind:href="'/admin/lists?optin=' + l.optin"
             x-bind:title="filterTitle(optinLabel(l.optin))"
           >
             <span class="badge enum">
@@ -300,7 +300,7 @@ export const listsView: AdminView = ({ context, site, can, listScope }) => {
         <header class="hstack justify-between page-header">
           <div class="hstack page-heading">
             <h1 class="page-title">
-              {term("lists")} <span x-text="`(${page.total ?? '-'})`"></span>
+              {term("lists")} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
             </h1>
             {status === "archived" ? (
               <FilterBadge t={t} label={term("archived")} url={filterURL(base, params, "status")} />
@@ -385,8 +385,8 @@ export const listsView: AdminView = ({ context, site, can, listScope }) => {
         <div class="card page-content has-table">
           <div
             class="table-wrapper"
-            x-data="table({ query: urlParams.get('query') ?? '', filters: urlFilters() })"
-            x-effect="total = page.total ?? 0"
+            x-data="table({ query: urlParams.get('query') || '', filters: urlFilters() })"
+            x-effect="total = page.total || 0"
             x-bind:aria-busy="loading"
             x-on:change="onChange($event)"
           >

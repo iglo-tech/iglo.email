@@ -21,6 +21,7 @@ const statuses = ["draft", "scheduled", "running", "paused", "finished", "cancel
 export const campaignKeys = [
   "campaigns.confirmSchedule",
   "editor.anchorName",
+  "editor.showRemoteImagesConfirm",
   "editor.blockquote",
   "editor.confirmSwitchFormat",
   "editor.contentType.html",
@@ -119,14 +120,14 @@ function Menu(props: {
     <ot-dropdown>
       <button
         popovertarget=""
-        x-bind:popovertarget="`camp-actions-${c.id}`"
+        x-bind:popovertarget="'camp-actions-' + c.id"
         type="button"
         class="ghost more icon"
         aria-label={t.T("globals.buttons.more")}
       >
         <Icon name="more-vertical" />
       </button>
-      <menu popover="" x-bind:id="`camp-actions-${c.id}`">
+      <menu popover="" x-bind:id="'camp-actions-' + c.id">
         <button
           type="button"
           role="menuitem"
@@ -137,7 +138,7 @@ function Menu(props: {
         </button>
         {canSend ? <StatusControls t={t} /> : null}
         <hr />
-        <a x-bind:href="`/admin/campaigns/${c.id}`" role="menuitem" class="button ghost">
+        <a x-bind:href="'/admin/campaigns/' + c.id" role="menuitem" class="button ghost">
           <Icon name="edit-2" /> {t.T("globals.buttons.edit")}
         </a>
         {canManage ? (
@@ -181,12 +182,12 @@ function NameCell({ t }: { t: Translation }) {
         <AvatarLink
           kind="campaign"
           name="c.name"
-          href="`/admin/campaigns/${c.id}`"
+          href="'/admin/campaigns/' + c.id"
           title="viewTitle(c.name)"
         />
         <div class="avatar-label vstack gap-1">
           <div>
-            <a x-bind:href="`/admin/campaigns/${c.id}`" class="unstyled" x-text="c.name"></a>{" "}
+            <a x-bind:href="'/admin/campaigns/' + c.id" class="unstyled" x-text="c.name"></a>{" "}
             <template x-if="c.type === 'optin'">
               <a
                 x-bind:href="filterLink('type', 'optin')"
@@ -198,7 +199,7 @@ function NameCell({ t }: { t: Translation }) {
               </a>
             </template>
             <div class="subject text-8 text-light">
-              <a x-bind:href="`/admin/campaigns/${c.id}`" class="unstyled" x-text="c.subject"></a>
+              <a x-bind:href="'/admin/campaigns/' + c.id" class="unstyled" x-text="c.subject"></a>
             </div>
           </div>
           <template x-if="c.tags.length">
@@ -208,7 +209,7 @@ function NameCell({ t }: { t: Translation }) {
                   x-bind:href="filterLink('tag', tag)"
                   x-bind:title="filterTitle(tag)"
                   class="tag"
-                  x-text="`#${tag}`"
+                  x-text="'#' + tag"
                 ></a>
               </template>
             </div>
@@ -220,12 +221,12 @@ function NameCell({ t }: { t: Translation }) {
                   <AvatarLink
                     kind="list"
                     name="l.name"
-                    href="`/admin/lists/${l.id}`"
+                    href="'/admin/lists/' + l.id"
                     title="viewTitle(l.name)"
                   />
                   <a
                     class="unstyled text-light avatar-label"
-                    x-bind:href="`/admin/subscribers/lists/${l.id}`"
+                    x-bind:href="'/admin/subscribers/lists/' + l.id"
                     x-bind:title="filterTitle(l.name)"
                     x-text="l.name"
                   ></a>
@@ -237,16 +238,16 @@ function NameCell({ t }: { t: Translation }) {
                     type="button"
                     class="ghost small text-8"
                     popovertarget=""
-                    x-bind:popovertarget="`camp-lists-${c.id}`"
+                    x-bind:popovertarget="'camp-lists-' + c.id"
                     aria-label={t.T("globals.terms.lists")}
-                    x-text={`\`+\${c.lists.length - 3} ${t.T("globals.terms.lists").toLowerCase()}\``}
+                    x-text={`'+' + (c.lists.length - 3) + ' ${t.T("globals.terms.lists").toLowerCase()}'`}
                   ></button>
-                  <menu popover="" x-bind:id="`camp-lists-${c.id}`">
+                  <menu popover="" x-bind:id="'camp-lists-' + c.id">
                     <template x-for="l in c.lists.slice(3)" x-bind:key="l.id">
                       <a
                         role="menuitem"
                         class="button ghost"
-                        x-bind:href="`/admin/subscribers/lists/${l.id}`"
+                        x-bind:href="'/admin/subscribers/lists/' + l.id"
                         x-bind:title="filterTitle(l.name)"
                       >
                         <span class="avatar-label text-light" x-text="l.name"></span>
@@ -277,13 +278,13 @@ function StatsCells({ t }: { t: Translation }) {
               </span>
             </div>
             <span class="text-8 text-light">
-              <span data-stat="percent" x-text="`${percent(c)}%`"></span>{" "}
+              <span data-stat="percent" x-text="'' + percent(c) + '%'"></span>{" "}
               {lower("globals.terms.sent")}
-              <span x-text="runTime(c) ? ` · ${runTime(c)}` : ''"></span>
+              <span x-text="runTime(c) ? (' · ' + runTime(c)) : ''"></span>
             </span>
           </div>
           <div>
-            <a class="unstyled" x-bind:href="`/admin/subscribers/bounces?campaign_id=${c.id}`">
+            <a class="unstyled" x-bind:href="'/admin/subscribers/bounces?campaign_id=' + c.id">
               <span x-text="formatNumber(c.bounces)"></span>{" "}
               <span class="text-8 text-light">{lower("globals.terms.bounces")}</span>
             </a>
@@ -293,11 +294,11 @@ function StatsCells({ t }: { t: Translation }) {
               <progress
                 data-stat="progress"
                 x-bind:value="c.sent"
-                x-bind:max="Math.max(c.to_send, 1)"
+                x-bind:max="c.to_send > 1 ? c.to_send : 1"
                 aria-label={t.T("globals.terms.progress")}
               ></progress>
               <span>
-                <span data-stat="rate" x-text="c.rate ?? 0"></span>{" "}
+                <span data-stat="rate" x-text="c.rate || 0"></span>{" "}
                 <span class="text-light">/ {t.T("globals.terms.minuteShort")}</span>
               </span>
             </div>
@@ -328,7 +329,7 @@ function Row(props: {
 }) {
   const { t, dateLabel } = props;
   return (
-    <tr x-bind:data-campaign-id="c.id" x-bind:class="`status-${c.status}`">
+    <tr x-bind:data-campaign-id="c.id" x-bind:class="'status-' + c.status">
       <td>
         <input name="id" type="checkbox" x-bind:value="c.id" />
       </td>
@@ -339,7 +340,7 @@ function Row(props: {
             x-bind:href="filterLink('status', c.status)"
             x-bind:title="filterTitle(statusLabel(c.status))"
           >
-            <span class="badge enum" x-bind:class="`status-${c.status}`">
+            <span class="badge enum" x-bind:class="'status-' + c.status">
               <span class="dot">●</span> <span x-text="statusLabel(c.status)"></span>
             </span>
             <template x-if="c.status === 'running'">
@@ -492,7 +493,7 @@ export const campaignsView: AdminView = (request) => {
         <header class="row page-header">
           <div class="col-4">
             <h1 class="page-title">
-              {t.T("globals.terms.campaigns")} <span x-text="`(${page.total ?? '-'})`"></span>{" "}
+              {t.T("globals.terms.campaigns")} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>{" "}
               <Filters t={t} params={params} base={base} />
             </h1>
           </div>
@@ -524,8 +525,8 @@ export const campaignsView: AdminView = (request) => {
         <div class="card page-content has-table">
           <div
             class="table-wrapper"
-            x-data="table({ query: urlParams.get('query') ?? '', filters: urlFilters() })"
-            x-effect="total = page.total ?? 0"
+            x-data="table({ query: urlParams.get('query') || '', filters: urlFilters() })"
+            x-effect="total = page.total || 0"
             x-bind:aria-busy="loading"
             x-on:change="onChange($event)"
           >

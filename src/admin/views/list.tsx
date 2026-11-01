@@ -113,22 +113,22 @@ function Overview({ t, subscribers }: { t: Translation; subscribers: boolean }) 
       <strong>{label}</strong> <span x-text={`form.${field}`}></span>
     </button>
   );
-  const link = "`/admin/subscribers/lists/${form.id}`";
+  const link = "'/admin/subscribers/lists/' + form.id";
   return (
     <div class="vstack gap-6">
       <div class="card">
         <div class="row">
           <div class="col-3">
             <div class="hstack gap-2">
-              <a x-bind:href="`/admin/lists?type=${form.type}`">
-                <span class="badge enum" x-bind:class="`type-${form.type}`">
+              <a x-bind:href="'/admin/lists?type=' + form.type">
+                <span class="badge enum" x-bind:class="'type-' + form.type">
                   <svg class="icon">
                     <use x-bind:href="typeIcon(form.type)"></use>
                   </svg>{" "}
                   <span x-text="typeLabel(form.type)"></span>
                 </span>
               </a>
-              <a x-bind:href="`/admin/lists?optin=${form.optin}`">
+              <a x-bind:href="'/admin/lists?optin=' + form.optin">
                 <span class="badge enum">
                   <svg class="icon">
                     <use x-bind:href="optinIcon(form.optin)"></use>
@@ -148,10 +148,10 @@ function Overview({ t, subscribers }: { t: Translation; subscribers: boolean }) 
               <template x-for="tag in form.tags" x-bind:key="tag">
                 <span>
                   <a
-                    x-bind:href="`/admin/lists?tag=${encodeURIComponent(tag)}`"
+                    x-bind:href="'/admin/lists?tag=' + encodeURIComponent(tag)"
                     class="tag"
                     x-bind:title="filterTitle(tag)"
-                    x-text="`#${tag}`"
+                    x-text="'#' + tag"
                   ></a>{" "}
                 </span>
               </template>
@@ -184,7 +184,7 @@ function Overview({ t, subscribers }: { t: Translation; subscribers: boolean }) 
         {["confirmed", "unconfirmed", "unsubscribed"].map((status) => (
           <Stat
             title={t.T(`globals.terms.${status}`)}
-            value={`formatNumber(form.subscriber_statuses?.${status} ?? 0)`}
+            value={`formatNumber(form.subscriber_statuses ? form.subscriber_statuses.${status} : 0)`}
             href={subscribers ? `${link} + '?subscription_status=${status}'` : "''"}
           />
         ))}
@@ -253,7 +253,7 @@ export function listView(tab: "list" | "edit"): AdminView {
                   <AvatarLink
                     kind="list"
                     name="form.name"
-                    href="`/admin/lists/${form.id}`"
+                    href="'/admin/lists/' + form.id"
                     title="viewTitle(form.name)"
                   />
                   <h1 class="page-title avatar-label" x-text="form.name"></h1>

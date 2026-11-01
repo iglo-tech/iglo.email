@@ -271,7 +271,7 @@ function CampaignContent({ t }: { t: Translation }) {
     <template x-if={`ready && contentReady && ${when}`} data-editor="">
       <code-editor
         lang={language}
-        x-init="$el.value = form.body"
+        x-init="setValue($el, form.body)"
         x-on:input="form.body = $event.target.value"
       ></code-editor>
     </template>
@@ -282,6 +282,7 @@ function CampaignContent({ t }: { t: Translation }) {
     "x-on:campaign-preview.window": "onPreviewContent",
     "x-on:richtext-media": "onEditorMedia($event)",
     "x-on:richtext-removed": "editorRemoved = $event.detail.removed",
+    "x-on:richtext-held": "editorHeld = true",
   };
   return (
     <div class="page-content content editor">
@@ -293,10 +294,23 @@ function CampaignContent({ t }: { t: Translation }) {
         x-show="canEdit && form.content_type === 'richtext' && editorRemoved.length > 0"
         x-text="editorNotice"
       ></div>
+      <div
+        role="status"
+        data-variant="warning"
+        class="hstack justify-between"
+        data-testid="editor-held"
+        style="display: none"
+        x-show="form.content_type === 'richtext' && editorHeld"
+      >
+        <span>{t.T("editor.remoteImages")}</span>
+        <button type="button" class="outline small" x-on:click="onShowRemoteImages">
+          {t.T("editor.showRemoteImages")}
+        </button>
+      </div>
       <fieldset class="card editor-box">
         <div class="editor-body" x-bind:class="{ 'is-loading': showEditorSpinner }" {...editor}>
           <template x-if="ready && contentReady && form.content_type === 'richtext'" data-editor="">
-            <RichtextEditor t={t} init="$el.value = form.body" />
+            <RichtextEditor t={t} init="setValue($el, form.body)" />
           </template>
           {code("html", "['html', 'visual'].includes(form.content_type)")}
           {code("markdown", "form.content_type === 'markdown'")}
@@ -380,11 +394,11 @@ function Attachment({ t }: { t: Translation }) {
           class="ghost more icon"
           aria-label={t.T("globals.buttons.more")}
           popovertarget=""
-          x-bind:popovertarget="`attach-${idx}`"
+          x-bind:popovertarget="'attach-' + idx"
         >
           <Icon name="more-vertical" />
         </button>
-        <menu popover="" x-bind:id="`attach-${idx}`">
+        <menu popover="" x-bind:id="'attach-' + idx">
           <button
             type="button"
             role="menuitem"
@@ -589,7 +603,7 @@ function Tabs(props: FormProps & { canManage: boolean }) {
           "attachments",
           "paperclip",
           t.T("globals.terms.attachments"),
-          <span x-cloak="" x-show="form.media.length" x-text="`(${form.media.length})`"></span>,
+          <span x-cloak="" x-show="form.media.length" x-text="'(' + form.media.length + ')'"></span>,
         )}
         {tab("archive", "archive", t.T("globals.terms.archive"), done("form.archive"))}
       </div>
@@ -716,7 +730,7 @@ function Header(props: { t: Translation; isNew: boolean; canManage: boolean }) {
                 <AvatarLink
                   kind="campaign"
                   name="saved.name"
-                  href="`/admin/campaigns/${form.id}`"
+                  href="'/admin/campaigns/' + form.id"
                   title="viewTitle(saved.name)"
                 />
                 <h1 class="page-title avatar-label" x-text="saved.name"></h1>
@@ -725,7 +739,7 @@ function Header(props: { t: Translation; isNew: boolean; canManage: boolean }) {
           </div>
           {isNew ? null : (
             <>
-              <span class="badge enum" x-bind:class="`status-${form.status}`" x-show="ready">
+              <span class="badge enum" x-bind:class="'status-' + form.status" x-show="ready">
                 <span class="dot">●</span> <span x-text="statusLabel(form.status)"></span>
               </span>
               <template x-if="form.type === 'optin'">
@@ -772,13 +786,17 @@ function view(isNew: boolean): AdminView {
     };
     const asset = (name: string) => `/admin/static/${name}?v=${assetVersion}`;
     const props = { t, isNew, canSend, site };
+    // Only this screen mounts authored HTML, and only the button above asks for this (D69).
+    const remoteImages = context.url.searchParams.get("remote_images") === "1";
     return {
       title: `${isNew ? `${t.T("campaigns.newCampaign")} / ` : ""}${t.T("globals.terms.campaigns")}`,
       pageId: isNew ? "campaigns.new" : "campaigns.all",
       script: "campaign",
       translationKeys: campaignKeys,
+      remoteImages,
       config: {
         ...campaignConfig(request),
+        remote_images: remoteImages,
         from_emails: site.fromEmails,
         can_manage: canManage,
         can_templates: can("templates:get"),

@@ -114,7 +114,7 @@ function ChartCard(props: {
         <div class="hstack text-8 mt-2">
           <template x-for="(c, n) in items" x-bind:key="c.id">
             <span>
-              <span aria-hidden="true" x-bind:style="`color: ${color(n)}`">
+              <span aria-hidden="true" x-bind:style="'color: ' + color(n)">
                 ●
               </span>{" "}
               <a

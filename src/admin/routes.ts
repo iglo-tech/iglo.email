@@ -6,6 +6,7 @@
 // from the view.
 import { createAdminPages, type AdminSite, type AdminView } from "@/admin/page";
 import { createPasswordReset, type ResetDeps } from "@/admin/password-reset";
+import { adminPolicyHeader } from "@/admin/policy";
 import { analyticsView } from "@/admin/views/analytics";
 import { bouncesView } from "@/admin/views/bounces";
 import { campaignView, newCampaignView } from "@/admin/views/campaign";
@@ -52,6 +53,7 @@ const checkedID =
 export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   const { auth, roles, site } = deps;
   const { adminPage } = createAdminPages({ auth, roles, site });
+  router.use(adminPolicyHeader(site));
   const page = (path: string, view: AdminView, ...permissions: string[]) =>
     router.route("GET", path, adminPage(view, ...permissions));
   const withID = (path: string, view: AdminView, ...permissions: string[]) =>

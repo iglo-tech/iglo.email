@@ -39,51 +39,92 @@ export function safeURL(value, image = false) {
   return !scheme || SCHEMES.has(scheme) || (image && DATA_IMAGE.test(url));
 }
 
+// What this page's policy would refuse to load (D69): the address stays in a data attribute until
+// the body leaves the editor, so nothing is requested and no violation is reported. With
+// `remote_images`, the operator asked for this page's policy to allow them.
+export function heldURL(value) {
+  const url = URL.parse(value.trim(), window.location.href);
+  if (!url || url.protocol === 'data:') {
+    return false;
+  }
+  if (window._LM_CONFIG?.remote_images && /^https?:$/.test(url.protocol)) {
+    return false;
+  }
+  const root = URL.parse(window._LM_CONFIG?.root_url ?? '')?.origin;
+  return url.origin !== window.location.origin && url.origin !== root;
+}
+
+const HOLDABLE = ['src', 'background'];
+
+// The stored form of what the editor holds.
+export function restoreHeld(html) {
+  if (!html.includes('data-rte-')) {
+    return html;
+  }
+  const root = inertElement(html);
+  for (const name of HOLDABLE) {
+    for (const el of root.querySelectorAll(`[data-rte-${name}]`)) {
+      el.setAttribute(name, el.getAttribute(`data-rte-${name}`));
+      el.removeAttribute(`data-rte-${name}`);
+    }
+  }
+  return root.innerHTML;
+}
+
 const allowed = (element, name) => (name === 'name' ? element === 'a'
   : ATTRIBUTES.has(name) || /^aria-[a-z]+$/.test(name));
 
-function copyAttributes(from, to, removed) {
+function copyAttributes(from, to, removed, held) {
   const element = to.localName;
   for (const { name, value } of from.attributes) {
     if (URL_ATTRIBUTES.has(name)
       ? (name !== 'src' || element === 'img') && safeURL(value, name === 'src')
       : allowed(element, name)) {
-      to.setAttribute(name, value);
+      if (HOLDABLE.includes(name) && heldURL(value)) {
+        to.setAttribute(`data-rte-${name}`, value);
+        held.add(value);
+      } else {
+        to.setAttribute(name, value);
+      }
     } else {
       removed.add(URL_ATTRIBUTES.has(name) ? `${name}="${value.slice(0, 40)}"` : name);
     }
   }
 }
 
-function copyChildren(from, to, removed) {
+function copyChildren(from, to, removed, held) {
   const walker = document.createTreeWalker(from);
   for (let node = walker.firstChild(); node; node = walker.nextSibling()) {
     if (node instanceof Text) {
       to.append(node.data);
     } else if (node instanceof HTMLFormElement) {
       removed.add('form');
-      copyChildren(node, to, removed);
+      copyChildren(node, to, removed, held);
     } else if (node instanceof HTMLElement && ELEMENTS.has(node.localName)) {
       const el = document.createElement(node.localName);
-      copyAttributes(node, el, removed);
+      copyAttributes(node, el, removed, held);
       to.append(el);
-      copyChildren(node, el, removed);
+      copyChildren(node, el, removed, held);
     } else if (node instanceof HTMLElement && !DROPPED.has(node.localName)) {
       removed.add(node.localName);
-      copyChildren(node, to, removed);
+      copyChildren(node, to, removed, held);
     } else if (node instanceof Element) {
       removed.add(node.localName);
     }
   }
 }
 
-// The live-document fragment, and the names of what did not come across.
+// The live-document fragment, the names of what did not come across, and the addresses held back.
 export function sanitizeHTML(html) {
-  const { body } = new DOMParser().parseFromString(html || '', 'text/html');
+  const { head, body } = new DOMParser().parseFromString(html || '', 'text/html');
   const fragment = document.createDocumentFragment();
   const removed = new Set();
-  copyChildren(body, fragment, removed);
-  return { fragment, removed };
+  const held = new Set();
+  for (const element of head.children) {
+    removed.add(element.localName);
+  }
+  copyChildren(body, fragment, removed, held);
+  return { fragment, removed, held };
 }
 
 // An element for reading authored HTML. innerHTML on an element of the page runs image handlers,

@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/lists.js at 6fcd95f. Upstream's page arrives
 // with its lists; here this module reads them from the API.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   filterTitle, iconHref, initials, pageLinks, pageQuery, read, statusIcon, urlFilters, viewTitle,
 } from '@/assets/admin/js/listing.js';

@@ -4,7 +4,7 @@
 // back empty, which the API reads as "keep the stored value". After a save the form is read again,
 // so a secret just typed is masked and a new server has its UUID. A save takes effect at once; only
 // the root URL, a read-only flag, needs a restart.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { read } from '@/assets/admin/js/listing.js';
 import {
   api, config, i18n,
@@ -82,6 +82,12 @@ function component() {
   let tabPanels = [];
 
   return {
+    clearDefaultExclusion(item) {
+      if (!item.name) {
+        item.exclude_from_default = false;
+      }
+    },
+
     form: null,
     error: '',
 

@@ -51,13 +51,13 @@ function RowLists() {
         <div class="avatar xsmall">
           <a
             class="unstyled avatar-icon avatar-list"
-            x-bind:href="`/admin/lists/${l.id}`"
+            x-bind:href="'/admin/lists/' + l.id"
             x-bind:title="listTitle(l)"
             x-bind:aria-label="listTitle(l)"
           >
             <span
               class="badge enum"
-              x-bind:class="`status-${l.subscription_status}`"
+              x-bind:class="'status-' + l.subscription_status"
               aria-hidden="true"
             >
               <template x-if="l.subscription_status === 'unconfirmed'">
@@ -72,7 +72,7 @@ function RowLists() {
           </a>
           <a
             class="unstyled text-light avatar-label"
-            x-bind:href="`/admin/subscribers/lists/${l.id}`"
+            x-bind:href="'/admin/subscribers/lists/' + l.id"
             x-bind:title="filterTitle(l.name)"
             x-text="l.name"
           ></a>
@@ -80,8 +80,8 @@ function RowLists() {
       </template>
       <template x-if="s.lists.length > 3">
         <a
-          x-bind:href="`/admin/subscribers/${s.id}/lists`"
-          x-bind:title="s.lists.slice(3).map((l) => l.name).join(', ')"
+          x-bind:href="'/admin/subscribers/' + s.id + '/lists'"
+          x-bind:title="listNames(s.lists.slice(3))"
           x-text="moreLists(s)"
         ></a>
       </template>
@@ -94,17 +94,17 @@ function RowMenu({ t, manage, bounces }: { t: Translation; manage: boolean; boun
     <ot-dropdown>
       <button
         popovertarget=""
-        x-bind:popovertarget="`sub-actions-${s.id}`"
+        x-bind:popovertarget="'sub-actions-' + s.id"
         type="button"
         class="ghost more icon"
         aria-label={t.T("globals.buttons.more")}
       >
         <Icon name="more-vertical" />
       </button>
-      <menu popover="" x-bind:id="`sub-actions-${s.id}`">
+      <menu popover="" x-bind:id="'sub-actions-' + s.id">
         {manage ? (
           <a
-            x-bind:href="`/admin/subscribers/${s.id}/edit`"
+            x-bind:href="'/admin/subscribers/' + s.id + '/edit'"
             role="menuitem"
             class="button ghost"
             data-testid="btn-edit"
@@ -113,15 +113,15 @@ function RowMenu({ t, manage, bounces }: { t: Translation; manage: boolean; boun
           </a>
         ) : null}
         <hr />
-        <a x-bind:href="`/admin/subscribers/${s.id}/lists`" role="menuitem" class="button ghost">
+        <a x-bind:href="'/admin/subscribers/' + s.id + '/lists'" role="menuitem" class="button ghost">
           <Icon name="list" /> {t.Tc("globals.terms.lists", 2)}
         </a>
-        <a x-bind:href="`/admin/subscribers/${s.id}`" role="menuitem" class="button ghost">
+        <a x-bind:href="'/admin/subscribers/' + s.id" role="menuitem" class="button ghost">
           <Icon name="activity" /> {t.T("globals.terms.activity")}
         </a>
         {bounces ? (
           <a
-            x-bind:href="`/admin/subscribers/${s.id}/bounces`"
+            x-bind:href="'/admin/subscribers/' + s.id + '/bounces'"
             role="menuitem"
             class="button ghost"
           >
@@ -131,7 +131,7 @@ function RowMenu({ t, manage, bounces }: { t: Translation; manage: boolean; boun
         {manage ? (
           <>
             <a
-              x-bind:href="`/api/subscribers/${s.id}/export`"
+              x-bind:href="'/api/subscribers/' + s.id + '/export'"
               role="menuitem"
               class="button ghost"
               data-testid="btn-download"
@@ -171,16 +171,16 @@ function Row({ t, manage, bounces }: { t: Translation; manage: boolean; bounces:
           <AvatarLink
             kind="subscriber"
             name="s.name || s.email"
-            href="`/admin/subscribers/${s.id}`"
+            href="'/admin/subscribers/' + s.id"
             title="viewTitle(s.name || s.email)"
           />
           <div class="avatar-label">
-            <a class="unstyled" x-bind:href="`/admin/subscribers/${s.id}`" x-text="s.email"></a>
+            <a class="unstyled" x-bind:href="'/admin/subscribers/' + s.id" x-text="s.email"></a>
             <template x-if="s.status !== 'enabled'">
               <a
                 x-bind:href="statusFilter(s)"
                 class="status-icon"
-                x-bind:class="`status-${s.status}`"
+                x-bind:class="'status-' + s.status"
                 x-bind:title="filterTitle(statusLabel(s.status))"
                 x-bind:aria-label="filterTitle(statusLabel(s.status))"
               >
@@ -194,7 +194,7 @@ function Row({ t, manage, bounces }: { t: Translation; manage: boolean; bounces:
         </div>
       </td>
       <td class="name" data-label={t.T("globals.fields.name")}>
-        <a class="unstyled" x-bind:href="`/admin/subscribers/${s.id}`" x-text="s.name"></a>
+        <a class="unstyled" x-bind:href="'/admin/subscribers/' + s.id" x-text="s.name"></a>
       </td>
       <td data-label={t.T("globals.fields.createdAt")} x-text="niceDate(s.created_at)"></td>
       <td data-label={t.T("globals.fields.updatedAt")} x-text="niceDate(s.updated_at)"></td>
@@ -283,7 +283,7 @@ function SearchForm(props: { base: string; params: URLSearchParams; t: Translati
   const { base, params, t } = props;
   const onToggle = {
     "x-on:toggle":
-      "isSqlOpen = ($event.newState === 'open'); if (isSqlOpen) $nextTick(() => $refs.queryInput.focus())",
+      "onSqlToggle($event)",
   };
   return (
     <form action={base} class="search-form" method="get">
@@ -377,7 +377,7 @@ export const subscribersView: AdminView = ({ context, can, listScope }) => {
         <header class="hstack justify-between page-header">
           <div class="hstack page-heading">
             <h1 class="page-title">
-              {heading} <span x-text="`(${page.total ?? '-'})`"></span>
+              {heading} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
             </h1>
             {listID !== null ? (
               <FilterBadge
@@ -386,15 +386,15 @@ export const subscribersView: AdminView = ({ context, can, listScope }) => {
                 class="badge-avatar"
                 label={
                   <a href={`/admin/lists/${listID}`} class="unstyled">
-                    <span class="avatar xsmall" x-bind:class="{ disabled: currentList?.archived }">
+                    <span class="avatar xsmall" x-bind:class="{ disabled: currentList && currentList.archived }">
                       <span class="avatar-icon avatar-list">
                         <span
                           class="avatar-initials"
                           aria-hidden="true"
-                          x-text="initials(currentList?.name ?? '')"
+                          x-text="initials(currentList ? currentList.name : '')"
                         ></span>
                       </span>
-                      <span class="avatar-label" x-text="currentList?.name ?? ''"></span>
+                      <span class="avatar-label" x-text="currentList ? currentList.name : ''"></span>
                     </span>
                   </a>
                 }
@@ -444,7 +444,7 @@ export const subscribersView: AdminView = ({ context, can, listScope }) => {
           <div
             class="table-wrapper"
             x-data="table({ query: subscriberFilters.query, filters: urlFilters() })"
-            x-effect="total = page.total ?? 0"
+            x-effect="total = page.total || 0"
             x-bind:aria-busy="loading"
             x-on:change="onChange($event)"
           >

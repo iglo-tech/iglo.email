@@ -131,7 +131,6 @@ const themeModes = [
   ["light", "sun", "globals.terms.light"],
   ["dark", "moon", "globals.terms.dark"],
 ] as const;
-const themeScript = `(function(){try{var t=localStorage.getItem('theme');if(t)document.documentElement.style.colorScheme=t;}catch(e){}})();`;
 
 /** The sidebar and top bar around a page's content. */
 function Chrome(props: AdminShellProps) {
@@ -241,7 +240,7 @@ function AdminShell(props: AdminShellProps) {
     ...(props.translationKeys ?? []),
   ]);
   const translations = Object.fromEntries([...keys].map((key) => [key, i18n.T(key)]));
-  const bootstrap = `window._LM_I18N=${scriptJSON(translations)};window._LM_CONFIG=${scriptJSON(config)};`;
+  const bootstrap = scriptJSON({ i18n: translations, config });
   const base = `/admin/static`;
   return (
     <html>
@@ -252,7 +251,11 @@ function AdminShell(props: AdminShellProps) {
         </title>
         <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
         <meta name="color-scheme" content="light dark" />
-        <script>{raw(themeScript)}</script>
+        {/* Data, not script: js/boot.js reads it, as the policy allows no inline code. */}
+        <script id="admin-bootstrap" type="application/json">
+          {raw(bootstrap)}
+        </script>
+        <script src={`${base}/js/boot.js?v=${assetVersion}`}></script>
         <link
           rel="preload"
           href={`${base}/fonts/Geist-Variable.woff2`}
@@ -270,7 +273,6 @@ function AdminShell(props: AdminShellProps) {
         ) : (
           <link href={`${base}/favicon.png?v=${assetVersion}`} rel="icon" type="image/png" />
         )}
-        <script>{raw(bootstrap)}</script>
       </head>
       <body x-data="adminApp" {...(props.bare ? { class: "media-fragment" } : {})}>
         {props.bare ? <div class="container">{children}</div> : <Chrome {...props} />}

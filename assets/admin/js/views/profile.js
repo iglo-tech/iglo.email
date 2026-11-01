@@ -1,5 +1,5 @@
 // Adapted from listmonk static/admin/assets/js/views/profile.js at 6fcd95f.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { api, config, i18n } from '@/assets/admin/js/main.js';
 import * as u from '@/assets/admin/js/utils.js';
 

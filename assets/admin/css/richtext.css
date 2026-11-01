@@ -103,6 +103,13 @@ richtext-editor {
     max-width: 100%;
 }
 
+.rte-content img[data-rte-src] {
+  display: inline-block;
+  min-width: 4rem;
+  min-height: 2rem;
+  outline: 1px dashed var(--border, currentcolor);
+}
+
 .rte-content img.img-float-left {
     float: left;
     margin: 0 1em 1em 0;

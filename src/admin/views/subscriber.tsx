@@ -180,12 +180,12 @@ function Subscriptions({ t, canSave }: { t: Translation; canSave: boolean }) {
                       <AvatarLink
                         kind="list"
                         name="l.name"
-                        href="`/admin/lists/${l.id}`"
+                        href="'/admin/lists/' + l.id"
                         title="viewTitle(l.name)"
                       />
                       <div class="avatar-label">
                         <a
-                          x-bind:href="`/admin/lists/${l.id}`"
+                          x-bind:href="'/admin/lists/' + l.id"
                           class="unstyled"
                           x-text="l.name"
                         ></a>
@@ -206,7 +206,7 @@ function Subscriptions({ t, canSave }: { t: Translation; canSave: boolean }) {
                     <span class="text-light">–</span>
                   </template>
                   <template x-if="l.optin !== 'single' || l.subscription_status !== 'unconfirmed'">
-                    <span class="badge enum" x-bind:class="`status-${l.subscription_status}`">
+                    <span class="badge enum" x-bind:class="'status-' + l.subscription_status">
                       <span class="dot">●</span>{" "}
                       <span x-text="statusLabel(l.subscription_status)"></span>
                     </span>
@@ -225,14 +225,14 @@ function Subscriptions({ t, canSave }: { t: Translation; canSave: boolean }) {
                     <ot-dropdown>
                       <button
                         popovertarget=""
-                        x-bind:popovertarget="`sub-list-${l.id}`"
+                        x-bind:popovertarget="'sub-list-' + l.id"
                         type="button"
                         class="ghost more icon"
                         aria-label={t.T("globals.buttons.more")}
                       >
                         <Icon name="more-vertical" />
                       </button>
-                      <menu popover="" x-bind:id="`sub-list-${l.id}`">
+                      <menu popover="" x-bind:id="'sub-list-' + l.id">
                         <template x-if="l.optin === 'double' && l.subscription_status === 'unconfirmed'">
                           {item(
                             "btn-confirm-sub",
@@ -322,11 +322,11 @@ function Bounces({ t }: { t: Translation }) {
               <tr data-testid="bounce-row">
                 <td
                   data-label={t.T("globals.terms.campaign")}
-                  x-text="b.campaign?.name ?? '-'"
+                  x-text="b.campaign ? b.campaign.name : '-'"
                 ></td>
                 <td data-label={t.T("globals.fields.source")} x-text="b.source"></td>
                 <td data-label={t.T("globals.fields.type")}>
-                  <span class="badge enum" x-bind:class="`bounce-${b.type}`" x-text="b.type"></span>
+                  <span class="badge enum" x-bind:class="'bounce-' + b.type" x-text="b.type"></span>
                 </td>
                 <td
                   data-label={t.T("globals.fields.createdAt")}
@@ -373,7 +373,7 @@ function Events({ t }: { t: Translation }) {
               <tr data-testid="event-row">
                 <td data-label={t.T("globals.fields.name")} x-text="row.name"></td>
                 <td data-label={data}>
-                  <pre x-text="JSON.stringify(row.data, null, 2)"></pre>
+                  <pre x-text="pretty(row.data)"></pre>
                 </td>
                 <td
                   data-label={t.T("subscribers.occurredAt")}
@@ -409,8 +409,8 @@ function Enrollments({ t }: { t: Translation }) {
               <tr data-testid="enrollment-row">
                 <td>
                   <a
-                    x-bind:href="`/admin/sequences/enrollments/${row.id}`"
-                    x-text="`#${row.id}`"
+                    x-bind:href="'/admin/sequences/enrollments/' + row.id"
+                    x-text="'#' + row.id"
                   ></a>{" "}
                   <template x-if="row.test">
                     <span class="badge" data-variant="warning">
@@ -422,7 +422,7 @@ function Enrollments({ t }: { t: Translation }) {
                 <td data-label={t.T("globals.fields.status")}>
                   <span class="badge enum" x-text="row.status"></span>
                 </td>
-                <td data-label={t.T("sequences.exitReason")} x-text="row.exit_reason ?? ''"></td>
+                <td data-label={t.T("sequences.exitReason")} x-text="row.exit_reason || ''"></td>
                 <td
                   data-label={t.T("globals.fields.createdAt")}
                   x-text="niceDate(row.created_at, true)"
@@ -459,11 +459,11 @@ function Sends({ t }: { t: Translation }) {
                 <td data-label={t.T("globals.fields.type")} x-text="row.kind"></td>
                 <td data-label={t.T("globals.fields.status")}>
                   <span class="badge enum" x-text="row.status"></span>{" "}
-                  <span class="text-light" x-text="row.skip_reason ?? ''"></span>
+                  <span class="text-light" x-text="row.skip_reason || ''"></span>
                 </td>
                 <td
                   data-label={t.T("subscribers.sentAt")}
-                  x-text="niceDate(row.sent_at ?? row.created_at, true)"
+                  x-text="niceDate(row.sent_at || row.created_at, true)"
                 ></td>
               </tr>
             </template>
@@ -499,7 +499,7 @@ function Tabs({
       <a role="tab" href={`${base}/lists`} {...selected("lists")}>
         <Icon name="list" />{" "}
         <span>
-          {t.Tc("globals.terms.lists", 2)} <span x-text="`(${subscriptions.length})`"></span>
+          {t.Tc("globals.terms.lists", 2)} <span x-text="'(' + subscriptions.length + ')'"></span>
         </span>
       </a>
       {can("bounces:get") ? (
@@ -592,13 +592,13 @@ export function subscriberView(tab: SubscriberTab): AdminView {
                     <AvatarLink
                       kind="subscriber"
                       name="form.name || form.email"
-                      href="`/admin/subscribers/${form.id}`"
+                      href="'/admin/subscribers/' + form.id"
                       title="viewTitle(form.name || form.email)"
                     />
                     <h1 class="page-title avatar-label">
                       <span x-text="form.email"></span>{" "}
                       <template x-if="form.status !== 'enabled'">
-                        <span class="badge" x-bind:class="`status-${form.status}`">
+                        <span class="badge" x-bind:class="'status-' + form.status">
                           <span class="dot">●</span> <span x-text="statusLabel(form.status)"></span>
                         </span>
                       </template>

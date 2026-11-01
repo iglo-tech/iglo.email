@@ -2,7 +2,9 @@
 // <richtext-editor> is a WebComponent wrapping Squire (squire-rte).
 import Squire from 'squire-rte';
 import { beautifyHTML } from '@/assets/admin/js/content.js';
-import { sanitizeHTML, safeURL } from '@/assets/admin/js/richtext/sanitize.js';
+import {
+  heldURL, inertElement, restoreHeld, sanitizeHTML, safeURL,
+} from '@/assets/admin/js/richtext/sanitize.js';
 import { setupTable } from '@/assets/admin/js/richtext/table.js';
 import {
   i18n, t, closestInSelection, PALETTE, EMOJIS, CHARS,
@@ -38,8 +40,11 @@ class RichtextEditor extends HTMLElement {
   // Every way HTML enters goes through Squire's setHTML or insertHTML, so through here: load,
   // value changes, paste, drop, and the source and insert dialogs.
   #sanitize(html) {
-    const { fragment, removed } = sanitizeHTML(html);
+    const { fragment, removed, held } = sanitizeHTML(html);
     removed.forEach((name) => this.#removed.add(name));
+    if (held.size) {
+      this.dispatchEvent(new CustomEvent('richtext-held', { bubbles: true }));
+    }
     this.dispatchEvent(new CustomEvent('richtext-removed', {
       bubbles: true,
       detail: { removed: [...this.#removed] },
@@ -140,10 +145,15 @@ class RichtextEditor extends HTMLElement {
     this.editor = null;
   }
 
+  // The body as stored, with anything held back from the page put back.
+  #html() {
+    return restoreHeld(this.editor.getHTML());
+  }
+
   // Main value getter/setter.
   get value() {
     return this.editor
-      ? this.editor.getHTML()
+      ? this.#html()
       : (this.#pending ?? this.getAttribute('value') ?? '');
   }
 
@@ -151,7 +161,7 @@ class RichtextEditor extends HTMLElement {
     const v = val == null ? '' : String(val);
     if (!this.editor) {
       this.#pending = v;
-    } else if (v !== this.editor.getHTML()) {
+    } else if (v !== this.#html()) {
       this.#mute = true;
       this.#removed.clear();
       this.editor.setHTML(v);
@@ -171,7 +181,7 @@ class RichtextEditor extends HTMLElement {
       return;
     }
     if (this.#source) {
-      this.#source.value = this.editor.getHTML();
+      this.#source.value = this.#html();
     }
 
     this.#updateWordcount();
@@ -385,6 +395,14 @@ class RichtextEditor extends HTMLElement {
     this.querySelectorAll('.rte-menu:popover-open, .rte-colors:popover-open').forEach((m) => m.hidePopover());
   }
 
+  // A dialog's refused address stays in front of the operator, with its reason.
+  #refuseURL(dialog, input) {
+    const message = dialog.querySelector('[data-rte-url-error]');
+    message.hidden = false;
+    input.focus();
+    input.addEventListener('input', () => { message.hidden = true; }, { once: true });
+  }
+
   // Link dialog.
   #openLink() {
     const ed = this.editor;
@@ -400,11 +418,16 @@ class RichtextEditor extends HTMLElement {
     f.text.value = a ? a.textContent : sel;
     f.title.value = a?.getAttribute('title') ?? '';
     f.track.checked = a ? tracked : localStorage.getItem(TRACK_KEY) === 'true';
+    d.querySelector('[data-rte-url-error]').hidden = true;
 
     d.querySelector('[data-rte-act="submit"]').onclick = () => {
       let url = f.url.value.trim();
-      if (!url || !safeURL(url)) {
+      if (!url) {
         d.close();
+        return;
+      }
+      if (!safeURL(url)) {
+        this.#refuseURL(d, f.url);
         return;
       }
 
@@ -461,7 +484,8 @@ class RichtextEditor extends HTMLElement {
     const f = d.querySelector('form');
     const img = closestInSelection(ed, this.content, 'img');
 
-    f.src.value = img?.getAttribute('src') ?? '';
+    f.src.value = img?.getAttribute('data-rte-src') ?? img?.getAttribute('src') ?? '';
+    d.querySelector('[data-rte-url-error]').hidden = true;
     f.alt.value = img?.getAttribute('alt') ?? '';
     f.width.value = img ? Math.round(img.getBoundingClientRect().width) || '' : '';
     f.height.value = img ? Math.round(img.getBoundingClientRect().height) || '' : '';
@@ -489,7 +513,7 @@ class RichtextEditor extends HTMLElement {
     // Get the ratio from an image's actual size.
     const loadRatio = (src) => {
       const id = ++request;
-      if (src) {
+      if (src && safeURL(src, true) && !heldURL(src)) {
         const probe = new Image();
         probe.onload = () => {
           if (id !== request) {
@@ -546,10 +570,15 @@ class RichtextEditor extends HTMLElement {
         return;
       }
       const src = f.src.value.trim();
-      if (!src || !safeURL(src, true)) {
+      if (!src) {
         d.close();
         return;
       }
+      if (!safeURL(src, true)) {
+        this.#refuseURL(d, f.src);
+        return;
+      }
+      const held = heldURL(src);
       const attrs = Object.fromEntries([
         ['alt', f.alt.value.trim()],
         ['width', f.width.value.trim()],
@@ -562,7 +591,11 @@ class RichtextEditor extends HTMLElement {
       if (img) {
         // Update the existing image in place.
         ed.saveUndoState();
-        img.setAttribute('src', src);
+        img.setAttribute(held ? 'data-rte-src' : 'src', src);
+        img.removeAttribute(held ? 'src' : 'data-rte-src');
+        if (held) {
+          this.dispatchEvent(new CustomEvent('richtext-held', { bubbles: true }));
+        }
         for (const k of ['alt', 'width', 'height', 'data-embed']) {
           if (attrs[k]) {
             img.setAttribute(k, attrs[k]);
@@ -580,6 +613,11 @@ class RichtextEditor extends HTMLElement {
         }
 
         this.sync();
+      } else if (held) {
+        // Through the sanitizer, in a document where the element loads nothing.
+        const el = inertElement('<img>').firstChild;
+        Object.entries({ src, ...attrs }).forEach(([k, v]) => el.setAttribute(k, v));
+        ed.insertHTML(el.outerHTML);
       } else {
         ed.insertImage(src, attrs);
       }
@@ -597,7 +635,7 @@ class RichtextEditor extends HTMLElement {
     const code = document.createElement('code-editor');
     code.setAttribute('lang', 'html');
     const ta = document.createElement('textarea');
-    ta.value = name === 'source' ? beautifyHTML(this.editor.getHTML()) : '';
+    ta.value = name === 'source' ? beautifyHTML(this.#html()) : '';
     code.append(ta);
     body.replaceChildren(code);
 
