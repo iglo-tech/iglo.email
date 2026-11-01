@@ -152,18 +152,21 @@ executable from it, also against a modified Bun.
 ${await license("bun-LICENSE.txt")}`,
     `----- Bun and JavaScriptCore sources for this release -----
 
-The executable contains Bun ${runtime.bun}, which statically links JavaScriptCore and WebCore, under
-the LGPL. The exact sources are public, and they are the source route for this release:
+The executable contains Bun ${runtime.bun}, which statically links JavaScriptCore, WebCore and TinyCC,
+under the LGPL. The exact sources are public, and they are the source route for this release. The
+Bun tag pins the TinyCC revision in scripts/build/deps/tinycc.ts:
 
   Bun     https://github.com/oven-sh/bun/tree/bun-v${runtime.bun}
   WebKit  https://github.com/oven-sh/WebKit/tree/${runtime.webkit}
 
 To use a modified JavaScriptCore, check out both, apply your change, and follow the relinking steps
-above to build a native \`bun\`. Then run \`bun install --frozen-lockfile\` and \`bun run build\` with
-that \`bun\` in a checkout of the iglo.email source named above, which gives you this executable
+above to build a native \`bun\`. Put that binary first on PATH under the name \`bun\`, because the
+build script finds the compiler by that name, and calling the binary by its path would silently use
+another \`bun\`. Check with \`command -v bun\`. Then run \`bun install --frozen-lockfile\` and
+\`bun run build\` in a checkout of the iglo.email source named above, which gives you this executable
 linked against your library.
 `,
-    `----- GNU Lesser General Public License, version 2 -----\n\n${await license("LGPL-2.0.txt")}`,
+    `----- GNU Library General Public License, version 2 -----\n\n${await license("LGPL-2.0.txt")}`,
     `----- GNU Lesser General Public License, version 2.1 -----\n\n${await license("LGPL-2.1.txt")}`,
   ];
   for (const name of (await readdir(licenses)).sort()) {
