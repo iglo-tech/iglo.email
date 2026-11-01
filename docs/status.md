@@ -5,21 +5,20 @@ Updated 2026-11-01. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B1 is with its worker: [brief](briefs/B1.md), branch `task/B1-instance-lock`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B2 is with its worker: [brief](briefs/B2.md), branch `task/B2-retention`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: one real Mailgun event and a retry (D63); publishing a release.
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B1: one process per data directory.
-2. B2: retention: expired sessions and delivered webhook rows. Send analytics history: agents decide the retention, as a logged decision.
-3. B3: admin CSP, editor containment, a hostile sanitizer test and the other editor items.
-4. B4: public-form CAPTCHA. Agents decide, as a logged decision; it needs a design that fits the dependency rule.
-5. B5: sequence reschedule and live condition validation; the subscriber activity tab.
-6. B6: send and media safety: `POST /api/tx` attachment concurrency, `finishAll` regressions, media crash and `data-embed` coverage.
-7. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
-8. B8: test debt and intermittent failures; every line still left in the backlog.
+1. B2: retention: expired sessions and delivered webhook rows. Send analytics history: agents decide the retention, as a logged decision.
+2. B3: admin CSP, editor containment, a hostile sanitizer test and the other editor items.
+3. B4: public-form CAPTCHA. Agents decide, as a logged decision; it needs a design that fits the dependency rule.
+4. B5: sequence reschedule and live condition validation; the subscriber activity tab.
+5. B6: send and media safety: `POST /api/tx` attachment concurrency, `finishAll` regressions, media crash and `data-embed` coverage.
+6. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
+7. B8: test debt and intermittent failures; every line still left in the backlog.
 
 ## Owner decisions
 
@@ -47,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| B1           | [#50](https://github.com/iglo-tech/iglo.email/pull/50) | 07e3ace | One process per data directory (D69)                       |
 | M6.3         | [#48](https://github.com/iglo-tech/iglo.email/pull/48) | 2013ada | Release workflow, version, verification, packaging         |
 | M6.4         | [#49](https://github.com/iglo-tech/iglo.email/pull/49) | 21e5bea | OpenAPI, subscriber export and activity routes             |
 | M6.2         | [#47](https://github.com/iglo-tech/iglo.email/pull/47) | e191856 | Backup, restore hold (D67), reset-password, operations guide |
@@ -105,9 +105,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
 - M5.1 perf: record source/executable hashes for each measured variant.
 - M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
-- Single-instance data-dir lock: D15 says one process per data dir but nothing enforces it; lease-based loops (outbox, scheduler, campaign runner) assume it. Bootstrap owner.
 - Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. Lowering it needs shared write batching across loops, or an owner decision on D22 durability.
 - `finishAll`: add permanent regressions for mixed retry outcomes, same-subscriber batch caps and COMMIT rollback ([#32 review](https://github.com/iglo-tech/iglo.email/pull/32#issuecomment-6517645045)).
 - Webhook delivery rows are never purged; add retention ([#34](https://github.com/iglo-tech/iglo.email/pull/34)).
 - Subscriber activity tab with its clear buttons: upstream's page over `GET` and `DELETE /api/subscribers/:id/activity`, which M6.4 ported without a screen.
+- Instance lock: no test that it is held through `withStoppedDatabase` or of the "stop what has it open first" branch; the only test guarding the start retry usually passes without it; two forged lock file headers stop the start with a clean error ([#50](https://github.com/iglo-tech/iglo.email/pull/50)).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
