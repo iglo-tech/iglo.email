@@ -1,0 +1,17 @@
+{"at":"2026-11-01T18:27:37.749Z","step":"seeded","rows":1000000,"sendRows":100000,"seconds":114.412,"fileMiB":3775.2,"freeMiB":0,"sends":{"rows":100000,"payload":26855,"max_payload":26855,"links":0}}
+{"at":"2026-11-01T18:28:02.883Z","step":"migration","ms":5744}
+{"at":"2026-11-01T18:28:22.919Z","step":"idle with new indexes","send":{"n":1000,"p50":4.94,"p95":13.07,"p99":17.49,"max":23.16},"lateness":{"n":1000,"p50":-0.26,"p95":2.24,"p99":3.41,"max":8.36}}
+{"at":"2026-11-01T18:28:43.482Z","step":"idle before (no new indexes)","send":{"n":1000,"p50":4.46,"p95":8.34,"p99":12.93,"max":22.47},"lateness":{"n":1000,"p50":-0.3,"p95":0.15,"p99":1.05,"max":2.48}}
+{"at":"2026-11-01T18:29:07.762Z","step":"idle with new indexes, again","send":{"n":1000,"p50":5.07,"p95":7.78,"p99":13.32,"max":77.2},"lateness":{"n":1000,"p50":-0.33,"p95":0.13,"p99":1.33,"max":57.21}}
+{"at":"2026-11-01T18:30:07.803Z","step":"sessions alone","owner":"sessions","rows":21400,"seconds":60,"left":979600,"rowsPerSecond":357}
+{"at":"2026-11-01T18:30:08.193Z","step":"sessions alone","pass":{"n":214,"p50":20.28,"p95":55.1,"p99":59.92,"max":69.07},"send":{"n":2999,"p50":13.5,"p95":46.76,"p99":64.78,"max":82.2},"lateness":{"n":2999,"p50":-0.12,"p95":33.65,"p99":48.63,"max":62.65},"fileMiB":3860.8,"freeMiB":0}
+{"at":"2026-11-01T18:31:08.247Z","step":"deliveries alone","owner":"deliveries","rows":22400,"seconds":60,"left":977600,"rowsPerSecond":373}
+{"at":"2026-11-01T18:31:08.270Z","step":"deliveries alone","pass":{"n":224,"p50":11.51,"p95":36.21,"p99":44.3,"max":46.37},"send":{"n":3000,"p50":6.26,"p95":38.28,"p99":54.91,"max":87.36},"lateness":{"n":3000,"p50":-0.2,"p95":21.19,"p99":36.63,"max":67.39},"fileMiB":3878.5,"freeMiB":0}
+{"at":"2026-11-01T18:32:08.323Z","step":"sends alone","owner":"sends","rows":10700,"seconds":60,"left":89300,"rowsPerSecond":178}
+{"at":"2026-11-01T18:32:08.337Z","step":"sends alone","pass":{"n":214,"p50":21.26,"p95":34.32,"p99":38.15,"max":46.18},"send":{"n":3000,"p50":15.58,"p95":43.94,"p99":56.88,"max":112.37},"lateness":{"n":3000,"p50":0.03,"p95":28.41,"p99":39.4,"max":94.49},"fileMiB":3878.5,"freeMiB":232.7}
+{"at":"2026-11-01T18:33:08.409Z","step":"first start, all three","owner":"sessions","rows":7200,"seconds":60,"left":972400,"rowsPerSecond":120}
+{"at":"2026-11-01T18:33:08.422Z","step":"first start, all three","owner":"deliveries","rows":7200,"seconds":60,"left":970400,"rowsPerSecond":120}
+{"at":"2026-11-01T18:33:08.435Z","step":"first start, all three","owner":"sends","rows":3550,"seconds":60,"left":85750,"rowsPerSecond":59}
+{"at":"2026-11-01T18:33:08.452Z","step":"first start, all three","pass":{"n":215,"p50":21.1,"p95":46.07,"p99":48.57,"max":49.72},"send":{"n":3000,"p50":16.19,"p95":47.96,"p99":59.22,"max":71.36},"lateness":{"n":3000,"p50":0.1,"p95":31.34,"p99":41.19,"max":51.39},"fileMiB":3878.5,"freeMiB":298}
+{"at":"2026-11-01T18:33:28.468Z","step":"idle after","send":{"n":1000,"p50":14.69,"p95":25.6,"p99":52.2,"max":75.01},"lateness":{"n":1000,"p50":-0.32,"p95":5.63,"p99":32.22,"max":55.03}}
+{"at":"2026-11-01T18:33:28.641Z","step":"end","sends":{"rows":115999,"payload":23502.331393920333,"max_payload":26855,"links":30.097242217605324},"fileMiB":3878.5,"freeMiB":291.9}

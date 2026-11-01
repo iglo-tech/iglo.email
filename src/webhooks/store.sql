@@ -77,3 +77,9 @@ UPDATE webhook_deliveries SET payload = json_set(payload, '$.data.list_ids', jso
 UPDATE webhook_deliveries SET updated_at = ?1,
     payload = json_set(payload, '$.data.subscriber.email', '', '$.data.subscriber.external_id', json('null'))
   WHERE subscriber_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?2));
+-- name: delivery-purge
+-- Finished rows only: a queued row, claimed or not, is never in this partial index.
+DELETE FROM webhook_deliveries WHERE id IN (
+    SELECT id FROM webhook_deliveries INDEXED BY idx_webhook_deliveries_finished
+    WHERE status IN ('delivered', 'failed') AND updated_at < ? ORDER BY updated_at LIMIT ?
+  ) RETURNING id;

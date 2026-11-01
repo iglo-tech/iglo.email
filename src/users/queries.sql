@@ -53,6 +53,15 @@ INSERT INTO sessions(id, data, created_at) VALUES (?, ?, ?);
 -- name: delete-session
 DELETE FROM sessions WHERE id = ?;
 
+-- name: purge-expired-sessions
+-- The expression is idx_sessions_expiry's; a row without an expiry lasts seven days, as
+-- session() reads it. Nothing leaves here that session() would still accept.
+DELETE FROM sessions WHERE id IN (
+    SELECT id FROM sessions
+    WHERE coalesce(json_extract(data, '$.expires_at'), unixepoch(created_at) * 1000 + 604800000) <= ?
+    LIMIT ?
+  ) RETURNING 1 AS gone;
+
 -- name: delete-user-sessions
 DELETE FROM sessions WHERE json_extract(data, '$.user_id') = ? AND (? = '' OR id != ?);
 

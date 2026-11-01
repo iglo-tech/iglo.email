@@ -28,7 +28,7 @@ export function createSendAnonymizer(db: Database) {
       `UPDATE sends SET
          status = CASE status WHEN 'queued' THEN 'skipped' ELSE status END,
          skip_reason = CASE status WHEN 'queued' THEN 'subscriber_unavailable' ELSE skip_reason END,
-         next_attempt_at = NULL, to_email = '', payload = NULL
+         next_attempt_at = NULL, to_email = '', payload = NULL, tracked_links = NULL
        WHERE id IN (
          SELECT id FROM sends WHERE subscriber_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?1))
          UNION ALL

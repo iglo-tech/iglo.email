@@ -10,6 +10,7 @@
     "auth:measure": "bun run build && bun test/users/measure.ts",
     "schema:measure": "bun test/schema/measure.ts",
     "backup:measure": "bun test/backup/measure.ts",
+    "retention:measure": "bun test/retention/measure.ts",
     "db:spike": "bun test/perf/sqlite-write-load/benchmark.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",

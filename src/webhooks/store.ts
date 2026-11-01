@@ -18,6 +18,8 @@ export type WebhookEvent = (typeof webhookEvents)[number];
 export const MAX_WEBHOOKS = 20;
 /** Retried for this long from first queueing, then `failed`. */
 export const DELIVERY_WINDOW_MS = 86_400_000;
+/** Finished deliveries stay this long after their last change (D70). */
+export const DELIVERY_RETENTION_MS = 30 * 86_400_000;
 const FIRST_RETRY_MS = 30_000;
 const MAX_RETRY_MS = 3_600_000;
 /** Delivery rows of one disabled webhook advanced per claim. */
@@ -291,6 +293,11 @@ export function createWebhookStore(db: Database, clock: Clock) {
       return q.get("delivery-retry").run(next, error, at, delivery.id, lease).changes
         ? "queued"
         : null;
+    },
+    /** Delete up to `limit` finished deliveries past retention, oldest first. */
+    purge(now: Date, limit: number) {
+      const before = new Date(now.getTime() - DELIVERY_RETENTION_MS).toISOString();
+      return q.get("delivery-purge").all(before, limit);
     },
     onWake(fn: () => void) {
       wake = fn;
