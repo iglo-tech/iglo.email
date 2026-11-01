@@ -213,7 +213,6 @@ async function writer(until: () => boolean) {
       const time = new Date();
       return sends.claimBatch(time, new Date(time.getTime() + 60_000), 1);
     });
-    await 0;
     sends.finishAll(
       claimed.map(({ row }) => ({
         row,

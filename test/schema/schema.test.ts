@@ -237,6 +237,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
         "next_attempt_at",
         "retry_of",
         "attempted_at",
+        "tracked_links",
       ],
       webhooks: ["id", "url", "secret", "events", "enabled", "created_at", "updated_at"],
       webhook_deliveries: [
