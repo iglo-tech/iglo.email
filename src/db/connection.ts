@@ -2,6 +2,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { holdDataDirectory } from "@/db/instance-lock";
 
 export function openDatabase(dataDir: string): Database {
   mkdirSync(dataDir, { recursive: true });
@@ -41,9 +42,9 @@ export function openDatabase(dataDir: string): Database {
 }
 
 /**
- * Work that only a stopped server allows. EXCLUSIVE locking fails while any other connection has
- * the database open, which is how the server is told apart from nothing running, and holds until
- * this connection closes.
+ * Work that only a stopped server allows. The instance lock refuses a server and keeps one from
+ * starting meanwhile. EXCLUSIVE locking also fails while any other connection has the database
+ * open, such as a running backup, and holds until this connection closes.
  */
 export function withStoppedDatabase<T>(
   dataDir: string,
@@ -52,24 +53,29 @@ export function withStoppedDatabase<T>(
 ): T {
   const path = join(resolve(dataDir), "iglo-email.db");
   if (!statSync(path, { throwIfNoEntry: false })) throw new Error(`No database at ${path}`);
-  const db = new Database(path, { readwrite: true, strict: true, safeIntegers: true });
+  const instance = holdDataDirectory(dataDir);
   try {
-    // Before the first read: a connection that has read keeps its shared-memory locking.
-    db.run("PRAGMA busy_timeout = 0");
-    db.run("PRAGMA locking_mode = EXCLUSIVE");
+    const db = new Database(path, { readwrite: true, strict: true, safeIntegers: true });
     try {
-      db.run("BEGIN IMMEDIATE");
-    } catch {
-      throw new Error(`${path} is in use: stop the server first`);
+      // Before the first read: a connection that has read keeps its shared-memory locking.
+      db.run("PRAGMA busy_timeout = 0");
+      db.run("PRAGMA locking_mode = EXCLUSIVE");
+      try {
+        db.run("BEGIN IMMEDIATE");
+      } catch {
+        throw new Error(`${path} is in use: stop what has it open first`);
+      }
+      const version = db.query<{ user_version: bigint }, []>("PRAGMA user_version").get();
+      db.run("ROLLBACK");
+      if (version?.user_version === 0n)
+        throw new Error(`${path} has no schema yet; start the server once`);
+      if (Number(version?.user_version) > supportedVersion)
+        throw new Error(`Database version ${version?.user_version} is ahead of this executable`);
+      return work(db);
+    } finally {
+      db.close(true);
     }
-    const version = db.query<{ user_version: bigint }, []>("PRAGMA user_version").get();
-    db.run("ROLLBACK");
-    if (version?.user_version === 0n)
-      throw new Error(`${path} has no schema yet; start the server once`);
-    if (Number(version?.user_version) > supportedVersion)
-      throw new Error(`Database version ${version?.user_version} is ahead of this executable`);
-    return work(db);
   } finally {
-    db.close(true);
+    instance.release();
   }
 }

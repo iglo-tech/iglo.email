@@ -1,7 +1,9 @@
 // Process startup and shutdown are adapted from listmonk's cmd/main.go.
+import type { Database } from "bun:sqlite";
 import { createApp, createErrorLogger } from "@/app";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
+import { holdDataDirectory } from "@/db/instance-lock";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { helpText, parseBootstrap, versionText } from "@/config/bootstrap";
@@ -117,7 +119,15 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   }
 
   const clock = createRealClock();
-  const db = openDatabase(bootstrap.config.dataDir);
+  // Before anything reads or migrates the database, and released after it closes (D69).
+  const instance = holdDataDirectory(bootstrap.config.dataDir);
+  let db: Database;
+  try {
+    db = openDatabase(bootstrap.config.dataDir);
+  } catch (error) {
+    instance.release();
+    throw error;
+  }
   let lists: ReturnType<typeof createListReferences> | undefined;
   let listStore: ReturnType<typeof createListStore> | undefined;
   let subscriberStore: ReturnType<typeof createSubscriberStore> | undefined;
@@ -781,6 +791,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     roles?.close();
     lists?.close();
     db.close(true);
+    instance.release();
   }
 }
 

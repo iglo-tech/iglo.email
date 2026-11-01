@@ -669,3 +669,16 @@ Decided by the owner on 2026-11-01; amends D56 and the reviewer it named.
 - **Reviewer:** one Claude Opus 5.5 reviewer (`claudeAgent`, `claude-opus-5-5`, effort `xhigh`) replaces Sol. The owner named the model; the lead kept the previous reviewer's `xhigh` depth. This replaces the earlier rule against Claude reviewing Claude work.
 - **Independence:** the same model family wrote the code, so independence now comes from process. The reviewer is always a fresh delegate that did not write the code, works from the PR, the brief and its own local checks, and in round 1 receives no lead conclusions.
 - **Unchanged:** council size, rounds, finding rules, local verification and everything else in D56 and D57.
+
+## D69. A file lock enforces one process per data directory
+
+Decided by agents on 2026-11-01, for owner review.
+
+- **Decision:** the server holds an exclusive lock on `iglo-email.lock` in the data directory from before it opens the database until after it closes it. A second server exits nonzero with one line naming the directory, and nothing reaches the database. `reset-password` and `backup --release-hold` take the same lock and refuse with the same error. `backup`, `backup --verify`, `--help`, `--version` and the helpers of D62 never touch it.
+- **Why:** the leases and at-most-once rules of the loops assume one process, and D4 says so, but nothing enforced it. An accidental second copy could send a message twice.
+- **Mechanism:** a separate SQLite file, held by a connection with `locking_mode = EXCLUSIVE` after one small write, with no journal and no sync. That is an fcntl lock on the file, which needs no new dependency. The kernel frees it when the process dies, also on `kill -9`, so there is nothing to clean up. Children do not inherit it, and symlinks or relative paths to one directory meet the same lock. Proved through compiled processes in `test/bootstrap/instance-lock.test.ts`.
+- **The write is required:** SQLite opens a file it cannot write read-only, and there `BEGIN EXCLUSIVE` succeeds and holds nothing. So a file owned by another user stops the server with an error instead of turning the lock off, which a lock without a write did when tested.
+- **A leftover file:** a kill cannot leave anything to recover, since the only write is one page and there is no journal. A file that is not a database is emptied in place and locked. It is not deleted: two processes that each delete and recreate it could hold locks on two different files.
+- **Limit:** a POSIX lock needs a local filesystem, which [the guide](../operations.md#one-process-per-data-directory) says, and WAL needs one host anyway. Deleting the file under a running server lets a later process start.
+- **Stopped-database check stays:** `withStoppedDatabase` keeps its EXCLUSIVE attempt on the database. The lock answers "is a server running", and that attempt also answers "is anything reading", such as a running backup, as D67 requires.
+- **Not chosen:** a lock on the main database, which would stop helpers and backups. A PID file, which goes stale and needs a timeout or a liveness guess. Binding a port as the lock, which depends on configuration, so two ports would still share a directory. `flock` through `bun:ffi`, which adds an unsafe boundary for what SQLite already does. Bun has no file lock in `node:fs`.
