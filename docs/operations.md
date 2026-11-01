@@ -9,8 +9,18 @@ copies.
 
 ## Install
 
-There are no release artifacts yet (M6.3). Build the one executable on a machine with Bun 1.4 or
-newer and copy it to the server, which needs neither Bun nor a checkout:
+Each release on [GitHub](https://github.com/iglo-tech/iglo.email/releases) has one Linux x86-64
+executable, `SHA256SUMS`, `LICENSE` and `THIRD-PARTY-NOTICES.txt`. The server needs glibc and an
+x86-64 CPU with SSE4.2 (Nehalem or newer, as Bun 1.4.4 targets), and neither Bun nor a checkout. Download the four files of the version you
+want into an empty directory, then:
+
+```sh
+sha256sum --check --strict SHA256SUMS
+install -m 0755 iglo.email-linux-x64 /usr/local/bin/iglo.email
+iglo.email --version
+```
+
+To build it yourself instead, on a machine with Bun 1.4 or newer:
 
 ```sh
 bun install --frozen-lockfile
@@ -416,13 +426,17 @@ Executable and backup versions:
 ## Upgrades
 
 1. Take and verify a backup.
-2. Stop the server, replace the executable, start it.
-3. Check `/health`.
+2. Download and check the new release as in [Install](#install).
+3. Stop the server, replace the executable, start it.
+4. Check `/health` and `iglo.email --version`.
 
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
 restore the backup from step 1, and put back the old executable.
+
+A version with `-` in it, such as `0.1.0-rc.1`, is marked as a prerelease. Do not run one in
+production.
 
 A pre-migration snapshot carries a [hold](#restore), like a backup, and everything in Restore
 applies if you put one back: it is an older moment, and it sends nothing until you release it. A
@@ -488,6 +502,8 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 - The systemd unit as a running service, the nginx example, TLS, a mounted upload directory, and a
   restore from real off-site storage.
 - Behaviour on Linux arm64 or macOS. Only Linux x86-64 was used.
+- A download from a published release. The checksum and install commands ran on files packaged
+  locally by `bun run release:package`, and the release workflow has not run yet.
 - Translations other than English have not been reviewed.
 - Supported PDF viewers for attachments.
 

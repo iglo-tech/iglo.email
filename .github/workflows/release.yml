@@ -1,0 +1,66 @@
+name: Release
+
+# A pushed v* tag builds, verifies and publishes a draft release. A manual run from any ref is a
+# dry run of the same build and verification, and publishes nothing. package.json must already hold
+# the tag's version. Tag names reach shell only as environment variables.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      # These use the file check built. contract:normal would rebuild it first.
+      - run: bun run release:verify
+      - run: bun test/contract/cli.ts owned production
+      - run: bun run release:package
+      - name: Keep the files for the publish job
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: dist/release/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+      - run: sha256sum --check --strict SHA256SUMS
+      - name: Create the draft release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          case "$GITHUB_REF_NAME" in
+            *-*) flags+=(--prerelease) ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --draft --verify-tag --generate-notes --title "$GITHUB_REF_NAME" "${flags[@]}" \
+            iglo.email-linux-x64 LICENSE THIRD-PARTY-NOTICES.txt SHA256SUMS
