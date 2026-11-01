@@ -4,7 +4,7 @@ Operate in `/home/t3-code/iglo.email` on `main`. Owner decisions [D56](design/09
 
 ## Continuous work and recovery
 
-Keep one task moving through implementation, local verification, review and merge. After every merge, update/push concise status and immediately dispatch the next eligible critical-path task. No elapsed-time, session or task-count cutoff. Only a completed applicable work plan ends the goal. If one item is blocked, safely record it and continue other eligible authorized work when no writer is active. Respect genuine capacity/provider cooldowns; never duplicate work.
+Keep one task moving through implementation, local verification, review and merge. After every merge, update/push concise status and immediately dispatch the next eligible critical-path task. No elapsed-time, session or task-count cutoff. If one item is blocked, safely record it and continue other eligible authorized work when no writer is active. Respect genuine capacity/provider cooldowns; never duplicate work.
 
 The existing enabled recovery schedule stays **unbound** (`boundThreadId:null`). It recovers from `docs/status.md`, GitHub and `~/.local/state/iglo-email-cos/lock.json`, never from a responsive conversation. The lock retains the continuous run start, heartbeat, owning lead thread ID, active branch/head/stage, every delegate's task ID **and thread ID**, verdicts and next action.
 
@@ -15,6 +15,14 @@ The existing enabled recovery schedule stays **unbound** (`boundThreadId:null`).
 5. Keep `status.md` short: active task/next action, one line per merged task, owner-decision links and concise blockers/backlog. Details and lead dispositions live in the PR; historical review ledgers remain evidence, not required reading on every wake.
 
 A redundant healthy check-in auto-settles only itself via `t3_thread_organize` action settle (omit threadId). It must own no child, PR watch or implementation/recovery duty. Leave the actual owner and its state untouched. A coordinator awaiting its own work or a recovery transition never qualifies.
+
+## When work ends
+
+Owner rule, 2026-11-01: work until nothing remains that can be done without the owner doing something. A merged work plan does not end the goal: after it come the Work queue and every line of the Hardening backlog in [`status.md`](status.md).
+
+- Only these need the owner: verification against a real account (one real Mailgun event), publishing a release, and product scope excluded here: OIDC, postback messengers and the official Docker image (P.1).
+- An owner item blocks only itself. Skip it and continue. Decisions, reviews and backlog are never owner items: decide, log and go on.
+- Never disable or pause the schedule. When only owner items remain, name them and settle that run.
 
 ## Models and capacity
 
