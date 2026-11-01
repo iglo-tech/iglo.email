@@ -103,6 +103,10 @@ richtext-editor {
     max-width: 100%;
 }
 
+[data-rte-url-error][hidden] {
+  display: none;
+}
+
 .rte-content img[data-rte-src] {
   display: inline-block;
   min-width: 4rem;

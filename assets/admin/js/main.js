@@ -35,6 +35,7 @@ function setupAlpine() {
     },
     asNumber: (value) => Number(value),
     round: (value) => Math.round(value),
+    asParam: (value) => encodeURIComponent(value),
     pretty: (value) => JSON.stringify(value, null, 2),
 
     theme: localStorage.getItem('theme') || 'auto',

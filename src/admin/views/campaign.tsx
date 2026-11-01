@@ -603,7 +603,11 @@ function Tabs(props: FormProps & { canManage: boolean }) {
           "attachments",
           "paperclip",
           t.T("globals.terms.attachments"),
-          <span x-cloak="" x-show="form.media.length" x-text="'(' + form.media.length + ')'"></span>,
+          <span
+            x-cloak=""
+            x-show="form.media.length"
+            x-text="'(' + form.media.length + ')'"
+          ></span>,
         )}
         {tab("archive", "archive", t.T("globals.terms.archive"), done("form.archive"))}
       </div>
@@ -786,7 +790,7 @@ function view(isNew: boolean): AdminView {
     };
     const asset = (name: string) => `/admin/static/${name}?v=${assetVersion}`;
     const props = { t, isNew, canSend, site };
-    // Only this screen mounts authored HTML, and only the button above asks for this (D69).
+    // Only this screen mounts authored HTML, and only the button above asks for this (D71).
     const remoteImages = context.url.searchParams.get("remote_images") === "1";
     return {
       title: `${isNew ? `${t.T("campaigns.newCampaign")} / ` : ""}${t.T("globals.terms.campaigns")}`,

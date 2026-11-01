@@ -6,6 +6,10 @@ import { createServer } from "node:http";
 import { expect } from "@playwright/test";
 import { api, confirm, createUser, login, ORIGIN, PASSWORD, test, unique } from "../helpers.js";
 
+// These prove the sanitizer on its own, and `neverRan` needs a handler that does run: the policy
+// would stop both. editor-containment.e2e.js holds the corpus with and without it.
+test.use({ bypassCSP: true });
+
 const CAMPAIGNS = "/admin/campaigns";
 const EDITOR = 'richtext-editor [contenteditable="true"]';
 const button = (scope, name) => scope.getByRole("button", { name, exact: true });

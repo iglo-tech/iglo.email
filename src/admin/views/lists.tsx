@@ -300,7 +300,8 @@ export const listsView: AdminView = ({ context, site, can, listScope }) => {
         <header class="hstack justify-between page-header">
           <div class="hstack page-heading">
             <h1 class="page-title">
-              {term("lists")} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
+              {term("lists")}{" "}
+              <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
             </h1>
             {status === "archived" ? (
               <FilterBadge t={t} label={term("archived")} url={filterURL(base, params, "status")} />

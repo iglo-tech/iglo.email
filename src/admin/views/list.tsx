@@ -148,7 +148,7 @@ function Overview({ t, subscribers }: { t: Translation; subscribers: boolean }) 
               <template x-for="tag in form.tags" x-bind:key="tag">
                 <span>
                   <a
-                    x-bind:href="'/admin/lists?tag=' + encodeURIComponent(tag)"
+                    x-bind:href="'/admin/lists?tag=' + asParam(tag)"
                     class="tag"
                     x-bind:title="filterTitle(tag)"
                     x-text="'#' + tag"

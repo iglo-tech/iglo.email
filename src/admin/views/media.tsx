@@ -119,7 +119,8 @@ function Gallery({ request, picker }: { request: AdminRequest; picker: boolean }
       <header class="row page-header">
         <div class="col-4">
           <h1 class="page-title">
-            {t.T("globals.terms.media")} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
+            {t.T("globals.terms.media")}{" "}
+            <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
           </h1>
         </div>
         <div class="col-8 hstack justify-end buttons">

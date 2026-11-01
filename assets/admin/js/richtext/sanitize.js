@@ -39,7 +39,7 @@ export function safeURL(value, image = false) {
   return !scheme || SCHEMES.has(scheme) || (image && DATA_IMAGE.test(url));
 }
 
-// What this page's policy would refuse to load (D69): the address stays in a data attribute until
+// What this page's policy would refuse to load (D71): the address stays in a data attribute until
 // the body leaves the editor, so nothing is requested and no violation is reported. With
 // `remote_images`, the operator asked for this page's policy to allow them.
 export function heldURL(value) {

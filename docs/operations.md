@@ -537,6 +537,20 @@ These run by themselves and have no settings
 - Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
 - `sends` rows are kept for good. Their size is small, and old links and analytics read them.
 
+## Admin Content-Security-Policy
+
+Every HTML page under `/admin` has a Content-Security-Policy
+([D71](design/09-decisions.md#d71-admin-pages-have-a-content-security-policy-and-the-editor-stays-in-the-page)).
+Do not replace or weaken it at the proxy, and do not add a second one there: browsers enforce both.
+
+- `appearance.admin.custom_js` runs, as `/admin/custom.js`, but cannot use `eval` or inline handlers,
+  load a script from another origin, or call another origin. Custom CSS cannot load fonts or images
+  from another origin.
+- Images load from this address, the root URL's origin and the favicon's. Set `app.root_url` to the
+  address the admin is used at, or media in the rich-text editor waits behind its notice.
+- Remote images in a campaign body stay unloaded until **Show remote images** is pressed, for that
+  page load only.
+
 ## Defaults for open questions
 
 From [Open questions](design/10-open-questions.md), until the owner decides otherwise:
@@ -566,4 +580,4 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 Known limits rather than unknowns: a [hold](#restore)
 is in what `backup` and the migration runner write, so a disk image or a hand copy does not add
 one (it keeps the row of a database already held) and must not be started without the same
-review; and admin pages set no Content-Security-Policy yet, so review that before exposing the admin UI publicly.
+review.

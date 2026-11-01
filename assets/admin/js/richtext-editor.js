@@ -37,13 +37,18 @@ class RichtextEditor extends HTMLElement {
   #refreshFind = null;
   #removed = new Set();
 
+  // After the current task: the first body can mount before the page's listener is on its parent.
+  #noteHeld() {
+    setTimeout(() => this.dispatchEvent(new CustomEvent('richtext-held', { bubbles: true })));
+  }
+
   // Every way HTML enters goes through Squire's setHTML or insertHTML, so through here: load,
   // value changes, paste, drop, and the source and insert dialogs.
   #sanitize(html) {
     const { fragment, removed, held } = sanitizeHTML(html);
     removed.forEach((name) => this.#removed.add(name));
     if (held.size) {
-      this.dispatchEvent(new CustomEvent('richtext-held', { bubbles: true }));
+      this.#noteHeld();
     }
     this.dispatchEvent(new CustomEvent('richtext-removed', {
       bubbles: true,
@@ -594,7 +599,7 @@ class RichtextEditor extends HTMLElement {
         img.setAttribute(held ? 'data-rte-src' : 'src', src);
         img.removeAttribute(held ? 'src' : 'data-rte-src');
         if (held) {
-          this.dispatchEvent(new CustomEvent('richtext-held', { bubbles: true }));
+          this.#noteHeld();
         }
         for (const k of ['alt', 'width', 'height', 'data-embed']) {
           if (attrs[k]) {

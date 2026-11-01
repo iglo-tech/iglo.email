@@ -118,7 +118,7 @@ function ChartCard(props: {
                 ●
               </span>{" "}
               <a
-                x-bind:href={`\`/admin/${resource}/\${c.id}\``}
+                x-bind:href={`'/admin/${resource}/' + c.id`}
                 class="unstyled"
                 x-text="c.label"
               ></a>

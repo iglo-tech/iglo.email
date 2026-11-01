@@ -113,7 +113,11 @@ function RowMenu({ t, manage, bounces }: { t: Translation; manage: boolean; boun
           </a>
         ) : null}
         <hr />
-        <a x-bind:href="'/admin/subscribers/' + s.id + '/lists'" role="menuitem" class="button ghost">
+        <a
+          x-bind:href="'/admin/subscribers/' + s.id + '/lists'"
+          role="menuitem"
+          class="button ghost"
+        >
           <Icon name="list" /> {t.Tc("globals.terms.lists", 2)}
         </a>
         <a x-bind:href="'/admin/subscribers/' + s.id" role="menuitem" class="button ghost">
@@ -282,8 +286,7 @@ function BulkMenu({ t, manage }: { t: Translation; manage: boolean }) {
 function SearchForm(props: { base: string; params: URLSearchParams; t: Translation }) {
   const { base, params, t } = props;
   const onToggle = {
-    "x-on:toggle":
-      "onSqlToggle($event)",
+    "x-on:toggle": "onSqlToggle($event)",
   };
   return (
     <form action={base} class="search-form" method="get">
@@ -386,7 +389,10 @@ export const subscribersView: AdminView = ({ context, can, listScope }) => {
                 class="badge-avatar"
                 label={
                   <a href={`/admin/lists/${listID}`} class="unstyled">
-                    <span class="avatar xsmall" x-bind:class="{ disabled: currentList && currentList.archived }">
+                    <span
+                      class="avatar xsmall"
+                      x-bind:class="{ disabled: currentList && currentList.archived }"
+                    >
                       <span class="avatar-icon avatar-list">
                         <span
                           class="avatar-initials"
@@ -394,7 +400,10 @@ export const subscribersView: AdminView = ({ context, can, listScope }) => {
                           x-text="initials(currentList ? currentList.name : '')"
                         ></span>
                       </span>
-                      <span class="avatar-label" x-text="currentList ? currentList.name : ''"></span>
+                      <span
+                        class="avatar-label"
+                        x-text="currentList ? currentList.name : ''"
+                      ></span>
                     </span>
                   </a>
                 }

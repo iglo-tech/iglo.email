@@ -252,7 +252,8 @@ export const bouncesView: AdminView = ({ context, can }) => {
           <header class="page-header">
             <div class="hstack">
               <h1 class="page-title">
-                {t.T("globals.terms.bounces")} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
+                {t.T("globals.terms.bounces")}{" "}
+                <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
               </h1>
               <div class="hstack gap-1">
                 {source ? (

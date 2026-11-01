@@ -493,7 +493,8 @@ export const campaignsView: AdminView = (request) => {
         <header class="row page-header">
           <div class="col-4">
             <h1 class="page-title">
-              {t.T("globals.terms.campaigns")} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>{" "}
+              {t.T("globals.terms.campaigns")}{" "}
+              <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>{" "}
               <Filters t={t} params={params} base={base} />
             </h1>
           </div>

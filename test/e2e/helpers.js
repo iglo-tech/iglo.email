@@ -14,7 +14,7 @@ export const unique = (prefix) => `${prefix}-${randomBytes(4).toString("hex")}`;
 
 // Each test is its own client, through the trusted proxy run.ts configures, so a run of specs
 // stays inside the real login limit of 20 posts a minute per client. Every page also reports what
-// the admin policy (D69) refused and what Alpine's CSP build could not evaluate, and a test fails
+// the admin policy (D71) refused and what Alpine's CSP build could not evaluate, and a test fails
 // on either unless it sets `violations: "expected"`. A sandboxed preview runs no script, so what its
 // own policy refuses there is not counted.
 export const test = base.extend({

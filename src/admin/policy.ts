@@ -1,4 +1,4 @@
-// The Content-Security-Policy of admin pages (D69). Not ported: listmonk sets none.
+// The Content-Security-Policy of admin pages (D71). Not ported: listmonk sets none.
 import type { Middleware } from "@/server/context";
 
 /** The settings the policy reads. */
