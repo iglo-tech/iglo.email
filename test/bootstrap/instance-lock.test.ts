@@ -107,6 +107,7 @@ test("a second server refuses, before the database, and the first keeps serving"
   const first = await serve();
   const client = apiClient(first.origin, await provisionAuthorization(first.origin));
   expect((await createSubscriber(client, 1)).status).toBe(200);
+  expect(existsSync(join(data, "iglo-email.lock-journal"))).toBe(false);
   const before = fileBytes(data);
 
   const second = await secondServer(data);
