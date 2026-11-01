@@ -92,6 +92,11 @@ export async function startServer(executable: string, dataDir: string) {
     health: `${origin}/health`,
     async stop() {
       child.kill("SIGTERM");
+      return child.exited;
+    },
+    /** As a crash: nothing of the shutdown runs. */
+    async kill() {
+      child.kill("SIGKILL");
       await child.exited;
     },
   };

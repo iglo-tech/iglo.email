@@ -22,7 +22,7 @@ These conventions are the same as [iglo.monitor](https://github.com/iglo-tech/ig
 
 ## Process model
 
-One server process runs everything that writes. Background work is a set of loops in that process, each owning one table of work. Slow or untrusted reads run in short-lived read-only helpers: the same executable re-run with an internal argument, one read each, owned and killed by the server. They hold no state and never write ([D62](09-decisions.md#d62-read-only-helper-processes-for-slow-reads)).
+One server process runs everything that writes. Background work is a set of loops in that process, each owning one table of work. Slow or untrusted reads run in short-lived read-only helpers: the same executable re-run with an internal argument, one read each, owned and killed by the server. They hold no state and never write ([D62](09-decisions.md#d62-read-only-helper-processes-for-slow-reads)). A lock on the data directory, taken before the database opens, makes a second server refuse to start ([D69](09-decisions.md#d69-a-file-lock-enforces-one-process-per-data-directory)).
 
 | Loop               | Interval                                                                                                | Work                                                                                                                                                                                                                  |
 | ------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -154,11 +154,12 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 ```text
 data/
   iglo-email.db        (+ -wal, -shm)
+  iglo-email.lock      instance lock (D69); no data
   uploads/             media files
   backups/             pre-migration snapshots, and `backup` output by default
 ```
 
-Startup opens `iglo-email.db`, validates and applies the embedded migration
+Startup takes the instance lock, opens `iglo-email.db`, validates and applies the embedded migration
 manifest, then starts HTTP. It closes the connection after HTTP shutdown or a
 startup failure. A nonempty database with pending migrations gets one verified
 SQLite `VACUUM INTO` snapshot before the batch, held as a backup is. `iglo.email backup` takes a live
@@ -166,8 +167,8 @@ snapshot from a separate read-only process, with a short-lived helper that syncs
 output ([operations guide](../operations.md#backups)). A backup carries a
 restore hold: a database restored from one sends nothing until an operator
 releases it ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)).
-`iglo.email reset-password` sets a password on a stopped server, reading it from
-stdin, so a locked-out operator need not end a hold to log in. Continuous replication
+`iglo.email reset-password` sets a password on a stopped server, under the same
+instance lock, reading it from stdin, so a locked-out operator need not end a hold to log in. Continuous replication
 (for example Litestream) is an operator choice, not built in.
 
 ## Dependencies

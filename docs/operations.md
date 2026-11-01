@@ -74,9 +74,9 @@ Put the two admin variables in `/etc/iglo.email/env`, owned by root, mode 0640, 
 and remove them after the first start. systemd reads this file as root; a shell run as the account
 needs the group.
 
-Run one server per data directory. Nothing enforces this yet, and the sending loops depend on it:
-two servers on one directory can send a message twice. A backup, and the helpers the server
-starts itself, are read-only and do not count.
+One server runs per data directory, because the sending loops depend on it: two servers on one
+directory could send a message twice. A second one [refuses to start](#one-process-per-data-directory).
+A backup, and the helpers the server starts itself, are read-only and do not count.
 
 ## Environment variables
 
@@ -98,6 +98,7 @@ Settings, or `PUT /api/settings`, and applies at once.
 ```text
 /var/lib/iglo.email/
   iglo-email.db         the database, with -wal and -shm while it is open
+  iglo-email.lock       the instance lock; holds no data and stays after the server stops
   uploads/              media files
   backups/              pre-migration snapshots, and backups with no --output
   .iglo-email-import/   the file of a running import
@@ -106,6 +107,42 @@ Settings, or `PUT /api/settings`, and applies at once.
 The database holds SMTP passwords, API tokens, password hashes, webhook secrets, the Mailgun key
 and subscriber data, stored as given. Protect the directory with the host's permissions and disk
 encryption. Never copy `iglo-email.db` of a running server by hand: use `backup`.
+
+### One process per data directory
+
+The server takes a lock on the data directory before it opens the database. While it is held,
+a second server exits nonzero with this one line and touches nothing:
+
+```text
+/var/lib/iglo.email is in use by another iglo.email process: stop it first
+```
+
+The operating system frees the lock when the process ends, also on `kill -9` or a crash, so a
+restart needs no cleanup. `iglo-email.lock` staying behind is normal, and a backup does not include
+it. Its content does not matter. Do not delete it while a server runs: a process started after
+that would get a lock of its own.
+
+| Command | Beside a running server |
+|---|---|
+| `serve` | Refuses |
+| `reset-password` | Refuses |
+| `backup --release-hold` | Refuses |
+| `backup` | Runs: it only reads the database |
+| `backup --verify` | Runs: it reads a backup, not the data directory |
+| `--help`, `--version` | Run: they do not use the data directory |
+
+The two commands that refuse also take the lock while they work, so a server started in that moment
+refuses too, with the same error. They also refuse while anything else has the database open, such
+as a running `backup`.
+
+Run commands as the service user, as this guide does. A lock file first created by root is one the
+service cannot write, and the server then stops with `Cannot lock` and that path; `chown` it to the
+service user.
+
+**This needs a local filesystem.** The lock is a POSIX file lock. On NFS, SMB and other shared
+filesystems it may not reach other hosts or work at all, so two servers on two machines could both
+start. SQLite's WAL mode, which the database uses, needs one host in any case. Keep the data
+directory on a local disk; a mounted upload directory inside it is fine.
 
 ## Reverse proxy and TLS
 
@@ -507,7 +544,7 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 - Translations other than English have not been reviewed.
 - Supported PDF viewers for attachments.
 
-Known limits rather than unknowns: nothing enforces one server per data directory; a [hold](#restore)
+Known limits rather than unknowns: a [hold](#restore)
 is in what `backup` and the migration runner write, so a disk image or a hand copy does not add
 one (it keeps the row of a database already held) and must not be started without the same
 review; admin pages set no Content-Security-Policy yet, so review that before exposing the admin UI publicly; and delivered
