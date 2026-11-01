@@ -4,9 +4,9 @@ Updated 2026-11-01. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-M6.3 [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) is approved at `b646fae` and waits on the owner adding the token scope: `gh auth refresh -h github.com -s workflow`. Then: commit the workflow unchanged, `bun run check`, merge, dry run, test tag `v0.1.0-rc.1`. D26 stands: no public first-account form.
+M6.3 release proof: [PR #48](https://github.com/iglo-tech/iglo.email/pull/48) is merged and the dry run passed. Test tag `v0.1.0-rc.1` is pushed at `2013ada`; its Release run must produce a draft prerelease that downloads, checks and reports its version.
 Host: hypervisor powered the VM off repeatedly on 2026-10-30, external to this work. Worktrees cleaned, disk 49%.
-Next: finish M6.3. All other plan tasks are merged. Owner to verify: one real Mailgun event and a retry (D63); D58-D67 for review; the before-1.0 backlog.
+Next: collect that run. All 44 plan tasks are merged. Owner to verify: one real Mailgun event and a retry (D63); D58-D67 for review; the before-1.0 backlog.
 Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next action.
 
 ## Owner decisions
@@ -35,6 +35,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| M6.3         | [#48](https://github.com/iglo-tech/iglo.email/pull/48) | 2013ada | Release workflow, version, verification, packaging         |
 | M6.4         | [#49](https://github.com/iglo-tech/iglo.email/pull/49) | 21e5bea | OpenAPI, subscriber export and activity routes             |
 | M6.2         | [#47](https://github.com/iglo-tech/iglo.email/pull/47) | e191856 | Backup, restore hold (D67), reset-password, operations guide |
 | M5.5         | [#45](https://github.com/iglo-tech/iglo.email/pull/45) | 25bf1f4 | Sequence screens, subscriber tabs, test mode               |
