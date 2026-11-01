@@ -660,3 +660,12 @@ Decided by agents on 2026-10-31, for owner review.
 - **Pre-migration snapshots:** the application creates them for going back, so they are held like a backup: an avoidable gap otherwise. The hold goes in the snapshot and never in the live database. The runner has no restoring rollback: a failed migration rolls back its own transaction and startup stops, so the live database stays at its version, unheld, and the snapshot stays in `backups/`. An unversioned database is not this application's schema, whatever its tables are called, and gets no hold.
 - **Accepted limits:** the hold is in what `backup` and the migration runner write. A disk image or a hand copy does not add one, though a copy of a held database keeps its row, and a pre-migration snapshot from before this rule has none. A running install that takes a backup is not held itself. Rows queued during a hold go out at release, with their consent checked then.
 - **Not chosen:** a `--restored` start flag or a procedure of SQL statements, which fail open when forgotten. A new table, which older snapshots lack and which would need `backup` to create it. A hold in the settings API, where one saved form could clear it.
+
+## D68. Anthropic models only, Opus reviewer
+
+Decided by the owner on 2026-11-01; amends D56 and the reviewer it named.
+
+- **Models:** every role uses an Anthropic model. Lead, workers and fixers stay on Opus 5.5 medium, and Haiku 5.5 medium stays limited to bulk mechanical work. Fable is not used. OpenAI, Codex, Sol, Terra and other providers are not used for any role, and nothing falls back to them.
+- **Reviewer:** one Claude Opus 5.5 reviewer (`claudeAgent`, `claude-opus-5-5`, effort `xhigh`) replaces Sol. The owner named the model; the lead kept the previous reviewer's `xhigh` depth. This replaces the earlier rule against Claude reviewing Claude work.
+- **Independence:** the same model family wrote the code, so independence now comes from process. The reviewer is always a fresh delegate that did not write the code, works from the PR, the brief and its own local checks, and in round 1 receives no lead conclusions.
+- **Unchanged:** council size, rounds, finding rules, local verification and everything else in D56 and D57.

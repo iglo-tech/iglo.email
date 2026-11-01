@@ -1,12 +1,12 @@
 # Chief of staff runbook
 
-Operate in `/home/t3-code/iglo.email` on `main`. Owner decisions [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification) and [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening) replace the earlier model, council and CI policies.
+Operate in `/home/t3-code/iglo.email` on `main`. Owner decisions [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification) and [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening) replace the earlier model, council and CI policies. [D68](design/09-decisions.md#d68-anthropic-models-only-opus-reviewer) replaces their reviewer.
 
 ## Continuous work and recovery
 
 Keep one task moving through implementation, local verification, review and merge. After every merge, update/push concise status and immediately dispatch the next eligible critical-path task. No elapsed-time, session or task-count cutoff. Only a completed applicable work plan ends the goal. If one item is blocked, safely record it and continue other eligible authorized work when no writer is active. Respect genuine capacity/provider cooldowns; never duplicate work.
 
-The existing enabled45-minute recovery schedule stays **unbound** (`boundThreadId:null`). It recovers from `docs/status.md`, GitHub and `~/.local/state/iglo-email-cos/lock.json`, never from a responsive conversation. The lock retains the continuous run start, heartbeat, owning lead thread ID, active branch/head/stage, every delegate's task ID **and thread ID**, verdicts and next action.
+The existing enabled recovery schedule stays **unbound** (`boundThreadId:null`). It recovers from `docs/status.md`, GitHub and `~/.local/state/iglo-email-cos/lock.json`, never from a responsive conversation. The lock retains the continuous run start, heartbeat, owning lead thread ID, active branch/head/stage, every delegate's task ID **and thread ID**, verdicts and next action.
 
 1. `git pull --ff-only`; read only relevant AGENTS/design/task/status sections.
 2. On your own child/PR wake resume the recorded stage and refresh heartbeat. Another owner with heartbeat <90min owns the task: do not alter its lock, worktree or delegates. Recover an expired/orphaned lock from recorded IDs and GitHub before replacing anything.
@@ -24,15 +24,15 @@ For new dispatches, use `delegate_task`, isolation worktree, role and settings i
 |---|---|
 | Lead, worker, fixer, normal helper | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"medium"}}` |
 | Pure bulk mechanical work only | `{providerInstanceId:"claudeAgent",model:"claude-haiku-5-5",options:{effort:"medium"}}` |
-| Single independent reviewer | `{providerInstanceId:"codex",model:"gpt-6.1-sol",options:{reasoningEffort:"xhigh"}}` |
+| Single independent reviewer | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"xhigh"}}` |
 
-No Terra work, OpenAI implementation/lead work, second Sol reviewer or Claude review of Claude work. The lead and **one** Sol reviewer form the council. Existing dispatched work stays on its branch; let the legacy M1.8 reviewer B finish and collect its result. No replacement or extra reviewer for that transition.
+Anthropic models only, and no Fable: no OpenAI, Codex, Sol, Terra or other provider, as worker or reviewer, and no fallback to them. The lead and **one** Opus xhigh reviewer form the council. The reviewer is always a fresh delegate that did not write the code. Give it the reviewer suffix, PR, head, task and round; in round 1 give it no lead conclusions.
 
 At most two task agents: an implementation worker/fixer and the reviewer. Helpers consume the implementation slot; no fan-out. Prefer sequential stages. **Only one role runs full checks/acceptance on this host at a time**, including the lead. Record the verification owner in the lock; release it only after the owned commands/processes finish. Every agent completes checks in the foreground before ending its turn. Async delegate dispatch remains allowed; background test processes surviving a turn do not.
 
 The lead/project default is Opus medium. `t3_thread_configure` can set the current lead's model for subsequent turns. The scheduler tool has no per-task model field: keep its prompt aligned, preserve the unbound schedule, and report this limitation rather than claim a pinned scheduler model.
 
-The earlier1%-remaining whole-fleet provider fallback is superseded. The quota helper may report remaining OpenAI review capacity; it cannot authorize Claude reviewers or OpenAI workers. If Sol quota is unavailable, record the reset/cooldown and continue only independent authorized Opus work; no review substitution or approval inferred from an unfinished run. Provider failures receive the existing documented60-minute cooldown, not a retry loop. Keep account quota samples local.
+If Opus capacity is unavailable, record the reset/cooldown; no provider substitution and no approval inferred from an unfinished run. Provider failures receive the existing documented60-minute cooldown, not a retry loop.
 
 ## Stages
 
@@ -41,7 +41,7 @@ The earlier1%-remaining whole-fleet provider fallback is superseded. The quota h
 | brief | Name the realistic client flows, pinned upstream sources, owned modules/tables, acceptance commands and any sending/storage measurements. Push the brief and short status. |
 | worker | One Opus medium worker does the implementation in its prepared isolated checkout. No shell-created worktree; fetch the intended base/head inside that checkout. |
 | verify | Worker/fixer runs `bun run check` and the brief's acceptance tests serially on this host, in the foreground. Record failures, justified reruns and exact head. CI is optional manual evidence, never a merge gate or a reason to wait. |
-| review | Round1: one fresh Sol xhigh deep review. Later rounds: a fresh delegate verifies the fixes and touched code only. Give later reviewers the complete prior findings and lead dispositions, not another whole-PR audit request. Reviewer runs full local check and acceptance serially after the implementation role is finished. |
+| review | Round1: one fresh Opus xhigh deep review. Later rounds: a fresh delegate verifies the fixes and touched code only. Give later reviewers the complete prior findings and lead dispositions, not another whole-PR audit request. Reviewer runs full local check and acceptance serially after the implementation role is finished. |
 | fix | Read every finding. Agree: fix small issues yourself, or give one Opus medium fixer all agreed findings of the round. Disagree: answer in the PR with concrete reasoning. Safely handled exotic response differences go to hardening backlog. Run affected tests, then full check/acceptance once on final code. |
 | merge | Lead and reviewer agree: reviewer approves the current head, or both agree remaining items are backlog; local final-head verification passed. After three rounds without agreement the lead decides and writes reasons in the PR. Never waive actual safety/auth/format defects. Squash-merge/delete remote branch, pull main, push concise status and immediately start the next eligible task. |
 
@@ -57,9 +57,9 @@ Change only authorized modules/seams. Work in the supplied checkout/branch and o
 
 ## Reviewer brief suffix
 
-You are the one GPT-6.1 Sol xhigh reviewer; the Opus lead and you form the council. Review only, no code/format/push/helper. PR <URL>, head <SHA>, task <id>, round <n>. Check out that exact head in your supplied worktree. Read relevant AGENTS, D56/D57, task brief and pinned upstream sources. Round1 is deep; later rounds cover earlier findings, fixes and touched code only. Run full local check and acceptance serially, foreground, after the implementation role releases host verification.
+You are the one independent Opus 5.5 xhigh reviewer; the lead and you form the council. You did not write this code; judge it only on what you read and run. Review only, no code/format/push/helper. PR <URL>, head <SHA>, task <id>, round <n>. Check out that exact head in your supplied worktree. Read relevant AGENTS, D56/D57/D68, task brief and pinned upstream sources. Round1 is deep; later rounds cover earlier findings, fixes and touched code only. Run full local check and acceptance serially, foreground, after the implementation role releases host verification.
 
-A blocker names file/line, a realistic client and request, and concrete wrong result or safety failure. Safe malformed/hand-crafted input with a different exact error goes under Backlog. Crashes, partial writes, auth/permission bypass, invalid data-format acceptance and unbounded memory remain defects even for hostile input. Do not request cosmetic changes. Post one comment starting `COUNCIL GPT-6.1 Sol VERDICT: APPROVE <SHA>` or `... CHANGES <SHA>`, with blockers then backlog and actual validation limits. Last line: PR <URL>, head <SHA>, local checks <state>.
+A blocker names file/line, a realistic client and request, and concrete wrong result or safety failure. Safe malformed/hand-crafted input with a different exact error goes under Backlog. Crashes, partial writes, auth/permission bypass, invalid data-format acceptance and unbounded memory remain defects even for hostile input. Do not request cosmetic changes. Post one comment starting `COUNCIL Opus 5.5 VERDICT: APPROVE <SHA>` or `... CHANGES <SHA>`, with blockers then backlog and actual validation limits. Last line: PR <URL>, head <SHA>, local checks <state>.
 
 ## Host and scope limits
 

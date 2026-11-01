@@ -9,21 +9,21 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 | Role | Who | Does |
 |---|---|---|
 | Owner | the project owner | Sets direction. Is not asked for approvals: agents merge and decide on their own, and log decisions for later review |
-| Lead (chief of staff) | a scheduled agent run, every 45 minutes ([runbook](../chief-of-staff.md)) | Keeps this plan and [`docs/status.md`](../status.md) current, writes task briefs, starts workers and the council, merges, decides design questions |
+| Lead (chief of staff) | a scheduled agent run ([runbook](../chief-of-staff.md)) | Keeps this plan and [`docs/status.md`](../status.md) current, writes task briefs, starts workers and the council, merges, decides design questions |
 | Worker | one agent per task | Does one task in its own branch and worktree, opens one PR |
-| Council | Opus lead plus one independent GPT-6.1 Sol xhigh reviewer | Lead dispositions every finding; one deep round followed by fix-only re-reviews; local acceptance governs merge |
+| Council | Opus lead plus one independent Opus 5.5 xhigh reviewer | Lead dispositions every finding; one deep round followed by fix-only re-reviews; local acceptance governs merge |
 
 ### Models and owner operating policy
 
-Owner direction2026-10-29, [D56](09-decisions.md#d56-owner-directed-models-review-and-local-verification), supersedes the earlier two-reviewer, Terra and conditional Anthropic-fallback policies.
+Owner direction2026-10-29, [D56](09-decisions.md#d56-owner-directed-models-review-and-local-verification), supersedes the earlier two-reviewer, Terra and conditional Anthropic-fallback policies. [D68](09-decisions.md#d68-anthropic-models-only-opus-reviewer) makes the fleet Anthropic-only: no Fable, and an Opus reviewer.
 
 | Work | Model and target.options |
 |---|---|
 | Lead, worker, fixer and normal helper | Claude Opus5.5, `{effort:"medium"}`, provider claudeAgent |
 | Pure bulk mechanical work only | Claude Haiku5.5, `{effort:"medium"}`, provider claudeAgent |
-| One independent reviewer | GPT-6.1 Sol, `{reasoningEffort:"xhigh"}`, provider codex |
+| One independent reviewer | Claude Opus5.5, `{effort:"xhigh"}`, provider claudeAgent, a fresh delegate that did not write the code |
 
-Use isolation worktree for delegates. At most one implementation worker/fixer and one reviewer; helpers consume the implementation slot. All full local checks and acceptance run on this host **one role at a time, serially and in the foreground**, before that agent ends its turn. CI runs only through workflow_dispatch and is not a merge gate. Existing M1.8 reviewer B may finish; new dispatches use this policy, with no second reviewer or Terra work.
+Use isolation worktree for delegates. At most one implementation worker/fixer and one reviewer; helpers consume the implementation slot. All full local checks and acceptance run on this host **one role at a time, serially and in the foreground**, before that agent ends its turn. CI runs only through workflow_dispatch and is not a merge gate. No second reviewer.
 
 [D57](09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): match upstream results for realistic clients; port logic only when those results depend on it and otherwise use native platform APIs. Safe exotic-input error differences are hardening backlog. Never relax formats, auth, permissions, atomicity or actual security; blockers name a realistic client/request and concrete failure.
 
@@ -80,7 +80,7 @@ These are created in M0 and change only through a small task of their own, becau
 ### Review and merge
 
 1. Worker finishes full local check/acceptance in the foreground and opens/updates the task PR with its exact head and evidence. No CI wait.
-2. One Sol xhigh reviewer plus the Opus lead form the council. Round1 deeply checks realistic client results, data formats, auth/permissions, safety, scope and tests; later rounds check fixes and touched code only. Reviewer completes the full local check and acceptance after the worker/fixer releases verification capacity.
+2. One Opus xhigh reviewer plus the Opus lead form the council. Round1 deeply checks realistic client results, data formats, auth/permissions, safety, scope and tests; later rounds check fixes and touched code only. Reviewer completes the full local check and acceptance after the worker/fixer releases verification capacity.
 3. Lead reads every finding. Fix agreed small issues yourself; give one Opus medium fixer all agreed findings of the round. Answer disagreements in the PR with reasoning. Safe exotic-input response differences go to hardening backlog, not a blocked merge; actual security/data failures remain defects. A blocker names its realistic client/request and concrete failure.
 4. After three rounds without agreement the lead decides and writes reasoning in the PR. Otherwise merge when reviewer approves the head or both agree remaining findings are backlog, and final local acceptance passed. CI is manual and not a gate.
 5. Squash-merge/delete branch, pull main, push one-line-per-task status and immediately dispatch the next eligible critical-path task. Never report project completion merely because one assignment/PR ended.

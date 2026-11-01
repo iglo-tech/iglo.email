@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-31. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-01. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
@@ -11,7 +11,8 @@ Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next
 
 ## Owner decisions
 
-[D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one Sol xhigh reviewer; lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
+[D68](design/09-decisions.md#d68-anthropic-models-only-opus-reviewer): Anthropic models only, no Fable; the reviewer is a fresh Opus5.5 xhigh delegate.
+[D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one reviewer (Opus xhigh since D68); lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
 [D67](design/09-decisions.md) (agents, for owner review): every backup carries a restore hold that stops all sending until released.
 [D66](design/09-decisions.md) (agents, for owner review): authored HTML passes an allow-list before the admin editor; `style` is kept.
@@ -26,7 +27,7 @@ Recovery: ~/.local/state/iglo-email-cos/lock.json holds the delegate ID and next
 
 ## Automation and capacity
 
-Existing enabled45-minute schedule scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280 stays unbound. Continuous run starts2026-10-28T20:34:55.959528+00:00; no task/session cutoff.
+Existing enabled schedule scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280 stays unbound. Continuous run starts2026-10-28T20:34:55.959528+00:00; no task/session cutoff.
 Project default is Opus5.5 medium; Scheduler API has no per-task model selector; prompt/default can be aligned, separately pinned scheduler model cannot be claimed.
 Host disk/memory are constrained; no protected cache/worktree/export cleanup or VM policy changes. One role verifies at a time. Healthy redundant check-ins settle only themselves.
 
