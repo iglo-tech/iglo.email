@@ -39,6 +39,9 @@ class RichtextEditor extends HTMLElement {
 
   // After the current task: the first body can mount before the page's listener is on its parent.
   #noteHeld() {
+    if (window._LM_CONFIG?.remote_images) {
+      return;
+    }
     setTimeout(() => this.dispatchEvent(new CustomEvent('richtext-held', { bubbles: true })));
   }
 

@@ -22,8 +22,8 @@ const views = (await readdir(join(jsRoot, "views")))
   .filter((name) => name.endsWith(".js"))
   .map((name) => join("views", name));
 const built = await Bun.build({
-  entrypoints: ["boot.js", "main.js", "code-editor.js", "richtext-editor.js", ...views].map((name) =>
-    join(jsRoot, name),
+  entrypoints: ["boot.js", "main.js", "code-editor.js", "richtext-editor.js", ...views].map(
+    (name) => join(jsRoot, name),
   ),
   outdir: join(admin, "js"),
   root: jsRoot,

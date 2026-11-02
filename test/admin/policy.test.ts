@@ -1,6 +1,7 @@
 // The policy of admin pages (D71), read over HTTP, and every Alpine expression those pages render,
 // through the parser of the CSP build they load.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+// @ts-expect-error The package ships this source without types.
 import { generateRuntimeFunction, Parser, Tokenizer } from "@alpinejs/csp/src/parser.js";
 import { admin, get, login, type Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
@@ -188,7 +189,8 @@ test("every rendered Alpine expression is one the CSP build can run", async () =
       .on("*", {
         element(element) {
           for (const [name, value] of element.attributes) {
-            if (!/^(x-|@|:)/.test(name) || /^x-(ref|cloak|ignore|transition)\b/.test(name)) continue;
+            if (!/^(x-|@|:)/.test(name) || /^x-(ref|cloak|ignore|transition)\b/.test(name))
+              continue;
             if (/^(iframe|script)$/.test(element.tagName)) framed.push(`${path} ${name}`);
             if (value) seen.set(`${name}\0${decode(value)}`, path);
           }

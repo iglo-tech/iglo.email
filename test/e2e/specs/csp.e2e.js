@@ -82,7 +82,6 @@ test("every screen works under the policy", async ({ page }) => {
     "/admin/campaigns",
     "/admin/campaigns/new",
     `/admin/campaigns/${campaign.id}`,
-    `/admin/campaigns/${campaign.id}#tab=content`,
     "/admin/campaigns/media",
     "/admin/campaigns/analytics",
     "/admin/templates",

@@ -117,11 +117,7 @@ function ChartCard(props: {
               <span aria-hidden="true" x-bind:style="'color: ' + color(n)">
                 ●
               </span>{" "}
-              <a
-                x-bind:href={`'/admin/${resource}/' + c.id`}
-                class="unstyled"
-                x-text="c.label"
-              ></a>
+              <a x-bind:href={`'/admin/${resource}/' + c.id`} class="unstyled" x-text="c.label"></a>
               : <span data-testid="legend-count" x-text={`legendCount('${key}', c)`}></span>
               {extra ? (
                 <span class="text-lighter">

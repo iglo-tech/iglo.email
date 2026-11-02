@@ -9,6 +9,18 @@ export interface Difference {
 
 export const differences: Difference[] = [
   {
+    area: "Admin Content-Security-Policy (B3)",
+    summary:
+      "Every /admin HTML response has the D71 policy; upstream has none. Script is same-origin assets only, Alpine is its CSP build, and an appearance script is held to the same limits.",
+    applies: [],
+  },
+  {
+    area: "Remote images in the rich-text editor (B3)",
+    summary:
+      "Not requested until the operator asks, which reloads that campaign with ?remote_images=1 (D71). Upstream loads them on open. The stored body is unchanged.",
+    applies: [],
+  },
+  {
     area: "Templates (M1.8 in progress)",
     summary:
       "D54 validates final stored type/candidate, preserves the old default on invalid set-default, uses literal case-insensitive name search and signed 64-bit IDs, omits the visual sample, and applies a scriptless CSP to previews.",
