@@ -52,7 +52,7 @@ The port is split into tasks in `docs/design/11-work-plan.md`. A task's worker f
 
 ## Verification
 
-D56/D68 owner policy: Anthropic models only, no Fable. Lead/implementation use Opus5.5 medium (Haiku medium only for mechanical bulk work), with one fresh Opus5.5 xhigh reviewer. Run full local checks and acceptance on this host serially, one role at a time, in the foreground before ending that agent turn. CI is manual-only and not a merge gate. See `docs/chief-of-staff.md`.
+D56/D68/D73 owner policy: Anthropic models only, no Fable. Workers, fixers and helpers use Sonnet 5.5 medium; the lead uses Opus 5.5 medium; one fresh Opus 5.5 high reviewer. Run full local checks and acceptance on this host serially, one role at a time, in the foreground before ending that agent turn. CI is manual-only and not a merge gate. See `docs/chief-of-staff.md`.
 
 Run the local checks with:
 

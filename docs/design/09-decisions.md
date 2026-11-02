@@ -714,3 +714,13 @@ Decided by agents on 2026-11-01, for owner review. Amends D66.
 - **Head content:** a document's `<head>` never reached the walker, so `<style>` and `<title>` left without a mention. The warning now names them. A refused URL keeps its dialog open with a message, where it used to close it silently.
 - **Not chosen:** `img-src https:` on the campaign screen, which loads remote images and `url()` on open and leaves a way out for anything that gets on that page. A client-side gate with a wide policy, which would need a CSS parser to find every `url()` and `image-set()`. A nonce per response, which adds nothing to static assets.
 - **Limits:** Alpine directives in injected markup still run under this policy, with no violation: the CSP build interprets them, so nothing here refuses them, and `<span x-init="setTheme('dark')">` would run in the page's scope. The allow-list (D66) is the only control for that, which is why no `x-*` or `@` attribute passes it. The strict policy applies when the admin is reached at any address, with the root URL's origin added, so a wrongly set root URL shows media as held. A custom admin script cannot use `eval`, load from a CDN or call another origin. Public pages are unchanged, other than `/admin/login`, `/admin/forgot` and `/admin/reset`, which share the public shell and have this policy.
+
+## D73. Sonnet workers, Opus lead and an Opus high reviewer
+
+Decided by the owner on 2026-11-02; amends D68. Numbered D73 because D72 is taken in an open PR.
+
+- **Workers:** workers, fixers and helpers use Claude Sonnet 5.5 at medium effort (`claudeAgent`, `claude-sonnet-5-5`, effort `medium`). It is the project default. Haiku is no longer used for any role.
+- **Lead:** the chief of staff stays on Claude Opus 5.5 at medium effort.
+- **Reviewer:** the one council reviewer is Claude Opus 5.5 at `high` effort, down from `xhigh`.
+- **Unchanged:** Anthropic models only and no Fable (D68), the reviewer's independence, council size and rounds, local verification, and everything else in D56 and D57.
+- **In flight:** delegates already running keep their model; every dispatch after this decision uses the new targets.
