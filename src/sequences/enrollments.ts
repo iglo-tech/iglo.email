@@ -73,7 +73,7 @@ export function project(row: EnrollmentRow) {
  * When a step is due: `wait` after `from`, in the stored ISO format. The one place a test
  * enrollment's waits are shortened. Waits were validated when saved.
  */
-function after(from: string, wait: string, test: boolean): string {
+function dueAfter(from: string, wait: string, test: boolean): string {
   const ms = parseDuration(wait);
   if (ms === undefined) throw new Error("Stored step wait is invalid");
   return new Date(Date.parse(from) + (test ? Math.min(ms, TEST_WAIT_MS) : ms)).toISOString();
@@ -203,7 +203,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     now: string,
     test = false,
   ): bigint {
-    const dueAt = after(from, first.wait, test);
+    const dueAt = dueAfter(from, first.wait, test);
     const id = (
       q
         .get("enrollment-insert")
@@ -468,7 +468,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         q.get("claimed-complete").run(at, at, claim.id, claim.lease);
         return "completed";
       }
-      const dueAt = deleted ? step.due_at : after(at, next.wait, test);
+      const dueAt = deleted ? step.due_at : dueAfter(at, next.wait, test);
       // A deleted step keeps the previous step time; claimed-advance sets updated_at.
       const updated = deleted ? (byId(claim.id)?.updated_at ?? at) : at;
       q.get("claimed-advance").run(next.id, dueAt, updated, claim.id, claim.lease);
@@ -489,6 +489,50 @@ export function createEnrollments(db: Database, clock: Clock) {
      */
     release(claim: Pick<Claim, "id" | "lease">, retryAt: Date | null) {
       q.get("claimed-release").run(retryAt?.toISOString() ?? null, claim.id, claim.lease);
+    },
+    /**
+     * B5: recompute `due_at` of one batch of enrollments waiting on a step from the step's current
+     * wait. A step's wait counts from when the enrollment reached it: the last step's time
+     * (`updated_at`), else the trigger event's time, else enrollment. Leased rows, `retry_at` and
+     * a test's 1-minute cap keep their rules; nothing is sent or advanced. The caller holds the
+     * write. `next` is the cursor for the following batch, null when the set is done.
+     */
+    rescheduleBatch(
+      sequenceId: bigint,
+      stepId: bigint,
+      cursor: bigint,
+      limit: number,
+    ): { changed: number; next: bigint | null; dueNow: boolean } | "missing" {
+      const step = q.get("reschedule-step").get(stepId, sequenceId) as { wait: string } | null;
+      if (!step) return "missing";
+      const now = at();
+      const rows = q.get("reschedule-batch").all(sequenceId, stepId, cursor, now, limit) as {
+        id: bigint;
+        due_at: string | null;
+        created_at: string;
+        updated_at: string;
+        test: bigint | number;
+        event_at: string | null;
+      }[];
+      let changed = 0,
+        dueNow = false;
+      for (const row of rows) {
+        const from =
+          row.updated_at > row.created_at ? row.updated_at : (row.event_at ?? row.created_at);
+        const dueAt = dueAfter(from, step.wait, Boolean(row.test));
+        if (dueAt <= now) dueNow = true;
+        if (dueAt === row.due_at) continue;
+        changed += q.get("reschedule-set").run(dueAt, row.id, stepId, now).changes;
+      }
+      return {
+        changed,
+        next: rows.length === limit ? rows[rows.length - 1]!.id : null,
+        dueNow,
+      };
+    },
+    /** Wake the scheduler when a reschedule made work due. */
+    wake() {
+      due();
     },
     /** Called after an enrollment due now is created, inside the creating transaction. */
     onDue(fn: () => void) {

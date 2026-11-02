@@ -23,6 +23,8 @@ import {
   type EnrollmentRow,
   type Enrollments,
 } from "@/sequences/enrollments";
+import { validate } from "@/conditions/validate";
+import { compile } from "@/conditions/compile";
 import { SequenceConflict, type SequenceStore } from "@/sequences/store";
 import { timeline } from "@/sequences/timeline";
 import type { RequestContext } from "@/server/context";
@@ -39,6 +41,10 @@ const MANAGE = "sequences:manage";
 const SMALL_BODY_BYTES = 4 * 1024;
 const enrollmentStatuses = ["active", "completed", "exited", "canceled"];
 const MAX_EXIT_REASON = 256;
+/** Enrollments rescheduled per write transaction, so the write lock is held briefly. */
+export const RESCHEDULE_BATCH = 500;
+/** Request bodies of live condition validation; a save allows more, this is per keystroke. */
+const VALIDATE_BODY_BYTES = 64 * 1024;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -201,6 +207,60 @@ export function registerSequenceRoutes(
       });
       if (!saved) throw new HttpError(404, "Sequence not found");
       return ok(saved);
+    },
+    auth.middleware(MANAGE),
+    hasID,
+  );
+  router.route(
+    "POST",
+    "/api/conditions/validate",
+    async (c) => {
+      const value = await body(c, VALIDATE_BODY_BYTES);
+      const field = value.field === undefined ? "condition" : value.field;
+      if (typeof field !== "string" || !/^[A-Za-z0-9_.]{1,64}$/.test(field))
+        throw invalid(c, "field");
+      if (!("condition" in value)) throw invalid(c, "condition");
+      const result = validate(value.condition, {
+        canUseSql: roles.can(identity(c).role, "subscribers:sql_query"),
+        field,
+      });
+      if (!result.ok) return ok({ ok: false, errors: result.errors });
+      // The compiler is what a save's evaluator will run; it touches no data.
+      try {
+        compile(result.condition);
+      } catch {
+        return ok({ ok: false, errors: [{ field, message: "invalid condition" }] });
+      }
+      return ok({ ok: true, errors: [] });
+    },
+    auth.middleware(MANAGE),
+  );
+  router.route(
+    "POST",
+    "/api/sequences/:id/steps/:step/reschedule",
+    async (c) => {
+      const stepRaw = c.params.step ?? "";
+      if (!/^[1-9]\d{0,18}$/.test(stepRaw) || BigInt(stepRaw) > maxID) throw invalid(c, "step");
+      const stepId = BigInt(stepRaw);
+      const id = BigInt(getID(c));
+      let cursor = 0n,
+        changed = 0,
+        dueNow = false;
+      for (;;) {
+        const batch = writeTransaction(c.app.db, () => {
+          auth.revalidate(c, MANAGE);
+          return enrollments.rescheduleBatch(id, stepId, cursor, RESCHEDULE_BATCH);
+        });
+        if (batch === "missing") throw new HttpError(404, "Step not found");
+        changed += batch.changed;
+        dueNow ||= batch.dueNow;
+        if (batch.next === null) break;
+        cursor = batch.next;
+        // Let the scheduler and other requests take the write lock between batches.
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      if (dueNow) enrollments.wake();
+      return ok({ changed });
     },
     auth.middleware(MANAGE),
     hasID,
