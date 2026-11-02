@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { altchaPayload, solveAltcha, type AltchaChallenge } from "@/test/public/altcha-solver";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 const uuidText = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -1189,6 +1190,109 @@ export async function runPublicContract(target: {
       check((await visit("/archive/latest")).status === 404, "gate-archive-latest");
       check((await visit("/api/public/archive")).status === 404, "gate-archive-api");
     });
+
+    // B4 CAPTCHA. ALTCHA is solved here as a widget does; hCaptcha is only checked up to the
+    // point where upstream would call hcaptcha.com, which tests never do. Expiry needs the
+    // injected clock and is in test/public/captcha.test.ts.
+    const captchaChecks = async () => {
+      const hcaptcha = { enabled: false, key: "", secret: "" };
+      await withSetting(
+        "security.captcha",
+        { altcha: { enabled: true, complexity: 1000 }, hcaptcha },
+        async () => {
+          const issued = await visit("/api/public/captcha/altcha");
+          const challenge = JSON.parse(issued.text) as AltchaChallenge;
+          check(
+            issued.status === 200 &&
+              issued.headers.get("content-type") === "application/json" &&
+              Object.keys(challenge).join() === "parameters,signature" &&
+              Object.keys(challenge.parameters).join() ===
+                "algorithm,nonce,salt,cost,keyLength,keyPrefix,expiresAt" &&
+              challenge.parameters.algorithm === "SHA-256" &&
+              challenge.parameters.cost === 1 &&
+              challenge.parameters.keyLength === 32 &&
+              /^[0-9a-f]{32}$/.test(challenge.parameters.keyPrefix) &&
+              /^[0-9a-f]{32}$/.test(challenge.parameters.salt) &&
+              /^[0-9a-f]{32}$/.test(challenge.parameters.nonce) &&
+              /^[0-9a-f]{64}$/.test(challenge.signature) &&
+              Math.abs(challenge.parameters.expiresAt - (Date.now() / 1000 + 300)) < 30,
+            "altcha-challenge",
+          );
+          const solution = solveAltcha(challenge);
+          check(solution.counter <= 1000, "altcha-counter");
+          const page = await visit("/subscription/form");
+          check(
+            page.text.includes(
+              `<altcha-widget challenge="${rootUrl}/api/public/captcha/altcha"></altcha-widget>`,
+            ) &&
+              /<script type="module" src="[^"]*\/public\/static\/altcha\.umd\.js[^"]*"/.test(
+                page.text,
+              ),
+            "altcha-form-page",
+          );
+          const signup = (email: string, extra: Record<string, string>) =>
+            post("/subscription/form", new URLSearchParams({ email, l: single.uuid, ...extra }));
+          const invalid = (response: { status: number; text: string }) =>
+            response.status === 400 && response.text.includes("Invalid CAPTCHA.");
+          check(invalid(await signup(address("altcha-none"), {})), "altcha-missing");
+          const payload = altchaPayload(challenge, solution);
+          const tampered = altchaPayload(challenge, { ...solution, counter: solution.counter + 1 });
+          check(
+            invalid(await signup(address("altcha-bad"), { altcha: tampered })),
+            "altcha-tampered",
+          );
+          check(invalid(await signup(address("altcha-junk"), { altcha: "%%%" })), "altcha-junk");
+          const solvedEmail = address("altcha-ok");
+          const solved = await signup(solvedEmail, { altcha: payload });
+          check(
+            solved.status === 200 && solved.text.includes("Subscribed successfully."),
+            "altcha-solved",
+          );
+          check((await adminSubscriber(solvedEmail))?.lists.length === 1, "altcha-stored");
+          const replayEmail = address("altcha-replay");
+          check(invalid(await signup(replayEmail, { altcha: payload })), "altcha-replay");
+          check(!(await adminSubscriber(replayEmail)), "altcha-replay-not-stored");
+          const api = await postJson("/api/public/subscription", {
+            email: address("altcha-api"),
+            list_uuids: [single.uuid],
+          });
+          check(api.status === 200, "altcha-api-without-captcha");
+        },
+      );
+      await withSetting(
+        "security.captcha",
+        {
+          altcha: { enabled: false, complexity: 1000 },
+          hcaptcha: { enabled: true, key: "site-key", secret: "" },
+        },
+        async () => {
+          check((await visit("/api/public/captcha/altcha")).status === 404, "hcaptcha-no-altcha");
+          const page = await visit("/subscription/form");
+          check(
+            page.text.includes('<div class="h-captcha" data-sitekey="site-key"></div>') &&
+              page.text.includes('<script src="https://js.hcaptcha.com/1/api.js" async defer>') &&
+              !page.text.includes("altcha-widget"),
+            "hcaptcha-form-page",
+          );
+          const missing = await post(
+            "/subscription/form",
+            new URLSearchParams({ email: address("hcaptcha-none"), l: single.uuid }),
+          );
+          check(
+            missing.status === 400 && missing.text.includes("Invalid CAPTCHA."),
+            "hcaptcha-missing",
+          );
+        },
+      );
+    };
+    // The subscribe budget is native; the checks above must not meet it.
+    if (reference) await captchaChecks();
+    else
+      await withSetting(
+        "security.public_rate_limit",
+        { ...settings["security.public_rate_limit"], subscribe: 1000 },
+        captchaChecks,
+      );
 
     if (target.restart) {
       await target.restart();
