@@ -466,8 +466,9 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
         headers: { authorization },
         body: upload,
       });
-      assert.equal(stored.status, 200, await stored.text());
-      const media = ((await stored.json()) as { data: { id: number } }).data.id;
+      const storedText = await stored.text();
+      assert.equal(stored.status, 200, storedText);
+      const media = (JSON.parse(storedText) as { data: { id: number } }).data.id;
       const id = (
         await api("/api/campaigns", "POST", {
           name: "crash",
