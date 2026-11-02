@@ -484,6 +484,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         return {
           enabled: current["bounce.enabled"],
           webhooksEnabled: current["bounce.webhooks_enabled"],
+          ses: current["bounce.ses_enabled"],
           mailgun: current["bounce.mailgun"],
         };
       },

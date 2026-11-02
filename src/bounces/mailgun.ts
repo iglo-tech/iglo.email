@@ -6,14 +6,14 @@ import { sanitizeEmail } from "@/subscribers/email";
 
 /** How far a signature's timestamp may sit from now, either way. */
 export const SIGNATURE_WINDOW_MS = 15 * 60_000;
-const MAX_ID_LENGTH = 256;
+export const MAX_ID_LENGTH = 256;
 const MAX_TEXT_LENGTH = 1000;
 const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const sendMessage = new RegExp(`^<?(${uuid})@[^@>\\s]+>?$`, "i");
-const campaignMessage = new RegExp(`^<?(${uuid})\\.(${uuid})@[^@>\\s]+>?$`, "i");
+export const sendMessage = new RegExp(`^<?(${uuid})@[^@>\\s]+>?$`, "i");
+export const campaignMessage = new RegExp(`^<?(${uuid})\\.(${uuid})@[^@>\\s]+>?$`, "i");
 const addresses = /[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g;
 
-const record = (value: unknown) =>
+export const record = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
@@ -46,7 +46,7 @@ function bounceType(data: Record<string, unknown>): BounceType | null {
 }
 
 /** Provider text is bounded and loses addresses, which it often repeats. */
-function safeText(value: unknown) {
+export function safeText(value: unknown) {
   if (typeof value !== "string" || !value) return undefined;
   return value.slice(0, MAX_TEXT_LENGTH).replace(addresses, "[address]");
 }

@@ -5,6 +5,8 @@ import type { Database } from "bun:sqlite";
 import type { BounceStore, BounceEvent, BounceType } from "@/bounces/store";
 import { bounceTypes, reUUID } from "@/bounces/store";
 import { mailgunEvent, verifySignature } from "@/bounces/mailgun";
+import { SES_BODY_LIMIT, createSnsClient, parseSns, sesEvents } from "@/bounces/ses";
+import type { SnsClient } from "@/bounces/ses";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import { publicNotFound } from "@/public/message";
@@ -21,11 +23,13 @@ import { readBodyBytes } from "@/users/input";
 
 /** A provider re-sends a delivery for hours; a day covers it, and the table stays small. */
 const EVENT_RECEIPT_MS = 86_400_000;
+const MAX_RECEIPT_ID = 256;
 const reRFC3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
 
 export interface BounceSettings {
   enabled: boolean;
   webhooksEnabled: boolean;
+  ses: boolean;
   mailgun: { enabled: boolean; key: string };
 }
 // Go strconv.Atoi, ignoring its error.
@@ -75,9 +79,12 @@ export function registerBounceRoutes(
     settings: () => BounceSettings;
     /** The public rate limit for the provider's route. */
     limit: Middleware;
+    /** SNS signature checks and confirmations; tests inject the network. */
+    sns?: SnsClient;
   },
 ) {
   const { db, clock, store, subscribers, roles, auth, settings } = deps;
+  const sns = deps.sns ?? createSnsClient({ clock });
   const invalidID = (c: RequestContext) =>
     new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
   const invalidField = (c: RequestContext, name: string) =>
@@ -259,8 +266,64 @@ export function registerBounceRoutes(
     writeTransaction(db, () => store.record(event));
     return ok(true);
   };
+  /** The body, up to SNS's own message limit; a larger one is refused before it is parsed. */
+  const readSns = async (request: Request) => {
+    if (Number(request.headers.get("content-length")) > SES_BODY_LIMIT) throw new HttpError(413);
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    const reader = request.body?.getReader();
+    if (reader)
+      try {
+        for (;;) {
+          const item = await reader.read();
+          if (item.done) break;
+          size += item.value.length;
+          if (size > SES_BODY_LIMIT) {
+            await reader.cancel();
+            throw new HttpError(413);
+          }
+          chunks.push(item.value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    return Buffer.concat(chunks).toString("utf8");
+  };
+  /** cmd/bounce.go's `ses` branch. Every refusal is upstream's 400 and changes nothing. */
+  const ses: Handler = async (c) => {
+    const raw = await readSns(c.request);
+    const type = c.request.headers.get("X-Amz-Sns-Message-Type");
+    if (
+      type !== "SubscriptionConfirmation" &&
+      type !== "UnsubscribeConfirmation" &&
+      type !== "Notification"
+    )
+      throw invalidData(c);
+    const message = parseSns(raw);
+    // The header is not signed: it must agree with the signed type.
+    if (!message || message.Type !== type || !(await sns.verify(message))) throw invalidData(c);
+    if (type === "SubscriptionConfirmation") {
+      if (!(await sns.confirm(message))) throw invalidData(c);
+      return ok(true);
+    }
+    // An unsubscription is acknowledged: the link it carries would end the subscription.
+    if (type === "UnsubscribeConfirmation") return ok(true);
+    const id = message.MessageId ?? "";
+    if (!id || id.length > MAX_RECEIPT_ID) throw invalidData(c);
+    const now = clock.now();
+    const events = sesEvents(message.Message ?? "", now);
+    if (!events) throw invalidData(c);
+    writeTransaction(db, () => {
+      store.pruneReceipts();
+      // SNS delivers at least once: a repeated message is recorded once.
+      if (!store.receive(`sns:${id}`, new Date(now.getTime() + EVENT_RECEIPT_MS))) return;
+      for (const event of events) store.record(event);
+    });
+    return ok(true);
+  };
   const service: Handler = (c) => {
     if (!settings().enabled) throw unavailable(c);
+    if (c.params.service === "ses" && settings().ses) return ses(c);
     throw unknownService(c);
   };
   const mailgun: Handler = async (c) => {
@@ -318,6 +381,6 @@ export function registerBounceRoutes(
     webhooksEnabled,
     auth.middleware("webhooks:post_bounce"),
   );
-  router.route("POST", "/webhooks/service/:service", service, webhooksEnabled);
+  router.route("POST", "/webhooks/service/:service", service, webhooksEnabled, deps.limit);
   router.route("POST", "/webhooks/bounce/mailgun", mailgun, webhooksEnabled, deps.limit);
 }

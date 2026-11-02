@@ -53,6 +53,9 @@ import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/pol
 import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 import { registerBounceRoutes, type BounceSettings } from "@/bounces/routes";
+import { createSnsClient, type SnsFetch } from "@/bounces/ses";
+
+const refuseNetwork: SnsFetch = () => Promise.reject(new Error("no network in tests"));
 import { createBounceStore, type BounceAction } from "@/bounces/store";
 import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
@@ -75,6 +78,8 @@ export async function txFixture(
     webhooks?: WebhookTransport;
     /** The provider route's rate limit, with `webhooks`. */
     bounceLimit?: Middleware;
+    /** The network for the SES route; the default would reach AWS. */
+    snsFetch?: SnsFetch;
     /** Holds each synchronous dispatch, as a stalled SMTP server does. */
     beforeDispatch?: () => Promise<void>;
     /** The attachment budget of `POST /api/tx`. */
@@ -188,6 +193,7 @@ export async function txFixture(
   const bounceSettings: BounceSettings & { actions: Record<string, BounceAction> } = {
     enabled: true,
     webhooksEnabled: true,
+    ses: true,
     mailgun: { enabled: true, key: "fixture-mailgun-key" },
     actions: {
       soft: { count: 2, action: "none" },
@@ -231,6 +237,7 @@ export async function txFixture(
       auth,
       settings: () => bounceSettings,
       limit: options.bounceLimit ?? ((_context, next) => next()),
+      sns: createSnsClient({ clock, fetch: options.snsFetch ?? refuseNetwork }),
     });
   }
   const media = createMediaStore(db, clock);
