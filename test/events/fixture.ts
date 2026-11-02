@@ -14,7 +14,8 @@ import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createSubscriberStore } from "@/subscribers/store";
 import { createEventStore, type ExitThenTrigger } from "@/events/store";
 import { registerEventRoutes } from "@/events/routes";
-import { startEventRetention } from "@/events/retention";
+import { createEventPurge } from "@/events/retention";
+import { startPurge } from "@/loops/purge";
 import { TestClock } from "@/test/server/fixture";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
@@ -160,12 +161,12 @@ export async function eventsFixture(
       close();
       current = await open();
     },
-    retention: (retention: Partial<Parameters<typeof startEventRetention>[0]> = {}) =>
-      startEventRetention({
+    retention: (retention: { batchSize?: number } = {}) =>
+      startPurge({
         db: current.db,
         clock,
         logger: { error: (error) => errors.push(error) },
-        events: current.events,
+        purges: [createEventPurge(current.events)],
         ...retention,
       }),
     close() {

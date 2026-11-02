@@ -50,6 +50,8 @@ function stats(values: number[]) {
 
 interface Delivery {
   to: string;
+  /** The message carried the campaign's media attachment as a named part. */
+  attached: boolean;
   /** MAIL FROM time and the accepting reply time (performance.now()). */
   mail: number;
   accepted: number;
@@ -72,7 +74,7 @@ async function startSink() {
     socket.setEncoding("latin1");
     let buffer = "";
     let data = false;
-    let current: { to: string; mail: number } | null = null;
+    let current: { to: string; mail: number; attached: boolean } | null = null;
     socket.write("220 sink.test ESMTP\r\n");
     socket.on("close", () => {
       if (current) open--;
@@ -85,6 +87,7 @@ async function startSink() {
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 2);
         if (data) {
+          if (/filename="?crash-note\.txt"?/i.test(line)) current!.attached = true;
           if (line !== ".") continue;
           data = false;
           if (delivered.length >= limit) {
@@ -100,7 +103,7 @@ async function startSink() {
         const verb = line.slice(0, 4).toUpperCase();
         if (verb === "EHLO") socket.write("250-sink.test\r\n250 8BITMIME\r\n");
         else if (verb === "MAIL") {
-          current = { to: "", mail: performance.now() };
+          current = { to: "", mail: performance.now(), attached: false };
           peak = Math.max(peak, ++open);
           socket.write("250 ok\r\n");
         } else if (verb === "RCPT") {
@@ -441,7 +444,7 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
   await withRun(`crash-${point}`, async (directory, sink) => {
     const app = await server(directory);
     try {
-      const { api } = await client(app.origin, sink.port, {
+      const { api, authorization } = await client(app.origin, sink.port, {
         "app.concurrency": 2,
         "app.message_rate": 1000,
         "app.batch_size": batch,
@@ -454,8 +457,25 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
       const byEmail = new Map(
         ids.map((id, i) => [`c${String(i).padStart(5, "0")}@example.test`, id]),
       );
+      // Every campaign carries one stored media file, so a crash is shown for a message with an
+      // attachment too: the file is read for each message and must not make a resend possible.
+      const upload = new FormData();
+      upload.append("file", new File(["synthetic crash attachment\n"], "crash-note.txt"));
+      const stored = await fetch(`${app.origin}/api/media`, {
+        method: "POST",
+        headers: { authorization },
+        body: upload,
+      });
+      const storedText = await stored.text();
+      assert.equal(stored.status, 200, storedText);
+      const media = (JSON.parse(storedText) as { data: { id: number } }).data.id;
       const id = (
-        await api("/api/campaigns", "POST", { name: "crash", subject: "s", lists: [list] })
+        await api("/api/campaigns", "POST", {
+          name: "crash",
+          subject: "s",
+          lists: [list],
+          media: [media],
+        })
       ).body.data.id;
       // Hold acceptance: at the start of batch 3, inside it, or on its last message.
       const holdAfter = {
@@ -506,6 +526,7 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
         delivered: received.length,
         unique: unique.size,
         duplicates: received.length - unique.size,
+        withoutAttachment: sink.delivered.filter((d) => !d.attached).length,
         missing: missing.length,
         missingRange: missing.length ? [missing[0], missing.at(-1)] : null,
         loggedRange: logged ? { count: +logged[1]!, first: +logged[2]!, last: +logged[3]! } : null,
@@ -516,6 +537,7 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
       };
       record(entry);
       assert.equal(entry.duplicates, 0);
+      assert.equal(entry.withoutAttachment, 0, "a message was sent without its attachment");
       assert.ok(missing.length <= batch, "more than one batch skipped");
       if (missing.length) {
         assert.ok(logged, "skipped range not logged");

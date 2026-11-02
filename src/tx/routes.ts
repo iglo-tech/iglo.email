@@ -13,6 +13,7 @@ import type { ListReferences } from "@/lists/references";
 import type { Attachments } from "@/media/attachments";
 import type { EmbedImages } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
+import type { Handler } from "@/server/context";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -20,7 +21,8 @@ import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
 import type { TemplateStore } from "@/templates/store";
 import { RenderCapacityError, type TemplateRenderer } from "@/templates/renderer";
 import type { Authentication } from "@/users/auth";
-import { readTxMessage, TxInputError, type TxMessage } from "@/tx/input";
+import { createByteGate, type ByteGate, type Reservation } from "@/tx/gate";
+import { BODY_LIMIT, readTxMessage, TxInputError, type TxMessage } from "@/tx/input";
 import { messageLinks } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
@@ -28,7 +30,17 @@ import type { Tracking } from "@/unsubscribe/tracking";
 const MAX_RECIPIENTS = 100;
 /** Aggregate prepared bytes for one request; each payload is also bounded by messaging. */
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
-const MAX_DISPATCHING_BYTES = 64 * 1024 * 1024;
+/**
+ * Memory a synchronous send with attachments may hold at once, across requests (D74): a
+ * multipart upload costs its body about five times while it is parsed (read chunks, joined body, form, file copies), and a
+ * send holds each recipient's decoded copy until SMTP answers.
+ */
+const MAX_ATTACHMENT_BYTES_IN_FLIGHT = 64 * 1024 * 1024;
+const MAX_ATTACHMENT_SENDS = 64;
+/** How long an upload waits for room before a 429. */
+const ATTACHMENT_WAIT_MS = 2000;
+const PARSE_COPIES = 5;
+type Slot = { reservation: Reservation | null };
 const MAX_KEY_BYTES = 255;
 const MAX_HEADERS = 64;
 const headerName = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -86,18 +98,49 @@ export function registerTxRoutes(
     marketing: { settings: () => MarketingSettings; tracking: Tracking };
     attachments: Attachments;
     embedImages: EmbedImages;
+    /** Test seam for the attachment budget; production uses the constants above. */
+    limits?: { maxBytes?: number; maxSends?: number; waitMs?: number };
   },
 ) {
-  let dispatching = 0;
+  let gate: ByteGate | undefined;
+  const busy = () =>
+    new HttpError(429, "Too many sends with attachments in progress.", { "Retry-After": "1" });
+  /** Gives the handler its reservation slot and releases whatever it still holds on any exit. */
+  const guarded =
+    (
+      inner: (context: Parameters<Handler>[0], gate: ByteGate, slot: Slot) => ReturnType<Handler>,
+    ): Handler =>
+    async (context) => {
+      gate ??= createByteGate({
+        clock: context.app.clock,
+        maxBytes: deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT,
+        maxHolders: deps.limits?.maxSends ?? MAX_ATTACHMENT_SENDS,
+        waitMs: deps.limits?.waitMs ?? ATTACHMENT_WAIT_MS,
+      });
+      const slot: Slot = { reservation: null };
+      try {
+        return await inner(context, gate, slot);
+      } finally {
+        slot.reservation?.release();
+      }
+    };
   router.route(
     "POST",
     "/api/tx",
-    async (context) => {
+    guarded(async (context, gate, slot) => {
       const t = context.app.i18n;
       const invalid = (name: string) =>
         new HttpError(400, t.Ts("globals.messages.invalidFields", "name", name));
       let m: TxMessage;
       try {
+        // Only a multipart body can carry caller attachments. Its parse buffers are charged
+        // before it is read, from its declared size or the cap, and waited for briefly.
+        if ((context.request.headers.get("content-type") ?? "").startsWith("multipart/form-data")) {
+          const declared = Number(context.request.headers.get("content-length"));
+          const size = declared > 0 && declared <= BODY_LIMIT ? declared : BODY_LIMIT;
+          slot.reservation = await gate.acquire(size * PARSE_COPIES);
+          if (!slot.reservation) throw busy();
+        }
         m = await readTxMessage(context.request);
       } catch (error) {
         if (error instanceof TxInputError) throw invalid(error.field);
@@ -300,13 +343,19 @@ export function registerTxRoutes(
         });
       }
 
-      // A template's image costs a small JSON request nothing, but each synchronous send decodes
-      // its own copy from the journal and holds it until SMTP answers.
-      const held = !m.async && inline.length ? attachmentBytes * requested.length : 0;
-      if (held && dispatching + held > MAX_DISPATCHING_BYTES)
-        throw new HttpError(429, "Too many sends with embedded images in progress.", {
-          "Retry-After": "1",
-        });
+      // Each synchronous send decodes its own copy of every attachment from the journal and
+      // holds it until SMTP answers. An async send holds nothing past the request.
+      const held = !m.async && attachments.length ? attachmentBytes * requested.length : 0;
+      if (!held) {
+        slot.reservation?.release();
+        slot.reservation = null;
+      } else if (slot.reservation) {
+        if (held <= slot.reservation.bytes) slot.reservation.shrink(held);
+        else if (!slot.reservation.grow(held - slot.reservation.bytes)) throw busy();
+      } else {
+        slot.reservation = gate.tryAcquire(held);
+        if (!slot.reservation) throw busy();
+      }
 
       let result: ReturnType<Sends["enqueueRequest"]>;
       try {
@@ -322,17 +371,12 @@ export function registerTxRoutes(
       }
       // Synchronously after commit, so the outbox loop cannot claim these rows first.
       if (!m.async && result.queued.length) {
-        dispatching += held;
-        try {
-          await deps.outbox.dispatch(result.queued);
-        } finally {
-          dispatching -= held;
-        }
+        await deps.outbox.dispatch(result.queued);
         const current = result.ids.map((id, i) => deps.sends.summary(id) ?? result.sends[i]!);
         return ok({ sends: current });
       }
       return ok({ sends: result.sends });
-    },
+    }),
     deps.auth.middleware("tx:send"),
   );
 }

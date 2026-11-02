@@ -77,6 +77,8 @@ export async function txFixture(
     bounceLimit?: Middleware;
     /** Holds each synchronous dispatch, as a stalled SMTP server does. */
     beforeDispatch?: () => Promise<void>;
+    /** The attachment budget of `POST /api/tx`. */
+    limits?: { maxBytes?: number; maxSends?: number; waitMs?: number };
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});
@@ -268,6 +270,7 @@ export async function txFixture(
       ...options.policy,
     }),
     marketing: { settings: () => marketing, tracking },
+    ...(options.limits ? { limits: options.limits } : {}),
   });
   registerUnsubscribeRoutes(router, {
     db,

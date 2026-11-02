@@ -3,7 +3,7 @@
 import { HttpError } from "@/server/response";
 
 /** Matches the M2.2 prepared-payload attachment bound plus room for the data field. */
-const BODY_LIMIT = 5 * 1024 * 1024;
+export const BODY_LIMIT = 5 * 1024 * 1024;
 const MAX_FILES = 10;
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 
