@@ -180,6 +180,41 @@ export async function runBouncesContract(target: {
       check(answer.status === 400 && answer.body.message === "Unknown service.", service);
     }
 
+    // Amazon SES: enabled, a message that cannot be verified is refused and records nothing. A
+    // signed one needs a certificate from AWS, so those cases are in test/bounces/ses.test.ts.
+    await setting("bounce.ses_enabled", true);
+    const sesBefore = (await call("/api/bounces?per_page=1")).body.data.total;
+    const sesBody = {
+      Type: "Notification",
+      MessageId: crypto.randomUUID(),
+      TopicArn: "arn:aws:sns:eu-west-1:123456789012:bounces",
+      Timestamp: new Date().toISOString(),
+      Message: JSON.stringify({
+        notificationType: "Bounce",
+        bounce: { bounceType: "Permanent", bouncedRecipients: [{ emailAddress: "a@example.com" }] },
+        mail: { timestamp: new Date().toISOString(), destination: ["a@example.com"] },
+      }),
+      SignatureVersion: "1",
+      Signature: btoa("forged"),
+      SigningCertURL:
+        "https://sns.eu-west-1.amazonaws.com.evil.test/SimpleNotificationService-abc.pem",
+    };
+    const sns = (body: unknown, type?: string) =>
+      call("/webhooks/service/ses", "POST", body, {
+        "content-type": "text/plain",
+        ...(type ? { "x-amz-sns-message-type": type } : {}),
+      });
+    check((await sns(sesBody)).status === 400, "ses-no-type");
+    check((await sns(sesBody, "Other")).status === 400, "ses-other-type");
+    check((await sns(sesBody, "Notification")).status === 400, "ses-wrong-cert-host");
+    check((await sns("{", "Notification")).status === 400, "ses-json");
+    check((await sns(sesBody, "SubscriptionConfirmation")).status === 400, "ses-confirm-refused");
+    check(
+      (await call("/api/bounces?per_page=1")).body.data.total === sesBefore,
+      "ses-refused-rows",
+    );
+    await setting("bounce.ses_enabled", false);
+
     // Authentication and permissions.
     check((await post({ email: "a@b.c", type: "hard" }, {})).status === 403, "post-anonymous");
     const readOnly = await apiUser("bounce-read", ["bounces:get"]);
@@ -542,6 +577,7 @@ export async function runBouncesContract(target: {
     for (const id of users) await attempt(() => call(`/api/users/${id}`, "DELETE"));
     for (const id of roles.reverse()) await attempt(() => call(`/api/roles/${id}`, "DELETE"));
     await attempt(() => setting("bounce.actions", originals["bounce.actions"]));
+    await attempt(() => setting("bounce.ses_enabled", originals["bounce.ses_enabled"]));
     await attempt(() => setting("bounce.enabled", originals["bounce.enabled"]));
     await attempt(() => setting("bounce.webhooks_enabled", originals["bounce.webhooks_enabled"]));
     if (failures.length) process.stderr.write("Bounce contract cleanup failed\n");

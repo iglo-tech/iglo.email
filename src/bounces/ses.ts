@@ -216,7 +216,9 @@ export function sesEvents(message: string, now: Date) {
     : [];
   const bounce = record(inner.bounce);
   const complaint = record(inner.complaint);
-  const listed = recipients(kind === "Complaint" ? complaint.complainedRecipients : bounce.bouncedRecipients);
+  const listed = recipients(
+    kind === "Complaint" ? complaint.complainedRecipients : bounce.bouncedRecipients,
+  );
   // ses.go takes `destination[0]`; the recipients SES names are used when it names any.
   const named: Record<string, unknown>[] = listed.length
     ? listed
@@ -233,8 +235,7 @@ export function sesEvents(message: string, now: Date) {
       const lower = name.toLowerCase();
       // ses.go compares the name exactly; header names are case-insensitive.
       if (lower === "x-listmonk-campaign" && !campaignUuid) campaignUuid = value.trim();
-      else if (lower === "x-listmonk-subscriber" && !subscriberUuid)
-        subscriberUuid = value.trim();
+      else if (lower === "x-listmonk-subscriber" && !subscriberUuid) subscriberUuid = value.trim();
       else if (lower === "message-id" && !messageId) messageId = value.trim();
     }
   }
@@ -252,7 +253,8 @@ export function sesEvents(message: string, now: Date) {
   const type = typeof bounce.bounceType === "string" ? bounce.bounceType : "";
   const events: BounceEvent[] = [];
   for (const entry of named) {
-    const email = typeof entry.emailAddress === "string" ? sanitizeEmail(entry.emailAddress) : undefined;
+    const email =
+      typeof entry.emailAddress === "string" ? sanitizeEmail(entry.emailAddress) : undefined;
     if (!email) continue;
     const status = typeof entry.status === "string" ? entry.status : "";
     let kindOfBounce: BounceType = "soft";
@@ -287,4 +289,3 @@ export function sesEvents(message: string, now: Date) {
   }
   return events;
 }
-
