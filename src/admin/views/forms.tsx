@@ -1,8 +1,8 @@
 // Adapted from listmonk static/admin/views/forms.html and cmd/lists.go (ViewForms) at 6fcd95f.
 // Upstream's page arrives with its lists; here forms.js reads them from /api/lists, which applies
 // the user's list scope as ViewForms does. Trusted URLs are settings, not list data, and go
-// through the JSX escaper. No captcha markup: the
-// public form serves no challenge (07-api-and-ui.md).
+// through the JSX escaper. The captcha markup comes from upstream's `public_subscription` server
+// config, which this page alone receives.
 import { Icon } from "@/admin/layout/icon";
 import type { AdminView } from "@/admin/page";
 import { Alert, Breadcrumbs } from "@/admin/views/parts";
@@ -23,6 +23,13 @@ export const formsView: AdminView = ({ context, site }) => {
     pageId: "lists.forms",
     script: "forms",
     translationKeys: formKeys,
+    config: {
+      public_subscription: {
+        captcha_enabled: site.captcha.provider !== "",
+        captcha_provider: site.captcha.provider || null,
+        captcha_key: site.captcha.provider === "hcaptcha" ? site.captcha.key : null,
+      },
+    },
     body: (
       <>
         <Breadcrumbs

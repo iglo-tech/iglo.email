@@ -1,8 +1,10 @@
 // Public subscriber pages and APIs, adapted from listmonk cmd/public.go, cmd/handlers.go
 // (public routes, hasUUID, hasSub, noIndex, serveCustomAppearance) and
-// static/public/templates (optin.html, subscription-form.html) at 6fcd95f.
+// static/public/templates (optin.html, subscription-form.html) at 6fcd95f. The captcha
+// handlers (AltchaChallenge, SubscriptionForm) use @/captcha/captcha.
 import { sendingHeld } from "@/settings/hold";
 import type { Database } from "bun:sqlite";
+import type { Captcha } from "@/captcha/captcha";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
@@ -41,6 +43,9 @@ export function registerPublicRoutes(
     subscribers: SubscriberStore;
     mail: SubscriberMail;
     settings: () => PublicSettings;
+    captcha: Captcha;
+    /** security.captcha.altcha.complexity. */
+    altchaComplexity: () => number;
     limits: PublicLimits;
     clientAddress: (context: RequestContext) => string;
   },
@@ -148,9 +153,19 @@ export function registerPublicRoutes(
   router.route("GET", "/api/public/lists", () =>
     Response.json(deps.lists.publicLists().map((list) => ({ uuid: list.uuid, name: list.name }))),
   );
-  // ALTCHA is not implemented (07-api-and-ui.md): the same answer as with it disabled.
-  router.route("GET", "/api/public/captcha/altcha", () => {
-    throw new HttpError(404, "captcha not enabled");
+  router.route("GET", "/api/public/captcha/altcha", async (context) => {
+    if (deps.settings().captcha.provider !== "altcha")
+      throw new HttpError(404, "captcha not enabled");
+    let challenge: string;
+    try {
+      challenge = await deps.captcha.challenge(deps.altchaComplexity());
+    } catch (error) {
+      context.app.logger.error(error);
+      throw new HttpError(500, "Error generating challenge");
+    }
+    return new Response(challenge, {
+      headers: { "Content-Type": "application/json" },
+    });
   });
   router.route(
     "POST",
@@ -210,6 +225,24 @@ export function registerPublicRoutes(
                 </li>
               ))}
             </ul>
+            {settings.captcha.provider === "hcaptcha" ? (
+              <div class="captcha">
+                <div class="h-captcha" data-sitekey={settings.captcha.key}></div>
+                <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+              </div>
+            ) : settings.captcha.provider === "altcha" ? (
+              <div class="captcha">
+                <altcha-widget
+                  challenge={`${settings.rootUrl}/api/public/captcha/altcha`}
+                ></altcha-widget>
+                <script
+                  type="module"
+                  src={`/public/static/altcha.umd.js?v=${assetVersion}`}
+                  async
+                  defer
+                ></script>
+              </div>
+            ) : null}
             <p>
               <button type="submit" class="button">
                 {title}
@@ -246,8 +279,13 @@ export function registerPublicRoutes(
       };
       // If there's a nonce value, a bot could've filled the form.
       if (value("nonce")) throw new HttpError(502, t.T("public.invalidFeature"));
-      // Captcha verification is not implemented: an enabled setting fails closed.
-      if (settings.captcha) return failed(t, 400, t.T("public.invalidCaptcha"));
+      // Process CAPTCHA, before any transaction: hCaptcha is a network call.
+      const provider = settings.captcha.provider;
+      if (provider) {
+        const solution = value(provider === "altcha" ? "altcha" : "h-captcha-response");
+        if (!solution || !(await deps.captcha.verify(provider, solution)))
+          return failed(t, 400, t.T("public.invalidCaptcha"));
+      }
       let hasOptin: boolean;
       try {
         hasOptin = subscribe(t, fields);

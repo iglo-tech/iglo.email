@@ -25,6 +25,7 @@ import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { createRenderer } from "@/templates/renderer";
 import { registerAdminRoutes } from "@/admin/routes";
+import { publicSettings } from "@/public/settings";
 import type { Message } from "@/messaging/email";
 
 export async function startUserFixture(
@@ -130,6 +131,7 @@ export async function startUserFixture(
         messengers: ["email"],
         publicSubscription: settings.read()["app.enable_public_subscription_page"],
         trustedUrls: settings.read()["security.trusted_urls"],
+        captcha: publicSettings(settings.read()).captcha,
         customCss: settings.read()["appearance.admin.custom_css"],
         customJs: settings.read()["appearance.admin.custom_js"],
       }),

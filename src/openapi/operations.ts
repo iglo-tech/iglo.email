@@ -1333,8 +1333,23 @@ const publicApi: Operation[] = [
     route: "GET /api/public/captcha/altcha",
     id: "getAltchaChallenge",
     tag: "Public",
-    summary: "ALTCHA is not implemented: always 404.",
+    summary:
+      "A signed ALTCHA v2 challenge (SHA-256, five minutes), as upstream. 404 unless ALTCHA is the active captcha. As upstream, this answer has no envelope.",
     anonymous: true,
+    answer: {
+      "application/json": object({
+        parameters: object({
+          algorithm: string,
+          nonce: string,
+          salt: string,
+          cost: integer,
+          keyLength: integer,
+          keyPrefix: string,
+          expiresAt: integer,
+        }),
+        signature: string,
+      }),
+    },
     errors: [404],
   },
 ];

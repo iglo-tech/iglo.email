@@ -1,10 +1,12 @@
 // Public API CORS adapted from listmonk cmd/handlers.go (initHTTPHandlers, trustedURLsToCORSOrigins)
 // and Echo v5.4.0 middleware/cors.go at 6fcd95f. Upstream applies it to every route; here it
-// covers only the public API (docs/design/07-api-and-ui.md).
+// covers the public API and the ALTCHA widget, which a pasted form loads as a module script in
+// CORS mode (docs/design/07-api-and-ui.md).
 import type { RequestContext, Middleware } from "@/server/context";
 import { errorResponse, HttpError } from "@/server/response";
 
 const scope = "/api/public/";
+const widget = "/public/static/altcha.umd.js";
 const allowMethods = "GET,HEAD,PUT,PATCH,POST,DELETE";
 const allowHeaders = "Origin,Content-Type,Accept,Authorization";
 
@@ -27,7 +29,8 @@ function failure(context: RequestContext, error: unknown): Response {
 
 export function publicCors(settings: () => { trustedUrls: string[] }): Middleware {
   return async (context, next) => {
-    if (!context.url.pathname.startsWith(scope)) return next();
+    const path = context.url.pathname;
+    if (!path.startsWith(scope) && path !== widget) return next();
     const origins = trustedOrigins(settings().trustedUrls);
     if (!origins.length) return next();
     const { headers, method } = context.request;

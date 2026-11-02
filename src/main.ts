@@ -80,6 +80,7 @@ import { registerArchiveRoutes } from "@/public/archive";
 import { createSubscriberMail, startSignupMail, type SubscriberMail } from "@/public/mail";
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
+import { createCaptcha } from "@/captcha/captcha";
 import { publicSettings } from "@/public/settings";
 import { createBounceStore } from "@/bounces/store";
 import { registerBounceRoutes } from "@/bounces/routes";
@@ -554,12 +555,15 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       settings: pages,
     });
     signups = startSignupMail({ db, clock, logger: app.logger, mail });
+    const captchaOptions = () => settings!.read()["security.captcha"];
     registerPublicRoutes(router, {
       db,
       lists,
       subscribers: subscriberStore,
       mail,
       settings: pages,
+      captcha: await createCaptcha({ clock, options: captchaOptions }),
+      altchaComplexity: () => captchaOptions().altcha.complexity,
       limits,
       clientAddress,
     });
@@ -668,6 +672,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           messengers: campaignSettings().messengers,
           publicSubscription: current.subscriptionPage,
           trustedUrls: current.trustedUrls,
+          captcha: current.captcha,
           customCss: settings!.read()["appearance.admin.custom_css"],
           customJs: settings!.read()["appearance.admin.custom_js"],
         };

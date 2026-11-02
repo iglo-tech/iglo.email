@@ -42,7 +42,8 @@ It is embedded and served at
 the npm license collection and the minified browser bundle's comments. A
 compiled-executable HTTP test verifies the copyright, permission and disclaimer.
 
-The Altcha/CAPTCHA package and public build step, visual drag-and-drop email
+The altcha npm widget and its public build step are replaced by the original
+`public/static/altcha.umd.js` (D72). The visual drag-and-drop email
 builder and its distribution, view-specific domain entrypoints, custom
 appearance and update/restart UI are omitted: they are later, dropped, or owned
 by later domain tasks. The bundled editor and chart modules are reusable inputs;

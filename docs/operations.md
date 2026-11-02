@@ -551,6 +551,29 @@ Do not replace or weaken it at the proxy, and do not add a second one there: bro
 - Remote images in a campaign body stay unloaded until **Show remote images** is pressed, for that
   page load only.
 
+## Public form CAPTCHA
+
+Open public forms attract signup spam. Turn a CAPTCHA on in Settings → Security before linking
+`/subscription/form` or pasting a form from Lists → Forms on another site.
+
+- **ALTCHA** needs no account and sends nothing to a third party. The browser solves a SHA-256
+  proof of work, at most *complexity* hashes (300,000 by default, about a second on a laptop).
+  Challenges are valid for five minutes, each solution is accepted once, and a restart refuses
+  challenges issued before it. The form loads `/public/static/altcha.umd.js` from this server and
+  fetches its challenge from the root URL, so the root URL must be the address visitors use. A
+  form pasted on another site also needs that site's origin in `security.trusted_urls`: the
+  widget script and the challenge are then served with CORS headers for that origin, as in
+  listmonk. A site that is not listed gets no header, so its browser refuses the widget and every
+  signup from that page is refused too. If the site has its own Content-Security-Policy, it must
+  allow this server in `script-src` and `connect-src`, and `blob:` in `worker-src`.
+- **hCaptcha** needs a site key and secret from hcaptcha.com. Each form post calls hCaptcha's
+  `siteverify` with a 5 s timeout, so the server needs outbound HTTPS to `hcaptcha.com`; when that
+  fails, or answers anything but success, the signup is refused, never let through.
+
+Only one provider is used: ALTCHA if both are enabled. `POST /api/public/subscription`, the JSON
+API, never asks for a CAPTCHA, as in listmonk; the subscribe rate limit is its protection. Keep
+lists private if that API is not meant to be public.
+
 ## Defaults for open questions
 
 From [Open questions](design/10-open-questions.md), until the owner decides otherwise:
@@ -558,7 +581,7 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 | Question | Default in effect |
 |---|---|
 | Where does the first instance run? | A VPS with a persistent volume, behind the existing reverse proxy, with the nightly `backup` above sent off-site. Litestream is not recommended or tested; replication is the operator's choice. |
-| Public subscription forms in v1? | The pages are there, with no CAPTCHA. The first consumer adds people through the API. Open forms attract signup spam, so keep lists private until CAPTCHA arrives. |
+| Public subscription forms in v1? | The pages are there, with ALTCHA or hCaptcha available; see [Public form CAPTCHA](#public-form-captcha). The first consumer adds people through the API. |
 | Existing listmonk data? | None is imported. There is no listmonk importer. |
 | Public repository? | Public, under the AGPL-3.0. |
 

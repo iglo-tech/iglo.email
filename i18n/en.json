@@ -709,7 +709,6 @@
     "settings.security.captchaKey": "hCaptcha.com SiteKey",
     "settings.security.captchaKeyHelp": "Visit www.hcaptcha.com to obtain the key and secret.",
     "settings.security.captchaSecret": "hCaptcha.com secret",
-    "settings.security.captchaUnavailable": "Not available in this version. If a stored value enables a CAPTCHA, public subscription forms are refused until it is turned off through PUT /api/settings.",
     "settings.security.enableCaptcha": "CAPTCHA",
     "settings.security.enableCaptchaHelp": "Enable CAPTCHA on the public subscription form.",
     "settings.security.enableOIDC": "OIDC SSO",

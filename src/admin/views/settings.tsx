@@ -491,15 +491,64 @@ function Security({ t }: { t: Translation }) {
           hint={t.T("settings.security.blockPrivateAddressesHelp")}
         />
       </fieldset>
-      <Unavailable
-        t={t}
-        legend={t.T("settings.security.enableCaptcha")}
-        keywords="captcha altcha hcaptcha spam bot protection public form verification"
-        note={t.T("settings.security.captchaUnavailable")}
+      <fieldset
+        class="card"
+        data-keywords="captcha altcha hcaptcha spam bot protection public form verification"
       >
-        <Switch model="form['security.captcha'].altcha.enabled" label="ALTCHA" />
-        <Switch model="form['security.captcha'].hcaptcha.enabled" label="hCaptcha" />
-      </Unavailable>
+        <legend>{t.T("settings.security.enableCaptcha")}</legend>
+        <Switch
+          model="captchaEnabled"
+          label={t.T("globals.buttons.enable")}
+          hint={t.T("settings.security.enableCaptchaHelp")}
+        />
+        <template x-if="captchaEnabled">
+          <div class="mt-4">
+            <div data-field="" class="hstack" data-testid="captcha-provider">
+              <label>
+                <input
+                  type="radio"
+                  value="altcha"
+                  name="captcha_provider"
+                  x-model="captchaProvider"
+                />{" "}
+                ALTCHA
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  value="hcaptcha"
+                  name="captcha_provider"
+                  x-model="captchaProvider"
+                />{" "}
+                hCaptcha (deprecated)
+              </label>
+            </div>
+            <div x-show="captchaProvider === 'altcha'">
+              <NumberField
+                model="form['security.captcha'].altcha.complexity"
+                label={t.T("settings.security.altchaComplexity")}
+                hint={t.T("settings.security.altchaComplexityHelp")}
+                min="1000"
+                max="1000000"
+              />
+            </div>
+            <div x-show="captchaProvider === 'hcaptcha'">
+              <TextField
+                model="form['security.captcha'].hcaptcha.key"
+                label={t.T("settings.security.captchaKey")}
+                hint={t.T("settings.security.captchaKeyHelp")}
+                maxlength="200"
+              />
+              <TextField
+                model="form['security.captcha'].hcaptcha.secret"
+                label={t.T("settings.security.captchaSecret")}
+                type="password"
+                maxlength="200"
+              />
+            </div>
+          </div>
+        </template>
+      </fieldset>
     </div>
   );
 }

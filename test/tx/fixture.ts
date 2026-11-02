@@ -58,6 +58,7 @@ import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
+import type { Captcha } from "@/captcha/captcha";
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
@@ -286,6 +287,8 @@ export async function txFixture(
       subscribers,
       mail: {} as SubscriberMail,
       settings: () => ({ allowWipe: true }) as PublicSettings,
+      captcha: {} as Captcha,
+      altchaComplexity: () => 0,
       limits: { subscribe: open, optin: open, privacy: open },
       clientAddress: () => "127.0.0.1",
     });
