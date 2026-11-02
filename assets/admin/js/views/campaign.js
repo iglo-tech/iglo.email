@@ -416,10 +416,13 @@ function component() {
         return false;
       }
 
+      // What was sent is what is saved: an edit typed while this waits is still unsaved.
+      const sent = JSON.parse(JSON.stringify(this.form));
       const d = await api('campaigns', `/campaigns/${this.form.id}`, 'PUT', p);
       this.saved = d;
       this.form.archive_slug = d.archive_slug || this.form.archive_slug;
-      this.loadedForm = JSON.stringify(this.form);
+      sent.archive_slug = this.form.archive_slug;
+      this.loadedForm = JSON.stringify(sent);
       return true;
     },
 

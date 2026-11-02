@@ -111,6 +111,15 @@ class RichtextEditor extends HTMLElement {
         this.#run(el.matches('img') ? 'image' : 'link');
       });
 
+      // A held image has no picture, so Squire's resizer would measure it as 0 wide and store
+      // `width: 0px`. One click is what selects an image for it, on the document; the double-click
+      // dialog above still changes the size, from what is stored.
+      this.content.addEventListener('click', (e) => {
+        if (e.target.matches?.('img[data-rte-src]')) {
+          e.stopPropagation();
+        }
+      });
+
       // Squire's getHTML() temporarily detaches its handles. Serialize after
       // the drag ends so live input sync does not break its pointer capture.
       this.content.addEventListener('gotpointercapture', (e) => {

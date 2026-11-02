@@ -369,6 +369,87 @@ test.describe("remote images load on request", () => {
     });
   });
 
+  test.describe("the resize handles", () => {
+    // One click selects an image for Squire's resizer; a drag on the corner handle resizes it.
+    const dragCorner = async (page) => {
+      const handle = page.locator(".squire-resize-handle-se");
+      if (!(await handle.count())) return false;
+      const box = await handle.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 120, box.y + 80, { steps: 8 });
+      await page.mouse.up();
+      return true;
+    };
+    const afterDrag = async (page, stored) => {
+      await login(page);
+      const c = await campaign(page, `<p>text ${stored} more</p>`);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      const dragged = await dragCorner(page);
+      await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
+      await page.locator(EDITOR).pressSequentially("x");
+      const save = page.waitForResponse((r) => r.request().method() === "PUT");
+      await page.keyboard.press("Control+s");
+      expect((await save).status()).toBe(200);
+      const body = (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
+      return { dragged, tag: /<img[^>]*>/.exec(body)[0] };
+    };
+
+    for (const [label, stored] of [
+      ["with a stored size", `<img src="REMOTE/sized.gif" alt="b" width="600" height="400">`],
+      ["with no stored size", `<img src="REMOTE/plain.gif" alt="b">`],
+    ])
+      test(`are not offered on a held image ${label}, and a drag changes nothing`, async ({
+        page,
+      }) => {
+        const html = stored.replace("REMOTE", remote);
+        const { dragged, tag } = await afterDrag(page, html);
+        expect(tag).not.toContain("style=");
+        for (const name of ["src", "alt", "width", "height"]) {
+          const want = new RegExp(`\\s${name}="([^"]*)"`).exec(html)?.[1] ?? null;
+          expect(new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null).toBe(want);
+        }
+        expect(dragged).toBe(false);
+      });
+
+    test("still resize an image that loaded", async ({ page }) => {
+      const { dragged, tag } = await afterDrag(
+        page,
+        `<img src="/admin/static/favicon.png" alt="b">`,
+      );
+      expect(dragged).toBe(true);
+      expect(tag).toMatch(/style="width: [1-9]\d*px/);
+    });
+  });
+
+  test("an edit typed while a save is in flight is still unsaved", async ({ page }) => {
+    await login(page);
+    const c = await campaign(page, `<p><img src="${remote}/during.gif" alt="a"></p>`);
+    await page.goto(`/admin/campaigns/${c.id}`);
+    let release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/api/campaigns/${c.id}`, async (route) => {
+      if (route.request().method() === "PUT") await held;
+      await route.continue();
+    });
+    const subject = page.locator('input[name="subject"]');
+    await subject.fill("Saved subject");
+    const save = page.waitForResponse((r) => r.request().method() === "PUT");
+    await page.keyboard.press("Control+s");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.name)).toBe("subject");
+    await subject.fill("Typed during the save");
+    release();
+    expect((await save).status()).toBe(200);
+    await page.getByRole("tab", { name: "Content", exact: true }).click();
+    await page.getByTestId("editor-held").getByRole("button").click();
+    await expect(page.locator("dialog.confirm-dialog")).toBeVisible();
+    await page.locator("dialog.confirm-dialog [data-confirm-cancel]").click();
+    expect(page.url()).not.toContain("remote_images");
+  });
+
   test("a changed subject is asked about before the page reloads", async ({ page }) => {
     await login(page);
     const c = await campaign(page, `<p><img src="${remote}/subject.gif" alt="a"></p>`);
