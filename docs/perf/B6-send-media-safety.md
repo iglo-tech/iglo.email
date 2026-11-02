@@ -23,11 +23,13 @@ the harness shares the process with the server, so growth is an upper bound for 
 | 6 | 64 MiB (after) | 6 | 0 | 295 MiB | 2.6 s / 2.6 s | n/a |
 
 At 40 requests the budget cuts the memory growth by 61% and the served latency by two thirds,
-because the requests that do run no longer compete for the single thread with 26 others; the 26
-refused ones are answered, with the retry header, in at most the 2-second wait plus the time to
-read their queue position. At 6 requests (the limit is not reached) the budget costs nothing
-measurable: the difference in growth and latency between the two rows is the run-to-run spread
-(a repeat of the same pair measured 233 and 247 MiB, 2.2 and 2.3 s).
+because the requests that do run no longer compete for the single thread with 26 others. A
+refused request normally answers at once (the median is 36 ms: a full queue refuses immediately)
+or after its 2-second wait; the p95 of 4.6 s is the wait plus the time the busy thread needed to
+run its timer and write the answer. At 6 requests the limit is not reached and the budget costs
+nothing measurable: the two rows differ by less than the spread of repeated runs (earlier runs of
+the same pair, not kept in the raw file, measured 233 to 267 MiB without a budget and 247 to
+295 MiB with one, and 2.2 to 2.9 s).
 
 The budget is a bound on what is *counted* (64 MiB), not on peak RSS, which also holds the
 journal's encoded payload, the SMTP library's own encoding and garbage not yet collected: the
