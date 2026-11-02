@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/logs.js at 6fcd95f. A refused read shows its
 // message, and the page keeps polling.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { read } from '@/assets/admin/js/listing.js';
 
 // [timestamp] *: [message]. Lines have no source file here.

@@ -51,18 +51,18 @@ function Row({ t, canManage }: { t: Translation; canManage: boolean }) {
             <AvatarLink
               kind="subscriber"
               name="b.email || ''"
-              href="`/admin/subscribers/${b.subscriber_id}`"
+              href="'/admin/subscribers/' + b.subscriber_id"
               title="viewTitle(b.email || '')"
             />
             <div class="avatar-label">
               <a
-                x-bind:href="`/admin/subscribers/${b.subscriber_id}`"
+                x-bind:href="'/admin/subscribers/' + b.subscriber_id"
                 class="unstyled"
                 x-bind:class="{ blocklisted: b.subscriber_status === 'blocklisted' }"
                 x-text="b.email"
               ></a>{" "}
               <template x-if="b.subscriber_status !== 'enabled'">
-                <span class="badge" x-bind:class="`status-${b.subscriber_status}`">
+                <span class="badge" x-bind:class="'status-' + b.subscriber_status">
                   <span class="dot">●</span> <span x-text="statusLabel(b.subscriber_status)"></span>
                 </span>
               </template>
@@ -79,7 +79,7 @@ function Row({ t, canManage }: { t: Translation; canManage: boolean }) {
             <AvatarLink
               kind="campaign"
               name="b.campaign.name"
-              href="`/admin/campaigns/${b.campaign.id}`"
+              href="'/admin/campaigns/' + b.campaign.id"
               title="viewTitle(b.campaign.name)"
             />
             <a
@@ -110,7 +110,7 @@ function Row({ t, canManage }: { t: Translation; canManage: boolean }) {
         >
           <span
             class="badge enum"
-            x-bind:class="`bounce-${b.type}`"
+            x-bind:class="'bounce-' + b.type"
             x-text="typeLabel(b.type)"
           ></span>
         </a>
@@ -124,14 +124,14 @@ function Row({ t, canManage }: { t: Translation; canManage: boolean }) {
         <ot-dropdown>
           <button
             popovertarget=""
-            x-bind:popovertarget="`bounce-actions-${b.id}`"
+            x-bind:popovertarget="'bounce-actions-' + b.id"
             type="button"
             class="ghost more icon"
             aria-label={t.T("globals.buttons.more")}
           >
             <Icon name="more-vertical" />
           </button>
-          <menu popover="" x-bind:id="`bounce-actions-${b.id}`">
+          <menu popover="" x-bind:id="'bounce-actions-' + b.id">
             <button
               type="button"
               role="menuitem"
@@ -252,7 +252,8 @@ export const bouncesView: AdminView = ({ context, can }) => {
           <header class="page-header">
             <div class="hstack">
               <h1 class="page-title">
-                {t.T("globals.terms.bounces")} <span x-text="`(${page.total ?? '-'})`"></span>
+                {t.T("globals.terms.bounces")}{" "}
+                <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
               </h1>
               <div class="hstack gap-1">
                 {source ? (
@@ -293,7 +294,7 @@ export const bouncesView: AdminView = ({ context, can }) => {
             <div
               class="table-wrapper"
               x-data="table({ query: '', filters: selection })"
-              x-effect="total = page.total ?? 0"
+              x-effect="total = page.total || 0"
               x-bind:aria-busy="loading || isLoading('bounces')"
               x-on:change="onChange($event)"
             >
@@ -338,7 +339,7 @@ export const bouncesView: AdminView = ({ context, can }) => {
                 <h4 class="dialog-title" x-text="metaTitle"></h4>
               </header>
               <section class="dialog-body">
-                <pre x-text="JSON.stringify(meta, null, 2)"></pre>
+                <pre x-text="pretty(meta)"></pre>
               </section>
               <footer class="dialog-foot hstack justify-end">
                 <button type="button" class="outline" x-on:click="$refs.metaDialog.close()">

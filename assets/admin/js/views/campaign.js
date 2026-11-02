@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/campaign.js at 6fcd95f. Upstream's page arrives
 // with its campaign, lists and templates; here this module reads them from the API.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { convert, htmlToText } from '@/assets/admin/js/content.js';
 import {
   fileExt, initials, rasterThumb, read, viewTitle,
@@ -79,6 +79,8 @@ function component() {
     editorReady: false,
     // What the rich-text editor left out of the body, by name.
     editorRemoved: [],
+    editorHeld: false,
+    loadedForm: '',
     // A status change is in flight, or asking: a second click starts nothing.
     changing: false,
     _mediaTarget: null,
@@ -152,6 +154,7 @@ function component() {
         });
       }
       this.ready = true;
+      this.loadedForm = JSON.stringify(this.form);
     },
 
     // The API's attachments carry an ID and a name; the gallery shows the URL and thumbnail.
@@ -227,6 +230,17 @@ function component() {
       // event wouldn't clear the spinner.
       const { contentReady, editorReady } = this;
       return contentReady && this.form.content_type !== 'plain' && !editorReady;
+    },
+
+    // The page's policy decides, so asking for the images is a new response. Any field changed
+    // since the campaign loaded or saved would be lost to it.
+    async onShowRemoteImages() {
+      const changed = JSON.stringify(this.form) !== this.loadedForm;
+      if (!changed || await u.confirm(i18n.t('editor.showRemoteImagesConfirm'))) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('remote_images', '1');
+        window.location.assign(url);
+      }
     },
 
     get editorNotice() {
@@ -405,6 +419,7 @@ function component() {
       const d = await api('campaigns', `/campaigns/${this.form.id}`, 'PUT', p);
       this.saved = d;
       this.form.archive_slug = d.archive_slug || this.form.archive_slug;
+      this.loadedForm = JSON.stringify(this.form);
       return true;
     },
 

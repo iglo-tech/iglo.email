@@ -205,12 +205,7 @@ export function PreviewDialog({ t }: { t: Translation }) {
           <h4 class="dialog-title" x-text="preview.title"></h4>
         </header>
         <section class="dialog-body preview" x-bind:aria-busy="preview.loading">
-          <iframe
-            sandbox=""
-            x-ref="previewFrame"
-            title={t.T("globals.buttons.preview")}
-            x-on:load="preview.loading = false"
-          ></iframe>
+          <iframe sandbox="" x-ref="previewFrame" title={t.T("globals.buttons.preview")}></iframe>
         </section>
         <footer class="dialog-foot align-right">
           <button type="button" class="outline" autofocus x-on:click="$refs.previewDialog.close()">

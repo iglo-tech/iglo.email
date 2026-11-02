@@ -4,6 +4,7 @@
 import { STATUS_CODES } from "node:http";
 import { renderAdminShell, type JSONValue } from "@/admin/layout/shell";
 import { sidebar } from "@/admin/layout/sidebar";
+import { adminPolicy } from "@/admin/policy";
 import { render, type Child } from "@/jsx/render";
 import type { Roles } from "@/roles/roles";
 import { restoreHold } from "@/settings/hold";
@@ -47,6 +48,8 @@ export interface AdminPage {
   readonly config?: Readonly<Record<string, JSONValue>>;
   /** Without the sidebar and top bar, for an iframe. */
   readonly bare?: boolean;
+  /** This response may load remote images: the operator asked for them on this request. */
+  readonly remoteImages?: boolean;
 }
 export interface AdminRequest {
   readonly context: RequestContext;
@@ -172,7 +175,20 @@ export function createAdminPages(deps: {
           duration: `${Math.round(performance.now() - started)}ms`,
           children: page.body,
         });
-        return new Response(html, { status: page.status ?? 200, headers: htmlHeaders });
+        return new Response(html, {
+          status: page.status ?? 200,
+          headers: {
+            ...htmlHeaders,
+            ...(page.remoteImages
+              ? {
+                  "Content-Security-Policy": adminPolicy({
+                    origins: [current.rootUrl, current.faviconUrl],
+                    remoteImages: true,
+                  }),
+                }
+              : {}),
+          },
+        });
       } catch (error) {
         return failure(context, error);
       }

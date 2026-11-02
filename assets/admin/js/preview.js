@@ -20,6 +20,8 @@ export function previewMixin() {
 
     _openPreview(title) {
       this.preview = { title, loading: true };
+      // Not an x-on attribute: Alpine's CSP build refuses expressions on an iframe.
+      this.$refs.previewFrame.onload = () => { this.preview.loading = false; };
       this.$refs.previewDialog.showModal();
     },
 

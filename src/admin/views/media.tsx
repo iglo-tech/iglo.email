@@ -31,14 +31,14 @@ function Item(props: { t: Translation; picker: boolean; canManage: boolean }) {
       <ot-dropdown class="actions">
         <button
           popovertarget=""
-          x-bind:popovertarget="`media-actions-${m.id}`"
+          x-bind:popovertarget="'media-actions-' + m.id"
           type="button"
           class="ghost more icon"
           aria-label={t.T("globals.buttons.more")}
         >
           <Icon name="more-vertical" />
         </button>
-        <menu popover="" x-bind:id="`media-actions-${m.id}`">
+        <menu popover="" x-bind:id="'media-actions-' + m.id">
           <button
             type="button"
             role="menuitem"
@@ -86,7 +86,7 @@ function Upload({ t }: { t: Translation }) {
               name="file"
               multiple
               x-ref="uploadInput"
-              x-on:change="files = [...$event.target.files]"
+              x-on:change="pickFiles($event)"
             />
             <small data-hint="">{t.T("media.uploadHelp")}</small>
           </label>
@@ -119,7 +119,8 @@ function Gallery({ request, picker }: { request: AdminRequest; picker: boolean }
       <header class="row page-header">
         <div class="col-4">
           <h1 class="page-title">
-            {t.T("globals.terms.media")} <span x-text="`(${page.total ?? '-'})`"></span>
+            {t.T("globals.terms.media")}{" "}
+            <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
           </h1>
         </div>
         <div class="col-8 hstack justify-end buttons">

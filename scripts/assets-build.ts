@@ -22,8 +22,8 @@ const views = (await readdir(join(jsRoot, "views")))
   .filter((name) => name.endsWith(".js"))
   .map((name) => join("views", name));
 const built = await Bun.build({
-  entrypoints: ["main.js", "code-editor.js", "richtext-editor.js", ...views].map((name) =>
-    join(jsRoot, name),
+  entrypoints: ["boot.js", "main.js", "code-editor.js", "richtext-editor.js", ...views].map(
+    (name) => join(jsRoot, name),
   ),
   outdir: join(admin, "js"),
   root: jsRoot,
@@ -42,7 +42,7 @@ const packages = [
   "marked",
   "nodemailer",
   "qrcode",
-  "alpinejs",
+  "@alpinejs/csp",
   "@knadh/oat",
   "@codemirror/commands",
   "@codemirror/lang-css",
@@ -90,7 +90,7 @@ for (let index = 0; index < packages.length; index++) {
   const license =
     name === "saxes" && info.version === "6.0.0"
       ? join(root, "assets/licenses/saxes-6.0.0-ISC.txt")
-      : name === "alpinejs"
+      : name === "@alpinejs/csp"
         ? join(root, "assets/licenses/alpinejs-LICENSE.txt")
         : files[0]
           ? join(directory, files[0])

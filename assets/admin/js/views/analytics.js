@@ -2,7 +2,7 @@
 // arrives with its data. Here this module reads each chart from the M3.3 routes and shows a refusal
 // (429, 422, 500) in that chart. Upstream's date presets send the browser's wall clock to a server
 // that reads it in its own zone; here the form is in UTC, as the API reads it.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import Chart from 'chart.js/auto';
 import { read } from '@/assets/admin/js/listing.js';
 import { api, config } from '@/assets/admin/js/main.js';

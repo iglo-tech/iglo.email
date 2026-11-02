@@ -13,12 +13,29 @@ export const PASSWORD = "e2e-user-password";
 export const unique = (prefix) => `${prefix}-${randomBytes(4).toString("hex")}`;
 
 // Each test is its own client, through the trusted proxy run.ts configures, so a run of specs
-// stays inside the real login limit of 20 posts a minute per client.
+// stays inside the real login limit of 20 posts a minute per client. Every page also reports what
+// the admin policy (D71) refused and what Alpine's CSP build could not evaluate, and a test fails
+// on either unless it sets `violations: "expected"`. A sandboxed preview runs no script, so what its
+// own policy refuses there is not counted.
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  violations: ["none", { option: true }],
+  page: async ({ page, violations }, use) => {
     const peer = `203.0.113.${1 + (randomBytes(1)[0] % 254)}`;
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": peer });
+    const seen = [];
+    await page.exposeBinding("__reportViolation", (_source, text) => seen.push(text));
+    await page.addInitScript(() => {
+      document.addEventListener("securitypolicyviolation", (event) => {
+        window.__reportViolation?.(
+          `${event.effectiveDirective} ${event.blockedURI} on ${document.location.pathname}`,
+        );
+      });
+    });
+    page.on("console", (message) => {
+      if (message.text().includes("Alpine Expression Error")) seen.push(message.text());
+    });
     await use(page);
+    if (violations === "none") expect(seen).toEqual([]);
   },
 });
 

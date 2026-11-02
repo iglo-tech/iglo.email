@@ -2,7 +2,7 @@
 // with its lists; here this module reads them from the API. Upstream writes a list's name and
 // description, and the root URL, into the snippet as they are: here every value is escaped, as
 // the snippet is pasted into someone's page. No captcha, as the public form serves none.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { read } from '@/assets/admin/js/listing.js';
 import { config, i18n } from '@/assets/admin/js/main.js';
 import * as u from '@/assets/admin/js/utils.js';

@@ -120,7 +120,17 @@ export class Router {
     this.routes.sort(precedence);
   }
 
+  /**
+   * Every response, whichever path made it. Without this, a same-origin response holding authored
+   * text runs as a classic script and passes the admin's `script-src 'self'` (D71).
+   */
   async handle(app: App, request: Request, peerAddress = "unknown"): Promise<Response> {
+    const response = await this.respond(app, request, peerAddress);
+    response.headers.set("X-Content-Type-Options", "nosniff");
+    return response;
+  }
+
+  private async respond(app: App, request: Request, peerAddress: string): Promise<Response> {
     const url = new URL(request.url);
     const path = routingPath(url.pathname);
     if (path === undefined)

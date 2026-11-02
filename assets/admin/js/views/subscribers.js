@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/subscribers.js at 6fcd95f. Upstream's page
 // arrives with its subscribers and lists; here this module reads them from the API.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   filterTitle, iconHref, initials, pageLinks, pageQuery, read, statusIcon, urlFilters, viewTitle,
 } from '@/assets/admin/js/listing.js';
@@ -55,6 +55,13 @@ function component() {
     subscriberFilters: filters,
     query: filters.query,
     isSqlOpen: false,
+    onSqlToggle(event) {
+      this.isSqlOpen = event.newState === 'open';
+      if (this.isSqlOpen) {
+        this.$nextTick(() => this.$refs.queryInput.focus());
+      }
+    },
+    listNames: (lists) => lists.map((list) => list.name).join(', '),
     get advanced() {
       return this.query.trim() !== '';
     },

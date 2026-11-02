@@ -31,17 +31,17 @@ function Row({ t }: { t: Translation }) {
           <AvatarLink
             kind="list"
             name="s.name"
-            href="`/admin/sequences/${s.id}`"
+            href="'/admin/sequences/' + s.id"
             title="viewTitle(s.name)"
           />
           <div class="avatar-label">
-            <a x-bind:href="`/admin/sequences/${s.id}`" class="unstyled" x-text="s.name"></a>
+            <a x-bind:href="'/admin/sequences/' + s.id" class="unstyled" x-text="s.name"></a>
             <div class="text-light text-8" x-text="s.trigger.event"></div>
           </div>
         </div>
       </td>
       <td data-label={t.T("globals.fields.status")}>
-        <span class="badge" x-bind:class="`status-${s.status}`">
+        <span class="badge" x-bind:class="'status-' + s.status">
           <span class="dot">●</span> <span x-text="statusLabel(s.status)"></span>
         </span>
       </td>
@@ -95,7 +95,7 @@ export const sequencesView: AdminView = ({ context, can }) => {
         <header class="hstack justify-between page-header">
           <div class="hstack page-heading">
             <h1 class="page-title">
-              {title} <span x-text="`(${page.total ?? '-'})`"></span>
+              {title} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
             </h1>
             {/^[a-z]+$/.test(status) ? (
               <FilterBadge
