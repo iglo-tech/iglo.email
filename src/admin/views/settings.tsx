@@ -952,6 +952,12 @@ function Bounces({ t }: { t: Translation }) {
             {t.T("settings.bounces.enableWebhooks")}
           </label>
           <template x-if="form['bounce.webhooks_enabled']">
+            <fieldset class="card" data-keywords="bounce ses amazon sns webhook">
+              <legend>{t.T("settings.bounces.enableSES")}</legend>
+              {provider("form['bounce.ses_enabled']", t.T("globals.buttons.enable"))}
+            </fieldset>
+          </template>
+          <template x-if="form['bounce.webhooks_enabled']">
             <fieldset class="card" data-keywords="bounce mailgun webhook signing key">
               <legend>{t.T("settings.bounces.enableMailgun")}</legend>
               <label data-field="">
@@ -971,9 +977,8 @@ function Bounces({ t }: { t: Translation }) {
           <Unavailable
             t={t}
             legend={t.T("settings.bounces.otherProviders")}
-            keywords="bounce ses amazon azure sendgrid postmark forwardemail lettermint webhook"
+            keywords="bounce azure sendgrid postmark forwardemail lettermint webhook"
           >
-            {provider("form['bounce.ses_enabled']", t.T("settings.bounces.enableSES"))}
             {provider("form['bounce.azure'].enabled", t.T("settings.bounces.enableAzure"))}
             {provider("form['bounce.sendgrid_enabled']", t.T("settings.bounces.enableSendgrid"))}
             {provider("form['bounce.postmark'].enabled", t.T("settings.bounces.enablePostmark"))}
