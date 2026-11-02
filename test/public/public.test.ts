@@ -760,18 +760,6 @@ test("malformed public input fails safely with no write", async () => {
   expect(f.errors).toEqual([]);
 });
 
-test("an enabled captcha fails closed on the form", async () => {
-  const f = await open();
-  const list = await f.list("News");
-  f.overrides.captcha = true;
-  const response = await f.fresh(
-    "/subscription/form",
-    form({ email: "bot@example.test", l: list.uuid }),
-  );
-  expect(response.status).toBe(400);
-  expect(await response.text()).toContain("Invalid CAPTCHA.");
-});
-
 test("a public signup never changes an existing stored profile", async () => {
   const f = await open();
   const list = await f.list("News");

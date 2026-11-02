@@ -1,7 +1,7 @@
 // Adapted from listmonk static/admin/assets/js/views/forms.js at 6fcd95f. Upstream's page arrives
 // with its lists; here this module reads them from the API. Upstream writes a list's name and
 // description, and the root URL, into the snippet as they are: here every value is escaped, as
-// the snippet is pasted into someone's page. No captcha, as the public form serves none.
+// the snippet is pasted into someone's page.
 import Alpine from '@alpinejs/csp';
 import { read } from '@/assets/admin/js/listing.js';
 import { config, i18n } from '@/assets/admin/js/main.js';
@@ -91,6 +91,20 @@ function component() {
 
         h += '    </p>\n';
       });
+
+      // Captcha?
+      const sub = config.public_subscription || {};
+      if (sub.captcha_enabled) {
+        if (sub.captcha_provider === 'altcha') {
+          h += '\n'
+            + `    <altcha-widget challenge="${root}/api/public/captcha/altcha"></altcha-widget>\n`
+            + `    <${'script'} type="module" src="${root}/public/static/altcha.umd.js" async defer></${'script'}>\n`;
+        } else if (sub.captcha_provider === 'hcaptcha') {
+          h += '\n'
+            + `    <div class="h-captcha" data-sitekey="${escapeHTML(sub.captcha_key || '')}"></div>\n`
+            + `    <${'script'} src="https://js.hcaptcha.com/1/api.js" async defer></${'script'}>\n`;
+        }
+      }
 
       h += '\n'
         + `    <input type="submit" value="${subscribe} " />\n`

@@ -1,4 +1,5 @@
 // The settings public pages read for each request, as listmonk cmd/init.go collects them.
+import { captchaProvider, type Provider } from "@/captcha/captcha";
 import type { ShellSite } from "@/public/layout";
 
 export interface PublicSettings extends ShellSite {
@@ -19,7 +20,8 @@ export interface PublicSettings extends ShellSite {
   trustedUrls: string[];
   trustedProxies: string[];
   rateLimits: { subscribe: number; optin: number; unsubscribe: number; privacy: number };
-  captcha: boolean;
+  /** The active provider, and the hCaptcha site key the form embeds. */
+  captcha: { provider: Provider; key: string };
   customCss: string;
   customJs: string;
 }
@@ -50,7 +52,7 @@ export function publicSettings(current: Record<string, any>): PublicSettings {
     trustedUrls: current["security.trusted_urls"],
     trustedProxies: current["security.trusted_proxies"],
     rateLimits: current["security.public_rate_limit"],
-    captcha: captcha.altcha.enabled || captcha.hcaptcha.enabled,
+    captcha: { provider: captchaProvider(captcha), key: captcha.hcaptcha.key },
     customCss: current["appearance.public.custom_css"],
     customJs: current["appearance.public.custom_js"],
   };

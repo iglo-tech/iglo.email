@@ -30,6 +30,8 @@ export interface AdminSite {
   readonly publicSubscription: boolean;
   /** security.trusted_urls: where a public form may send a subscriber afterwards. */
   readonly trustedUrls: readonly string[];
+  /** security.captcha: the active provider and the hCaptcha site key, for the forms snippet. */
+  readonly captcha: { readonly provider: "" | "altcha" | "hcaptcha"; readonly key: string };
   /** appearance.admin.*: what /admin/custom.css and /admin/custom.js answer. */
   readonly customCss: string;
   readonly customJs: string;

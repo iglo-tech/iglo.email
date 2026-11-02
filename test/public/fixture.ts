@@ -8,6 +8,7 @@ import { registerArchiveRoutes } from "@/public/archive";
 import { createSubscriberMail, startSignupMail } from "@/public/mail";
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
+import { createCaptcha } from "@/captcha/captcha";
 import { publicSettings, type PublicSettings } from "@/public/settings";
 import { createRoles } from "@/roles/roles";
 import { createClientAddress } from "@/server/client-address";
@@ -76,12 +77,24 @@ export async function publicFixture() {
       () => "Fixture",
       clientAddress,
     );
+  const hcaptcha = { url: "http://127.0.0.1:1/siteverify" };
+  const captchaOptions = () => store.read()["security.captcha"];
+  const captcha = await createCaptcha({
+    clock: f.clock,
+    options: captchaOptions,
+    get hcaptchaUrl() {
+      return hcaptcha.url;
+    },
+    maxUsed: 50,
+  });
   registerPublicRoutes(router, {
     db: f.db,
     lists,
     subscribers,
     mail,
     settings,
+    captcha,
+    altchaComplexity: () => captchaOptions().altcha.complexity,
     limits: { subscribe: limit(5), optin: limit(5), privacy: limit(5) },
     clientAddress,
   });
@@ -115,7 +128,9 @@ export async function publicFixture() {
   return {
     ...f,
     settings,
+    store,
     overrides,
+    hcaptcha,
     campaigns,
     mail,
     calls,

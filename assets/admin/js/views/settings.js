@@ -91,6 +91,23 @@ function component() {
     form: null,
     error: '',
 
+    // One provider at a time, as upstream's provider radio; the API takes ALTCHA if both are on.
+    get captchaEnabled() {
+      return this.form['security.captcha'].altcha.enabled || this.form['security.captcha'].hcaptcha.enabled;
+    },
+    set captchaEnabled(v) {
+      this.form['security.captcha'].altcha.enabled = !!v;
+      this.form['security.captcha'].hcaptcha.enabled = false;
+    },
+
+    get captchaProvider() {
+      return this.form['security.captcha'].hcaptcha.enabled ? 'hcaptcha' : 'altcha';
+    },
+    set captchaProvider(v) {
+      this.form['security.captcha'].hcaptcha.enabled = v === 'hcaptcha';
+      this.form['security.captcha'].altcha.enabled = v === 'altcha';
+    },
+
     smtpTestItem: null,
     testEmail: '',
     errMsg: '',
