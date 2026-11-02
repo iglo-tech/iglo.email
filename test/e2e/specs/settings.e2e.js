@@ -355,6 +355,59 @@ test("persists trusted URLs and the native security settings", async ({ page }) 
   await expect(urls).toBeEmpty();
 });
 
+test("the CAPTCHA card turns one provider on at a time and keeps the secret masked", async ({
+  page,
+}) => {
+  await tab(page, "Security").click();
+  const card = page.locator('fieldset[data-keywords^="captcha"]');
+  await expect(card).toBeEnabled();
+  await card.getByRole("switch", { name: /^Enable/ }).check();
+  await expect(card.getByRole("radio", { name: "ALTCHA" })).toBeChecked();
+  await card.getByRole("spinbutton", { name: /^Altcha Complexity/ }).fill("5000");
+  await save(page);
+  expect((await settings(page))["security.captcha"]).toEqual({
+    altcha: { enabled: true, complexity: 5000 },
+    hcaptcha: { ...before["security.captcha"].hcaptcha, enabled: false },
+  });
+  // A reload between saves, so each save's toast is the only one.
+  await page.reload();
+  await tab(page, "Security").click();
+  await expect(card.getByRole("radio", { name: "ALTCHA" })).toBeChecked();
+  await card.getByRole("radio", { name: /^hCaptcha/ }).check();
+  await card.getByRole("textbox", { name: /^hCaptcha.com SiteKey/ }).fill("site-key");
+  await card.getByLabel("hCaptcha.com secret").fill("hc-secret");
+  await save(page);
+  const stored = (await settings(page))["security.captcha"];
+  expect(stored).toEqual({
+    altcha: { enabled: false, complexity: 5000 },
+    hcaptcha: { enabled: true, key: "site-key", secret: "•".repeat(9) },
+  });
+  await page.reload();
+  await tab(page, "Security").click();
+  await expect(card.getByRole("radio", { name: /^hCaptcha/ })).toBeChecked();
+  await expect(card.getByLabel("hCaptcha.com secret")).toHaveValue("•".repeat(9));
+  // A save without touching it keeps the stored secret; the public form uses the key.
+  await save(page);
+  // Fetched, not opened: a browser would load hCaptcha's script, and tests never reach hCaptcha.
+  await api(page, "/api/lists", "POST", {
+    name: unique("captcha"),
+    type: "public",
+    optin: "single",
+  });
+  const form = await page.request.get("/subscription/form");
+  expect(await form.text()).toContain('<div class="h-captcha" data-sitekey="site-key"></div>');
+  await page.reload();
+  await tab(page, "Security").click();
+  await card.getByRole("switch", { name: /^Enable/ }).uncheck();
+  await save(page);
+  const off = (await settings(page))["security.captcha"];
+  expect([off.altcha.enabled, off.hcaptcha.enabled, off.hcaptcha.secret]).toEqual([
+    false,
+    false,
+    "•".repeat(9),
+  ]);
+});
+
 test("persists bounce actions and the Mailgun key; other providers stay read-only", async ({
   page,
 }) => {
