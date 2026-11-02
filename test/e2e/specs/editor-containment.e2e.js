@@ -413,6 +413,29 @@ test.describe("remote images load on request", () => {
         expect(dragged).toBe(false);
       });
 
+    test("a click on a held image releases an image selected before", async ({ page }) => {
+      await login(page);
+      const c = await campaign(
+        page,
+        `<p>logo <img src="/admin/static/favicon.png" alt="logo"></p>` +
+          `<p>banner <img src="${remote}/banner.gif" alt="banner"></p>`,
+      );
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img[alt="logo"]`).click();
+      await expect(page.locator(".squire-resize-handle-se")).toHaveCount(1);
+      await page.locator(`${EDITOR} img[alt="banner"]`).click();
+      await expect(page.locator(".squire-resize-handle-se")).toHaveCount(0);
+      await page.keyboard.press("Delete");
+      await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
+      await page.locator(EDITOR).pressSequentially("x");
+      const save = page.waitForResponse((r) => r.request().method() === "PUT");
+      await page.keyboard.press("Control+s");
+      expect((await save).status()).toBe(200);
+      const body = (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
+      expect(body).toContain('alt="logo"');
+      expect(body).toContain('alt="banner"');
+    });
+
     test("still resize an image that loaded", async ({ page }) => {
       const { dragged, tag } = await afterDrag(
         page,

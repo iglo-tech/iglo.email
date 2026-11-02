@@ -113,10 +113,12 @@ class RichtextEditor extends HTMLElement {
 
       // A held image has no picture, so Squire's resizer would measure it as 0 wide and store
       // `width: 0px`. One click is what selects an image for it, on the document; the double-click
-      // dialog above still changes the size, from what is stored.
+      // dialog above still changes the size, from what is stored. The click on the editor releases
+      // an image selected before, which Delete would otherwise remove.
       this.content.addEventListener('click', (e) => {
         if (e.target.matches?.('img[data-rte-src]')) {
           e.stopPropagation();
+          this.content.click();
         }
       });
 
