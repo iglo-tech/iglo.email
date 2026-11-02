@@ -90,7 +90,7 @@
     "maintenance:measure": "bun run build && bun test/maintenance/measure.ts",
     "contract:maintenance": "bun run build && bun run reference:run -- bun test/contract/cli.ts owned maintenance",
     "contract:maintenance:reference": "bun run reference:run -- bun test/contract/maintenance.ts reference",
-    "contract:media": "bun run build && bun test/contract/cli.ts owned media",
+    "contract:media": "bun run build && bun test/contract/cli.ts owned media && bun test/media/embed-contract.ts",
     "contract:media:reference": "bun run reference:run -- bun test/contract/media.ts reference",
     "contract:import": "bun run build && bun test/contract/cli.ts owned import",
     "contract:import:reference": "bun run reference:run -- bun test/contract/import.ts reference",
