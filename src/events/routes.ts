@@ -22,9 +22,16 @@ const MAX_BATCHES_IN_FLIGHT = 4;
 /** Single-event requests admitted until their commit settles; excess requests get 429. */
 export const MAX_SINGLES_IN_FLIGHT = 1000;
 
-export function registerEventRoutes(router: Router, store: EventStore, auth: Authentication) {
+export function registerEventRoutes(
+  router: Router,
+  store: EventStore,
+  auth: Authentication,
+) {
   const invalid = (c: RequestContext, field: string) =>
-    new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", field));
+    new HttpError(
+      400,
+      c.app.i18n.Ts("globals.messages.invalidFields", "name", field),
+    );
   const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
     try {
       return eventInput(value);
@@ -34,8 +41,12 @@ export function registerEventRoutes(router: Router, store: EventStore, auth: Aut
     }
   };
   const respond = (r: EventResult) => {
-    if (r.status !== 200) throw new HttpError(r.status, "message" in r ? r.message : "");
-    const { status: _status, ...data } = r as Extract<EventResult, { status: 200 }>;
+    if (r.status !== 200)
+      throw new HttpError(r.status, "message" in r ? r.message : "");
+    const { status: _status, ...data } = r as Extract<
+      EventResult,
+      { status: 200 }
+    >;
     return ok(data);
   };
   let singles = 0;
@@ -45,13 +56,18 @@ export function registerEventRoutes(router: Router, store: EventStore, auth: Aut
     async (c) => {
       const receivedAt = c.app.clock.now();
       // Reserve before reading the body so overload is shed instead of buffered.
-      if (singles >= MAX_SINGLES_IN_FLIGHT) throw new HttpError(429, "Too many requests");
+      if (singles >= MAX_SINGLES_IN_FLIGHT)
+        throw new HttpError(429, "Too many requests");
       singles++;
       try {
         const body = await readBounded(c.request, SINGLE_BODY_BYTES);
         const input = item(c, parseJson(c.request, body));
         if (input instanceof HttpError) throw input;
-        return respond(await store.submit(input, receivedAt, () => auth.revalidate(c, PERMISSION)));
+        return respond(
+          await store.submit(input, receivedAt, () =>
+            auth.revalidate(c, PERMISSION),
+          ),
+        );
       } finally {
         singles--;
       }
@@ -64,11 +80,15 @@ export function registerEventRoutes(router: Router, store: EventStore, auth: Aut
     "/api/subscriber-events/batch",
     async (c) => {
       const receivedAt = c.app.clock.now();
-      if (batches >= MAX_BATCHES_IN_FLIGHT) throw new HttpError(429, "Too many requests");
+      if (batches >= MAX_BATCHES_IN_FLIGHT)
+        throw new HttpError(429, "Too many requests");
       batches++;
       let items: Array<EventInput | HttpError>;
       try {
-        const body = parseJson(c.request, await readBounded(c.request, BATCH_BODY_BYTES));
+        const body = parseJson(
+          c.request,
+          await readBounded(c.request, BATCH_BODY_BYTES),
+        );
         let values: unknown[];
         try {
           values = batchItems(body);
@@ -80,7 +100,9 @@ export function registerEventRoutes(router: Router, store: EventStore, auth: Aut
       } finally {
         batches--;
       }
-      const results = store.recordBatch(items, receivedAt, () => auth.revalidate(c, PERMISSION));
+      const results = store.recordBatch(items, receivedAt, () =>
+        auth.revalidate(c, PERMISSION),
+      );
       return ok({ results });
     },
     auth.middleware(PERMISSION),

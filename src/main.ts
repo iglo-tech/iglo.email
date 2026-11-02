@@ -57,7 +57,7 @@ import { registerEventRoutes } from "@/events/routes";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
-import { startEventRetention } from "@/events/retention";
+import { createEventPurge } from "@/events/retention";
 import { startPurge } from "@/loops/purge";
 import { createConditionEvaluator } from "@/conditions/evaluate";
 import { startScheduler } from "@/scheduler/scheduler";
@@ -150,7 +150,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   let tracking: ReturnType<typeof createTracking> | undefined;
   let subscriberTracking: ReturnType<typeof createSubscriberTracking> | undefined;
   let events: ReturnType<typeof createEventStore> | undefined;
-  let retention: ReturnType<typeof startEventRetention> | undefined;
   let purge: ReturnType<typeof startPurge> | undefined;
   let enrollments: ReturnType<typeof createEnrollments> | undefined;
   let sequences: ReturnType<typeof createSequenceStore> | undefined;
@@ -591,12 +590,16 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       roles,
       auth,
     });
-    retention = startEventRetention({ db, clock, logger: app.logger, events });
     purge = startPurge({
       db,
       clock,
       logger: app.logger,
-      purges: [users.purgeSessions, webhooks.purge, createSendCompaction(db)],
+      purges: [
+        users.purgeSessions,
+        webhooks.purge,
+        createSendCompaction(db),
+        createEventPurge(events),
+      ],
     });
     conditions = createConditionEvaluator({ readonly, runner: queryRunner });
     scheduler = startScheduler({
@@ -710,7 +713,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         const runnerStop = runner!.stop();
         const schedulerStop = scheduler!.stop();
         const outboxStop = outbox!.stop();
-        const retentionStop = retention!.stop();
         const purgeStop = purge!.stop();
         const signupStop = signups!.stop();
         const deliveryStop = deliveries!.stop();
@@ -724,7 +726,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           runnerStop,
           schedulerStop,
           outboxStop,
-          retentionStop,
           purgeStop,
           signupStop,
           deliveryStop,
@@ -751,7 +752,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       void outbox!.done.catch(() => shutdown(new Error("Outbox failed")));
       void signups!.done.catch(() => shutdown(new Error("Opt-in mail failed")));
       void deliveries!.done.catch(() => shutdown(new Error("Webhook delivery failed")));
-      void retention!.done.catch(() => shutdown(new Error("Event retention failed")));
       void purge!.done.catch(() => shutdown(new Error("Retention failed")));
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
       void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
@@ -764,7 +764,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     const running = runner?.stop();
     const scheduling = scheduler?.stop();
     const stopped = outbox?.stop();
-    const purging = retention?.stop();
     const retaining = purge?.stop();
     const signing = signups?.stop();
     const delivering = deliveries?.stop();
@@ -778,7 +777,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     await queryRunner?.close();
     conditions?.close();
     await stopped?.catch(() => {});
-    await purging?.catch(() => {});
     await retaining?.catch(() => {});
     await signing?.catch(() => {});
     await delivering?.catch(() => {});

@@ -530,9 +530,12 @@ These run by themselves and have no settings
 | The message body of a finished send | 30 days after the send was created | The row, its links, and all analytics |
 | Events | 400 days after receipt | Newer events |
 
+Sessions, deliveries, send bodies and events share one loop that takes at most 100 rows from one
+of them, then pauses 250 ms, so a large expired backlog never holds back a send.
+
 - After 30 days a `failed` or `unknown` send can no longer be resent: `POST /api/sends/:id/resend` answers 409.
 - After an upgrade from a version without this, the first start works through what has built up
-  at about 120 rows a second per table, while sending goes on. A million rows take a few hours,
+  at a few hundred rows a second across all four, while sending goes on. A million rows take a few hours,
   and nothing needs watching ([measurements](perf/B2-retention.md)).
 - Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
 - `sends` rows are kept for good. Their size is small, and old links and analytics read them.

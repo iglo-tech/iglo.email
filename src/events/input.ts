@@ -33,8 +33,12 @@ export class EventInputError extends Error {
 }
 
 /** Read at most `limit` bytes; a larger declared or streamed body is 413. */
-export async function readBounded(request: Request, limit: number): Promise<Buffer> {
-  if (Number(request.headers.get("content-length")) > limit) throw new HttpError(413);
+export async function readBounded(
+  request: Request,
+  limit: number,
+): Promise<Buffer> {
+  if (Number(request.headers.get("content-length")) > limit)
+    throw new HttpError(413);
   const chunks: Uint8Array[] = [];
   let size = 0;
   const reader = request.body?.getReader();
@@ -59,7 +63,11 @@ export async function readBounded(request: Request, limit: number): Promise<Buff
 
 /** Parse a JSON request body; anything else is 415 and malformed JSON is 400. */
 export function parseJson(request: Request, body: Buffer): unknown {
-  const type = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  const type = request.headers
+    .get("content-type")
+    ?.split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
   if (type !== "application/json") throw new HttpError(415);
   try {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
@@ -84,10 +92,14 @@ function normalize(value: unknown, depth: number): unknown {
     if (!Number.isFinite(value)) throw new Error("number");
     return value;
   }
-  if (Array.isArray(value)) return value.map((item) => normalize(item, depth + 1));
+  if (Array.isArray(value))
+    return value.map((item) => normalize(item, depth + 1));
   if (isObject(value))
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key.toWellFormed(), normalize(item, depth + 1)]),
+      Object.entries(value).map(([key, item]) => [
+        key.toWellFormed(),
+        normalize(item, depth + 1),
+      ]),
     );
   return value;
 }
@@ -102,7 +114,11 @@ function object(value: unknown, field: string): Record<string, unknown> {
   if (!validAttributes(normalized)) throw new EventInputError(field);
   return normalized;
 }
-function known(value: Record<string, unknown>, fields: readonly string[], prefix = "") {
+function known(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+  prefix = "",
+) {
   for (const key of Object.keys(value))
     if (!fields.includes(key)) throw new EventInputError(`${prefix}${key}`);
 }
@@ -115,20 +131,21 @@ export function parseOccurredAt(value: string): string | undefined {
       value,
     );
   if (!m) return;
-  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number) as [
-    number,
-    number,
-    number,
-    number,
-    number,
-    number,
-  ];
+  const [year, month, day, hour, minute, second] = m
+    .slice(1, 7)
+    .map(Number) as [number, number, number, number, number, number];
   const ms = Number((m[7] ?? "").padEnd(3, "0").slice(0, 3));
-  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return;
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59)
+    return;
   const local = Date.UTC(year, month - 1, day, hour, minute, second, ms);
   const check = new Date(local);
   // Date.UTC maps years 0-99 to 1900-1999; reject them with impossible dates.
-  if (year < 1000 || check.getUTCDate() !== day || check.getUTCMonth() !== month - 1) return;
+  if (
+    year < 1000 ||
+    check.getUTCDate() !== day ||
+    check.getUTCMonth() !== month - 1
+  )
+    return;
   let offset = 0;
   if (m[8] !== "Z") {
     const hours = Number(m[10]),
@@ -144,7 +161,13 @@ export function parseOccurredAt(value: string): string | undefined {
 /** Validate one event object without touching storage. */
 export function eventInput(value: unknown): EventInput {
   if (!isObject(value)) throw new EventInputError("event");
-  known(value, ["subscriber", "name", "data", "occurred_at", "idempotency_key"]);
+  known(value, [
+    "subscriber",
+    "name",
+    "data",
+    "occurred_at",
+    "idempotency_key",
+  ]);
   const s = value.subscriber;
   if (!isObject(s)) throw new EventInputError("subscriber");
   known(s, ["external_id", "email", "name", "attribs"], "subscriber.");
@@ -164,13 +187,15 @@ export function eventInput(value: unknown): EventInput {
   if (subscriber.external_id === undefined && subscriber.email === undefined)
     throw new EventInputError("subscriber");
   if (!optional(s.name)) {
-    if (typeof s.name !== "string") throw new EventInputError("subscriber.name");
+    if (typeof s.name !== "string")
+      throw new EventInputError("subscriber.name");
     const name = trimSpace(s.name.toWellFormed());
     if (name.includes("\0") || Buffer.byteLength(name) > 2000)
       throw new EventInputError("subscriber.name");
     if (name) subscriber.name = name;
   }
-  if (!optional(s.attribs)) subscriber.attribs = object(s.attribs, "subscriber.attribs");
+  if (!optional(s.attribs))
+    subscriber.attribs = object(s.attribs, "subscriber.attribs");
 
   const name = value.name;
   if (
@@ -181,11 +206,16 @@ export function eventInput(value: unknown): EventInput {
     Buffer.byteLength(name) > MAX_NAME_BYTES
   )
     throw new EventInputError("name");
-  const data = optional(value.data) ? "{}" : JSON.stringify(object(value.data, "data"));
-  if (Buffer.byteLength(data) > MAX_DATA_BYTES) throw new EventInputError("data");
+  const data = optional(value.data)
+    ? "{}"
+    : JSON.stringify(object(value.data, "data"));
+  if (Buffer.byteLength(data) > MAX_DATA_BYTES)
+    throw new EventInputError("data");
   const event: EventInput = { subscriber, name, data };
   if (!optional(value.occurred_at)) {
-    const at = typeof value.occurred_at === "string" && parseOccurredAt(value.occurred_at);
+    const at =
+      typeof value.occurred_at === "string" &&
+      parseOccurredAt(value.occurred_at);
     if (!at) throw new EventInputError("occurred_at");
     event.occurredAt = at;
   }

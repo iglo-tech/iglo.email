@@ -3,7 +3,7 @@
 import { HttpError } from "@/server/response";
 
 /** Matches the M2.2 prepared-payload attachment bound plus room for the data field. */
-const BODY_LIMIT = 5 * 1024 * 1024;
+export const BODY_LIMIT = 5 * 1024 * 1024;
 const MAX_FILES = 10;
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 
@@ -42,7 +42,8 @@ export class TxInputError extends Error {
 }
 
 async function readBounded(request: Request): Promise<Buffer<ArrayBuffer>> {
-  if (Number(request.headers.get("content-length")) > BODY_LIMIT) throw new HttpError(413);
+  if (Number(request.headers.get("content-length")) > BODY_LIMIT)
+    throw new HttpError(413);
   const chunks: Uint8Array[] = [];
   let size = 0;
   const reader = request.body?.getReader();
@@ -91,12 +92,18 @@ function empty(): TxMessage {
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 type Sources = WeakMap<object, Map<string, string>>;
-function int(value: unknown, holder: object, key: string, sources: Sources): bigint {
+function int(
+  value: unknown,
+  holder: object,
+  key: string,
+  sources: Sources,
+): bigint {
   if (value === null) return 0n;
   if (typeof value !== "number") throw new TxInputError(key);
   // Go decodes an int only from integer syntax, exactly and within int64.
   const source = sources.get(holder)?.get(key);
-  if (source === undefined || !/^-?(?:0|[1-9]\d*)$/.test(source)) throw new TxInputError(key);
+  if (source === undefined || !/^-?(?:0|[1-9]\d*)$/.test(source))
+    throw new TxInputError(key);
   const result = BigInt(source);
   if (result < INT64_MIN || result > INT64_MAX) throw new TxInputError(key);
   return result;
@@ -106,7 +113,11 @@ const str = (value: unknown, key: string): string => {
   if (typeof value !== "string") throw new TxInputError(key);
   return value;
 };
-function list<T>(value: unknown, key: string, item: (value: unknown, index: number) => T): T[] {
+function list<T>(
+  value: unknown,
+  key: string,
+  item: (value: unknown, index: number) => T,
+): T[] {
   if (value === null) return [];
   if (!Array.isArray(value)) throw new TxInputError(key);
   return value.map(item);
@@ -117,19 +128,23 @@ function bindJSON(text: string, out: TxMessage) {
   const sources: Sources = new WeakMap();
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text, function (this: object, key, value, context?: { source?: string }) {
-      if (typeof value === "number" && context?.source !== undefined) {
-        let entries = sources.get(this);
-        if (!entries) sources.set(this, (entries = new Map()));
-        entries.set(key, context.source);
-      }
-      return value;
-    });
+    parsed = JSON.parse(
+      text,
+      function (this: object, key, value, context?: { source?: string }) {
+        if (typeof value === "number" && context?.source !== undefined) {
+          let entries = sources.get(this);
+          if (!entries) sources.set(this, (entries = new Map()));
+          entries.set(key, context.source);
+        }
+        return value;
+      },
+    );
   } catch {
     throw new TxInputError("body");
   }
   if (parsed === null) return;
-  if (typeof parsed !== "object" || Array.isArray(parsed)) throw new TxInputError("body");
+  if (typeof parsed !== "object" || Array.isArray(parsed))
+    throw new TxInputError("body");
   for (const [rawKey, value] of Object.entries(parsed)) {
     const key = rawKey.toLowerCase().replaceAll("ſ", "s");
     switch (key) {
@@ -140,7 +155,9 @@ function bindJSON(text: string, out: TxMessage) {
         out.subscriberEmails = list(value, key, (v) => str(v, key));
         break;
       case "subscriber_ids":
-        out.subscriberIds = list(value, key, (v, i) => int(v, value as object, String(i), sources));
+        out.subscriberIds = list(value, key, (v, i) =>
+          int(v, value as object, String(i), sources),
+        );
         break;
       case "subscriber_email":
         out.subscriberEmail = str(value, key);
@@ -156,7 +173,8 @@ function bindJSON(text: string, out: TxMessage) {
         break;
       case "data":
         if (value === null) out.data = null;
-        else if (typeof value !== "object" || Array.isArray(value)) throw new TxInputError(key);
+        else if (typeof value !== "object" || Array.isArray(value))
+          throw new TxInputError(key);
         else out.data = JSON.stringify(value);
         break;
       case "from_email":
@@ -165,9 +183,11 @@ function bindJSON(text: string, out: TxMessage) {
       case "headers":
         out.headers = list(value, key, (set) => {
           if (set === null) return {};
-          if (typeof set !== "object" || Array.isArray(set)) throw new TxInputError(key);
+          if (typeof set !== "object" || Array.isArray(set))
+            throw new TxInputError(key);
           const result: Record<string, string> = Object.create(null);
-          for (const [name, v] of Object.entries(set)) result[name] = str(v, key);
+          for (const [name, v] of Object.entries(set))
+            result[name] = str(v, key);
           return result;
         });
         break;
@@ -193,7 +213,8 @@ function bindJSON(text: string, out: TxMessage) {
         out.idempotencyKey = str(value, key);
         break;
       case "async":
-        if (value !== null && typeof value !== "boolean") throw new TxInputError(key);
+        if (value !== null && typeof value !== "boolean")
+          throw new TxInputError(key);
         out.async = value === true;
         break;
     }
@@ -214,7 +235,9 @@ export async function readTxMessage(request: Request): Promise<TxMessage> {
   if (header.startsWith("multipart/form-data")) {
     let form: FormData;
     try {
-      form = await new Response(body, { headers: { "content-type": header } }).formData();
+      form = await new Response(body, {
+        headers: { "content-type": header },
+      }).formData();
     } catch {
       throw new TxInputError("form");
     }
@@ -251,6 +274,7 @@ export async function readTxMessage(request: Request): Promise<TxMessage> {
   }
   // TxMessage has no form tags; Echo's form binder leaves its fields unset.
   if (type === "application/x-www-form-urlencoded") return out;
-  if (type === "application/xml" || type === "text/xml") throw new TxInputError("body");
+  if (type === "application/xml" || type === "text/xml")
+    throw new TxInputError("body");
   throw new HttpError(415);
 }

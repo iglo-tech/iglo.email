@@ -61,7 +61,8 @@ export type EventResult =
     }
   | { status: number; message: string };
 
-const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON;
+const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object })
+  .rawJSON;
 const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(id) : rawJSON(id.toString());
 
@@ -92,7 +93,11 @@ export function createEventStore(
 ) {
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
   const exitThenTrigger = options.exitThenTrigger ?? noSequences;
-  const result = (id: bigint, subscriberId: bigint, enrollments: Enrollments): EventResult => ({
+  const result = (
+    id: bigint,
+    subscriberId: bigint,
+    enrollments: Enrollments,
+  ): EventResult => ({
     status: 200,
     event_id: numberID(id),
     subscriber_id: numberID(subscriberId),
@@ -102,16 +107,26 @@ export function createEventStore(
   function record(input: EventInput, receivedAt: string): EventResult {
     const found = subscribers.resolveForEvent(input.subscriber);
     if (found && input.idempotencyKey !== undefined) {
-      const previous = q.get("event-by-key").get(found.id, input.idempotencyKey) as
+      const previous = q
+        .get("event-by-key")
+        .get(found.id, input.idempotencyKey) as
         | (Pick<EventRow, "id" | "subscriber_id"> & {
             enrollments: string | null;
           })
         | null;
       // Replay what the first request started and ended; never recompute it.
       if (previous)
-        return result(previous.id, previous.subscriber_id, storedEnrollments(previous.enrollments));
+        return result(
+          previous.id,
+          previous.subscriber_id,
+          storedEnrollments(previous.enrollments),
+        );
     }
-    const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
+    const subscriber = subscribers.upsertForEvent(
+      found,
+      input.subscriber,
+      options.emailAllowed,
+    );
     const occurredAt = input.occurredAt ?? receivedAt;
     const inserted = q
       .get("event-insert")
@@ -141,7 +156,11 @@ export function createEventStore(
     return result(inserted.id, subscriber.id, enrollments);
   }
   /** One item in its own savepoint: a rejection rolls back only this item's writes. */
-  function item(input: EventInput, at: string, authorize?: () => void): EventResult {
+  function item(
+    input: EventInput,
+    at: string,
+    authorize?: () => void,
+  ): EventResult {
     db.run("SAVEPOINT event_item");
     try {
       authorize?.();
@@ -157,7 +176,8 @@ export function createEventStore(
         // isolated. Abort the whole transaction rather than report a partial outcome.
         throw new TransactionLost(cleanup);
       }
-      if (error instanceof HttpError) return { status: error.status, message: error.message };
+      if (error instanceof HttpError)
+        return { status: error.status, message: error.message };
       throw error;
     }
   }
@@ -184,7 +204,8 @@ export function createEventStore(
           try {
             return { result: item(e.input, e.at, e.authorize) };
           } catch (failure) {
-            if (failure instanceof TransactionLost || !db.inTransaction) throw failure;
+            if (failure instanceof TransactionLost || !db.inTransaction)
+              throw failure;
             return { failure };
           }
         }),
@@ -213,7 +234,11 @@ export function createEventStore(
      * commit), each in its own savepoint with its own authorization, so one fsync covers
      * them without coupling their results.
      */
-    submit(input: EventInput, receivedAt: Date, authorize: () => void): Promise<EventResult> {
+    submit(
+      input: EventInput,
+      receivedAt: Date,
+      authorize: () => void,
+    ): Promise<EventResult> {
       return new Promise((resolve, reject) => {
         queue.push({
           input,
@@ -252,14 +277,17 @@ export function createEventStore(
     },
     /** A subscriber's events in ID order, at most `limit`. */
     list(subscriberId: bigint, limit = 1000): EventRow[] {
-      return q.get("events-by-subscriber").all(subscriberId, limit) as EventRow[];
+      return q
+        .get("events-by-subscriber")
+        .all(subscriberId, limit) as EventRow[];
     },
     /** One page of a subscriber's events, newest first, for the admin screens. */
     page(subscriberId: bigint, page: number, perPage: number) {
       const rows = q
         .get("events-page")
         .all(subscriberId, perPage, (page - 1) * perPage) as EventRow[];
-      const total = (q.get("events-count").get(subscriberId) as { n: bigint }).n;
+      const total = (q.get("events-count").get(subscriberId) as { n: bigint })
+        .n;
       return {
         results: rows.map((row) => ({
           id: numberID(row.id),

@@ -465,7 +465,8 @@ test("retention purges events received more than 400 days ago in bounded batches
   const loop = f.retention({ batchSize: 2 });
   for (let i = 0; i < 5; i++) {
     await f.clock.whenSleeping();
-    f.clock.advance(0);
+    // A pass with rows is followed by the pause, never at once (D70).
+    f.clock.advance(250);
   }
   await f.clock.whenSleeping();
   expect(transactions).toEqual([2, 2, 1, 0]);
