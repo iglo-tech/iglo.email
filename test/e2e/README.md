@@ -23,6 +23,11 @@ screens, `bun run e2e:browser:campaigns` for the templates and campaigns screens
 Credentials are the synthetic ones in `test/worked-example/harness.ts`; each
 test makes its own users and data through the public API.
 
+A test fails on any Content-Security-Policy violation or Alpine expression error
+on its page. One that provokes them on purpose sets `violations: "expected"`, and
+one that needs a handler to run sets `bypassCSP`. `csp.e2e.js` walks every screen;
+`editor-containment.e2e.js` runs the corpus in `hostile-html.js` through the editor.
+
 ## Adapting an upstream spec
 
 1. Copy `tests/specs/<name>.spec.js` from the pinned upstream to

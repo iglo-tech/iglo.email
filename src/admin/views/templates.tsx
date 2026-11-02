@@ -36,14 +36,14 @@ function Menu({ t, canManage }: { t: Translation; canManage: boolean }) {
     <ot-dropdown>
       <button
         popovertarget=""
-        x-bind:popovertarget="`tpl-actions-${t.id}`"
+        x-bind:popovertarget="'tpl-actions-' + t.id"
         type="button"
         class="ghost more icon"
         aria-label={t.T("globals.buttons.more")}
       >
         <Icon name="more-vertical" />
       </button>
-      <menu popover="" x-bind:id="`tpl-actions-${t.id}`">
+      <menu popover="" x-bind:id="'tpl-actions-' + t.id">
         <button
           type="button"
           role="menuitem"
@@ -55,7 +55,7 @@ function Menu({ t, canManage }: { t: Translation; canManage: boolean }) {
         </button>
         <hr />
         <a
-          x-bind:href="`/admin/templates/${t.id}`"
+          x-bind:href="'/admin/templates/' + t.id"
           role="menuitem"
           class="button ghost"
           data-testid="btn-edit"
@@ -115,12 +115,12 @@ function Row({ t, canManage }: { t: Translation; canManage: boolean }) {
           <AvatarLink
             kind="campaign-template"
             name="t.name"
-            href="`/admin/templates/${t.id}`"
+            href="'/admin/templates/' + t.id"
             title="viewTitle(t.name)"
           />
           <div class="avatar-label">
             <a
-              x-bind:href="`/admin/templates/${t.id}`"
+              x-bind:href="'/admin/templates/' + t.id"
               class="unstyled"
               x-bind:class="{ default: t.is_default }"
               data-testid="btn-edit"
@@ -193,7 +193,7 @@ export const templatesView: AdminView = ({ context, can }) => {
           <header class="row page-header">
             <div class="col-4">
               <h1 class="page-title">
-                {title} <span x-text="`(${templates.length})`"></span>
+                {title} <span x-text="'(' + templates.length + ')'"></span>
                 {type ? (
                   <FilterBadge
                     t={t}

@@ -2,7 +2,7 @@
 // with the status and lists; here this module reads them from the API. Upstream polls on a fixed
 // interval for as long as the tab stays open; here one read follows another, stops at the bounds
 // below and pauses while the page is hidden.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { read } from '@/assets/admin/js/listing.js';
 import {
   api, csrfToken, i18n, ListTag, urls,

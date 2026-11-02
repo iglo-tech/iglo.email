@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/maintenance.js at 6fcd95f, without its VACUUM
 // settings: nothing here runs them.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   api,
   isLoading,

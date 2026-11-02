@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/bounces.js at 6fcd95f. Upstream's page arrives
 // with its bounces; here this module reads them from the API.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   filterTitle, initials, pageLinks, pageQuery, read, viewTitle,
 } from '@/assets/admin/js/listing.js';

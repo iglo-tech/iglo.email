@@ -360,6 +360,11 @@ export async function runMediaContract(target: {
     check(opened.headers.get("content-disposition")?.startsWith("attachment"), "html-attachment");
     check(/sandbox/.test(opened.headers.get("content-security-policy") ?? ""), "html-csp");
     check(opened.headers.get("content-type")?.startsWith("text/html"), "html-type");
+    // Not a script the admin's `script-src 'self'` would run (D71).
+    const code = keep(await stored(`code-${suffix}.js`, "globalThis.ran = 1", "image/png"));
+    const codeFile = await served(code.url);
+    check(codeFile.headers.get("content-type") === "application/octet-stream", "script-type");
+    check(codeFile.headers.get("x-content-type-options") === "nosniff", "script-nosniff");
     const lying = keep(await stored(`claims-${suffix}.png`, "<script>1</script>", "text/html"));
     check((await served(lying.url)).headers.get("content-type") === "image/png", "stored-type");
     const unknown = keep(await stored(`data-${suffix}.zzz`, "<script>1</script>", "text/html"));

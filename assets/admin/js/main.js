@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/main.js at 6fcd95f.
 import '@knadh/oat';
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { I18n } from '@/assets/admin/js/i18n.js';
 import { register as registerTable } from '@/assets/admin/js/table.js';
 import * as u from '@/assets/admin/js/utils.js';
@@ -27,6 +27,16 @@ function setupAlpine() {
     isLoading,
     copyToClipboard: u.copyToClipboard,
     listAutocomplete,
+
+    // What an expression cannot do itself in Alpine's CSP build: assign to a DOM element or reach
+    // a global.
+    setValue(el, value) {
+      el.value = value;
+    },
+    asNumber: (value) => Number(value),
+    round: (value) => Math.round(value),
+    asParam: (value) => encodeURIComponent(value),
+    pretty: (value) => JSON.stringify(value, null, 2),
 
     theme: localStorage.getItem('theme') || 'auto',
 

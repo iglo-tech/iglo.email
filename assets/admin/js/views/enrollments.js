@@ -1,6 +1,6 @@
 // Native screens with no upstream source (docs/design/05-sequences.md#admin-ui): the enrollment
 // explorer and one enrollment's timeline, which follows the scheduler while the enrollment runs.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   pageLinks, pageQuery, read, subscriberID,
 } from '@/assets/admin/js/listing.js';

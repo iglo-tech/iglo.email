@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/users.js at 6fcd95f. Upstream's list page
 // arrives with its rows; here this module reads them from the API and applies the URL's filters.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { filterTitle, initials, pageQuery, read, viewTitle } from '@/assets/admin/js/listing.js';
 import {
   api, config, i18n, urls,

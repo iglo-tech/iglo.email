@@ -75,7 +75,7 @@ function Footer(props: { t: Translation; isNew: boolean }) {
             data-variant="secondary"
             title={t.T("globals.messages.clickToCopy")}
             aria-label={t.T("globals.fields.id")}
-            x-on:click="copyToClipboard(String(form.id))"
+            x-on:click="copyToClipboard('' + form.id)"
           >
             <strong>{t.T("globals.fields.id")}</strong> <span x-text="form.id"></span>
           </button>
@@ -320,7 +320,7 @@ export const listRoleView =
                 <template x-for="l in form.lists" x-bind:key="l.id">
                   <tr>
                     <td>
-                      <a x-bind:href="`/admin/lists/${l.id}`" class="unstyled" x-text="l.name"></a>
+                      <a x-bind:href="'/admin/lists/' + l.id" class="unstyled" x-text="l.name"></a>
                     </td>
                     <td>
                       <div class="hstack gap-3">

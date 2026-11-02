@@ -273,7 +273,10 @@ export function registerMediaRoutes(
     const file = await files.stat(name).catch(() => null);
     if (!file) return next();
     const ext = extensionOf(name);
-    const type = Bun.file(ext ? `file.${ext}` : "file").type.split(";", 1)[0]!;
+    // Same origin as the admin: with `nosniff`, this type is what stops `<script src>` on an upload
+    // from passing the admin's `script-src 'self'` (D71).
+    const known = Bun.file(ext ? `file.${ext}` : "file").type.split(";", 1)[0]!;
+    const type = /script/.test(known) ? "application/octet-stream" : known;
     const tag = `"${file.size.toString(16)}-${Math.floor(file.modified).toString(16)}"`;
     const modified = new Date(file.modified).toUTCString();
     const headers: Record<string, string> = {

@@ -28,7 +28,8 @@ Direct browser build dependencies match the pinned upstream lock: Alpine.js
 6.7.1, state 6.7.0 and view 6.43.4, Lezer highlight 1.2.3, Chart.js 4.5.1 and
 Squire 2.4.8. The root `bun.lock` pins their resolved transitive dependencies.
 The build embeds the license files of all browser dependencies next to the
-assets. The Alpine npm package omits its license file, so
+assets. `@alpinejs/csp` replaces upstream's `alpinejs` (D71), at the same
+version. It omits its license file, so
 `licenses/alpinejs-LICENSE.txt` is the upstream Alpine v3.15.12 license from
 `https://github.com/alpinejs/alpine/blob/v3.15.12/LICENSE.md`.
 

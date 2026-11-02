@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/media.js at 6fcd95f. Upstream's page arrives
 // with its files; here this module reads them from the API.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   fileExt, pageLinks, pageQuery, rasterThumb, read,
 } from '@/assets/admin/js/listing.js';
@@ -20,6 +20,9 @@ function component(mode) {
     loading: true,
     error: '',
     files: [],
+    pickFiles(event) {
+      this.files = [...event.target.files];
+    },
     isUploading: false,
     isPicker: mode === 'picker',
 

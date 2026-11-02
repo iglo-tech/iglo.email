@@ -1,5 +1,5 @@
 // Adapted from listmonk static/admin/assets/js/table.js at 6fcd95f.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 
 function Table({
   query = '',

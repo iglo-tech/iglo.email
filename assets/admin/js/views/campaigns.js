@@ -1,7 +1,7 @@
 // Adapted from listmonk static/admin/assets/js/views/campaigns.js and the date functions of
 // cmd/init.go and cmd/utils.go at 6fcd95f. Upstream's page arrives with its rows; here this module
 // reads them from the API.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   filterTitle, initials, pageLinks, pageQuery, read, urlFilters, viewTitle,
 } from '@/assets/admin/js/listing.js';

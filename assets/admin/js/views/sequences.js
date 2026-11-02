@@ -1,6 +1,6 @@
 // Native screens with no upstream source (docs/design/05-sequences.md#admin-ui). Stored names reach
 // the page by x-text, and a save sends back the stored step with only the shown fields changed.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   initials, pageLinks, pageQuery, read, subscriberID, viewTitle,
 } from '@/assets/admin/js/listing.js';

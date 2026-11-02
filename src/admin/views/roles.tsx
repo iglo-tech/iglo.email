@@ -27,14 +27,14 @@ function Menu({ t }: { t: Translation }) {
     <ot-dropdown>
       <button
         popovertarget=""
-        x-bind:popovertarget="`role-actions-${r.id}`"
+        x-bind:popovertarget="'role-actions-' + r.id"
         type="button"
         class="ghost more icon"
         aria-label={t.T("globals.buttons.more")}
       >
         <Icon name="more-vertical" />
       </button>
-      <menu popover="" x-bind:id="`role-actions-${r.id}`">
+      <menu popover="" x-bind:id="'role-actions-' + r.id">
         <a x-bind:href="link(r)" role="menuitem" class="button ghost" data-testid="btn-edit">
           <Icon name="edit-2" /> {t.T("globals.buttons.edit")}
         </a>
@@ -93,7 +93,7 @@ export function rolesView(type: "user" | "list"): AdminView {
               <div class="col-4">
                 <div class="hstack">
                   <h1 class="page-title">
-                    {title} <span x-text="`(${roles.length})`"></span>
+                    {title} <span x-text="'(' + roles.length + ')'"></span>
                   </h1>
                 </div>
               </div>

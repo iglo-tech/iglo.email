@@ -57,7 +57,7 @@ function Form({ t, isNew, canManage }: { t: Translation; isNew: boolean; canMana
             <template x-if="ready">
               <code-editor
                 lang="html"
-                x-init="$el.value = form.body"
+                x-init="setValue($el, form.body)"
                 x-on:input="form.body = $event.target.value"
               ></code-editor>
             </template>
@@ -148,7 +148,7 @@ function templateView(isNew: boolean): AdminView {
                         <AvatarLink
                           kind="campaign-template"
                           name="saved.name"
-                          href="`/admin/templates/${form.id}`"
+                          href="'/admin/templates/' + form.id"
                           title="viewTitle(saved.name)"
                         />
                         <h1 class="page-title avatar-label" x-text="saved.name"></h1>

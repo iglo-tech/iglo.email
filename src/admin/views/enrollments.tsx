@@ -51,7 +51,7 @@ function TestBadge({ t }: { t: Translation }) {
 }
 function StatusBadge() {
   return (
-    <span class="badge" x-bind:class="`status-${e.status}`">
+    <span class="badge" x-bind:class="'status-' + e.status">
       <span class="dot">●</span> <span x-text="statusLabel(e.status)"></span>
     </span>
   );
@@ -72,7 +72,7 @@ function Filters({ t }: { t: Translation }) {
             <template x-for="s in sequenceOptions" x-bind:key="s.id">
               <option
                 x-bind:value="s.id"
-                x-bind:selected="String(s.id) === filter.sequence_id"
+                x-bind:selected="'' + s.id === filter.sequence_id"
                 x-text="s.name"
               ></option>
             </template>
@@ -192,7 +192,7 @@ export const enrollmentsView: AdminView = ({ context, can }) => {
         <header class="hstack justify-between page-header">
           <div class="hstack page-heading">
             <h1 class="page-title">
-              {title} <span x-text="`(${page.total ?? '-'})`"></span>
+              {title} <span x-text="'(' + (page.total != null ? page.total : '-') + ')'"></span>
             </h1>
           </div>
           <div class="hstack justify-end buttons">
@@ -231,17 +231,17 @@ export const enrollmentsView: AdminView = ({ context, can }) => {
                   <tr data-testid="enrollment-row" x-bind:data-id="e.id">
                     <td>
                       <a
-                        x-bind:href="`/admin/sequences/enrollments/${e.id}`"
-                        x-text="`#${e.id}`"
+                        x-bind:href="'/admin/sequences/enrollments/' + e.id"
+                        x-text="'#' + e.id"
                       ></a>{" "}
                       <TestBadge t={t} />
                     </td>
                     <td x-text="e.sequence_name"></td>
-                    <td x-text="e.subscriber_email ?? `#${e.subscriber_id}`"></td>
+                    <td x-text="e.subscriber_email || ('#' + e.subscriber_id)"></td>
                     <td>
                       <StatusBadge />
                     </td>
-                    <td x-text="e.exit_reason ?? ''"></td>
+                    <td x-text="e.exit_reason || ''"></td>
                     <td x-text="niceDate(e.created_at, true)"></td>
                     {canManage ? (
                       <td class="actions align-right">
@@ -301,7 +301,7 @@ export const enrollmentView: AdminView = ({ context, can }) => {
         <Breadcrumbs
           parent={parent}
           href="/admin/sequences/enrollments"
-          current={<span x-text="`#${e.id ?? ''}`"></span>}
+          current={<span x-text="'#' + (e.id || '')"></span>}
         />
         <Alert name="error" />
         <div x-show="ready" style="display: none">
@@ -314,12 +314,12 @@ export const enrollmentView: AdminView = ({ context, can }) => {
               <div class="text-light">
                 <template x-if="e.subscriber_email">
                   <a
-                    x-bind:href="`/admin/subscribers/${e.subscriber_id}`"
+                    x-bind:href="'/admin/subscribers/' + e.subscriber_id"
                     x-text="e.subscriber_email"
                   ></a>
                 </template>
                 <template x-if="!e.subscriber_email">
-                  <span x-text="`#${e.subscriber_id}`"></span>
+                  <span x-text="'#' + e.subscriber_id"></span>
                 </template>
               </div>
             </div>

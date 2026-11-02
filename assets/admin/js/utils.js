@@ -49,7 +49,8 @@ export function toast(message, variant, duration) {
 }
 
 export function confirm(message) {
-  const tpl = document.getElementById('confirm-dialog-template');
+  // A body in the editor can hold this id and comes first, so not getElementById.
+  const tpl = document.querySelector('body > template#confirm-dialog-template');
   const fallback = message || i18n.t('globals.messages.confirm');
   if (!tpl) {
     return Promise.resolve(window.confirm(fallback));

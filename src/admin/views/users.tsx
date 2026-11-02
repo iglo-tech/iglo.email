@@ -26,16 +26,16 @@ function Menu({ t }: { t: Translation }) {
     <ot-dropdown>
       <button
         popovertarget=""
-        x-bind:popovertarget="`user-actions-${r.id}`"
+        x-bind:popovertarget="'user-actions-' + r.id"
         type="button"
         class="ghost more icon"
         aria-label={t.T("globals.buttons.more")}
       >
         <Icon name="more-vertical" />
       </button>
-      <menu popover="" x-bind:id="`user-actions-${r.id}`">
+      <menu popover="" x-bind:id="'user-actions-' + r.id">
         <a
-          x-bind:href="`/admin/users/${r.id}`"
+          x-bind:href="'/admin/users/' + r.id"
           role="menuitem"
           class="button ghost"
           data-testid="btn-edit"
@@ -93,12 +93,12 @@ function Row({ t, manage }: { t: Translation; manage: boolean }) {
           <AvatarLink
             kind="user"
             name="(r.name || r.username)"
-            href="`/admin/users/${r.id}`"
+            href="'/admin/users/' + r.id"
             title="viewTitle(r.name || r.username)"
           />
           <div class="avatar-label">
             <a
-              x-bind:href="`/admin/users/${r.id}`"
+              x-bind:href="'/admin/users/' + r.id"
               class="unstyled"
               x-bind:class="{ 'text-light': r.status === 'disabled' }"
               x-text="r.username"
@@ -128,8 +128,8 @@ function Row({ t, manage }: { t: Translation; manage: boolean }) {
         <Role
           kind="user-role"
           name="r.user_role.name"
-          href="`/admin/users/roles/${r.user_role.id}`"
-          filter="`/admin/users?user_role_id=${r.user_role.id}`"
+          href="'/admin/users/roles/' + r.user_role.id"
+          filter="'/admin/users?user_role_id=' + r.user_role.id"
         />
       </td>
       <td data-label={listRole}>
@@ -137,8 +137,8 @@ function Row({ t, manage }: { t: Translation; manage: boolean }) {
           <Role
             kind="list-role"
             name="r.list_role.name"
-            href="`/admin/users/roles/lists/${r.list_role.id}`"
-            filter="`/admin/users?list_role_id=${r.list_role.id}`"
+            href="'/admin/users/roles/lists/' + r.list_role.id"
+            filter="'/admin/users?list_role_id=' + r.list_role.id"
           />
         </template>
         <template x-if="!r.list_role">
@@ -190,7 +190,7 @@ export const usersView =
             <div class="col-4">
               <div class="hstack">
                 <h1 class="page-title">
-                  {t.T("globals.terms.users")} <span x-text="`(${users.length})`"></span>
+                  {t.T("globals.terms.users")} <span x-text="'(' + users.length + ')'"></span>
                 </h1>
                 {type === "api" ? (
                   <FilterBadge

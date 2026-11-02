@@ -111,7 +111,7 @@ function StepCard({
               <select
                 name="template"
                 data-testid="step-template"
-                x-on:change="s.template_id = Number($event.target.value) || null"
+                x-on:change="s.template_id = asNumber($event.target.value) || null"
               >
                 <option value="" x-bind:selected="!s.template_id">
                   {t.T("sequences.noTemplate")}
@@ -148,7 +148,7 @@ function StepCard({
         <label>{t.T("sequences.condition")}</label>
         <code-editor
           lang="json"
-          x-init="$el.value = s.condition"
+          x-init="setValue($el, s.condition)"
           x-on:input="s.condition = $event.target.value"
           {...(canManage ? {} : { disabled: true })}
         ></code-editor>
@@ -274,7 +274,7 @@ function sequenceView(isNew: boolean): AdminView {
                       <AvatarLink
                         kind="list"
                         name="saved.name"
-                        href="`/admin/sequences/${saved.id}`"
+                        href="'/admin/sequences/' + saved.id"
                         title="saved.name"
                       />
                       <h1 class="page-title avatar-label">
@@ -282,7 +282,7 @@ function sequenceView(isNew: boolean): AdminView {
                         <span
                           class="badge"
                           data-testid="sequence-status"
-                          x-bind:class="`status-${saved.status}`"
+                          x-bind:class="'status-' + saved.status"
                         >
                           <span class="dot">●</span>{" "}
                           <span x-text="statusLabel(saved.status)"></span>
@@ -387,7 +387,7 @@ function sequenceView(isNew: boolean): AdminView {
                         <code-editor
                           lang="json"
                           data-testid="trigger-where"
-                          x-init="$el.value = form.where"
+                          x-init="setValue($el, form.where)"
                           x-on:input="form.where = $event.target.value"
                           {...(canManage ? {} : { disabled: true })}
                         ></code-editor>
@@ -414,7 +414,7 @@ function sequenceView(isNew: boolean): AdminView {
                           <select
                             name="list"
                             data-testid="sequence-list"
-                            x-on:change="form.list_id = Number($event.target.value) || null"
+                            x-on:change="form.list_id = asNumber($event.target.value) || null"
                           >
                             <option value="" x-bind:selected="!form.list_id">
                               {t.T("sequences.noList")}
@@ -435,7 +435,7 @@ function sequenceView(isNew: boolean): AdminView {
                   <h3>{t.T("sequences.steps")}</h3>
                   <template x-if="ready">
                     <div class="vstack gap-4" data-testid="steps">
-                      <template x-for="(s, i) in steps" x-bind:key="`${generation}-${s.uid}`">
+                      <template x-for="(s, i) in steps" x-bind:key="'' + generation + '-' + s.uid">
                         <StepCard t={t} canSql={canSql} canManage={canManage} />
                       </template>
                     </div>

@@ -123,7 +123,7 @@ export const formsView: AdminView = ({ context, site }) => {
                         <Icon name="copy" /> {t.T("globals.buttons.copy")}
                       </button>
                     </div>
-                    <code-editor lang="html" disabled x-effect="$el.value = html"></code-editor>
+                    <code-editor lang="html" disabled x-effect="setValue($el, html)"></code-editor>
                   </div>
                 </article>
               </div>

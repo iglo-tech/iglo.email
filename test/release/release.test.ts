@@ -118,6 +118,6 @@ describe("release package", () => {
     expect(notices).toContain("d6375c72affe0f70222cdcb45012b10f0bf3a9d5");
     expect(notices).toContain("SIL OPEN FONT LICENSE");
     expect(notices).toContain("liquidjs@");
-    expect(notices).toContain("alpinejs@");
+    expect(notices).toContain("alpinejs_csp@");
   });
 });

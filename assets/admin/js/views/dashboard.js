@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/dashboard.js at 6fcd95f. Upstream's page
 // arrives with its data; here each section reads /api/dashboard/* and shows its own refusal.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import { lineChart } from '@/assets/admin/js/charts.js';
 import { initials, read } from '@/assets/admin/js/listing.js';
 import { i18n } from '@/assets/admin/js/main.js';

@@ -1,6 +1,6 @@
 // Adapted from listmonk static/admin/assets/js/views/roles.js at 6fcd95f. Upstream's list page
 // arrives with its rows; here this module reads them from the API.
-import Alpine from 'alpinejs';
+import Alpine from '@alpinejs/csp';
 import {
   initials, pageQuery, read, viewTitle,
 } from '@/assets/admin/js/listing.js';

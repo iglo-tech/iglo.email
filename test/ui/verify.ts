@@ -65,12 +65,15 @@ try {
   assert.match(page.body, /Nav &lt;&amp;&quot;/);
   assert.match(page.body, /User &lt;&amp;&quot;/);
   assert.ok(!page.body.includes("globalThis.fixtureInjected=true</script>"));
-  const bootstrap = /window\._LM_I18N=(.*?);window\._LM_CONFIG=(.*?);<\/script>/.exec(page.body);
+  const bootstrap = /<script id="admin-bootstrap" type="application\/json">(.*?)<\/script>/.exec(
+    page.body,
+  );
   assert.ok(bootstrap);
-  for (const value of [bootstrap[1]!, bootstrap[2]!]) assert.ok(!/[<>&\u2028\u2029]/.test(value));
+  assert.ok(!/[<>&\u2028\u2029]/.test(bootstrap[1]!));
+  const { i18n, config } = JSON.parse(bootstrap[1]!);
   const payload = "</script><script>globalThis.fixtureInjected=true</script>&\u2028\u2029";
-  assert.equal(JSON.parse(bootstrap[1]!)["fixture.hostile"], payload);
-  assert.equal(JSON.parse(bootstrap[2]!).hostile, payload);
+  assert.equal(i18n["fixture.hostile"], payload);
+  assert.equal(config.hostile, payload);
   assert.equal((await get("/invalid-navigation")).status, 400);
   assert.equal((await get("/invalid-config")).status, 400);
   for (const [path, contentType] of [

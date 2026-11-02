@@ -251,6 +251,11 @@ function Dialogs({ t }: { t: Translation }) {
       {t.T("globals.buttons.close")}
     </button>
   );
+  const refused = (
+    <p role="alert" class="text-danger" data-rte-url-error="" hidden>
+      {t.T("editor.urlRefused")}
+    </p>
+  );
   const submit = (label: string) => (
     <button type="button" data-variant="primary" data-rte-act="submit">
       {label}
@@ -304,6 +309,7 @@ function Dialogs({ t }: { t: Translation }) {
           </header>
           <section class="dialog-body">
             {text(t.T("globals.terms.url"), "url", true)}
+            {refused}
             {text(t.T("globals.terms.text"), "text")}
             {text(t.T("globals.fields.title"), "title")}
             <label data-field="">
@@ -335,6 +341,7 @@ function Dialogs({ t }: { t: Translation }) {
                 </button>
               </div>
             </div>
+            {refused}
             {text(t.T("editor.altText"), "alt")}
             <div class="hstack gap-2">
               <div class="rte-img-dims">

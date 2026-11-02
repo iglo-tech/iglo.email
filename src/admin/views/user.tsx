@@ -217,7 +217,7 @@ export const userView =
                         data-variant="secondary"
                         title={t.T("globals.messages.clickToCopy")}
                         aria-label={t.T("globals.fields.id")}
-                        x-on:click="copyToClipboard(String(form.id))"
+                        x-on:click="copyToClipboard('' + form.id)"
                       >
                         <strong>{t.T("globals.fields.id")}</strong> <span x-text="form.id"></span>
                       </button>
