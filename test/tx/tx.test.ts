@@ -629,3 +629,104 @@ test("an idempotent retry replays after its template or subscriber changes", asy
       .status,
   ).toBe(400);
 });
+
+/** A multipart POST with a Content-Length, as a client that buffers its form sends it. */
+async function postForm(f: TxFixture, form: FormData) {
+  const encoded = await new Response(form).blob();
+  return f.request("/api/tx", {
+    method: "POST",
+    headers: {
+      ...f.sessionHeaders,
+      "content-type": encoded.type,
+      "content-length": String(encoded.size),
+    },
+    body: encoded,
+  });
+}
+const journaledSends = (f: TxFixture) =>
+  (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
+const attachmentForm = (template: number, email: string, async = false) => {
+  const body = new FormData();
+  body.set("data", JSON.stringify({ subscriber_emails: [email], template_id: template, async }));
+  body.append("file", new File([new Uint8Array(2 * 1024 * 1024)], "a.bin"));
+  return body;
+};
+
+test("synchronous multipart sends with attachments wait for room, then get a 429", async () => {
+  let release = () => {};
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  // A 2 MiB file costs about 6 MiB while parsed and 2 MiB while its send is held.
+  const f = await open({
+    beforeDispatch: () => stalled,
+    limits: { maxBytes: 7 * 1024 * 1024, waitMs: 1000 },
+  });
+  const template = await f.template("<p>x</p>");
+  const first = postForm(f, attachmentForm(template, "first@example.test"));
+  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  expect(journaledSends(f)).toBe(1n);
+
+  // No room while the first is held: the second waits the injected 1000 ms, then is refused.
+  const second = postForm(f, attachmentForm(template, "second@example.test"));
+  let waiting = true;
+  void second.then(() => (waiting = false));
+  for (let i = 0; i < 400 && waiting; i++) {
+    f.clock.advance(1000);
+    await Bun.sleep(5);
+  }
+  const refused = await second;
+  expect(refused.status).toBe(429);
+  expect(refused.headers.get("retry-after")).toBe("1");
+  // Refused before the journal, so the caller's retry is not a second send.
+  expect(journaledSends(f)).toBe(1n);
+
+  // A request with no attachment is not charged anything, and is journaled at once.
+  const plain = await f.tx({
+    subscriber_email: "plain@example.test",
+    subscriber_mode: "external",
+    template_id: template,
+    async: true,
+  });
+  expect(plain.status).toBe(200);
+  expect(journaledSends(f)).toBe(2n);
+
+  release();
+  expect((await first).status).toBe(200);
+  // The room is back: the same request now goes through.
+  expect((await postForm(f, attachmentForm(template, "second@example.test"))).status).toBe(200);
+  expect(f.sink.messages.map((m) => m.to[0])).toContain("second@example.test");
+});
+
+test("a multipart request that waits is served when room frees", async () => {
+  let release = () => {};
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  const f = await open({
+    beforeDispatch: () => stalled,
+    limits: { maxBytes: 7 * 1024 * 1024, waitMs: 60_000 },
+  });
+  const template = await f.template("<p>x</p>");
+  const first = postForm(f, attachmentForm(template, "first@example.test"));
+  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  const second = postForm(f, attachmentForm(template, "second@example.test"));
+  await Bun.sleep(100);
+  expect(journaledSends(f)).toBe(1n);
+  release();
+  expect((await first).status).toBe(200);
+  expect((await second).status).toBe(200);
+  expect(f.sink.messages.map((m) => m.to[0]).sort()).toEqual([
+    "first@example.test",
+    "second@example.test",
+  ]);
+});
+
+test("a multipart body with no declared size is charged at the body cap", async () => {
+  const f = await open({ limits: { maxBytes: 8 * 1024 * 1024 } });
+  const template = await f.template("<p>x</p>");
+  // 5 MiB x 3 copies can never fit 8 MiB: refused at once, nothing journaled.
+  const response = await f.request("/api/tx", {
+    method: "POST",
+    headers: f.sessionHeaders,
+    body: attachmentForm(template, "chunked@example.test"),
+  });
+  expect(response.status).toBe(429);
+  expect(journaledSends(f)).toBe(0n);
+});

@@ -24,12 +24,7 @@ export function eventCountSQL<P>(input: {
     args.push(input.after);
   }
   for (const [key, value] of Object.entries(input.where ?? {})) {
-    const part = compareSQL(
-      "events.data",
-      key.slice("data.".length),
-      "eq",
-      value,
-    );
+    const part = compareSQL("events.data", key.slice("data.".length), "eq", value);
     filter += ` AND ${part.sql}`;
     args.push(...part.args);
   }

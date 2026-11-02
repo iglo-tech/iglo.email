@@ -14,13 +14,8 @@ export function createEventPurge(
   events: EventStore,
   retentionDays: number = DEFAULT_RETENTION_DAYS,
 ): Purge {
-  if (
-    !Number.isSafeInteger(retentionDays) ||
-    retentionDays < 1 ||
-    retentionDays > 36_500
-  )
+  if (!Number.isSafeInteger(retentionDays) || retentionDays < 1 || retentionDays > 36_500)
     throw new RangeError("Invalid event retention");
   const retentionMs = retentionDays * 86_400_000;
-  return (now, limit) =>
-    events.purge(new Date(now.getTime() - retentionMs), limit);
+  return (now, limit) => events.purge(new Date(now.getTime() - retentionMs), limit);
 }

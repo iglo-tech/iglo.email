@@ -31,8 +31,7 @@ export function createByteGate(options: {
     cost: number;
     wake: (reservation: Reservation | null) => void;
   }> = [];
-  const fits = (cost: number) =>
-    holders < options.maxHolders && bytes + cost <= options.maxBytes;
+  const fits = (cost: number) => holders < options.maxHolders && bytes + cost <= options.maxBytes;
 
   function open(cost: number): Reservation {
     let held = cost;
@@ -101,9 +100,7 @@ export function createByteGate(options: {
     },
     /** Take `cost` now or not at all. */
     tryAcquire: (cost: number): Reservation | null =>
-      !waiting.length && cost <= options.maxBytes && fits(cost)
-        ? open(cost)
-        : null,
+      !waiting.length && cost <= options.maxBytes && fits(cost) ? open(cost) : null,
     stats: () => ({ bytes, holders, waiting: waiting.length }),
   };
 }
