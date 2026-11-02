@@ -727,3 +727,12 @@ Decided by agents on 2026-11-02, for owner review.
 - **hCaptcha:** fails closed on a network error, a timeout (5 s, as upstream), a non-2xx answer, an answer over 64 KiB, a redirect or an unparsable answer; upstream lets an unparsable answer through. The verify URL is a dependency, so tests answer from a local server and never call hCaptcha.
 - **Not chosen:** vendoring the altcha npm widget (MIT, AGPL-compatible): a large Svelte bundle for one checkbox, and an unreviewed dependency on a public page. Storing used signatures in a table: it would outlive the key that makes them meaningful.
 
+## D73. Sonnet workers, Opus lead and an Opus high reviewer
+
+Decided by the owner on 2026-11-02; amends D68.
+
+- **Workers:** workers, fixers and helpers use Claude Sonnet 5.5 at medium effort (`claudeAgent`, `claude-sonnet-5-5`, effort `medium`). It is the project default. Haiku is no longer used for any role.
+- **Lead:** the chief of staff stays on Claude Opus 5.5 at medium effort.
+- **Reviewer:** the one council reviewer is Claude Opus 5.5 at `high` effort, down from `xhigh`.
+- **Unchanged:** Anthropic models only and no Fable (D68), the reviewer's independence, council size and rounds, local verification, and everything else in D56 and D57.
+- **In flight:** delegates already running keep their model; every dispatch after this decision uses the new targets.
