@@ -184,7 +184,7 @@ function Overview({ t, subscribers }: { t: Translation; subscribers: boolean }) 
         {["confirmed", "unconfirmed", "unsubscribed"].map((status) => (
           <Stat
             title={t.T(`globals.terms.${status}`)}
-            value={`formatNumber(form.subscriber_statuses ? form.subscriber_statuses.${status} : 0)`}
+            value={`formatNumber(form.subscriber_statuses && form.subscriber_statuses.${status} != null ? form.subscriber_statuses.${status} : 0)`}
             href={subscribers ? `${link} + '?subscription_status=${status}'` : "''"}
           />
         ))}

@@ -78,6 +78,8 @@ class RichtextEditor extends HTMLElement {
     this.editor = new Squire(this.content, {
       blockTag: 'P',
       sanitizeToDOMFragment: (html) => this.#sanitize(html),
+      // What leaves is the address, so another program or a paste here gets the real image.
+      willCutCopy: restoreHeld,
     });
     this.editor.setHTML(this.#source?.value ?? this.#pending ?? this.getAttribute('value') ?? '');
 
@@ -495,8 +497,20 @@ class RichtextEditor extends HTMLElement {
     f.src.value = img?.getAttribute('data-rte-src') ?? img?.getAttribute('src') ?? '';
     d.querySelector('[data-rte-url-error]').hidden = true;
     f.alt.value = img?.getAttribute('alt') ?? '';
-    f.width.value = img ? Math.round(img.getBoundingClientRect().width) || '' : '';
-    f.height.value = img ? Math.round(img.getBoundingClientRect().height) || '' : '';
+    // A held image has no picture, so its box is the placeholder's. The stored size is the fact.
+    const heldImage = img?.hasAttribute('data-rte-src') ?? false;
+    const shown = (name) => {
+      if (!img) {
+        return '';
+      }
+      if (heldImage) {
+        return /^\d+$/.test(img.getAttribute(name) ?? '') ? img.getAttribute(name) : '';
+      }
+      return Math.round(img.getBoundingClientRect()[name]) || '';
+    };
+    f.width.value = shown('width');
+    f.height.value = shown('height');
+    const opened = { width: f.width.value, height: f.height.value };
     f.float.value = (img && ['img-float-left', 'img-float-right'].find((c) => img.classList.contains(c))) || '';
     f.embed.checked = img?.hasAttribute('data-embed') ?? false;
 
@@ -604,15 +618,23 @@ class RichtextEditor extends HTMLElement {
         if (held) {
           this.#noteHeld();
         }
+        // On a held image, a side the operator left alone stays exactly as stored.
+        const untouched = (k) => heldImage && f[k].value === opened[k];
         for (const k of ['alt', 'width', 'height', 'data-embed']) {
+          if (k in opened && untouched(k)) {
+            continue;
+          }
           if (attrs[k]) {
             img.setAttribute(k, attrs[k]);
           } else {
             img.removeAttribute(k);
           }
         }
-        img.style.removeProperty('width');
-        img.style.removeProperty('height');
+        for (const k of ['width', 'height']) {
+          if (!untouched(k)) {
+            img.style.removeProperty(k);
+          }
+        }
 
         // Only replace the float classes managed by this dialog.
         img.classList.remove('img-float-left', 'img-float-right');

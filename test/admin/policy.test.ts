@@ -140,6 +140,26 @@ test("remote images are allowed on the one screen that asks, for that response o
   expect(await plain.text()).toContain('"remote_images":false');
 });
 
+test("every kind of response has nosniff", async () => {
+  const session = { cookie };
+  for (const [path, headers] of [
+    ["/", {}],
+    ["/admin/login", {}],
+    ["/admin/lists", session],
+    ["/admin/no-such-page", session],
+    ["/admin/custom.js", session],
+    ["/admin/static/js/main.js", {}],
+    ["/admin/static/no-such-asset.js", {}],
+    ["/api/lists", session],
+    ["/api/no-such-route", session],
+    ["/api/health", {}],
+    ["/%00", {}],
+  ] as [string, Record<string, string>][]) {
+    const response = await fetch(`${f.origin}${path}`, { redirect: "manual", headers });
+    expect(`${path} ${response.headers.get("x-content-type-options")}`).toBe(`${path} nosniff`);
+  }
+});
+
 test("assets and the session's custom files are not pages", async () => {
   const script = await get(f, "/admin/custom.js", cookie);
   expect(script.headers.get("content-type")).toStartWith("application/javascript");

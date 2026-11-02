@@ -80,6 +80,7 @@ function component() {
     // What the rich-text editor left out of the body, by name.
     editorRemoved: [],
     editorHeld: false,
+    loadedForm: '',
     // A status change is in flight, or asking: a second click starts nothing.
     changing: false,
     _mediaTarget: null,
@@ -153,6 +154,7 @@ function component() {
         });
       }
       this.ready = true;
+      this.loadedForm = JSON.stringify(this.form);
     },
 
     // The API's attachments carry an ID and a name; the gallery shows the URL and thumbnail.
@@ -230,10 +232,10 @@ function component() {
       return contentReady && this.form.content_type !== 'plain' && !editorReady;
     },
 
-    // The page's policy decides, so asking for the images is a new response. A body with changes
-    // would be lost to it.
+    // The page's policy decides, so asking for the images is a new response. Any field changed
+    // since the campaign loaded or saved would be lost to it.
     async onShowRemoteImages() {
-      const changed = this.form.body !== (this.saved.body ?? '');
+      const changed = JSON.stringify(this.form) !== this.loadedForm;
       if (!changed || await u.confirm(i18n.t('editor.showRemoteImagesConfirm'))) {
         const url = new URL(window.location.href);
         url.searchParams.set('remote_images', '1');
@@ -417,6 +419,7 @@ function component() {
       const d = await api('campaigns', `/campaigns/${this.form.id}`, 'PUT', p);
       this.saved = d;
       this.form.archive_slug = d.archive_slug || this.form.archive_slug;
+      this.loadedForm = JSON.stringify(this.form);
       return true;
     },
 

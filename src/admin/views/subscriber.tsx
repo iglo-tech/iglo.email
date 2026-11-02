@@ -322,7 +322,7 @@ function Bounces({ t }: { t: Translation }) {
               <tr data-testid="bounce-row">
                 <td
                   data-label={t.T("globals.terms.campaign")}
-                  x-text="b.campaign ? b.campaign.name : '-'"
+                  x-text="b.campaign && b.campaign.name != null ? b.campaign.name : '-'"
                 ></td>
                 <td data-label={t.T("globals.fields.source")} x-text="b.source"></td>
                 <td data-label={t.T("globals.fields.type")}>

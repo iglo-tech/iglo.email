@@ -76,7 +76,15 @@ const allowed = (element, name) => (name === 'name' ? element === 'a'
 
 function copyAttributes(from, to, removed, held) {
   const element = to.localName;
-  for (const { name, value } of from.attributes) {
+  for (const attribute of from.attributes) {
+    // A held address that left the editor by a path `restoreHeld` does not see, such as a drag.
+    // It is the address it stands for and passes the same checks.
+    const alias = /^data-rte-(src|background)$/.exec(attribute.name)?.[1];
+    if (alias && from.hasAttribute(alias)) {
+      continue;
+    }
+    const { value } = attribute;
+    const name = alias ?? attribute.name;
     if (URL_ATTRIBUTES.has(name)
       ? (name !== 'src' || element === 'img') && safeURL(value, name === 'src')
       : allowed(element, name)) {

@@ -119,6 +119,125 @@ test("every screen works under the policy", async ({ page }) => {
   await expect(frame.locator("body")).toContainText("Styled");
 });
 
+test.describe("responses that hold authored text", () => {
+  // Loads each address as a classic script on an admin page, as injected markup would.
+  const asScript = (page, paths) =>
+    page.evaluate(async (list) => {
+      const outcomes = {};
+      for (const path of list)
+        outcomes[path] = await new Promise((resolve) => {
+          const script = document.createElement("script");
+          script.onload = () => resolve("ran");
+          script.onerror = () => resolve("refused");
+          script.src = path;
+          document.head.append(script);
+        });
+      return { outcomes, ran: window.__authored ?? null };
+    }, paths);
+
+  test("do not run as same-origin script", async ({ page }) => {
+    await login(page);
+    const list = await ok(page, "/api/lists", "POST", {
+      name: unique("Script"),
+      type: "private",
+      optin: "single",
+    });
+    const payload = 'window.__authored = (window.__authored || "") + "x";';
+    const slug = unique("script");
+    const archived = await ok(page, "/api/campaigns", "POST", {
+      name: unique("Archived"),
+      subject: "Script",
+      type: "regular",
+      content_type: "visual",
+      template_id: null,
+      archive: true,
+      archive_slug: slug,
+      body: payload,
+      body_source: "{}",
+      lists: [list.id],
+    });
+    await ok(page, `/api/campaigns/${archived.id}/status`, "PUT", { status: "running" });
+    await expect.poll(async () => (await page.request.get(`/archive/${slug}`)).status()).toBe(200);
+    const template = await ok(page, "/api/templates", "POST", {
+      name: unique("Raw"),
+      type: "campaign",
+      body: "{{ content | raw }}",
+    });
+    const draft = async (content_type) =>
+      ok(page, "/api/campaigns", "POST", {
+        name: unique("Draft"),
+        subject: "Script",
+        type: "regular",
+        content_type,
+        template_id: template.id,
+        body: payload,
+        lists: [list.id],
+      });
+    const plain = await draft("plain");
+    const html = await draft("html");
+    const authored = [
+      `/archive/${slug}`,
+      `/api/campaigns/${plain.id}/preview`,
+      `/api/campaigns/${html.id}/preview`,
+    ];
+    for (const path of authored) {
+      const response = await page.request.get(path);
+      expect([path, response.status(), await response.text()]).toEqual([path, 200, payload]);
+    }
+
+    await page.goto("/admin/lists");
+    expect(await asScript(page, ["/admin/custom.js"])).toEqual({
+      outcomes: { "/admin/custom.js": "ran" },
+      ran: null,
+    });
+    expect(await asScript(page, authored)).toEqual({
+      outcomes: Object.fromEntries(authored.map((path) => [path, "refused"])),
+      ran: null,
+    });
+  });
+});
+
+test.describe("expressions rewritten for the CSP build", () => {
+  test("a list missing a status shows 0, not NaN", async ({ page }) => {
+    await login(page);
+    const list = await ok(page, "/api/lists", "POST", {
+      name: unique("Statuses"),
+      type: "private",
+      optin: "single",
+    });
+    await page.goto(`/admin/lists/${list.id}`);
+    const stats = page.locator(".stat-card .stat-value");
+    await expect(stats).toHaveText(["0", "0", "0", "0"]);
+  });
+
+  test("a bounce whose campaign has no name still shows the dash", async ({ page }) => {
+    await login(page);
+    const subscriber = await ok(page, "/api/subscribers", "POST", {
+      email: `${unique("dash")}@example.com`,
+      name: "Dash",
+      status: "enabled",
+      lists: [],
+    });
+    await page.route(`**/api/subscribers/${subscriber.id}/bounces`, (route) =>
+      route.fulfill({
+        json: {
+          data: [
+            {
+              id: 1,
+              type: "soft",
+              source: "api",
+              created_at: "2026-01-01T00:00:00Z",
+              campaign: { id: 9, name: null },
+            },
+          ],
+        },
+      }),
+    );
+    await page.goto(`/admin/subscribers/${subscriber.id}/bounces`);
+    await expect(page.getByTestId("bounce-row").locator("td").first()).toHaveText("-");
+  });
+});
+
 test.describe("script that reached the page", () => {
   test.use({ violations: "expected" });
   let server;

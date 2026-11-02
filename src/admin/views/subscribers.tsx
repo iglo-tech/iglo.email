@@ -397,12 +397,12 @@ export const subscribersView: AdminView = ({ context, can, listScope }) => {
                         <span
                           class="avatar-initials"
                           aria-hidden="true"
-                          x-text="initials(currentList ? currentList.name : '')"
+                          x-text="initials(currentList && currentList.name != null ? currentList.name : '')"
                         ></span>
                       </span>
                       <span
                         class="avatar-label"
-                        x-text="currentList ? currentList.name : ''"
+                        x-text="currentList && currentList.name != null ? currentList.name : ''"
                       ></span>
                     </span>
                   </a>

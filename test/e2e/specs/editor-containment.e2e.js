@@ -261,6 +261,135 @@ test.describe("remote images load on request", () => {
     await expect.poll(() => requests).toContain("/banner.gif");
   });
 
+  test.describe("a real cut and paste", () => {
+    test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+
+    test("keeps the addresses of held images and backgrounds", async ({ page }) => {
+      await login(page);
+      const body =
+        `<p>first</p><p>move <img src="${remote}/moved.gif" alt="banner"> me</p>` +
+        `<table><tbody><tr><td background="${remote}/moved-cell.gif">cell</td></tr></tbody></table>` +
+        "<p>last</p>";
+      const c = await campaign(page, body);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} p`).first().click();
+      for (const key of ["Control+a", "Control+x"]) await page.keyboard.press(key);
+      await expect(page.locator(`${EDITOR} img`)).toHaveCount(0);
+      await page.keyboard.press("Control+v");
+      await expect(page.locator(`${EDITOR} img`)).toHaveCount(1);
+      await expect(page.getByTestId("editor-removed")).toBeHidden();
+
+      const save = page.waitForResponse((r) => r.request().method() === "PUT");
+      await page.keyboard.press("Control+s");
+      expect((await save).status()).toBe(200);
+      const stored = (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
+      expect(stored).toContain(`src="${remote}/moved.gif"`);
+      expect(stored).toContain(`background="${remote}/moved-cell.gif"`);
+      expect(stored).not.toContain("data-rte-");
+      expect(requests.filter((path) => /moved/.test(path))).toEqual([]);
+    });
+
+    test("a pasted internal attribute is an address like any other", async ({ page }) => {
+      await login(page);
+      const c = await campaign(page);
+      await open(page, c.id);
+      await page.locator(EDITOR).evaluate((el, html) => {
+        el.focus();
+        const clipboardData = new DataTransfer();
+        clipboardData.setData("text/html", html);
+        el.dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
+        );
+      }, `<img id="moved" data-rte-src="javascript:window.__hostile=1" alt="x">`);
+      await expect(page.locator(`${EDITOR} #moved`)).toHaveCount(1);
+      expect(await page.locator(`${EDITOR} #moved`).getAttribute("data-rte-src")).toBeNull();
+      expect(await page.locator(`${EDITOR} #moved`).getAttribute("src")).toBeNull();
+      await expect(page.getByTestId("editor-removed")).toContainText('src="javascript');
+      await expect(page.getByTestId("editor-removed")).not.toContainText("data-rte");
+    });
+  });
+
+  test.describe("the image dialog on a held image", () => {
+    const imageAfter = async (page, stored, change) => {
+      await login(page);
+      const c = await campaign(page, `<p>${stored}</p>`);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).dblclick();
+      const dialog = page.locator('richtext-editor dialog[data-rte-dialog="image"]');
+      await expect(dialog).toHaveAttribute("open");
+      await change(dialog);
+      await dialog.locator('[data-rte-act="submit"]').click();
+      await expect(dialog).not.toHaveAttribute("open");
+      const save = page.waitForResponse((r) => r.request().method() === "PUT");
+      await page.keyboard.press("Control+s");
+      expect((await save).status()).toBe(200);
+      return /<img[^>]*>/.exec((await ok(page, `/api/campaigns/${c.id}`, "GET")).body)[0];
+    };
+    const attribute = (tag, name) => new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
+    const alt = (dialog) => dialog.locator('[name="alt"]').fill("edited");
+
+    test("a stored image with no size keeps none", async ({ page }) => {
+      const tag = await imageAfter(page, `<img src="${remote}/none.gif" alt="a">`, alt);
+      expect(attribute(tag, "alt")).toBe("edited");
+      expect(attribute(tag, "src")).toBe(`${remote}/none.gif`);
+      expect(attribute(tag, "width")).toBeNull();
+      expect(attribute(tag, "height")).toBeNull();
+    });
+
+    test("a stored width stays alone, with no height added", async ({ page }) => {
+      const tag = await imageAfter(page, `<img src="${remote}/w.gif" alt="a" width="600">`, alt);
+      expect(attribute(tag, "width")).toBe("600");
+      expect(attribute(tag, "height")).toBeNull();
+    });
+
+    test("a size only in style, or as a percentage, stays as stored", async ({ page }) => {
+      const stored = `<img src="${remote}/s.gif" alt="a" width="100%" style="height: 80px;">`;
+      const tag = await imageAfter(page, stored, alt);
+      expect(attribute(tag, "width")).toBe("100%");
+      expect(attribute(tag, "height")).toBeNull();
+      expect(attribute(tag, "style")).toContain("height: 80px");
+    });
+
+    test("the proportion comes from the stored size, not the placeholder", async ({ page }) => {
+      const stored = `<img src="${remote}/r.gif" alt="a" width="600" height="400">`;
+      const tag = await imageAfter(page, stored, (dialog) =>
+        dialog.locator('[name="width"]').fill("300"),
+      );
+      expect(attribute(tag, "width")).toBe("300");
+      expect(attribute(tag, "height")).toBe("200");
+    });
+
+    test("with one stored side, a change leaves the other alone", async ({ page }) => {
+      const stored = `<img src="${remote}/o.gif" alt="a" width="600">`;
+      const tag = await imageAfter(page, stored, (dialog) =>
+        dialog.locator('[name="width"]').fill("300"),
+      );
+      expect(attribute(tag, "width")).toBe("300");
+      expect(attribute(tag, "height")).toBeNull();
+    });
+  });
+
+  test("a changed subject is asked about before the page reloads", async ({ page }) => {
+    await login(page);
+    const c = await campaign(page, `<p><img src="${remote}/subject.gif" alt="a"></p>`);
+    await page.goto(`/admin/campaigns/${c.id}`);
+    await page.locator('input[name="subject"]').fill("Changed subject");
+    await page.getByRole("tab", { name: "Content", exact: true }).click();
+    const held = page.getByTestId("editor-held");
+    await held.getByRole("button").click();
+    const dialog = page.locator("dialog.confirm-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.locator("[data-confirm-cancel]").click();
+    expect(page.url()).not.toContain("remote_images");
+    await page.getByRole("tab", { name: "Campaign", exact: true }).click();
+    await expect(page.locator('input[name="subject"]')).toHaveValue("Changed subject");
+
+    await page.getByRole("tab", { name: "Content", exact: true }).click();
+    await held.getByRole("button").click();
+    await page.locator("dialog.confirm-dialog [data-confirm-ok]").click();
+    await expect(page).toHaveURL(/remote_images=1/);
+  });
+
   test("a typed address waits the same way, and unsaved changes are asked about", async ({
     page,
   }) => {

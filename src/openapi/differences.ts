@@ -11,7 +11,7 @@ export const differences: Difference[] = [
   {
     area: "Admin Content-Security-Policy (B3)",
     summary:
-      "Every /admin HTML response has the D71 policy; upstream has none. Script is same-origin assets only, Alpine is its CSP build, and an appearance script is held to the same limits.",
+      "Every /admin HTML response has the D71 policy, and every response has `nosniff`; upstream has neither. Script is same-origin assets only, Alpine is its CSP build, and an appearance script is held to the same limits.",
     applies: [],
   },
   {
@@ -560,7 +560,8 @@ export const differences: Difference[] = [
   },
   {
     area: "Media serving (M3.5)",
-    summary: "The extension decides the type, never the type sent at upload.",
+    summary:
+      "The extension decides the type, never the type sent at upload. A JavaScript extension is `application/octet-stream`, so an upload cannot pass the admin's `script-src 'self'` (D71).",
     applies: [],
   },
   {
