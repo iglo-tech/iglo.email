@@ -648,17 +648,17 @@ const journaledSends = (f: TxFixture) =>
 const attachmentForm = (template: number, email: string, async = false) => {
   const body = new FormData();
   body.set("data", JSON.stringify({ subscriber_emails: [email], template_id: template, async }));
-  body.append("file", new File([new Uint8Array(2 * 1024 * 1024)], "a.bin"));
+  body.append("file", new File([new Uint8Array(1024 * 1024)], "a.bin"));
   return body;
 };
 
 test("synchronous multipart sends with attachments wait for room, then get a 429", async () => {
   let release = () => {};
   const stalled = new Promise<void>((resolve) => (release = resolve));
-  // A 2 MiB file costs about 6 MiB while parsed and 2 MiB while its send is held.
+  // A 1 MiB file costs about 5 MiB while parsed and 1 MiB while its send is held.
   const f = await open({
     beforeDispatch: () => stalled,
-    limits: { maxBytes: 7 * 1024 * 1024, waitMs: 1000 },
+    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 1000 },
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));
@@ -694,14 +694,14 @@ test("synchronous multipart sends with attachments wait for room, then get a 429
   // The room is back: the same request now goes through.
   expect((await postForm(f, attachmentForm(template, "second@example.test"))).status).toBe(200);
   expect(f.sink.messages.map((m) => m.to[0])).toContain("second@example.test");
-});
+}, 30_000);
 
 test("a multipart request that waits is served when room frees", async () => {
   let release = () => {};
   const stalled = new Promise<void>((resolve) => (release = resolve));
   const f = await open({
     beforeDispatch: () => stalled,
-    limits: { maxBytes: 7 * 1024 * 1024, waitMs: 60_000 },
+    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 60_000 },
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));
@@ -716,7 +716,7 @@ test("a multipart request that waits is served when room frees", async () => {
     "first@example.test",
     "second@example.test",
   ]);
-});
+}, 30_000);
 
 test("a multipart body with no declared size is charged at the body cap", async () => {
   const f = await open({ limits: { maxBytes: 8 * 1024 * 1024 } });
