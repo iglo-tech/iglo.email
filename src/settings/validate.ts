@@ -8,6 +8,7 @@ import { validFromAddress } from "@/settings/mail";
 import { goDuration, intervalStart, sessionDuration } from "@/settings/duration";
 import { cronError } from "@/settings/cron";
 import { cloneJson, int64, Members } from "@/settings/json";
+import { validTopicArn } from "@/bounces/ses";
 import { parseProxy } from "@/server/client-address";
 import { HttpError } from "@/server/response";
 import type { Roles } from "@/roles/roles";
@@ -80,6 +81,7 @@ const arrays = new Set([
   "privacy.domain_allowlist",
   "security.trusted_urls",
   "security.trusted_proxies",
+  "bounce.ses_topic_arns",
   "upload.extensions",
   "smtp",
   "messengers",
@@ -93,6 +95,7 @@ const strings = new Set([
   "privacy.domain_allowlist",
   "security.trusted_urls",
   "security.trusted_proxies",
+  "bounce.ses_topic_arns",
   "upload.extensions",
 ]);
 for (const key of strings) shapes[key] = [""];
@@ -327,6 +330,13 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     .filter(Boolean);
   for (const proxy of next["security.trusted_proxies"])
     if (!parseProxy(proxy)) return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
+  next["bounce.ses_topic_arns"] = next["bounce.ses_topic_arns"]
+    .map((v: string) => trimSpace(v ?? ""))
+    .filter(Boolean);
+  if (next["bounce.ses_topic_arns"].length > 100)
+    return fail("Invalid data: at most 100 SNS topic ARNs.");
+  for (const arn of next["bounce.ses_topic_arns"])
+    if (!validTopicArn(arn)) return fail(`Invalid data: invalid SNS topic ARN: ${arn}`);
   for (const budget of Object.values(next["security.public_rate_limit"] ?? {}))
     if (!Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 1_000_000)
       return fail("Invalid security.public_rate_limit: use whole requests per minute.");

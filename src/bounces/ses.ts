@@ -22,6 +22,25 @@ const FETCH_TIMEOUT_MS = 5000;
 export const SNS_MAX_AGE_MS = 86_400_000;
 const SNS_MAX_AHEAD_MS = 15 * 60_000;
 
+/** SES names at most 50 recipients in a message; a signed message listing more is not SES's. */
+export const MAX_RECIPIENTS = 50;
+const fullArn = /^arn:aws(?:-cn|-us-gov)?:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]{1,256}(?:\.fifo)?$/;
+const accountArn = /^(arn:aws(?:-cn|-us-gov)?:sns):\*:(\d{12}):\*$/;
+
+/** A `bounce.ses_topic_arns` entry: a topic ARN, or `arn:aws:sns:*:<account>:*` for an account. */
+export const validTopicArn = (value: string) => fullArn.test(value) || accountArn.test(value);
+
+/** Whether the signed `TopicArn` is on the list. An empty list allows nothing. */
+export function topicAllowed(topic: string | undefined, allowed: readonly string[]) {
+  if (!topic || !fullArn.test(topic)) return false;
+  const [, partition, , , account] = topic.split(":");
+  return allowed.some((entry) => {
+    if (entry === topic) return true;
+    const wild = accountArn.exec(entry);
+    return !!wild && wild[1] === `arn:${partition}:sns` && wild[2] === account;
+  });
+}
+
 export interface SnsFetch {
   (url: string, init: { signal: AbortSignal; redirect: "error" }): Promise<Response>;
 }
@@ -220,10 +239,11 @@ export function sesEvents(message: string, now: Date) {
     kind === "Complaint" ? complaint.complainedRecipients : bounce.bouncedRecipients,
   );
   // ses.go takes `destination[0]`; the recipients SES names are used when it names any.
-  const named: Record<string, unknown>[] = listed.length
+  let named: Record<string, unknown>[] = listed.length
     ? listed
     : destination.slice(0, 1).map((emailAddress) => ({ emailAddress }));
   if (!named.length) return null;
+  named = named.slice(0, MAX_RECIPIENTS);
 
   let campaignUuid = "",
     subscriberUuid = "",

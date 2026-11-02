@@ -135,6 +135,8 @@ export const defaults = {
     },
   },
   "bounce.ses_enabled": false,
+  // Native (D75): the SNS topics whose messages the SES route accepts; empty accepts none.
+  "bounce.ses_topic_arns": [],
   "bounce.azure": {
     enabled: false,
     shared_secret: "",

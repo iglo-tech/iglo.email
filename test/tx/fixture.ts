@@ -194,6 +194,7 @@ export async function txFixture(
     enabled: true,
     webhooksEnabled: true,
     ses: true,
+    sesTopics: ["arn:aws:sns:*:123456789012:*"],
     mailgun: { enabled: true, key: "fixture-mailgun-key" },
     actions: {
       soft: { count: 2, action: "none" },

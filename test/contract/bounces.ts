@@ -610,6 +610,23 @@ export async function runBouncesContract(target: {
       // The key is a masked secret and survives a listmonk client's full replace.
       const settings = (await call("/api/settings")).body.data;
       check(settings["bounce.mailgun"].enabled === false, "mailgun-default");
+      // Native (D75): SES accepts only listed topics; the list is validated and survives a full PUT.
+      check(JSON.stringify(settings["bounce.ses_topic_arns"]) === "[]", "ses-topics-default");
+      check(
+        (await call("/api/settings/bounce.ses_topic_arns", "PUT", ["not-an-arn"])).status === 400,
+        "ses-topics-invalid",
+      );
+      const arns = ["arn:aws:sns:eu-west-1:123456789012:bounces", "arn:aws:sns:*:123456789012:*"];
+      await setting("bounce.ses_topic_arns", arns);
+      const withoutArns = { ...(await call("/api/settings")).body.data };
+      delete withoutArns["bounce.ses_topic_arns"];
+      check((await call("/api/settings", "PUT", withoutArns)).status === 200, "ses-topics-put");
+      check(
+        JSON.stringify((await call("/api/settings")).body.data["bounce.ses_topic_arns"]) ===
+          JSON.stringify(arns),
+        "ses-topics-kept",
+      );
+      await setting("bounce.ses_topic_arns", []);
       for (const key of [
         "bounce.azure",
         "bounce.postmark",

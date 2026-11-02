@@ -578,6 +578,8 @@
     "settings.bounces.enableMailgun": "Enable Mailgun",
     "settings.bounces.enablePostmark": "Postmark",
     "settings.bounces.enableSES": "SES",
+    "settings.bounces.sesTopics": "Allowed SNS topic ARNs",
+    "settings.bounces.sesTopicsHelp": "One per line: a full topic ARN, or arn:aws:sns:*:<account-id>:* to allow every topic of one AWS account. With none listed, every SES message is refused.",
     "settings.bounces.enableSendgrid": "SendGrid",
     "settings.bounces.enableWebhooks": "Enable bounce webhooks",
     "settings.bounces.forwardemailKey": "Forward Email Key",

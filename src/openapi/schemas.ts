@@ -248,6 +248,7 @@ const settings = (smtp: string, mailbox: string): Schema =>
         complaint: object({ count: integer, action: string }),
       }),
       "bounce.ses_enabled": boolean,
+      "bounce.ses_topic_arns": array(string),
       "bounce.azure": object({
         enabled: boolean,
         shared_secret: string,

@@ -5,7 +5,14 @@ import type { Database } from "bun:sqlite";
 import type { BounceStore, BounceEvent, BounceType } from "@/bounces/store";
 import { bounceTypes, reUUID } from "@/bounces/store";
 import { mailgunEvent, verifySignature } from "@/bounces/mailgun";
-import { SES_BODY_LIMIT, createSnsClient, parseSns, sesEvents } from "@/bounces/ses";
+import {
+  SES_BODY_LIMIT,
+  SNS_MAX_AGE_MS,
+  createSnsClient,
+  parseSns,
+  sesEvents,
+  topicAllowed,
+} from "@/bounces/ses";
 import type { SnsClient } from "@/bounces/ses";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
@@ -30,6 +37,8 @@ export interface BounceSettings {
   enabled: boolean;
   webhooksEnabled: boolean;
   ses: boolean;
+  /** `bounce.ses_topic_arns`: empty accepts no SES message (D75). */
+  sesTopics: string[];
   mailgun: { enabled: boolean; key: string };
 }
 // Go strconv.Atoi, ignoring its error.
@@ -302,6 +311,8 @@ export function registerBounceRoutes(
     const message = parseSns(raw);
     // The header is not signed: it must agree with the signed type.
     if (!message || message.Type !== type || !(await sns.verify(message))) throw invalidData(c);
+    // Anyone with an AWS account can sign a message: only the operator's topics are believed.
+    if (!topicAllowed(message.TopicArn, settings().sesTopics)) throw invalidData(c);
     if (type === "SubscriptionConfirmation") {
       if (!(await sns.confirm(message))) throw invalidData(c);
       return ok(true);
@@ -315,8 +326,10 @@ export function registerBounceRoutes(
     if (!events) throw invalidData(c);
     writeTransaction(db, () => {
       store.pruneReceipts();
-      // SNS delivers at least once: a repeated message is recorded once.
-      if (!store.receive(`sns:${id}`, new Date(now.getTime() + EVENT_RECEIPT_MS))) return;
+      // SNS delivers at least once: a repeated message is recorded once. The receipt outlasts the
+      // last moment the message verifies (its Timestamp plus the age limit), even when it is dated ahead.
+      const sent = Math.max(now.getTime(), Date.parse(message.Timestamp ?? ""));
+      if (!store.receive(`sns:${id}`, new Date(sent + SNS_MAX_AGE_MS + 1000))) return;
       for (const event of events) store.record(event);
     });
     return ok(true);

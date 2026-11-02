@@ -545,7 +545,7 @@ export const differences: Difference[] = [
   {
     area: "Bounces (M3.4)",
     summary:
-      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast.",
+      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast. `POST /webhooks/service/ses` believes only the SNS topics listed in `bounce.ses_topic_arns` and records at most 50 recipients, where upstream believes any signed message.",
     applies: ["/api/bounces", "/bounces", "POST /webhooks/bounce"],
   },
   {

@@ -427,3 +427,102 @@ test("the route answers as a disabled provider does until SES is enabled", async
   expect(r.status).toBe(400);
   expect(r.body.message).toBe("Unknown service.");
 });
+
+const foreign = "arn:aws:sns:us-east-1:999999999999:attacker-topic";
+
+test("a topic that is not on the list is refused, and a foreign confirmation is never fetched", async () => {
+  const net = network();
+  const f = await open(net);
+  const id = await f.subscriber("topic@example.com");
+  const url = "https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&Token=t";
+  const message = bounceMessage(f, ["topic@example.com"]);
+  const attempts = (topics: string[]) => {
+    f.bounceSettings.sesTopics = topics;
+    return [
+      () => post(f, envelope(f, { Message: message, TopicArn: foreign })),
+      () =>
+        post(
+          f,
+          envelope(f, {
+            Type: "SubscriptionConfirmation",
+            Message: "confirm",
+            SubscribeURL: url,
+            Token: "t",
+            TopicArn: foreign,
+          }),
+          "SubscriptionConfirmation",
+        ),
+    ];
+  };
+  // Another account's topic, with the operator's account allowed.
+  for (const run of attempts(["arn:aws:sns:*:123456789012:*"]))
+    expect((await run()).status).toBe(400);
+  // An exact ARN does not match its neighbour; an empty list accepts nothing, even the right topic.
+  const own = "arn:aws:sns:eu-west-1:123456789012:bounces";
+  f.bounceSettings.sesTopics = [`${own}-other`];
+  expect((await post(f, envelope(f, { Message: message }))).status).toBe(400);
+  f.bounceSettings.sesTopics = [];
+  expect((await post(f, envelope(f, { Message: message }))).status).toBe(400);
+  expect(
+    (
+      await post(
+        f,
+        envelope(f, {
+          Type: "SubscriptionConfirmation",
+          Message: "c",
+          SubscribeURL: url,
+          Token: "t",
+        }),
+        "SubscriptionConfirmation",
+      )
+    ).status,
+  ).toBe(400);
+  expect(rows(f).length).toBe(0);
+  expect(await status(f, id)).toBe("enabled");
+  expect(net.requests.includes(url)).toBe(false);
+  // The exact ARN and the account pattern both accept.
+  f.bounceSettings.sesTopics = [own];
+  expect((await post(f, envelope(f, { Message: message }))).status).toBe(200);
+  expect(rows(f).length).toBe(1);
+});
+
+test("a message naming thousands of recipients records at most 50", async () => {
+  const f = await open();
+  const real: string[] = [];
+  for (let i = 0; i < 52; i++) {
+    const email = `real${i}@example.com`;
+    await f.subscriber(email);
+    real.push(email);
+  }
+  const fake = Array.from({ length: 3948 }, (_, i) => `fake${i}@example.net`);
+  const message = JSON.stringify({
+    notificationType: "Bounce",
+    bounce: {
+      bounceType: "Transient",
+      bouncedRecipients: [...real, ...fake].map((emailAddress) => ({ emailAddress })),
+    },
+    mail: { timestamp: f.clock.now().toISOString(), destination: real.slice(0, 1) },
+  });
+  const body = envelope(f, { Message: message });
+  expect(JSON.stringify(body).length).toBeLessThan(256 * 1024);
+  expect((await post(f, body)).status).toBe(200);
+  // Only the first 50 are acted on; the rest of the list is ignored.
+  expect(rows(f).length).toBe(50);
+});
+
+test("a message dated ahead is still recorded once when replayed at the end of its window", async () => {
+  const f = await open();
+  await f.subscriber("ahead@example.com");
+  const ahead = envelope(f, {
+    Message: bounceMessage(f, ["ahead@example.com"], { bounceType: "Transient" }),
+    Timestamp: new Date(f.clock.now().getTime() + 14 * 60_000).toISOString(),
+  });
+  expect((await post(f, ahead)).status).toBe(200);
+  // 24 h after its Timestamp it still verifies; its receipt must too.
+  f.clock.advance(14 * 60_000 + 86_400_000 - 60_000);
+  expect((await post(f, ahead)).status).toBe(200);
+  expect(rows(f).length).toBe(1);
+  f.clock.advance(120_000);
+  expect((await post(f, ahead)).status).toBe(400);
+  expect(rows(f).length).toBe(1);
+});
