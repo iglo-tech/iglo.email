@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-11-01. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-02. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
@@ -37,7 +37,7 @@ Run in order, one at a time, through the normal stages. Write each brief from th
 
 ## Automation and capacity
 
-Paused schedule scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280 stays unbound and is resumed by the owner. Continuous run starts2026-10-28T20:34:55.959528+00:00; no task/session cutoff.
+Schedule scheduled-task:9c337a51-67ec-4b34-adc4-9d033babc280 stays enabled and unbound. Continuous run starts2026-10-28T20:34:55.959528+00:00; no task/session cutoff.
 Project default is Opus5.5 medium; Scheduler API has no per-task model selector; prompt/default can be aligned, separately pinned scheduler model cannot be claimed.
 Host disk/memory are constrained; no protected cache/worktree/export cleanup or VM policy changes. One role verifies at a time. Healthy redundant check-ins settle only themselves.
 
