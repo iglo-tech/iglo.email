@@ -1,6 +1,6 @@
 // Serial in-process measurement for docs/perf/B6-send-media-safety.md: peak memory and latency of
 // concurrent synchronous `POST /api/tx` multipart sends with a 4 MiB attachment each, against a
-// slow SMTP server (every dispatch is held 300 ms). "Before" removes the attachment budget;
+// simulated slow SMTP server (every dispatch is held 300 ms before it starts, so the request keeps its attachment for that long). "Before" removes the attachment budget;
 // "after" is the shipped one. Opt-in, not a CI threshold. Usage: bun test/tx/measure-attachments.ts <requests> before|after
 import { appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -55,7 +55,10 @@ async function run(variant: "before" | "after") {
           },
           body: encoded,
         })
-        .then((response) => ({ status: response.status, ms: performance.now() - begin }));
+        .then((response) => ({
+          status: response.status,
+          ms: performance.now() - begin,
+        }));
     };
   };
   const sends = await Promise.all(Array.from({ length: requests }, (_, i) => post(i)));
@@ -67,6 +70,7 @@ async function run(variant: "before" | "after") {
   const answers = await Promise.all(sends.map((send) => send()));
   const seconds = (performance.now() - begin) / 1000;
   clearInterval(sampler);
+  await Bun.sleep(1000);
   const ok = answers.filter((a) => a.status === 200);
   const entry = {
     scenario: `tx attachments ${variant}`,
