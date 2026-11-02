@@ -5,17 +5,16 @@ Updated 2026-11-02. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B5 is with its worker: [brief](briefs/B5.md), branch `task/B5-sequence-followups`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B6 is with its worker: [brief](briefs/B6.md), branch `task/B6-send-media-safety`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: one real Mailgun event and a retry (D63); publishing a release.
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B5: sequence reschedule and live condition validation; the subscriber activity tab.
-2. B6: send and media safety: `POST /api/tx` attachment concurrency, `finishAll` regressions, media crash and `data-embed` coverage.
-3. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
-4. B8: test debt and intermittent failures; every line still left in the backlog.
+1. B6: send and media safety: `POST /api/tx` attachment concurrency, `finishAll` regressions, media crash and `data-embed` coverage.
+2. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
+3. B8: test debt and intermittent failures; every line still left in the backlog.
 
 ## Owner decisions
 
@@ -44,6 +43,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| B5           | [#54](https://github.com/iglo-tech/iglo.email/pull/54) | 92c5d90 | Reschedule, live condition validation, activity tab        |
 | B4           | [#53](https://github.com/iglo-tech/iglo.email/pull/53) | 785594f | ALTCHA and hCaptcha on public forms (D72)                  |
 | B3           | [#52](https://github.com/iglo-tech/iglo.email/pull/52) | 5dfea64 | Admin CSP, nosniff, editor containment (D71)               |
 | B2           | [#51](https://github.com/iglo-tech/iglo.email/pull/51) | c4a24a5 | Retention of sessions, webhook rows and send bodies (D70)  |
@@ -96,7 +96,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Media: `runner:crash` has no media campaign; no compiled `data-embed` contract; synchronous `POST /api/tx` with caller attachments has no concurrency limit; supported PDF viewers unverified.
 - Tests: contract coverage of multi-list actions and exports (M4.2 dropped two API-only cases); `availablePort()` free-port race in the contract harness.
 - Tests: no contract case for a nonempty messenger lifecycle (M4.4).
-- Sequences: "reschedule active enrollments" and live condition validation deferred (M5.5); both need a write or validate endpoint.
 - Intermittent under load: `CLI cancellation interrupts an in-flight request` and `subscribers.e2e.js:272` navigation race (both M6.2, once each, clean on rerun).
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
@@ -104,9 +103,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
 - Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. Lowering it needs shared write batching across loops, or an owner decision on D22 durability.
 - `finishAll`: add permanent regressions for mixed retry outcomes, same-subscriber batch caps and COMMIT rollback ([#32 review](https://github.com/iglo-tech/iglo.email/pull/32#issuecomment-6517645045)).
-- Subscriber activity tab with its clear buttons: upstream's page over `GET` and `DELETE /api/subscribers/:id/activity`, which M6.4 ported without a screen.
 - Instance lock: no test that it is held through `withStoppedDatabase` or of the "stop what has it open first" branch; the only test guarding the start retry usually passes without it; two forged lock file headers stop the start with a clean error ([#50](https://github.com/iglo-tech/iglo.email/pull/50)).
 - Retention ([#51](https://github.com/iglo-tech/iglo.email/pull/51)): event retention runs 500 rows a pass with no pause, so it can delay sends; send bodies expire 30 days from `created_at`, not from finishing, which contradicts one line in `04-sending.md`; session rows with no `expires_at` go up to 999 ms early; no test covers the `purges` list in `src/main.ts`; D70's session index and the rate in `docs/operations.md` are slightly off.
 - Admin CSP and editor ([#52](https://github.com/iglo-tech/iglo.email/pull/52)): `url()` in a kept `style` logs a violation and gets no notice; `?remote_images=1` can come from a crafted link; an archive slug typed during a save counts as saved; no caret on a held image; with `_` in the root URL host, root-URL images are blocked but not held; `refused()` in `test/admin/policy.test.ts` misses browser globals under Bun.
 - Intermittent: `users.e2e.js` reload races at `:193` and `:382`; `media.test.ts:74` 409 under load (B3 review, once each, clean on rerun).
+- Sequences ([#54](https://github.com/iglo-tech/iglo.email/pull/54)): reschedule returns 404 after partial batches when the step is deleted mid-run; the reschedule query names its index, so a missing index gives a 500 and the perf doc's no-index "before" run cannot be repeated; the Campaigns count on the activity tab includes the non-campaign row; the activity-tab e2e mocks the API; the retry-backoff test does not check the rewritten due time.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
