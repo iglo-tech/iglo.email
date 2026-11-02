@@ -5,18 +5,17 @@ Updated 2026-11-02. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B4 is with its worker: [brief](briefs/B4.md), branch `task/B4-captcha`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B5 is with its worker: [brief](briefs/B5.md), branch `task/B5-sequence-followups`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: one real Mailgun event and a retry (D63); publishing a release.
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B4: public-form CAPTCHA. Agents decide, as a logged decision; it needs a design that fits the dependency rule.
-2. B5: sequence reschedule and live condition validation; the subscriber activity tab.
-3. B6: send and media safety: `POST /api/tx` attachment concurrency, `finishAll` regressions, media crash and `data-embed` coverage.
-4. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
-5. B8: test debt and intermittent failures; every line still left in the backlog.
+1. B5: sequence reschedule and live condition validation; the subscriber activity tab.
+2. B6: send and media safety: `POST /api/tx` attachment concurrency, `finishAll` regressions, media crash and `data-embed` coverage.
+3. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
+4. B8: test debt and intermittent failures; every line still left in the backlog.
 
 ## Owner decisions
 
@@ -45,6 +44,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| B4           | [#53](https://github.com/iglo-tech/iglo.email/pull/53) | 785594f | ALTCHA and hCaptcha on public forms (D72)                  |
 | B3           | [#52](https://github.com/iglo-tech/iglo.email/pull/52) | 5dfea64 | Admin CSP, nosniff, editor containment (D71)               |
 | B2           | [#51](https://github.com/iglo-tech/iglo.email/pull/51) | c4a24a5 | Retention of sessions, webhook rows and send bodies (D70)  |
 | B1           | [#50](https://github.com/iglo-tech/iglo.email/pull/50) | 07e3ace | One process per data directory (D69)                       |
