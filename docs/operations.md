@@ -531,7 +531,8 @@ These run by themselves and have no settings
 | Events | 400 days after receipt | Newer events |
 
 Sessions, deliveries, send bodies and events share one loop that takes at most 100 rows from one
-of them, then pauses 250 ms, so a large expired backlog never holds back a send.
+of them, then pauses 250 ms, so a large expired backlog never holds back a send. Events drain at about 380 rows a second
+([D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)).
 
 - After 30 days a `failed` or `unknown` send can no longer be resent: `POST /api/sends/:id/resend` answers 409.
 - After an upgrade from a version without this, the first start works through what has built up
@@ -539,6 +540,15 @@ of them, then pauses 250 ms, so a large expired backlog never holds back a send.
   and nothing needs watching ([measurements](perf/B2-retention.md)).
 - Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
 - `sends` rows are kept for good. Their size is small, and old links and analytics read them.
+
+## Attachment sends
+
+`POST /api/tx` with caller attachments, or with a template that embeds images, holds memory until
+the SMTP server answers. All such requests share 64 MiB
+([D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)):
+a request that finds no room waits up to 2 seconds and then gets `429` with `Retry-After: 1`,
+before anything is journaled, so retrying it is safe. A caller that sees this often should send
+`async` or fewer, smaller attachments at once. There is no setting.
 
 ## Admin Content-Security-Policy
 

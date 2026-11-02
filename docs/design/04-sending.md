@@ -52,7 +52,7 @@ M3.1 implements the campaigns API: CRUD, listmonk's status transitions (which on
 
 ## Transactional API
 
-`POST /api/tx`, compatible with listmonk's request body (`subscriber_email`, `subscriber_id`, `subscriber_emails`, `subscriber_ids`, `subscriber_mode`, `template_id`, `data`, `headers`, `messenger`, `subject`, `from_email`, `content_type`, multipart attachments).
+`POST /api/tx`, compatible with listmonk's request body (`subscriber_email`, `subscriber_id`, `subscriber_emails`, `subscriber_ids`, `subscriber_mode`, `template_id`, `data`, `headers`, `messenger`, `subject`, `from_email`, `content_type`, multipart attachments). Synchronous sends with attachments share a 64 MiB memory budget ([D74](09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)): a multipart upload is charged five times its size while it is parsed and each synchronous recipient holds one copy until SMTP answers; when there is no room after a 2-second wait the request gets `429` with `Retry-After: 1` before anything is journaled. `async` sends and requests without attachments hold nothing during SMTP; only a multipart body is charged, and only while it is parsed.
 
 New optional fields:
 
