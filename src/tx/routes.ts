@@ -32,14 +32,14 @@ const MAX_RECIPIENTS = 100;
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 /**
  * Memory a synchronous send with attachments may hold at once, across requests (D74): a
- * multipart upload costs its body three times while it is parsed (body, form, file copies), and a
+ * multipart upload costs its body about five times while it is parsed (read chunks, joined body, form, file copies), and a
  * send holds each recipient's decoded copy until SMTP answers.
  */
 const MAX_ATTACHMENT_BYTES_IN_FLIGHT = 64 * 1024 * 1024;
 const MAX_ATTACHMENT_SENDS = 64;
 /** How long an upload waits for room before a 429. */
 const ATTACHMENT_WAIT_MS = 2000;
-const PARSE_COPIES = 3;
+const PARSE_COPIES = 5;
 type Slot = { reservation: Reservation | null };
 const MAX_KEY_BYTES = 255;
 const MAX_HEADERS = 64;
