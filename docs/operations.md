@@ -561,8 +561,11 @@ Open public forms attract signup spam. Turn a CAPTCHA on in Settings → Securit
   Challenges are valid for five minutes, each solution is accepted once, and a restart refuses
   challenges issued before it. The form loads `/public/static/altcha.umd.js` from this server and
   fetches its challenge from the root URL, so the root URL must be the address visitors use. A
-  form pasted on another site also needs that site's origin in `security.trusted_urls`, for the
-  challenge request's CORS.
+  form pasted on another site also needs that site's origin in `security.trusted_urls`: the
+  widget script and the challenge are then served with CORS headers for that origin, as in
+  listmonk. A site that is not listed gets no header, so its browser refuses the widget and every
+  signup from that page is refused too. If the site has its own Content-Security-Policy, it must
+  allow this server in `script-src` and `connect-src`, and `blob:` in `worker-src`.
 - **hCaptcha** needs a site key and secret from hcaptcha.com. Each form post calls hCaptcha's
   `siteverify` with a 5 s timeout, so the server needs outbound HTTPS to `hcaptcha.com`; when that
   fails, or answers anything but success, the signup is refused, never let through.

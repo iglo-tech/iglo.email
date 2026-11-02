@@ -1051,6 +1051,22 @@ export async function runPublicContract(target: {
           invalid.headers.get("access-control-allow-origin") === "https://example.test",
         "cors-error",
       );
+      // A pasted form loads the ALTCHA widget as a module script, which a browser fetches in
+      // CORS mode: the trusted origin gets the same header, another origin none.
+      const widget = await visit("/public/static/altcha.umd.js", { headers: origin });
+      check(
+        widget.status === 200 &&
+          widget.headers.get("access-control-allow-origin") === "https://example.test" &&
+          widget.headers.get("vary")?.includes("Origin"),
+        "cors-widget",
+      );
+      const widgetForeign = await visit("/public/static/altcha.umd.js", {
+        headers: { origin: "https://evil.example" },
+      });
+      check(
+        widgetForeign.status === 200 && !widgetForeign.headers.get("access-control-allow-origin"),
+        "cors-widget-foreign",
+      );
       await adminSubscriber(`next-${marker}@example.test`);
       await adminSubscriber(`next2-${marker}@example.test`);
     });

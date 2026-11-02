@@ -456,9 +456,9 @@ export const differences: Difference[] = [
     applies: ["GET /api/public/captcha/altcha"],
   },
   {
-    area: "Public CORS (M2.5)",
+    area: "Public CORS (M2.5, B4)",
     summary:
-      "Origins of `security.trusted_urls` get upstream's CORS and preflight on `/api/public/*` only: same origin matching, methods and headers, no credentials.",
+      "Origins of `security.trusted_urls` get upstream's CORS and preflight on `/api/public/*` and the ALTCHA widget script only: same origin matching, methods and headers, no credentials.",
     applies: ["/api/public/"],
   },
   {
