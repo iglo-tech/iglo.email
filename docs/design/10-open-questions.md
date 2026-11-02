@@ -7,8 +7,8 @@ Questions that change scope or order and need the owner. Everything else is deci
    - **Why it matters:** the backup and restore steps in the operations guide (M6), and whether Litestream is documented as the recommended setup.
 
 2. **Are public subscription forms needed in v1?**
-   - **Default:** yes, the pages are ported, but CAPTCHA (Altcha) stays "later". The first consumer adds people through the API, not through forms.
-   - **Why it matters:** if forms will be public on day one, CAPTCHA moves into v1, because open forms attract signup spam.
+   - **Default:** yes, the pages are ported, with ALTCHA or hCaptcha on the form (B4, [D72](09-decisions.md#d72-the-altcha-widget-is-in-house-and-replay-state-stays-in-memory)). The first consumer adds people through the API, not through forms.
+   - **Why it matters:** open forms attract signup spam; turn a CAPTCHA on before making a form public.
 
 3. **Is any existing listmonk data to be imported?**
    - **Default:** no. The listmonk importer stays "later".
