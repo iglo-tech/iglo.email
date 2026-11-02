@@ -38,6 +38,9 @@ const keys = [
   "sequences.editLive",
   "sequences.editLiveConfirm",
   "sequences.invalidJSON",
+  "sequences.reschedule",
+  "sequences.rescheduleConfirm",
+  "sequences.rescheduleDone",
   "sequences.step",
   "sequences.subscriberNotFound",
   "sequences.triggerWhere",
@@ -94,6 +97,20 @@ function StepCard({
             <input name="wait" required x-model="s.wait" data-testid="step-wait" />
             <small data-hint="">{t.T("sequences.waitHelp")}</small>
           </label>
+          {canManage ? (
+            <template x-if="!isNew && s.stored.id && saved.active_enrollments > 0">
+              <button
+                type="button"
+                class="ghost small"
+                data-testid="btn-step-reschedule"
+                x-bind:disabled="s.wait !== s.stored.wait || loadingReschedule"
+                title={t.T("sequences.rescheduleHelp")}
+                {...{ "x-on:click.prevent": "onReschedule(s)" }}
+              >
+                {t.T("sequences.reschedule")}
+              </button>
+            </template>
+          ) : null}
         </div>
         <div class="col-3">
           <label data-field="">
@@ -149,9 +166,18 @@ function StepCard({
         <code-editor
           lang="json"
           x-init="setValue($el, s.condition)"
-          x-on:input="s.condition = $event.target.value"
+          x-on:input="onCondition(s, $event.target.value)"
           {...(canManage ? {} : { disabled: true })}
         ></code-editor>
+        <small
+          data-hint=""
+          data-variant="danger"
+          role="alert"
+          data-testid="condition-error"
+          x-show="s.conditionError"
+          x-text="s.conditionError"
+          style="display: none"
+        ></small>
         <small data-hint="">
           {t.T("sequences.conditionHelp")} {canSql ? null : t.T("sequences.conditionSql")}
         </small>
