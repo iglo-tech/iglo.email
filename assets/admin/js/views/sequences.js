@@ -5,7 +5,7 @@ import {
   initials, pageLinks, pageQuery, read, subscriberID, viewTitle,
 } from '@/assets/admin/js/listing.js';
 import {
-  api, config, i18n, urls,
+  api, config, csrfToken, i18n, urls,
 } from '@/assets/admin/js/main.js';
 import { previewMixin } from '@/assets/admin/js/preview.js';
 import * as u from '@/assets/admin/js/utils.js';
@@ -72,6 +72,8 @@ const makeStep = (stored = {}) => {
   return {
     uid,
     stored,
+    conditionError: '',
+    checkTimer: null,
     wait: stored.wait ?? 'PT0S',
     kind: stored.kind ?? 'transactional',
     template_id: stored.template_id ?? null,
@@ -110,6 +112,7 @@ function sequenceForm() {
     lists: [],
     testSubscriber: '',
     testError: '',
+    loadingReschedule: false,
 
     async init() {
       try {
@@ -194,6 +197,63 @@ function sequenceForm() {
       this.generation += 1;
     },
 
+    // Live check: the same validator a save runs, a moment after typing stops. A refused or failed
+    // check shows nothing, and save is unchanged.
+    onCondition(step, text) {
+      step.condition = text;
+      clearTimeout(step.checkTimer);
+      step.checkTimer = setTimeout(() => this.checkCondition(step), 400);
+    },
+
+    async checkCondition(step) {
+      const text = step.condition;
+      let condition;
+      if (!text.trim()) {
+        step.conditionError = '';
+        return;
+      }
+      try {
+        condition = JSON.parse(text);
+      } catch {
+        step.conditionError = i18n.ts('sequences.invalidJSON', { field: i18n.t('sequences.condition') });
+        return;
+      }
+      try {
+        const resp = await fetch(`${urls.api}/conditions/validate`, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-CSRF-Token': csrfToken(),
+          },
+          body: JSON.stringify({ condition }),
+        });
+        const out = await resp.json();
+        if (step.condition !== text) {
+          return;
+        }
+        const first = resp.ok && out.data && !out.data.ok ? out.data.errors[0] : null;
+        step.conditionError = first ? `${first.field}: ${first.message}` : '';
+      } catch {
+        step.conditionError = '';
+      }
+    },
+
+    async onReschedule(step) {
+      if (!(await u.confirm(i18n.t('sequences.rescheduleConfirm')))) {
+        return;
+      }
+      this.error = '';
+      this.loadingReschedule = true;
+      try {
+        const data = await api('sequences.reschedule', `/sequences/${this.saved.id}/steps/${step.stored.id}/reschedule`, 'POST');
+        u.toast(i18n.ts('sequences.rescheduleDone', { count: data.changed }));
+      } catch (e) {
+        this.error = e.message;
+      }
+      this.loadingReschedule = false;
+    },
+
     onExample(step, event) {
       const text = event.target.value;
       event.target.value = '';
@@ -202,7 +262,7 @@ function sequenceForm() {
       }
       const editor = event.target.closest('.step-card').querySelector('code-editor');
       editor.value = text;
-      step.condition = text;
+      this.onCondition(step, text);
     },
 
     onPreviewTemplate(step) {

@@ -308,6 +308,7 @@ export async function sequencesFixture() {
     event,
     count,
     sends,
+    enrollments,
     async close() {
       const stopped = outbox.stop();
       await emailer.close();

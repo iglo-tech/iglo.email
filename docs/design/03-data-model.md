@@ -116,7 +116,7 @@ Steps are never hard-deleted while enrollments point at them; deleting sets `sta
 | `created_at`, `updated_at`, `finished_at` | TEXT | |
 | `test` | INTEGER NOT NULL DEFAULT 0 | 1 for a [test mode](05-sequences.md#test-mode) enrollment (M5.5) |
 
-Indexes: `(status, coalesce(retry_at, due_at))` for the scheduler claim, `(subscriber_id, sequence_id)`, `(sequence_id, status, test)`, and unique `(subscriber_id, sequence_id) WHERE status = 'active' AND test = 0`, with the same index for `test = 1`: at most one active enrollment per subscriber and sequence. Active sequences are indexed by `trigger.event`.
+Indexes: `(status, coalesce(retry_at, due_at))` for the scheduler claim, `(subscriber_id, sequence_id)`, `(sequence_id, status, test)`, and unique `(subscriber_id, sequence_id) WHERE status = 'active' AND test = 0`, with the same index for `test = 1`: at most one active enrollment per subscriber and sequence. `idx_enrollments_step_active` (`step_id`, `id`, partial on `status = 'active'`, migration 15) lets a reschedule batch read one step's waiting enrollments by ID. Active sequences are indexed by `trigger.event`.
 
 ### `sends`
 

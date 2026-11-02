@@ -74,6 +74,8 @@ function component() {
     ready: false,
     activity: [],
     activityPages: [],
+    views: [],
+    clicks: [],
     currentList: null,
     bounces: [],
 
@@ -145,6 +147,14 @@ function component() {
         this.subscriptions = Array.isArray(sub.lists) ? sub.lists : [];
         if (config.tab === 'bounces') {
           this.bounces = (await read(`/subscribers/${config.subscriber_id}/bounces`)) || [];
+        }
+        if (config.tab === 'activity') {
+          const act = await read(`/subscribers/${config.subscriber_id}/activity`);
+          // Rows of transactional and sequence sends have no campaign; they show with a blank one.
+          this.views = (act.campaign_views || []).map((v, i) => ({ ...v, key: i }));
+          this.clicks = (act.link_clicks || []).map((c, i) => ({
+            ...c, key: i, href: /^https?:\/\//i.test(c.url || '') ? c.url : '',
+          }));
         }
         const activityPath = activityPaths[config.tab];
         if (activityPath) {
@@ -419,6 +429,23 @@ function component() {
 
       this.$refs.listDialog.close();
       u.reload({ message: i18n.t('subscribers.listChangeApplied') });
+    },
+
+    get totalViews() {
+      return u.formatNumber(this.views.reduce((n, v) => n + v.view_count, 0));
+    },
+
+    get totalClicks() {
+      return u.formatNumber(this.clicks.reduce((n, c) => n + c.click_count, 0));
+    },
+
+    // Upstream's clear buttons: `campaign_views` or `link_clicks`.
+    async onClearActivity(type) {
+      if (!(await u.confirm())) {
+        return;
+      }
+      await api('subscribers', `/subscribers/${this.form.id}/activity/${type}`, 'DELETE');
+      u.reload({ message: i18n.t('globals.messages.done') });
     },
 
     // ===============

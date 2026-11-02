@@ -405,3 +405,117 @@ test("template previews stay in the sandboxed frame", async ({ page }) => {
   await expect(frame).toHaveAttribute("src", /\/api\/templates\/\d+\/preview/);
   expect(await page.evaluate(() => window.pwned)).toBeUndefined();
 });
+
+test("a changed wait is applied to waiting enrollments on request", async ({ page }) => {
+  await login(page);
+  const tx = await template(page);
+  const seq = await sequence(page, {
+    reentry: "always",
+    steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }],
+  });
+  const person = await subscriber(page);
+  const made = await api(page, "/api/enrollments", "POST", {
+    sequence_id: seq.id,
+    subscriber_id: person.id,
+  });
+  expect(made.status).toBe(200);
+  await page.goto(`/admin/sequences/${seq.id}`);
+  const button = page.getByTestId("btn-step-reschedule");
+  await expect(button).toBeEnabled();
+  await page.getByTestId("step-wait").fill("P2D");
+  await expect(button).toBeDisabled();
+  await page.getByTestId("btn-save").click();
+  await confirm(page);
+  await page.waitForLoadState("networkidle");
+  const kept = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
+  expect(kept.due_at).toBe(made.body.data.due_at);
+  await expect(button).toBeEnabled();
+  await button.click();
+  await confirm(page);
+  await expect(page.locator("ot-toast, .toast, [role=status]").first()).toContainText(
+    "1 enrollments rescheduled",
+  );
+  const moved = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
+  expect(Date.parse(moved.due_at) - Date.parse(made.body.data.due_at)).toBe(86_400_000);
+});
+
+test("a step condition is checked as it is typed", async ({ page }) => {
+  await login(page);
+  const tx = await template(page);
+  const seq = await sequence(page, {
+    steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }],
+  });
+  await page.goto(`/admin/sequences/${seq.id}`);
+  const editor = page.locator(".step-card .cm-content").first();
+  await editor.fill('{"attr": "status", "op": "nope", "value": "x"}');
+  await expect(page.getByTestId("condition-error")).toContainText("op");
+  await editor.fill('{"attr": "status", "op": "eq", "value": "enabled"}');
+  await expect(page.getByTestId("condition-error")).toBeHidden();
+});
+
+test("the activity tab shows views and clicks and clears them", async ({ page }) => {
+  await login(page);
+  const person = await subscriber(page);
+  let activity = {
+    campaign_views: [
+      {
+        id: 7,
+        name: "Spring <b>sale</b>",
+        subject: "Hello",
+        view_count: 3,
+        last_viewed_at: "2026-01-02T03:04:05Z",
+      },
+      {
+        id: null,
+        name: null,
+        subject: null,
+        view_count: 2,
+        last_viewed_at: "2026-01-01T03:04:05Z",
+      },
+    ],
+    link_clicks: [
+      {
+        url: "https://example.com/a",
+        campaign_id: 7,
+        campaign_name: "Spring <b>sale</b>",
+        campaign_subject: "Hello",
+        click_count: 4,
+        last_clicked_at: "2026-01-02T03:04:05Z",
+      },
+      {
+        url: "javascript:alert(1)",
+        campaign_id: null,
+        campaign_name: null,
+        campaign_subject: null,
+        click_count: 1,
+        last_clicked_at: "2026-01-01T03:04:05Z",
+      },
+    ],
+  };
+  const deleted = [];
+  await page.route(`**/api/subscribers/${person.id}/activity**`, (route) => {
+    const request = route.request();
+    if (request.method() === "DELETE") {
+      deleted.push(new URL(request.url()).pathname.split("/").pop());
+      activity = { campaign_views: [], link_clicks: [] };
+      return route.fulfill({ json: { data: true } });
+    }
+    return route.fulfill({ json: { data: activity } });
+  });
+  await page.goto(`/admin/subscribers/${person.id}`);
+  await expect(page.getByTestId("stat-campaigns")).toHaveText("2");
+  await expect(page.getByTestId("stat-views")).toHaveText("5");
+  await expect(page.getByTestId("stat-clicks")).toHaveText("5");
+  await expect(page.getByTestId("view-row").first()).toContainText("Spring <b>sale</b>");
+  await expect(
+    page.getByTestId("click-row").first().locator("a[href^='https://example.com']"),
+  ).toHaveCount(1);
+  await expect(page.locator("[data-testid=click-row] a[href^='javascript']")).toHaveCount(0);
+  await page.getByTestId("btn-views-actions").click();
+  await page.getByTestId("btn-clear-campaign_views").click();
+  await confirm(page);
+  await page.waitForLoadState("networkidle");
+  expect(deleted).toEqual(["campaign_views"]);
+  await expect(page.getByTestId("stat-views")).toHaveText("0");
+  await expect(page.getByTestId("view-row")).toHaveCount(0);
+});

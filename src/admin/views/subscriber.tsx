@@ -1,7 +1,7 @@
 // Adapted from listmonk static/admin/views/subscriber.html, partials/subscriber-form.html,
 // subscriber-info.html, subscriber-lists.html and bounces-table.html at 6fcd95f. The subscriber
 // arrives from /api/subscribers/:id, which owns its permission check and list masking. The API has
-// no chart endpoint and activity has no screen yet, so the overview tab shows the record. The events,
+// no chart endpoint, so the overview tab shows the record and, as upstream's, the activity tables over /api/subscribers/:id/activity (B5); the charts are not built. The events,
 // enrollments and sends tabs are native (docs/design/05-sequences.md#admin-ui): their rows come from
 // /api/subscribers/:id/*, under the same list scope, and reach the page through x-text.
 import { Icon } from "@/admin/layout/icon";
@@ -110,7 +110,7 @@ function SubscriberForm(props: { t: Translation; isNew: boolean; canSave: boolea
     </form>
   );
 }
-function Overview({ t }: { t: Translation }) {
+function Overview({ t, canSave }: { t: Translation; canSave: boolean }) {
   const copy = (name: string, field: string, label: string) => (
     <button
       type="button"
@@ -137,7 +137,151 @@ function Overview({ t }: { t: Translation }) {
           </div>
         </div>
       </div>
+      <div class="row">
+        {[
+          ["globals.terms.campaigns", "views.length", "stat-campaigns"],
+          ["globals.terms.views", "totalViews", "stat-views"],
+          ["globals.terms.clicks", "totalClicks", "stat-clicks"],
+        ].map(([label, value, test]) => (
+          <div class="col-4">
+            <div class="card float stat-card">
+              <h5 class="title">{t.T(label!)}</h5>
+              <div class="stat-value" data-testid={test} x-text={value}></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div class="card float has-table" x-show="views.length" style="display: none">
+        <h5 class="title">{t.T("globals.terms.views")}</h5>
+        <div class="table-wrapper">
+          {canSave ? <Clear t={t} id="views-actions" type="campaign_views" /> : null}
+          <table>
+            <thead>
+              <tr>
+                <th>{t.T("globals.terms.campaign")}</th>
+                <th width="10%" class="align-center">
+                  {t.T("globals.terms.views")}
+                </th>
+                <th width="20%">{t.T("globals.fields.createdAt")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="row in views" x-bind:key="row.key">
+                <tr data-testid="view-row">
+                  <td class="name">
+                    <template x-if="row.id">
+                      <a
+                        class="unstyled"
+                        x-bind:href="'/admin/campaigns/' + row.id"
+                        x-text="row.name"
+                      ></a>
+                    </template>
+                    <template x-if="row.id">
+                      <div class="subject text-8 text-light" x-text="row.subject"></div>
+                    </template>
+                  </td>
+                  <td
+                    class="align-center"
+                    data-label={t.T("globals.terms.views")}
+                    x-text="row.view_count"
+                  ></td>
+                  <td
+                    data-label={t.T("globals.fields.createdAt")}
+                    x-text="niceDate(row.last_viewed_at)"
+                  ></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card float has-table" x-show="clicks.length" style="display: none">
+        <h5 class="title">{t.T("globals.terms.clicks")}</h5>
+        <div class="table-wrapper">
+          {canSave ? <Clear t={t} id="clicks-actions" type="link_clicks" /> : null}
+          <table>
+            <thead>
+              <tr>
+                <th>{t.T("globals.terms.campaign")}</th>
+                <th>{t.T("globals.terms.url")}</th>
+                <th width="10%" class="align-center">
+                  {t.T("globals.terms.clicks")}
+                </th>
+                <th width="20%">{t.T("globals.fields.createdAt")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="row in clicks" x-bind:key="row.key">
+                <tr data-testid="click-row">
+                  <td class="name">
+                    <template x-if="row.campaign_id">
+                      <a
+                        class="unstyled"
+                        x-bind:href="'/admin/campaigns/' + row.campaign_id"
+                        x-text="row.campaign_name"
+                      ></a>
+                    </template>
+                    <template x-if="row.campaign_id">
+                      <div class="subject text-8 text-light" x-text="row.campaign_subject"></div>
+                    </template>
+                  </td>
+                  <td class="link-click-url" data-label={t.T("globals.terms.url")}>
+                    <template x-if="row.href">
+                      <a
+                        x-bind:href="row.href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        x-text="row.url"
+                      ></a>
+                    </template>
+                    <template x-if="!row.href">
+                      <span x-text="row.url"></span>
+                    </template>
+                  </td>
+                  <td
+                    class="align-center"
+                    data-label={t.T("globals.terms.clicks")}
+                    x-text="row.click_count"
+                  ></td>
+                  <td
+                    data-label={t.T("globals.fields.createdAt")}
+                    x-text="niceDate(row.last_clicked_at)"
+                  ></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
+  );
+}
+function Clear({ t, id, type }: { t: Translation; id: string; type: string }) {
+  return (
+    <ot-dropdown class="bulk-actions">
+      <button
+        popovertarget={id}
+        type="button"
+        class="small"
+        aria-label={t.T("globals.buttons.more")}
+        data-testid={`btn-${id}`}
+      >
+        <Icon name="more-vertical" />
+      </button>
+      <menu popover="" id={id}>
+        <button
+          type="button"
+          role="menuitem"
+          class="ghost"
+          data-variant="danger"
+          data-testid={`btn-clear-${type}`}
+          x-bind:disabled="isLoading('subscribers')"
+          {...{ "x-on:click.prevent": `onClearActivity('${type}')` }}
+        >
+          <Icon name="trash-2" /> {t.T("globals.buttons.clear")}
+        </button>
+      </menu>
+    </ot-dropdown>
   );
 }
 function Subscriptions({ t, canSave }: { t: Translation; canSave: boolean }) {
@@ -649,7 +793,7 @@ export function subscriberView(tab: SubscriberTab): AdminView {
             {tab === "edit" ? <SubscriberForm t={t} isNew={false} canSave={canSave} /> : null}
             {tab === "lists" ? <Subscriptions t={t} canSave={canSave} /> : null}
             {tab === "bounces" ? <Bounces t={t} /> : null}
-            {tab === "activity" ? <Overview t={t} /> : null}
+            {tab === "activity" ? <Overview t={t} canSave={canSave} /> : null}
             {tab === "events" ? <Events t={t} /> : null}
             {tab === "enrollments" ? <Enrollments t={t} /> : null}
             {tab === "sends" ? <Sends t={t} /> : null}
