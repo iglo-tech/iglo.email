@@ -291,57 +291,65 @@ async function nothingFetched(page, place) {
   const image = page.frameLocator(".preview-modal iframe").locator("img");
   await expect(image).toHaveCount(1);
   await expect.poll(() => image.evaluate((el) => el.complete)).toBe(true);
-  await page.evaluate((url) => fetch(`${url}/control`, { mode: "no-cors" }), place.url);
+  // From a blank page of the same browser: the admin's own policy refuses this request.
+  const blank = await page.context().newPage();
+  await blank.evaluate((url) => fetch(`${url}/control`, { mode: "no-cors" }), place.url);
+  await blank.close();
   await expect.poll(() => place.hits.includes("/control")).toBe(true);
   expect(place.hits.filter((hit) => hit.startsWith("/pixel"))).toEqual([]);
 }
 
-for (const start of [" ", " ", "﻿", "text ", "<!-- a -->", ""]) {
-  const label = [...start].map((ch) => ch.codePointAt(0).toString(16)).join(" ") || "nothing";
-  test(`a template preview starting with ${label} reaches no receiver`, async ({ page }) => {
+// These are about the frame's own policy, which `bypassCSP` would switch off too.
+test.describe("previews", () => {
+  test.use({ bypassCSP: false });
+
+  for (const start of [" ", " ", "﻿", "text ", "<!-- a -->", ""]) {
+    const label = [...start].map((ch) => ch.codePointAt(0).toString(16)).join(" ") || "nothing";
+    test(`a template preview starting with ${label} reaches no receiver`, async ({ page }) => {
+      await login(page);
+      const place = await receiver();
+      try {
+        const t = await ok(page, "/api/templates", "POST", {
+          name: unique("Preview"),
+          type: "tx",
+          subject: "Preview",
+          body: `${start}<!doctype html><html><body><img src="${place.url}/pixel.gif"></body></html>`,
+        });
+        await page.goto(`/admin/templates/${t.id}`);
+        await page.getByTestId("btn-preview").first().click();
+        await nothingFetched(page, place);
+      } finally {
+        await place.close();
+      }
+    });
+  }
+
+  test("the campaign and archive previews reach no receiver either", async ({ page }) => {
     await login(page);
     const place = await receiver();
     try {
       const t = await ok(page, "/api/templates", "POST", {
         name: unique("Preview"),
-        type: "tx",
-        subject: "Preview",
-        body: `${start}<!doctype html><html><body><img src="${place.url}/pixel.gif"></body></html>`,
+        type: "campaign",
+        subject: "",
+        body: ` <!doctype html><img src="${place.url}/pixel.gif">{{ content | raw }}`,
       });
-      await page.goto(`/admin/templates/${t.id}`);
-      await page.getByTestId("btn-preview").first().click();
+      const c = await create(page, { content_type: "html", template_id: t.id });
+      await page.goto(`${CAMPAIGNS}/${c.id}`);
+      await button(page.locator(".page-header"), "Preview").click();
+      await nothingFetched(page, place);
+      await button(page.locator(".preview-modal"), "Close").click();
+      place.hits.length = 0;
+
+      await page.getByRole("tab", { name: "Archive", exact: true }).click();
+      await page.getByRole("switch").filter({ visible: true }).check();
+      await page.locator(".campaign select").filter({ visible: true }).first().selectOption(t.name);
+      await button(page.getByRole("tabpanel").filter({ hasText: "Slug" }), "Preview").click();
       await nothingFetched(page, place);
     } finally {
       await place.close();
     }
   });
-}
-
-test("the campaign and archive previews reach no receiver either", async ({ page }) => {
-  await login(page);
-  const place = await receiver();
-  try {
-    const t = await ok(page, "/api/templates", "POST", {
-      name: unique("Preview"),
-      type: "campaign",
-      subject: "",
-      body: ` <!doctype html><img src="${place.url}/pixel.gif">{{ content | raw }}`,
-    });
-    const c = await create(page, { content_type: "html", template_id: t.id });
-    await page.goto(`${CAMPAIGNS}/${c.id}`);
-    await button(page.locator(".page-header"), "Preview").click();
-    await nothingFetched(page, place);
-    await button(page.locator(".preview-modal"), "Close").click();
-    place.hits.length = 0;
-
-    await page.getByRole("tab", { name: "Archive", exact: true }).click();
-    await page.getByRole("switch").filter({ visible: true }).check();
-    await page.locator(".campaign select").filter({ visible: true }).first().selectOption(t.name);
-    await button(page.getByRole("tabpanel").filter({ hasText: "Slug" }), "Preview").click();
-    await nothingFetched(page, place);
-  } finally {
-    await place.close();
-  }
 });
 
 async function saveName(page, c) {
