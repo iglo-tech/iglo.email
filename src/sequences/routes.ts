@@ -220,6 +220,8 @@ export function registerSequenceRoutes(
       if (typeof field !== "string" || !/^[A-Za-z0-9_.]{1,64}$/.test(field))
         throw invalid(c, "field");
       if (!("condition" in value)) throw invalid(c, "condition");
+      // A save reads null as "no condition", so null is valid here too.
+      if (value.condition === null) return ok({ ok: true, errors: [] });
       const result = validate(value.condition, {
         canUseSql: roles.can(identity(c).role, "subscribers:sql_query"),
         field,

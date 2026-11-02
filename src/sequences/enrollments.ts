@@ -509,6 +509,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       const rows = q.get("reschedule-batch").all(sequenceId, stepId, cursor, now, limit) as {
         id: bigint;
         due_at: string | null;
+        retry_at: string | null;
         created_at: string;
         updated_at: string;
         test: bigint | number;
@@ -519,10 +520,18 @@ export function createEnrollments(db: Database, clock: Clock) {
       for (const row of rows) {
         const from =
           row.updated_at > row.created_at ? row.updated_at : (row.event_at ?? row.created_at);
-        const dueAt = dueAfter(from, step.wait, Boolean(row.test));
+        const computed = dueAfter(from, step.wait, Boolean(row.test));
+        // A past time means "due now", never a past due time: the scheduler measures `max_late`
+        // from `due_at`, so a stored past time would skip the step as late. A time already due
+        // stays as it is, which also keeps a repeated call from changing anything.
+        const dueAt =
+          computed > now ? computed : row.due_at !== null && row.due_at <= now ? row.due_at : now;
         if (dueAt <= now) dueNow = true;
         if (dueAt === row.due_at) continue;
-        changed += q.get("reschedule-set").run(dueAt, row.id, stepId, now).changes;
+        const written = q.get("reschedule-set").run(dueAt, row.id, stepId, now).changes;
+        // Claims order by `coalesce(retry_at, due_at)`: a backoff in progress decides when the
+        // row runs, so a changed `due_at` there changes nothing the operator would see.
+        if (row.retry_at === null) changed += written;
       }
       return {
         changed,

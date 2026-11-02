@@ -90,9 +90,9 @@ UPDATE enrollments SET claimed_until = NULL, retry_at = ? WHERE id = ? AND statu
 -- name: reschedule-batch
 -- B5: waiting enrollments of one step after a cursor, with the time that step's wait counts from.
 -- Claimed (leased) rows are left to the scheduler.
-SELECT e.id, e.due_at, e.created_at, e.updated_at, e.test, ev.occurred_at AS event_at
-  FROM enrollments e LEFT JOIN events ev ON ev.id = e.trigger_event_id
-  WHERE e.sequence_id = ?1 AND e.status = 'active' AND e.step_id = ?2 AND e.id > ?3
+SELECT e.id, e.due_at, e.retry_at, e.created_at, e.updated_at, e.test, ev.occurred_at AS event_at
+  FROM enrollments e INDEXED BY idx_enrollments_step_active LEFT JOIN events ev ON ev.id = e.trigger_event_id
+  WHERE e.step_id = ?2 AND e.status = 'active' AND e.id > ?3 AND e.sequence_id = ?1
     AND (e.claimed_until IS NULL OR e.claimed_until < ?4)
   ORDER BY e.id LIMIT ?5;
 -- name: reschedule-set

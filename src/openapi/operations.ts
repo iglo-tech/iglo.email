@@ -909,6 +909,7 @@ const sending: Operation[] = [
       ok: { type: "boolean" },
       errors: { type: "array", items: object({ field: string, message: string }) },
     }),
+    errors: [400, 413],
   },
   {
     route: "DELETE /api/sequences/{id}",

@@ -3,7 +3,9 @@
 // whole set in one statement and one transaction; "after" is the endpoint's bounded batches. A
 // scheduler-like loop claims and releases a due row in its own write transaction on every turn of
 // the event loop meanwhile, so the longest gap between its turns is the longest it waits for the
-// write lock. Usage: bun test/sequences/measure-reschedule.ts [N] [runs].
+// write lock. With `other` > 0 the sequence has a second step holding that many more waiting
+// enrollments, which a batch of the first step must not pay for.
+// Usage: bun test/sequences/measure-reschedule.ts [N] [runs] [other].
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { writeTransaction } from "@/db/transaction";
@@ -17,11 +19,14 @@ if (/tmpfs|ramfs/.test(Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.to
 process.env.TMPDIR = base;
 const total = Number(process.argv[2] ?? 100_000);
 const runs = Number(process.argv[3] ?? 3);
+const other = Number(process.argv[4] ?? 0);
 const hour = 3_600_000;
 
 async function once(mode: "before" | "after") {
   const f = await sequencesFixture();
   try {
+    // MEASURE_NO_INDEX=1 drops migration 15's index, which is the schema before B5's fix.
+    if (process.env.MEASURE_NO_INDEX) f.db.run("DROP INDEX idx_enrollments_step_active");
     const tx = await f.template();
     const made = await f.json("/api/sequences", "POST", {
       name: "Measure",
@@ -29,7 +34,10 @@ async function once(mode: "before" | "after") {
       trigger: { event: "x" },
       exit_on: [],
       reentry: "never",
-      steps: [{ wait: "PT1H", kind: "transactional", template_id: tx }],
+      steps: [
+        { wait: "PT1H", kind: "transactional", template_id: tx },
+        { wait: "PT1H", kind: "transactional", template_id: tx },
+      ],
     });
     const seq = made.body.data as { id: number; steps: { id: number }[] };
     const now = f.clock.now();
@@ -37,14 +45,16 @@ async function once(mode: "before" | "after") {
     f.db.run(
       `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
        INSERT INTO subscribers (uuid, email, name, status) SELECT lower(hex(randomblob(16))), 'm' || i || '@example.test', 'x', 'enabled' FROM n`,
-      [total],
+      [total + other],
     );
     f.db.run(
       `INSERT INTO enrollments (sequence_id, subscriber_id, step_id, due_at, status, created_at, updated_at, test)
-       SELECT ?, id, ?, ?, 'active', ?, ?, 0 FROM subscribers WHERE email LIKE 'm%@example.test'`,
+       SELECT ?, id, CASE WHEN id <= ? THEN ? ELSE ? END, ?, 'active', ?, ?, 0 FROM subscribers WHERE email LIKE 'm%@example.test'`,
       [
         seq.id,
+        total,
         seq.steps[0]!.id,
+        seq.steps[1]!.id,
         new Date(now.getTime() + hour).toISOString(),
         now.toISOString(),
         now.toISOString(),
@@ -103,6 +113,7 @@ async function once(mode: "before" | "after") {
     return {
       mode,
       total,
+      other,
       elapsedMs: Math.round(elapsed),
       writes: holds.length,
       holdP50Ms: +sorted[Math.floor(sorted.length / 2)]!.toFixed(1),

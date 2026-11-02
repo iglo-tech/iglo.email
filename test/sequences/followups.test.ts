@@ -187,6 +187,10 @@ test("condition validation returns a save's errors and writes nothing", async ()
     condition: { all: [] },
     pad: "x".repeat(70_000),
   });
-  expect(huge.status).toBeGreaterThanOrEqual(400);
+  expect(huge.status).toBe(413);
+  // A save reads null as no condition, so the live check does too.
+  expect((await validate(null)).body.data).toEqual({ ok: true, errors: [] });
+  full.steps[0].condition = null;
+  expect((await f.json(`/api/sequences/${s.seq.id}`, "PUT", full)).status).toBe(200);
   expect(f.count("sequences")).toBe(1);
 });

@@ -20,6 +20,7 @@ import analyticsSummaries from "@/migrations/0011_analytics_summaries.sql" with 
 import bounceReceipts from "@/migrations/0012_bounce_receipts.sql" with { type: "text" };
 import enrollmentTest from "@/migrations/0013_enrollment_test.sql" with { type: "text" };
 import retention from "@/migrations/0014_retention.sql" with { type: "text" };
+import rescheduleIndex from "@/migrations/0015_reschedule_index.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -42,6 +43,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 12, sql: bounceReceipts },
   { version: 13, sql: enrollmentTest },
   { version: 14, sql: retention },
+  { version: 15, sql: rescheduleIndex },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {
