@@ -6,15 +6,16 @@ Updated 2026-11-02. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
 B6 is with its worker: [brief](briefs/B6.md), branch `task/B6-send-media-safety`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
-Owner-only, blocking nothing else: one real Mailgun event and a retry (D63); publishing a release.
+Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces (B9) come next.
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
 1. B6: send and media safety: `POST /api/tx` attachment concurrency, `finishAll` regressions, media crash and `data-embed` coverage.
-2. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
-3. B8: test debt and intermittent failures; every line still left in the backlog.
+2. B9: Amazon SES bounces and complaints through SNS ([brief](briefs/B9.md)). Next after B6.
+3. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
+4. B8: test debt and intermittent failures; every line still left in the backlog.
 
 ## Owner decisions
 
