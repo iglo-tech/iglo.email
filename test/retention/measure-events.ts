@@ -2,7 +2,7 @@
 // backlog is purged, before (the standalone 500-row loop with no pause, as it was until B6) and
 // after (the shared paced loop, D70). One message is journaled, claimed and finished every 20 ms
 // on the same thread, as the server does. Opt-in, not a CI threshold.
-// Usage: bun test/retention/measure-events.ts [events] [seconds]
+// Usage: bun test/retention/measure-events.ts [events] [seconds] [idle|before|after]
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createRealClock } from "@/clock";
@@ -72,6 +72,9 @@ async function run(variant: "idle" | "before" | "after") {
         insert.run(subscriber.id, `event-${j % 50}`, old, old);
     });
   insert.finalize();
+  // Let the seeding's checkpoint and file writes finish, so they are not counted as the purge's.
+  db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+  await Bun.sleep(5000);
   const left = () => (db.query("SELECT count(*) AS n FROM events").get() as { n: bigint }).n;
   const startCount = Number(left());
 
@@ -141,6 +144,7 @@ async function run(variant: "idle" | "before" | "after") {
   rmSync(directory, { recursive: true, force: true });
 }
 
-await run("idle");
-await run("before");
-await run("after");
+// One variant per process (argv[4]), so one run's heap and page cache do not shape the next.
+const only = process.argv[4];
+for (const variant of ["idle", "before", "after"] as const)
+  if (!only || only === variant) await run(variant);
