@@ -50,7 +50,8 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
       (blankOrigin) =>
         run({ origin: production.origin, dataDir: production.dataDir, blankOrigin, mailbox }),
       undefined,
-      1_200_000,
+      // The suite passed 20 minutes at about 330 specs (B6 review); 40 leaves room to grow.
+      2_400_000,
     );
   } finally {
     await mailbox.close();
