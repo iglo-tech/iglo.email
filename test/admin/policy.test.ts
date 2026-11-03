@@ -184,6 +184,40 @@ interface Node {
   readonly [child: string]: unknown;
 }
 
+/**
+ * Globals a browser has and Bun does not, so `name in globalThis` alone would let them through:
+ * the CSP build resolves a name in the component's scope only, and these are all undefined there.
+ * Names a component may well use for its own data (`open`, `history`, `top`) are left out.
+ */
+const browserGlobals = new Set([
+  "window",
+  "document",
+  "location",
+  "navigator",
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+  "caches",
+  "alert",
+  "confirm",
+  "prompt",
+  "getComputedStyle",
+  "matchMedia",
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+  "requestIdleCallback",
+  "XMLHttpRequest",
+  "FileReader",
+  "HTMLElement",
+  "CustomEvent",
+  "MutationObserver",
+  "IntersectionObserver",
+  "ResizeObserver",
+  "DOMParser",
+  "Alpine",
+]);
+const isGlobal = (name: string) => name in globalThis || browserGlobals.has(name);
+
 /** What the CSP build refuses at run time rather than when it parses. */
 function refused(node: Node, found: string[]): void {
   if (node.type === "AssignmentExpression" || node.type === "UpdateExpression") {
@@ -191,7 +225,7 @@ function refused(node: Node, found: string[]): void {
     while (target?.type === "MemberExpression") target = target.object;
     if (target?.name?.startsWith("$")) found.push(`assigns through ${target.name}`);
   }
-  if (node.type === "Identifier" && node.name && node.name in globalThis)
+  if (node.type === "Identifier" && node.name && isGlobal(node.name))
     found.push(`reads global ${node.name}`);
   for (const [key, child] of Object.entries(node)) {
     if (key === "property" && !node.computed) continue;
@@ -200,6 +234,28 @@ function refused(node: Node, found: string[]): void {
       if (item && typeof item === "object") refused(item as Node, found);
   }
 }
+
+test("refused() names a browser global even where this runtime has none", () => {
+  for (const expression of [
+    "window.location.reload()",
+    "document.title",
+    "localStorage.getItem('k')",
+    "navigator.clipboard",
+    "confirm('sure?')",
+    "Alpine.store('x')",
+    "items.includes(location.hash)",
+  ]) {
+    const found: string[] = [];
+    refused(new Parser(new Tokenizer(expression).tokenize()).parse(), found);
+    expect(found.length, expression).toBeGreaterThan(0);
+  }
+  // Names in the scope, and properties that merely share a global's name, are not reads of it.
+  for (const expression of ["open", "item.window", "items.length > 0", "$store.x.open"]) {
+    const found: string[] = [];
+    refused(new Parser(new Tokenizer(expression).tokenize()).parse(), found);
+    expect(found, expression).toEqual([]);
+  }
+});
 
 test("every rendered Alpine expression is one the CSP build can run", async () => {
   const seen = new Map<string, string>();
