@@ -17,6 +17,8 @@ import {
   subscriptionStatuses,
   type SubscriberFilter,
 } from "@/subscribers/query-filter";
+import type { IdList } from "@/subscribers/id-stage";
+import { MEMORY_PAGE } from "@/subscribers/query";
 import { RunnerError } from "@/subscribers/query-runner";
 import type { SubscriberQuery } from "@/subscribers/query";
 import type { BulkAction, Scope, SubscriberStore } from "@/subscribers/store";
@@ -29,7 +31,7 @@ const MANAGE: Types = { get: false, manage: true },
   ANY: Types = { get: true, manage: true };
 const NONE = [-1n];
 /** Pages above this many rows count as large selections. */
-const LARGE_PAGE = 1000;
+const LARGE_PAGE = MEMORY_PAGE;
 const throwTooMany = (): never => {
   throw new HttpError(429, "Too many large subscriber selections in progress.");
 };
@@ -258,7 +260,7 @@ export function registerSubscriberQueryRoutes(
     // per_page=all, negative and oversized pages hold every selected ID until streamed.
     let release = () => {};
     if (perPage === 0 || perPage > LARGE_PAGE) release = query.admitLarge() ?? throwTooMany();
-    let result: { total: number; ids: bigint[] };
+    let result: { total: number; ids: IdList };
     try {
       result = await query.page(
         filter,
@@ -281,6 +283,7 @@ export function registerSubscriberQueryRoutes(
     }).slice(1);
     // As upstream: no matches is [], a page past the end is null.
     if (!result.total || !result.ids.length) {
+      result.ids.close();
       release();
       return new Response(`{"data":{"results":${result.total ? "null" : "[]"},${tail}}\n`, {
         headers: { "Content-Type": "application/json" },
@@ -294,6 +297,7 @@ export function registerSubscriberQueryRoutes(
         if (next >= result.ids.length) {
           controller.enqueue(text.encode(`],${tail}}\n`));
           controller.close();
+          result.ids.close();
           release();
           return;
         }
@@ -306,7 +310,10 @@ export function registerSubscriberQueryRoutes(
         next += 200;
         controller.enqueue(text.encode(prefix + parts.join(",")));
       },
-      cancel: release,
+      cancel() {
+        result.ids.close();
+        release();
+      },
     });
     return new Response(body, { headers: { "Content-Type": "application/json" } });
   };
@@ -449,12 +456,11 @@ export function registerSubscriberQueryRoutes(
       validate(c, select(identity(c)));
       // A raw selection holds its candidate IDs until the write transaction ends.
       const release = fragment ? (query.admitLarge() ?? throwTooMany()) : () => {};
+      let candidates: IdList | null = null;
       try {
-        let candidates: bigint[] | null = null;
         if (fragment) {
-          candidates = [];
           try {
-            for await (const ids of query.ids(select(identity(c)))) candidates.push(...ids);
+            candidates = await query.stageIds(select(identity(c)));
           } catch (e) {
             return failed(e);
           }
@@ -474,6 +480,7 @@ export function registerSubscriberQueryRoutes(
           return failed(e);
         }
       } finally {
+        candidates?.close();
         release();
       }
       return ok(true);

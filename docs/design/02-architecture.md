@@ -155,6 +155,7 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 data/
   iglo-email.db        (+ -wal, -shm)
   iglo-email.lock      instance lock (D69); no data
+  stage/               IDs of a running large subscriber selection (D62); empty at rest
   uploads/             media files
   backups/             pre-migration snapshots, and `backup` output by default
 ```

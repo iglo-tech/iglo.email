@@ -450,7 +450,7 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
   let current = failed;
   registerAnalyticsRoutes(router, {
     reader: {
-      read: (method: "dashboardCounts") => current.read(method, []),
+      respond: (method: "dashboardCounts") => current.respond(method, []),
     } as never,
     summaries,
     campaigns: f.owners.store,

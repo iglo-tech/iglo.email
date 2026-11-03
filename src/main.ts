@@ -206,7 +206,12 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       effects: subscriberEffects,
     });
     campaigns = createCampaignListReferences(db);
-    analyticsReader = createAnalyticsReader({ path: db.filename });
+    const writer = db;
+    analyticsReader = createAnalyticsReader({
+      path: db.filename,
+      // After a long run of overlapping reads, let the WAL be checkpointed and restarted (D62).
+      onGap: () => void writer.run("PRAGMA wal_checkpoint(PASSIVE)"),
+    });
     summaries = createSummaries(db, clock, analyticsReader);
     const liveCounts = counts;
     const cachedSummaries = summaries;

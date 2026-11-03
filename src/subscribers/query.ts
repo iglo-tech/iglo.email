@@ -5,6 +5,7 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
+import { memoryIds, stageRows, type IdList } from "@/subscribers/id-stage";
 import type { ExportRow } from "@/subscribers/export";
 import {
   countSQL,
@@ -20,11 +21,14 @@ import exportSql from "@/subscribers/export.sql" with { type: "text" };
 
 /** IDs per statement and per streamed batch: bounds memory and statement size. */
 export const BATCH = 500;
+/** Pages up to this many rows are held in memory; larger ones are staged on disk. */
+export const MEMORY_PAGE = 1000;
 /**
- * Large selections (`per_page=all` or oversized pages, exports and raw-SQL bulk actions) hold
- * their matching IDs, about 40 bytes each, in the parent while they run. Two at once keeps the
- * worst case at twice one full selection (docs/perf/M1.7-query.md) and matches the raw-query
- * child pool; these are rare admin operations, so excess requests are refused with 429.
+ * Large selections (`per_page=all` or oversized pages, exports and raw-SQL bulk actions) are
+ * staged on disk (src/subscribers/id-stage.ts), so the parent holds a batch of IDs, not all of
+ * them (docs/perf/B7-load-memory.md). Two at once still bounds the staged disk space and
+ * matches the raw-query child pool; these are rare admin operations, so excess requests are
+ * refused with 429.
  */
 export const LARGE_SELECTIONS = 2;
 
@@ -69,23 +73,45 @@ export function createSubscriberQuery(options: {
       order: string,
       offset: number,
       limit: number,
-    ): Promise<{ total: number; ids: bigint[] }> {
+    ): Promise<{ total: number; ids: IdList }> {
       const count = countSQL(filter),
         page = pageSQL(filter, orderBy, order, offset, limit);
+      const large = limit <= 0 || limit > MEMORY_PAGE;
       if (filter.fragment) {
-        const [total, ids] = await runner.all([count, page]);
-        return { total: Number(total![0] ?? 0n), ids: ids! };
+        const [total, ids] = await runner.stage([count, page]);
+        const value = Number(total!.slice(0, 1)[0] ?? 0n);
+        total!.close();
+        if (large) return { total: value, ids: ids! };
+        const held = memoryIds(ids!.slice(0, ids!.length));
+        ids!.close();
+        return { total: value, ids: held };
       }
       readonly.run("BEGIN");
       try {
         const total = Number(column(readonly, count.sql, count.args)[0] ?? 0n);
-        return {
-          total,
-          ids: total ? column(readonly, page.sql, page.args) : [],
-        };
+        if (!total) return { total, ids: memoryIds([]) };
+        if (!large) return { total, ids: memoryIds(column(readonly, page.sql, page.args)) };
+        const rows = readonly.query(page.sql).iterate(...page.args) as Iterable<
+          Record<string, bigint>
+        >;
+        const ids = stageRows(
+          runner.stageDir,
+          (function* () {
+            for (const row of rows) yield Object.values(row)[0]!;
+          })(),
+        );
+        return { total, ids };
       } finally {
         readonly.run("COMMIT");
       }
+    },
+    /**
+     * The IDs a raw fragment selects, staged on disk in one snapshot, for a bulk action. The
+     * caller closes the list.
+     */
+    async stageIds(filter: SubscriberFilter): Promise<IdList> {
+      const [ids] = await runner.stage([idsSQL(filter)]);
+      return ids!;
     },
     /**
      * Matching IDs in ascending batches. With a fragment the first item is yielded once the
@@ -130,7 +156,7 @@ export function createSubscriberQuery(options: {
      * filters and current permissions are rechecked here so a concurrent change cannot
      * redirect the action. Without a fragment the whole selection happens here.
      */
-    apply(filter: SubscriberFilter, candidates: bigint[] | null, act: (ids: bigint[]) => void) {
+    apply(filter: SubscriberFilter, candidates: IdList | null, act: (ids: bigint[]) => void) {
       const builtIn = { ...filter, fragment: "" };
       if (candidates) {
         for (let i = 0; i < candidates.length; i += BATCH) {
@@ -150,7 +176,7 @@ export function createSubscriberQuery(options: {
       }
     },
     /** In the action's transaction, before its first write. */
-    admitBulk(action: BulkAction, filter: SubscriberFilter, candidates: bigint[] | null) {
+    admitBulk(action: BulkAction, filter: SubscriberFilter, candidates: IdList | null) {
       effects.admitBulk?.(action, () => {
         if (candidates) return candidates.length;
         const count = countSQL({ ...filter, fragment: "" });

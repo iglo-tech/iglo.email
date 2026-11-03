@@ -92,7 +92,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
-- Analytics: global egress budget for many slow near-cap downloads; WAL growth under no-gap report polling (D62).
 - Intermittent: `route-auth` "held SMTP body denies disabled before a connection" failed once in M1.9 (`smtp.count()` 1); may be the same as the unnamed M3.4 failure.
 - Media: supported PDF viewers unverified (needs real devices).
 - Tests: contract coverage of multi-list actions and exports (M4.2 dropped two API-only cases); `availablePort()` free-port race in the contract harness.
@@ -101,8 +100,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Intermittent pinned settings-reference refusal: retain diagnostic context; cause unproven.
 - M5.1 perf: record source/executable hashes for each measured variant.
-- M1.7: disk-backed staging for very large selections (parent holds ~3.9 MiB per 100k IDs; 2-slot pool bounds concurrency).
-- Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. Lowering it needs shared write batching across loops, or an owner decision on D22 durability.
+- Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. B7 tried a longer event group-commit window (3 ms): no gain, worse tail ([evidence](perf/B7-load-memory.md)). Lowering it needs other loops' commits batched or merged (outbox, scheduler, campaigns: owners outside B7), or an owner decision on D22 durability.
 - Instance lock: no test that it is held through `withStoppedDatabase` or of the "stop what has it open first" branch; the only test guarding the start retry usually passes without it; two forged lock file headers stop the start with a clean error ([#50](https://github.com/iglo-tech/iglo.email/pull/50)).
 - Retention ([#51](https://github.com/iglo-tech/iglo.email/pull/51)): session rows with no `expires_at` go up to 999 ms early; no test covers the `purges` list in `src/main.ts`; D70's session index and the rate in `docs/operations.md` are slightly off.
 - Admin CSP and editor ([#52](https://github.com/iglo-tech/iglo.email/pull/52)): `url()` in a kept `style` logs a violation and gets no notice; `?remote_images=1` can come from a crafted link; an archive slug typed during a save counts as saved; no caret on a held image; with `_` in the root URL host, root-URL images are blocked but not held; `refused()` in `test/admin/policy.test.ts` misses browser globals under Bun.
