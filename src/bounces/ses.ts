@@ -2,7 +2,7 @@
 // internal/bounce/webhooks/ses.go at 6fcd95f: the certificate URL pattern, the string to sign,
 // the bounce type mapping and the campaign header. Differences are listed in
 // docs/design/04-sending.md#bounces: signature versions 1 and 2, bounded fetches, a bounded
-// certificate cache, every recipient, and no stored headers or addresses in `meta`.
+// certificate cache, up to 50 recipients, a topic allowlist, and no stored headers or addresses in `meta`.
 import { X509Certificate, createVerify } from "node:crypto";
 import type { BounceEvent, BounceType } from "@/bounces/store";
 import { campaignMessage, record, safeText, sendMessage } from "@/bounces/mailgun";

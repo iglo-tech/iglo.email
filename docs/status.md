@@ -1,20 +1,19 @@
 # Status
 
-Updated 2026-11-02. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B9 is with its worker: [brief](briefs/B9.md), branch `task/B9-ses-bounces`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
-Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces (B9) come next.
+B7 is with its worker: [brief](briefs/B7.md), branch `task/B7-load-memory`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B9: Amazon SES bounces and complaints through SNS ([brief](briefs/B9.md)).
-2. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
-3. B8: test debt and intermittent failures; every line still left in the backlog.
+1. B7: load and memory: analytics egress and WAL, M1.7 disk-backed staging, event latency.
+2. B8: test debt and intermittent failures; every line still left in the backlog.
 
 ## Owner decisions
 
@@ -43,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                    |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| B9           | [#56](https://github.com/iglo-tech/iglo.email/pull/56) | 6669094 | SES/SNS bounces, topic allowlist (D75)                     |
 | B6           | [#55](https://github.com/iglo-tech/iglo.email/pull/55) | 33d8e65 | Tx attachment budget, finishAll tests, paced events (D74)  |
 | B5           | [#54](https://github.com/iglo-tech/iglo.email/pull/54) | 92c5d90 | Reschedule, live condition validation, activity tab        |
 | B4           | [#53](https://github.com/iglo-tech/iglo.email/pull/53) | 785594f | ALTCHA and hCaptcha on public forms (D72)                  |
@@ -109,4 +109,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Intermittent: `users.e2e.js` reload races at `:193` and `:382`; `media.test.ts:74` 409 under load (B3 review, once each, clean on rerun).
 - Sequences ([#54](https://github.com/iglo-tech/iglo.email/pull/54)): reschedule returns 404 after partial batches when the step is deleted mid-run; the reschedule query names its index, so a missing index gives a 500 and the perf doc's no-index "before" run cannot be repeated; the Campaigns count on the activity tab includes the non-campaign row; the activity-tab e2e mocks the API; the retry-backoff test does not check the rewritten due time.
 - Tx budget ([#55](https://github.com/iglo-tech/iglo.email/pull/55)): while any upload waits, a JSON send with template images gets 429 at once even when it would fit; under load a multipart request over 5 MiB can get 429 before its 413; peak memory is about 8x the counted bytes; paced event retention drains about 380 rows/s.
+- SES ([#56](https://github.com/iglo-tech/iglo.email/pull/56)): SES shares the 300/min per-client webhook limit with Mailgun, so a large bounce burst may be refused (unverified); the reference contract's SES refusals check only the 400 status; upstream's certificate URL pattern may also match an S3 bucket named `sns` (unverified); the OpenAPI SES difference is not attached to `POST /webhooks/service/{service}`.
+- Intermittent: `templates-campaigns.test.ts` 5 s timeout with a connection reset, `users.e2e.js` navigation race, campaigns clone e2e timeout (B9 reviews, load ~12, clean on rerun).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
