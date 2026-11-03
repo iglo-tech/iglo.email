@@ -74,6 +74,20 @@ test("an enrollment in retry backoff is rewritten but not counted", async () => 
     new Date(f.clock.now().getTime() + 3 * day).toISOString(),
     id,
   ]);
+  const row = () =>
+    f.db
+      .query<{ due_at: string; retry_at: string; occurred_at: string }, [number]>(
+        `SELECT e.due_at, e.retry_at, ev.occurred_at FROM enrollments e
+           JOIN events ev ON ev.id = e.trigger_event_id WHERE e.id = ?`,
+      )
+      .get(id)!;
+  const before = row();
+  const started = Date.parse(before.occurred_at);
+  expect(Date.parse(before.due_at)).toBe(started + day);
   await shorten(f, seq.id, "P2D");
   expect((await reschedule(f, seq)).body.data).toEqual({ changed: 0 });
+  // The wait is counted from the event again, and the backoff is left where it was.
+  const after = row();
+  expect(Date.parse(after.due_at)).toBe(started + 2 * day);
+  expect(after.retry_at).toBe(before.retry_at);
 });

@@ -204,11 +204,18 @@ export async function runBouncesContract(target: {
         "content-type": "text/plain",
         ...(type ? { "x-amz-sns-message-type": type } : {}),
       });
-    check((await sns(sesBody)).status === 400, "ses-no-type");
-    check((await sns(sesBody, "Other")).status === 400, "ses-other-type");
-    check((await sns(sesBody, "Notification")).status === 400, "ses-wrong-cert-host");
-    check((await sns("{", "Notification")).status === 400, "ses-json");
-    check((await sns(sesBody, "SubscriptionConfirmation")).status === 400, "ses-confirm-refused");
+    // Upstream and this server refuse with the same status and message.
+    const refusedSns = async (body: unknown, type?: string) => {
+      const response = await sns(body, type);
+      return (
+        response.status === 400 && JSON.stringify(response.body) === '{"message":"Invalid data"}'
+      );
+    };
+    check(await refusedSns(sesBody), "ses-no-type");
+    check(await refusedSns(sesBody, "Other"), "ses-other-type");
+    check(await refusedSns(sesBody, "Notification"), "ses-wrong-cert-host");
+    check(await refusedSns("{", "Notification"), "ses-json");
+    check(await refusedSns(sesBody, "SubscriptionConfirmation"), "ses-confirm-refused");
     check(
       (await call("/api/bounces?per_page=1")).body.data.total === sesBefore,
       "ses-refused-rows",
