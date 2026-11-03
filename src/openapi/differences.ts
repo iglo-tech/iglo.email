@@ -467,6 +467,12 @@ export const differences: Difference[] = [
     applies: ["POST /api/tx"],
   },
   {
+    area: "`POST /api/tx` memory budget (B6, [D74](09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop))",
+    summary:
+      "Multipart bodies and synchronous sends with attachments share a 64 MiB per-process budget; a request that finds no room within 2 seconds gets 429 with Retry-After: 1 before anything is journaled.",
+    applies: ["POST /api/tx"],
+  },
+  {
     area: "`POST /api/tx` recipients",
     summary: "Any email address can receive a transactional email.",
     applies: ["POST /api/tx"],
@@ -539,7 +545,7 @@ export const differences: Difference[] = [
   {
     area: "Bounces (M3.4)",
     summary:
-      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast.",
+      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast. `POST /webhooks/service/ses` believes only the SNS topics listed in `bounce.ses_topic_arns` and records at most 50 recipients, where upstream believes any signed message.",
     applies: ["/api/bounces", "/bounces", "POST /webhooks/bounce"],
   },
   {

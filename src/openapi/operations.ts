@@ -1264,9 +1264,10 @@ const bounces: Operation[] = [
     route: "POST /webhooks/service/{service}",
     id: "postServiceBounce",
     tag: "Bounces",
-    summary: "Upstream's provider webhooks: no provider is served here.",
+    summary:
+      "Upstream's provider webhooks. Only `ses` is served: an Amazon SNS message, verified by its signature, as a subscription confirmation or a bounce or complaint notification. Other providers answer as a disabled provider does.",
     anonymous: true,
-    errors: [400, 404, 503],
+    errors: [400, 404, 413, 429, 503],
   },
 ];
 

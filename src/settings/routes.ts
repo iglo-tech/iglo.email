@@ -69,6 +69,7 @@ export function registerSettingsRoutes(
         for (const native of [
           "marketing.min_interval",
           "bounce.mailgun",
+          "bounce.ses_topic_arns",
           "webhooks.block_private_addresses",
           "security.trusted_proxies",
           "security.public_rate_limit",

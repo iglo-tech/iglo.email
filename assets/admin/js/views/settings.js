@@ -28,7 +28,7 @@ const smtpTemplates = {
 // Settings edited as one entry per line.
 const lineKeys = [
   'app.from_email', 'privacy.domain_blocklist', 'privacy.domain_allowlist',
-  'security.trusted_urls', 'security.trusted_proxies',
+  'security.trusted_urls', 'security.trusted_proxies', 'bounce.ses_topic_arns',
 ];
 
 function isDummy(pwd) {

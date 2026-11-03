@@ -423,9 +423,14 @@ test("persists bounce actions and the Mailgun key; other providers stay read-onl
   await save(page, 400);
   await expect(page.getByText("A Mailgun signing key is required.")).toBeVisible();
   await mailgun.getByLabel(/signing key/).fill("mailgun-signing-key");
+  const ses = page.getByRole("group", { name: /SES/ });
+  await ses.getByRole("switch").check();
+  await ses.getByLabel(/Allowed SNS topic ARNs/).fill("arn:aws:sns:*:123456789012:*");
   await save(page);
   expect(await settings(page)).toMatchObject({
     "bounce.enabled": true,
+    "bounce.ses_enabled": true,
+    "bounce.ses_topic_arns": ["arn:aws:sns:*:123456789012:*"],
     "bounce.webhooks_enabled": true,
     "bounce.actions": { hard: { count: 3, action: "unsubscribe" } },
     "bounce.mailboxes": before["bounce.mailboxes"],
@@ -438,7 +443,8 @@ test("persists bounce actions and the Mailgun key; other providers stay read-onl
   await expect(mailgun.getByLabel(/signing key/)).toHaveValue(/^•+$/);
   const others = page.getByRole("group", { name: "Other bounce providers", exact: true });
   await expect(others.getByText("Not available in this version.")).toBeVisible();
-  await expect(others.getByRole("switch", { name: /SES/ })).toBeDisabled();
+  await expect(ses.getByRole("switch")).toBeChecked();
+  await expect(others.getByRole("switch", { name: /Azure/ })).toBeDisabled();
   await expect(
     page.getByRole("group", { name: "Enable bounce mailbox" }).getByRole("switch"),
   ).toBeDisabled();

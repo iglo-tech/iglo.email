@@ -952,6 +952,24 @@ function Bounces({ t }: { t: Translation }) {
             {t.T("settings.bounces.enableWebhooks")}
           </label>
           <template x-if="form['bounce.webhooks_enabled']">
+            <fieldset class="card" data-keywords="bounce ses amazon sns webhook">
+              <legend>{t.T("settings.bounces.enableSES")}</legend>
+              {provider("form['bounce.ses_enabled']", t.T("globals.buttons.enable"))}
+              <template x-if="form['bounce.ses_enabled']">
+                <label data-field="">
+                  {t.T("settings.bounces.sesTopics")}
+                  <textarea
+                    rows="3"
+                    name="bounce.ses_topic_arns"
+                    placeholder="arn:aws:sns:eu-west-1:123456789012:ses-bounces"
+                    x-model="form['bounce.ses_topic_arns']"
+                  ></textarea>
+                  <Hint>{t.T("settings.bounces.sesTopicsHelp")}</Hint>
+                </label>
+              </template>
+            </fieldset>
+          </template>
+          <template x-if="form['bounce.webhooks_enabled']">
             <fieldset class="card" data-keywords="bounce mailgun webhook signing key">
               <legend>{t.T("settings.bounces.enableMailgun")}</legend>
               <label data-field="">
@@ -971,9 +989,8 @@ function Bounces({ t }: { t: Translation }) {
           <Unavailable
             t={t}
             legend={t.T("settings.bounces.otherProviders")}
-            keywords="bounce ses amazon azure sendgrid postmark forwardemail lettermint webhook"
+            keywords="bounce azure sendgrid postmark forwardemail lettermint webhook"
           >
-            {provider("form['bounce.ses_enabled']", t.T("settings.bounces.enableSES"))}
             {provider("form['bounce.azure'].enabled", t.T("settings.bounces.enableAzure"))}
             {provider("form['bounce.sendgrid_enabled']", t.T("settings.bounces.enableSendgrid"))}
             {provider("form['bounce.postmark'].enabled", t.T("settings.bounces.enablePostmark"))}

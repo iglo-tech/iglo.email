@@ -35,7 +35,7 @@ The MVP targets Linux x86-64 only. CI, reference acceptance and the first releas
 | Transactional API | `POST /api/tx`, attachments, custom headers | | |
 | Media | filesystem storage | S3 storage, thumbnails | |
 | Import | CSV import of subscribers | ZIP import, listmonk Postgres importer | |
-| Bounces | bounce API, Mailgun webhook, soft/hard/complaint actions | Postmark, SES, SendGrid and other webhooks, POP3 mailbox scanning | |
+| Bounces | bounce API, Mailgun and Amazon SES (SNS) webhooks, soft/hard/complaint actions | Postmark, SendGrid and other webhooks, POP3 mailbox scanning | |
 | Analytics | campaign views, clicks, bounces, link stats, dashboard counts | unique-count graphs, list analytics | |
 | Users | admin users, API users and tokens, user roles and list roles, TOTP 2FA | OIDC login | |
 | Messengers | SMTP pool, multiple SMTP servers | postback (HTTP) messengers | |

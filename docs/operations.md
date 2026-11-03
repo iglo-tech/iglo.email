@@ -240,6 +240,63 @@ acknowledged and ignored. A request with a bad signature answers 406,
 which is what a forged one got in this check. The server's clock must be right: a signature older
 than 15 minutes is refused as stale.
 
+## Amazon SES bounces
+
+Sending through SES is ordinary SMTP (see [SMTP and DKIM](#smtp-and-dkim)). SES reports bounces and
+complaints through Amazon SNS, and iglo.email records and acts on them as listmonk does, so the
+account's bounce and complaint rates stay low.
+
+1. **SMTP credentials.** In the SES console, verify your sending domain, then create SMTP
+   credentials (they are not your AWS login). Add an SMTP server in Settings > SMTP with host
+   `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
+   credentials.
+2. **An SNS topic.** In SNS, create a Standard topic in the same region, for example
+   `ses-bounces`, and note its ARN.
+3. **Send feedback to it.** In SES > Verified identities > your domain > Notifications, set the
+   Bounce and Complaint feedback to the topic, and tick "Include original headers" so a bounce
+   can be matched to the campaign (without them it is matched by address). With a configuration
+   set, add an event destination for Bounce and Complaint events to the topic instead. Other event
+   types (Delivery, Send) are refused with 400 and do nothing, so do not publish them to this topic.
+4. **Turn it on** in Settings > Bounces (bounce processing, webhooks, the Amazon SES switch, and
+   the allowed topic ARNs), or:
+
+   ```sh
+   for setting in bounce.enabled bounce.webhooks_enabled bounce.ses_enabled; do
+     curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
+       -d 'true' "http://127.0.0.1:9000/api/settings/$setting"
+   done
+   curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
+     -d '["arn:aws:sns:eu-west-1:123456789012:ses-bounces"]' \
+     http://127.0.0.1:9000/api/settings/bounce.ses_topic_arns
+   ```
+
+   List the topic's full ARN, or `arn:aws:sns:*:<account-id>:*` to accept every topic of your
+   AWS account. **Until a topic is listed, every SES message is refused**, including the
+   subscription confirmation.
+
+5. **Subscribe the endpoint.** In SNS, create a subscription on the topic with protocol HTTPS and
+   endpoint `https://news.example.com/webhooks/service/ses`. SNS posts a
+   `SubscriptionConfirmation`; with the switch on, iglo.email verifies it and confirms by itself,
+   and the subscription shows "Confirmed". Turn the switch on first: a confirmation sent while it
+   is off is refused, and SNS needs a new request (delete and recreate the subscription).
+6. **Check it.** Send to SES's mailbox simulator, `bounce@simulator.amazonses.com` (hard) and
+   `complaint@simulator.amazonses.com`, from a campaign or `/api/tx`. Then open Bounces: rows
+   appear with source `ses`, and the subscriber is acted on at the thresholds you set. If nothing
+   appears, check in SNS that the subscription is confirmed and read its delivery logs, where a
+   refused message shows as a 400 response; the endpoint does not say why it refused.
+
+The server needs outbound HTTPS to `sns.<region>.amazonaws.com` to fetch the signing certificate
+and to confirm subscriptions, and its clock must be right (a message more than 24 hours old, or
+15 minutes ahead, is refused). The endpoint accepts bodies up to 256 KiB. SNS delivers at least
+once; a repeated message is recorded once.
+
+Amazon signs every SNS message with the same certificates, whoever's topic it comes from, so a
+valid signature only proves the message passed through SNS. Any AWS account could create a topic,
+subscribe your public endpoint and publish a bounce for any address. That is why the allowed
+topic ARNs are required (unlike listmonk, which believes any signed message): a message from a topic
+that is not listed is refused with 400, a confirmation is not fetched and nothing is recorded. At most
+50 recipients of a message are recorded, which is SES's own limit.
+
 ## Uploads
 
 Rules from [D64](design/09-decisions.md#d64-the-upload-directory-is-a-fixed-boundary-inside-the-data-directory):
