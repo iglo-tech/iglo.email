@@ -11,6 +11,8 @@ import { openReadOnly } from "@/subscribers/query-runner";
 
 /** The command line that makes the executable run the child instead of the server. */
 export const analyticsChildArgument = "__analytics-read";
+/** Bytes per piece of a streamed response; a smaller body is sent whole and not counted. */
+const PIECE = 65536;
 const methods = [
   "campaignCounts",
   "listCounts",
@@ -69,7 +71,7 @@ export async function runAnalyticsChild(): Promise<void> {
 
 export class ReaderError extends Error {
   constructor(
-    readonly kind: "busy" | "timeout" | "limit" | "failed" | "cancelled" | "closed",
+    readonly kind: "busy" | "egress" | "timeout" | "limit" | "failed" | "cancelled" | "closed",
     message: string,
   ) {
     super(message);
@@ -91,6 +93,25 @@ export interface ReaderOptions {
   memoryBytes?: number;
   /** Bytes of one response, which the server holds whole so it can never send a partial one. */
   maxOutputBytes?: number;
+  /**
+   * Bytes of finished responses that may wait to be written to clients at once. A new read is
+   * refused as "egress" before it starts while the total is at or over this; a finished one
+   * is never cut short. Worst case held is this plus one maximum response per running child.
+   */
+  egressBytes?: number;
+  /**
+   * After reads have overlapped continuously for this long, new reads wait until every running
+   * one has finished, so the WAL can be checkpointed and restarted (D62).
+   */
+  gapAfterMs?: number;
+  /**
+   * Called when the last running read of a streak that lasted gapAfterMs has finished, before
+   * any waiting read starts: the server checkpoints the WAL here (it is the only writer, and
+   * no helper of this reader holds a snapshot). Failures are ignored; the next gap tries again.
+   */
+  onGap?: () => void;
+  /** The clock for the gap; tests inject theirs. */
+  now?: () => number;
   command?: string[];
 }
 
@@ -109,6 +130,12 @@ export function createAnalyticsReader(options: ReaderOptions) {
   const admissionMs = options.admissionMs ?? 30_000;
   const memoryBytes = options.memoryBytes ?? 256 * 1024 * 1024;
   const maxOutputBytes = options.maxOutputBytes ?? 32 * 1024 * 1024;
+  const egressBytes = options.egressBytes ?? 64 * 1024 * 1024;
+  const gapAfterMs = options.gapAfterMs ?? 15_000;
+  const now = options.now ?? Date.now;
+  let held = 0;
+  let streakStart = 0;
+  const overloaded = () => new ReaderError("egress", "analytics responses are waiting to be sent");
   const busy = () => new ReaderError("busy", "too many analytics reads in progress");
   const cancelled = () => new ReaderError("cancelled", "analytics read cancelled");
   const closing = () => new ReaderError("closed", "analytics reader closed");
@@ -118,16 +145,36 @@ export function createAnalyticsReader(options: ReaderOptions) {
   const waiting = new Set<(error?: ReaderError) => void>();
   let active = 0;
   let closed = false;
+  /** Reads have overlapped for too long: admit none until the running ones finish. */
+  const draining = () => active > 0 && now() - streakStart >= gapAfterMs;
+  const admit = () => {
+    if (active === 0) streakStart = now();
+    active++;
+  };
   const release = () => {
-    const [next] = waiting;
-    if (next) next();
-    else active--;
+    active--;
+    if (active === 0 && options.onGap && now() - streakStart >= gapAfterMs) {
+      try {
+        options.onGap();
+      } catch {
+        /* a busy checkpoint is retried at the next gap */
+      }
+    }
+    admitWaiting();
+  };
+  const admitWaiting = () => {
+    while (active < concurrency && !draining()) {
+      const [next] = waiting;
+      if (!next) return;
+      admit();
+      next();
+    }
   };
   const acquire = (signal: AbortSignal | undefined) => {
     if (closed) throw closing();
     if (signal?.aborted) throw cancelled();
-    if (active < concurrency) {
-      active++;
+    if (active < concurrency && !draining() && waiting.size === 0) {
+      admit();
       return;
     }
     if (waiting.size >= maxQueued) throw busy();
@@ -213,16 +260,61 @@ export function createAnalyticsReader(options: ReaderOptions) {
       method: M,
       args: Parameters<AnalyticsStore[M]>,
       signal?: AbortSignal,
+      counted = false,
     ): Promise<Uint8Array<ArrayBuffer>> {
       await acquire(signal);
       try {
         if (closed) throw closing();
+        // A read that waited for a child meets the budget again, so a queue of reads cannot
+        // all pass a check made while nothing was held yet.
+        if (counted && held >= egressBytes) throw overloaded();
         if (signal?.aborted) throw cancelled();
         return await run(JSON.stringify({ path: options.path, method, args }), signal);
       } finally {
         release();
       }
     },
+    /**
+     * The response for a read, holding its bytes against the egress budget until the client has
+     * been sent all of them or has gone. Refused as "egress" before any work when the budget is
+     * spent. A body over one piece is streamed from memory in 64 KiB pieces.
+     */
+    async respond<M extends Method>(
+      method: M,
+      args: Parameters<AnalyticsStore[M]>,
+      signal?: AbortSignal,
+    ): Promise<Response> {
+      if (held >= egressBytes) throw overloaded();
+      const bytes = await this.read(method, args, signal, true);
+      const headers = { "Content-Type": "application/json" };
+      // A body of one piece is handed over whole, with its length, and is not counted: it is
+      // small and the server's own connection limits bound how many wait.
+      if (bytes.length <= PIECE) return new Response(bytes, { headers });
+      held += bytes.length;
+      let at = 0;
+      let returned = false;
+      const done = () => {
+        if (returned) return;
+        returned = true;
+        held -= bytes.length;
+      };
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (at >= bytes.length) {
+              controller.close();
+              done();
+              return;
+            }
+            controller.enqueue(bytes.subarray(at, (at += PIECE)));
+          },
+          cancel: done,
+        }),
+        { headers },
+      );
+    },
+    /** Bytes of responses finished but not yet fully written. */
+    heldBytes: () => held,
     /** Refuse new and queued reads, kill running children and wait for them to exit. */
     async close() {
       closed = true;

@@ -56,21 +56,23 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
     new HttpError(400, t(context).T("globals.messages.invalidData"));
   const invalidDates = (context: RequestContext) =>
     new HttpError(400, t(context).T("analytics.invalidDates"));
-  /** A body the child already serialized, with the headers of ok(). */
-  const body = (bytes: Uint8Array<ArrayBuffer> | string) =>
-    new Response(bytes, { headers: { "Content-Type": "application/json" } });
+  /** A cached body, with the headers of ok(). Reader responses carry their own. */
+  const body = (text: string) =>
+    new Response(text, { headers: { "Content-Type": "application/json" } });
   const refused: Partial<Record<ReaderError["kind"], [number, string]>> = {
     busy: [429, "Too many analytics reads in progress."],
+    egress: [503, "Analytics responses are still being sent. Try again shortly."],
     limit: [422, "Analytics result too large. Narrow the range, the IDs or the interval."],
     cancelled: [499, "Client closed the request."],
     closed: [503, "The server is shutting down."],
   };
   const served = async (
     context: RequestContext,
-    read: (signal: AbortSignal) => Promise<Uint8Array<ArrayBuffer> | string>,
+    read: (signal: AbortSignal) => Promise<Response | string>,
   ) => {
     try {
-      return body(await read(context.request.signal));
+      const result = await read(context.request.signal);
+      return typeof result === "string" ? body(result) : result;
     } catch (error) {
       const answer = error instanceof ReaderError ? refused[error.kind] : undefined;
       if (answer) throw new HttpError(...answer);
@@ -149,7 +151,7 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
       const text = ids.map(String);
       if (type === "links")
         return served(context, (signal) =>
-          reader.read("links", [resource, text, range, individualTracking], signal),
+          reader.respond("links", [resource, text, range, individualTracking], signal),
         );
 
       const params = context.url.searchParams;
@@ -164,7 +166,7 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
         throw invalidData(context);
       if (!intervals.includes(interval)) throw invalidData(context);
       return served(context, (signal) =>
-        reader.read(
+        reader.respond(
           resource === "list" ? "listCounts" : "campaignCounts",
           [counted as CountType, text, range, interval as Interval],
           signal,
@@ -179,14 +181,14 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
         // A cached read may start the shared refresh, which outlives one client.
         settings().cacheSlowQueries
           ? ok(await summaries.read(name)).text()
-          : reader.read(live, [], signal),
+          : reader.respond(live, [], signal),
       );
 
   /** getDashboardCampaigns. */
   const dashboardCampaigns: Handler = (context) => {
     const { all, ids } = scope(context);
     return served(context, (signal) =>
-      reader.read("dashboardCampaigns", [all, ids.map(String)], signal),
+      reader.respond("dashboardCampaigns", [all, ids.map(String)], signal),
     );
   };
 
@@ -195,14 +197,14 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
     const range = parseRange(context);
     const group = context.url.searchParams.get("group_by") ?? "template";
     if (group !== "template" && group !== "step") throw invalidData(context);
-    return served(context, (signal) => reader.read("sends", [group, range], signal));
+    return served(context, (signal) => reader.respond("sends", [group, range], signal));
   };
 
   /** Native: the counts of a page of sequences; 07-api-and-ui.md. */
   const sequenceCounts: Handler = (context) => {
     const ids = parseIDs(context);
     if (ids.length > MAX_SEQUENCE_IDS) throw invalidData(context);
-    return served(context, (signal) => reader.read("sequenceCounts", [ids.map(String)], signal));
+    return served(context, (signal) => reader.respond("sequenceCounts", [ids.map(String)], signal));
   };
 
   router.route(

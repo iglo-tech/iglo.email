@@ -99,6 +99,7 @@ Settings, or `PUT /api/settings`, and applies at once.
 /var/lib/iglo.email/
   iglo-email.db         the database, with -wal and -shm while it is open
   iglo-email.lock       the instance lock; holds no data and stays after the server stops
+  stage/                IDs of a large subscriber selection while it runs; empty at rest
   uploads/              media files
   backups/              pre-migration snapshots, and backups with no --output
   .iglo-email-import/   the file of a running import
@@ -574,6 +575,20 @@ Measured on one shared 6 vCPU VM with SQLite on ext4. These are observations, no
 Plan for a disk of at least twice the data directory, for the backup that is built beside it, plus
 what is kept. With `app.cache_slow_queries` on, dashboard reads stop holding the WAL open
 ([D62](design/09-decisions.md#d62-read-only-helper-processes-for-slow-reads)).
+
+Analytics and report reads have two further limits ([D62](design/09-decisions.md#d62-read-only-helper-processes-for-slow-reads),
+[measurements](perf/B7-load-memory.md)):
+
+- **Slow downloads.** Finished responses over 64 KiB that a client has not yet received are held
+  in memory up to 64 MiB in all. Past that, a new analytics read gets `503` before it starts;
+  retry shortly. Normal dashboards and reports are unaffected.
+- **Continuous polling.** If reads overlap for 15 s without a pause, new reads wait for the
+  running ones to finish and the server checkpoints the WAL, so polling with no gap cannot grow
+  it without limit. An occasional report that takes a few seconds longer is the sign.
+
+Large subscriber selections (`per_page=all`, exports, bulk actions on a query) write the matching
+IDs to `stage/` in the data directory while they run, about 8 bytes each. The files are removed as
+the request ends, and any left by a killed server when it next starts.
 
 ## Retention
 

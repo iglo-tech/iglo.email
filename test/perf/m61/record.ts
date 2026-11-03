@@ -6,7 +6,9 @@ import { join, resolve } from "node:path";
 
 export const repository = resolve(import.meta.dir, "../../..");
 // M6.1 records stay in M6.1-results.jsonl; M6.1b appends to its own file.
-export const resultsFile = join(repository, "docs/perf/M6.1b-results.jsonl");
+export const resultsFile = process.env.M61_RESULTS_FILE
+  ? resolve(process.env.M61_RESULTS_FILE)
+  : join(repository, "docs/perf/M6.1b-results.jsonl");
 
 /** Durable measurement directory (never tmpfs/ramfs, which also keeps /tmp free). */
 export function measurementBase() {
