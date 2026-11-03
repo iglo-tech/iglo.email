@@ -1,6 +1,9 @@
 // B7: the process-wide egress budget for finished analytics responses, and the forced gap that
 // lets the WAL restart under continuous polling. The child is a stand-in that prints bytes.
 import { expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAnalyticsReader } from "@/analytics/reader";
 
 const bytes = (count: number) => ["head", "-c", String(count), "/dev/zero"];
@@ -49,27 +52,44 @@ test("many unread near-cap responses stop at the budget", async () => {
 });
 
 test("continuous overlap forces a gap after the window, by the injected clock", async () => {
+  // Each child logs when it starts and, once released, when it ends; the order of the log says
+  // whether the second read ran beside the first or waited for it. No elapsed time is measured.
   const run = async (advance: boolean) => {
+    const directory = mkdtempSync(join(tmpdir(), "iglo-gap-"));
+    const log = join(directory, "log");
+    const go = join(directory, "go");
+    writeFileSync(log, "");
+    const lines = () => readFileSync(log, "utf8").split("\n").filter(Boolean);
     let time = 0;
     const reader = createAnalyticsReader({
       path: "x",
-      command: ["sleep", "0.3"],
+      command: [
+        "sh",
+        "-c",
+        `cat >/dev/null; echo start >> ${log}; while [ ! -e ${go} ]; do sleep 0.01; done; sleep 0.1; echo end >> ${log}`,
+      ],
       concurrency: 2,
       gapAfterMs: 10_000,
       now: () => time,
     });
-    const started = performance.now();
-    const first = reader.read("dashboardCounts", []);
-    if (advance) time = 10_000;
-    const second = reader.read("dashboardCounts", []).then(() => performance.now() - started);
-    await first;
-    const elapsed = await second;
-    await reader.close();
-    return elapsed;
+    try {
+      const first = reader.read("dashboardCounts", []);
+      while (lines().length < 1) await Bun.sleep(5);
+      if (advance) time = 10_000;
+      const second = reader.read("dashboardCounts", []);
+      // Within the window the second child starts beside the first; past it, it is held back
+      // until the first has finished, so there is nothing to wait for and the release comes now.
+      if (!advance) while (lines().length < 2) await Bun.sleep(5);
+      writeFileSync(go, "");
+      await Promise.all([first, second]);
+      return lines();
+    } finally {
+      await reader.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
   };
-  // Within the window both run together; past it the second waits for the first to finish.
-  expect(await run(false)).toBeLessThan(550);
-  expect(await run(true)).toBeGreaterThan(550);
+  expect(await run(false)).toEqual(["start", "start", "end", "end"]);
+  expect(await run(true)).toEqual(["start", "end", "start", "end"]);
 });
 
 test("a small body is sent whole and is not counted", async () => {
