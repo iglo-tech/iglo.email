@@ -151,6 +151,73 @@ export async function runSettingsContract(target: {
     "smtp-normalization",
   );
   check(typeof updated.smtp[0].uuid === "string" && updated.smtp[0].uuid.length > 0, "smtp-uuid");
+  // A nonempty messenger list through its whole life: add, mask, keep a blank password by uuid,
+  // refuse bad names, rename and remove.
+  const messengerPut = async (messengers: unknown[]) =>
+    request("/api/settings", "PUT", JSON.stringify({ ...updated, messengers }));
+  const messengerGet = async () =>
+    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data
+      .messengers as Record<string, any>[];
+  const postback = {
+    uuid: "",
+    enabled: true,
+    name: " My-Post_Back ",
+    root_url: "http://127.0.0.1:9/postback",
+    username: "hook",
+    password: "secret",
+    max_conns: 2,
+    timeout: "5s",
+    max_msg_retries: 1,
+  };
+  check((await messengerPut([postback])).status === 200, "messenger-add");
+  let listed = await messengerGet();
+  check(
+    listed.length === 1 &&
+      listed[0]!.name === "my-postback" &&
+      typeof listed[0]!.uuid === "string" &&
+      listed[0]!.uuid.length > 0 &&
+      listed[0]!.password === "••••••" &&
+      listed[0]!.root_url === postback.root_url &&
+      listed[0]!.max_conns === 2,
+    "messenger-projection",
+  );
+  const kept = { ...listed[0], password: "", timeout: "7s" };
+  check((await messengerPut([kept])).status === 200, "messenger-keep-password");
+  listed = await messengerGet();
+  check(
+    listed.length === 1 &&
+      listed[0]!.uuid === kept.uuid &&
+      listed[0]!.password === "••••••" &&
+      listed[0]!.timeout === "7s",
+    "messenger-keep-password-projection",
+  );
+  check(
+    (await messengerPut([{ ...kept, password: "longer-secret" }])).status === 200 &&
+      (await messengerGet())[0]!.password === "•".repeat("longer-secret".length),
+    "messenger-change-password",
+  );
+  for (const [label, names] of [
+    ["duplicate", ["dup", "DUP"]],
+    ["reserved", ["email"]],
+    ["empty", ["  "]],
+    ["empty-after-cleaning", ["___"]],
+  ] as const)
+    check(
+      (await messengerPut(names.map((name) => ({ ...postback, name })))).status === 400,
+      `messenger-name-${label}`,
+    );
+  check(
+    (await messengerGet()).length === 1 && (await messengerGet())[0]!.uuid === kept.uuid,
+    "messenger-refusal-atomic",
+  );
+  check((await messengerPut([{ ...kept, name: "Renamed" }])).status === 200, "messenger-rename");
+  listed = await messengerGet();
+  check(
+    listed.length === 1 && listed[0]!.name === "renamed" && listed[0]!.uuid === kept.uuid,
+    "messenger-rename-projection",
+  );
+  check((await messengerPut([])).status === 200, "messenger-remove");
+  check((await messengerGet()).length === 0, "messenger-removed");
   const addressCandidate = structuredClone(updated);
   addressCandidate["app.from_email"] = ['"Display, Name" <"quoted local"@example.invalid>'];
   check(

@@ -107,7 +107,10 @@ function canonical(path: string): string {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   // realpath also says ENOENT for a broken link, and writing through one leaves this path.
-  if (lstatSync(path, { throwIfNoEntry: false })) throw new Error("Broken link");
+  const entry = lstatSync(path, { throwIfNoEntry: false });
+  // Another request may have created the directory since realpath looked, which is not a link.
+  if (entry && !entry.isSymbolicLink()) return realpathSync(path);
+  if (entry) throw new Error("Broken link");
   const parent = dirname(path);
   return parent === path ? path : join(canonical(parent), basename(path));
 }

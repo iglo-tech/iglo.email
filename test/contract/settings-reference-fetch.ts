@@ -5,8 +5,12 @@ export async function settingsFetch(
   init: RequestInit,
   reference: boolean,
 ): Promise<Response> {
-  const deadline = Date.now() + 5000;
+  // A restart on a loaded host has outlasted a 5 s wait; the failure below says how long it waited.
+  const started = Date.now();
+  const deadline = started + 20_000;
+  let attempts = 0;
   for (;;) {
+    attempts++;
     try {
       const response = await fetch(url, init);
       const method = /^(GET|PUT|POST|DELETE)$/.test(init.method ?? "GET")
@@ -32,7 +36,9 @@ export async function settingsFetch(
           : "OTHER";
         const code = (error as { code?: string }).code;
         const reason = code === "ECONNREFUSED" ? "refused" : "other";
-        throw new Error(`FAIL settings-fetch-${method}-${reason}`);
+        const waited = Date.now() - started;
+        const detail = `attempts=${attempts} waited=${waited}ms code=${code ?? "none"} reference=${reference}`;
+        throw new Error(`FAIL settings-fetch-${method}-${reason} (${detail})`);
       }
       await new Promise((resolve) => setTimeout(resolve, 25));
     }

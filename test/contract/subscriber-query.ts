@@ -410,6 +410,84 @@ export async function runSubscriberQuery(target: {
       1,
     );
 
+    // Several lists at once: export by more than one list, and add, unsubscribe and remove on two
+    // lists in one query-selected action.
+    const listC = (await create("/api/lists", "lists", { name: `qc-${tag}`, optin: "single" })).id;
+    const listD = (await create("/api/lists", "lists", { name: `qd-${tag}`, optin: "single" })).id;
+    const multi = `Multi ${tag}`;
+    const m1 = await create("/api/subscribers", "subscribers", {
+      email: `m1-${tag}@example.test`,
+      name: multi,
+      lists: [listC],
+    });
+    const m2 = await create("/api/subscribers", "subscribers", {
+      email: `m2-${tag}@example.test`,
+      name: multi,
+      lists: [listD],
+    });
+    const m3 = await create("/api/subscribers", "subscribers", {
+      email: `m3-${tag}@example.test`,
+      name: multi,
+    });
+    const several = await request(`/api/subscribers/export?list_id=${listC}&list_id=${listD}`);
+    const severalLines = (await several.text()).split("\n");
+    check(
+      several.status === 200 &&
+        severalLines.length === 4 &&
+        severalLines[1]!.startsWith(`${m1.uuid},`) &&
+        severalLines[2]!.startsWith(`${m2.uuid},`),
+      "subscriber-export-lists",
+    );
+    const members = async (list: number, extra = "") =>
+      names(
+        await json(
+          `/api/subscribers?list_id=${list}&search=${q(multi)}${extra}&order_by=email&order=asc`,
+        ).then((x) => x.body),
+      );
+    const both = [listC, listD];
+    r = await json("/api/subscribers/query/lists", "PUT", {
+      search: multi,
+      action: "add",
+      target_list_ids: both,
+      status: "confirmed",
+    });
+    check(same(r.body, { data: true }), "subscriber-bulk-add-lists");
+    check(
+      same(await members(listC), ["m1", "m2", "m3"]) &&
+        same(await members(listD), ["m1", "m2", "m3"]),
+      "subscriber-bulk-add-lists-members",
+    );
+    r = await json("/api/subscribers/query/lists", "PUT", {
+      search: multi,
+      action: "unsubscribe",
+      target_list_ids: both,
+    });
+    check(
+      same(r.body, { data: true }) &&
+        same(await members(listC, "&subscription_status=unsubscribed"), ["m1", "m2", "m3"]) &&
+        same(await members(listD, "&subscription_status=unsubscribed"), ["m1", "m2", "m3"]),
+      "subscriber-bulk-unsubscribe-lists",
+    );
+    r = await json("/api/subscribers/query/lists", "PUT", {
+      search: multi,
+      action: "remove",
+      target_list_ids: both,
+    });
+    check(
+      same(r.body, { data: true }) &&
+        same(await members(listC), []) &&
+        same(await members(listD), []),
+      "subscriber-bulk-remove-lists",
+    );
+
+    r = await json("/api/subscribers/query/delete", "POST", { search: multi });
+    check(same(r.body, { data: true }), "subscriber-bulk-delete-lists");
+    for (const sub of [m1, m2, m3])
+      resources.splice(
+        resources.findIndex((x) => x.kind === "subscribers" && x.id === sub.id),
+        1,
+      );
+
     // Accented search: case folds, accents do not (upstream `~*`), for listing and deletion.
     const accent = await create("/api/subscribers", "subscribers", {
       email: `accent-${tag}@example.test`,

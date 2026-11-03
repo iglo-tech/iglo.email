@@ -56,8 +56,11 @@ async function save(page, id, action = () => button(page, "Save changes").click(
 
 async function menu(page, name, action) {
   const item = row(page, name).getByRole("menuitem", { name: action, exact: true });
-  if (!(await item.isVisible())) await openMenu(row(page, name));
-  await item.click();
+  // A menu that is closing still reads as visible, so the whole open-and-click is retried.
+  await expect(async () => {
+    if (!(await item.isVisible())) await openMenu(row(page, name));
+    await item.click({ timeout: 3000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 async function switchFormat(page, format, accept = true) {
