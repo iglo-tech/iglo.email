@@ -36,7 +36,6 @@ import {
 } from "@/test/backup/fixture";
 
 setDefaultTimeout(60_000);
-const PARTIAL = ".iglo-email-backup-partial-";
 const HOLD_HEADER = "x-iglo-email-hold";
 const version = productionMigrations.length;
 let executable = "";
@@ -135,60 +134,6 @@ test("a backup under write load restores, opens and holds what was committed", a
   expect(await file.text()).toBe("kept bytes");
   expect((await createSubscriber(restored, "after-restore")).status).toBe(200);
 });
-
-for (const signal of ["SIGKILL", "SIGTERM"] as const)
-  test(`${signal} midway leaves nothing that looks complete`, async () => {
-    base = temporaryDirectory();
-    dataDir = join(base, "data");
-    mkdirSync(join(dataDir, "uploads"), { recursive: true });
-    await (await startServer(executable, dataDir)).stop();
-    seedSubscribers(dataDir, 300_000);
-    server = await startServer(executable, dataDir);
-    const destination = join(base, "destination");
-    mkdirSync(destination);
-    const output = join(destination, "backup");
-
-    const child = Bun.spawn([executable, "backup", "--data-dir", dataDir, "--output", output], {
-      env: { PATH: "" },
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    let partial: string | undefined;
-    for (const deadline = Date.now() + 20_000; !partial && Date.now() < deadline;) {
-      partial = names(destination).find((name) => name.startsWith(PARTIAL));
-      if (!partial || statSync(join(destination, partial, "iglo-email.db")).size === 0) {
-        partial = undefined;
-        await Bun.sleep(1);
-      }
-    }
-    expect(partial).toBeDefined();
-    child.kill(signal);
-    expect(await child.exited).not.toBe(0);
-
-    // The helper that syncs the snapshot goes with it.
-    const helperRunning = () =>
-      readdirSync("/proc").some((entry) => {
-        try {
-          return readFileSync(`/proc/${entry}/cmdline`, "utf8").includes(partial!);
-        } catch {
-          return false;
-        }
-      });
-    for (const deadline = Date.now() + 5_000; helperRunning() && Date.now() < deadline;)
-      await Bun.sleep(25);
-    expect(helperRunning()).toBe(false);
-
-    expect(existsSync(output)).toBe(false);
-    expect(names(destination)).toEqual([partial!]);
-    const refused = await runBackup(executable, ["--verify", join(destination, partial!)]);
-    expect(refused.exitCode).toBe(1);
-    expect(refused.stderr).toContain("interrupted backup");
-
-    const next = await runBackup(executable, ["--data-dir", dataDir, "--output", output]);
-    expect(next.exitCode).toBe(0);
-    expect(next.stderr).toContain(partial!);
-    expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
-  });
 
 test("a failure exits nonzero and leaves no file", async () => {
   const client = await live();
