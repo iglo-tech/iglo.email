@@ -1,14 +1,30 @@
 # Adapted browser specs
 
-`bun run e2e` builds the executable, starts it on a generated data directory
-with the loopback SMTP sink, and runs `specs/*.e2e.js` serially with Playwright
-in the Chromium under `~/.cache/ms-playwright`. A second instance has no
-administrator, for the fresh-install case. Everything stops when the run ends.
-It needs no Docker and is not part of `bun run check`. If Playwright cannot find
-its browser, `node_modules/.bin/playwright install chromium` fetches the revision
-it pins. Failures leave a screenshot and trace in `dist/e2e-results`.
+`bun run e2e` builds the executable and runs `specs/*.e2e.js` with Playwright in the Chromium
+under `~/.cache/ms-playwright`. It starts `E2E_WORKERS` independent stacks (default 2), each with
+its own server on a generated data directory, loopback SMTP sink and a second, administrator-less
+instance for the fresh-install case. Spec files are the unit of work: each stack takes the next
+file from a queue, longest first, and runs it serially with one Playwright process, so tests inside
+a file keep their order and their shared setup. Specs change settings every user of a server shares
+(SMTP, captcha, tracking, trusted URLs, and `reset` in the subscribers files empties every list), so
+two files never share a server. Everything stops when the run ends. It needs no Docker and is not
+part of `bun run check`. If Playwright cannot find its browser, `node_modules/.bin/playwright
+install chromium` fetches the revision it pins. Failures leave a screenshot and trace in
+`dist/e2e-results/<spec file>`; the trace has DOM snapshots, network and console but no screencast
+frames, which cost a quarter of the CPU of a run. The run ends with the slowest spec files, and
+`dist/e2e-results/timings.json` lists every file and test with its duration.
 
-One file: `bun run e2e test/e2e/specs/login.e2e.js`. Arguments go to Playwright.
+`E2E_WORKERS=1 bun run e2e` runs every file on one stack, longest first, one Playwright process per
+file. `E2E_WORKERS` must be a whole number, 1 or more; anything else stops the run before it starts.
+Each stack takes about 1.1 GiB and one to one and a half cores while it works (the Playwright
+process, two servers and a Chromium). The default is 2 because the 6-core, 16 GiB VM is shared with
+other agents: 2 stacks keep the run at about 3 cores and 2.2 GiB. On an idle host `E2E_WORKERS=3` or
+`E2E_WORKERS=4` is faster (see `docs/perf/e2e-speed.md`); more than 4 does not help, since the
+longest files then bound the time. A spec that is too long to balance is split along its describe
+blocks (`subscribers*.e2e.js`, with the shared steps in `subscribers-helpers.js`).
+
+One file: `bun run e2e test/e2e/specs/login.e2e.js`. Arguments go to Playwright and run on one
+stack, in order.
 
 `bun run e2e:browser` makes one `agent-browser` pass over login, 2FA enrolment,
 password reset and the dashboard against the same servers and prints what each
@@ -34,7 +50,11 @@ one that needs a handler to run sets `bypassCSP`. `csp.e2e.js` walks every scree
    `specs/<name>.e2e.js`, with a header naming the source. The name matters:
    `bun test` would run a `.spec.js` file.
 2. Import `test` from `../helpers.js`, not from `@playwright/test`. It makes each
-   test its own client, so a run stays inside the login limit.
+   test its own client, so a run stays inside the login limit. Start a session with `signIn(page)`,
+   which posts the login form's request without drawing any page (about 0.3 s, against 0.7 s and
+   a dashboard render for the form), then `page.goto` the screen. Use `login(page)`, the form itself,
+   only where logging in is what is tested (login, two-factor, password reset, a role's first
+   screen). `logout` opens `/admin` when the page is not on an admin screen.
 3. Replace `resetDB` with data of your own: `createUser`, `api` and `unique`
    instead of a clean database. Upstream's `psql` has no equivalent; assert
    through the API or the screen.

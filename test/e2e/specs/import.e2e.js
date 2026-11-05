@@ -2,7 +2,7 @@
 // memory with unique addresses instead of fixtures/subs.csv and resetDB, and clears the importer
 // when it ends. The cases after upstream's two are this project's: polling bounds and refusals.
 import { expect } from "@playwright/test";
-import { api, confirm, createUser, login, logout, selectList, test, unique } from "../helpers.js";
+import { api, confirm, createUser, logout, selectList, test, unique, signIn } from "../helpers.js";
 
 const IMPORT = "/admin/subscribers/import";
 const STATUS = "**/api/import/subscribers";
@@ -41,7 +41,7 @@ async function finishImport(page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
   await api(page, "/api/import/subscribers", "DELETE");
 });
 test.afterEach(async ({ page }) => {
@@ -279,7 +279,7 @@ test("polling gives up after repeated failures and keeps the last status", async
 test("the route needs subscribers:import", async ({ page }) => {
   const none = await createUser(page, ["lists:get_all"]);
   await logout(page);
-  await login(page, none.username, "e2e-user-password");
+  await signIn(page, none.username, "e2e-user-password");
   const denied = await page.goto(IMPORT);
   expect(denied.status()).toBe(403);
 });

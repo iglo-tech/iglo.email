@@ -4,7 +4,7 @@
 import { createServer } from "node:http";
 import { expect } from "@playwright/test";
 import { corpus, audit } from "../hostile-html.js";
-import { api, login, ORIGIN, test, unique } from "../helpers.js";
+import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
 const EDITOR = 'richtext-editor [contenteditable="true"]';
 
@@ -99,7 +99,7 @@ for (const [mode, bypassCSP] of [
           if (/^https?:/.test(request.url()) && !request.url().startsWith(ORIGIN))
             outside.push(request.url());
         });
-        await login(page);
+        await signIn(page);
         const c = await campaign(page);
         await open(page, c.id);
         const before = await page.evaluate(() => document.querySelectorAll("script").length);
@@ -124,7 +124,7 @@ for (const [mode, bypassCSP] of [
 test.describe("what the editor keeps from a hostile body", () => {
   test.use({ violations: "expected" });
   test("a head is named in the warning, with what a body removed", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(
       page,
       "<html><head><title>t</title><style>p{color:red}</style><meta charset=utf-8>" +
@@ -137,7 +137,7 @@ test.describe("what the editor keeps from a hostile body", () => {
   });
 
   test("a body holding the confirm template's id leaves the dialog working", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page, '<div id="confirm-dialog-template">x</div><p>y</p>');
     await open(page, c.id);
     await page.locator(EDITOR).pressSequentially("x");
@@ -155,7 +155,7 @@ test.describe("foreign content and undo", () => {
   test("editing around markup that foreign content would reparse stays in the allow-list", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body =
       "<p>one</p><table><tr><td>cell<svg><title>a</title></svg></td></tr></table>" +
       "<p>two<math><mi>x</mi></math></p>";
@@ -180,7 +180,7 @@ test.describe("foreign content and undo", () => {
 
 test.describe("a refused URL", () => {
   test("stays in the link dialog with a message", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page);
     await open(page, c.id);
     await page.locator(EDITOR).click();
@@ -201,7 +201,7 @@ test.describe("a refused URL", () => {
   });
 
   test("stays in the image dialog with a message", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page);
     await open(page, c.id);
     await page.locator('richtext-editor [data-cmd="image"]').first().click();
@@ -232,7 +232,7 @@ test.describe("remote images load on request", () => {
   test("a body fetches nothing, reports nothing and is stored as written until asked", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body =
       `<p>before</p><p><img src="${remote}/banner.gif" alt="banner"></p>` +
       `<table><tbody><tr><td background="${remote}/cell.gif">cell</td></tr></tbody></table>`;
@@ -264,7 +264,7 @@ test.describe("remote images load on request", () => {
   test("a style that fetches a remote address is held and noticed, and stored as written (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body = `<p style="background-image: url('${remote}/style.gif'); color: red">styled</p>`;
     const c = await campaign(page, body);
     await open(page, c.id);
@@ -293,7 +293,7 @@ test.describe("remote images load on request", () => {
   test("aligning a block with a held background keeps the alignment and the background (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body = `<p style="background-image: url('${remote}/bg.gif'); padding: 16px">Hello</p>`;
     const c = await campaign(page, body);
     await open(page, c.id);
@@ -311,7 +311,7 @@ test.describe("remote images load on request", () => {
   test("resizing an image with a held background keeps the size and the background (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body = `<p>text <img src="/admin/static/favicon.png" alt="b" style="background-image: url('${remote}/img-bg.gif'); padding: 2px"> more</p>`;
     const c = await campaign(page, body);
     await open(page, c.id);
@@ -349,7 +349,7 @@ test.describe("remote images load on request", () => {
     page,
     context,
   }) => {
-    await login(page);
+    await signIn(page);
     const cells = orderCells(remote);
     const body = `<table><tbody><tr>${cells.map((c, i) => `<td style="${c}">cell${i}</td>`).join("")}</tr></tbody></table>`;
     const c = await campaign(page, body);
@@ -385,7 +385,7 @@ test.describe("remote images load on request", () => {
   });
 
   test("centring a hero cell keeps the colour after the shorthand (B10)", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const [hero] = orderCells(remote);
     const c = await campaign(
       page,
@@ -417,7 +417,7 @@ test.describe("remote images load on request", () => {
     test(`saving a span with a remote background and ${other} unedited keeps it (B10)`, async ({
       page,
     }) => {
-      await login(page);
+      await signIn(page);
       const style = `background: url('${remote}/span.gif') no-repeat left center; ${other}`;
       const c = await campaign(page, `<p>Hi <span style="${style}">Sale</span> now</p>`);
       await open(page, c.id);
@@ -442,7 +442,7 @@ test.describe("remote images load on request", () => {
   test("bolding a word inside a span with a held background keeps the background (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const style = `background: url('${remote}/span.gif') no-repeat; font-weight: normal`;
     const c = await campaign(page, `<p>Hi <span style="${style}">Sale today</span> now</p>`);
     await open(page, c.id);
@@ -462,7 +462,7 @@ test.describe("remote images load on request", () => {
     test("a cut and paste keeps the background and the padding, and the notice (B10)", async ({
       page,
     }) => {
-      await login(page);
+      await signIn(page);
       const body = `<p style="background-image: url('${remote}/moved-bg.gif'); padding: 16px">move me</p>`;
       const c = await campaign(page, body);
       await open(page, c.id);
@@ -478,7 +478,7 @@ test.describe("remote images load on request", () => {
     test("a paste carrying both a style and its held declarations keeps both (B10)", async ({
       page,
     }) => {
-      await login(page);
+      await signIn(page);
       const c = await campaign(page);
       await open(page, c.id);
       await page.locator(EDITOR).evaluate((el, html) => {
@@ -501,7 +501,7 @@ test.describe("remote images load on request", () => {
   });
 
   test("an image from a root URL the policy cannot name is held (B10)", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page);
     await open(page, c.id);
     // The page's own policy names no origin with `_` in its host, so the editor must not treat it
@@ -519,7 +519,7 @@ test.describe("remote images load on request", () => {
     test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
     test("keeps the addresses of held images and backgrounds", async ({ page }) => {
-      await login(page);
+      await signIn(page);
       const body =
         `<p>first</p><p>move <img src="${remote}/moved.gif" alt="banner"> me</p>` +
         `<table><tbody><tr><td background="${remote}/moved-cell.gif">cell</td></tr></tbody></table>` +
@@ -544,7 +544,7 @@ test.describe("remote images load on request", () => {
     });
 
     test("a pasted internal attribute is an address like any other", async ({ page }) => {
-      await login(page);
+      await signIn(page);
       const c = await campaign(page);
       await open(page, c.id);
       await page.locator(EDITOR).evaluate((el, html) => {
@@ -565,7 +565,7 @@ test.describe("remote images load on request", () => {
 
   test.describe("the image dialog on a held image", () => {
     const imageAfter = async (page, stored, change) => {
-      await login(page);
+      await signIn(page);
       const c = await campaign(page, `<p>${stored}</p>`);
       await open(page, c.id);
       await page.locator(`${EDITOR} img`).dblclick();
@@ -636,7 +636,7 @@ test.describe("remote images load on request", () => {
       return true;
     };
     const afterDrag = async (page, stored) => {
-      await login(page);
+      await signIn(page);
       const c = await campaign(page, `<p>text ${stored} more</p>`);
       await open(page, c.id);
       await page.locator(`${EDITOR} img`).click();
@@ -668,7 +668,7 @@ test.describe("remote images load on request", () => {
       });
 
     test("a click on a held image releases an image selected before", async ({ page }) => {
-      await login(page);
+      await signIn(page);
       const c = await campaign(
         page,
         `<p>logo <img src="/admin/static/favicon.png" alt="logo"></p>` +
@@ -701,7 +701,7 @@ test.describe("remote images load on request", () => {
   });
 
   test("an edit typed while a save is in flight is still unsaved", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page, `<p><img src="${remote}/during.gif" alt="a"></p>`);
     await page.goto(`/admin/campaigns/${c.id}`);
     let release;
@@ -730,7 +730,7 @@ test.describe("remote images load on request", () => {
   test("an archive slug typed while a save is in flight is still unsaved (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page, `<p><img src="${remote}/slug.gif" alt="a"></p>`);
     await ok(page, `/api/campaigns/${c.id}/archive`, "PUT", {
       archive: true,
@@ -765,7 +765,7 @@ test.describe("remote images load on request", () => {
   });
 
   test("a changed subject is asked about before the page reloads", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page, `<p><img src="${remote}/subject.gif" alt="a"></p>`);
     await page.goto(`/admin/campaigns/${c.id}`);
     await page.locator('input[name="subject"]').fill("Changed subject");
@@ -788,7 +788,7 @@ test.describe("remote images load on request", () => {
   test("a typed address waits the same way, and unsaved changes are asked about", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     requests.length = 0;
     const c = await campaign(page);
     await open(page, c.id);

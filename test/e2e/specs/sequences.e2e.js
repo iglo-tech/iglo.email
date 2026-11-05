@@ -11,6 +11,7 @@ import {
   PASSWORD,
   test,
   unique,
+  signIn,
 } from "../helpers.js";
 
 const hostile = (kind) =>
@@ -53,7 +54,7 @@ test("test mode advances on the timeline, to the sink, leaving the definition al
   page,
 }) => {
   test.setTimeout(180_000);
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const seq = await sequence(page, {
     steps: [
@@ -100,7 +101,7 @@ test("test mode advances on the timeline, to the sink, leaving the definition al
 });
 
 test("a person without consent is refused in the dialog", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const list = await api(page, "/api/lists", "POST", {
     name: unique("consent"),
@@ -124,7 +125,7 @@ test("a person without consent is refused in the dialog", async ({ page }) => {
 test("the editor saves what it shows, keeps what it hides and shows a refusal", async ({
   page,
 }) => {
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   await page.goto("/admin/sequences/new");
   const name = unique("made");
@@ -181,7 +182,7 @@ test("the editor saves what it shows, keeps what it hides and shows a refusal", 
 test("live enrollments are named before a save, and a viewer without SQL is refused it", async ({
   page,
 }) => {
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const seq = await sequence(page, {
     reentry: "always",
@@ -215,7 +216,7 @@ test("live enrollments are named before a save, and a viewer without SQL is refu
 });
 
 test("the explorer filters, pages, enrolls and cancels", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const seq = await sequence(page, {
     reentry: "always",
@@ -264,7 +265,7 @@ test("the explorer filters, pages, enrolls and cancels", async ({ page }) => {
 });
 
 test("the subscriber page shows that person's events, enrollments and sends", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const eventName = unique("evt");
   await sequence(page, {
@@ -292,7 +293,7 @@ test("the subscriber page shows that person's events, enrollments and sends", as
 test("hostile names, event data and attributes render as text", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const name = hostile("sequence");
   const eventName = unique("evt");
@@ -350,7 +351,7 @@ test("hostile names, event data and attributes render as text", async ({ page })
 });
 
 test("an enrollment hides its person from a viewer who can't read them", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const seq = await sequence(page, {
     steps: [{ wait: "P1D", kind: "transactional", template_id: (await template(page)).id }],
   });
@@ -387,7 +388,7 @@ test("an enrollment hides its person from a viewer who can't read them", async (
 });
 
 test("template previews stay in the sandboxed frame", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const made = await api(page, "/api/templates", "POST", {
     name: unique("hostile-tx"),
     type: "tx",
@@ -407,7 +408,7 @@ test("template previews stay in the sandboxed frame", async ({ page }) => {
 });
 
 test("a changed wait is applied to waiting enrollments on request", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const seq = await sequence(page, {
     reentry: "always",
@@ -440,7 +441,7 @@ test("a changed wait is applied to waiting enrollments on request", async ({ pag
 });
 
 test("a step condition is checked as it is typed", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const tx = await template(page);
   const seq = await sequence(page, {
     steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }],
@@ -457,7 +458,7 @@ test("the activity tab shows views and clicks from a real campaign and clears th
   page,
 }) => {
   test.setTimeout(120_000);
-  await login(page);
+  await signIn(page);
   // Per-subscriber activity is recorded only with individual tracking; put the setting back after.
   const settings = await api(page, "/api/settings");
   const tracking = settings.body.data["privacy.individual_tracking"];

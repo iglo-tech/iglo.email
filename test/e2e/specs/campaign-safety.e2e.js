@@ -2,7 +2,17 @@
 // stored names stay text, a stale status shows the API's message, a second click sends nothing
 // twice, and live stats stop when nothing runs. listmonk has no such spec at 6fcd95f.
 import { expect } from "@playwright/test";
-import { api, confirm, login, openMenu, PASSWORD, createUser, test, unique } from "../helpers.js";
+import {
+  api,
+  confirm,
+  login,
+  openMenu,
+  PASSWORD,
+  createUser,
+  test,
+  unique,
+  signIn,
+} from "../helpers.js";
 
 const CAMPAIGNS = "/admin/campaigns";
 const TEMPLATES = "/admin/templates";
@@ -70,7 +80,7 @@ test("a campaign or template body with script cannot act on the application's or
   page,
 }) => {
   const asked = watch(page);
-  await login(page);
+  await signIn(page);
   const c = await create(page, { body: payload, archive_meta: {} });
   const body = `${payload}{{ content | raw }}`;
   const t = await ok(page, "/api/templates", "POST", {
@@ -118,7 +128,7 @@ test("a campaign or template body with script cannot act on the application's or
 test("hostile campaign, subject, template and tag names render as text", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await login(page);
+  await signIn(page);
   const hostile = (kind) =>
     `<img src=x onerror="window.pwned='${kind}'"> "'\` {{ 7*7 }} \${7*7} x-on:click="window.pwned=1" ${unique(kind)}`;
   const name = hostile("campaign");
@@ -203,7 +213,7 @@ test("hostile campaign, subject, template and tag names render as text", async (
 test("a stale listing or form shows the API's message and offers what is true now", async ({
   page,
 }) => {
-  await login(page);
+  await signIn(page);
   const list = await ok(page, "/api/lists", "POST", {
     name: unique("Stale"),
     type: "private",
@@ -235,7 +245,7 @@ test("a stale listing or form shows the API's message and offers what is true no
 });
 
 test("a second click changes the status once", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const puts = [];
   page.on("request", (r) => {
     if (r.method() === "PUT" && r.url().endsWith("/status")) puts.push(r.url());
@@ -271,7 +281,7 @@ test("a second click changes the status once", async ({ page }) => {
 test("live stats update while a campaign runs and stop when nothing runs or the page is hidden", async ({
   page,
 }) => {
-  await login(page);
+  await signIn(page);
   const c = await create(page);
   // A running row without sending: the listing and the stats are this test's.
   let statuses = "running";
@@ -321,7 +331,7 @@ test("live stats update while a campaign runs and stop when nothing runs or the 
 });
 
 test("the templates chosen on a campaign show after a reload", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const layout = await ok(page, "/api/templates", "POST", {
     name: `zz ${unique("layout")}`,
     type: "campaign",
@@ -355,7 +365,7 @@ test("the templates chosen on a campaign show after a reload", async ({ page }) 
 });
 
 test("an opt-in campaign created from a list reaches the form", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const name = unique("Double list");
   await ok(page, "/api/lists", "POST", { name, type: "private", optin: "double" });
   await page.goto(`/admin/lists?query=${name}`);
@@ -371,7 +381,7 @@ test("an opt-in campaign created from a list reaches the form", async ({ page })
 });
 
 test("the screen offers what each permission allows", async ({ page, browser }) => {
-  await login(page);
+  await signIn(page);
   const list = await ok(page, "/api/lists", "POST", {
     name: unique("Scoped"),
     type: "private",

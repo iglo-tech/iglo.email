@@ -3,7 +3,7 @@
 // settings are read live here, so a test turns them on through the API. resetDB's complaint action
 // is set the same way. Differences beside the cases below, with their rows in 07-api-and-ui.md.
 import { expect } from "@playwright/test";
-import { api, confirm, createUser, login, logout, openMenu, test, unique } from "../helpers.js";
+import { api, confirm, createUser, logout, openMenu, test, unique, signIn } from "../helpers.js";
 
 const BOUNCES = "/admin/subscribers/bounces";
 
@@ -60,14 +60,14 @@ async function subStatus(page, id) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
   await enableBounces(page);
 });
 // The run shares one database: a later spec expects bounces as this one found them.
 test.afterEach(async ({ page, context }) => {
   // A test may end as a user who cannot write settings.
   await context.clearCookies();
-  await login(page);
+  await signIn(page);
   const current = await ok(page, "/api/settings");
   const { "bounce.enabled": enabled, "bounce.webhooks_enabled": webhooks } = before;
   await ok(page, "/api/settings", "PUT", {
@@ -241,7 +241,7 @@ test("a viewer sees no destructive action and the route needs bounces:get", asyn
   const none = await createUser(page, ["lists:get_all"]);
   await logout(page);
 
-  await login(page, viewer.username, "e2e-user-password");
+  await signIn(page, viewer.username, "e2e-user-password");
   await page.goto(`${BOUNCES}?source=${source}`);
   const row = bounceRow(page, sub.email);
   await expect(row).toBeVisible();
@@ -255,7 +255,7 @@ test("a viewer sees no destructive action and the route needs bounces:get", asyn
   await expect(page.getByTestId("btn-manage-blocklist")).toHaveCount(0);
   await logout(page);
 
-  await login(page, none.username, "e2e-user-password");
+  await signIn(page, none.username, "e2e-user-password");
   const denied = await page.goto(BOUNCES);
   expect(denied.status()).toBe(403);
 });
@@ -282,10 +282,10 @@ test("rejects invalid scopes, preserves explicit IDs, and uses bounce permission
   // same permission check, and the CSRF header api() sends.
   const manager = await createUser(page, ["bounces:get", "bounces:manage"]);
   await logout(page);
-  await login(page, manager.username, "e2e-user-password");
+  await signIn(page, manager.username, "e2e-user-password");
   await ok(page, `/api/bounces/blocklist?id=${bounces[0].id}`, "PUT");
   await logout(page);
-  await login(page);
+  await signIn(page);
   expect(await subStatus(page, bounces[0].subscriber_id)).toBe("blocklisted");
   expect(await subStatus(page, bounces[1].subscriber_id)).toBe("enabled");
   await ok(page, `/api/bounces?all=true&id=${bounces[0].id}`, "DELETE");

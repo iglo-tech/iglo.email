@@ -14,6 +14,7 @@ import {
   openMenu,
   test,
   unique,
+  signIn,
 } from "../helpers.js";
 
 const USERS = "/admin/users";
@@ -55,7 +56,7 @@ async function signedIn(page, username, password, next = "/admin/lists") {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
 });
 
 test.describe("Users, roles & login", () => {
@@ -403,6 +404,8 @@ test.describe("Your own account", () => {
     await other.getByTestId("btn-save").click();
     const sent = (await request).postDataJSON();
     expect([sent.user_role_id, sent.list_role_id]).toEqual([0, 0]);
+    // The page reloads itself after the update and shows the toast then; a goto before that is aborted.
+    await expect(other.locator(".toast")).toBeVisible();
 
     const { body } = await api(page, `/api/users/${manager.id}`);
     expect(body.data.name).toBe("Renamed");

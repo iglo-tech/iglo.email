@@ -2,7 +2,7 @@
 // each test clones the seeded templates under unique names instead of counting and deleting them;
 // the seeded visual sample does not exist (D54) and bodies are Liquid (D9).
 import { expect } from "@playwright/test";
-import { api, confirm, login, openMenu, test, unique } from "../helpers.js";
+import { api, confirm, openMenu, test, unique, signIn } from "../helpers.js";
 
 const TEMPLATES = "/admin/templates";
 const DEFAULT = "Default campaign template";
@@ -31,7 +31,7 @@ async function clone(page, source, name) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
 });
 
 test("shows the seeded default templates", async ({ page }) => {

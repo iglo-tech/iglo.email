@@ -2,7 +2,7 @@
 // spec at 6fcd95f; this reads each page in the browser, with an error and a marker in `window` as
 // the proof that nothing ran.
 import { expect } from "@playwright/test";
-import { api, confirm, login, openMenu, test, unique } from "../helpers.js";
+import { api, confirm, openMenu, test, unique, signIn } from "../helpers.js";
 
 const hostile = (kind) =>
   `<img src=x onerror="window.pwned='${kind}'"> "'\` {{ 7*7 }} \${7*7} x-on:click="window.pwned=1" x-html=x @click=y ${unique(kind)}`;
@@ -10,7 +10,7 @@ const hostile = (kind) =>
 test("hostile names render as text on every screen", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await login(page);
+  await signIn(page);
 
   const listName = hostile("list");
   const tag = `<b>${unique("tag")}</b>'"`;
@@ -102,7 +102,7 @@ test("hostile names render as text on every screen", async ({ page }) => {
 });
 
 test("hostile URL parameters stay in their attributes", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const value = `"><img src=x onerror="window.pwned=1">{{7*7}}`;
   const q = encodeURIComponent(value);
   for (const path of [

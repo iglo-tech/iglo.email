@@ -4,7 +4,17 @@
 // 6fcd95f; docs/design/09-decisions.md#d66 lists what the sanitizer keeps.
 import { createServer } from "node:http";
 import { expect } from "@playwright/test";
-import { api, confirm, createUser, login, ORIGIN, PASSWORD, test, unique } from "../helpers.js";
+import {
+  api,
+  confirm,
+  createUser,
+  login,
+  ORIGIN,
+  PASSWORD,
+  test,
+  unique,
+  signIn,
+} from "../helpers.js";
 
 // These prove the sanitizer on its own, and `neverRan` needs a handler that does run: the policy
 // would stop both. editor-containment.e2e.js holds the corpus with and without it.
@@ -68,7 +78,7 @@ async function neverRan(page, marker) {
 const marker = () => unique("mark").replace("-", "");
 
 test("a stored handler does not run when the rich-text editor loads it", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const mark = marker();
   const body = hostile(mark);
   const c = await create(page, { body });
@@ -102,7 +112,7 @@ test("a stored handler does not run when the rich-text editor loads it", async (
 });
 
 test("a pasted handler does not run", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const c = await create(page);
   await open(page, c);
   const mark = marker();
@@ -121,7 +131,7 @@ test("a pasted handler does not run", async ({ page }) => {
 });
 
 test("a dropped handler does not run", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const c = await create(page);
   await open(page, c);
   const mark = marker();
@@ -146,7 +156,7 @@ test("a dropped handler does not run", async ({ page }) => {
 
 for (const to of ["richtext", "markdown", "plain"]) {
   test(`a handler does not run on switching html to ${to}`, async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const mark = marker();
     const c = await create(page, { content_type: "html", body: hostile(mark) });
     await open(page, c);
@@ -165,7 +175,7 @@ for (const to of ["richtext", "markdown", "plain"]) {
 test("a handler does not run on leaving the rich-text format or adding alt text", async ({
   page,
 }) => {
-  await login(page);
+  await signIn(page);
   const mark = marker();
   const c = await create(page, { body: hostile(mark) });
   await open(page, c);
@@ -187,7 +197,7 @@ for (const [cmd, title] of [
   ["source", "source"],
 ]) {
   test(`a handler does not run from the ${title} dialog`, async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await create(page);
     await open(page, c);
     const mark = marker();
@@ -204,7 +214,7 @@ for (const [cmd, title] of [
 }
 
 test("links and images cannot carry a script or a data document", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const body =
     '<p><a href="java&#9;script:window.pwned=1" id="tab">tab</a>' +
     '<a href="JaVaScRiPt:window.pwned=1" id="case">case</a>' +
@@ -232,7 +242,7 @@ test("links and images cannot carry a script or a data document", async ({ page 
 });
 
 test("an ordinary newsletter comes through the rich-text editor unchanged", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk";
   const body = `<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="border-collapse:collapse;font-family:Arial,sans-serif"><thead><tr><th colspan="2" align="left" style="padding:8px;background:#003366;color:#ffffff">April news</th></tr></thead><tbody><tr><td width="200" valign="top" style="padding:8px"><a href="https://example.test/shop?a=1&amp;b=2" target="_blank" rel="noopener" title="Shop"><img src="https://example.test/logo.png" alt="Logo" width="120" height="40" style="display:block;border:0"></a></td><td valign="top" style="padding:8px;font-size:14px;line-height:20px"><h2 id="news" style="margin:0 0 8px;color:#003366">Hello {{ subscriber.name }}</h2><p style="margin:0 0 8px">Read <a href="https://example.test/post@TrackLink" style="color:#0066cc">the post</a>, mail <a href="mailto:team@example.test">the team</a> or call <a href="tel:+48123456789">us</a>.</p><ul style="padding-left:16px"><li>One</li><li><b>Two</b></li></ul><img src="${png}" alt="Dot" width="1" height="1"></td></tr></tbody><tfoot><tr><td colspan="2" align="center" style="font-size:11px"><a href="{{ unsubscribe_url }}">Unsubscribe</a> <a href="#news">Top</a> <a href="/archive/latest">Archive</a></td></tr></tfoot></table>`;
   const c = await create(page, { body });
@@ -306,7 +316,7 @@ test.describe("previews", () => {
   for (const start of [" ", " ", "﻿", "text ", "<!-- a -->", ""]) {
     const label = [...start].map((ch) => ch.codePointAt(0).toString(16)).join(" ") || "nothing";
     test(`a template preview starting with ${label} reaches no receiver`, async ({ page }) => {
-      await login(page);
+      await signIn(page);
       const place = await receiver();
       try {
         const t = await ok(page, "/api/templates", "POST", {
@@ -325,7 +335,7 @@ test.describe("previews", () => {
   }
 
   test("the campaign and archive previews reach no receiver either", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const place = await receiver();
     try {
       const t = await ok(page, "/api/templates", "POST", {
@@ -363,7 +373,7 @@ async function saveName(page, c) {
 }
 
 test("an unrelated save keeps hidden archive metadata", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const archive_meta = { name: "Keep me", attribs: { city: "Warsaw" } };
   const c = await create(page, { archive: false, archive_meta });
   expect((await stored(page, c.id)).archive_meta).toEqual(archive_meta);
@@ -376,7 +386,7 @@ test("an unrelated save keeps hidden archive metadata", async ({ page }) => {
 test("an unrelated save keeps the instant of a schedule, and the control still changes it", async ({
   page,
 }) => {
-  await login(page);
+  await signIn(page);
   const at = new Date(Date.now() + 7 * 86_400_000);
   at.setUTCSeconds(9, 152);
   const c = await create(page, { send_at: at.toISOString() });
@@ -398,7 +408,7 @@ test("a role that can send and not manage starts a saved campaign from the form"
   page,
   browser,
 }) => {
-  await login(page);
+  await signIn(page);
   const c = await create(page);
   const sender = await createUser(page, [
     "campaigns:get_all",
@@ -430,7 +440,7 @@ test("a role that can send and not manage starts a saved campaign from the form"
 });
 
 test("a role that can manage still saves its edits before starting", async ({ page }) => {
-  await login(page);
+  await signIn(page);
   const c = await create(page);
   await page.goto(`${CAMPAIGNS}/${c.id}`);
   await page.locator('input[name="name"]').fill(`${c.name} edited`);

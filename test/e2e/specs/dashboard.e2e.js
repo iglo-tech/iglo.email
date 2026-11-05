@@ -1,7 +1,7 @@
 // listmonk has no dashboard spec at 6fcd95f; this follows views/dashboard.html, with its data
 // made through the public API and read back from the screen.
 import { expect } from "@playwright/test";
-import { PASSWORD, api, createUser, login, logout, unique, test } from "../helpers.js";
+import { PASSWORD, api, createUser, login, logout, unique, test, signIn } from "../helpers.js";
 
 const hostile = `<img src=x onerror="window.pwned=1"> ${unique("Launch")}`;
 
@@ -24,7 +24,7 @@ test.describe("Dashboard", () => {
   test("shows counts, charts, system stats and escaped campaign names", async ({ page }) => {
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await login(page);
+    await signIn(page);
     const list = await api(page, "/api/lists", "POST", {
       name: unique("List"),
       type: "public",
@@ -53,7 +53,16 @@ test.describe("Dashboard", () => {
     await expect(row.getByText("Draft")).toBeVisible();
     expect(await page.evaluate(() => window.pwned)).toBeUndefined();
 
-    await expect(page.locator(".chart-box").first().getByText("Nothing here")).toBeVisible();
+    // The views chart is empty only if no earlier spec on this server recorded a view (the order of
+    // spec files is not fixed), so the screen is checked against what the charts API holds.
+    const charts = (await api(page, "/api/dashboard/charts")).body.data;
+    const views = page.locator(".chart-box").first();
+    if (charts.campaign_views.some((day) => day.count > 0)) {
+      await expect(views.locator("canvas")).toBeVisible();
+      await expect(views.getByText("Nothing here")).toHaveCount(0);
+    } else {
+      await expect(views.getByText("Nothing here")).toBeVisible();
+    }
     const system = page.getByTestId("system");
     await expect(system.getByText("Uptime")).toBeVisible();
     await expect(system.getByText("CPU cores")).toBeVisible();
@@ -61,7 +70,7 @@ test.describe("Dashboard", () => {
   });
 
   test("a scoped role sees only the campaigns of its lists", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const mine = await api(page, "/api/lists", "POST", {
       name: unique("Mine"),
       type: "private",
@@ -108,7 +117,7 @@ test.describe("Dashboard", () => {
   });
 
   test("a queued read leaves the page usable and a refused one is a message", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     let release;
     const queued = new Promise((resolve) => {
       release = resolve;

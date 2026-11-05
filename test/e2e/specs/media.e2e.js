@@ -3,7 +3,7 @@ import { lstat, mkdtemp, rename, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
-import { api, confirm, createUser, login, logout, openMenu, test, unique } from "../helpers.js";
+import { api, confirm, createUser, logout, openMenu, test, unique, signIn } from "../helpers.js";
 
 const MEDIA = "/admin/campaigns/media";
 const PNG = Buffer.from(
@@ -41,7 +41,7 @@ async function upload(page, name, buffer = PNG, mimeType = "image/png") {
 const search = (name) => `${MEDIA}?query=${encodeURIComponent(name)}`;
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
 });
 
 test("uploads, searches, copies a URL and deletes", async ({ page, context }) => {
@@ -158,7 +158,7 @@ test("the permissions decide the actions, and the routes need media:get", async 
   const none = await createUser(page, ["lists:get_all"]);
   await logout(page);
 
-  await login(page, viewer.username, "e2e-user-password");
+  await signIn(page, viewer.username, "e2e-user-password");
   await page.goto(search(row.filename));
   const found = item(page, row.filename);
   await expect(found).toBeVisible();
@@ -167,7 +167,7 @@ test("the permissions decide the actions, and the routes need media:get", async 
   await expect(found.getByTestId("btn-copy-url")).toHaveCount(1);
   await logout(page);
 
-  await login(page, none.username, "e2e-user-password");
+  await signIn(page, none.username, "e2e-user-password");
   expect((await page.goto(MEDIA)).status()).toBe(403);
   expect((await page.goto(`${MEDIA}/fragment`)).status()).toBe(403);
 });

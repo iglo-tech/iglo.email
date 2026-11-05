@@ -2,7 +2,7 @@
 // reaches them through a run tag, where upstream resets the database; list counts and rows arrive
 // from the API after the page, which Playwright's assertions wait for.
 import { expect } from "@playwright/test";
-import { api, confirm, login, openMenu, test, unique } from "../helpers.js";
+import { api, confirm, openMenu, test, unique, signIn } from "../helpers.js";
 
 const LISTS = "/admin/lists";
 
@@ -66,7 +66,7 @@ test.describe("Lists", () => {
   let seeded = false;
 
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    await signIn(page);
     if (seeded) return;
     seeded = true;
     const first = await makeList(page, { name: defaultList, tags: [run, "test"] });
@@ -205,7 +205,7 @@ test.describe("Lists: filters and sorting", () => {
   let ids = [];
 
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    await signIn(page);
   });
 
   test("adds new lists of every type/opt-in combination", async ({ page }) => {
@@ -388,7 +388,7 @@ test.describe("Lists: filters and sorting", () => {
 
 test.describe("Lists: filtered bulk deletion", () => {
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    await signIn(page);
   });
 
   for (const { filter, unrelated } of [

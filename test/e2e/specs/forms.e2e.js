@@ -3,7 +3,7 @@
 // is called with the page's request context, as upstream, and needs no session. Settings apply
 // live here, so setting trusted URLs needs no wait for a reload.
 import { expect } from "@playwright/test";
-import { api, createUser, login, logout, mailFor, test, unique } from "../helpers.js";
+import { api, createUser, logout, mailFor, test, unique, signIn } from "../helpers.js";
 
 const FORMS = "/admin/lists/forms";
 const SUB_FORM = "/subscription/form";
@@ -54,7 +54,7 @@ async function subscribe(page, { email, name, lists }) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
 });
 
 test("lists only public lists and hides the form until one is picked", async ({ page }) => {
@@ -138,7 +138,7 @@ test("a list scope limits the lists and a session is enough for the route", asyn
   const list = await makeList(page);
   const user = await createUser(page, ["campaigns:get"]);
   await logout(page);
-  await login(page, user.username, "e2e-user-password");
+  await signIn(page, user.username, "e2e-user-password");
   const answer = await page.goto(FORMS);
   expect(answer.status()).toBe(200);
   await expect(publicLists(page, list.name)).toHaveCount(0);
@@ -171,7 +171,7 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
   await mailFor(a);
   await mailFor(b);
 
-  await login(page);
+  await signIn(page);
   const sub = async (email) => {
     const query = encodeURIComponent(`subscribers.email = '${email}'`);
     const data = await ok(page, `/api/subscribers?query=${query}`);
