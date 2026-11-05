@@ -5,7 +5,7 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B11 is with its worker: [brief](briefs/B11.md), branch `task/B11-event-latency`. Test speed: [#60](https://github.com/iglo-tech/iglo.email/pull/60) merged (`bun run check` ~145 s, was 547 s); e2e speed [#61](https://github.com/iglo-tech/iglo.email/pull/61) in review. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B11 is with its worker: [brief](briefs/B11.md), branch `task/B11-event-latency`. Test speed: [#60](https://github.com/iglo-tech/iglo.email/pull/60) merged (`bun run check` ~145 s, was 547 s); e2e speed [#61](https://github.com/iglo-tech/iglo.email/pull/61) merged (`bun run e2e` ~10 min at 2 stacks, was 17; `E2E_WORKERS` for more). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
@@ -42,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                          |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------------- |
+| E2e speed    | [#61](https://github.com/iglo-tech/iglo.email/pull/61) | 8aeb257 | Parallel e2e stacks, default 2 (17→~10 min)                     |
 | Test speed   | [#60](https://github.com/iglo-tech/iglo.email/pull/60) | 893c85f | Parallel `bun run test`, one build, `bun check` (547→~145 s)    |
 | B10          | [#59](https://github.com/iglo-tech/iglo.email/pull/59) | edcebf7 | Backlog defects; lead decided after round 3 (held styles)       |
 | B8           | [#58](https://github.com/iglo-tech/iglo.email/pull/58) | ae83f35 | Intermittent fixes, contract and lock tests, settings ref fixed |
@@ -107,4 +108,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Tests ([#58](https://github.com/iglo-tech/iglo.email/pull/58)): the real-API activity-tab e2e no longer checks that a non-HTTP click URL gets no link or the non-campaign rows; `withProduction` retry accepts any server answering `/health`; the `templates-campaigns` connection reset is unexplained; the settings fields a partial write must keep set are repeated in three contract files.
 - Editor and tx ([#59](https://github.com/iglo-tech/iglo.email/pull/59)): identical repeated declarations in a held block style are merged (`color:red;color:blue;color:red` saves blue); a live shorthand rewritten to longhands after a style edit can move past a held declaration; the style splitter ignores CSS comments; a steady stream of small tx sends can keep a waiting upload out until its 429; the tx tests wait with `Bun.sleep` loops.
 - Test speed ([#60](https://github.com/iglo-tech/iglo.email/pull/60)): the `test/production-build.ts` build lock retries forever on any `mkdir` error, clears a lock older than 120 s even if its build still runs, and sits at one system temp path shared by every checkout; `README.md` still shows plain `bun test`; the regex example in `docs/perf/test-speed.md` shows raw characters instead of escapes.
+- E2e speed ([#61](https://github.com/iglo-tech/iglo.email/pull/61)): the dashboard "Nothing here" empty state is checked only when no earlier spec on that stack recorded a view, so never at `E2E_WORKERS=1`; enable oxlint `no-undef` (it would have caught a missing `login` import that git merged silently).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
