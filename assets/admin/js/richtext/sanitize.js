@@ -129,6 +129,14 @@ function mergeStyle(current, original) {
 
 const HOLDABLE = ['src', 'background'];
 
+// Blocks and images keep the editor's changes to a held style (alignment, size). Every other
+// element is inline: Squire turns the font and text declarations of a span into markup and may
+// replace the span, so its style is held whole and never reaches the editor.
+const BLOCKS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'dl', 'dt',
+  'dd', 'blockquote', 'pre', 'table', 'caption', 'colgroup', 'col', 'thead', 'tbody', 'tfoot', 'tr',
+  'td', 'th', 'hr', 'center', 'section', 'article', 'header', 'footer', 'figure', 'figcaption']);
+const heldWhole = (element) => element !== 'img' && !BLOCKS.has(element);
+
 // The stored form of what the editor holds. A held style is the original declarations; they merge
 // with whatever the style is now.
 export function restoreHeld(html) {
@@ -143,7 +151,10 @@ export function restoreHeld(html) {
     }
   }
   for (const el of root.querySelectorAll('[data-rte-style]')) {
-    el.setAttribute('style', mergeStyle(el.getAttribute('style') ?? '', el.getAttribute('data-rte-style')));
+    const original = el.getAttribute('data-rte-style');
+    el.setAttribute('style', heldWhole(el.localName) && !el.hasAttribute('style')
+      ? original
+      : mergeStyle(el.getAttribute('style') ?? '', original));
     el.removeAttribute('data-rte-style');
   }
   return root.innerHTML;
@@ -164,6 +175,13 @@ function copyStyle(from, to, held) {
   const live = [];
   const waiting = [];
   const every = declarations(all);
+  if (heldWhole(to.localName)) {
+    to.setAttribute('data-rte-style', every.join('; '));
+    for (const declaration of every.filter(heldDeclaration)) {
+      held.add(declaration);
+    }
+    return;
+  }
   for (const declaration of every) {
     (heldDeclaration(declaration) ? waiting : live).push(declaration);
   }

@@ -403,6 +403,59 @@ test.describe("remote images load on request", () => {
     expect(stored).not.toContain("data-rte-");
   });
 
+  // Squire turns the font and text declarations of a span into markup, so the span's style is held
+  // whole: an unedited save stores the span as it was.
+  const spanStyles = [
+    "font-weight: bold",
+    "font-style: italic",
+    "font-family: Arial",
+    "font-size: 18px",
+    "text-decoration: underline",
+  ];
+
+  for (const other of spanStyles) {
+    test(`saving a span with a remote background and ${other} unedited keeps it (B10)`, async ({
+      page,
+    }) => {
+      await login(page);
+      const style = `background: url('${remote}/span.gif') no-repeat left center; ${other}`;
+      const c = await campaign(page, `<p>Hi <span style="${style}">Sale</span> now</p>`);
+      await open(page, c.id);
+      await expect(page.getByTestId("editor-held")).toBeVisible();
+      await page.locator(`${EDITOR} p`).first().click();
+      await page.keyboard.press("End");
+      await page.keyboard.type("x");
+      const stored = await saved(page, c.id);
+      const got = await page.evaluate(
+        ([html]) => {
+          const el = new DOMParser().parseFromString(html, "text/html").querySelector("span");
+          return el && { style: el.getAttribute("style"), text: el.textContent };
+        },
+        [stored],
+      );
+      expect(got).toEqual({ style, text: "Sale" });
+      expect(stored).not.toContain("data-rte-");
+      expect(requests.filter((path) => /span\.gif/.test(path))).toEqual([]);
+    });
+  }
+
+  test("bolding a word inside a span with a held background keeps the background (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const style = `background: url('${remote}/span.gif') no-repeat; font-weight: normal`;
+    const c = await campaign(page, `<p>Hi <span style="${style}">Sale today</span> now</p>`);
+    await open(page, c.id);
+    await page.locator(`${EDITOR} span`).first().dblclick();
+    await page.locator('richtext-editor [data-cmd="bold"]').click();
+    const stored = await saved(page, c.id);
+    expect(stored).toContain(`url('${remote}/span.gif')`);
+    expect(stored).toMatch(/<b>[^<]*<\/b>/);
+    expect(stored).toContain("Sale");
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /span\.gif/.test(path))).toEqual([]);
+  });
+
   test.describe("a block whose style is held, moved by the clipboard", () => {
     test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
