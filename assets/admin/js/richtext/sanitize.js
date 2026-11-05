@@ -100,23 +100,37 @@ function declarations(style) {
 
 const property = (declaration) => declaration.split(':', 1)[0].trim().toLowerCase();
 
-// The declarations of `base`, then those of `added` for properties `base` does not set: what the
-// editor wrote wins over what was held.
-function mergeStyle(base, added) {
-  const list = declarations(base);
-  const seen = new Set(list.map(property));
-  for (const declaration of declarations(added)) {
-    if (!seen.has(property(declaration))) {
+// The original declarations in their order, which CSS makes meaningful (a shorthand resets the
+// longhands before it). A held one stays where it was and is never dropped. A kept one takes the
+// editor's current value for its property, or goes when the editor removed it; a property set
+// twice pairs off in order. What the editor added comes last, in its order.
+function mergeStyle(current, original) {
+  const now = declarations(current);
+  const used = new Set();
+  const list = [];
+  for (const declaration of declarations(original)) {
+    if (heldDeclaration(declaration)) {
       list.push(declaration);
+      continue;
+    }
+    const at = now.findIndex((d, i) => !used.has(i) && property(d) === property(declaration));
+    if (at >= 0) {
+      used.add(at);
+      list.push(now[at]);
     }
   }
+  now.forEach((declaration, i) => {
+    if (!used.has(i) && !list.includes(declaration)) {
+      list.push(declaration);
+    }
+  });
   return list.join('; ');
 }
 
 const HOLDABLE = ['src', 'background'];
 
-// The stored form of what the editor holds. A held style is only the declarations that fetch; they
-// join whatever the style is now.
+// The stored form of what the editor holds. A held style is the original declarations; they merge
+// with whatever the style is now.
 export function restoreHeld(html) {
   if (!html.includes('data-rte-')) {
     return html;
@@ -139,7 +153,7 @@ const allowed = (element, name) => (name === 'name' ? element === 'a'
   : ATTRIBUTES.has(name) || /^aria-[a-z]+$/.test(name));
 
 // The live style keeps every declaration that fetches nothing, so the editor's changes to it are
-// kept; the rest wait in `data-rte-style` until the body leaves the editor.
+// kept. `data-rte-style` is the whole style as it was, in order, until the body leaves the editor.
 function copyStyle(from, to, held) {
   if (!from.hasAttribute('data-rte-style') && !declarations(from.getAttribute('style') ?? '').some(heldDeclaration)) {
     // Nothing to hold: the style is copied as written.
@@ -149,14 +163,15 @@ function copyStyle(from, to, held) {
   const all = mergeStyle(from.getAttribute('style') ?? '', from.getAttribute('data-rte-style') ?? '');
   const live = [];
   const waiting = [];
-  for (const declaration of declarations(all)) {
+  const every = declarations(all);
+  for (const declaration of every) {
     (heldDeclaration(declaration) ? waiting : live).push(declaration);
   }
   if (live.length || from.hasAttribute('style')) {
     to.setAttribute('style', live.join('; '));
   }
   if (waiting.length) {
-    to.setAttribute('data-rte-style', waiting.join('; '));
+    to.setAttribute('data-rte-style', every.join('; '));
     for (const declaration of waiting) {
       held.add(declaration);
     }

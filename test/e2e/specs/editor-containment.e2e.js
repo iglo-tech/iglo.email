@@ -332,6 +332,77 @@ test.describe("remote images load on request", () => {
     expect(tag).not.toContain("data-rte-");
   });
 
+  // CSS order matters: a shorthand resets the longhands before it, so a held declaration stays
+  // where it was and saving without a style edit stores the same declarations in the same order.
+  const orderCells = (r) => [
+    `background: url('${r}/hero.gif') center/cover no-repeat; background-color: #1a1a1a`,
+    `background: url('${r}/size.gif'); background-size: cover`,
+    `background-image: url('${r}/a.gif'); background-image: linear-gradient(red, blue)`,
+  ];
+  const styleOf = (html, index) =>
+    new DOMParser()
+      .parseFromString(html, "text/html")
+      .querySelectorAll("td")
+      [index].getAttribute("style");
+
+  test("saving held background cells unedited keeps declaration order and values (B10)", async ({
+    page,
+    context,
+  }) => {
+    await login(page);
+    const cells = orderCells(remote);
+    const body = `<table><tbody><tr>${cells.map((c, i) => `<td style="${c}">cell${i}</td>`).join("")}</tr></tbody></table>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await expect(page.getByTestId("editor-held")).toBeVisible();
+    // Only text is edited; every style is as it was.
+    await page.locator(`${EDITOR} td`).first().click();
+    await page.keyboard.press("End");
+    await page.keyboard.type("x");
+    const stored = await saved(page, c.id);
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /hero|size|a\.gif/.test(path))).toEqual([]);
+    const probe = await context.newPage();
+    for (const [i, original] of cells.entries()) {
+      const got = await page.evaluate(`(${styleOf})(${JSON.stringify(stored)}, ${i})`);
+      expect(got.replace(/\s+/g, " ")).toBe(original);
+      const computed = (style) =>
+        probe.evaluate((css) => {
+          const el = document.body.appendChild(document.createElement("div"));
+          el.setAttribute("style", css);
+          const s = getComputedStyle(el);
+          return [
+            s.backgroundColor,
+            s.backgroundSize,
+            s.backgroundPosition,
+            s.backgroundRepeat,
+            s.backgroundImage,
+          ];
+        }, style);
+      expect(await computed(got)).toEqual(await computed(original));
+    }
+    await probe.close();
+  });
+
+  test("centring a hero cell keeps the colour after the shorthand (B10)", async ({ page }) => {
+    await login(page);
+    const [hero] = orderCells(remote);
+    const c = await campaign(
+      page,
+      `<table><tbody><tr><td style="${hero}">hero</td></tr></tbody></table>`,
+    );
+    await open(page, c.id);
+    await page.locator(`${EDITOR} td`).first().click();
+    await page.locator('richtext-editor [data-cmd="align"][data-value="center"]').click();
+    const stored = await saved(page, c.id);
+    const style = /<td[^>]*style="([^"]*)"/.exec(stored)[1];
+    expect(style).toMatch(/text-align:\s*center/);
+    expect(style.indexOf("background-color")).toBeGreaterThan(style.indexOf("background:"));
+    expect(style).toMatch(/background-color:\s*(?:#1a1a1a|rgb\(26, 26, 26\))/);
+    expect(style).toContain(`url('${remote}/hero.gif')`);
+    expect(stored).not.toContain("data-rte-");
+  });
+
   test.describe("a block whose style is held, moved by the clipboard", () => {
     test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
