@@ -498,10 +498,18 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
       // Providers post from shared addresses too, with a budget of their own. A large campaign's
       // bounces arrive from SNS as one POST each; a 429 there is a lost bounce once SNS stops
-      // retrying, so this budget is 20 times the unsubscribe default (still one bounded budget).
+      // retrying, so this budget is 20 times the unsubscribe default, or the unsubscribe setting when that is larger.
       limit: rateLimited(
         clock,
-        { limit: BOUNCE_WEBHOOK_PER_MINUTE, windowMs: 60_000, maxPeers: 10_000 },
+        {
+          // Never below the 6,000 it is now, and an operator's higher unsubscribe setting still
+          // raises it (read at each request, like the public forms).
+          get limit() {
+            return Math.max(BOUNCE_WEBHOOK_PER_MINUTE, pages().rateLimits.unsubscribe);
+          },
+          windowMs: 60_000,
+          maxPeers: 10_000,
+        },
         () => pages().siteName,
         clientAddress,
       ),

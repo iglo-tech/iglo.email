@@ -58,10 +58,10 @@ export function heldURL(value) {
 }
 
 // Addresses a style would fetch: url(), image-set() and image() forms. A CSS escape can spell any
-// of them differently, so a style with one is held whenever it has a backslash at all.
+// of them differently, so a declaration with one is held whenever it has a backslash at all.
 const STYLE_FETCH = /\b(?:url|image-set|image|src)\s*\(/i;
 const STYLE_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)/gi;
-function heldStyle(value) {
+function heldDeclaration(value) {
   if (!STYLE_FETCH.test(value) && !value.includes('\\')) {
     return false;
   }
@@ -70,9 +70,53 @@ function heldStyle(value) {
   return urls.some((url) => heldURL(url)) || STYLE_FETCH.test(plain) || plain.includes('\\');
 }
 
-const HOLDABLE = ['src', 'background', 'style'];
+// A style attribute as its declarations, split on the semicolons outside quotes, brackets and
+// escapes. Text that never closes stays whole in the last one.
+function declarations(style) {
+  const list = [];
+  let start = 0;
+  let quote = '';
+  let depth = 0;
+  for (let i = 0; i < style.length; i += 1) {
+    const c = style[i];
+    if (c === '\\') {
+      i += 1;
+    } else if (quote) {
+      quote = c === quote ? '' : quote;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === '(') {
+      depth += 1;
+    } else if (c === ')') {
+      depth = Math.max(0, depth - 1);
+    } else if (c === ';' && depth === 0) {
+      list.push(style.slice(start, i));
+      start = i + 1;
+    }
+  }
+  list.push(style.slice(start));
+  return list.map((d) => d.trim()).filter(Boolean);
+}
 
-// The stored form of what the editor holds.
+const property = (declaration) => declaration.split(':', 1)[0].trim().toLowerCase();
+
+// The declarations of `base`, then those of `added` for properties `base` does not set: what the
+// editor wrote wins over what was held.
+function mergeStyle(base, added) {
+  const list = declarations(base);
+  const seen = new Set(list.map(property));
+  for (const declaration of declarations(added)) {
+    if (!seen.has(property(declaration))) {
+      list.push(declaration);
+    }
+  }
+  return list.join('; ');
+}
+
+const HOLDABLE = ['src', 'background'];
+
+// The stored form of what the editor holds. A held style is only the declarations that fetch; they
+// join whatever the style is now.
 export function restoreHeld(html) {
   if (!html.includes('data-rte-')) {
     return html;
@@ -84,11 +128,40 @@ export function restoreHeld(html) {
       el.removeAttribute(`data-rte-${name}`);
     }
   }
+  for (const el of root.querySelectorAll('[data-rte-style]')) {
+    el.setAttribute('style', mergeStyle(el.getAttribute('style') ?? '', el.getAttribute('data-rte-style')));
+    el.removeAttribute('data-rte-style');
+  }
   return root.innerHTML;
 }
 
 const allowed = (element, name) => (name === 'name' ? element === 'a'
   : ATTRIBUTES.has(name) || /^aria-[a-z]+$/.test(name));
+
+// The live style keeps every declaration that fetches nothing, so the editor's changes to it are
+// kept; the rest wait in `data-rte-style` until the body leaves the editor.
+function copyStyle(from, to, held) {
+  if (!from.hasAttribute('data-rte-style') && !declarations(from.getAttribute('style') ?? '').some(heldDeclaration)) {
+    // Nothing to hold: the style is copied as written.
+    to.setAttribute('style', from.getAttribute('style') ?? '');
+    return;
+  }
+  const all = mergeStyle(from.getAttribute('style') ?? '', from.getAttribute('data-rte-style') ?? '');
+  const live = [];
+  const waiting = [];
+  for (const declaration of declarations(all)) {
+    (heldDeclaration(declaration) ? waiting : live).push(declaration);
+  }
+  if (live.length || from.hasAttribute('style')) {
+    to.setAttribute('style', live.join('; '));
+  }
+  if (waiting.length) {
+    to.setAttribute('data-rte-style', waiting.join('; '));
+    for (const declaration of waiting) {
+      held.add(declaration);
+    }
+  }
+}
 
 function copyAttributes(from, to, removed, held) {
   const element = to.localName;
@@ -97,14 +170,24 @@ function copyAttributes(from, to, removed, held) {
     // It is the address it stands for and passes the same checks.
     const alias = /^data-rte-(src|background|style)$/.exec(attribute.name)?.[1];
     if (alias && from.hasAttribute(alias)) {
+      // A style and its held declarations on one element, as after a paste or the source dialog:
+      // `style` below carries both, so nothing the element had is dropped.
+      if (alias !== 'style') {
+        continue;
+      }
+    }
+    const name = alias ?? attribute.name;
+    if (name === 'style') {
+      if (attribute.name === 'style' || !from.hasAttribute('style')) {
+        copyStyle(from, to, held);
+      }
       continue;
     }
     const { value } = attribute;
-    const name = alias ?? attribute.name;
     if (URL_ATTRIBUTES.has(name)
       ? (name !== 'src' || element === 'img') && safeURL(value, name === 'src')
       : allowed(element, name)) {
-      if (HOLDABLE.includes(name) && (name === 'style' ? heldStyle(value) : heldURL(value))) {
+      if (HOLDABLE.includes(name) && heldURL(value)) {
         to.setAttribute(`data-rte-${name}`, value);
         held.add(value);
       } else {

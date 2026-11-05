@@ -146,8 +146,12 @@ test("remote images are allowed on the one screen that asks, for that response o
     expect(crafted.headers.get("content-security-policy")).toBe(strict);
     expect(await crafted.text()).toContain('"remote_images":false');
   }
+  // No header at all: a plain-HTTP admin reached by a network address, where browsers send none.
   const bare = await get(f, "/admin/campaigns/1?remote_images=1", cookie);
-  expect(bare.headers.get("content-security-policy")).toBe(strict);
+  expect(/img-src ([^;]+)/.exec(bare.headers.get("content-security-policy") ?? "")?.[1]).toEndWith(
+    " http: https:",
+  );
+  expect(await bare.text()).toContain('"remote_images":true');
   const other = await own("/admin/lists?remote_images=1");
   expect(other.headers.get("content-security-policy")).toBe(strict);
   const plain = await get(f, "/admin/campaigns/1", cookie);

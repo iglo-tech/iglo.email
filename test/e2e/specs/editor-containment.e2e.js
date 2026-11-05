@@ -269,7 +269,10 @@ test.describe("remote images load on request", () => {
     const c = await campaign(page, body);
     await open(page, c.id);
     await expect(page.getByTestId("editor-held")).toBeVisible();
-    expect(await page.locator(`${EDITOR} p`).first().getAttribute("style")).toBeNull();
+    // Only the declaration that would fetch waits; the rest stays live.
+    const live = await page.locator(`${EDITOR} p`).first().getAttribute("style");
+    expect(live).toContain("color: red");
+    expect(live).not.toContain("url(");
     await page.locator(EDITOR).pressSequentially("x");
     const save = page.waitForResponse((r) => r.request().method() === "PUT");
     await page.keyboard.press("Control+s");
@@ -278,6 +281,99 @@ test.describe("remote images load on request", () => {
     expect(stored).toContain(`url('${remote}/style.gif')`);
     expect(stored).not.toContain("data-rte-");
     expect(requests.filter((path) => /style\.gif/.test(path))).toEqual([]);
+  });
+
+  const saved = async (page, id) => {
+    const save = page.waitForResponse((r) => r.request().method() === "PUT");
+    await page.keyboard.press("Control+s");
+    expect((await save).status()).toBe(200);
+    return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
+  };
+
+  test("aligning a block with a held background keeps the alignment and the background (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const body = `<p style="background-image: url('${remote}/bg.gif'); padding: 16px">Hello</p>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await expect(page.getByTestId("editor-held")).toBeVisible();
+    await page.locator(`${EDITOR} p`).first().click();
+    await page.locator('richtext-editor [data-cmd="align"][data-value="center"]').click();
+    const stored = await saved(page, c.id);
+    expect(stored).toContain(`url('${remote}/bg.gif')`);
+    expect(stored).toContain("padding: 16px");
+    expect(stored).toMatch(/text-align:\s*center/);
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /bg\.gif/.test(path))).toEqual([]);
+  });
+
+  test("resizing an image with a held background keeps the size and the background (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const body = `<p>text <img src="/admin/static/favicon.png" alt="b" style="background-image: url('${remote}/img-bg.gif'); padding: 2px"> more</p>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await page.locator(`${EDITOR} img`).click();
+    const handle = page.locator(".squire-resize-handle-se");
+    const box = await handle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 120, box.y + 80, { steps: 8 });
+    await page.mouse.up();
+    await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
+    await page.locator(EDITOR).pressSequentially("x");
+    const stored = await saved(page, c.id);
+    const tag = /<img[^>]*>/.exec(stored)[0];
+    expect(tag).toMatch(/width:\s*[1-9]\d*px/);
+    expect(tag).toContain(`url('${remote}/img-bg.gif')`);
+    expect(tag).toContain("padding: 2px");
+    expect(tag).not.toContain("data-rte-");
+  });
+
+  test.describe("a block whose style is held, moved by the clipboard", () => {
+    test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+
+    test("a cut and paste keeps the background and the padding, and the notice (B10)", async ({
+      page,
+    }) => {
+      await login(page);
+      const body = `<p style="background-image: url('${remote}/moved-bg.gif'); padding: 16px">move me</p>`;
+      const c = await campaign(page, body);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} p`).first().click();
+      for (const key of ["Control+a", "Control+x", "Control+v"]) await page.keyboard.press(key);
+      await expect(page.getByTestId("editor-held")).toBeVisible();
+      const stored = await saved(page, c.id);
+      expect(stored).toContain(`url('${remote}/moved-bg.gif')`);
+      expect(stored).toContain("padding: 16px");
+      expect(stored).not.toContain("data-rte-");
+    });
+
+    test("a paste carrying both a style and its held declarations keeps both (B10)", async ({
+      page,
+    }) => {
+      await login(page);
+      const c = await campaign(page);
+      await open(page, c.id);
+      await page.locator(EDITOR).evaluate((el, html) => {
+        el.focus();
+        const clipboardData = new DataTransfer();
+        clipboardData.setData("text/html", html);
+        el.dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
+        );
+      }, `<p style="padding: 16px; text-align: center" data-rte-style="background-image: url('${remote}/both.gif'); padding: 99px">both</p>`);
+      await expect(page.locator(EDITOR).getByText("both")).toHaveCount(1);
+      await expect(page.getByTestId("editor-held")).toBeVisible();
+      const stored = await saved(page, c.id);
+      expect(stored).toContain(`url('${remote}/both.gif')`);
+      expect(stored).toContain("padding: 16px");
+      expect(stored).not.toContain("padding: 99px");
+      expect(stored).toMatch(/text-align:\s*center/);
+      expect(stored).not.toContain("data-rte-");
+    });
   });
 
   test("an image from a root URL the policy cannot name is held (B10)", async ({ page }) => {
