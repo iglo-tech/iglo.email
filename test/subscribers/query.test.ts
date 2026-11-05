@@ -54,8 +54,11 @@ async function seed() {
   }
 }
 
+// The limit covers starting the child, which a loaded host (parallel test workers) can slow.
+const QUERY_TIMEOUT_MS = 4000;
+
 beforeAll(async () => {
-  f = await queryFixture({ timeoutMs: 1500 });
+  f = await queryFixture({ timeoutMs: QUERY_TIMEOUT_MS });
   await seed();
 });
 afterAll(async () => {
@@ -229,7 +232,7 @@ describe("GET /api/subscribers", () => {
     const elapsed = performance.now() - started;
     expect(response.status).toBe(500);
     expect(response.body.message).toBe("Error fetching Subscribers: query timed out");
-    expect(elapsed).toBeLessThan(5000);
+    expect(elapsed).toBeLessThan(QUERY_TIMEOUT_MS + 3500);
     expect(children().length).toBe(before);
     // Memory: SQLite's allocations in the child are capped.
     const big = await f.json(`/api/subscribers?query=${q("length(randomblob(1000000000)) > 0")}`);

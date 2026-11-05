@@ -42,11 +42,11 @@ function pagination(url: URL) {
 }
 const xml = (value: string) =>
   value
-    .replace(/[^\t\n\r -퟿-�\u{10000}-\u{10ffff}]/gu, "")
+    .replace(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10ffff}]/gu, "")
     .replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const cdata = (value: string) =>
   `<![CDATA[${value
-    .replace(/[^\t\n\r -퟿-�\u{10000}-\u{10ffff}]/gu, "")
+    .replace(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10ffff}]/gu, "")
     .replaceAll("]]>", "]]]]><![CDATA[>")}]]>`;
 const rssDate = (value: string) => {
   const [day, date, month, year, time] = new Date(value).toUTCString().split(" ");

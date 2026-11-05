@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "bun run assets:build && bun build --compile ./src/main.ts --outfile ./dist/iglo.email",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun run build",
+    "test": "bun run build && IGLO_TEST_PREBUILT=1 bun test --parallel=4 --timeout=30000 --timings=test/timings.json",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build",
     "db:measure": "bun test/db/measure.ts",
     "auth:measure": "bun run build && bun test/users/measure.ts",
     "schema:measure": "bun test/schema/measure.ts",
@@ -16,7 +17,7 @@
     "format:check": "oxfmt --check .",
     "hooks:install": "git config --local core.hooksPath .githooks",
     "lint": "oxlint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun check --no-script",
     "reference:prepare": "bun test/reference/prepare.ts",
     "reference:run": "bun test/reference/run.ts",
     "reference:smoke": "bun test/reference/smoke.ts",

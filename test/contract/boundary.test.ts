@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { ensureProductionBuild } from "@/test/production-build";
 import { withProduction } from "@/test/contract/owned";
 import { runContract } from "@/test/contract/runner";
 import type { ContractCase, ContractTarget, Difference } from "@/test/contract/types";
@@ -77,16 +78,7 @@ describe("owned production lifecycle", () => {
   });
 
   test("the production CLI removes its own data after refusing an unsupported case", async () => {
-    const build = Bun.spawn([process.execPath, "run", "build"], {
-      cwd: repository,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [buildCode, buildError] = await Promise.all([
-      build.exited,
-      new Response(build.stderr).text(),
-    ]);
-    if (buildCode !== 0) throw new Error(`Production build failed: ${buildError}`);
+    await ensureProductionBuild();
     const temporaryRoot = await mkdtemp(join(tmpdir(), "iglo-contract-cli-cleanup-"));
     try {
       const child = Bun.spawn(

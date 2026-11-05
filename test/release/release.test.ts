@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { ensureProductionBuild } from "@/test/production-build";
 import { version } from "@/../package.json";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -27,8 +28,7 @@ async function run(command: string[], env: Record<string, string> = {}, cwd = re
 const script = (...args: string[]) => [process.execPath, "scripts/release.ts", ...args];
 
 beforeAll(async () => {
-  const build = await run([process.execPath, "run", "build"]);
-  if (build.code !== 0) throw new Error(`Build failed:\n${build.stdout}\n${build.stderr}`);
+  await ensureProductionBuild();
   temporaryDirectory = await mkdtemp(join(tmpdir(), "iglo-email-release-test-"));
 }, 60_000);
 

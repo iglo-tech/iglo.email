@@ -4,19 +4,14 @@ import { copyFileSync, cpSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { ensureProductionBuild } from "@/test/production-build";
 
 const repository = resolve(import.meta.dir, "../..");
 // Generated for these tests; see test/backup/fixtures.md.
 export const admin = { user: "backup-test-admin", password: "backup-test-password" };
 
 export async function buildExecutable(directory: string): Promise<string> {
-  const build = Bun.spawn([process.execPath, "run", "build"], {
-    cwd: repository,
-    env: { PATH: process.env.PATH ?? "" },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if ((await build.exited) !== 0) throw new Error(await new Response(build.stderr).text());
+  await ensureProductionBuild();
   const executable = join(directory, "iglo.email");
   copyFileSync(join(repository, "dist/iglo.email"), executable);
   return executable;
