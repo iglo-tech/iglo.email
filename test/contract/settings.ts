@@ -86,7 +86,9 @@ export async function runSettingsContract(target: {
     {
       method: "PUT",
       headers: { Authorization: authorization, "Content-Type": "application/xml" },
-      body: "<Settings><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
+      // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
+      // (app.lang panic at cmd/main.go:211, "unknown provider" fatal at cmd/init.go:852, invalid duration at cmd/init.go:747, MaxConns at cmd/init.go:777).
+      body: "<Settings><AppLang>en</AppLang><UploadProvider>filesystem</UploadProvider><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled><MaxConns>1</MaxConns><IdleTimeout>15s</IdleTimeout><WaitTimeout>5s</WaitTimeout></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
     },
     target.mode === "reference",
   );
@@ -432,7 +434,7 @@ if (import.meta.main) {
     await runSettingsContract({ mode: "reference", baseUrl, credentials: { user, token } });
   } catch (error) {
     process.stderr.write(
-      `${error instanceof Error && /^FAIL [a-zA-Z0-9-]+$/.test(error.message) ? error.message : "Settings contract failed"}\n`,
+      `${error instanceof Error && /^FAIL [a-zA-Z0-9-]+( \([ -~]*\))?$/.test(error.message) ? error.message : "Settings contract failed"}\n`,
     );
     process.exitCode = 1;
   }

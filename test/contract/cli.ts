@@ -261,7 +261,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
             await runAuthContract({ mode: "normal", baseUrl, credentials, admin });
           } catch (error) {
             throw new Error(
-              error instanceof Error && /^FAIL [a-zA-Z0-9-]+$/.test(error.message)
+              error instanceof Error && /^FAIL [a-zA-Z0-9-]+( \([ -~]*\))?$/.test(error.message)
                 ? error.message
                 : "Auth contract failed",
             );

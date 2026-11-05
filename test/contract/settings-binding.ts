@@ -22,7 +22,9 @@ export async function runSettingsBinding(target: {
     if (!condition) throw new Error(`FAIL settings-binding-${label}`);
   };
   const original = await get();
-  const base = `<Settings><AppFromEmail>a@example.invalid</AppFromEmail><SMTP><Enabled>true</Enabled></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration>`;
+  // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
+  // (app.lang panic at cmd/main.go:211, "unknown provider" fatal at cmd/init.go:852, invalid duration at cmd/init.go:747, MaxConns at cmd/init.go:777).
+  const base = `<Settings><AppLang>en</AppLang><UploadProvider>filesystem</UploadProvider><AppFromEmail>a@example.invalid</AppFromEmail><SMTP><Enabled>true</Enabled><MaxConns>1</MaxConns><IdleTimeout>15s</IdleTimeout><WaitTimeout>5s</WaitTimeout></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration>`;
   const xml = (contents: string) => base + contents + "</Settings>";
   for (const [label, contents, expected] of [
     ["empty-scalars", "<AppBatchSize/><EnablePublicArchive/>", 0],

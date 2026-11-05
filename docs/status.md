@@ -96,9 +96,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 ## Hardening backlog
 
 - Intermittent: `route-auth` "held SMTP body denies disabled before a connection" failed once in M1.9 (`smtp.count()` 1). B8 could not reproduce it (22 runs of the file's four cases pass on a host at load ~12); the SMTP peer now lists each counted client (remote port, opening line) so the next failure names who connected.
+- Intermittent: `users.e2e.js` "edits a user" fails now and then (B3 reviews: reload races at `:193` and `:382`). B8 fixed the toast wait; one unidentified failure in 19 runs afterwards, and no output was kept.
 - Media: supported PDF viewers unverified (needs real devices).
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
-- Intermittent pinned settings-reference refusal: cause unproven. B8 keeps the diagnostic (attempts, wait, error code in the failure) and raised the restart wait from 5 s to 20 s; a recurrence now says whether the wait ran out.
 - Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. B7 tried a longer event group-commit window (3 ms): no gain, worse tail ([evidence](perf/B7-load-memory.md)). Lowering it needs other loops' commits batched or merged (outbox, scheduler, campaigns: owners outside B7), or an owner decision on D22 durability.
 - Instance lock: two forged lock file headers stop the start with a clean error ([#50](https://github.com/iglo-tech/iglo.email/pull/50)).
 - Retention ([#51](https://github.com/iglo-tech/iglo.email/pull/51)): session rows with no `expires_at` go up to 999 ms early; D70's session index and the rate in `docs/operations.md` are slightly off.
