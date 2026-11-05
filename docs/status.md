@@ -5,16 +5,15 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B10 is with its worker: [brief](briefs/B10.md), branch `task/B10-product-defects`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B11 is with its worker: [brief](briefs/B11.md), branch `task/B11-event-latency`. Host hold: the e2e speed thread (`task/speed-e2e`) has the verification slot until it reports; PR #60 (test speed) is in review. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B10: product defects left in the backlog ([brief](briefs/B10.md)).
-2. B11: event latency: batch or merge commits across loops (outbox, scheduler, campaigns) without weakening D22.
-3. B12: anything still left in the backlog that agents can do.
+1. B11: event latency ([brief](briefs/B11.md)).
+2. B12: anything still left in the backlog that agents can do.
 
 ## Owner decisions
 
@@ -43,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                          |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------------- |
+| B10          | [#59](https://github.com/iglo-tech/iglo.email/pull/59) | edcebf7 | Backlog defects; lead decided after round 3 (held styles)       |
 | B8           | [#58](https://github.com/iglo-tech/iglo.email/pull/58) | ae83f35 | Intermittent fixes, contract and lock tests, settings ref fixed |
 | B7           | [#57](https://github.com/iglo-tech/iglo.email/pull/57) | fb7ea5a | Analytics egress budget, WAL gap, disk-staged selections        |
 | B9           | [#56](https://github.com/iglo-tech/iglo.email/pull/56) | 6669094 | SES/SNS bounces, topic allowlist (D75)                          |
@@ -104,4 +104,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Tx budget ([#55](https://github.com/iglo-tech/iglo.email/pull/55)): peak memory is about 8x the counted bytes ([B6](perf/B6-send-media-safety.md): the journal payload, the SMTP library's encoding and uncollected garbage are outside the count; lowering `PARSE_COPIES` or the budget trades refusals for memory, an owner call); paced event retention drains about 380 rows/s (the price of not holding back sends, [D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)).
 - B7 staging ([#57](https://github.com/iglo-tech/iglo.email/pull/57)): a read queued during a forced WAL gap can wait the full 30 s and get 429 (the gap is D62's price for restarting the WAL under continuous polling; a long read holds it open, and an earlier admission would block the checkpoint); analytics responses over 64 KiB are chunked with no Content-Length (B10 tried an explicit header: Bun ignores it on streamed bodies, and sending the bytes whole would drop the egress accounting that releases when the client has read them).
 - Tests ([#58](https://github.com/iglo-tech/iglo.email/pull/58)): the real-API activity-tab e2e no longer checks that a non-HTTP click URL gets no link or the non-campaign rows; `withProduction` retry accepts any server answering `/health`; the `templates-campaigns` connection reset is unexplained; the settings fields a partial write must keep set are repeated in three contract files.
+- Editor and tx ([#59](https://github.com/iglo-tech/iglo.email/pull/59)): identical repeated declarations in a held block style are merged (`color:red;color:blue;color:red` saves blue); a live shorthand rewritten to longhands after a style edit can move past a held declaration; the style splitter ignores CSS comments; a steady stream of small tx sends can keep a waiting upload out until its 429; the tx tests wait with `Bun.sleep` loops.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
