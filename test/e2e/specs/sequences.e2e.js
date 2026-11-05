@@ -453,69 +453,95 @@ test("a step condition is checked as it is typed", async ({ page }) => {
   await expect(page.getByTestId("condition-error")).toBeHidden();
 });
 
-test("the activity tab shows views and clicks and clears them", async ({ page }) => {
+test("the activity tab shows views and clicks from a real campaign and clears them", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
   await login(page);
-  const person = await subscriber(page);
-  let activity = {
-    campaign_views: [
-      {
-        id: 7,
-        name: "Spring <b>sale</b>",
-        subject: "Hello",
-        view_count: 3,
-        last_viewed_at: "2026-01-02T03:04:05Z",
-      },
-      {
-        id: null,
-        name: null,
-        subject: null,
-        view_count: 2,
-        last_viewed_at: "2026-01-01T03:04:05Z",
-      },
-    ],
-    link_clicks: [
-      {
-        url: "https://example.com/a",
-        campaign_id: 7,
-        campaign_name: "Spring <b>sale</b>",
-        campaign_subject: "Hello",
-        click_count: 4,
-        last_clicked_at: "2026-01-02T03:04:05Z",
-      },
-      {
-        url: "javascript:alert(1)",
-        campaign_id: null,
-        campaign_name: null,
-        campaign_subject: null,
-        click_count: 1,
-        last_clicked_at: "2026-01-01T03:04:05Z",
-      },
-    ],
-  };
-  const deleted = [];
-  await page.route(`**/api/subscribers/${person.id}/activity**`, (route) => {
-    const request = route.request();
-    if (request.method() === "DELETE") {
-      deleted.push(new URL(request.url()).pathname.split("/").pop());
-      activity = { campaign_views: [], link_clicks: [] };
-      return route.fulfill({ json: { data: true } });
-    }
-    return route.fulfill({ json: { data: activity } });
+  // Per-subscriber activity is recorded only with individual tracking; put the setting back after.
+  const settings = await api(page, "/api/settings");
+  const tracking = settings.body.data["privacy.individual_tracking"];
+  expect((await api(page, "/api/settings/privacy.individual_tracking", "PUT", true)).status).toBe(
+    200,
+  );
+  try {
+    await activityTab(page);
+  } finally {
+    await api(page, "/api/settings/privacy.individual_tracking", "PUT", tracking);
+  }
+});
+
+async function activityTab(page) {
+  const list = await api(page, "/api/lists", "POST", {
+    name: unique("activity"),
+    type: "private",
+    optin: "single",
   });
+  expect(list.status).toBe(200);
+  const person = await subscriber(page, {
+    lists: [list.body.data.id],
+    preconfirm_subscriptions: true,
+  });
+  const name = `Spring <b>sale</b> ${unique("activity")}`;
+  const made = await api(page, "/api/campaigns", "POST", {
+    name,
+    subject: "Hello",
+    lists: [list.body.data.id],
+    content_type: "html",
+    type: "regular",
+    messenger: "email",
+    body: '<p><a href="{{ "https://example.com/a" | track_link }}">go</a></p>',
+  });
+  expect(made.status).toBe(200);
+  const campaign = made.body.data;
+  expect(
+    (await api(page, `/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status,
+  ).toBe(200);
+
+  // The tracked address is the one the delivered mail carries.
+  const [mail] = await mailFor(person.email);
+  const body = mail.body.replace(/=\r?\n/g, "").replace(/=3D/g, "=");
+  const link = /\/link\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36}/.exec(body)?.[0];
+  expect(link).toBeTruthy();
+  for (let i = 0; i < 2; i++) {
+    const followed = await page.request.get(link, { maxRedirects: 0 });
+    expect([followed.status(), followed.headers().location]).toEqual([
+      307,
+      "https://example.com/a",
+    ]);
+  }
+  const pixel = await page.request.get(`/campaign/${campaign.uuid}/${person.uuid}/px.png`);
+  expect(pixel.status()).toBe(200);
+
+  // Views and clicks are written behind the response; the API says when they have landed.
+  await expect
+    .poll(async () => {
+      const seen = await api(page, `/api/subscribers/${person.id}/activity`);
+      return [
+        seen.body.data.campaign_views.reduce((n, v) => n + v.view_count, 0),
+        seen.body.data.link_clicks.reduce((n, c) => n + c.click_count, 0),
+      ];
+    })
+    .toEqual([1, 2]);
   await page.goto(`/admin/subscribers/${person.id}`);
-  await expect(page.getByTestId("stat-campaigns")).toHaveText("2");
-  await expect(page.getByTestId("stat-views")).toHaveText("5");
-  await expect(page.getByTestId("stat-clicks")).toHaveText("5");
-  await expect(page.getByTestId("view-row").first()).toContainText("Spring <b>sale</b>");
+  await expect(page.getByTestId("stat-views")).toHaveText("1");
+  await expect(page.getByTestId("stat-clicks")).toHaveText("2");
+  await expect(page.getByTestId("view-row")).toHaveCount(1);
+  await expect(page.getByTestId("view-row").first()).toContainText(name);
   await expect(
     page.getByTestId("click-row").first().locator("a[href^='https://example.com']"),
   ).toHaveCount(1);
-  await expect(page.locator("[data-testid=click-row] a[href^='javascript']")).toHaveCount(0);
   await page.getByTestId("btn-views-actions").click();
   await page.getByTestId("btn-clear-campaign_views").click();
+  const cleared = page.waitForResponse(
+    (r) => /\/activity\/campaign_views$/.test(r.url()) && r.request().method() === "DELETE",
+  );
   await confirm(page);
-  await page.waitForLoadState("networkidle");
-  expect(deleted).toEqual(["campaign_views"]);
+  expect((await cleared).status()).toBe(200);
   await expect(page.getByTestId("stat-views")).toHaveText("0");
   await expect(page.getByTestId("view-row")).toHaveCount(0);
-});
+  await expect(page.getByTestId("stat-clicks")).toHaveText("2");
+  const after = await api(page, `/api/subscribers/${person.id}/activity`);
+  expect(after.body.data.campaign_views).toEqual([]);
+  expect(after.body.data.link_clicks).toHaveLength(1);
+}

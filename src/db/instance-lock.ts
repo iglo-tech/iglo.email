@@ -51,7 +51,11 @@ function takeLock(path: string): Database {
  * writes the database calls this before opening it. The caller keeps the result until it is done:
  * the lock lasts as long as this connection does.
  */
-export function holdDataDirectory(dataDir: string): InstanceLock {
+export function holdDataDirectory(
+  dataDir: string,
+  /** The wait between attempts; a test replaces it to release a holder at a known moment. */
+  pause: (milliseconds: number) => void = Bun.sleepSync,
+): InstanceLock {
   const directory = resolve(dataDir);
   mkdirSync(directory, { recursive: true });
   const path = join(directory, LOCK);
@@ -65,7 +69,7 @@ export function holdDataDirectory(dataDir: string): InstanceLock {
       if (code === "SQLITE_BUSY") {
         if (busy++ === BUSY_RETRIES)
           throw new Error(`${directory} is in use by another iglo.email process: stop it first`);
-        Bun.sleepSync(1 + Math.random() * BUSY_RETRY_MS);
+        pause(1 + Math.random() * BUSY_RETRY_MS);
         continue;
       }
       // The file's content means nothing, and a holder never reads it again, so a damaged one is

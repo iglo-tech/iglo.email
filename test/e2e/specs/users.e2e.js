@@ -111,6 +111,8 @@ test.describe("Users, roles & login", () => {
       ),
       page.getByTestId("btn-save").click(),
     ]);
+    // The page reloads itself after an update and shows the toast then; a goto before that is aborted.
+    await expect(page.locator(".toast")).toBeVisible();
 
     // Reopen the role: "users:get" (not a default) is checked, proving the edit stuck.
     await gotoRoleEdit(page, USER_ROLES, first);
@@ -188,6 +190,8 @@ test.describe("Users, roles & login", () => {
       ),
       page.getByTestId("btn-save").click(),
     ]);
+    // The page reloads itself after an update and shows the toast then; a goto before that is aborted.
+    await expect(page.locator(".toast")).toBeVisible();
 
     // Reopen the role: both lists keep "view", exactly one lost "manage".
     await gotoRoleEdit(page, LIST_ROLES, second);
@@ -281,6 +285,8 @@ test.describe("Users, roles & login", () => {
       ),
       page.getByTestId("btn-save").click(),
     ]);
+    // The page reloads itself after an update and shows the toast then; a goto before that is aborted.
+    await expect(page.locator(".toast")).toBeVisible();
 
     // Reopen the edit view: the new roles and disabled password login are reflected.
     await gotoUserEdit(page, third);

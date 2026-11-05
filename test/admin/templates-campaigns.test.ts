@@ -1,6 +1,9 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { admin, get, login, userWith, type Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+
+// The fixture's password hashing and the whole file take 4 s of a 5 s default on an idle host.
+setDefaultTimeout(60_000);
 
 let f: Fixture;
 let cookie = "";

@@ -53,6 +53,8 @@ async function peer(hold = false) {
     ready = resolve;
   });
   const sockets = new Set<Socket>();
+  // Every counted client (remote port and opening line), so a failure names who connected.
+  const clients: string[] = [];
   // The host's dev runtime probes every new loopback port, some silently and some with HTTP or
   // TLS, sooner or later. An SMTP client speaks after the greeting and opens with EHLO or HELO, so
   // only that is a connection. A held peer counts it and never answers.
@@ -74,6 +76,7 @@ async function peer(hold = false) {
           if (!/^(EHLO|HELO) /i.test(line)) return void socket.destroy();
           spoken = true;
           count++;
+          clients.push(`${socket.remotePort}: ${line.slice(0, 40)}`);
           if (count === 4) ready();
         }
         if (hold) continue;
@@ -112,6 +115,7 @@ async function peer(hold = false) {
     port: addr.port,
     four,
     count: () => count,
+    clients: () => clients,
     close: async () => {
       for (const s of sockets) s.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -214,7 +218,8 @@ for (const change of ["disabled", "deleted", "grant", "explicit"] as const) {
         socket.end(payload.slice(split));
       }
       expect(await response).toContain(" 403 ");
-      expect(smtp.count()).toBe(0);
+      // The list names any client that did connect, for a failure that cannot be rerun.
+      expect(smtp.clients()).toEqual([]);
     } finally {
       await smtp.close();
     }

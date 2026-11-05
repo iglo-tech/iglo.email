@@ -7,6 +7,7 @@ import { mkdirSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { variantIdentity } from "@/test/perf/variant";
 
 const repository = resolve(import.meta.dir, "../..");
 const WINDOW_MS = Number(process.env.EVENTS_MEASURE_WINDOW_MS ?? 60_000);
@@ -380,6 +381,8 @@ async function run(name: string, events: boolean, sends: boolean) {
 const results: Record<string, unknown> = {
   date: new Date().toISOString(),
   bun: Bun.version,
+  // The code measured: set PERF_VARIANT to name it (for example "before" or "after").
+  ...variantIdentity(repository, join(repository, "dist/iglo.email")),
   sendRate: SEND_RATE,
   dataFs: fsType,
   freeBefore: free(),

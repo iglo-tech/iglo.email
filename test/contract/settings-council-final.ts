@@ -128,7 +128,9 @@ export async function runSettingsCouncilFinal(target: {
       JSON.stringify(out).slice(0, -1) +
       ',"smtp":[' +
       JSON.stringify({ enabled: firstEnabled }) +
-      ',{"enabled":true,"name":"second","host":"retained.example","port":25}],' +
+      // The pool fields keep upstream able to restart before the restore below.
+      ',{"enabled":true,"name":"second","host":"retained.example","port":25,"max_conns":1,' +
+      '"idle_timeout":"15s","wait_timeout":"5s"}],' +
       '"smtp":[{}],"smtp":[{},{}]}';
     const response = await request(body);
     const allowed = firstEnabled || target.mode === "reference";

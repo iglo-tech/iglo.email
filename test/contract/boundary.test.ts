@@ -383,9 +383,16 @@ describe("difference metadata and strict transport", () => {
       ],
       { cwd: repository, stdout: "pipe", stderr: "pipe" },
     );
-    const timeout = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    // The start-up of a loaded host is not bounded; the clock runs from the request, which the
+    // CLI sends only after it has installed its signal handlers, and again from the signal.
+    let timeout: ReturnType<typeof setTimeout> | undefined = setTimeout(
+      () => child.kill("SIGKILL"),
+      60_000,
+    );
     try {
       await started;
+      clearTimeout(timeout);
+      timeout = setTimeout(() => child.kill("SIGKILL"), 10_000);
       child.kill("SIGTERM");
       const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()]);
       expect(code).not.toBe(0);

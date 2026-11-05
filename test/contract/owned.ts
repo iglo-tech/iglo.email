@@ -50,8 +50,10 @@ export async function withProduction<T>(
   try {
     const copy = join(directory, "iglo.email");
     await copyFile(executable, copy);
-    const port = await availablePort();
-    const origin = `http://127.0.0.1:${port}`;
+    // A reserved port can be taken between release and bind, so the first start retries on a new
+    // port when the process dies at bind. A restart reuses the port its predecessor just freed.
+    let port = await availablePort();
+    let origin = `http://127.0.0.1:${port}`;
     const start = async () => {
       lifetime.throwIfAborted();
       child = spawnGroup(
@@ -113,7 +115,18 @@ export async function withProduction<T>(
         throw new Error("Compiled production restart shutdown failed");
       await start();
     };
-    await start();
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await start();
+        break;
+      } catch (error) {
+        const bind = /in use|EADDRINUSE|bind/i.test(String(error));
+        if (!bind || attempt >= 5) throw error;
+        if (child && closed) await stop(child, closed).catch(() => 0);
+        port = await availablePort();
+        origin = `http://127.0.0.1:${port}`;
+      }
+    }
     let abort!: () => void;
     const cancelled = new Promise<never>((_, reject) => {
       abort = () => reject(lifetime.reason);

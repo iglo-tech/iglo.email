@@ -1,7 +1,7 @@
 // B7: selections staged on disk. More IDs than one staging chunk, so batches span chunks, and
 // no staged file outlives a success, a failure or an unread response.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, readdirSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { STAGE_CHUNK } from "@/subscribers/id-stage";
 import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
@@ -9,9 +9,23 @@ import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
 const TOTAL = STAGE_CHUNK * 2 + 123;
 const q = (fragment: string) => encodeURIComponent(fragment);
 let f: QueryFixture;
+/**
+ * A staged file is gone when it is neither in the directory nor open: a file that was unlinked
+ * while still open (MVP targets Linux) leaves no name but keeps its disk until the process lets go.
+ */
 const staged = () => {
   const dir = join(f.db.filename, "..", "stage");
-  return existsSync(dir) ? readdirSync(dir) : [];
+  const named = existsSync(dir) ? readdirSync(dir) : [];
+  const open: string[] = [];
+  for (const fd of readdirSync("/proc/self/fd")) {
+    try {
+      const target = readlinkSync(join("/proc/self/fd", fd));
+      if (target.startsWith(`${dir}/`)) open.push(target);
+    } catch {
+      // The descriptor that listed the directory is already closed.
+    }
+  }
+  return [...named, ...open];
 };
 
 beforeAll(async () => {
@@ -72,6 +86,20 @@ describe("staged selections", () => {
     const page = await f.request(`/api/subscribers?per_page=all`, { headers: f.sessionHeaders });
     await page.body!.cancel();
     await Bun.sleep(100);
+    expect(staged()).toEqual([]);
+  });
+
+  test("the check sees a file that is unlinked but still open", async () => {
+    const dir = join(f.db.filename, "..", "stage");
+    const path = join(dir, "q-held");
+    await Bun.write(path, "held");
+    const handle = openSync(path, "r");
+    unlinkSync(path);
+    try {
+      expect(staged()).toHaveLength(1);
+    } finally {
+      closeSync(handle);
+    }
     expect(staged()).toEqual([]);
   });
 

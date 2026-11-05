@@ -438,6 +438,7 @@ async function run(args: string[]): Promise<number> {
         ...process.env,
         REFERENCE_RUN_ID: id,
         REFERENCE_URL: referenceUrl,
+        REFERENCE_LOG: join(directory, "listmonk.log"),
         REFERENCE_API_USER: apiUser,
         REFERENCE_API_TOKEN: token,
         MAILPIT_URL: mailUrl,
