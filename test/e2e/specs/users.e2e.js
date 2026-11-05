@@ -14,6 +14,7 @@ import {
   openMenu,
   test,
   unique,
+  signIn,
 } from "../helpers.js";
 
 const USERS = "/admin/users";
@@ -55,7 +56,7 @@ async function signedIn(page, username, password, next = "/admin/lists") {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
 });
 
 test.describe("Users, roles & login", () => {

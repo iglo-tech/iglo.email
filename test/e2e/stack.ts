@@ -3,7 +3,6 @@
 import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
 import {
-  admin,
   apiClient,
   startMailbox,
   startProduction,

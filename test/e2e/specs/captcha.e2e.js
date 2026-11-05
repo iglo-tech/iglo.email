@@ -3,7 +3,7 @@
 // run shares one server, so the setting is put back after each test.
 import { createServer } from "node:http";
 import { expect } from "@playwright/test";
-import { ORIGIN, api, login, test, unique } from "../helpers.js";
+import { ORIGIN, api, test, unique, signIn } from "../helpers.js";
 
 const SUB_FORM = "/subscription/form";
 let before;
@@ -28,7 +28,7 @@ async function fillForm(page, list, email) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
   before = (await ok(page, "/api/settings"))["security.captcha"];
   await ok(page, "/api/settings/security.captcha", "PUT", {
     altcha: { enabled: true, complexity: 20000 },

@@ -13,7 +13,9 @@ export default defineConfig({
   reporter: "list",
   use: {
     baseURL: process.env.E2E_ORIGIN,
-    trace: "retain-on-failure",
+    // A failure keeps the DOM snapshots, network and console; the screencast frames are left out,
+    // since recording them cost a quarter of the CPU of a run (the failure screenshot stays).
+    trace: { mode: "retain-on-failure", screenshots: false, snapshots: true },
     screenshot: "only-on-failure",
   },
   projects: [

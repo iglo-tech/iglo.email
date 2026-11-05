@@ -10,6 +10,9 @@ export const BLANK_ORIGIN = process.env.E2E_BLANK_ORIGIN;
 export const ADMIN = { user: process.env.E2E_ADMIN_USER, password: process.env.E2E_ADMIN_PASSWORD };
 export const PASSWORD = "e2e-user-password";
 
+// The client address each test page presents through the trusted proxy; see `test` below.
+const peers = new WeakMap();
+
 export const unique = (prefix) => `${prefix}-${randomBytes(4).toString("hex")}`;
 
 // Each test is its own client, through the trusted proxy run.ts configures, so a run of specs
@@ -22,6 +25,7 @@ export const test = base.extend({
   page: async ({ page, violations }, use) => {
     const peer = `203.0.113.${1 + (randomBytes(1)[0] % 254)}`;
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": peer });
+    peers.set(page, peer);
     const seen = [];
     await page.exposeBinding("__reportViolation", (_source, text) => seen.push(text));
     await page.addInitScript(() => {
@@ -55,8 +59,29 @@ export async function login(
   ]);
 }
 
-// Log out through the user menu.
+// Start an administrator session the way `login` does, but without drawing the pages: fetch the
+// login page for its nonce, post the form, and leave the page on a small same-origin document that
+// holds the session and CSRF cookies, which is all `api` needs. The login, two-factor, reset and
+// logout specs go through the form with `login`; every other test only needs the session, and
+// each still gets a fresh one of its own. Navigate with `page.goto` afterwards.
+export async function signIn(page, username = ADMIN.user, password = ADMIN.password) {
+  const headers = { "X-Forwarded-For": peers.get(page) };
+  const form = await page.request.get("/admin/login?next=%2Fadmin", { headers });
+  const nonce = /name="nonce" value="([^"]+)"/.exec(await form.text())?.[1];
+  expect(nonce, "the login page carries a nonce").toBeTruthy();
+  const posted = await page.request.post("/admin/login", {
+    headers,
+    form: { username, password, next: "/admin", nonce },
+    maxRedirects: 0,
+  });
+  expect(posted.status(), "the login form redirects to the admin").toBe(302);
+  expect(posted.headers().location).toBe("/admin");
+  await page.goto("/api/health");
+}
+
+// Log out through the user menu. After `signIn` the page holds no admin screen yet, so open one.
 export async function logout(page) {
+  if (!new URL(page.url()).pathname.startsWith("/admin")) await page.goto("/admin");
   await page.locator(".user-trigger").click();
   await Promise.all([
     page.waitForURL("**/admin/login"),

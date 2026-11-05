@@ -3,7 +3,7 @@
 // the deletes leave other tests' subscribers alone only if those have lists, which they do here
 // by running serially. Differences beside the cases, with their rows in 07-api-and-ui.md.
 import { expect } from "@playwright/test";
-import { PASSWORD, api, confirm, createUser, login, logout, test, unique } from "../helpers.js";
+import { PASSWORD, api, confirm, createUser, logout, test, unique, signIn } from "../helpers.js";
 
 async function ok(page, path, method = "GET", body = undefined) {
   const res = await api(page, path, method, body);
@@ -22,7 +22,7 @@ const makeSub = (page, lists, status = "enabled") =>
 const exists = async (page, id) => (await api(page, `/api/subscribers/${id}`)).status === 200;
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
 });
 
 test("deletes orphan and blocklisted subscribers", async ({ page }) => {
@@ -106,7 +106,7 @@ test("over the webhook budget the page shows the API's message and deletes nothi
 test("the screens need their permissions", async ({ page }) => {
   const reader = await createUser(page, ["settings:get"]);
   await logout(page);
-  await login(page, reader.username, PASSWORD);
+  await signIn(page, reader.username, PASSWORD);
   await page.goto("/admin/settings/logs");
   await expect(page.locator(".logs .page-title")).toHaveText("Logs");
   const denied = await page.goto("/admin/settings/maintenance");

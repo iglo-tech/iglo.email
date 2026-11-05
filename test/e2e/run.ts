@@ -1,5 +1,5 @@
 // Runs the adapted listmonk Playwright specs in test/e2e/specs. `bun run e2e` builds first.
-// With no arguments every spec file runs, spread over E2E_WORKERS independent stacks (default 3):
+// With no arguments every spec file runs, spread over E2E_WORKERS independent stacks (default 2):
 // each stack is its own server, data directory, SMTP sink and fresh-install instance, and takes
 // the next spec file from the queue when it is free. Arguments go to Playwright, as in
 // `bun run e2e test/e2e/specs/login.e2e.js`, and then one stack runs them in order.
@@ -9,27 +9,36 @@ import { root, withStacks, type Stack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 
 const results = resolve(root, "dist/e2e-results");
-const workers = Math.max(1, Number(process.env.E2E_WORKERS ?? 3) || 1);
+const workers = Math.max(1, Number(process.env.E2E_WORKERS ?? 2) || 1);
 
 // Longest first, so the big files start early and the short ones fill the gaps. Seconds from a
-// serial run; a file missing here runs last. Only the order depends on them, never the outcome.
+// run over three stacks; a file missing here runs last. Only the order depends on them, never
+// the outcome.
 const weights: Record<string, number> = {
-  "subscribers.e2e.js": 208,
-  "campaigns.e2e.js": 112,
-  "sequences.e2e.js": 95,
-  "editor-containment.e2e.js": 88,
-  "bounces.e2e.js": 83,
-  "lists.e2e.js": 54,
-  "settings.e2e.js": 49,
-  "users.e2e.js": 47,
-  "import.e2e.js": 45,
-  "csp.e2e.js": 45,
-  "campaign-editor.e2e.js": 37,
-  "campaign-safety.e2e.js": 33,
-  "maintenance.e2e.js": 21,
-  "media.e2e.js": 19,
-  "templates.e2e.js": 18,
-  "forms.e2e.js": 16,
+  "campaigns.e2e.js": 130,
+  "csp.e2e.js": 109,
+  "sequences.e2e.js": 107,
+  "editor-containment.e2e.js": 96,
+  "bounces.e2e.js": 88,
+  "subscribers-filtered-bulk.e2e.js": 81,
+  "subscribers-filtered-bulk-query.e2e.js": 67,
+  "settings.e2e.js": 67,
+  "subscribers.e2e.js": 65,
+  "lists.e2e.js": 61,
+  "users.e2e.js": 58,
+  "import.e2e.js": 53,
+  "campaign-editor.e2e.js": 40,
+  "campaign-safety.e2e.js": 39,
+  "maintenance.e2e.js": 28,
+  "media.e2e.js": 27,
+  "templates.e2e.js": 26,
+  "forms.e2e.js": 23,
+  "captcha.e2e.js": 17,
+  "reset.e2e.js": 16,
+  "login.e2e.js": 14,
+  "dashboard.e2e.js": 12,
+  "hostile.e2e.js": 12,
+  "twofa.e2e.js": 12,
 };
 
 interface Outcome {

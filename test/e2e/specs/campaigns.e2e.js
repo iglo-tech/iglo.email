@@ -3,7 +3,7 @@
 // Liquid (D9). Dropped cases, with reasons, are in the M4.3 pull request: the visual format, dates
 // set through psql, and the API-only bulk deletion cases the contract suite covers.
 import { expect } from "@playwright/test";
-import { api, confirm, login, mailFor, openMenu, selectList, test, unique } from "../helpers.js";
+import { api, confirm, mailFor, openMenu, selectList, test, unique, signIn } from "../helpers.js";
 
 const CAMPAIGNS = "/admin/campaigns";
 const expression = "Hello {{ subscriber.name }} from {{ subscriber.attribs.city }}";
@@ -92,17 +92,29 @@ async function fillBody(page, format, text) {
 // One subscriber on a new list, for mail the sink can be asked about.
 async function audience(page, count = 1) {
   const list = await makeList(page);
-  const emails = [];
-  for (let i = 0; i < count; i += 1) {
-    const email = `${unique("reader")}@example.com`;
-    await ok(page, "/api/subscribers", "POST", {
-      email,
-      name: `Reader ${i}`,
-      status: "enabled",
-      lists: [list.id],
-    });
-    emails.push(email);
-  }
+  const emails = Array.from({ length: count }, () => `${unique("reader")}@example.com`);
+  // One round trip for all of them, in order; the first refusal is reported with its answer.
+  const refused = await page.evaluate(
+    async ([listID, addresses]) => {
+      const csrf =
+        document.cookie
+          .split("; ")
+          .find((c) => c.startsWith("csrf="))
+          ?.slice(5) ?? "";
+      for (const [i, email] of addresses.entries()) {
+        const response = await fetch("/api/subscribers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+          body: JSON.stringify({ email, name: `Reader ${i}`, status: "enabled", lists: [listID] }),
+        });
+        if (response.status !== 200)
+          return { status: response.status, body: await response.text() };
+      }
+      return null;
+    },
+    [list.id, emails],
+  );
+  expect(refused, "seeding the audience").toBeNull();
   return { list, emails };
 }
 
@@ -113,7 +125,7 @@ async function preview(page, text) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await login(page);
+  await signIn(page);
 });
 
 test("shows a campaign and previews it from the listing", async ({ page }) => {
@@ -608,8 +620,10 @@ test("uploads an attachment, persists it and delivers it when starting from the 
 });
 
 test("starts, pauses, resumes and cancels from the listing", async ({ page }) => {
-  // Keep sending long enough to change status at the configured rate.
-  const { list } = await audience(page, 150);
+  // Keep sending long enough to change status at the configured rate of 10 a second: 600 readers
+  // are 60 s of sending, so a slow host (this test took 20 s at load 16, and 150 readers had
+  // finished before the cancel) cannot outrun the four status changes.
+  const { list } = await audience(page, 600);
   const c = await create(page, { lists: [list.id] });
   await page.goto(`${CAMPAIGNS}?query=${c.name}`);
   for (const [action, status] of [

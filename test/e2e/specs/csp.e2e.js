@@ -5,7 +5,7 @@
 import { createServer } from "node:http";
 import { generateRuntimeFunction } from "@alpinejs/csp/src/parser.js";
 import { expect } from "@playwright/test";
-import { api, login, ORIGIN, test, unique } from "../helpers.js";
+import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
 async function ok(page, path, method, body) {
   const response = await api(page, path, method, body);
@@ -31,7 +31,7 @@ function directives() {
 
 test("every screen works under the policy", async ({ page }) => {
   test.setTimeout(120_000);
-  await login(page);
+  await signIn(page);
   const list = await ok(page, "/api/lists", "POST", {
     name: unique("Policy"),
     type: "public",
@@ -136,7 +136,7 @@ test.describe("responses that hold authored text", () => {
     }, paths);
 
   test("do not run as same-origin script", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const list = await ok(page, "/api/lists", "POST", {
       name: unique("Script"),
       type: "private",
@@ -199,7 +199,7 @@ test.describe("responses that hold authored text", () => {
 
 test.describe("expressions rewritten for the CSP build", () => {
   test("a list missing a status shows 0, not NaN", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const list = await ok(page, "/api/lists", "POST", {
       name: unique("Statuses"),
       type: "private",
@@ -211,7 +211,7 @@ test.describe("expressions rewritten for the CSP build", () => {
   });
 
   test("a bounce whose campaign has no name still shows the dash", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const subscriber = await ok(page, "/api/subscribers", "POST", {
       email: `${unique("dash")}@example.com`,
       name: "Dash",
@@ -256,7 +256,7 @@ test.describe("script that reached the page", () => {
   test.afterAll(() => new Promise((resolve) => server.close(resolve)));
 
   test("does not run, and cannot send anything out", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     await page.goto("/admin/lists");
     const outcome = await page.evaluate(async (target) => {
       const refused = [];
@@ -339,7 +339,7 @@ test.describe("script that reached the page", () => {
   });
 
   test("the admin cannot be framed by another origin", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const response = await page.goto("/admin/login");
     expect(response.headers()["content-security-policy"]).toContain("frame-ancestors 'self'");
   });
