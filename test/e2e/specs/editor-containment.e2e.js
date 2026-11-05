@@ -364,7 +364,7 @@ test.describe("remote images load on request", () => {
         el.dispatchEvent(
           new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
         );
-      }, `<p style="padding: 16px; text-align: center" data-rte-style="background-image: url('${remote}/both.gif'); padding: 99px">both</p>`);
+      }, `<p>head</p><p style="padding: 16px; text-align: center" data-rte-style="background-image: url('${remote}/both.gif'); padding: 99px">both</p>`);
       await expect(page.locator(EDITOR).getByText("both")).toHaveCount(1);
       await expect(page.getByTestId("editor-held")).toBeVisible();
       const stored = await saved(page, c.id);
