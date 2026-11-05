@@ -107,7 +107,7 @@ Chromium browser 117, Playwright runner 53, Chromium utility 21.
 The default is 2 (owner decision): the VM is shared with other agents, and 2 stacks keep the run at
 about 3 cores and 2.2 GiB, inside the VM's 2 to 16 GiB policy. `E2E_WORKERS=3` (5.6 min) or
 `E2E_WORKERS=4` (5.0 min, with the order-dependent failure below, since fixed) are overrides for an
-idle host, and `E2E_WORKERS=1` is the old serial order.
+idle host, and `E2E_WORKERS=1` runs all files on one stack.
 
 ## Order dependence found by changing the order
 

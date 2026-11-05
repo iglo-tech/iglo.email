@@ -9,7 +9,12 @@ import { root, withStacks, type Stack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 
 const results = resolve(root, "dist/e2e-results");
-const workers = Math.max(1, Number(process.env.E2E_WORKERS ?? 2) || 1);
+const requested = process.env.E2E_WORKERS ?? "2";
+if (!/^[1-9][0-9]*$/.test(requested)) {
+  console.error(`E2E_WORKERS must be a whole number of stacks, 1 or more; got "${requested}".`);
+  process.exit(2);
+}
+const workers = Number(requested);
 
 // Longest first, so the big files start early and the short ones fill the gaps. Seconds from a
 // run over three stacks; a file missing here runs last. Only the order depends on them, never

@@ -264,7 +264,7 @@ test.describe("remote images load on request", () => {
   test("a style that fetches a remote address is held and noticed, and stored as written (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body = `<p style="background-image: url('${remote}/style.gif'); color: red">styled</p>`;
     const c = await campaign(page, body);
     await open(page, c.id);
@@ -293,7 +293,7 @@ test.describe("remote images load on request", () => {
   test("aligning a block with a held background keeps the alignment and the background (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body = `<p style="background-image: url('${remote}/bg.gif'); padding: 16px">Hello</p>`;
     const c = await campaign(page, body);
     await open(page, c.id);
@@ -311,7 +311,7 @@ test.describe("remote images load on request", () => {
   test("resizing an image with a held background keeps the size and the background (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const body = `<p>text <img src="/admin/static/favicon.png" alt="b" style="background-image: url('${remote}/img-bg.gif'); padding: 2px"> more</p>`;
     const c = await campaign(page, body);
     await open(page, c.id);
@@ -349,7 +349,7 @@ test.describe("remote images load on request", () => {
     page,
     context,
   }) => {
-    await login(page);
+    await signIn(page);
     const cells = orderCells(remote);
     const body = `<table><tbody><tr>${cells.map((c, i) => `<td style="${c}">cell${i}</td>`).join("")}</tr></tbody></table>`;
     const c = await campaign(page, body);
@@ -385,7 +385,7 @@ test.describe("remote images load on request", () => {
   });
 
   test("centring a hero cell keeps the colour after the shorthand (B10)", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const [hero] = orderCells(remote);
     const c = await campaign(
       page,
@@ -417,7 +417,7 @@ test.describe("remote images load on request", () => {
     test(`saving a span with a remote background and ${other} unedited keeps it (B10)`, async ({
       page,
     }) => {
-      await login(page);
+      await signIn(page);
       const style = `background: url('${remote}/span.gif') no-repeat left center; ${other}`;
       const c = await campaign(page, `<p>Hi <span style="${style}">Sale</span> now</p>`);
       await open(page, c.id);
@@ -442,7 +442,7 @@ test.describe("remote images load on request", () => {
   test("bolding a word inside a span with a held background keeps the background (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const style = `background: url('${remote}/span.gif') no-repeat; font-weight: normal`;
     const c = await campaign(page, `<p>Hi <span style="${style}">Sale today</span> now</p>`);
     await open(page, c.id);
@@ -462,7 +462,7 @@ test.describe("remote images load on request", () => {
     test("a cut and paste keeps the background and the padding, and the notice (B10)", async ({
       page,
     }) => {
-      await login(page);
+      await signIn(page);
       const body = `<p style="background-image: url('${remote}/moved-bg.gif'); padding: 16px">move me</p>`;
       const c = await campaign(page, body);
       await open(page, c.id);
@@ -478,7 +478,7 @@ test.describe("remote images load on request", () => {
     test("a paste carrying both a style and its held declarations keeps both (B10)", async ({
       page,
     }) => {
-      await login(page);
+      await signIn(page);
       const c = await campaign(page);
       await open(page, c.id);
       await page.locator(EDITOR).evaluate((el, html) => {
@@ -501,7 +501,7 @@ test.describe("remote images load on request", () => {
   });
 
   test("an image from a root URL the policy cannot name is held (B10)", async ({ page }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page);
     await open(page, c.id);
     // The page's own policy names no origin with `_` in its host, so the editor must not treat it
@@ -730,7 +730,7 @@ test.describe("remote images load on request", () => {
   test("an archive slug typed while a save is in flight is still unsaved (B10)", async ({
     page,
   }) => {
-    await login(page);
+    await signIn(page);
     const c = await campaign(page, `<p><img src="${remote}/slug.gif" alt="a"></p>`);
     await ok(page, `/api/campaigns/${c.id}/archive`, "PUT", {
       archive: true,

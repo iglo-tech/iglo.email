@@ -14,13 +14,14 @@ install chromium` fetches the revision it pins. Failures leave a screenshot and 
 frames, which cost a quarter of the CPU of a run. The run ends with the slowest spec files, and
 `dist/e2e-results/timings.json` lists every file and test with its duration.
 
-`E2E_WORKERS=1 bun run e2e` is the old serial order on one stack. Each stack takes about 1.1 GiB
-and one to one and a half cores while it works (the Playwright process, two servers and a Chromium).
-The default is 2 because the 6-core, 16 GiB VM is shared with other agents: 2 stacks keep the run at
-about 3 cores and 2.2 GiB. On an idle host `E2E_WORKERS=3` or `E2E_WORKERS=4` is faster (see
-`docs/perf/e2e-speed.md`); more than 4 does not help, since the longest files then bound the time. A
-spec that is too long to balance is split along its describe blocks (`subscribers*.e2e.js`, with the
-shared steps in `subscribers-helpers.js`).
+`E2E_WORKERS=1 bun run e2e` runs every file on one stack, longest first, one Playwright process per
+file. `E2E_WORKERS` must be a whole number, 1 or more; anything else stops the run before it starts.
+Each stack takes about 1.1 GiB and one to one and a half cores while it works (the Playwright
+process, two servers and a Chromium). The default is 2 because the 6-core, 16 GiB VM is shared with
+other agents: 2 stacks keep the run at about 3 cores and 2.2 GiB. On an idle host `E2E_WORKERS=3` or
+`E2E_WORKERS=4` is faster (see `docs/perf/e2e-speed.md`); more than 4 does not help, since the
+longest files then bound the time. A spec that is too long to balance is split along its describe
+blocks (`subscribers*.e2e.js`, with the shared steps in `subscribers-helpers.js`).
 
 One file: `bun run e2e test/e2e/specs/login.e2e.js`. Arguments go to Playwright and run on one
 stack, in order.

@@ -614,7 +614,7 @@ Decided by agents on 2026-10-30, for owner review.
 
 Decided by agents on 2026-10-30, for owner review.
 
-- **Decision:** `@playwright/test` 1.64.1 is a development dependency, pinned to the release that drives the Chromium revision already in `~/.cache/ms-playwright`. `bun run e2e` runs the adapted upstream specs serially against the compiled executable on a generated data directory. It is local and not a CI gate; no release artifact contains it.
+- **Decision:** `@playwright/test` 1.64.1 is a development dependency, pinned to the release that drives the Chromium revision already in `~/.cache/ms-playwright`. `bun run e2e` runs the adapted upstream specs against the compiled executable, spread over `E2E_WORKERS` independent stacks (default 2), each with its own generated data directory; the specs of one file run serially on one stack. It is local and not a CI gate; no release artifact contains it.
 - **Why:** M4 tasks adapt upstream's Playwright specs, and keeping the same runner and locators keeps an adapted spec close to its upstream file. `agent-browser` is kept for the one-off checks each task reports.
 - **Details:** spec files end in `.e2e.js` because `bun test` claims `.spec.js`. Mail goes to the loopback SMTP sink of `test/tx/sink.ts` instead of Mailpit, so a run needs no Docker or reference preparation; specs that need Mailpit keep using `bun run reference:run`. Each test is its own client through `security.trusted_proxies`, so a run stays inside the real login limit instead of a test-only bypass.
 - **Not chosen:** a hand-written runner over `agent-browser`, which would mean rewriting every upstream spec. Running through `reference:run`, which starts upstream and Postgres that these specs do not use.
