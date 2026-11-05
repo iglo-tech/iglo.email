@@ -74,8 +74,12 @@ export function holdDataDirectory(
       }
       // The file's content means nothing, and a holder never reads it again, so a damaged one is
       // emptied where it stands. Removing it instead could give two processes two locks.
-      if (emptied || (code !== "SQLITE_NOTADB" && code !== "SQLITE_CORRUPT"))
-        throw new Error(`Cannot lock ${path}: ${message}`);
+      // A header with SQLite's magic and a schema format from the future is "unsupported file format".
+      const damaged =
+        code === "SQLITE_NOTADB" ||
+        code === "SQLITE_CORRUPT" ||
+        (code === "SQLITE_ERROR" && message === "unsupported file format");
+      if (emptied || !damaged) throw new Error(`Cannot lock ${path}: ${message}`);
       emptied = true;
       try {
         truncateSync(path);

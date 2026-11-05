@@ -261,6 +261,260 @@ test.describe("remote images load on request", () => {
     await expect.poll(() => requests).toContain("/banner.gif");
   });
 
+  test("a style that fetches a remote address is held and noticed, and stored as written (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const body = `<p style="background-image: url('${remote}/style.gif'); color: red">styled</p>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await expect(page.getByTestId("editor-held")).toBeVisible();
+    // Only the declaration that would fetch waits; the rest stays live.
+    const live = await page.locator(`${EDITOR} p`).first().getAttribute("style");
+    expect(live).toContain("color: red");
+    expect(live).not.toContain("url(");
+    await page.locator(EDITOR).pressSequentially("x");
+    const save = page.waitForResponse((r) => r.request().method() === "PUT");
+    await page.keyboard.press("Control+s");
+    expect((await save).status()).toBe(200);
+    const stored = (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
+    expect(stored).toContain(`url('${remote}/style.gif')`);
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /style\.gif/.test(path))).toEqual([]);
+  });
+
+  const saved = async (page, id) => {
+    const save = page.waitForResponse((r) => r.request().method() === "PUT");
+    await page.keyboard.press("Control+s");
+    expect((await save).status()).toBe(200);
+    return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
+  };
+
+  test("aligning a block with a held background keeps the alignment and the background (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const body = `<p style="background-image: url('${remote}/bg.gif'); padding: 16px">Hello</p>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await expect(page.getByTestId("editor-held")).toBeVisible();
+    await page.locator(`${EDITOR} p`).first().click();
+    await page.locator('richtext-editor [data-cmd="align"][data-value="center"]').click();
+    const stored = await saved(page, c.id);
+    expect(stored).toContain(`url('${remote}/bg.gif')`);
+    expect(stored).toContain("padding: 16px");
+    expect(stored).toMatch(/text-align:\s*center/);
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /bg\.gif/.test(path))).toEqual([]);
+  });
+
+  test("resizing an image with a held background keeps the size and the background (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const body = `<p>text <img src="/admin/static/favicon.png" alt="b" style="background-image: url('${remote}/img-bg.gif'); padding: 2px"> more</p>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await page.locator(`${EDITOR} img`).click();
+    const handle = page.locator(".squire-resize-handle-se");
+    const box = await handle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 120, box.y + 80, { steps: 8 });
+    await page.mouse.up();
+    await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
+    await page.locator(EDITOR).pressSequentially("x");
+    const stored = await saved(page, c.id);
+    const tag = /<img[^>]*>/.exec(stored)[0];
+    expect(tag).toMatch(/width:\s*[1-9]\d*px/);
+    expect(tag).toContain(`url('${remote}/img-bg.gif')`);
+    expect(tag).toContain("padding: 2px");
+    expect(tag).not.toContain("data-rte-");
+  });
+
+  // CSS order matters: a shorthand resets the longhands before it, so a held declaration stays
+  // where it was and saving without a style edit stores the same declarations in the same order.
+  const orderCells = (r) => [
+    `background: url('${r}/hero.gif') center/cover no-repeat; background-color: #1a1a1a`,
+    `background: url('${r}/size.gif'); background-size: cover`,
+    `background-image: url('${r}/a.gif'); background-image: linear-gradient(red, blue)`,
+  ];
+  const styleOf = (html, index) =>
+    new DOMParser()
+      .parseFromString(html, "text/html")
+      .querySelectorAll("td")
+      [index].getAttribute("style");
+
+  test("saving held background cells unedited keeps declaration order and values (B10)", async ({
+    page,
+    context,
+  }) => {
+    await login(page);
+    const cells = orderCells(remote);
+    const body = `<table><tbody><tr>${cells.map((c, i) => `<td style="${c}">cell${i}</td>`).join("")}</tr></tbody></table>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await expect(page.getByTestId("editor-held")).toBeVisible();
+    // Only text is edited; every style is as it was.
+    await page.locator(`${EDITOR} td`).first().click();
+    await page.keyboard.press("End");
+    await page.keyboard.type("x");
+    const stored = await saved(page, c.id);
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /hero|size|a\.gif/.test(path))).toEqual([]);
+    const probe = await context.newPage();
+    for (const [i, original] of cells.entries()) {
+      const got = await page.evaluate(`(${styleOf})(${JSON.stringify(stored)}, ${i})`);
+      expect(got.replace(/\s+/g, " ")).toBe(original);
+      const computed = (style) =>
+        probe.evaluate((css) => {
+          const el = document.body.appendChild(document.createElement("div"));
+          el.setAttribute("style", css);
+          const s = getComputedStyle(el);
+          return [
+            s.backgroundColor,
+            s.backgroundSize,
+            s.backgroundPosition,
+            s.backgroundRepeat,
+            s.backgroundImage,
+          ];
+        }, style);
+      expect(await computed(got)).toEqual(await computed(original));
+    }
+    await probe.close();
+  });
+
+  test("centring a hero cell keeps the colour after the shorthand (B10)", async ({ page }) => {
+    await login(page);
+    const [hero] = orderCells(remote);
+    const c = await campaign(
+      page,
+      `<table><tbody><tr><td style="${hero}">hero</td></tr></tbody></table>`,
+    );
+    await open(page, c.id);
+    await page.locator(`${EDITOR} td`).first().click();
+    await page.locator('richtext-editor [data-cmd="align"][data-value="center"]').click();
+    const stored = await saved(page, c.id);
+    const style = /<td[^>]*style="([^"]*)"/.exec(stored)[1];
+    expect(style).toMatch(/text-align:\s*center/);
+    expect(style.indexOf("background-color")).toBeGreaterThan(style.indexOf("background:"));
+    expect(style).toMatch(/background-color:\s*(?:#1a1a1a|rgb\(26, 26, 26\))/);
+    expect(style).toContain(`url('${remote}/hero.gif')`);
+    expect(stored).not.toContain("data-rte-");
+  });
+
+  // Squire turns the font and text declarations of a span into markup, so the span's style is held
+  // whole: an unedited save stores the span as it was.
+  const spanStyles = [
+    "font-weight: bold",
+    "font-style: italic",
+    "font-family: Arial",
+    "font-size: 18px",
+    "text-decoration: underline",
+  ];
+
+  for (const other of spanStyles) {
+    test(`saving a span with a remote background and ${other} unedited keeps it (B10)`, async ({
+      page,
+    }) => {
+      await login(page);
+      const style = `background: url('${remote}/span.gif') no-repeat left center; ${other}`;
+      const c = await campaign(page, `<p>Hi <span style="${style}">Sale</span> now</p>`);
+      await open(page, c.id);
+      await expect(page.getByTestId("editor-held")).toBeVisible();
+      await page.locator(`${EDITOR} p`).first().click();
+      await page.keyboard.press("End");
+      await page.keyboard.type("x");
+      const stored = await saved(page, c.id);
+      const got = await page.evaluate(
+        ([html]) => {
+          const el = new DOMParser().parseFromString(html, "text/html").querySelector("span");
+          return el && { style: el.getAttribute("style"), text: el.textContent };
+        },
+        [stored],
+      );
+      expect(got).toEqual({ style, text: "Sale" });
+      expect(stored).not.toContain("data-rte-");
+      expect(requests.filter((path) => /span\.gif/.test(path))).toEqual([]);
+    });
+  }
+
+  test("bolding a word inside a span with a held background keeps the background (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const style = `background: url('${remote}/span.gif') no-repeat; font-weight: normal`;
+    const c = await campaign(page, `<p>Hi <span style="${style}">Sale today</span> now</p>`);
+    await open(page, c.id);
+    await page.locator(`${EDITOR} span`).first().dblclick();
+    await page.locator('richtext-editor [data-cmd="bold"]').click();
+    const stored = await saved(page, c.id);
+    expect(stored).toContain(`url('${remote}/span.gif')`);
+    expect(stored).toMatch(/<b>[^<]*<\/b>/);
+    expect(stored).toContain("Sale");
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /span\.gif/.test(path))).toEqual([]);
+  });
+
+  test.describe("a block whose style is held, moved by the clipboard", () => {
+    test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+
+    test("a cut and paste keeps the background and the padding, and the notice (B10)", async ({
+      page,
+    }) => {
+      await login(page);
+      const body = `<p style="background-image: url('${remote}/moved-bg.gif'); padding: 16px">move me</p>`;
+      const c = await campaign(page, body);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} p`).first().click();
+      for (const key of ["Control+a", "Control+x", "Control+v"]) await page.keyboard.press(key);
+      await expect(page.getByTestId("editor-held")).toBeVisible();
+      const stored = await saved(page, c.id);
+      expect(stored).toContain(`url('${remote}/moved-bg.gif')`);
+      expect(stored).toContain("padding: 16px");
+      expect(stored).not.toContain("data-rte-");
+    });
+
+    test("a paste carrying both a style and its held declarations keeps both (B10)", async ({
+      page,
+    }) => {
+      await login(page);
+      const c = await campaign(page);
+      await open(page, c.id);
+      await page.locator(EDITOR).evaluate((el, html) => {
+        el.focus();
+        const clipboardData = new DataTransfer();
+        clipboardData.setData("text/html", html);
+        el.dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
+        );
+      }, `<p>head</p><p style="padding: 16px; text-align: center" data-rte-style="background-image: url('${remote}/both.gif'); padding: 99px">both</p>`);
+      await expect(page.locator(EDITOR).getByText("both")).toHaveCount(1);
+      await expect(page.getByTestId("editor-held")).toBeVisible();
+      const stored = await saved(page, c.id);
+      expect(stored).toContain(`url('${remote}/both.gif')`);
+      expect(stored).toContain("padding: 16px");
+      expect(stored).not.toContain("padding: 99px");
+      expect(stored).toMatch(/text-align:\s*center/);
+      expect(stored).not.toContain("data-rte-");
+    });
+  });
+
+  test("an image from a root URL the policy cannot name is held (B10)", async ({ page }) => {
+    await login(page);
+    const c = await campaign(page);
+    await open(page, c.id);
+    // The page's own policy names no origin with `_` in its host, so the editor must not treat it
+    // as loadable either.
+    const held = await page.evaluate(() => {
+      window._LM_CONFIG.root_url = "http://under_score.example.test";
+      const host = document.querySelector("richtext-editor");
+      host.value = '<p><img src="http://under_score.example.test/a.png" alt="a"></p>';
+      return !!host.querySelector("img[data-rte-src]");
+    });
+    expect(held).toBe(true);
+  });
+
   test.describe("a real cut and paste", () => {
     test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
@@ -471,6 +725,43 @@ test.describe("remote images load on request", () => {
     await expect(page.locator("dialog.confirm-dialog")).toBeVisible();
     await page.locator("dialog.confirm-dialog [data-confirm-cancel]").click();
     expect(page.url()).not.toContain("remote_images");
+  });
+
+  test("an archive slug typed while a save is in flight is still unsaved (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const c = await campaign(page, `<p><img src="${remote}/slug.gif" alt="a"></p>`);
+    await ok(page, `/api/campaigns/${c.id}/archive`, "PUT", {
+      archive: true,
+      archive_template_id: 0,
+      archive_meta: {},
+      archive_slug: unique("slug"),
+    });
+    await page.goto(`/admin/campaigns/${c.id}`);
+    let release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/api/campaigns/${c.id}`, async (route) => {
+      if (route.request().method() === "PUT") await held;
+      await route.continue();
+    });
+    const slug = page.locator('input[name="archive_slug"]');
+    await page.getByRole("tab", { name: "Archive", exact: true }).click();
+    await slug.fill("first-slug");
+    const save = page.waitForResponse((r) => r.request().method() === "PUT");
+    await page.keyboard.press("Control+s");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.name)).toBe("archive_slug");
+    await slug.fill("typed-during-the-save");
+    release();
+    expect((await save).status()).toBe(200);
+    // The typed slug is still on screen, and the page knows it was not stored.
+    await expect(slug).toHaveValue("typed-during-the-save");
+    await page.getByRole("tab", { name: "Content", exact: true }).click();
+    await page.getByTestId("editor-held").getByRole("button").click();
+    await expect(page.locator("dialog.confirm-dialog")).toBeVisible();
+    await page.locator("dialog.confirm-dialog [data-confirm-cancel]").click();
   });
 
   test("a changed subject is asked about before the page reloads", async ({ page }) => {

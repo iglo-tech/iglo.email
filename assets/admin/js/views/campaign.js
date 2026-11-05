@@ -420,8 +420,12 @@ function component() {
       const sent = JSON.parse(JSON.stringify(this.form));
       const d = await api('campaigns', `/campaigns/${this.form.id}`, 'PUT', p);
       this.saved = d;
-      this.form.archive_slug = d.archive_slug || this.form.archive_slug;
-      sent.archive_slug = this.form.archive_slug;
+      // A slug typed while this waited stays as typed, and stays unsaved: only the stored one
+      // counts as what was saved.
+      if (this.form.archive_slug === sent.archive_slug) {
+        this.form.archive_slug = d.archive_slug || this.form.archive_slug;
+      }
+      sent.archive_slug = d.archive_slug || sent.archive_slug;
       this.loadedForm = JSON.stringify(sent);
       return true;
     },

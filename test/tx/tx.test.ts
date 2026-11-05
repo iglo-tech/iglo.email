@@ -730,3 +730,58 @@ test("a multipart body with no declared size is charged at the body cap", async 
   expect(response.status).toBe(429);
   expect(journaledSends(f)).toBe(0n);
 });
+
+test("a JSON send with an embedded image is not refused because an upload waits (B10)", async () => {
+  let release = () => {};
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  const f = await open({
+    beforeDispatch: () => stalled,
+    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 60_000 },
+  });
+  const body = new FormData();
+  body.append("file", new File([imagePng], "small.png", { type: "image/png" }));
+  expect(
+    (await f.request("/api/media", { method: "POST", headers: f.sessionHeaders, body })).status,
+  ).toBe(200);
+  const withImage = await f.template(`<img src="small.png" data-embed="true">`);
+  const plain = await f.template("<p>x</p>");
+  const first = postForm(f, attachmentForm(plain, "first@example.test"));
+  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  // The second upload cannot fit beside the first, so it waits.
+  const second = postForm(f, attachmentForm(plain, "second@example.test"));
+  await Bun.sleep(100);
+  expect(journaledSends(f)).toBe(1n);
+  // A few hundred bytes fit in the room that is left: the send is journaled, not a 429.
+  const small = f.tx({
+    subscriber_email: "small@example.test",
+    subscriber_mode: "external",
+    template_id: withImage,
+  });
+  for (let i = 0; i < 2000 && journaledSends(f) < 2n; i++) await Bun.sleep(5);
+  expect(journaledSends(f)).toBe(2n);
+  release();
+  expect((await small).status).toBe(200);
+  expect((await first).status).toBe(200);
+  expect((await second).status).toBe(200);
+}, 30_000);
+
+test("a multipart body over the cap is a 413 even while the budget is full (B10)", async () => {
+  let release = () => {};
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  const f = await open({
+    beforeDispatch: () => stalled,
+    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 1000 },
+  });
+  const template = await f.template("<p>x</p>");
+  const first = postForm(f, attachmentForm(template, "first@example.test"));
+  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  const big = new FormData();
+  big.set(
+    "data",
+    JSON.stringify({ subscriber_emails: ["big@example.test"], template_id: template }),
+  );
+  big.append("file", new File([new Uint8Array(6 * 1024 * 1024)], "big.bin"));
+  expect((await postForm(f, big)).status).toBe(413);
+  release();
+  expect((await first).status).toBe(200);
+}, 30_000);

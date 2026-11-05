@@ -603,12 +603,13 @@ These run by themselves and have no settings
 | Events | 400 days after receipt | Newer events |
 
 Sessions, deliveries, send bodies and events share one loop that takes at most 100 rows from one
-of them, then pauses 250 ms, so a large expired backlog never holds back a send. Events drain at about 380 rows a second
-([D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)).
+of them, then pauses 250 ms, so a large expired backlog never holds back a send. The loop clears about 380 rows a second in
+total (measured with events alone, [D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)); owners with a backlog take turns, so each gets a share of that, and send bodies, 50 rows a pass, are slower in rows.
+A session with no stored expiry (written before sessions captured one) goes seven days after creation, to the millisecond.
 
 - After 30 days a `failed` or `unknown` send can no longer be resent: `POST /api/sends/:id/resend` answers 409.
 - After an upgrade from a version without this, the first start works through what has built up
-  at a few hundred rows a second across all four, while sending goes on. A million rows take a few hours,
+  at about 380 rows a second across all four together, while sending goes on. A million rows take about three quarters of an hour, and a backlog in every table a few hours,
   and nothing needs watching ([measurements](perf/B2-retention.md)).
 - Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
 - `sends` rows are kept for good. Their size is small, and old links and analytics read them.

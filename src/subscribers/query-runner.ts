@@ -4,7 +4,7 @@
 // interrupt or progress handler and terminating a Worker does not stop a running SQLite step
 // (docs/perf/M1.7-query.md), so the time limit kills the process.
 import { Database } from "bun:sqlite";
-import { closeSync, readFileSync, writeSync } from "node:fs";
+import { closeSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   createIdWriter,
@@ -228,6 +228,8 @@ export function createQueryRunner(options: RunnerOptions) {
     statements: WireStatement[],
     files: Map<number, number>,
     onError?: (error: RunnerError) => void,
+    /** False when the caller only wants the files: batches are then not decoded. */
+    decode = true,
   ): AsyncGenerator<[number, bigint[]]> {
     const prefix = stagePrefix(stageDir);
     const releaseSlot = await acquire();
@@ -346,7 +348,7 @@ export function createQueryRunner(options: RunnerOptions) {
       while (true) {
         if (failure) throw failure;
         const item = ready.shift();
-        if (item) yield [item[0], readIds(files.get(item[0])!, item[1], item[2])];
+        if (item) yield [item[0], decode ? readIds(files.get(item[0])!, item[1], item[2]) : []];
         else if (finished) return;
         else await new Promise<void>((resolve) => (wake = resolve));
       }
@@ -354,6 +356,16 @@ export function createQueryRunner(options: RunnerOptions) {
       closed = true;
       child.kill("SIGKILL");
       await exited;
+      // A file the child made but the parent was never told about (a timeout or a kill between
+      // the child's create and its "R" line) is not open here and would stay until restart.
+      for (let i = 0; i < statements.length; i++) {
+        if (files.has(i)) continue;
+        try {
+          unlinkSync(`${prefix}${i}`);
+        } catch {
+          /* never created */
+        }
+      }
     }
   }
   return {
@@ -374,7 +386,7 @@ export function createQueryRunner(options: RunnerOptions) {
       const files = new Map<number, number>();
       try {
         const wire = statements.map((s) => ({ sql: s.sql, args: s.args.map(toWire) }));
-        for await (const _ of spawn(wire, files)) void _;
+        for await (const _ of spawn(wire, files, undefined, false)) void _;
         return statements.map((_, index) => fileIds(files.get(index)!));
       } catch (error) {
         for (const fd of files.values()) closeSync(fd);

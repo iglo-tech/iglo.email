@@ -58,8 +58,12 @@ DELETE FROM sessions WHERE id = ?;
 -- session() reads it. Nothing leaves here that session() would still accept.
 DELETE FROM sessions WHERE id IN (
     SELECT id FROM sessions
-    WHERE coalesce(json_extract(data, '$.expires_at'), unixepoch(created_at) * 1000 + 604800000) <= ?
-    LIMIT ?
+    WHERE coalesce(json_extract(data, '$.expires_at'), unixepoch(created_at) * 1000 + 604800000) <= ?1
+      -- The index expression drops the milliseconds of created_at, so a row with no expiry is
+      -- also held to the exact time, as session() reads it.
+      AND (json_extract(data, '$.expires_at') IS NOT NULL
+        OR CAST(round(unixepoch(created_at, 'subsec') * 1000) AS INTEGER) + 604800000 <= ?1)
+    LIMIT ?2
   ) RETURNING 1 AS gone;
 
 -- name: delete-user-sessions

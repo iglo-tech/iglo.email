@@ -247,13 +247,20 @@ export function registerSequenceRoutes(
       const id = BigInt(getID(c));
       let cursor = 0n,
         changed = 0,
-        dueNow = false;
+        dueNow = false,
+        first = true;
       for (;;) {
         const batch = writeTransaction(c.app.db, () => {
           auth.revalidate(c, MANAGE);
           return enrollments.rescheduleBatch(id, stepId, cursor, RESCHEDULE_BATCH);
         });
-        if (batch === "missing") throw new HttpError(404, "Step not found");
+        // A step deleted while batches ran has nothing left to move: the request reports the rows
+        // already changed. Only a step that was never there is a 404.
+        if (batch === "missing") {
+          if (first) throw new HttpError(404, "Step not found");
+          break;
+        }
+        first = false;
         changed += batch.changed;
         dueNow ||= batch.dueNow;
         if (batch.next === null) break;

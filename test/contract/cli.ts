@@ -281,6 +281,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         );
       },
       admin,
+      // The bounces contract sends about 7,000 requests to measure the provider webhook budget.
+      args[1] === "bounces" ? 120_000 : undefined,
     );
     if (!passed) process.exitCode = 1;
     return;

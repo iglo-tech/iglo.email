@@ -189,6 +189,25 @@ test("a lock file with any content blocks nothing, and still locks", async () =>
   expect(second.stderr).toBe(inUse(data));
 });
 
+test("a lock file with a valid SQLite magic and an unknown schema format blocks nothing (B10)", async () => {
+  freshDirectories();
+  mkdirSync(data);
+  const header = Buffer.alloc(4096);
+  Buffer.from("SQLite format 3\0").copy(header);
+  header.writeUInt16BE(4096, 16);
+  header.fill(1, 18, 20);
+  header[21] = 64;
+  header[22] = 32;
+  header[23] = 32;
+  header.writeUInt32BE(1, 28);
+  header.writeUInt32BE(9, 44);
+  writeFileSync(join(data, "iglo-email.lock"), header);
+  await serve();
+  const second = await secondServer(data);
+  expect(second.exitCode).toBe(1);
+  expect(second.stderr).toBe(inUse(data));
+});
+
 // A read-only open would take no lock at all, so this must not start. Root can write the file.
 test.skipIf(process.getuid?.() === 0)("a lock file it cannot write stops the server", async () => {
   freshDirectories();
