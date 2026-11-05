@@ -96,7 +96,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 ## Hardening backlog
 
 - Intermittent: `route-auth` "held SMTP body denies disabled before a connection" failed once in M1.9 (`smtp.count()` 1). B8 could not reproduce it (22 runs of the file's four cases pass on a host at load ~12); the SMTP peer now lists each counted client (remote port, opening line) so the next failure names who connected.
-- Intermittent: `users.e2e.js` "edits a user" fails now and then (B3 reviews: reload races at `:193` and `:382`). B8 fixed the toast wait; one unidentified failure in 19 runs afterwards, and no output was kept.
+- Intermittent: `users.e2e.js` "edits a user" fails now and then (B3 reviews: reload races at `:193` and `:382`). B8 fixed the toast wait; one unidentified failure in 19 runs afterwards, and no output was kept. In the B8 round-1 fix run, `:388` "the screen does not raise your own permissions" failed once (`page.goto` to `/admin/users/roles/35` interrupted by a navigation to `/admin/users/29`), clean on rerun.
 - Media: supported PDF viewers unverified (needs real devices).
 - Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
 - Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. B7 tried a longer event group-commit window (3 ms): no gain, worse tail ([evidence](perf/B7-load-memory.md)). Lowering it needs other loops' commits batched or merged (outbox, scheduler, campaigns: owners outside B7), or an owner decision on D22 durability.
