@@ -3,6 +3,7 @@ import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { ensureProductionBuild } from "@/test/production-build";
 import { startDbFixture } from "@/test/db/fixture";
 import { startSchemaFixture } from "@/test/schema/fixture";
 
@@ -13,27 +14,13 @@ let executable = "";
 let adminUser = "";
 let adminPassword = "";
 
-// Building needs Bun on PATH; the compiled executable does not.
-const buildEnvironment = { PATH: process.env.PATH ?? "" };
-
 beforeAll(async () => {
   const fixture = await Bun.file(join(repository, "test/bootstrap/fixtures.md")).text();
   adminUser = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1] ?? "";
   adminPassword = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1] ?? "";
   if (!adminUser || !adminPassword) throw new Error("Bootstrap test credentials are missing");
 
-  const build = Bun.spawn([process.execPath, "run", "build"], {
-    cwd: repository,
-    env: buildEnvironment,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    build.exited,
-    new Response(build.stdout).text(),
-    new Response(build.stderr).text(),
-  ]);
-  if (exitCode !== 0) throw new Error(`Build failed:\n${stdout}\n${stderr}`);
+  await ensureProductionBuild();
 
   temporaryDirectory = await mkdtemp(join(tmpdir(), "iglo-email-bootstrap-"));
   executable = join(temporaryDirectory, "iglo.email");

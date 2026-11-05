@@ -50,13 +50,95 @@ export function heldURL(value) {
   if (window._LM_CONFIG?.remote_images && /^https?:$/.test(url.protocol)) {
     return false;
   }
+  // The server names the root origin in the policy only when it is a plain host (a name with `_`
+  // is not, as it could end a directive), so only then is it one this page may load from.
   const root = URL.parse(window._LM_CONFIG?.root_url ?? '')?.origin;
-  return url.origin !== window.location.origin && url.origin !== root;
+  const rootNamed = root !== undefined && /^https?:\/\/(?:[a-z0-9.-]+|\[[0-9a-f:.]+\])(?::\d+)?$/.test(root);
+  return url.origin !== window.location.origin && !(rootNamed && url.origin === root);
+}
+
+// Addresses a style would fetch: url(), image-set() and image() forms. A CSS escape can spell any
+// of them differently, so a declaration with one is held whenever it has a backslash at all.
+const STYLE_FETCH = /\b(?:url|image-set|image|src)\s*\(/i;
+const STYLE_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)/gi;
+function heldDeclaration(value) {
+  if (!STYLE_FETCH.test(value) && !value.includes('\\')) {
+    return false;
+  }
+  const urls = [...value.matchAll(STYLE_URL)].map((m) => m[1] ?? m[2] ?? m[3] ?? '');
+  const plain = value.replace(STYLE_URL, '');
+  return urls.some((url) => heldURL(url)) || STYLE_FETCH.test(plain) || plain.includes('\\');
+}
+
+// A style attribute as its declarations, split on the semicolons outside quotes, brackets and
+// escapes. Text that never closes stays whole in the last one.
+function declarations(style) {
+  const list = [];
+  let start = 0;
+  let quote = '';
+  let depth = 0;
+  for (let i = 0; i < style.length; i += 1) {
+    const c = style[i];
+    if (c === '\\') {
+      i += 1;
+    } else if (quote) {
+      quote = c === quote ? '' : quote;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === '(') {
+      depth += 1;
+    } else if (c === ')') {
+      depth = Math.max(0, depth - 1);
+    } else if (c === ';' && depth === 0) {
+      list.push(style.slice(start, i));
+      start = i + 1;
+    }
+  }
+  list.push(style.slice(start));
+  return list.map((d) => d.trim()).filter(Boolean);
+}
+
+const property = (declaration) => declaration.split(':', 1)[0].trim().toLowerCase();
+
+// The original declarations in their order, which CSS makes meaningful (a shorthand resets the
+// longhands before it). A held one stays where it was and is never dropped. A kept one takes the
+// editor's current value for its property, or goes when the editor removed it; a property set
+// twice pairs off in order. What the editor added comes last, in its order.
+function mergeStyle(current, original) {
+  const now = declarations(current);
+  const used = new Set();
+  const list = [];
+  for (const declaration of declarations(original)) {
+    if (heldDeclaration(declaration)) {
+      list.push(declaration);
+      continue;
+    }
+    const at = now.findIndex((d, i) => !used.has(i) && property(d) === property(declaration));
+    if (at >= 0) {
+      used.add(at);
+      list.push(now[at]);
+    }
+  }
+  now.forEach((declaration, i) => {
+    if (!used.has(i) && !list.includes(declaration)) {
+      list.push(declaration);
+    }
+  });
+  return list.join('; ');
 }
 
 const HOLDABLE = ['src', 'background'];
 
-// The stored form of what the editor holds.
+// Blocks and images keep the editor's changes to a held style (alignment, size). Every other
+// element is inline: Squire turns the font and text declarations of a span into markup and may
+// replace the span, so its style is held whole and never reaches the editor.
+const BLOCKS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'dl', 'dt',
+  'dd', 'blockquote', 'pre', 'table', 'caption', 'colgroup', 'col', 'thead', 'tbody', 'tfoot', 'tr',
+  'td', 'th', 'hr', 'center', 'section', 'article', 'header', 'footer', 'figure', 'figcaption']);
+const heldWhole = (element) => element !== 'img' && !BLOCKS.has(element);
+
+// The stored form of what the editor holds. A held style is the original declarations; they merge
+// with whatever the style is now.
 export function restoreHeld(html) {
   if (!html.includes('data-rte-')) {
     return html;
@@ -68,23 +150,73 @@ export function restoreHeld(html) {
       el.removeAttribute(`data-rte-${name}`);
     }
   }
+  for (const el of root.querySelectorAll('[data-rte-style]')) {
+    const original = el.getAttribute('data-rte-style');
+    el.setAttribute('style', heldWhole(el.localName) && !el.hasAttribute('style')
+      ? original
+      : mergeStyle(el.getAttribute('style') ?? '', original));
+    el.removeAttribute('data-rte-style');
+  }
   return root.innerHTML;
 }
 
 const allowed = (element, name) => (name === 'name' ? element === 'a'
   : ATTRIBUTES.has(name) || /^aria-[a-z]+$/.test(name));
 
+// The live style keeps every declaration that fetches nothing, so the editor's changes to it are
+// kept. `data-rte-style` is the whole style as it was, in order, until the body leaves the editor.
+function copyStyle(from, to, held) {
+  if (!from.hasAttribute('data-rte-style') && !declarations(from.getAttribute('style') ?? '').some(heldDeclaration)) {
+    // Nothing to hold: the style is copied as written.
+    to.setAttribute('style', from.getAttribute('style') ?? '');
+    return;
+  }
+  const all = mergeStyle(from.getAttribute('style') ?? '', from.getAttribute('data-rte-style') ?? '');
+  const live = [];
+  const waiting = [];
+  const every = declarations(all);
+  if (heldWhole(to.localName)) {
+    to.setAttribute('data-rte-style', every.join('; '));
+    for (const declaration of every.filter(heldDeclaration)) {
+      held.add(declaration);
+    }
+    return;
+  }
+  for (const declaration of every) {
+    (heldDeclaration(declaration) ? waiting : live).push(declaration);
+  }
+  if (live.length || from.hasAttribute('style')) {
+    to.setAttribute('style', live.join('; '));
+  }
+  if (waiting.length) {
+    to.setAttribute('data-rte-style', every.join('; '));
+    for (const declaration of waiting) {
+      held.add(declaration);
+    }
+  }
+}
+
 function copyAttributes(from, to, removed, held) {
   const element = to.localName;
   for (const attribute of from.attributes) {
     // A held address that left the editor by a path `restoreHeld` does not see, such as a drag.
     // It is the address it stands for and passes the same checks.
-    const alias = /^data-rte-(src|background)$/.exec(attribute.name)?.[1];
+    const alias = /^data-rte-(src|background|style)$/.exec(attribute.name)?.[1];
     if (alias && from.hasAttribute(alias)) {
+      // A style and its held declarations on one element, as after a paste or the source dialog:
+      // `style` below carries both, so nothing the element had is dropped.
+      if (alias !== 'style') {
+        continue;
+      }
+    }
+    const name = alias ?? attribute.name;
+    if (name === 'style') {
+      if (attribute.name === 'style' || !from.hasAttribute('style')) {
+        copyStyle(from, to, held);
+      }
       continue;
     }
     const { value } = attribute;
-    const name = alias ?? attribute.name;
     if (URL_ATTRIBUTES.has(name)
       ? (name !== 'src' || element === 'img') && safeURL(value, name === 'src')
       : allowed(element, name)) {

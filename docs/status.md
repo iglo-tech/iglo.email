@@ -5,16 +5,15 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B10 is with its worker: [brief](briefs/B10.md), branch `task/B10-product-defects`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B11 is with its worker: [brief](briefs/B11.md), branch `task/B11-event-latency`. Test speed: [#60](https://github.com/iglo-tech/iglo.email/pull/60) merged (`bun run check` ~145 s, was 547 s); e2e speed [#61](https://github.com/iglo-tech/iglo.email/pull/61) in review. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B10: product defects left in the backlog ([brief](briefs/B10.md)).
-2. B11: event latency: batch or merge commits across loops (outbox, scheduler, campaigns) without weakening D22.
-3. B12: anything still left in the backlog that agents can do.
+1. B11: event latency ([brief](briefs/B11.md)).
+2. B12: anything still left in the backlog that agents can do.
 
 ## Owner decisions
 
@@ -43,6 +42,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                          |
 | ------------ | ------------------------------------------------------ | ------- | --------------------------------------------------------------- |
+| Test speed   | [#60](https://github.com/iglo-tech/iglo.email/pull/60) | 893c85f | Parallel `bun run test`, one build, `bun check` (547→~145 s)    |
+| B10          | [#59](https://github.com/iglo-tech/iglo.email/pull/59) | edcebf7 | Backlog defects; lead decided after round 3 (held styles)       |
 | B8           | [#58](https://github.com/iglo-tech/iglo.email/pull/58) | ae83f35 | Intermittent fixes, contract and lock tests, settings ref fixed |
 | B7           | [#57](https://github.com/iglo-tech/iglo.email/pull/57) | fb7ea5a | Analytics egress budget, WAL gap, disk-staged selections        |
 | B9           | [#56](https://github.com/iglo-tech/iglo.email/pull/56) | 6669094 | SES/SNS bounces, topic allowlist (D75)                          |
@@ -98,15 +99,12 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Intermittent: `route-auth` "held SMTP body denies disabled before a connection" failed once in M1.9 (`smtp.count()` 1). B8 could not reproduce it (22 runs of the file's four cases pass on a host at load ~12); the SMTP peer now lists each counted client (remote port, opening line) so the next failure names who connected.
 - Intermittent: `users.e2e.js` "edits a user" fails now and then (B3 reviews: reload races at `:193` and `:382`). B8 fixed the toast wait; one unidentified failure in 19 runs afterwards, and no output was kept. In the B8 round-1 fix run, `:388` "the screen does not raise your own permissions" failed once (`page.goto` to `/admin/users/roles/35` interrupted by a navigation to `/admin/users/29`), clean on rerun.
 - Media: supported PDF viewers unverified (needs real devices).
-- Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains; exact-width follow-up (D34).
+- Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains (D34). B10 left it: IDs are allocated from 1 by AUTOINCREMENT, so a list ID above 9007199254740991 needs about 9e15 inserts and exists only when a test advances the allocator; a lossless parse of numeric JSON would touch every JSON body reader for no realistic client.
 - Event latency under full mixed load is p95 51 ms (10.5 ms alone); the throughput target is met. B7 tried a longer event group-commit window (3 ms): no gain, worse tail ([evidence](perf/B7-load-memory.md)). Lowering it needs other loops' commits batched or merged (outbox, scheduler, campaigns: owners outside B7), or an owner decision on D22 durability.
-- Instance lock: two forged lock file headers stop the start with a clean error ([#50](https://github.com/iglo-tech/iglo.email/pull/50)).
-- Retention ([#51](https://github.com/iglo-tech/iglo.email/pull/51)): session rows with no `expires_at` go up to 999 ms early; D70's session index and the rate in `docs/operations.md` are slightly off.
-- Admin CSP and editor ([#52](https://github.com/iglo-tech/iglo.email/pull/52)): `url()` in a kept `style` logs a violation and gets no notice; `?remote_images=1` can come from a crafted link; an archive slug typed during a save counts as saved; no caret on a held image; with `_` in the root URL host, root-URL images are blocked but not held.
-- Sequences ([#54](https://github.com/iglo-tech/iglo.email/pull/54)): reschedule returns 404 after partial batches when the step is deleted mid-run; the reschedule query names its index, so a missing index gives a 500 and the perf doc's no-index "before" run cannot be repeated; the Campaigns count on the activity tab includes the non-campaign row.
-- Tx budget ([#55](https://github.com/iglo-tech/iglo.email/pull/55)): while any upload waits, a JSON send with template images gets 429 at once even when it would fit; under load a multipart request over 5 MiB can get 429 before its 413; peak memory is about 8x the counted bytes; paced event retention drains about 380 rows/s.
-- SES ([#56](https://github.com/iglo-tech/iglo.email/pull/56)): SES shares the 300/min per-client webhook limit with Mailgun, so a large bounce burst may be refused (unverified); upstream's certificate URL pattern may also match an S3 bucket named `sns` (unverified); the OpenAPI SES difference is not attached to `POST /webhooks/service/{service}`.
-- B7 staging ([#57](https://github.com/iglo-tech/iglo.email/pull/57)): a staged file can stay until restart if the query time limit fires at one moment (and a similar multi-statement race); a read queued during a forced gap can wait the full 30 s and get 429; `runner.stage()` decodes batches it discards; analytics responses over 64 KiB are chunked with no Content-Length.
-- Settings: empty values ([#58](https://github.com/iglo-tech/iglo.email/pull/58)): a partial settings write stores empty `app.lang` and `upload.provider` (as upstream, whose next reload then crashes); ours starts with English and refuses uploads.
+- Admin CSP and editor ([#52](https://github.com/iglo-tech/iglo.email/pull/52)): there is still no caret position next to a held image (needs a design for where a click lands; B10 fixed the other items).
+- Tx budget ([#55](https://github.com/iglo-tech/iglo.email/pull/55)): peak memory is about 8x the counted bytes ([B6](perf/B6-send-media-safety.md): the journal payload, the SMTP library's encoding and uncollected garbage are outside the count; lowering `PARSE_COPIES` or the budget trades refusals for memory, an owner call); paced event retention drains about 380 rows/s (the price of not holding back sends, [D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)).
+- B7 staging ([#57](https://github.com/iglo-tech/iglo.email/pull/57)): a read queued during a forced WAL gap can wait the full 30 s and get 429 (the gap is D62's price for restarting the WAL under continuous polling; a long read holds it open, and an earlier admission would block the checkpoint); analytics responses over 64 KiB are chunked with no Content-Length (B10 tried an explicit header: Bun ignores it on streamed bodies, and sending the bytes whole would drop the egress accounting that releases when the client has read them).
 - Tests ([#58](https://github.com/iglo-tech/iglo.email/pull/58)): the real-API activity-tab e2e no longer checks that a non-HTTP click URL gets no link or the non-campaign rows; `withProduction` retry accepts any server answering `/health`; the `templates-campaigns` connection reset is unexplained; the settings fields a partial write must keep set are repeated in three contract files.
+- Editor and tx ([#59](https://github.com/iglo-tech/iglo.email/pull/59)): identical repeated declarations in a held block style are merged (`color:red;color:blue;color:red` saves blue); a live shorthand rewritten to longhands after a style edit can move past a held declaration; the style splitter ignores CSS comments; a steady stream of small tx sends can keep a waiting upload out until its 429; the tx tests wait with `Bun.sleep` loops.
+- Test speed ([#60](https://github.com/iglo-tech/iglo.email/pull/60)): the `test/production-build.ts` build lock retries forever on any `mkdir` error, clears a lock older than 120 s even if its build still runs, and sits at one system temp path shared by every checkout; `README.md` still shows plain `bun test`; the regex example in `docs/perf/test-speed.md` shows raw characters instead of escapes.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.

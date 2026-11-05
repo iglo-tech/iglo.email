@@ -111,3 +111,22 @@ describe("staged selections", () => {
     expect(staged()).toEqual([]);
   });
 });
+
+describe("a query killed by its time limit", () => {
+  test("leaves no staged file, whichever moment the limit falls on (B10)", async () => {
+    const timed = await queryFixture({ timeoutMs: 60 });
+    try {
+      const dir = join(timed.db.filename, "..", "stage");
+      for (let wait = 1; wait <= 120; wait += 3) {
+        // The child is killed at varying points of its work; a file it had made must not stay.
+        const run = timed.json(`/api/subscribers?per_page=all&query=${q("1=1")}`);
+        await Bun.sleep(wait % 40);
+        await run;
+      }
+      await Bun.sleep(100);
+      expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([]);
+    } finally {
+      await timed.close();
+    }
+  }, 60_000);
+});

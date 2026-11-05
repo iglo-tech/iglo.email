@@ -102,6 +102,8 @@ import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
 import { registerOpenApiRoutes } from "@/openapi/routes";
 
+const BOUNCE_WEBHOOK_PER_MINUTE = 6000;
+
 /** `inspect` sees the composed router before anything listens; a test may throw to stop there. */
 export async function main(inspect?: (router: Router) => void): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
@@ -494,8 +496,23 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           mailgun: current["bounce.mailgun"],
         };
       },
-      // Providers post from shared addresses too, with a budget of their own.
-      limit: limit("unsubscribe"),
+      // Providers post from shared addresses too, with a budget of their own. A large campaign's
+      // bounces arrive from SNS as one POST each; a 429 there is a lost bounce once SNS stops
+      // retrying, so this budget is 20 times the unsubscribe default, or the unsubscribe setting when that is larger.
+      limit: rateLimited(
+        clock,
+        {
+          // Never below the 6,000 it is now, and an operator's higher unsubscribe setting still
+          // raises it (read at each request, like the public forms).
+          get limit() {
+            return Math.max(BOUNCE_WEBHOOK_PER_MINUTE, pages().rateLimits.unsubscribe);
+          },
+          windowMs: 60_000,
+          maxPeers: 10_000,
+        },
+        () => pages().siteName,
+        clientAddress,
+      ),
     });
     recipients = createCampaignRecipients(db);
     const templateStore = templates;

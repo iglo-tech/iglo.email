@@ -526,6 +526,8 @@ async function activityTab(page) {
     .toEqual([1, 2]);
   await page.goto(`/admin/subscribers/${person.id}`);
   await expect(page.getByTestId("stat-views")).toHaveText("1");
+  // Campaigns counts campaigns: a view that belongs to a send has no campaign and adds none.
+  await expect(page.getByTestId("stat-campaigns")).toHaveText("1");
   await expect(page.getByTestId("stat-clicks")).toHaveText("2");
   await expect(page.getByTestId("view-row")).toHaveCount(1);
   await expect(page.getByTestId("view-row").first()).toContainText(name);

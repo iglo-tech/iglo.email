@@ -791,7 +791,16 @@ function view(isNew: boolean): AdminView {
     const asset = (name: string) => `/admin/static/${name}?v=${assetVersion}`;
     const props = { t, isNew, canSend, site };
     // Only this screen mounts authored HTML, and only the button above asks for this (D71).
-    const remoteImages = context.url.searchParams.get("remote_images") === "1";
+    // A link from another site, a mail or a pasted address would otherwise load a campaign's
+    // remote images (and tell their hosts the operator looked), so only a navigation that
+    // started on this origin counts: the button's own. Browsers send the header only to secure
+    // contexts (HTTPS or loopback), so on a plain-HTTP admin reached by a network address it is
+    // absent and the button must still work: only a header that is present and not same-origin
+    // refuses (D76).
+    const fetchSite = context.request.headers.get("sec-fetch-site");
+    const remoteImages =
+      context.url.searchParams.get("remote_images") === "1" &&
+      (fetchSite === null || fetchSite === "same-origin");
     return {
       title: `${isNew ? `${t.T("campaigns.newCampaign")} / ` : ""}${t.T("globals.terms.campaigns")}`,
       pageId: isNew ? "campaigns.new" : "campaigns.all",

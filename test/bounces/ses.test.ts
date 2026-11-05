@@ -346,6 +346,17 @@ test("refused messages change nothing", async () => {
       { Message: message },
       { cert: "https://sns.eu-west-1.amazonaws.com:8443/SimpleNotificationService-abc123.pem" },
     ),
+    // The S3 bucket named `sns` matches upstream's pattern but is not an SNS endpoint.
+    envelope(
+      f,
+      { Message: message },
+      { cert: "https://sns.s3.amazonaws.com/SimpleNotificationService-abc123.pem" },
+    ),
+    envelope(
+      f,
+      { Message: message },
+      { cert: "https://sns.s3-website.amazonaws.com/SimpleNotificationService-abc123.pem" },
+    ),
     // A valid certificate that is not the one that signed.
     envelope(f, { Message: message }, { cert: OTHER_CERT }),
     // An unknown signature version, a message altered after signing, a stale one.
@@ -410,6 +421,7 @@ test("a verified subscription confirmation fetches only its own SNS URL", async 
     "https://sns.eu-west-1.amazonaws.com.evil.test/?x=1",
     "https://user@sns.eu-west-1.amazonaws.com/?x=1",
     "https://sns.eu-west-1.amazonaws.com@evil.test/?x=1",
+    "https://sns.s3.amazonaws.com/?x=1",
   ];
   for (const bad of off)
     expect((await post(f, confirm(bad), "SubscriptionConfirmation")).status).toBe(400);

@@ -139,7 +139,7 @@ function Overview({ t, canSave }: { t: Translation; canSave: boolean }) {
       </div>
       <div class="row">
         {[
-          ["globals.terms.campaigns", "views.length", "stat-campaigns"],
+          ["globals.terms.campaigns", "campaignCount", "stat-campaigns"],
           ["globals.terms.views", "totalViews", "stat-views"],
           ["globals.terms.clicks", "totalClicks", "stat-clicks"],
         ].map(([label, value, test]) => (

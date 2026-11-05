@@ -431,6 +431,11 @@ function component() {
       u.reload({ message: i18n.t('subscribers.listChangeApplied') });
     },
 
+    // Views of a send have no campaign (a null row); only campaigns are counted here.
+    get campaignCount() {
+      return this.views.filter((v) => v.id).length;
+    },
+
     get totalViews() {
       return u.formatNumber(this.views.reduce((n, v) => n + v.view_count, 0));
     },

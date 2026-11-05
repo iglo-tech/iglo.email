@@ -705,6 +705,10 @@ export async function runBouncesContract(target: {
         (await call(`/api/subscribers/${victim.id}`)).body.data.status === "enabled",
         "mailgun-refused-status",
       );
+      // A bounce burst from one client (SNS posts one message each) is not cut at the 300/min
+      // unsubscribe budget: a refused bounce is lost once the provider stops retrying.
+      for (let i = 0; i < 400; i++)
+        check((await call("/webhooks/bounce/mailgun", "POST", "{")).status === 406, "burst-limit");
 
       // An accepted event, whose body is what the receiver then sees signed.
       const replay = { timestamp: now(), token: token() };
@@ -924,6 +928,39 @@ export async function runBouncesContract(target: {
       await setting("bounce.mailgun", { enabled: false, key: "" });
       await call(`/api/webhooks/${hook.body.data.id}`, "DELETE");
       await call(`/api/templates/${template.body.data.id}`, "DELETE");
+
+      // Provider webhooks have a budget of their own: the larger of 6,000 a minute and the
+      // unsubscribe setting, so an operator never gets less than before. This runs last, as it
+      // fills the client's counter for a minute.
+      await setting("bounce.webhooks_enabled", true);
+      await setting("bounce.enabled", true);
+      await setting("bounce.mailgun", { enabled: true, key: signingKey });
+      const budget = (await call("/api/settings")).body.data["security.public_rate_limit"];
+      check(budget.unsubscribe < 6000, "webhook-budget-default");
+      try {
+        // A body that is not JSON is refused with 406 after the limit has counted it.
+        const accepted = async () => {
+          let count = 0;
+          for (let limited = false; !limited;) {
+            const batch = await Promise.all(
+              Array.from({ length: 100 }, () => call("/webhooks/bounce/mailgun", "POST", "{")),
+            );
+            for (const answer of batch) {
+              if (answer.status === 429) limited = true;
+              else count++;
+            }
+            check(count <= 8000, "webhook-budget-bounded");
+          }
+          return count;
+        };
+        const first = await accepted();
+        check(first > 5000 && first <= 6000, `webhook-budget-floor-${first}`);
+        await setting("security.public_rate_limit", { ...budget, unsubscribe: 7000 });
+        const second = await accepted();
+        check(first + second <= 7000 && second >= 900, `webhook-budget-setting-${first}-${second}`);
+      } finally {
+        await setting("security.public_rate_limit", budget);
+      }
     } finally {
       receiver.close();
       await sink.close();
