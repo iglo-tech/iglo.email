@@ -98,9 +98,13 @@ export function createByteGate(options: {
         waiting.push(entry);
       });
     },
-    /** Take `cost` now or not at all. */
+    /**
+     * Take `cost` now or not at all. It does not queue behind a waiter that cannot fit yet: the
+     * waiter keeps its place and its 2 s bound, and a send that fits now has no reason to be
+     * refused for it.
+     */
     tryAcquire: (cost: number): Reservation | null =>
-      !waiting.length && cost <= options.maxBytes && fits(cost) ? open(cost) : null,
+      cost <= options.maxBytes && fits(cost) ? open(cost) : null,
     stats: () => ({ bytes, holders, waiting: waiting.length }),
   };
 }

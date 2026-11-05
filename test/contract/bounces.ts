@@ -705,6 +705,10 @@ export async function runBouncesContract(target: {
         (await call(`/api/subscribers/${victim.id}`)).body.data.status === "enabled",
         "mailgun-refused-status",
       );
+      // A bounce burst from one client (SNS posts one message each) is not cut at the 300/min
+      // unsubscribe budget: a refused bounce is lost once the provider stops retrying.
+      for (let i = 0; i < 400; i++)
+        check((await call("/webhooks/bounce/mailgun", "POST", "{")).status === 406, "burst-limit");
 
       // An accepted event, whose body is what the receiver then sees signed.
       const replay = { timestamp: now(), token: token() };

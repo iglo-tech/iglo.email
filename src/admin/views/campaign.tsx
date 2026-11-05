@@ -791,7 +791,12 @@ function view(isNew: boolean): AdminView {
     const asset = (name: string) => `/admin/static/${name}?v=${assetVersion}`;
     const props = { t, isNew, canSend, site };
     // Only this screen mounts authored HTML, and only the button above asks for this (D71).
-    const remoteImages = context.url.searchParams.get("remote_images") === "1";
+    // A link from another site, a mail or a pasted address would otherwise load a campaign's
+    // remote images (and tell their hosts the operator looked), so only a navigation that
+    // started on this origin counts: the button's own.
+    const remoteImages =
+      context.url.searchParams.get("remote_images") === "1" &&
+      context.request.headers.get("sec-fetch-site") === "same-origin";
     return {
       title: `${isNew ? `${t.T("campaigns.newCampaign")} / ` : ""}${t.T("globals.terms.campaigns")}`,
       pageId: isNew ? "campaigns.new" : "campaigns.all",

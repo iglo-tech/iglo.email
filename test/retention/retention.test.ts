@@ -480,3 +480,25 @@ test("a pass reads a bounded number of payload bytes", async () => {
   expect(compact(now, 100)).toHaveLength(1);
   expect(compact(now, 100)).toHaveLength(0);
 });
+
+test("a session with no stored expiry is not purged before the owner stops accepting it (B10)", async () => {
+  const f = await open();
+  // Created 500 ms into a second, seven days ago: it is valid until 500 ms after the boundary.
+  const boundary = (Math.floor(f.clock.now().getTime() / 1000) + 1) * 1000;
+  f.clock.advance(boundary + 300 - f.clock.now().getTime());
+  addSession(
+    f,
+    "legacy-edge",
+    { user_id: "1", csrf: "c".repeat(43) },
+    new Date(boundary - 7 * day + 500),
+  );
+  const pace = paced(f, () => sessionIds(f).length);
+  const loop = purging(f, pace.clock, [f.owners.users.purgeSessions]);
+  await pace.idle();
+  expect(sessionIds(f)).toContain("legacy-edge");
+  // Once its own time has passed it goes.
+  f.clock.advance(1000);
+  await pace.again();
+  expect(sessionIds(f)).not.toContain("legacy-edge");
+  await loop.stop();
+});

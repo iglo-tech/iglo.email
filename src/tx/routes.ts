@@ -137,7 +137,9 @@ export function registerTxRoutes(
         // before it is read, from its declared size or the cap, and waited for briefly.
         if ((context.request.headers.get("content-type") ?? "").startsWith("multipart/form-data")) {
           const declared = Number(context.request.headers.get("content-length"));
-          const size = declared > 0 && declared <= BODY_LIMIT ? declared : BODY_LIMIT;
+          // A body over the cap is 413 whatever the load: it is never read, so it needs no room.
+          if (declared > BODY_LIMIT) throw new HttpError(413);
+          const size = declared > 0 ? declared : BODY_LIMIT;
           slot.reservation = await gate.acquire(size * PARSE_COPIES);
           if (!slot.reservation) throw busy();
         }

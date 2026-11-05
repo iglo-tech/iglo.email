@@ -194,3 +194,48 @@ test("condition validation returns a save's errors and writes nothing", async ()
   expect((await f.json(`/api/sequences/${s.seq.id}`, "PUT", full)).status).toBe(200);
   expect(f.count("sequences")).toBe(1);
 });
+
+test("reschedule does not depend on a named index (B10)", async () => {
+  const f = await open();
+  const s = await make(f);
+  const a = await f.subscriber("noindex@example.test");
+  await f.json("/api/enrollments", "POST", { sequence_id: s.seq.id, subscriber_id: a });
+  f.db.run("DROP INDEX idx_enrollments_step_active");
+  await setWait(f, s, "PT5H");
+  const res = await reschedule(f, s);
+  expect(res.status).toBe(200);
+  expect(res.body.data).toEqual({ changed: 1 });
+});
+
+test("a step deleted between batches reports the rows already moved, not a 404 (B10)", async () => {
+  const f = await open();
+  const s = await make(f);
+  const now = f.clock.now().toISOString();
+  const total = 1300;
+  f.db.run("BEGIN");
+  for (let i = 0; i < total; i++)
+    f.db.run("INSERT INTO subscribers (uuid, email, name, status) VALUES (?, ?, 'x', 'enabled')", [
+      crypto.randomUUID(),
+      `mid${i}@example.test`,
+    ]);
+  f.db.run(
+    `INSERT INTO enrollments (sequence_id, subscriber_id, step_id, due_at, status, created_at, updated_at, test)
+     SELECT ?, id, ?, ?, 'active', ?, ?, 0 FROM subscribers WHERE email LIKE 'mid%'`,
+    [s.seq.id, s.seq.steps[0]!.id, new Date(Date.parse(now) + hour).toISOString(), now, now],
+  );
+  f.db.run("COMMIT");
+  // The step goes away while the first batch commits, as when an editor saves during a run.
+  const cut = (
+    f.db
+      .query("SELECT id FROM enrollments WHERE sequence_id = ? ORDER BY id LIMIT 1 OFFSET 400")
+      .get(s.seq.id) as { id: bigint }
+  ).id;
+  f.db.run(
+    `CREATE TRIGGER mid_run AFTER UPDATE OF due_at ON enrollments WHEN NEW.id = ${cut}
+     BEGIN UPDATE sequence_steps SET status = 'deleted' WHERE id = ${s.seq.steps[0]!.id}; END`,
+  );
+  await setWait(f, s, "PT2H");
+  const res = await reschedule(f, s);
+  expect(res.status).toBe(200);
+  expect(res.body.data.changed).toBe(500);
+});

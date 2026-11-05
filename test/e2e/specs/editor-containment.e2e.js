@@ -261,6 +261,40 @@ test.describe("remote images load on request", () => {
     await expect.poll(() => requests).toContain("/banner.gif");
   });
 
+  test("a style that fetches a remote address is held and noticed, and stored as written (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const body = `<p style="background-image: url('${remote}/style.gif'); color: red">styled</p>`;
+    const c = await campaign(page, body);
+    await open(page, c.id);
+    await expect(page.getByTestId("editor-held")).toBeVisible();
+    expect(await page.locator(`${EDITOR} p`).first().getAttribute("style")).toBeNull();
+    await page.locator(EDITOR).pressSequentially("x");
+    const save = page.waitForResponse((r) => r.request().method() === "PUT");
+    await page.keyboard.press("Control+s");
+    expect((await save).status()).toBe(200);
+    const stored = (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
+    expect(stored).toContain(`url('${remote}/style.gif')`);
+    expect(stored).not.toContain("data-rte-");
+    expect(requests.filter((path) => /style\.gif/.test(path))).toEqual([]);
+  });
+
+  test("an image from a root URL the policy cannot name is held (B10)", async ({ page }) => {
+    await login(page);
+    const c = await campaign(page);
+    await open(page, c.id);
+    // The page's own policy names no origin with `_` in its host, so the editor must not treat it
+    // as loadable either.
+    const held = await page.evaluate(() => {
+      window._LM_CONFIG.root_url = "http://under_score.example.test";
+      const host = document.querySelector("richtext-editor");
+      host.value = '<p><img src="http://under_score.example.test/a.png" alt="a"></p>';
+      return !!host.querySelector("img[data-rte-src]");
+    });
+    expect(held).toBe(true);
+  });
+
   test.describe("a real cut and paste", () => {
     test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
@@ -471,6 +505,43 @@ test.describe("remote images load on request", () => {
     await expect(page.locator("dialog.confirm-dialog")).toBeVisible();
     await page.locator("dialog.confirm-dialog [data-confirm-cancel]").click();
     expect(page.url()).not.toContain("remote_images");
+  });
+
+  test("an archive slug typed while a save is in flight is still unsaved (B10)", async ({
+    page,
+  }) => {
+    await login(page);
+    const c = await campaign(page, `<p><img src="${remote}/slug.gif" alt="a"></p>`);
+    await ok(page, `/api/campaigns/${c.id}/archive`, "PUT", {
+      archive: true,
+      archive_template_id: 0,
+      archive_meta: {},
+      archive_slug: unique("slug"),
+    });
+    await page.goto(`/admin/campaigns/${c.id}`);
+    let release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/api/campaigns/${c.id}`, async (route) => {
+      if (route.request().method() === "PUT") await held;
+      await route.continue();
+    });
+    const slug = page.locator('input[name="archive_slug"]');
+    await page.getByRole("tab", { name: "Archive", exact: true }).click();
+    await slug.fill("first-slug");
+    const save = page.waitForResponse((r) => r.request().method() === "PUT");
+    await page.keyboard.press("Control+s");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.name)).toBe("archive_slug");
+    await slug.fill("typed-during-the-save");
+    release();
+    expect((await save).status()).toBe(200);
+    // The typed slug is still on screen, and the page knows it was not stored.
+    await expect(slug).toHaveValue("typed-during-the-save");
+    await page.getByRole("tab", { name: "Content", exact: true }).click();
+    await page.getByTestId("editor-held").getByRole("button").click();
+    await expect(page.locator("dialog.confirm-dialog")).toBeVisible();
+    await page.locator("dialog.confirm-dialog [data-confirm-cancel]").click();
   });
 
   test("a changed subject is asked about before the page reloads", async ({ page }) => {

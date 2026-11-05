@@ -128,12 +128,27 @@ test("pages outside the session check and error pages carry it", async () => {
 });
 
 test("remote images are allowed on the one screen that asks, for that response only", async () => {
-  const asked = await get(f, "/admin/campaigns/1?remote_images=1", cookie);
+  const own = (path: string) =>
+    fetch(`${f.origin}${path}`, {
+      redirect: "manual",
+      headers: { cookie, "sec-fetch-site": "same-origin" },
+    });
+  const asked = await own("/admin/campaigns/1?remote_images=1");
   const header = asked.headers.get("content-security-policy") ?? "";
   expect(/img-src ([^;]+)/.exec(header)?.[1]).toEndWith(" http: https:");
   expect(header).not.toContain("unsafe-eval");
   expect(await asked.text()).toContain('"remote_images":true');
-  const other = await get(f, "/admin/lists?remote_images=1", cookie);
+  // A crafted link from another site, a typed address or a client that sends no origin hint.
+  for (const site of ["cross-site", "same-site", "none"]) {
+    const crafted = await fetch(`${f.origin}/admin/campaigns/1?remote_images=1`, {
+      headers: { cookie, "sec-fetch-site": site },
+    });
+    expect(crafted.headers.get("content-security-policy")).toBe(strict);
+    expect(await crafted.text()).toContain('"remote_images":false');
+  }
+  const bare = await get(f, "/admin/campaigns/1?remote_images=1", cookie);
+  expect(bare.headers.get("content-security-policy")).toBe(strict);
+  const other = await own("/admin/lists?remote_images=1");
   expect(other.headers.get("content-security-policy")).toBe(strict);
   const plain = await get(f, "/admin/campaigns/1", cookie);
   expect(plain.headers.get("content-security-policy")).toBe(strict);

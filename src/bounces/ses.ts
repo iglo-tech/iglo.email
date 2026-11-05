@@ -9,11 +9,21 @@ import { campaignMessage, record, safeText, sendMessage } from "@/bounces/mailgu
 import type { Clock } from "@/clock";
 import { sanitizeEmail } from "@/subscribers/email";
 
-/** ses.go sesRegCertURL. */
-const certUrl =
-  /^https:\/\/sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?\/SimpleNotificationService-[a-z0-9]+\.pem$/i;
+/**
+ * ses.go sesRegCertURL, with the region held to an AWS region's shape (`eu-west-1`, `cn-north-1`,
+ * `us-gov-west-1`). Upstream's `[a-z0-9-]+` also matches `s3`, so `sns.s3.amazonaws.com` (the S3
+ * bucket named `sns`) passed; a bucket's content is not SNS's.
+ */
+const region = String.raw`[a-z]{2}(?:-[a-z]+)+-\d{1,2}`;
+const certUrl = new RegExp(
+  String.raw`^https://sns\.${region}\.amazonaws\.com(\.cn)?/SimpleNotificationService-[a-z0-9]+\.pem$`,
+  "i",
+);
 /** A confirmation link: the same hosts, any path, so long as it is HTTPS on that host alone. */
-const confirmUrl = /^https:\/\/sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?\/(\?[^#\s]*)?$/i;
+const confirmUrl = new RegExp(
+  String.raw`^https://sns\.${region}\.amazonaws\.com(\.cn)?/(\?[^#\s]*)?$`,
+  "i",
+);
 export const SES_BODY_LIMIT = 256 * 1024;
 const CERT_LIMIT = 16 * 1024;
 const CERT_CACHE = 16;

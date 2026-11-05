@@ -50,11 +50,27 @@ export function heldURL(value) {
   if (window._LM_CONFIG?.remote_images && /^https?:$/.test(url.protocol)) {
     return false;
   }
+  // The server names the root origin in the policy only when it is a plain host (a name with `_`
+  // is not, as it could end a directive), so only then is it one this page may load from.
   const root = URL.parse(window._LM_CONFIG?.root_url ?? '')?.origin;
-  return url.origin !== window.location.origin && url.origin !== root;
+  const rootNamed = root !== undefined && /^https?:\/\/(?:[a-z0-9.-]+|\[[0-9a-f:.]+\])(?::\d+)?$/.test(root);
+  return url.origin !== window.location.origin && !(rootNamed && url.origin === root);
 }
 
-const HOLDABLE = ['src', 'background'];
+// Addresses a style would fetch: url(), image-set() and image() forms. A CSS escape can spell any
+// of them differently, so a style with one is held whenever it has a backslash at all.
+const STYLE_FETCH = /\b(?:url|image-set|image|src)\s*\(/i;
+const STYLE_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)/gi;
+function heldStyle(value) {
+  if (!STYLE_FETCH.test(value) && !value.includes('\\')) {
+    return false;
+  }
+  const urls = [...value.matchAll(STYLE_URL)].map((m) => m[1] ?? m[2] ?? m[3] ?? '');
+  const plain = value.replace(STYLE_URL, '');
+  return urls.some((url) => heldURL(url)) || STYLE_FETCH.test(plain) || plain.includes('\\');
+}
+
+const HOLDABLE = ['src', 'background', 'style'];
 
 // The stored form of what the editor holds.
 export function restoreHeld(html) {
@@ -79,7 +95,7 @@ function copyAttributes(from, to, removed, held) {
   for (const attribute of from.attributes) {
     // A held address that left the editor by a path `restoreHeld` does not see, such as a drag.
     // It is the address it stands for and passes the same checks.
-    const alias = /^data-rte-(src|background)$/.exec(attribute.name)?.[1];
+    const alias = /^data-rte-(src|background|style)$/.exec(attribute.name)?.[1];
     if (alias && from.hasAttribute(alias)) {
       continue;
     }
@@ -88,7 +104,7 @@ function copyAttributes(from, to, removed, held) {
     if (URL_ATTRIBUTES.has(name)
       ? (name !== 'src' || element === 'img') && safeURL(value, name === 'src')
       : allowed(element, name)) {
-      if (HOLDABLE.includes(name) && heldURL(value)) {
+      if (HOLDABLE.includes(name) && (name === 'style' ? heldStyle(value) : heldURL(value))) {
         to.setAttribute(`data-rte-${name}`, value);
         held.add(value);
       } else {
