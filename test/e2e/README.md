@@ -42,3 +42,7 @@ one that needs a handler to run sets `bypassCSP`. `csp.e2e.js` walks every scree
    `data-testid` values in the ported view so the rest of the spec applies as it is.
 5. Note a deliberate difference in a comment beside the changed case, with its
    row in `docs/design/07-api-and-ui.md`.
+
+Waits in specs: after an update the admin screens reload themselves and show a toast, and after a
+create they navigate to the list. Wait for that toast or URL before the next `goto`, since a
+navigation started during the move is aborted.
