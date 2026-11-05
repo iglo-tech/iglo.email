@@ -5,7 +5,7 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B11 is with its worker: [brief](briefs/B11.md), branch `task/B11-event-latency`. Host hold: the e2e speed thread (`task/speed-e2e`) has the verification slot until it reports; PR #60 (test speed) is in review. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B11 is with its worker: [brief](briefs/B11.md), branch `task/B11-event-latency`. Test-speed PRs [#60](https://github.com/iglo-tech/iglo.email/pull/60) and [#61](https://github.com/iglo-tech/iglo.email/pull/61) are in review (merge #60 first). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
