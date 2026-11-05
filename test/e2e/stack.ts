@@ -59,3 +59,17 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
     await production.close();
   }
 }
+
+/**
+ * `count` independent stacks, each with its own server, data directory, SMTP sink and fresh-install
+ * instance. Specs change settings that every user of a server shares (SMTP, captcha, tracking,
+ * trusted URLs), so parallel runs never share a server; they share nothing but the executable.
+ */
+export async function withStacks(
+  count: number,
+  run: (stacks: Stack[]) => Promise<number>,
+  started: Stack[] = [],
+): Promise<number> {
+  if (started.length === count) return run(started);
+  return withStack((stack) => withStacks(count, run, [...started, stack]));
+}

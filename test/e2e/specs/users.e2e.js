@@ -403,6 +403,8 @@ test.describe("Your own account", () => {
     await other.getByTestId("btn-save").click();
     const sent = (await request).postDataJSON();
     expect([sent.user_role_id, sent.list_role_id]).toEqual([0, 0]);
+    // The page reloads itself after the update and shows the toast then; a goto before that is aborted.
+    await expect(other.locator(".toast")).toBeVisible();
 
     const { body } = await api(page, `/api/users/${manager.id}`);
     expect(body.data.name).toBe("Renamed");

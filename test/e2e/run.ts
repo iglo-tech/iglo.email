@@ -1,12 +1,47 @@
-// Runs the adapted listmonk Playwright specs in test/e2e/specs, one at a time. `bun run e2e`
-// builds first; arguments go to Playwright, as in `bun run e2e test/e2e/specs/login.e2e.js`.
+// Runs the adapted listmonk Playwright specs in test/e2e/specs. `bun run e2e` builds first.
+// With no arguments every spec file runs, spread over E2E_WORKERS independent stacks (default 3):
+// each stack is its own server, data directory, SMTP sink and fresh-install instance, and takes
+// the next spec file from the queue when it is free. Arguments go to Playwright, as in
+// `bun run e2e test/e2e/specs/login.e2e.js`, and then one stack runs them in order.
+import { readdir, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { root, withStack } from "@/test/e2e/stack";
+import { root, withStacks, type Stack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 
-process.exitCode = await withStack(async ({ origin, dataDir, blankOrigin, mailbox }) => {
-  // The specs run in their own process and read the sink over HTTP.
-  const mail = Bun.serve({
+const results = resolve(root, "dist/e2e-results");
+const workers = Math.max(1, Number(process.env.E2E_WORKERS ?? 3) || 1);
+
+// Longest first, so the big files start early and the short ones fill the gaps. Seconds from a
+// serial run; a file missing here runs last. Only the order depends on them, never the outcome.
+const weights: Record<string, number> = {
+  "subscribers.e2e.js": 208,
+  "campaigns.e2e.js": 112,
+  "sequences.e2e.js": 95,
+  "editor-containment.e2e.js": 88,
+  "bounces.e2e.js": 83,
+  "lists.e2e.js": 54,
+  "settings.e2e.js": 49,
+  "users.e2e.js": 47,
+  "import.e2e.js": 45,
+  "csp.e2e.js": 45,
+  "campaign-editor.e2e.js": 37,
+  "campaign-safety.e2e.js": 33,
+  "maintenance.e2e.js": 21,
+  "media.e2e.js": 19,
+  "templates.e2e.js": 18,
+  "forms.e2e.js": 16,
+};
+
+interface Outcome {
+  spec: string;
+  code: number;
+  seconds: number;
+  tests: { title: string; seconds: number; status: string }[];
+}
+
+/** Serves the mail one stack's sink received to the specs, which run in another process. */
+function serveMail(mailbox: Stack["mailbox"]) {
+  return Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
@@ -15,31 +50,144 @@ process.exitCode = await withStack(async ({ origin, dataDir, blankOrigin, mailbo
       return Response.json(found.map(({ subject, body }) => ({ subject, body })));
     },
   });
-  try {
-    const specs = Bun.spawn(
-      [
-        resolve(root, "node_modules/.bin/playwright"),
-        "test",
-        "--config",
-        "test/e2e/playwright.config.js",
-        ...process.argv.slice(2),
-      ],
-      {
-        cwd: root,
-        stdio: ["ignore", "inherit", "inherit"],
-        env: {
-          ...process.env,
-          E2E_ORIGIN: origin,
-          E2E_DATA_DIR: dataDir,
-          E2E_BLANK_ORIGIN: blankOrigin,
-          E2E_MAIL: `http://127.0.0.1:${mail.port}`,
-          E2E_ADMIN_USER: admin.user,
-          E2E_ADMIN_PASSWORD: admin.password,
-        },
+}
+
+/** Copies a child's output line by line with a label, so parallel runs stay readable. */
+async function relay(stream: ReadableStream<Uint8Array>, label: string) {
+  const decoder = new TextDecoder();
+  let pending = "";
+  for await (const chunk of stream) {
+    pending += decoder.decode(chunk, { stream: true });
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    for (const line of lines) console.log(label ? `[${label}] ${line}` : line);
+  }
+  if (pending) console.log(label ? `[${label}] ${pending}` : pending);
+}
+
+interface JsonSuite {
+  title: string;
+  specs?: { title: string; tests: { results: { duration: number; status: string }[] }[] }[];
+  suites?: JsonSuite[];
+}
+
+function collect(suite: JsonSuite, path: string[], into: Outcome["tests"]) {
+  const here = suite.title.endsWith(".js") || !suite.title ? path : [...path, suite.title];
+  for (const spec of suite.specs ?? []) {
+    const run = spec.tests.flatMap((test) => test.results);
+    into.push({
+      title: [...here, spec.title].join(" › "),
+      seconds: run.reduce((sum, item) => sum + item.duration, 0) / 1000,
+      status: run.at(-1)?.status ?? "unknown",
+    });
+  }
+  for (const child of suite.suites ?? []) collect(child, here, into);
+}
+
+async function playwright(
+  stack: Stack,
+  mailPort: number,
+  args: string[],
+  name: string,
+  label: string,
+): Promise<Outcome> {
+  const started = performance.now();
+  const report = resolve(results, `${name}.json`);
+  const child = Bun.spawn(
+    [
+      resolve(root, "node_modules/.bin/playwright"),
+      "test",
+      "--config",
+      "test/e2e/playwright.config.js",
+      "--reporter=list,json",
+      "--output",
+      resolve(results, name),
+      ...args,
+    ],
+    {
+      cwd: root,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        E2E_ORIGIN: stack.origin,
+        E2E_DATA_DIR: stack.dataDir,
+        E2E_BLANK_ORIGIN: stack.blankOrigin,
+        E2E_MAIL: `http://127.0.0.1:${mailPort}`,
+        E2E_ADMIN_USER: admin.user,
+        E2E_ADMIN_PASSWORD: admin.password,
+        PLAYWRIGHT_JSON_OUTPUT_NAME: report,
       },
+    },
+  );
+  const [code] = await Promise.all([
+    child.exited,
+    relay(child.stdout, label),
+    relay(child.stderr, label),
+  ]);
+  const tests: Outcome["tests"] = [];
+  try {
+    const parsed = JSON.parse(await readFile(report, "utf8")) as { suites: JsonSuite[] };
+    for (const suite of parsed.suites) collect(suite, [], tests);
+  } catch {
+    // A run that never started a test (a bad argument) has no report; its exit code says enough.
+  }
+  return { spec: name, code, seconds: (performance.now() - started) / 1000, tests };
+}
+
+async function summarise(outcomes: Outcome[], seconds: number, stacks: number) {
+  const files = [...outcomes].sort((a, b) => b.seconds - a.seconds);
+  const tests = outcomes
+    .flatMap((o) => o.tests.map((t) => ({ spec: o.spec, ...t })))
+    .sort((a, b) => b.seconds - a.seconds);
+  await writeFile(
+    resolve(results, "timings.json"),
+    JSON.stringify({ stacks, seconds, files, tests }, null, 2),
+  );
+  console.log(`\nSlowest spec files (${stacks} stack${stacks === 1 ? "" : "s"}):`);
+  for (const item of files.slice(0, 15)) {
+    console.log(
+      `  ${item.seconds.toFixed(0).padStart(5)} s  ${item.tests.length} tests  ${item.spec}`,
     );
-    return await specs.exited;
+  }
+  console.log(`Wall time ${(seconds / 60).toFixed(1)} min. Timings: dist/e2e-results/timings.json`);
+}
+
+const extra = process.argv.slice(2);
+const begin = performance.now();
+await rm(results, { recursive: true, force: true });
+await mkdir(results, { recursive: true });
+
+process.exitCode = await withStacks(extra.length > 0 ? 1 : workers, async (stacks) => {
+  const mails = stacks.map((stack) => serveMail(stack.mailbox));
+  try {
+    const outcomes: Outcome[] = [];
+    if (extra.length > 0) {
+      outcomes.push(await playwright(stacks[0]!, mails[0]!.port!, extra, "run", ""));
+    } else {
+      const specs = (await readdir(resolve(root, "test/e2e/specs")))
+        .filter((name) => name.endsWith(".e2e.js"))
+        .sort((a, b) => (weights[b] ?? 0) - (weights[a] ?? 0) || a.localeCompare(b));
+      await Promise.all(
+        stacks.map(async (stack, index) => {
+          for (let spec = specs.shift(); spec; spec = specs.shift()) {
+            outcomes.push(
+              await playwright(
+                stack,
+                mails[index]!.port!,
+                [`test/e2e/specs/${spec}`],
+                spec,
+                `${index + 1}:${spec.replace(".e2e.js", "")}`,
+              ),
+            );
+          }
+        }),
+      );
+    }
+    await summarise(outcomes, (performance.now() - begin) / 1000, stacks.length);
+    const failed = outcomes.filter((o) => o.code !== 0);
+    for (const item of failed) console.log(`FAILED ${item.spec} (exit ${item.code})`);
+    return failed.length > 0 ? 1 : 0;
   } finally {
-    await mail.stop(true);
+    for (const mail of mails) await mail.stop(true);
   }
 });
