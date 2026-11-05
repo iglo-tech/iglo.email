@@ -181,7 +181,7 @@ export async function runSettingsContract(target: {
       listed[0]!.max_conns === 2,
     "messenger-projection",
   );
-  const kept = { ...listed[0], password: "", timeout: "7s" };
+  const kept = { ...listed[0], password: "", timeout: "7s" } as Record<string, any>;
   check((await messengerPut([kept])).status === 200, "messenger-keep-password");
   listed = await messengerGet();
   check(
