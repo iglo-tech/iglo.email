@@ -1,5 +1,12 @@
 // One process per data directory (D69), through the compiled executable and real processes.
-import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import {
   chmodSync,
   existsSync,
@@ -52,7 +59,10 @@ const inUse = (dataDir: string) =>
   `${dataDir} is in use by another iglo.email process: stop it first\n`;
 
 /** A run that must end by itself: a second server that kept serving fails here, not by hanging. */
-async function run(args: string[], options: { stdin?: string; cwd?: string } = {}) {
+async function run(
+  args: string[],
+  options: { stdin?: string; cwd?: string } = {},
+) {
   const child = Bun.spawn([executable, ...args], {
     env: { PATH: "" },
     cwd: options.cwd ?? base,
@@ -72,10 +82,17 @@ async function run(args: string[], options: { stdin?: string; cwd?: string } = {
 
 /** On a port of its own, so only the lock can stop it. */
 function secondServer(dataDir: string, options?: { cwd?: string }) {
-  const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const probe = Bun.listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: { data() {} },
+  });
   const port = String(probe.port);
   probe.stop(true);
-  return run(["serve", "--host", "127.0.0.1", "--port", port, "--data-dir", dataDir], options);
+  return run(
+    ["serve", "--host", "127.0.0.1", "--port", port, "--data-dir", dataDir],
+    options,
+  );
 }
 
 /** The database as it stands on disk. */
@@ -92,7 +109,12 @@ async function logIn(origin: string, password: string) {
     method: "POST",
     redirect: "manual",
     headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ nonce, username: admin.user, password, next: "/admin" }).toString(),
+    body: new URLSearchParams({
+      nonce,
+      username: admin.user,
+      password,
+      next: "/admin",
+    }).toString(),
   });
   return entered.headers.get("location");
 }
@@ -105,7 +127,10 @@ function freshDirectories() {
 test("a second server refuses, before the database, and the first keeps serving", async () => {
   freshDirectories();
   const first = await serve();
-  const client = apiClient(first.origin, await provisionAuthorization(first.origin));
+  const client = apiClient(
+    first.origin,
+    await provisionAuthorization(first.origin),
+  );
   expect((await createSubscriber(client, 1)).status).toBe(200);
   expect(existsSync(join(data, "iglo-email.lock-journal"))).toBe(false);
   const before = fileBytes(data);
@@ -117,7 +142,9 @@ test("a second server refuses, before the database, and the first keeps serving"
   expect(second.stdout).toBe("");
   expect(fileBytes(data)).toEqual(before);
   expect((await fetch(first.health)).status).toBe(200);
-  const listed = await client("/api/subscribers").then((response) => response.json());
+  const listed = await client("/api/subscribers").then((response) =>
+    response.json(),
+  );
   expect(listed.data.total).toBe(1);
 });
 
@@ -162,7 +189,10 @@ test("a killed server's lock is gone: the leftover file blocks nothing", async (
 
   const restarted = await serve();
 
-  const listed = await apiClient(restarted.origin, authorization)("/api/subscribers");
+  const listed = await apiClient(
+    restarted.origin,
+    authorization,
+  )("/api/subscribers");
   expect((await listed.json()).data.total).toBe(1);
   // The file was already there this time, and the lock on it is as real.
   const second = await secondServer(data);
@@ -209,17 +239,20 @@ test("a lock file with a valid SQLite magic and an unknown schema format blocks 
 });
 
 // A read-only open would take no lock at all, so this must not start. Root can write the file.
-test.skipIf(process.getuid?.() === 0)("a lock file it cannot write stops the server", async () => {
-  freshDirectories();
-  mkdirSync(data);
-  const lock = join(data, "iglo-email.lock");
-  writeFileSync(lock, "");
-  chmodSync(lock, 0o444);
-  const refused = await secondServer(data);
-  expect(refused.exitCode).toBe(1);
-  expect(refused.stderr).toStartWith(`Cannot lock ${lock}: `);
-  expect(existsSync(join(data, "iglo-email.db"))).toBe(false);
-});
+test.skipIf(process.getuid?.() === 0)(
+  "a lock file it cannot write stops the server",
+  async () => {
+    freshDirectories();
+    mkdirSync(data);
+    const lock = join(data, "iglo-email.lock");
+    writeFileSync(lock, "");
+    chmodSync(lock, 0o444);
+    const refused = await secondServer(data);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toStartWith(`Cannot lock ${lock}: `);
+    expect(existsSync(join(data, "iglo-email.db"))).toBe(false);
+  },
+);
 
 test("two data directories run side by side", async () => {
   freshDirectories();
@@ -232,18 +265,30 @@ test("two data directories run side by side", async () => {
 test("reads run beside a server, and the lock outlives them", async () => {
   freshDirectories();
   const server = await serve();
-  const client = apiClient(server.origin, await provisionAuthorization(server.origin));
+  const client = apiClient(
+    server.origin,
+    await provisionAuthorization(server.origin),
+  );
   await createSubscriber(client, 1);
 
   // Each of these runs in a helper child of the server (D62).
   expect((await client("/api/dashboard/charts")).status).toBe(200);
-  expect((await client("/api/sends/analytics?from=2020-01-01&to=2099-01-01")).status).toBe(200);
+  expect(
+    (await client("/api/sends/analytics?from=2020-01-01&to=2099-01-01")).status,
+  ).toBe(200);
   const query = encodeURIComponent("subscribers.id > 0");
-  const found = await client(`/api/subscribers?query=${query}`).then((response) => response.json());
+  const found = await client(`/api/subscribers?query=${query}`).then(
+    (response) => response.json(),
+  );
   expect(found.data.total).toBe(1);
 
   const output = join(base, "monday");
-  const backup = await runBackup(executable, ["--data-dir", data, "--output", output]);
+  const backup = await runBackup(executable, [
+    "--data-dir",
+    data,
+    "--output",
+    output,
+  ]);
   expect(backup.exitCode).toBe(0);
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.exitCode).toBe(0);
@@ -263,9 +308,18 @@ test("commands that write refuse beside a server, then work without one", async 
   const before = fileBytes(data);
   const password = "a-new-password";
   const reset = ["reset-password", "--data-dir", data, "--user", admin.user];
-  const release = ["backup", "--release-hold", "--consent-reconciled", "--data-dir", data];
+  const release = [
+    "backup",
+    "--release-hold",
+    "--consent-reconciled",
+    "--data-dir",
+    data,
+  ];
 
-  for (const refused of [await run(reset, { stdin: password }), await run(release)]) {
+  for (const refused of [
+    await run(reset, { stdin: password }),
+    await run(release),
+  ]) {
     expect(refused.exitCode).toBe(1);
     expect(refused.stderr).toBe(inUse(data));
     expect(refused.stdout).toBe("");
@@ -285,10 +339,59 @@ test("a command leaves a directory without a database as it found it", async () 
   freshDirectories();
   const missing = join(base, "missing");
   mkdirSync(base, { recursive: true });
-  const result = await run(["reset-password", "--data-dir", missing, "--user", "x"], {
-    stdin: "a-long-password",
-  });
+  const result = await run(
+    ["reset-password", "--data-dir", missing, "--user", "x"],
+    {
+      stdin: "a-long-password",
+    },
+  );
   expect(result.exitCode).toBe(1);
-  expect(result.stderr).toBe(`No database at ${join(missing, "iglo-email.db")}\n`);
+  expect(result.stderr).toBe(
+    `No database at ${join(missing, "iglo-email.db")}\n`,
+  );
   expect(statSync(missing, { throwIfNoEntry: false })).toBeUndefined();
+});
+
+test("reset-totp refuses beside a server and leaves the database unchanged", async () => {
+  freshDirectories();
+  await serve();
+  const before = fileBytes(data);
+  const refused = await run([
+    "reset-totp",
+    "--data-dir",
+    data,
+    "--user",
+    admin.user,
+  ]);
+  expect(refused.exitCode).toBe(1);
+  expect(refused.stderr).toBe(inUse(data));
+  expect(refused.stdout).toBe("");
+  expect(fileBytes(data)).toEqual(before);
+});
+
+test("reset-totp names an unknown user, and says so when there is no TOTP to turn off", async () => {
+  freshDirectories();
+  const server = await serve();
+  forget(server);
+  await server.stop();
+  const unknown = await run([
+    "reset-totp",
+    "--data-dir",
+    data,
+    "--user",
+    "nobody",
+  ]);
+  expect(unknown.exitCode).toBe(1);
+  expect(unknown.stderr).toContain("No user named nobody");
+  expect(unknown.stdout).toBe("");
+  const none = await run([
+    "reset-totp",
+    "--data-dir",
+    data,
+    "--user",
+    admin.user,
+  ]);
+  expect(none.exitCode).toBe(0);
+  expect(none.stdout).toContain("nothing to turn off");
+  expect(none.stdout).not.toContain("TOTP turned off");
 });

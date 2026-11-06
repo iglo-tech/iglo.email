@@ -62,7 +62,8 @@ export interface RecoveryOptions {
 
 export async function recoverPassword(options: RecoveryOptions): Promise<void> {
   const { dataDir, username, password, clock, supportedVersion } = options;
-  if (!validPassword(password)) throw new Error("A password must be 8 to 2000 bytes long");
+  if (!validPassword(password))
+    throw new Error("A password must be 8 to 2000 bytes long");
   const hash = await hashPassword(password);
   withStoppedDatabase(dataDir, supportedVersion, (db) => {
     const lists = createListReferences(db);
@@ -72,7 +73,9 @@ export async function recoverPassword(options: RecoveryOptions): Promise<void> {
       const user = users.byName(username);
       if (!user) throw new Error(`No user named ${username}`);
       if (!users.setPassword(user.id, hash))
-        throw new Error(`${username} is not an enabled account with password login`);
+        throw new Error(
+          `${username} is not an enabled account with password login`,
+        );
     } finally {
       users.close();
       roles.close();
@@ -99,11 +102,17 @@ export async function runResetPassword(
     clock: createRealClock(),
     supportedVersion: productionMigrations.length,
   });
-  process.stdout.write(`Password set for ${parsed.user}; their sessions have ended\n`);
+  process.stdout.write(
+    `Password set for ${parsed.user}; their sessions have ended\n`,
+  );
 }
 
-export async function recoverTotp(options: Omit<RecoveryOptions, "password">): Promise<void> {
+/** Whether the user had a TOTP to turn off. */
+export async function recoverTotp(
+  options: Omit<RecoveryOptions, "password">,
+): Promise<boolean> {
   const { dataDir, username, clock, supportedVersion } = options;
+  let had = false;
   withStoppedDatabase(dataDir, supportedVersion, (db) => {
     const lists = createListReferences(db);
     const roles = createRoles(db, lists);
@@ -111,6 +120,7 @@ export async function recoverTotp(options: Omit<RecoveryOptions, "password">): P
     try {
       const user = users.byName(username);
       if (!user) throw new Error(`No user named ${username}`);
+      had = user.twofa_type !== "none";
       users.clearFactor(user.id);
     } finally {
       users.close();
@@ -118,6 +128,7 @@ export async function recoverTotp(options: Omit<RecoveryOptions, "password">): P
       lists.close();
     }
   });
+  return had;
 }
 
 export async function runResetTotp(
@@ -130,11 +141,15 @@ export async function runResetTotp(
     return;
   }
   if (parsed.user === undefined) throw new Error("--user is required");
-  await recoverTotp({
+  const had = await recoverTotp({
     dataDir: parsed.dataDir ?? env.IGLO_EMAIL_DATA_DIR ?? "./data",
     username: parsed.user,
     clock: createRealClock(),
     supportedVersion: productionMigrations.length,
   });
-  process.stdout.write(`TOTP turned off for ${parsed.user}; their sessions have ended\n`);
+  process.stdout.write(
+    had
+      ? `TOTP turned off for ${parsed.user}; their sessions have ended\n`
+      : `${parsed.user} has no TOTP: nothing to turn off; their sessions have ended\n`,
+  );
 }
