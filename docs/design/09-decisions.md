@@ -806,3 +806,7 @@ Decided by an agent on 2026-11-06, for owner review.
 ## D83. One enrollment status per ending reason; exit events apply to every sequence status (B20)
 
 `sequence_archived` and `blocklisted` end an enrollment as `exited` on every path; the scheduler used `canceled` for them while the archive and subscriber paths used `exited`. `canceled` stays for `manual` and `subscriber_deleted`. An `exit_on` event ends enrollments of draft and paused sequences too, so resuming cannot revive an enrollment whose exit event already arrived. Every ending clears `claimed_until` and `retry_at`. Native behavior, with no listmonk counterpart.
+
+## D84. Bounce actions are validated; TOTP follows the account state; an operator can clear TOTP (B21)
+
+`bounce.actions` rules take `count` 1 to 1000 and `action` of `none`, `unsubscribe`, `blocklist` or `delete`, the ranges the admin form offers. Upstream stores anything, so a `count` of 0 recorded no bounce rows and fired the action on every bounce, and an unknown action did nothing; both are now 400. `update-user` clears `twofa_type` and `twofa_key` when `password_login` goes off or `type` becomes `api`, so an old key cannot return. `iglo.email reset-totp --user <name>` turns TOTP off with the server stopped and ends the user's sessions. The audit's webhook-postpone item did not reproduce through the API (a claimed row is not due before its lease ends, and `recover` clears leases at start), so `delivery-postpone` is unchanged. Tests: `test/users/b21.test.ts`.

@@ -17,6 +17,15 @@ user's sessions end, and a second factor stays required:
   --data-dir <path>      IGLO_EMAIL_DATA_DIR   Data directory (default: ./data)
 `;
 
+export const resetTotpHelp = `
+Usage: iglo.email reset-totp --user <name> [--data-dir <path>]
+
+Turn off a user's TOTP second factor with the server stopped, for a lost device. The user's
+sessions end and they log in with their password alone, then can enroll again:
+  --user <name>          The account
+  --data-dir <path>      IGLO_EMAIL_DATA_DIR   Data directory (default: ./data)
+`;
+
 interface ResetArguments {
   help: boolean;
   user?: string;
@@ -91,4 +100,41 @@ export async function runResetPassword(
     supportedVersion: productionMigrations.length,
   });
   process.stdout.write(`Password set for ${parsed.user}; their sessions have ended\n`);
+}
+
+export async function recoverTotp(options: Omit<RecoveryOptions, "password">): Promise<void> {
+  const { dataDir, username, clock, supportedVersion } = options;
+  withStoppedDatabase(dataDir, supportedVersion, (db) => {
+    const lists = createListReferences(db);
+    const roles = createRoles(db, lists);
+    const users = createUserStore(db, clock, roles);
+    try {
+      const user = users.byName(username);
+      if (!user) throw new Error(`No user named ${username}`);
+      users.clearFactor(user.id);
+    } finally {
+      users.close();
+      roles.close();
+      lists.close();
+    }
+  });
+}
+
+export async function runResetTotp(
+  args: string[],
+  env: Record<string, string | undefined>,
+): Promise<void> {
+  const parsed = parseArguments(args);
+  if (parsed.help) {
+    process.stdout.write(resetTotpHelp);
+    return;
+  }
+  if (parsed.user === undefined) throw new Error("--user is required");
+  await recoverTotp({
+    dataDir: parsed.dataDir ?? env.IGLO_EMAIL_DATA_DIR ?? "./data",
+    username: parsed.user,
+    clock: createRealClock(),
+    supportedVersion: productionMigrations.length,
+  });
+  process.stdout.write(`TOTP turned off for ${parsed.user}; their sessions have ended\n`);
 }

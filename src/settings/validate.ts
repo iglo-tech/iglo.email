@@ -289,6 +289,13 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     item.name = name;
     names.add(name);
   }
+  // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
+  for (const rule of Object.values(next["bounce.actions"] ?? {}) as Settings[]) {
+    if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000)
+      return fail("Bounce action count must be between 1 and 1000.");
+    if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action))
+      return fail("Bounce action must be none, unsubscribe, blocklist or delete.");
+  }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
     if (!next[key]) next[key] = current[key];
   for (const [key, field] of [

@@ -27,7 +27,11 @@ INSERT INTO users(username, password_login, password, email, name, type, user_ro
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: update-user
-UPDATE users SET username = ?, password_login = ?, password = ?, email = ?, name = ?, type = ?, user_role_id = ?, list_role_id = ?, status = ?, updated_at = ? WHERE id = ? RETURNING *;
+-- A second factor needs a human with password login: leaving either state drops the TOTP pair.
+UPDATE users SET username = ?, password_login = ?, password = ?, email = ?, name = ?, type = ?, user_role_id = ?, list_role_id = ?, status = ?,
+    twofa_type = CASE WHEN ?2 = 0 OR ?6 <> 'user' THEN 'none' ELSE twofa_type END,
+    twofa_key = CASE WHEN ?2 = 0 OR ?6 <> 'user' THEN NULL ELSE twofa_key END,
+    updated_at = ? WHERE id = ? RETURNING *;
 
 -- name: update-profile
 UPDATE users SET name = ?, email = ?, password = ?, updated_at = ? WHERE id = ? RETURNING *;
