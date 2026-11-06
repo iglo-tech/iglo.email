@@ -1,4 +1,5 @@
 // Public round-3 regressions for pinned listmonk/Go/cron; D48 is explicitly paired.
+import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 
@@ -28,9 +29,7 @@ export async function runSettingsCouncilFinal(target: {
   }
   const original = await read();
   function candidate() {
-    const out = structuredClone(original);
-    for (const key of ["smtp", "messengers", "bounce.mailboxes"])
-      for (const item of out[key]) item.password = "";
+    const out = withBlankPasswords(original);
     return out;
   }
   for (const [label, address] of [

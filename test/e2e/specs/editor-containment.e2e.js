@@ -403,6 +403,59 @@ test.describe("remote images load on request", () => {
     expect(stored).not.toContain("data-rte-");
   });
 
+  const storedStyle = (stored) => /<p[^>]*style="([^"]*)"/.exec(stored)[1].replace(/\s+/g, " ");
+
+  test("repeated identical declarations in a held block keep their order (B12)", async ({
+    page,
+  }) => {
+    await signIn(page);
+    const style = `background-image: url('${remote}/rep.gif'); color: red; color: blue; color: red`;
+    const c = await campaign(page, `<p style="${style}">repeat</p>`);
+    await open(page, c.id);
+    await page.locator(`${EDITOR} p`).first().click();
+    await page.keyboard.press("End");
+    await page.keyboard.type("x");
+    const stored = await saved(page, c.id);
+    expect(storedStyle(stored)).toBe(style);
+    expect(stored).not.toContain("data-rte-");
+  });
+
+  test("a held block style with CSS comments is edited without breaking them (B12)", async ({
+    page,
+  }) => {
+    await signIn(page);
+    const style = `/* a; b */ color: red; background-image: url('${remote}/cm.gif'); /* it's; (c */ margin-top: 3px`;
+    const c = await campaign(page, `<p style="${style}">comment</p>`);
+    await open(page, c.id);
+    await page.locator(`${EDITOR} p`).first().click();
+    await page.locator('richtext-editor [data-cmd="align"][data-value="center"]').click();
+    const got = storedStyle(await saved(page, c.id));
+    // Each declaration once, the held one in its place, and no half of a comment left behind.
+    expect(got.match(/color: red/g)).toHaveLength(1);
+    expect(got.match(/margin-top: 3px/g)).toHaveLength(1);
+    expect(got).toContain(`url('${remote}/cm.gif')`);
+    expect(got).toMatch(/text-align: center/);
+    expect(got.indexOf("color: red")).toBeLessThan(got.indexOf("background-image"));
+    expect(got.replace(/\/\*.*?\*\//g, "")).not.toMatch(/\/\*|\*\/|[a-z-]+; [a-z]+ \*\//);
+  });
+
+  test("a shorthand the editor rewrites stays before a later held declaration (B12)", async ({
+    page,
+  }) => {
+    await signIn(page);
+    // The !important longhand makes the browser write the shorthand as its sides.
+    const style = `margin: 0; margin-top: 3px !important; background-image: url('${remote}/sh.gif'); color: red`;
+    const c = await campaign(page, `<p style="${style}">short</p>`);
+    await open(page, c.id);
+    await page.locator(`${EDITOR} p`).first().click();
+    await page.locator('richtext-editor [data-cmd="align"][data-value="center"]').click();
+    const got = storedStyle(await saved(page, c.id));
+    expect(got).toMatch(/text-align:\s*center/);
+    expect(got).toContain(`url('${remote}/sh.gif')`);
+    // Whatever form the margin takes, it comes before the held background, as it did.
+    expect(got.lastIndexOf("margin-")).toBeLessThan(got.indexOf("background-image"));
+  });
+
   // Squire turns the font and text declarations of a span into markup, so the span's style is held
   // whole: an unedited save stores the span as it was.
   const spanStyles = [

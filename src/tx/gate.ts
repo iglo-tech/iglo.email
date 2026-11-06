@@ -24,11 +24,18 @@ export function createByteGate(options: {
   waitMs: number;
   /** Waiters beyond this are refused at once, so waiting itself holds nothing unbounded. */
   maxWaiters?: number;
+  /**
+   * How many later arrivals that fit may be admitted ahead of the oldest waiter by `admit`. Past
+   * it they queue behind that waiter, so a steady stream of small sends cannot starve it.
+   */
+  maxOvertakes?: number;
 }) {
   let bytes = 0;
   let holders = 0;
   const waiting: Array<{
     cost: number;
+    /** Arrivals `admit` let in ahead of this entry while it was first in line. */
+    overtaken: number;
     wake: (reservation: Reservation | null) => void;
   }> = [];
   const fits = (cost: number) => holders < options.maxHolders && bytes + cost <= options.maxBytes;
@@ -70,41 +77,57 @@ export function createByteGate(options: {
     }
   }
 
+  function queue(cost: number): Promise<Reservation | null> {
+    if (waiting.length >= (options.maxWaiters ?? 16)) return Promise.resolve(null);
+    return new Promise<Reservation | null>((resolve) => {
+      const timeout = new AbortController();
+      const entry = {
+        cost,
+        overtaken: 0,
+        wake: (reservation: Reservation | null) => {
+          timeout.abort();
+          resolve(reservation);
+        },
+      };
+      options.clock.sleep(options.waitMs, timeout.signal).then(
+        () => {
+          const at = waiting.indexOf(entry);
+          if (at < 0) return;
+          waiting.splice(at, 1);
+          resolve(null);
+          drain();
+        },
+        () => {},
+      );
+      waiting.push(entry);
+    });
+  }
+
   return {
-    /** Null when `cost` can never fit or the wait ran out. */
+    /** Null when `cost` can never fit or the wait ran out. Strictly in arrival order. */
     async acquire(cost: number): Promise<Reservation | null> {
       if (cost > options.maxBytes) return null;
       if (!waiting.length && fits(cost)) return open(cost);
-      if (waiting.length >= (options.maxWaiters ?? 16)) return null;
-      return new Promise<Reservation | null>((resolve) => {
-        const timeout = new AbortController();
-        const entry = {
-          cost,
-          wake: (reservation: Reservation | null) => {
-            timeout.abort();
-            resolve(reservation);
-          },
-        };
-        options.clock.sleep(options.waitMs, timeout.signal).then(
-          () => {
-            const at = waiting.indexOf(entry);
-            if (at < 0) return;
-            waiting.splice(at, 1);
-            resolve(null);
-            drain();
-          },
-          () => {},
-        );
-        waiting.push(entry);
-      });
+      return queue(cost);
     },
     /**
-     * Take `cost` now or not at all. It does not queue behind a waiter that cannot fit yet: the
-     * waiter keeps its place and its 2 s bound, and a send that fits now has no reason to be
-     * refused for it.
+     * For a send that holds nothing yet. Null at once when it does not fit now. When it fits it
+     * goes ahead of a waiter that cannot fit yet, so a few hundred bytes are not refused for a
+     * large upload's sake; but only
+     * `maxOvertakes` times per waiter. After that it queues behind the waiter like `acquire`,
+     * which bounds what can pass a waiter to the holders it already had plus that many.
      */
-    tryAcquire: (cost: number): Reservation | null =>
-      cost <= options.maxBytes && fits(cost) ? open(cost) : null,
+    async admit(cost: number): Promise<Reservation | null> {
+      if (cost > options.maxBytes) return null;
+      if (!fits(cost)) return null;
+      const head = waiting[0];
+      if (!head) return open(cost);
+      if (head.overtaken < (options.maxOvertakes ?? 8)) {
+        head.overtaken++;
+        return open(cost);
+      }
+      return queue(cost);
+    },
     stats: () => ({ bytes, holders, waiting: waiting.length }),
   };
 }

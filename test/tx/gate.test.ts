@@ -2,8 +2,15 @@ import { expect, test } from "bun:test";
 import { TestClock } from "@/test/server/fixture";
 import { createByteGate } from "@/tx/gate";
 
-const gate = (clock = new TestClock(), options: { maxBytes?: number; maxWaiters?: number } = {}) =>
-  createByteGate({ clock, maxBytes: 100, maxHolders: 3, waitMs: 1000, ...options });
+const gate = (
+  clock = new TestClock(),
+  options: {
+    maxBytes?: number;
+    maxWaiters?: number;
+    maxHolders?: number;
+    maxOvertakes?: number;
+  } = {},
+) => createByteGate({ clock, maxBytes: 100, maxHolders: 3, waitMs: 1000, ...options });
 
 test("reservations are granted in arrival order and freed by release", async () => {
   const g = gate();
@@ -48,7 +55,7 @@ test("a cost over the budget, a full queue and a full holder count are refused",
   a.release();
   (await waiting)!.release();
   const three = [await g.acquire(1), await g.acquire(1), await g.acquire(1)];
-  expect(g.tryAcquire(1)).toBeNull();
+  expect(await g.admit(1)).toBeNull();
   for (const r of three) r!.release();
 });
 
@@ -66,4 +73,46 @@ test("grow never waits, shrink wakes a waiter, and a released reservation holds 
   expect(r.grow(1)).toBe(false);
   w.release();
   expect(g.stats()).toEqual({ bytes: 0, holders: 0, waiting: 0 });
+});
+
+test("a steady stream of small admissions cannot starve a waiter past maxOvertakes", async () => {
+  const clock = new TestClock();
+  const g = gate(clock, { maxOvertakes: 3, maxHolders: 10 });
+  const held = [(await g.acquire(70))!];
+  const big = g.acquire(60);
+  let bigDone = false;
+  void big.then(() => (bigDone = true));
+  // Three small sends fit beside the first holder and go ahead of the waiter.
+  for (let i = 0; i < 3; i++) held.push((await g.admit(5))!);
+  expect(g.stats()).toEqual({ bytes: 85, holders: 4, waiting: 1 });
+  // The fourth queues behind the waiter instead of passing it.
+  let late: Awaited<ReturnType<typeof g.admit>> | undefined;
+  void g.admit(5).then((r) => (late = r));
+  await Promise.resolve();
+  expect(g.stats().waiting).toBe(2);
+  // Everything ahead of the waiter leaves: the waiter gets its room first, then the late one.
+  for (const r of held) r.release();
+  const reservation = (await big)!;
+  expect(bigDone).toBe(true);
+  expect(reservation.bytes).toBe(60);
+  await Promise.resolve();
+  expect(late?.bytes).toBe(5);
+  reservation.release();
+  late?.release();
+  expect(g.stats()).toEqual({ bytes: 0, holders: 0, waiting: 0 });
+});
+
+test("an admission queued behind a waiter takes the room when the waiter's wait ends", async () => {
+  const clock = new TestClock();
+  const g = gate(clock, { maxOvertakes: 0 });
+  const held = (await g.acquire(90))!;
+  const big = g.acquire(50);
+  const small = g.admit(5);
+  await clock.whenSleeping();
+  clock.advance(1000);
+  expect(await big).toBeNull();
+  const reservation = (await small)!;
+  expect(reservation.bytes).toBe(5);
+  reservation.release();
+  held.release();
 });

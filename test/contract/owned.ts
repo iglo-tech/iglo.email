@@ -1,4 +1,5 @@
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,27 @@ async function availablePort(): Promise<number> {
     socket.close((error) => (error ? reject(error) : resolve())),
   );
   return address.port;
+}
+
+// Whether `pid` itself listens on loopback `port`: a /health answer alone could come from another
+// server that took the reserved port while the child died at bind. Linux only, like the MVP.
+function listensOn(pid: number, port: number): boolean {
+  try {
+    const hex = port.toString(16).toUpperCase().padStart(4, "0");
+    const inodes = new Set<string>();
+    for (const line of readFileSync("/proc/net/tcp", "utf8").split("\n").slice(1)) {
+      const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
+      if (state === "0A" && local?.endsWith(`:${hex}`) && inode) inodes.add(inode);
+    }
+    if (inodes.size === 0) return false;
+    for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+      try {
+        const match = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/${fd}`));
+        if (match && inodes.has(match[1]!)) return true;
+      } catch {}
+    }
+  } catch {}
+  return false;
 }
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
@@ -99,7 +121,12 @@ export async function withProduction<T>(
             headers: { Connection: "close" },
             signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
           });
-          if (response.status === 200 && (await response.text()) === '{"data":true}\n') {
+          if (
+            response.status === 200 &&
+            (await response.text()) === '{"data":true}\n' &&
+            child.pid !== undefined &&
+            listensOn(child.pid, port)
+          ) {
             ready = true;
             break;
           }

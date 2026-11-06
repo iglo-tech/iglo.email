@@ -1,4 +1,5 @@
 // Public regressions for listmonk cmd/settings.go and models.HasTplExpr at 6fcd95f.
+import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 
@@ -28,9 +29,7 @@ export async function runSettingsCouncilSmall(target: {
   }
   const original = await read();
   function candidate() {
-    const out = structuredClone(original);
-    for (const key of ["smtp", "messengers", "bounce.mailboxes"])
-      for (const entry of out[key]) entry.password = "";
+    const out = withBlankPasswords(original);
     return out;
   }
   const reversed = candidate();

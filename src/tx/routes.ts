@@ -355,7 +355,7 @@ export function registerTxRoutes(
         if (held <= slot.reservation.bytes) slot.reservation.shrink(held);
         else if (!slot.reservation.grow(held - slot.reservation.bytes)) throw busy();
       } else {
-        slot.reservation = gate.tryAcquire(held);
+        slot.reservation = await gate.admit(held);
         if (!slot.reservation) throw busy();
       }
 

@@ -4,24 +4,63 @@
 // builds once before any worker starts and sets IGLO_TEST_PREBUILT, so no test rebuilds during the
 // run. Without it (a single file run by hand) the first caller in a process builds, under a lock
 // that serializes concurrent processes.
-import { mkdirSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const repository = resolve(import.meta.dir, "..");
-const lock = join(tmpdir(), "iglo-email-production-build.lock");
+// One lock per checkout: builds in different checkouts write different `dist` directories.
+const lock = join(tmpdir(), `iglo-email-build-${Bun.hash(repository).toString(36)}.lock`);
+const ownerFile = join(lock, "owner");
+// A held lock is waited for as long as its owner lives (a build takes about a minute).
+const holdLimitMs = 15 * 60_000;
+// Any other `mkdir` failure (permissions, full disk) cannot clear by waiting.
+const faultLimitMs = 5_000;
 let built: Promise<void> | undefined;
 
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+// A lock is stale when its recorded owner is gone. A lock without a readable owner yet is a
+// fresh `mkdir` whose owner has not written its PID: stale only after a few seconds.
+function stale(): boolean {
+  try {
+    const pid = Number(readFileSync(ownerFile, "utf8"));
+    if (Number.isInteger(pid) && pid > 0) return !alive(pid);
+  } catch {}
+  try {
+    return Date.now() - statSync(lock).mtimeMs > 10_000;
+  } catch {
+    return false;
+  }
+}
+
 async function acquire(): Promise<void> {
+  const start = Date.now();
   for (;;) {
     try {
       mkdirSync(lock);
+      writeFileSync(ownerFile, String(process.pid));
       return;
-    } catch {
-      try {
-        // A lock older than any build is left over from a killed process.
-        if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true });
-      } catch {}
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") {
+        if (stale()) {
+          rmSync(lock, { recursive: true, force: true });
+          continue;
+        }
+        if (Date.now() - start > holdLimitMs) {
+          throw new Error(`Production build lock ${lock} is still held by a live process`);
+        }
+      } else if (Date.now() - start > faultLimitMs) {
+        throw new Error(`Cannot create production build lock ${lock}: ${(error as Error).message}`);
+      }
       await Bun.sleep(50);
     }
   }
