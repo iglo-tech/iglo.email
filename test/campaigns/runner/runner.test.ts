@@ -66,7 +66,12 @@ test("an opt-in campaign targets unconfirmed members of double opt-in lists", as
   await f.member("b@x.test", [double], "unconfirmed");
   await f.member("c@x.test", [double], "confirmed");
   await f.member("d@x.test", [double], "unsubscribed");
-  const c = await f.campaign({ name: "o", subject: "s", lists: [single, double], type: "optin" });
+  const c = await f.campaign({
+    name: "o",
+    subject: "s",
+    lists: [single, double],
+    type: "optin",
+  });
   await f.status(c.id, "running");
   f.start();
   await f.until(c.id, "finished");
@@ -78,7 +83,12 @@ test("a scheduled campaign starts when send_at passes on the injected clock", as
   const list = await f.list("l");
   await f.member("a@x.test", [list]);
   const sendAt = new Date(f.clock.now().getTime() + 60_000).toISOString();
-  const c = await f.campaign({ name: "s", subject: "s", lists: [list], send_at: sendAt });
+  const c = await f.campaign({
+    name: "s",
+    subject: "s",
+    lists: [list],
+    send_at: sendAt,
+  });
   expect((await f.status(c.id, "scheduled")).status).toBe(200);
   f.start();
   await f.drive(() => f.clock.now().getTime() >= Date.parse(sendAt) - 1000, 1000);
@@ -272,7 +282,12 @@ test("an unknown messenger cancels the campaign", async () => {
   f = await runnerFixture();
   const list = await f.list("l");
   await f.member("a@x.test", [list]);
-  const c = await f.campaign({ name: "m", subject: "s", lists: [list], messenger: "fixture" });
+  const c = await f.campaign({
+    name: "m",
+    subject: "s",
+    lists: [list],
+    messenger: "fixture",
+  });
   await f.status(c.id, "running");
   // The named SMTP server was disabled after the campaign was created.
   f.settings.messengers = ["email"];
@@ -330,7 +345,11 @@ test("campaign deliveries count toward the marketing frequency cap", async () =>
     expect(sends.capFreeAt(BigInt(a.id), new Date(sentAt)).getTime()).toBeGreaterThan(
       sentAt + 86_000_000,
     );
-    const again = await f.campaign({ name: "cap2", subject: "s", lists: [list] });
+    const again = await f.campaign({
+      name: "cap2",
+      subject: "s",
+      lists: [list],
+    });
     await f.status(again.id, "running");
     await f.until(again.id, "finished");
     expect(f.pushes.length).toBe(4);
@@ -564,7 +583,12 @@ test("tracked links personalized per subscriber do not accumulate across batches
       `{% capture u${n} %}https://example.test/${pad}/${n}/{{ subscriber.uuid }}{% endcapture %}` +
       `<a href="{{ u${n} | track_link }}">${n}</a>`,
   ).join("");
-  const c = await f.campaign({ name: "links", subject: "s", lists: [list], body: links });
+  const c = await f.campaign({
+    name: "links",
+    subject: "s",
+    lists: [list],
+    body: links,
+  });
   Object.assign(f.settings, { concurrency: 5, batchSize: 20 });
   await f.status(c.id, "running");
   f.start();
@@ -590,4 +614,86 @@ test("tracked links personalized per subscriber do not accumulate across batches
   const body = Buffer.from(f.pushes.at(-1)!.message.body).toString();
   const link = /http:\/\/fixture\.test(\/link\/[^"]+)/.exec(body)![1]!;
   expect((await f.request(link)).status).toBe(307);
+});
+
+test("a due scheduled campaign sends its first batch on the first scan that finds it due", async () => {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const sendAt = new Date(f.clock.now().getTime() + 60_000).toISOString();
+  const c = await f.campaign({
+    name: "s",
+    subject: "s",
+    lists: [list],
+    send_at: sendAt,
+  });
+  await f.status(c.id, "scheduled");
+  f.start();
+  await f.drive(() => f.clock.now().getTime() >= Date.parse(sendAt) - 1000, 1000);
+  expect(f.pushes.length).toBe(0);
+  await f.drive(() => f.pushes.length > 0, 100, 200);
+  // One scan interval (5 s) later would mean the first pickup sent nothing.
+  expect(f.pushes[0]!.at - Date.parse(sendAt)).toBeLessThan(5000);
+});
+
+async function staleSetup() {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  const subs = [];
+  for (const email of ["a@x.test", "b@x.test"]) subs.push(await f.member(email, [list]));
+  const c = await f.campaign({ name: "stale", subject: "s", lists: [list] });
+  await f.status(c.id, "running");
+  const now = f.clock.now().toISOString();
+  const until = new Date(f.clock.now().getTime() + 30_000).toISOString();
+  const held = f.runnerStore.acquire(BigInt(c.id), "A", until, now)!;
+  expect(held).not.toBeNull();
+  const id = BigInt(c.id);
+  for (const s of subs) expect(f.runnerStore.claim(id, BigInt(s.id), now)).toBe(true);
+  // The lease passes to another holder.
+  f.db.run("UPDATE campaigns SET runner_lease = 'B' WHERE id = ?", [c.id]);
+  return { id, subs, now, held };
+}
+const deliveries = (id: bigint) =>
+  f.db
+    .query("SELECT subscriber_id, status FROM campaign_deliveries WHERE campaign_id = ? ORDER BY 1")
+    .all(id);
+
+test("a runner that lost its lease writes no cursor, count or delivery change", async () => {
+  const { id, subs, now } = await staleSetup();
+  const before = f.runnerStore.state(id)!;
+  const sub = BigInt(subs[0]!.id);
+  expect(f.runnerStore.advance(id, "A", 99n, now)).toBe(false);
+  expect(f.runnerStore.addSent(id, "A", 2, now)).toBe(false);
+  expect(f.runnerStore.settle(id, "A", sub, "sent", now)).toBe(false);
+  expect(f.runnerStore.unclaim(id, "A", sub)).toBe(false);
+  expect(f.runnerStore.state(id)!.last_subscriber_id).toBe(before.last_subscriber_id);
+  const sent = f.db.query("SELECT sent FROM campaigns WHERE id = ?").get(id) as { sent: bigint };
+  expect(sent.sent).toBe(0n);
+  expect(deliveries(id).map((d) => (d as { status: string }).status)).toEqual([
+    "claimed",
+    "claimed",
+  ]);
+});
+
+test("a runner cannot settle or unclaim a delivery that is no longer claimed", async () => {
+  const { id, subs, now } = await staleSetup();
+  f.db.run("UPDATE campaigns SET runner_lease = 'A' WHERE id = ?", [Number(id)]);
+  const sub = BigInt(subs[0]!.id);
+  expect(f.runnerStore.settle(id, "A", sub, "sent", now)).toBe(true);
+  expect(f.runnerStore.settle(id, "A", sub, "failed", now)).toBe(false);
+  expect(f.runnerStore.unclaim(id, "A", sub)).toBe(false);
+  expect(deliveries(id).map((d) => (d as { status: string }).status)).toEqual(["sent", "claimed"]);
+});
+
+test("the runner's own pause does not stop a campaign paused and resumed since", async () => {
+  const { id, held } = await staleSetup();
+  f.db.run("UPDATE campaigns SET runner_lease = 'A' WHERE id = ?", [Number(id)]);
+  expect((await f.status(Number(id), "paused")).status).toBe(200);
+  expect((await f.status(Number(id), "running")).status).toBe(200);
+  const now = f.clock.now().toISOString();
+  expect(f.runnerStore.pause(id, "A", held.runner_generation, now)).toBe(false);
+  expect((await f.read(Number(id))).status).toBe("running");
+  const current = f.runnerStore.state(id)!;
+  expect(f.runnerStore.pause(id, "A", current.runner_generation, now)).toBe(true);
+  expect((await f.read(Number(id))).status).toBe("paused");
 });

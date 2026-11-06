@@ -257,7 +257,9 @@ export function startCampaignRunner(deps: RunnerDeps) {
     if (!started) return;
     retryAt.delete(id);
     pipes.set(id, {
-      campaign,
+      // The scheduled -> running flip bumped the generation (a trigger, so RETURNING cannot
+      // show it): the pipe opens at the current one.
+      campaign: { ...campaign, runner_generation: store.state(id)!.runner_generation },
       compiled,
       media: store.mediaIds(id),
       images: embedded.images,
@@ -296,7 +298,11 @@ export function startCampaignRunner(deps: RunnerDeps) {
     }
     const at = iso(now);
     const recipients = found.filter((sub) => store.claim(id, sub.id, at));
-    store.advance(id, found.at(-1)!.id, at);
+    if (!store.advance(id, token, found.at(-1)!.id, at)) {
+      // The lease passed to another holder during this step: write nothing more.
+      drop(id);
+      return null;
+    }
     store.renew(id, token, iso(now + leaseMs));
     return { pipe, recipients };
   }
@@ -447,9 +453,9 @@ export function startCampaignRunner(deps: RunnerDeps) {
     }
     const now = iso(clock.now().getTime());
     writeTransaction(db, () => {
-      for (const sub of recipients) store.unclaim(c.id, sub.id);
+      for (const sub of recipients) store.unclaim(c.id, token, sub.id);
       if (recipients.length) store.rewind(c.id, token, recipients[0]!.id - 1n, now);
-      store.pause(c.id, now);
+      store.pause(c.id, token, c.runner_generation, now);
       release(pipe);
     });
     return null;
@@ -586,7 +592,10 @@ export function startCampaignRunner(deps: RunnerDeps) {
           continue;
         }
         // No automatic retry: a proven rejection fails, anything uncertain is unknown (D24).
-        outcomes.set(i, { status: outcome.status === "ambiguous" ? "unknown" : "failed", at });
+        outcomes.set(i, {
+          status: outcome.status === "ambiguous" ? "unknown" : "failed",
+          at,
+        });
         log(
           "error sending campaign message",
           `error sending message in campaign ${c.name}: subscriber ${sub.id}: ${outcome.status} at ${outcome.stage}`,
@@ -618,15 +627,19 @@ export function startCampaignRunner(deps: RunnerDeps) {
     const now = iso(clock.now().getTime());
     const unsent = recipients.filter((_, i) => !pushed.has(i) && !outcomes.has(i));
     writeTransaction(db, () => {
-      store.addSent(c.id, sent, now);
+      // A runner whose lease has passed to another holder writes nothing and drops the pipe.
+      if (store.state(c.id)?.runner_lease !== token || !store.addSent(c.id, token, sent, now)) {
+        drop(c.id);
+        return;
+      }
       for (const [i, outcome] of outcomes)
-        store.settle(c.id, recipients[i]!.id, outcome.status, iso(outcome.at));
+        store.settle(c.id, token, recipients[i]!.id, outcome.status, iso(outcome.at));
       if (unsent.length) {
-        for (const sub of unsent) store.unclaim(c.id, sub.id);
+        for (const sub of unsent) store.unclaim(c.id, token, sub.id);
         store.rewind(c.id, token, unsent[0]!.id - 1n, now);
       }
       if (stop === "errors") {
-        store.pause(c.id, now);
+        store.pause(c.id, token, c.runner_generation, now);
         release(pipe);
       } else if (stop === "status") release(pipe);
     });
