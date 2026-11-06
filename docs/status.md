@@ -5,7 +5,7 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B13 is in review (PR pending): [brief](briefs/B13.md). B12 merged (#63), B11 merged (#62, docs only: D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B13 is in review: [#64](https://github.com/iglo-tech/iglo.email/pull/64). B12 merged (#63), B11 merged (#62, docs only: D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
