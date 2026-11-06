@@ -65,26 +65,33 @@ export function createRunnerStore(db: Database) {
         max_subscriber_id: bigint;
       } | null;
     },
-    advance(id: bigint, cursor: bigint, now: string): void {
-      q.get("advance-cursor").run(id, cursor, now);
+    /** The writes below are false once the lease has passed to another holder. */
+    advance(id: bigint, token: string, cursor: bigint, now: string): boolean {
+      return q.get("advance-cursor").run(id, cursor, now, token).changes > 0;
     },
     /** Moves the cursor back to `cursor` while this runner still holds the lease. */
     rewind(id: bigint, token: string, cursor: bigint, now: string): void {
       q.get("rewind-cursor").run(id, token, cursor, now);
     },
-    addSent(id: bigint, count: number, now: string): void {
-      if (count > 0) q.get("add-sent").run(id, count, now);
+    addSent(id: bigint, token: string, count: number, now: string): boolean {
+      return count <= 0 || q.get("add-sent").run(id, count, now, token).changes > 0;
     },
     /** False when the subscriber already has a delivery for this campaign. */
     claim(id: bigint, subscriberId: bigint, now: string): boolean {
       return q.get("claim-delivery").run(id, subscriberId, now).changes > 0;
     },
-    settle(id: bigint, subscriberId: bigint, status: DeliveryStatus, at: string): void {
-      q.get("set-delivery").run(id, subscriberId, status, at);
+    settle(
+      id: bigint,
+      token: string,
+      subscriberId: bigint,
+      status: DeliveryStatus,
+      at: string,
+    ): boolean {
+      return q.get("set-delivery").run(id, subscriberId, status, at, token).changes > 0;
     },
     /** Releases a claim whose message was never handed to the emailer. */
-    unclaim(id: bigint, subscriberId: bigint): void {
-      q.get("unclaim-delivery").run(id, subscriberId);
+    unclaim(id: bigint, token: string, subscriberId: bigint): boolean {
+      return q.get("unclaim-delivery").run(id, subscriberId, token).changes > 0;
     },
     /** Marks claims left by a stopped runner as unknown and returns their range. */
     claimedCampaigns(): { id: bigint; name: string }[] {
@@ -97,13 +104,18 @@ export function createRunnerStore(db: Database) {
         last: bigint | null;
       };
       if (found.count > 0n) q.get("mark-abandoned").run(id, now);
-      return { count: Number(found.count), first: found.first, last: found.last };
+      return {
+        count: Number(found.count),
+        first: found.first,
+        last: found.last,
+      };
     },
     finish(id: bigint, now: string): boolean {
       return q.get("finish-campaign").run(id, now).changes > 0;
     },
-    pause(id: bigint, now: string): boolean {
-      return q.get("pause-campaign").run(id, now).changes > 0;
+    /** The runner's own pause of the run it opened at `generation`. */
+    pause(id: bigint, token: string, generation: bigint, now: string): boolean {
+      return q.get("pause-campaign").run(id, now, token, generation).changes > 0;
     },
     cancel(id: bigint, now: string): boolean {
       return q.get("cancel-campaign").run(id, now).changes > 0;

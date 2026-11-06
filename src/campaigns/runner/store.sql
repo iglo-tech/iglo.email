@@ -46,25 +46,28 @@ FROM campaigns WHERE id = ?;
 
 -- name: advance-cursor
 UPDATE campaigns SET last_subscriber_id = MAX(last_subscriber_id, ?2), updated_at = ?3
-WHERE id = ?1;
+WHERE id = ?1 AND runner_lease = ?4;
 
 -- name: rewind-cursor
 UPDATE campaigns SET last_subscriber_id = ?3, updated_at = ?4
 WHERE id = ?1 AND runner_lease = ?2 AND last_subscriber_id > ?3;
 
 -- name: add-sent
-UPDATE campaigns SET sent = sent + ?2, updated_at = ?3 WHERE id = ?1;
+UPDATE campaigns SET sent = sent + ?2, updated_at = ?3 WHERE id = ?1 AND runner_lease = ?4;
 
 -- name: claim-delivery
 INSERT INTO campaign_deliveries (campaign_id, subscriber_id, status, at)
 VALUES (?1, ?2, 'claimed', ?3) ON CONFLICT DO NOTHING;
 
 -- name: set-delivery
-UPDATE campaign_deliveries SET status = ?3, at = ?4 WHERE campaign_id = ?1 AND subscriber_id = ?2;
+UPDATE campaign_deliveries SET status = ?3, at = ?4
+WHERE campaign_id = ?1 AND subscriber_id = ?2 AND status = 'claimed'
+  AND EXISTS (SELECT 1 FROM campaigns WHERE id = ?1 AND runner_lease = ?5);
 
 -- name: unclaim-delivery
 DELETE FROM campaign_deliveries
-WHERE campaign_id = ?1 AND subscriber_id = ?2 AND status = 'claimed';
+WHERE campaign_id = ?1 AND subscriber_id = ?2 AND status = 'claimed'
+  AND EXISTS (SELECT 1 FROM campaigns WHERE id = ?1 AND runner_lease = ?3);
 
 -- name: abandoned-deliveries
 -- Claims a stopped runner left without an outcome: a crash after the cursor commit.
@@ -86,7 +89,9 @@ UPDATE campaigns SET status = 'finished', updated_at = ?2
 WHERE id = ?1 AND status IN ('running', 'scheduled');
 
 -- name: pause-campaign
-UPDATE campaigns SET status = 'paused', updated_at = ?2 WHERE id = ?1 AND status = 'running';
+-- The runner's own pause (error threshold, missing attachments): only the run it holds.
+UPDATE campaigns SET status = 'paused', updated_at = ?2
+WHERE id = ?1 AND status = 'running' AND runner_lease = ?3 AND runner_generation = ?4;
 
 -- name: cancel-campaign
 UPDATE campaigns SET status = 'cancelled', updated_at = ?2
