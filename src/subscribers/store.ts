@@ -586,9 +586,9 @@ export function createSubscriberStore(
      * un-blocklisting never resumes mail. The caller holds the write.
      */
     bounceBlocklist(id: bigint) {
-      blockOne(id, clock.now().toISOString());
+      const changed = blockOne(id, clock.now().toISOString());
       effects.blocklisted([id]);
-      consentChanged(id, true, []);
+      consentChanged(id, true, changed);
     },
     /**
      * record-bounce's block2: every list, keeping the status. Unlike upstream it stamps the
