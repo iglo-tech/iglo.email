@@ -131,13 +131,26 @@ class RichtextEditor extends HTMLElement {
             const last =
               link && this.content.contains(link) && !this.#visibleAfter(e.target, link);
             if (last) {
-              // Whitespace inside a banner link is invisible; left there, the first Backspace
-              // would remove it instead of the image, and then leave an empty link (B15).
-              for (const n of [...link.childNodes]) {
-                if (n.nodeType === Node.TEXT_NODE && n.textContent.trim() === '') {
-                  n.remove();
-                }
+              // The whitespace right after the image in its link is invisible; left there, the
+              // first Backspace would remove it instead of the image (B15). Nothing else changes.
+              const gap = e.target.nextSibling;
+              if (
+                e.target.parentNode === link &&
+                gap?.nodeType === Node.TEXT_NODE &&
+                gap.textContent.trim() === ''
+              ) {
+                gap.remove();
               }
+              // A banner alone in its paragraph: Squire's placeholder `<br>` after the text typed
+              // next is dropped once (#dropPlaceholderBr).
+              const block = link.parentNode;
+              this.#bannerBlock =
+                block.parentNode === this.editor.getRoot() &&
+                block.nodeName === 'P' &&
+                block.firstChild === link &&
+                (!link.nextSibling || link.nextSibling.nodeName === 'BR');
+            } else {
+              this.#bannerBlock = false;
             }
             range.setStartAfter(last ? link : e.target);
             range.collapse(true);
@@ -166,6 +179,11 @@ class RichtextEditor extends HTMLElement {
       });
     }
 
+    this.content.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        this.#bannerBlock = false;
+      }
+    });
     this.editor.addEventListener('input', () => {
       this.#dropPlaceholderBr();
       this.sync();
@@ -193,21 +211,31 @@ class RichtextEditor extends HTMLElement {
     this.editor = null;
   }
 
-  // Squire leaves its end-of-block `<br>` placeholder after text typed beside a banner that was
-  // alone in its block. Once the caret's block has text before the `<br>`, it is dropped (B15).
+  // After a click on a banner alone in its paragraph, Squire leaves its end-of-block `<br>`
+  // placeholder after the text typed beside the link. That one `<br>` is dropped (B15); this
+  // runs for that shape only, until the `<br>` is dropped or another click or Enter ends it.
+  #bannerBlock = false;
   #dropPlaceholderBr() {
-    const sel = document.getSelection();
-    let block = sel?.anchorNode;
-    while (block && block.parentNode !== this.content) {
+    if (!this.#bannerBlock) {
+      return;
+    }
+    // Squire may replace the block node while typing, so find it by the caret.
+    const root = this.editor.getRoot();
+    let block = document.getSelection()?.anchorNode;
+    while (block && block.parentNode !== root) {
       block = block.parentNode;
     }
     const br = block?.lastChild;
+    const text = br?.previousSibling;
     if (
       br?.nodeName === 'BR' &&
-      br.previousSibling?.nodeType === Node.TEXT_NODE &&
-      br.previousSibling.textContent !== ''
+      block.nodeName === 'P' &&
+      text?.nodeType === Node.TEXT_NODE &&
+      text.previousSibling?.nodeName === 'A' &&
+      block.childNodes.length === 3
     ) {
       br.remove();
+      this.#bannerBlock = false;
     }
   }
 

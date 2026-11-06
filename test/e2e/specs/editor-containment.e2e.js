@@ -885,6 +885,41 @@ test.describe("remote images load on request", () => {
       expect(body).toMatch(/<\/a>X<\/p>/);
     });
 
+    for (const [label, html] of [
+      [
+        "after bold link text",
+        (src) =>
+          `<p>first</p><p><a href="https://example.com/x"><b>Read more</b> <img src="${src}" alt="arrow"></a> tail</p>`,
+      ],
+      [
+        "after text before the link",
+        (src) =>
+          `<p>first</p><p>Click<a href="https://example.com/x"> <img src="${src}" alt="arrow"></a></p>`,
+      ],
+    ])
+      test(`a click on a held image keeps a visible space ${label} (B15)`, async ({ page }) => {
+        await signIn(page);
+        const c = await campaign(page, html(`${remote}/arrow.gif`));
+        await open(page, c.id);
+        await page.locator(`${EDITOR} img`).click();
+        await page.locator(`${EDITOR} p`).first().click();
+        await page.keyboard.press("End");
+        await page.keyboard.type("Z");
+        const body = await saveBody(page, c.id);
+        expect(body).toMatch(/(<\/b>|<a [^>]*>)(&nbsp;| )<img/);
+      });
+
+    test("Enter at the end of a code block starts a new line (B15)", async ({ page }) => {
+      await signIn(page);
+      const c = await campaign(page, `<pre>code</pre>`);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} pre`).click();
+      await page.keyboard.press("End");
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("x");
+      expect(await saveBody(page, c.id)).toMatch(/<pre>code\nx<\/pre>/);
+    });
+
     test("still resize an image that loaded", async ({ page }) => {
       const { dragged, tag } = await afterDrag(
         page,
