@@ -290,7 +290,14 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     names.add(name);
   }
   // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
-  for (const rule of Object.values(next["bounce.actions"] ?? {}) as Settings[]) {
+  // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
+  const storedRules = (current["bounce.actions"] ?? {}) as Settings;
+  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as [string, Settings][]) {
+    if (
+      Object.hasOwn(storedRules, name) &&
+      JSON.stringify(storedRules[name]) === JSON.stringify(rule)
+    )
+      continue;
     if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000)
       return fail("Bounce action count must be between 1 and 1000.");
     if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action))

@@ -140,3 +140,34 @@ test("bounce.actions refuses a zero count and an unknown action", async () => {
     action: "unsubscribe",
   });
 });
+
+test("a stored out-of-range bounce rule does not block saving other settings", async () => {
+  const first = await fixture();
+  const persisted = first.persisted;
+  await first.close(true);
+  fixtures.length = 0;
+  const db = openDatabase(persisted.dataDir);
+  const legacy = {
+    soft: { count: 0, action: "none" },
+    hard: { count: 2, action: "blocklist" },
+    complaint: { count: 2, action: "" },
+  };
+  db.query("UPDATE settings SET value = ? WHERE key = 'bounce.actions'").run(
+    JSON.stringify(legacy),
+  );
+  db.close();
+  const f = await startUserFixture(undefined, true, false, persisted);
+  fixtures.push(f);
+  const s = await admin(f);
+
+  const one = await call(f, s, "/api/settings/app.site_name", "PUT", "New name");
+  expect(one.status).toBe(200);
+
+  const body = ((await (await call(f, s, "/api/settings")).json()) as any).data;
+  expect(body["bounce.actions"].soft.count).toBe(0);
+  body["app.site_name"] = "Another name";
+  expect((await call(f, s, "/api/settings", "PUT", body)).status).toBe(200);
+
+  body["bounce.actions"].soft = { count: 0, action: "explode" };
+  expect((await call(f, s, "/api/settings", "PUT", body)).status).toBe(400);
+});
