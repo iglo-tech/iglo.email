@@ -3,6 +3,7 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
+import { HttpError } from "@/server/response";
 import type { ListCounts } from "@/subscribers/list-counts";
 import type { CampaignListReferences } from "@/campaigns/list-references";
 import sql from "@/lists/store.sql" with { type: "text" };
@@ -159,6 +160,12 @@ export function createListStore(
       return writeTransaction(db, () => {
         const old = byId(id);
         if (!old) return null;
+        // D82: a changed opt-in would silently end or start delivery to the unconfirmed.
+        if (input.optin && input.optin !== old.optin && counts.unconfirmed(id) > 0)
+          throw new HttpError(
+            400,
+            "Cannot change the opt-in type of a list that has unconfirmed subscribers.",
+          );
         queries
           .get("update-list")
           .run(

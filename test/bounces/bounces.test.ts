@@ -623,3 +623,19 @@ test("one request prunes a bounded batch of expired receipts, and a backlog stil
   for (let i = 0; i < 20 && expiredLeft(); i++) await mailgun(f, signed(f, { event: "delivered" }));
   expect(expiredLeft()).toBe(0);
 });
+
+test("D81: the automatic blocklist action leaves the memberships unsubscribed", async () => {
+  const f = await open();
+  f.bounceSettings.actions.hard = { count: 1, action: "blocklist" };
+  const list = (await f.json("/api/lists", "POST", { name: "L", type: "public" })).body.data.id;
+  const id = await f.subscriber("bouncy@example.com", "B", {
+    lists: [list],
+    preconfirm_subscriptions: true,
+  });
+  expect((await mailgun(f, signed(f, failed("bouncy@example.com")))).status).toBe(200);
+  const body = (await f.json(`/api/subscribers/${id}`)).body.data;
+  expect(body.status).toBe("blocklisted");
+  expect(body.lists.map((l: { subscription_status: string }) => l.subscription_status)).toEqual([
+    "unsubscribed",
+  ]);
+});

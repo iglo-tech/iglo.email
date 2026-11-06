@@ -138,15 +138,18 @@ export function registerPublicRoutes(
     const lists = deps.lists.byUuids(uuids.map((uuid) => uuid.toLowerCase()));
     if (lists.some((list) => list.type === "private"))
       throw new HttpError(400, t.T("globals.messages.invalidUUID"));
+    // D82: the form hides archived lists, so a hand-made post cannot join one either.
+    const open = lists.filter((list) => list.status !== "archived");
+    if (lists.length && !open.length) throw new HttpError(400, t.T("public.noListsSelected"));
     const row = writeTransaction(deps.db, () =>
       deps.subscribers.publicSubscribe(
         { email: address, name },
-        lists.map((list) => list.id),
+        open.map((list) => list.id),
       ),
     );
     // Every subscriber state takes this path; the conditional mail work runs later.
     deps.mail.acceptSignup(row.id);
-    return settings.sendOptin && lists.some((list) => list.optin === "double");
+    return settings.sendOptin && open.some((list) => list.optin === "double");
   }
 
   router.use(publicCors(deps.settings));
@@ -313,6 +316,9 @@ export function registerPublicRoutes(
     const headers = post ? {} : noIndex;
     const sub = subscriber(context, headers);
     if (sub instanceof Response) return sub;
+    // D81: a blocklisted subscriber has nothing to confirm.
+    if (sub.status === "blocklisted")
+      return message(t, 200, t.T("public.noSubTitle"), t.T("public.noSubInfo"), headers);
     let confirm = false;
     let uuids = context.url.searchParams.getAll("l");
     if (post) {

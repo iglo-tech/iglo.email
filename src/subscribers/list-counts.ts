@@ -19,6 +19,10 @@ export function createListCounts(db: Database) {
       }
       return result;
     },
+    /** How many members of the list are still unconfirmed. */
+    unconfirmed(list: bigint): number {
+      return Number((queries.get("list-unconfirmed").get(list) as { n: bigint }).n);
+    },
     close: () => queries.close(),
   };
 }

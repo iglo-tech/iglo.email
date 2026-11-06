@@ -9,4 +9,4 @@ SELECT id, uuid, name, type, optin, status, tags, description, created_at, updat
 SELECT id, uuid, name, type, optin, description FROM lists WHERE type = 'public' AND status = 'active' ORDER BY id;
 
 -- name: lists-by-uuid
-SELECT id, uuid, name, type, optin, description FROM lists WHERE uuid IN (SELECT value FROM json_each(?)) ORDER BY id;
+SELECT id, uuid, name, type, optin, status, description FROM lists WHERE uuid IN (SELECT value FROM json_each(?)) ORDER BY id;

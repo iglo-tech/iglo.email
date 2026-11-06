@@ -496,9 +496,12 @@ test("blocklist option follows privacy.allow_blocklist", async () => {
   const adaPath = await pathFor(ada);
   const multipart = new FormData();
   multipart.set("blocklist", "true");
+  f.clock.advance(60_000);
   expect((await form(adaPath, multipart)).status).toBe(200);
   const after = (await f.json(`/api/subscribers/${ada}`)).body.data;
   expect(after.status).toBe("blocklisted");
+  // D81: blocklisting stamps the subscriber like every other path into it.
+  expect(after.updated_at).toBe(f.clock.now().toISOString());
   expect(after.lists.map((l: { subscription_status: string }) => l.subscription_status)).toEqual([
     "unsubscribed",
     "unsubscribed",

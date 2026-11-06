@@ -260,6 +260,29 @@ export const differences: Difference[] = [
     applies: ["PUT /api/subscribers/lists", "/api/subscribers/query/lists"],
   },
   {
+    area: "Blocklisted subscribers (D81, B19)",
+    summary:
+      "Every way into blocklisted unsubscribes all memberships, and no add or confirm gives a blocklisted subscriber a live one; add by query replaces an existing status like add by IDs. Upstream leaves memberships confirmed and the two adds disagree.",
+    applies: [
+      "PUT /api/subscribers/{id}",
+      "PATCH /api/subscribers/{id}",
+      "PUT /api/subscribers/lists",
+      "/api/subscribers/query/lists",
+    ],
+  },
+  {
+    area: "List opt-in change (D82, B19)",
+    summary:
+      "A changed optin is refused with 400 while the list has unconfirmed members; upstream changes it freely.",
+    applies: ["PUT /api/lists/{id}"],
+  },
+  {
+    area: "Archived lists on the public form (D82, B19)",
+    summary:
+      "The public subscription endpoints ignore archived lists; upstream subscribes to them by UUID.",
+    applies: ["POST /api/public/subscription"],
+  },
+  {
     area: "Subscriber writable input",
     summary:
       "Ignore read-only/unknown metadata and validate the writable DTO; resolve PATCH omissions at commit time.",

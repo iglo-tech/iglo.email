@@ -24,14 +24,16 @@ DELETE FROM subscribers WHERE id=?;
 INSERT INTO subscriber_lists (subscriber_id,list_id,status,created_at,updated_at) VALUES (?,?,?,?,?) ON CONFLICT (subscriber_id,list_id) DO NOTHING;
 -- name: membership-status
 UPDATE subscriber_lists SET status=? WHERE subscriber_id=? AND list_id=?;
+-- name: membership-force-unsubscribe
+-- D81: a blocklisted subscriber's membership, whatever an add asked for. Stamped when it changes.
+UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND list_id=? AND status != 'unsubscribed';
 -- name: membership-update
 UPDATE subscriber_lists SET status=?, updated_at=? WHERE subscriber_id=? AND list_id=?;
 -- name: membership-delete
 DELETE FROM subscriber_lists WHERE subscriber_id=? AND list_id=?;
 -- name: subscriber-blocklist
-UPDATE subscribers SET status='blocklisted',updated_at=? WHERE id=?;
--- name: membership-blocklist
-UPDATE subscriber_lists SET status='unsubscribed',updated_at=? WHERE subscriber_id=?;
+-- D81: the one way into blocklisted. Stamps the subscriber; memberships follow with membership-unsubscribe-all.
+UPDATE subscribers SET status='blocklisted',updated_at=? WHERE id=? AND status != 'blocklisted';
 -- name: subscriber-by-uuid
 SELECT * FROM subscribers WHERE uuid = ?;
 -- name: webhook-unsubscribed
@@ -64,8 +66,6 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber
 -- name: membership-unsubscribe-all
 -- Adapted from unsubscribe-by-campaign with blocklist: every subscription not already unsubscribed.
 UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND status != 'unsubscribed' RETURNING list_id;
--- name: subscriber-blocklist-only
-UPDATE subscribers SET status='blocklisted' WHERE id=?;
 -- name: subscriber-touch
 UPDATE subscribers SET updated_at=? WHERE id=?;
 -- name: subscriber-rename
@@ -75,7 +75,8 @@ UPDATE subscribers SET name=?, updated_at=? WHERE id=?;
 UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND status = 'unconfirmed' RETURNING list_id;
 -- name: membership-confirm
 -- Adapted from confirm-subscription-optin, for rows still awaiting confirmation only.
-UPDATE subscriber_lists SET status='confirmed', meta=json_patch(meta, ?), updated_at=? WHERE subscriber_id=? AND list_id=? AND status='unconfirmed';
+UPDATE subscriber_lists SET status='confirmed', meta=json_patch(meta, ?), updated_at=? WHERE subscriber_id=? AND list_id=? AND status='unconfirmed'
+  AND (SELECT status FROM subscribers WHERE id = subscriber_lists.subscriber_id) != 'blocklisted';
 -- name: subscriber-import-update
 UPDATE subscribers SET name=?, attribs=?, updated_at=? WHERE id=?;
 -- name: import-unsubscribing
