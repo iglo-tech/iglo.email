@@ -34,6 +34,7 @@ const transient: Outcome = {
   rejected: [],
   retry: "transient",
 };
+const { retry: _retry, ...permanent } = transient;
 const message = (to = "recipient@example.test") => ({
   from: "sender@example.test",
   to: [to],
@@ -203,4 +204,71 @@ test("a send whose subscriber is deleted mid-send is skipped, not re-queued", ()
     f.journal.claimBatch(f.clock.now(), new Date(f.clock.now().getTime() + 120_000), 1),
   ).toEqual([]);
   expect(f.ended).toEqual([]);
+});
+
+// B22 (D61, D85): a send anonymized while in flight ends without a `send.failed` webhook, whatever
+// its outcome. The `ended` hook is the producer's only input. test/webhooks/wiped-send.test.ts
+// covers `failed` and a restart through a receiver; the cases here add `unknown`.
+for (const [name, outcome, status, error] of [
+  ["a permanent rejection", permanent, "failed", "not_accepted"],
+  [
+    "an ambiguous outcome",
+    { ...transient, status: "ambiguous" } as Outcome,
+    "unknown",
+    "uncertain",
+  ],
+] as const) {
+  test(`a send anonymized mid-flight ends ${status} without an end event: ${name}`, () => {
+    const f = fixture();
+    const subscriber = f.subscribers.create(
+      { email: "wiped@example.test", name: "Wiped" },
+      { all: true, ids: [] },
+    );
+    const id = f.enqueue({
+      subscriberId: subscriber.id,
+      message: message("wiped@example.test"),
+    });
+    const now = f.clock.now();
+    const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
+    f.db.transaction(() =>
+      createSendAnonymizer(f.db)([{ id: subscriber.id, email: subscriber.email }]),
+    )();
+    f.journal.finishAll([{ row: claimed!.row, outcome }]);
+    expect(f.row(id)).toMatchObject({ status, error });
+    expect(f.ended).toEqual([]);
+  });
+}
+
+test("a send that is not anonymized still reports its end", () => {
+  const f = fixture();
+  const id = f.enqueue();
+  const now = f.clock.now();
+  const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
+  f.journal.finishAll([{ row: claimed!.row, outcome: permanent }]);
+  expect(f.ended).toEqual([{ uuid: f.uuid(id), status: "failed", error: "not_accepted" }]);
+});
+
+test("a wiped send whose lease expires in the outbox pass ends silently; an unrelated one reports", async () => {
+  const f = fixture();
+  const outbox = f.outbox();
+  const subscriber = f.subscribers.create(
+    { email: "wiped@example.test", name: "Wiped" },
+    { all: true, ids: [] },
+  );
+  const wiped = f.enqueue({ subscriberId: subscriber.id, message: message("wiped@example.test") });
+  const other = f.enqueue({ message: message("stranger@example.test") });
+  void outbox.dispatch([wiped, other]);
+  expect(f.row(wiped).status).toBe("sending");
+  expect(f.row(other).status).toBe("sending");
+  f.db.transaction(() =>
+    createSendAnonymizer(f.db)([{ id: subscriber.id, email: subscriber.email }]),
+  )();
+  await f.clock.whenSleeping();
+  for (let i = 0; i < 150; i++) {
+    f.clock.advance(1000);
+    await tick();
+  }
+  expect(f.row(wiped)).toMatchObject({ status: "unknown", error: "interrupted" });
+  expect(f.row(other)).toMatchObject({ status: "unknown", error: "interrupted" });
+  expect(f.ended).toEqual([{ uuid: f.uuid(other), status: "unknown", error: "interrupted" }]);
 });

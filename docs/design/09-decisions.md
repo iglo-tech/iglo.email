@@ -827,6 +827,17 @@ Decided by an agent on 2026-11-06, for owner review.
 
 `sequence_archived` and `blocklisted` end an enrollment as `exited` on every path; the scheduler used `canceled` for them while the archive and subscriber paths used `exited`. `canceled` stays for `manual` and `subscriber_deleted`. An `exit_on` event ends enrollments of draft and paused sequences too, so resuming cannot revive an enrollment whose exit event already arrived. Every ending clears `claimed_until` and `retry_at`. Native behavior, with no listmonk counterpart.
 
+**Legacy rows (B22):** migration 17 sets `status='exited'` on enrollments stored as `canceled` with `exit_reason` `blocklisted` or `sequence_archived`, so the `status` filter and the exited count include them. `updated_at` and `finished_at` are untouched.
+
 ## D84. Bounce actions are validated; TOTP follows the account state; an operator can clear TOTP (B21)
 
 `bounce.actions` rules take `count` 1 to 1000 and `action` of `none`, `unsubscribe`, `blocklist` or `delete`, the ranges the admin form offers. Upstream stores anything, so a `count` of 0 recorded no bounce rows and fired the action on every bounce, and an unknown action did nothing; both are now 400. `update-user` clears `twofa_type` and `twofa_key` when `password_login` goes off or `type` becomes `api`, so an old key cannot return. `iglo.email reset-totp --user <name>` turns TOTP off with the server stopped and ends the user's sessions. The audit's webhook-postpone item did not reproduce through the API (a claimed row is not due before its lease ends, and `recover` clears leases at start), so `delivery-postpone` is unchanged. A rule already stored is checked only when a request changes it, so data an older build accepted never blocks saving another setting; new or changed rules are refused. `reset-totp` says so when the user has no TOTP. Tests: `test/users/b21.test.ts`, `test/bootstrap/instance-lock.test.ts`.
+
+## D85. A send anonymized while in flight ends without `send.failed` (B22)
+
+If a subscriber is deleted or wiped while one of their sends is `sending`, the row is anonymized (`to_email = ''`, D25). When that send then ends `failed` or `unknown`, no `send.failed` webhook is queued, whatever the outcome. The `ended` hook checks the row's current address after the update, since the row it holds was read at claim time. This is the same rule B18 applies to a skipped retry (D80).
+
+- **Why:** D61 lets a wipe keep only the numeric ID and UUID. The event would otherwise carry the send's list ID, which tied to the kept UUID reveals what the person joined, and its subscriber would be `null` so a receiver could not use it anyway. The row's status stays visible in the send journal.
+- **Not chosen:** a `send.failed` with `subscriber: null` and no list IDs, which tells a receiver nothing it can act on.
+- **Also covers an admin delete without a wipe.** The row cannot tell a wipe from an ordinary delete: D25 anonymizes the send on every deletion, so the rule silences the in-flight send of a subscriber an admin deleted with `wipe: false` too. The producing app still holds the send UUID from `POST /api/tx`, and `subscriber.deleted` is delivered. Owner review: confirm dropping the event for admin deletes is acceptable.
+- **Tests:** `test/webhooks/wiped-send.test.ts` (`POST /api/tx` to a receiver, wipe true and false, and a restart; absence shown by delivery order against a control `send.failed`); `test/sends/lease.test.ts` (`failed` and `unknown` through the `ended` hook, and lease expiry in the outbox pass with the injected clock).
