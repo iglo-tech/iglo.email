@@ -780,20 +780,52 @@ test.describe("remote images load on request", () => {
       return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
     };
 
-    test("a click on a held image inside a link puts the caret after the link (B14)", async ({
+    for (const [label, before] of [
+      ["alone in it", ""],
+      ["last in it", "Get "],
+    ])
+      test(`a click on a held image ${label} in a link types outside the link (B14)`, async ({
+        page,
+      }) => {
+        await signIn(page);
+        const c = await campaign(
+          page,
+          `<p>lead <a href="https://example.com/x">${before}<img src="${remote}/banner.gif" alt="banner"></a> tail</p>`,
+        );
+        await open(page, c.id);
+        await page.locator(`${EDITOR} img`).click();
+        await page.keyboard.type("X");
+        const body = await saveBody(page, c.id);
+        expect(body).toMatch(/<img[^>]*alt="banner"[^>]*><\/a>X(&nbsp;| )tail/);
+      });
+
+    test("Backspace after a click on a held image with text after it in a link removes only the image (B14)", async ({
+      page,
+    }) => {
+      await signIn(page);
+      const html = `<p>Get <a href="https://example.com/x"><img src="${remote}/icon.gif" alt="icon"> Download</a> now</p>`;
+      const c = await campaign(page, html);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.keyboard.press("Backspace");
+      const removed = await saveBody(page, c.id);
+      expect(removed).not.toContain("<img");
+      expect(removed).toMatch(/<a [^>]*>(&nbsp;| )Download<\/a>/);
+    });
+
+    test("typing after a click on a held image with text after it joins the link text (B14)", async ({
       page,
     }) => {
       await signIn(page);
       const c = await campaign(
         page,
-        `<p>lead <a href="https://example.com/x"><img src="${remote}/banner.gif" alt="banner"> more</a> tail</p>`,
+        `<p>Get <a href="https://example.com/x"><img src="${remote}/icon.gif" alt="icon"> Download</a> now</p>`,
       );
       await open(page, c.id);
       await page.locator(`${EDITOR} img`).click();
       await page.keyboard.type("X");
-      const body = await saveBody(page, c.id);
-      expect(body).toMatch(
-        /<a [^>]*href="https:\/\/example\.com\/x"[^>]*><img[^>]*alt="banner"[^>]*> more<\/a>X(&nbsp;| )tail/,
+      expect(await saveBody(page, c.id)).toMatch(
+        /<img[^>]*alt="icon"[^>]*>X(&nbsp;| )Download<\/a>/,
       );
     });
 
