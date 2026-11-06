@@ -164,9 +164,9 @@ export async function runSettingsBinding(target: {
     ],
     [
       "map-duplicate",
-      '"bounce.actions":{"bounce":{"count":1,"action":"a"}},"BOUNCE.ACTIONS":{"bounce":{"count":2}}',
+      '"bounce.actions":{"bounce":{"count":1,"action":"unsubscribe"}},"BOUNCE.ACTIONS":{"bounce":{"count":2,"action":"none"}}',
       "bounce.actions.bounce",
-      { count: 2, action: "" },
+      { count: 2, action: "none" },
     ],
     [
       "nullable",

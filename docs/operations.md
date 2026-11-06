@@ -127,6 +127,7 @@ that would get a lock of its own.
 |---|---|
 | `serve` | Refuses |
 | `reset-password` | Refuses |
+| `reset-totp` | Refuses |
 | `backup --release-hold` | Refuses |
 | `backup` | Runs: it only reads the database |
 | `backup --verify` | Runs: it reads a backup, not the data directory |
@@ -503,6 +504,22 @@ with password login off.
 It changes that one account: the hold stays, and all of the user's sessions end. A second factor
 stays required, so a user with TOTP gets the challenge after the new password. Control of the
 machine does not replace the device. The command works the same on an install with no hold.
+
+### A user lost their TOTP device
+
+No admin screen clears another user's second factor. With the server stopped, turn it off for that
+user:
+
+```sh
+systemctl stop iglo.email
+runuser -u iglo-email -- iglo.email reset-totp --data-dir /var/lib/iglo.email --user alice
+systemctl start iglo.email
+```
+
+All of the user's sessions end, and they log in with their password alone and can enroll a new
+device. The command refuses while anything has the database open. It does not change the password,
+and the restore hold stays as it is. TOTP is also dropped when an admin turns a user's password
+login off or converts the user to an API user, so an old key never comes back.
 
 From an archive, first unpack it with `tar -xzf` and verify what came out.
 

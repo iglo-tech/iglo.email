@@ -64,7 +64,12 @@ const mailboxShape = {
   tls_skip_verify: false,
   scan_interval: "",
 };
-const oidcRoleShape = { claim: "", match: "", user_role_id: null, list_role_id: null };
+const oidcRoleShape = {
+  claim: "",
+  match: "",
+  user_role_id: null,
+  list_role_id: null,
+};
 export const shapes: Record<string, unknown> = {
   ...defaults,
   smtp: [smtpShape],
@@ -288,6 +293,20 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     if (!name) return fail("Invalid messenger name.");
     item.name = name;
     names.add(name);
+  }
+  // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
+  // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
+  const storedRules = (current["bounce.actions"] ?? {}) as Settings;
+  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as [string, Settings][]) {
+    if (
+      Object.hasOwn(storedRules, name) &&
+      JSON.stringify(storedRules[name]) === JSON.stringify(rule)
+    )
+      continue;
+    if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000)
+      return fail("Bounce action count must be between 1 and 1000.");
+    if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action))
+      return fail("Bounce action must be none, unsubscribe, blocklist or delete.");
   }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
     if (!next[key]) next[key] = current[key];

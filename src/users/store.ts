@@ -199,6 +199,17 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       if (updated) onMutation(id);
       return updated;
     },
+    /** Operator recovery from a lost device: any user's TOTP goes and all their sessions end. */
+    clearFactor(id: bigint): UserRow | null {
+      const cleared = writeTransaction(db, () => {
+        if (!byId(id)) return null;
+        queries.get("set-twofa").run("none", null, now(), id);
+        revoke(id);
+        return byId(id);
+      });
+      if (cleared) onMutation(id);
+      return cleared;
+    },
     setFactor(
       expected: UserRow,
       type: "none" | "totp",

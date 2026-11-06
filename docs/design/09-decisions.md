@@ -829,6 +829,10 @@ Decided by an agent on 2026-11-06, for owner review.
 
 **Legacy rows (B22):** migration 17 sets `status='exited'` on enrollments stored as `canceled` with `exit_reason` `blocklisted` or `sequence_archived`, so the `status` filter and the exited count include them. `updated_at` and `finished_at` are untouched.
 
+## D84. Bounce actions are validated; TOTP follows the account state; an operator can clear TOTP (B21)
+
+`bounce.actions` rules take `count` 1 to 1000 and `action` of `none`, `unsubscribe`, `blocklist` or `delete`, the ranges the admin form offers. Upstream stores anything, so a `count` of 0 recorded no bounce rows and fired the action on every bounce, and an unknown action did nothing; both are now 400. `update-user` clears `twofa_type` and `twofa_key` when `password_login` goes off or `type` becomes `api`, so an old key cannot return. `iglo.email reset-totp --user <name>` turns TOTP off with the server stopped and ends the user's sessions. The audit's webhook-postpone item did not reproduce through the API (a claimed row is not due before its lease ends, and `recover` clears leases at start), so `delivery-postpone` is unchanged. A rule already stored is checked only when a request changes it, so data an older build accepted never blocks saving another setting; new or changed rules are refused. `reset-totp` says so when the user has no TOTP. Tests: `test/users/b21.test.ts`, `test/bootstrap/instance-lock.test.ts`.
+
 ## D85. A send anonymized while in flight ends without `send.failed` (B22)
 
 If a subscriber is deleted or wiped while one of their sends is `sending`, the row is anonymized (`to_email = ''`, D25). When that send then ends `failed` or `unknown`, no `send.failed` webhook is queued, whatever the outcome. The `ended` hook checks the row's current address after the update, since the row it holds was read at claim time. This is the same rule B18 applies to a skipped retry (D80).

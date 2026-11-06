@@ -29,7 +29,7 @@ import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
-import { resetPasswordHelp, runResetPassword } from "@/users/cli";
+import { resetPasswordHelp, resetTotpHelp, runResetPassword, runResetTotp } from "@/users/cli";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
@@ -113,9 +113,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   if (process.argv[2] === "backup") return runBackup(process.argv.slice(3), process.env);
   if (process.argv[2] === "reset-password")
     return runResetPassword(process.argv.slice(3), process.env);
+  if (process.argv[2] === "reset-totp") return runResetTotp(process.argv.slice(3), process.env);
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
-    process.stdout.write(helpText + backupHelp + resetPasswordHelp);
+    process.stdout.write(helpText + backupHelp + resetPasswordHelp + resetTotpHelp);
     return;
   }
   if (bootstrap.version) {

@@ -642,6 +642,12 @@ export const differences: Difference[] = [
     applies: ["GET /api/subscribers/{id}/export"],
   },
   {
+    area: "Bounce action settings (B21)",
+    summary:
+      "`bounce.actions` refuses a `count` outside 1 to 1000 and an `action` other than `none`, `unsubscribe`, `blocklist` or `delete` with 400, where upstream stores them. Turning `password_login` off or making a user an API user clears their TOTP.",
+    applies: [],
+  },
+  {
     area: "Dropped `GET /api/config`",
     summary:
       "404. The admin pages get what they need in the `window._LM_CONFIG` of each page, and each setting has its own API.",

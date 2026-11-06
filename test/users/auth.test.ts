@@ -1308,7 +1308,10 @@ for (const scenario of ["password", "type", "status", "factor"] as const) {
     expect((await call(f, "/fixture/gate-release", { method: "POST" })).status).toBe(200);
     expect((await pending).status).toBe(403);
     const after = await call(f, `/api/users/${user.id}`, { session: admin });
-    expect(((await after.json()) as { data: { twofa_type: string } }).data.twofa_type).toBe("totp");
+    expect(((await after.json()) as { data: { twofa_type: string } }).data.twofa_type).toBe(
+      // An API user has no second factor (D84): the conversion cleared the key.
+      scenario === "type" ? "none" : "totp",
+    );
   });
 }
 

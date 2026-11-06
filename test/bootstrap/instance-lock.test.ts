@@ -72,7 +72,11 @@ async function run(args: string[], options: { stdin?: string; cwd?: string } = {
 
 /** On a port of its own, so only the lock can stop it. */
 function secondServer(dataDir: string, options?: { cwd?: string }) {
-  const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const probe = Bun.listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: { data() {} },
+  });
   const port = String(probe.port);
   probe.stop(true);
   return run(["serve", "--host", "127.0.0.1", "--port", port, "--data-dir", dataDir], options);
@@ -92,7 +96,12 @@ async function logIn(origin: string, password: string) {
     method: "POST",
     redirect: "manual",
     headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ nonce, username: admin.user, password, next: "/admin" }).toString(),
+    body: new URLSearchParams({
+      nonce,
+      username: admin.user,
+      password,
+      next: "/admin",
+    }).toString(),
   });
   return entered.headers.get("location");
 }
@@ -291,4 +300,30 @@ test("a command leaves a directory without a database as it found it", async () 
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toBe(`No database at ${join(missing, "iglo-email.db")}\n`);
   expect(statSync(missing, { throwIfNoEntry: false })).toBeUndefined();
+});
+
+test("reset-totp refuses beside a server and leaves the database unchanged", async () => {
+  freshDirectories();
+  await serve();
+  const before = fileBytes(data);
+  const refused = await run(["reset-totp", "--data-dir", data, "--user", admin.user]);
+  expect(refused.exitCode).toBe(1);
+  expect(refused.stderr).toBe(inUse(data));
+  expect(refused.stdout).toBe("");
+  expect(fileBytes(data)).toEqual(before);
+});
+
+test("reset-totp names an unknown user, and says so when there is no TOTP to turn off", async () => {
+  freshDirectories();
+  const server = await serve();
+  forget(server);
+  await server.stop();
+  const unknown = await run(["reset-totp", "--data-dir", data, "--user", "nobody"]);
+  expect(unknown.exitCode).toBe(1);
+  expect(unknown.stderr).toContain("No user named nobody");
+  expect(unknown.stdout).toBe("");
+  const none = await run(["reset-totp", "--data-dir", data, "--user", admin.user]);
+  expect(none.exitCode).toBe(0);
+  expect(none.stdout).toContain("nothing to turn off");
+  expect(none.stdout).not.toContain("TOTP turned off");
 });
