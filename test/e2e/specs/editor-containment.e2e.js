@@ -941,6 +941,11 @@ test.describe("remote images load on request", () => {
         `<p style="white-space: pre-wrap"><a href="https://example.com/x"><img src="IMG" alt="banner"> </a> tail</p>`,
         /<img[^>]*alt="banner"[^>]*>(&nbsp;| )<\/a>(&nbsp;| )tail/,
       ],
+      [
+        "whitespace preserved on the link itself",
+        `<p><a href="https://example.com/x" style="white-space: pre"><img src="IMG" alt="banner"> </a> tail</p>`,
+        /<img[^>]*alt="banner"[^>]*>(&nbsp;| )<\/a>(&nbsp;| )tail/,
+      ],
     ])
       test(`a click on a linked banner keeps ${label} (B16)`, async ({ page }) => {
         await signIn(page);
