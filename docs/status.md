@@ -5,15 +5,16 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B11 is with its worker: [brief](briefs/B11.md), branch `task/B11-event-latency`. Test speed: [#60](https://github.com/iglo-tech/iglo.email/pull/60) merged (`bun run check` ~145 s, was 547 s); e2e speed [#61](https://github.com/iglo-tech/iglo.email/pull/61) merged (`bun run e2e` ~10 min at 2 stacks, was 17; `E2E_WORKERS` for more). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B11 is in review: [#62](https://github.com/iglo-tech/iglo.email/pull/62) (no code change; commit time does not drive event latency, D77). B12 is with its worker: [brief](briefs/B12.md), branch `task/B12-backlog`. Test speed: #60 merged (`bun run check` ~145 s, was 547 s); e2e speed #61 merged (`bun run e2e` ~10 min at 2 stacks, was 17; `E2E_WORKERS` for more). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B11: event latency ([brief](briefs/B11.md)).
-2. B12: anything still left in the backlog that agents can do.
+1. B11: event latency ([brief](briefs/B11.md)), in review.
+2. B12: tooling, test and editor lines ([brief](briefs/B12.md)).
+3. B13: anything still left in the backlog that agents can do.
 
 ## Owner decisions
 
