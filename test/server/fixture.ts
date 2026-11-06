@@ -49,6 +49,11 @@ export class TestClock implements Clock {
     });
   }
 
+  /** How many sleeps are pending now. */
+  get sleeping(): number {
+    return this.sleepers.size;
+  }
+
   whenSleeping(count = 1): Promise<void> {
     if (this.sleepers.size >= count) return Promise.resolve();
     return new Promise((resolve) => {

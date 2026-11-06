@@ -70,8 +70,9 @@ function heldDeclaration(value) {
   return urls.some((url) => heldURL(url)) || STYLE_FETCH.test(plain) || plain.includes('\\');
 }
 
-// A style attribute as its declarations, split on the semicolons outside quotes, brackets and
-// escapes. Text that never closes stays whole in the last one.
+// A style attribute as its declarations, split on the semicolons outside quotes, brackets, escapes
+// and comments (a comment stays in the declaration it is in). Text that never closes stays whole in
+// the last one.
 function declarations(style) {
   const list = [];
   let start = 0;
@@ -85,6 +86,9 @@ function declarations(style) {
       quote = c === quote ? '' : quote;
     } else if (c === '"' || c === "'") {
       quote = c;
+    } else if (c === '/' && depth === 0 && style[i + 1] === '*') {
+      const end = style.indexOf('*/', i + 2);
+      i = end < 0 ? style.length : end + 1;
     } else if (c === '(') {
       depth += 1;
     } else if (c === ')') {
@@ -98,7 +102,16 @@ function declarations(style) {
   return list.map((d) => d.trim()).filter(Boolean);
 }
 
-const property = (declaration) => declaration.split(':', 1)[0].trim().toLowerCase();
+const COMMENT = /\/\*[\s\S]*?(?:\*\/|$)/g;
+const property = (declaration) => declaration.replace(COMMENT, '').split(':', 1)[0].trim().toLowerCase();
+
+// The longhand properties a declaration sets, as the browser reads it: `margin: 0` is the four
+// margin sides, so a style the editor rewrote to them is still that declaration.
+function longhands(declaration) {
+  const { style } = inertElement('<i></i>').firstChild;
+  style.cssText = declaration;
+  return new Set(Array.from(style));
+}
 
 // The original declarations in their order, which CSS makes meaningful (a shorthand resets the
 // longhands before it). A held one stays where it was and is never dropped. A kept one takes the
@@ -117,10 +130,22 @@ function mergeStyle(current, original) {
     if (at >= 0) {
       used.add(at);
       list.push(now[at]);
+      continue;
+    }
+    // A shorthand the editor rewrote to its longhands keeps its place among the held ones.
+    const parts = longhands(declaration);
+    if (parts.size > 1 || !parts.has(property(declaration))) {
+      now.forEach((d, i) => {
+        if (!used.has(i) && parts.has(property(d))) {
+          used.add(i);
+          list.push(d);
+        }
+      });
     }
   }
   now.forEach((declaration, i) => {
-    if (!used.has(i) && !list.includes(declaration)) {
+    // A held declaration may be in both the style and its original (as after a paste).
+    if (!used.has(i) && !(heldDeclaration(declaration) && list.includes(declaration))) {
       list.push(declaration);
     }
   });

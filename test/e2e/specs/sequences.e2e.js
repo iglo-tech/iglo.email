@@ -472,6 +472,72 @@ test("the activity tab shows views and clicks from a real campaign and clears th
   }
 });
 
+// What the real-API test above cannot make: a click whose URL is not HTTP and rows that belong to
+// no campaign (a view of a send, a click on a deleted campaign). The API answers are fixed here.
+test("the activity tab gives a non-HTTP click URL no link and shows rows without a campaign", async ({
+  page,
+}) => {
+  await signIn(page);
+  const person = await subscriber(page);
+  await page.route(`**/api/subscribers/${person.id}/activity**`, (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          campaign_views: [
+            {
+              id: 7,
+              name: "Spring <b>sale</b>",
+              subject: "Hello",
+              view_count: 3,
+              last_viewed_at: "2026-01-02T03:04:05Z",
+            },
+            {
+              id: null,
+              name: null,
+              subject: null,
+              view_count: 2,
+              last_viewed_at: "2026-01-01T03:04:05Z",
+            },
+          ],
+          link_clicks: [
+            {
+              url: "https://example.com/a",
+              campaign_id: 7,
+              campaign_name: "Spring <b>sale</b>",
+              campaign_subject: "Hello",
+              click_count: 4,
+              last_clicked_at: "2026-01-02T03:04:05Z",
+            },
+            {
+              url: "javascript:alert(1)",
+              campaign_id: null,
+              campaign_name: null,
+              campaign_subject: null,
+              click_count: 1,
+              last_clicked_at: "2026-01-01T03:04:05Z",
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await page.goto(`/admin/subscribers/${person.id}`);
+  await expect(page.getByTestId("view-row")).toHaveCount(2);
+  await expect(page.getByTestId("view-row").first()).toContainText("Spring <b>sale</b>");
+  // The row without a campaign still counts its views but links to nothing.
+  const orphanView = page.getByTestId("view-row").nth(1);
+  await expect(orphanView).toContainText("2");
+  await expect(orphanView.locator("a")).toHaveCount(0);
+  await expect(page.getByTestId("click-row")).toHaveCount(2);
+  const javascript = page.getByTestId("click-row").nth(1);
+  await expect(javascript.locator(".link-click-url")).toContainText("javascript:alert(1)");
+  await expect(javascript.locator("a")).toHaveCount(0);
+  await expect(page.locator("[data-testid=click-row] a[href^='javascript']")).toHaveCount(0);
+  await expect(
+    page.getByTestId("click-row").first().locator("a[href^='https://example.com']"),
+  ).toHaveCount(1);
+});
+
 async function activityTab(page) {
   const list = await api(page, "/api/lists", "POST", {
     name: unique("activity"),

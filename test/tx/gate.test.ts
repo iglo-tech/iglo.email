@@ -2,8 +2,15 @@ import { expect, test } from "bun:test";
 import { TestClock } from "@/test/server/fixture";
 import { createByteGate } from "@/tx/gate";
 
-const gate = (clock = new TestClock(), options: { maxBytes?: number; maxWaiters?: number } = {}) =>
-  createByteGate({ clock, maxBytes: 100, maxHolders: 3, waitMs: 1000, ...options });
+const gate = (
+  clock = new TestClock(),
+  options: {
+    maxBytes?: number;
+    maxWaiters?: number;
+    maxHolders?: number;
+    maxOvertakes?: number;
+  } = {},
+) => createByteGate({ clock, maxBytes: 100, maxHolders: 3, waitMs: 1000, ...options });
 
 test("reservations are granted in arrival order and freed by release", async () => {
   const g = gate();
@@ -48,7 +55,7 @@ test("a cost over the budget, a full queue and a full holder count are refused",
   a.release();
   (await waiting)!.release();
   const three = [await g.acquire(1), await g.acquire(1), await g.acquire(1)];
-  expect(g.tryAcquire(1)).toBeNull();
+  expect(g.admit(1)).toBeNull();
   for (const r of three) r!.release();
 });
 
@@ -66,4 +73,31 @@ test("grow never waits, shrink wakes a waiter, and a released reservation holds 
   expect(r.grow(1)).toBe(false);
   w.release();
   expect(g.stats()).toEqual({ bytes: 0, holders: 0, waiting: 0 });
+});
+
+test("admissions overtake a waiter a bounded number of times, then are refused without waiting", async () => {
+  const g = gate(new TestClock(), { maxOvertakes: 3, maxHolders: 10 });
+  const held = [(await g.acquire(70))!];
+  const big = g.acquire(60);
+  for (let i = 0; i < 3; i++) held.push(g.admit(5)!);
+  expect(g.stats()).toEqual({ bytes: 85, holders: 4, waiting: 1 });
+  // The fourth fits but would pass the waiter once too often: refused, and nothing queues.
+  expect(g.admit(5)).toBeNull();
+  expect(g.stats().waiting).toBe(1);
+  for (const r of held) r.release();
+  const reservation = (await big)!;
+  expect(reservation.bytes).toBe(60);
+  reservation.release();
+  expect(g.stats()).toEqual({ bytes: 0, holders: 0, waiting: 0 });
+});
+
+test("an admission is refused at once when it does not fit, and never takes a waiter slot", async () => {
+  const g = gate(new TestClock(), { maxOvertakes: 0, maxWaiters: 1 });
+  const held = (await g.acquire(90))!;
+  const big = g.acquire(50);
+  expect(g.admit(20)).toBeNull();
+  expect(g.admit(5)).toBeNull();
+  expect(g.stats().waiting).toBe(1);
+  held.release();
+  (await big)!.release();
 });

@@ -776,6 +776,14 @@ Decided by agents on 2026-11-05, for owner review (B10).
 - **`synchronous = NORMAL`:** one experiment sample, taken under host disturbance (load about 7, in-flight peak 16 against 8, max latency doubled), showed event p50 −37 to −41 %, tx accept p95 −14 to −19 %, tx delivery p50 −41 to −44 % and p95 −34 to −40 %, and event p95 21.9 ms, 1.1 ms below the FULL runs' 23.0 to 25.3 ms. Confirming this needs at least three alternating FULL/NORMAL runs on a quiet host. D22 is unchanged.
 - **Open (owner):** a D22 decision (measured gain above) and/or a process-model change. The CPU explanation for the tail is inferred by elimination and not measured; the process-model change has no measured expected gain.
 
+## D78. Small tx sends overtake a waiting upload a bounded number of times; held-style merging keeps repeats and shorthand places
+
+Decided by an agent on 2026-11-06, for owner review (B12).
+
+- **Fair tx admission:** a send with attachments that holds nothing yet (JSON body, embedded images) used to take its few hundred bytes whenever they fit, ahead of a waiting multipart upload that did not fit yet ([D74](#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)). A steady stream of them kept the room taken until the upload's 429. `ByteGate.admit` keeps that for the first 8 such sends per waiter at the head of the queue (`maxOvertakes`); later ones are refused at once with the 429 an over-budget send gets, before anything is journaled. They never queue: D74's rule that a waiter holds nothing (only uploads wait, before their body is read) stays true, and the 16 waiter slots stay the uploads'. **Why not queue them:** a queued send has already parsed its body and rendered every recipient's message, memory the budget does not count. **Why not strict FIFO:** a small send would be refused for every large upload in flight, which B10 chose against. Measured peak RSS in the fairness scenario is not higher than before (about 50 MiB lower at the end of the run): [B12-backlog](../perf/B12-backlog.md). The memory budget itself is unchanged.
+- **Held styles in the editor:** `mergeStyle` no longer drops an editor declaration equal to an earlier one (`color:red;color:blue;color:red` stays as written); it removes only a held declaration present in both the style and its original (a paste). A kept shorthand the browser rewrote to its longhands (read from the browser's own parse) places them where the shorthand was. The splitter skips CSS comments (outside parentheses and quotes) and keeps them in the declaration they are in, and the property name ignores them.
+- **Test infrastructure:** the build lock in `test/production-build.ts` is per checkout, records its owner's PID and clears only a lock whose owner is gone; a `mkdir` error other than `EEXIST` gives up after 5 s and a live holder after 15 minutes. `withProduction` accepts a readiness answer only when its own child process listens on the port (read from `/proc`, Linux only like the MVP), so a different server that took a reserved port cannot satisfy the retry.
+
 ## D79. A click on a held image puts the caret just after it (B13)
 
 Decided by agents on 2026-11-06.
@@ -783,4 +791,3 @@ Decided by agents on 2026-11-06.
 - **Decision:** a single click on a held image (`img[data-rte-src]`, D71) collapses the selection to the position right after it. Typing then continues after the image, Backspace removes it as for any image, and ArrowLeft steps over it to the position before. A click beside the image is the browser's own. A double-click keeps its selection on the image for the dialog.
 - **Why:** a held image has no picture, so where the browser put the caret depended on the placeholder's box. The click already released a selected image (it must not reach Squire's resizer), which left no defined position.
 - **Test:** `editor-containment.e2e.js`, "a click on a held image puts the caret after it, and an arrow steps over it (B13)".
-

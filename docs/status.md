@@ -5,16 +5,15 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B12 is in review: [#63](https://github.com/iglo-tech/iglo.email/pull/63). B13 is with its worker: [brief](briefs/B13.md), branch `task/B13-intermittent-caret`. B11 merged (#62, docs only: D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B13 is with its worker: [brief](briefs/B13.md), branch `task/B13-intermittent-caret`. B12 merged (#63), B11 merged (#62, docs only: D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B12: tooling, test and editor lines ([brief](briefs/B12.md)), in review.
-2. B13: intermittent tests and the held-image caret ([brief](briefs/B13.md)).
-3. Then only owner items remain: a release, the D22 / process-model decision (D77), PDF viewers on real devices, the tx memory budget.
+1. B13: intermittent tests and the held-image caret ([brief](briefs/B13.md)).
+2. Then only owner items remain: a release, the D22 / process-model decision (D77), PDF viewers on real devices, the tx memory budget.
 
 ## Owner decisions
 
@@ -43,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                            |
 | ------------ | ------------------------------------------------------ | ------- | ----------------------------------------------------------------- |
+| B12          | [#63](https://github.com/iglo-tech/iglo.email/pull/63) | 9b10ec6 | Build lock, no-undef, editor fixes, bounded tx overtaking (D78) |
 | B11          | [#62](https://github.com/iglo-tech/iglo.email/pull/62) | 8d28d54 | Event latency measured; D22 and process model left to owner (D77) |
 | E2e speed    | [#61](https://github.com/iglo-tech/iglo.email/pull/61) | 8aeb257 | Parallel e2e stacks, default 2 (17→~10 min)                       |
 | Test speed   | [#60](https://github.com/iglo-tech/iglo.email/pull/60) | 893c85f | Parallel `bun run test`, one build, `bun check` (547→~145 s)      |
@@ -108,8 +108,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Admin CSP and editor ([#52](https://github.com/iglo-tech/iglo.email/pull/52)): there is still no caret position next to a held image (needs a design for where a click lands; B10 fixed the other items).
 - Tx budget ([#55](https://github.com/iglo-tech/iglo.email/pull/55)): peak memory is about 8x the counted bytes ([B6](perf/B6-send-media-safety.md): the journal payload, the SMTP library's encoding and uncollected garbage are outside the count; lowering `PARSE_COPIES` or the budget trades refusals for memory, an owner call); paced event retention drains about 380 rows/s (the price of not holding back sends, [D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)).
 - B7 staging ([#57](https://github.com/iglo-tech/iglo.email/pull/57)): a read queued during a forced WAL gap can wait the full 30 s and get 429 (the gap is D62's price for restarting the WAL under continuous polling; a long read holds it open, and an earlier admission would block the checkpoint); analytics responses over 64 KiB are chunked with no Content-Length (B10 tried an explicit header: Bun ignores it on streamed bodies, and sending the bytes whole would drop the egress accounting that releases when the client has read them).
-- Tests ([#58](https://github.com/iglo-tech/iglo.email/pull/58)): the real-API activity-tab e2e no longer checks that a non-HTTP click URL gets no link or the non-campaign rows; `withProduction` retry accepts any server answering `/health`; the `templates-campaigns` connection reset is unexplained; the settings fields a partial write must keep set are repeated in three contract files.
-- Editor and tx ([#59](https://github.com/iglo-tech/iglo.email/pull/59)): identical repeated declarations in a held block style are merged (`color:red;color:blue;color:red` saves blue); a live shorthand rewritten to longhands after a style edit can move past a held declaration; the style splitter ignores CSS comments; a steady stream of small tx sends can keep a waiting upload out until its 429; the tx tests wait with `Bun.sleep` loops.
-- Test speed ([#60](https://github.com/iglo-tech/iglo.email/pull/60)): the `test/production-build.ts` build lock retries forever on any `mkdir` error, clears a lock older than 120 s even if its build still runs, and sits at one system temp path shared by every checkout; `README.md` still shows plain `bun test`; the regex example in `docs/perf/test-speed.md` shows raw characters instead of escapes.
-- E2e speed ([#61](https://github.com/iglo-tech/iglo.email/pull/61)): the dashboard "Nothing here" empty state is checked only when no earlier spec on that stack recorded a view, so never at `E2E_WORKERS=1`; enable oxlint `no-undef` (it would have caught a missing `login` import that git merged silently).
+- Tests (B12): the `templates-campaigns` connection reset has no reproduction. The file takes 4.2-4.5 s on an idle host (6 clean runs), against the 5 s default timeout it had when the reset was seen at load ~12; a test that times out has its fixture closed under the request still in flight, which reads as a reset. B8 raised the file's timeout to 60 s and the parallel runner uses 30 s. Kept open only until a reset is seen with the longer timeout.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.

@@ -83,7 +83,7 @@ export async function txFixture(
     /** Holds each synchronous dispatch, as a stalled SMTP server does. */
     beforeDispatch?: () => Promise<void>;
     /** The attachment budget of `POST /api/tx`. */
-    limits?: { maxBytes?: number; maxSends?: number; waitMs?: number };
+    limits?: { maxBytes?: number; maxSends?: number; waitMs?: number; maxOvertakes?: number };
   } = {},
 ) {
   const sink = await startSink(options.reject ? { reject: options.reject } : {});

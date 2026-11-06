@@ -14,6 +14,15 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
   fixtures.push(f);
   return f;
 }
+/** Wait for `condition` by yielding to I/O, advancing the injected clock so its loops run. */
+async function until(condition: () => boolean, f?: TxFixture) {
+  const deadline = performance.now() + 20_000;
+  while (!condition()) {
+    if (performance.now() > deadline) throw new Error("condition not reached");
+    f?.clock.advance(0);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
 async function apiUser(f: TxFixture, permissions: string[]) {
   const role = await f.json("/api/roles/users", "POST", {
     name: `role-${crypto.randomUUID()}`,
@@ -96,10 +105,7 @@ test("async returns queued rows and the outbox delivers them", async () => {
     "queued",
     "queued",
   ]);
-  for (let i = 0; i < 200 && f.sink.messages.length < 2; i++) {
-    f.clock.advance(0);
-    await Bun.sleep(5);
-  }
+  await until(() => f.sink.messages.length >= 2, f);
   expect(f.sink.messages.map((m) => m.to[0]).sort()).toEqual(["a@example.test", "b@example.test"]);
 });
 
@@ -373,7 +379,7 @@ test("synchronous sends with an embedded image hold a bounded number of bytes", 
     });
   const held = Array.from({ length: 21 }, (_, i) => send(i));
   const journaled = () => (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
-  for (let i = 0; i < 2000 && journaled() < 21n; i++) await Bun.sleep(5);
+  await until(() => journaled() >= 21n);
   expect(journaled()).toBe(21n);
   const refused = await f.request("/api/tx", {
     method: "POST",
@@ -438,9 +444,15 @@ test("a credential revoked while the body is held writes and sends nothing", asy
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   const payload = JSON.stringify({ subscriber_emails: ["a@example.test"], template_id: template });
+  let reading!: () => void;
+  const consumed = new Promise<void>((resolve) => (reading = resolve));
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    start(controller) {
       controller.enqueue(new TextEncoder().encode(payload.slice(0, 10)));
+    },
+    // Called only once the server has read the first chunk and wants more.
+    async pull(controller) {
+      reading();
       await gate;
       controller.enqueue(new TextEncoder().encode(payload.slice(10)));
       controller.close();
@@ -451,20 +463,13 @@ test("a credential revoked while the body is held writes and sends nothing", asy
     headers: { ...user.headers, "content-type": "application/json" },
     body: stream,
   });
-  await Bun.sleep(10);
+  await consumed;
   expect((await f.json(`/api/users/${user.id}`, "DELETE")).status).toBe(200);
   release();
   expect((await pending).status).toBe(403);
   expect(f.count()).toBe(0);
   expect(f.sink.messages).toHaveLength(0);
 });
-
-async function settle(f: TxFixture, done: () => boolean) {
-  for (let i = 0; i < 200 && !done(); i++) {
-    f.clock.advance(0);
-    await Bun.sleep(5);
-  }
-}
 
 test("blocklisted Cc and Bcc from SMTP settings headers are removed too", async () => {
   const f = await open({
@@ -544,8 +549,13 @@ test("queued unlinked recipients and copies blocklisted later are skipped after 
   f.restartOutbox();
   const [first, second] = response.body.data.sends as { id: number }[];
   const status = async (id: number) => (await f.json(`/api/sends/${id}`)).body.data;
-  await settle(f, () => f.sink.messages.length > 0);
-  await settle(f, () => false);
+  const queued = () =>
+    (
+      f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get() as {
+        n: bigint;
+      }
+    ).n;
+  await until(() => f.sink.messages.length > 0 && queued() === 0n, f);
   expect(await status(first!.id)).toMatchObject({
     status: "sent",
     skip_reason: "copies_blocklisted:1",
@@ -572,7 +582,7 @@ test("manual resend rechecks the blocklist for unlinked recipients", async () =>
   expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT", {})).status).toBe(200);
   rejecting = false;
   expect((await f.json(`/api/sends/${row.id}/resend`, "POST")).status).toBe(409);
-  await settle(f, () => false);
+  // The refusal is synchronous: nothing was queued for the outbox loop to send.
   expect(f.sink.messages).toHaveLength(0);
   expect(f.count()).toBe(1);
 });
@@ -662,17 +672,14 @@ test("synchronous multipart sends with attachments wait for room, then get a 429
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));
-  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  await until(() => journaledSends(f) >= 1n);
   expect(journaledSends(f)).toBe(1n);
 
   // No room while the first is held: the second waits the injected 1000 ms, then is refused.
+  const asleep = f.clock.sleeping;
   const second = postForm(f, attachmentForm(template, "second@example.test"));
-  let waiting = true;
-  void second.then(() => (waiting = false));
-  for (let i = 0; i < 400 && waiting; i++) {
-    f.clock.advance(1000);
-    await Bun.sleep(5);
-  }
+  await f.clock.whenSleeping(asleep + 1);
+  f.clock.advance(1000);
   const refused = await second;
   expect(refused.status).toBe(429);
   expect(refused.headers.get("retry-after")).toBe("1");
@@ -705,9 +712,10 @@ test("a multipart request that waits is served when room frees", async () => {
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));
-  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  await until(() => journaledSends(f) >= 1n);
+  const asleep = f.clock.sleeping;
   const second = postForm(f, attachmentForm(template, "second@example.test"));
-  await Bun.sleep(100);
+  await f.clock.whenSleeping(asleep + 1);
   expect(journaledSends(f)).toBe(1n);
   release();
   expect((await first).status).toBe(200);
@@ -746,10 +754,11 @@ test("a JSON send with an embedded image is not refused because an upload waits 
   const withImage = await f.template(`<img src="small.png" data-embed="true">`);
   const plain = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(plain, "first@example.test"));
-  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  await until(() => journaledSends(f) >= 1n);
   // The second upload cannot fit beside the first, so it waits.
+  const asleep = f.clock.sleeping;
   const second = postForm(f, attachmentForm(plain, "second@example.test"));
-  await Bun.sleep(100);
+  await f.clock.whenSleeping(asleep + 1);
   expect(journaledSends(f)).toBe(1n);
   // A few hundred bytes fit in the room that is left: the send is journaled, not a 429.
   const small = f.tx({
@@ -757,12 +766,54 @@ test("a JSON send with an embedded image is not refused because an upload waits 
     subscriber_mode: "external",
     template_id: withImage,
   });
-  for (let i = 0; i < 2000 && journaledSends(f) < 2n; i++) await Bun.sleep(5);
+  await until(() => journaledSends(f) >= 2n);
   expect(journaledSends(f)).toBe(2n);
   release();
   expect((await small).status).toBe(200);
   expect((await first).status).toBe(200);
   expect((await second).status).toBe(200);
+}, 30_000);
+
+test("a steady stream of small embedded-image sends cannot keep a waiting upload out (B12)", async () => {
+  let release = () => {};
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  const f = await open({
+    beforeDispatch: () => stalled,
+    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 60_000 },
+  });
+  const body = new FormData();
+  body.append("file", new File([imagePng], "small.png", { type: "image/png" }));
+  expect(
+    (await f.request("/api/media", { method: "POST", headers: f.sessionHeaders, body })).status,
+  ).toBe(200);
+  const withImage = await f.template(`<img src="small.png" data-embed="true">`);
+  const plain = await f.template("<p>x</p>");
+  const first = postForm(f, attachmentForm(plain, "first@example.test"));
+  await until(() => journaledSends(f) >= 1n);
+  const asleep = f.clock.sleeping;
+  const upload = postForm(f, attachmentForm(plain, "upload@example.test"));
+  await f.clock.whenSleeping(asleep + 1);
+  const small = (i: number) =>
+    f.tx({
+      subscriber_email: `small-${i}@example.test`,
+      subscriber_mode: "external",
+      template_id: withImage,
+    });
+  // Eight go ahead of the waiting upload; the other four are refused at once, not queued.
+  const refused: Awaited<ReturnType<typeof small>>[] = [];
+  const smalls = Array.from({ length: 12 }, (_, i) =>
+    small(i).then((r) => {
+      if (r.status === 429) refused.push(r);
+      return r;
+    }),
+  );
+  await until(() => refused.length === 4 && journaledSends(f) >= 9n);
+  expect(journaledSends(f)).toBe(9n);
+  // A refused send was not journaled, so its retry is not a second send.
+  release();
+  const done = await Promise.all([first, upload, ...smalls]);
+  expect(done.filter((r) => r.status === 200)).toHaveLength(10);
+  expect(f.sink.messages).toHaveLength(10);
 }, 30_000);
 
 test("a multipart body over the cap is a 413 even while the budget is full (B10)", async () => {
@@ -774,7 +825,7 @@ test("a multipart body over the cap is a 413 even while the budget is full (B10)
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));
-  for (let i = 0; i < 2000 && journaledSends(f) < 1n; i++) await Bun.sleep(5);
+  await until(() => journaledSends(f) >= 1n);
   const big = new FormData();
   big.set(
     "data",

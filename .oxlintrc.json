@@ -1,5 +1,18 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "no-undef": "error"
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true,
+    "browser": true,
+    "node": true
+  },
+  "globals": {
+    "Bun": "readonly",
+    "HTMLRewriter": "readonly"
+  },
   "ignorePatterns": [
     "assets/admin/js/**",
     "src/server/asset-manifest.ts",
