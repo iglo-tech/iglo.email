@@ -117,15 +117,17 @@ class RichtextEditor extends HTMLElement {
       // an image selected before, which Delete would otherwise remove.
       //
       // The caret goes just after the image (D79): a held image has no picture to hit-test, so the
-      // browser's own landing depends on the placeholder's box. Arrow keys then step over it, and
-      // a double-click keeps its selection for the dialog.
+      // browser's own landing depends on the placeholder's box. Inside a link it is after the link.
+      // Arrow keys then step over it, and a double-click keeps its selection for the dialog.
       this.content.addEventListener('click', (e) => {
         if (e.target.matches?.('img[data-rte-src]')) {
           e.stopPropagation();
           this.content.click();
           if (e.detail < 2) {
             const range = document.createRange();
-            range.setStartAfter(e.target);
+            // Inside a link (a linked banner), after the link: typed text must not join it.
+            const link = e.target.closest('a');
+            range.setStartAfter(link && this.content.contains(link) ? link : e.target);
             range.collapse(true);
             this.editor.setSelection(range);
           }
