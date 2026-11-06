@@ -690,6 +690,28 @@ test.describe("remote images load on request", () => {
       expect(body).toContain('alt="banner"');
     });
 
+    // D79: a click on a held image puts the caret just after it, and the arrow keys step over it.
+    test("a click on a held image puts the caret after it, and an arrow steps over it (B13)", async ({
+      page,
+    }) => {
+      await signIn(page);
+      const c = await campaign(page, `<p>one <img src="${remote}/caret.gif" alt="held"> two</p>`);
+      await open(page, c.id);
+      const typedAfter = async (key) => {
+        await page.locator(`${EDITOR} img`).click();
+        if (key) await page.keyboard.press(key);
+        await page.keyboard.type("X");
+        const save = page.waitForResponse((r) => r.request().method() === "PUT");
+        await page.keyboard.press("Control+s");
+        expect((await save).status()).toBe(200);
+        return (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
+      };
+      const after = await typedAfter(null);
+      expect(after).toMatch(/<img[^>]*alt="held"[^>]*>X/);
+      const before = await typedAfter("ArrowLeft");
+      expect(before).toMatch(/X<img[^>]*alt="held"[^>]*>X/);
+    });
+
     test("still resize an image that loaded", async ({ page }) => {
       const { dragged, tag } = await afterDrag(
         page,

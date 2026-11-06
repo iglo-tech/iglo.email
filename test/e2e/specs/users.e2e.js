@@ -106,13 +106,16 @@ test.describe("Users, roles & login", () => {
     await row.getByTestId("btn-edit").click();
 
     await page.locator('input[value="users:get"]').check();
+    const reloaded = page.waitForEvent("load");
     await Promise.all([
       page.waitForResponse(
         (r) => /\/api\/roles\/users\/\d+/.test(r.url()) && r.request().method() === "PUT",
       ),
       page.getByTestId("btn-save").click(),
     ]);
-    // The page reloads itself after an update and shows the toast then; a goto before that is aborted.
+    // The page reloads itself after an update. Wait for that load itself: a toast alone does not say
+    // the reload has happened, and a goto before it is aborted by it (B13).
+    await reloaded;
     await expect(page.locator(".toast")).toBeVisible();
 
     // Reopen the role: "users:get" (not a default) is checked, proving the edit stuck.
@@ -185,13 +188,16 @@ test.describe("Users, roles & login", () => {
 
     // Drop the "manage" permission on the second list.
     await page.locator('input[value="list:manage"]').nth(1).uncheck();
+    const reloaded = page.waitForEvent("load");
     await Promise.all([
       page.waitForResponse(
         (r) => /\/api\/roles\/lists\/\d+/.test(r.url()) && r.request().method() === "PUT",
       ),
       page.getByTestId("btn-save").click(),
     ]);
-    // The page reloads itself after an update and shows the toast then; a goto before that is aborted.
+    // The page reloads itself after an update. Wait for that load itself: a toast alone does not say
+    // the reload has happened, and a goto before it is aborted by it (B13).
+    await reloaded;
     await expect(page.locator(".toast")).toBeVisible();
 
     // Reopen the role: both lists keep "view", exactly one lost "manage".
@@ -280,13 +286,16 @@ test.describe("Users, roles & login", () => {
     await page.getByTestId("password-login").uncheck();
     await page.locator("select[name=user_role]").selectOption({ label: second });
     await page.locator("select[name=list_role]").selectOption({ label: second });
+    const reloaded = page.waitForEvent("load");
     await Promise.all([
       page.waitForResponse(
         (r) => /\/api\/users\/\d+/.test(r.url()) && r.request().method() === "PUT",
       ),
       page.getByTestId("btn-save").click(),
     ]);
-    // The page reloads itself after an update and shows the toast then; a goto before that is aborted.
+    // The page reloads itself after an update. Wait for that load itself: a toast alone does not say
+    // the reload has happened, and a goto before it is aborted by it (B13).
+    await reloaded;
     await expect(page.locator(".toast")).toBeVisible();
 
     // Reopen the edit view: the new roles and disabled password login are reflected.
@@ -401,10 +410,12 @@ test.describe("Your own account", () => {
     // A save of the rest sends "keep", not the stale role.
     await other.locator("input[name=name]").fill("Renamed");
     const request = other.waitForRequest((r) => r.method() === "PUT");
+    const reloaded = other.waitForEvent("load");
     await other.getByTestId("btn-save").click();
     const sent = (await request).postDataJSON();
     expect([sent.user_role_id, sent.list_role_id]).toEqual([0, 0]);
-    // The page reloads itself after the update and shows the toast then; a goto before that is aborted.
+    // The page reloads itself after the update; a goto before that load is aborted by it (B13).
+    await reloaded;
     await expect(other.locator(".toast")).toBeVisible();
 
     const { body } = await api(page, `/api/users/${manager.id}`);

@@ -775,3 +775,12 @@ Decided by agents on 2026-11-05, for owner review (B10).
 - **Evidence ([B11](../perf/B11-event-latency.md)):** a per-writer probe under the M6.1 mixed load shows the other loops hold the write lock about 11.5 s in 165 s, each commit at most 16.1 ms outside startup (campaign progress; the others at most 15.1 ms). Campaign progress, outcomes and claims already commit per batch. This does not support B7's guess that the other loops' commits cause the tail. The event writer's own transactions (29.3 s, including sequence evaluation) are not excluded.
 - **`synchronous = NORMAL`:** one experiment sample, taken under host disturbance (load about 7, in-flight peak 16 against 8, max latency doubled), showed event p50 −37 to −41 %, tx accept p95 −14 to −19 %, tx delivery p50 −41 to −44 % and p95 −34 to −40 %, and event p95 21.9 ms, 1.1 ms below the FULL runs' 23.0 to 25.3 ms. Confirming this needs at least three alternating FULL/NORMAL runs on a quiet host. D22 is unchanged.
 - **Open (owner):** a D22 decision (measured gain above) and/or a process-model change. The CPU explanation for the tail is inferred by elimination and not measured; the process-model change has no measured expected gain.
+
+## D79. A click on a held image puts the caret just after it (B13)
+
+Decided by agents on 2026-11-06.
+
+- **Decision:** a single click on a held image (`img[data-rte-src]`, D71) collapses the selection to the position right after it. Typing then continues after the image, Backspace removes it as for any image, and ArrowLeft steps over it to the position before. A click beside the image is the browser's own. A double-click keeps its selection on the image for the dialog.
+- **Why:** a held image has no picture, so where the browser put the caret depended on the placeholder's box. The click already released a selected image (it must not reach Squire's resizer), which left no defined position.
+- **Test:** `editor-containment.e2e.js`, "a click on a held image puts the caret after it, and an arrow steps over it (B13)".
+
