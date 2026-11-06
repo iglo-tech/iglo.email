@@ -398,9 +398,8 @@ describe("query-selected actions", () => {
       ).body,
     ).toEqual({ data: true });
     const b = await f.json(`/api/subscribers?list_id=${listB}&subscription_status=confirmed`);
-    // D81: a given status replaces an existing one, as add by IDs does (upstream's query variant
-    // is DO NOTHING).
-    expect(emails(b.body).sort()).toEqual(["alice", "bob", "carol"]);
+    // Existing memberships are kept as they are (upstream's DO NOTHING).
+    expect(emails(b.body).sort()).toEqual(["alice", "carol"]);
     await f.json("/api/subscribers/query/lists", "PUT", {
       search: "carol",
       action: "unsubscribe",

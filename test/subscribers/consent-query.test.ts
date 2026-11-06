@@ -1,4 +1,4 @@
-// B19 (D81): the query-selected membership actions follow the by-IDs results.
+// B19 (D81): the query-selected membership actions keep upstream's results and never revive consent.
 import { afterEach, expect, test } from "bun:test";
 import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
 
@@ -29,36 +29,29 @@ const statuses = async (f: QueryFixture, id: number) =>
     }[]
   ).map((l) => l.subscription_status);
 
-test("add by IDs and add by query give the same result for an existing membership", async () => {
+test("add by query keeps an unsubscribed member unsubscribed, with or without a status", async () => {
   const f = await open();
   const a = await list(f, "A");
-  const byId = await person(f, "id@example.test", [a]);
-  const byQuery = await person(f, "query@example.test", [a]);
+  const id = await person(f, "gone@example.test", [a], {
+    preconfirm_subscriptions: true,
+  });
   await f.json("/api/subscribers/lists", "PUT", {
-    ids: [byId],
-    action: "add",
-    target_list_ids: [a],
-    status: "confirmed",
-  });
-  expect(
-    (
-      await f.json("/api/subscribers/query/lists", "PUT", {
-        query: "subscribers.email = 'query@example.test'",
-        action: "add",
-        target_list_ids: [a],
-        status: "confirmed",
-      })
-    ).status,
-  ).toBe(200);
-  expect(await statuses(f, byId)).toEqual(["confirmed"]);
-  expect(await statuses(f, byQuery)).toEqual(["confirmed"]);
-  // Without a status an existing membership is kept, in both.
-  await f.json("/api/subscribers/query/lists", "PUT", {
-    query: "subscribers.email = 'query@example.test'",
-    action: "add",
+    ids: [id],
+    action: "unsubscribe",
     target_list_ids: [a],
   });
-  expect(await statuses(f, byQuery)).toEqual(["confirmed"]);
+  for (const status of [undefined, "confirmed", "unconfirmed"])
+    expect(
+      (
+        await f.json("/api/subscribers/query/lists", "PUT", {
+          query: "subscribers.email = 'gone@example.test'",
+          action: "add",
+          target_list_ids: [a],
+          ...(status ? { status } : {}),
+        })
+      ).status,
+    ).toBe(200);
+  expect(await statuses(f, id)).toEqual(["unsubscribed"]);
 });
 
 test("adding by query never gives a blocklisted subscriber a live membership", async () => {

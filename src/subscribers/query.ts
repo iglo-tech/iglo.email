@@ -210,8 +210,8 @@ export function createSubscriberQuery(options: {
       const now = clock.now().toISOString();
       writes
         .get("add-memberships-by-ids")
-        .run(status || "unconfirmed", now, json(ids), json(lists), status ? 1 : 0);
-      // Only memberships now unsubscribed end enrollments.
+        .run(status || "unconfirmed", now, json(ids), json(lists));
+      // Existing memberships keep their status; only those now unsubscribed end enrollments.
       if (status !== "unsubscribed") return;
       const pairs = writes.get("unsubscribed-memberships-by-ids").all(json(ids), json(lists)) as {
         subscriber_id: bigint;

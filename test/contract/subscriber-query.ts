@@ -365,12 +365,7 @@ export async function runSubscriberQuery(target: {
     r = await json(
       `/api/subscribers?list_id=${listB}&subscription_status=confirmed&order_by=email&order=asc`,
     );
-    // D81 (deliberate difference): add by query replaces an existing status like add by IDs;
-    // upstream's query variant is DO NOTHING and keeps it.
-    check(
-      same(names(r.body), normal ? ["alice", "bob", "carol"] : ["alice", "carol"]),
-      "subscriber-bulk-add-keeps-existing",
-    );
+    check(same(names(r.body), ["alice", "carol"]), "subscriber-bulk-add-keeps-existing");
     await json("/api/subscribers/query/lists", "PUT", {
       query: `subscribers.email = '${carol.email}'`,
       action: "unsubscribe",
