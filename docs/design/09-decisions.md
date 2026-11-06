@@ -639,22 +639,22 @@ Decided by agents on 2026-10-31, for owner review.
 - **Storage:** a `restore.hold` row in `settings`, which is in every schema version a backup can have, so no migration is needed and none can clear it. `defaults` does not name it, so `GET` and `PUT /api/settings` neither show nor write it. The row stays after a release, with `released_at`, as the record of it. A row that cannot be read counts as a hold. `backup` of a held install keeps the row, so the hold keeps the date its gap began.
 - **Sending paths.** One owner, `src/settings/hold.ts`. These are all the ways a message reaches the emailer or a webhook reaches the network, and each has a case in `test/backup/hold.test.ts`:
 
-| Path | While held |
-|---|---|
-| Campaign runner, running and scheduled | Claims nothing; the status stays |
-| Outbox loop, marketing and transactional, and its retries | Claims nothing; rows stay `queued` |
-| Outbox dispatch of `POST /api/tx` | Refused with 503 before a row exists. `async` messages queue instead |
-| `POST /api/sends/:id/resend` | 503 |
-| `POST /api/campaigns/:id/test` | 503 |
-| `PUT /api/campaigns/:id/status` to `running` or `scheduled` | 503; pausing and cancelling work |
-| `POST /api/settings/smtp/test` | 503 |
-| Sequence scheduler | Claims nothing; enrollments wait |
-| `POST /api/enrollments` with `test` | 503 |
-| `POST /api/subscribers/:id/optin` | 503 |
-| Opt-in mail from an admin write or a public signup | The write lands; the mail is a row that stays `queued` |
-| `POST /subscription/export/:subUUID` | 503 page |
-| `POST /admin/forgot` | 503 page, for every address alike |
-| Webhook delivery | Claims nothing; deliveries stay pending |
+| Path                                                        | While held                                                           |
+| ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| Campaign runner, running and scheduled                      | Claims nothing; the status stays                                     |
+| Outbox loop, marketing and transactional, and its retries   | Claims nothing; rows stay `queued`                                   |
+| Outbox dispatch of `POST /api/tx`                           | Refused with 503 before a row exists. `async` messages queue instead |
+| `POST /api/sends/:id/resend`                                | 503                                                                  |
+| `POST /api/campaigns/:id/test`                              | 503                                                                  |
+| `PUT /api/campaigns/:id/status` to `running` or `scheduled` | 503; pausing and cancelling work                                     |
+| `POST /api/settings/smtp/test`                              | 503                                                                  |
+| Sequence scheduler                                          | Claims nothing; enrollments wait                                     |
+| `POST /api/enrollments` with `test`                         | 503                                                                  |
+| `POST /api/subscribers/:id/optin`                           | 503                                                                  |
+| Opt-in mail from an admin write or a public signup          | The write lands; the mail is a row that stays `queued`               |
+| `POST /subscription/export/:subUUID`                        | 503 page                                                             |
+| `POST /admin/forgot`                                        | 503 page, for every address alike                                    |
+| Webhook delivery                                            | Claims nothing; deliveries stay pending                              |
 
 - **Last gate:** `emailer.push` and `emailer.test` make the same check and throw, so a path added later and missing from this list fails closed. It stands behind the loops rather than replacing them, since a refused push would mark rows failed.
 - **Release:** refused without the acknowledgement flag, and refused while anything has the database open, which an EXCLUSIVE lock attempt detects. The server reads the row and never writes it. A hold stops duplicates and sends on stale consent. It does not recover a lost opt-out: the operator does that during the hold, as [the guide](../operations.md#restore) sets out.
@@ -768,6 +768,13 @@ Decided by agents on 2026-11-05, for owner review (B10).
 - **Provider webhook budget:** Mailgun and SES POSTs have one in-memory budget of 6,000 per client per minute, apart from the 300 of the unsubscribe forms. SNS delivers one HTTP POST per bounce; a 429 loses the bounce once SNS stops retrying. 6,000 is 20 times the old figure and still bounded: bodies are capped, and every request is signature-checked before anything is written.
 - **Remote editor images:** `?remote_images=1` takes effect only for a navigation the admin page made itself (`Sec-Fetch-Site: same-origin`). A link from another site, a mail or a pasted address gets the strict policy and the notice, so a crafted link cannot make the operator's browser fetch a campaign's remote images. A request that sends no `Sec-Fetch-Site` header is treated as before: browsers send it only to secure contexts (HTTPS or loopback), so on a plain-HTTP admin reached by a network address the button would otherwise do nothing. Only a header that is present and not `same-origin` refuses.
 - **SES certificate host:** the region in `sns.<region>.amazonaws.com[.cn]` must look like an AWS region. Upstream's `[a-z0-9-]+` also accepts `sns.s3.amazonaws.com`, the S3 bucket named `sns`.
+
+## D77. Other loops' commits do not explain the event tail; no change (B11)
+
+- **Decision:** nothing changes in the event, outbox, scheduler or campaign commit paths. FULL durability (D22), at-most-once marketing sends and the no-network-in-transaction rule are untouched.
+- **Evidence ([B11](../perf/B11-event-latency.md)):** a per-writer probe under the M6.1 mixed load shows the other loops hold the write lock about 11.5 s in 165 s, each commit at most 16.1 ms outside startup (campaign progress; the others at most 15.1 ms). Campaign progress, outcomes and claims already commit per batch. This does not support B7's guess that the other loops' commits cause the tail. The event writer's own transactions (29.3 s, including sequence evaluation) are not excluded.
+- **`synchronous = NORMAL`:** one experiment sample, taken under host disturbance (load about 7, in-flight peak 16 against 8, max latency doubled), showed event p50 −37 to −41 %, tx accept p95 −14 to −19 %, tx delivery p50 −41 to −44 % and p95 −34 to −40 %, and event p95 21.9 ms, 1.1 ms below the FULL runs' 23.0 to 25.3 ms. Confirming this needs at least three alternating FULL/NORMAL runs on a quiet host. D22 is unchanged.
+- **Open (owner):** a D22 decision (measured gain above) and/or a process-model change. The CPU explanation for the tail is inferred by elimination and not measured; the process-model change has no measured expected gain.
 
 ## D78. Small tx sends overtake a waiting upload a bounded number of times; held-style merging keeps repeats and shorthand places
 
