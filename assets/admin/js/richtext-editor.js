@@ -130,6 +130,15 @@ class RichtextEditor extends HTMLElement {
             const link = e.target.closest('a');
             const last =
               link && this.content.contains(link) && !this.#visibleAfter(e.target, link);
+            if (last) {
+              // Whitespace inside a banner link is invisible; left there, the first Backspace
+              // would remove it instead of the image, and then leave an empty link (B15).
+              for (const n of [...link.childNodes]) {
+                if (n.nodeType === Node.TEXT_NODE && n.textContent.trim() === '') {
+                  n.remove();
+                }
+              }
+            }
             range.setStartAfter(last ? link : e.target);
             range.collapse(true);
             this.editor.setSelection(range);
@@ -157,7 +166,10 @@ class RichtextEditor extends HTMLElement {
       });
     }
 
-    this.editor.addEventListener('input', () => this.sync());
+    this.editor.addEventListener('input', () => {
+      this.#dropPlaceholderBr();
+      this.sync();
+    });
     this.editor.addEventListener('pathChange', () => this.#updateState());
     this.editor.addEventListener('select', () => this.#updateState());
     this.editor.addEventListener('undoStateChange', (e) => this.#updateUndo(e.detail));
@@ -179,6 +191,24 @@ class RichtextEditor extends HTMLElement {
     this.#resizeObs = null;
     this.editor?.destroy();
     this.editor = null;
+  }
+
+  // Squire leaves its end-of-block `<br>` placeholder after text typed beside a banner that was
+  // alone in its block. Once the caret's block has text before the `<br>`, it is dropped (B15).
+  #dropPlaceholderBr() {
+    const sel = document.getSelection();
+    let block = sel?.anchorNode;
+    while (block && block.parentNode !== this.content) {
+      block = block.parentNode;
+    }
+    const br = block?.lastChild;
+    if (
+      br?.nodeName === 'BR' &&
+      br.previousSibling?.nodeType === Node.TEXT_NODE &&
+      br.previousSibling.textContent !== ''
+    ) {
+      br.remove();
+    }
   }
 
   // Whether anything but whitespace follows `node` inside `root`.

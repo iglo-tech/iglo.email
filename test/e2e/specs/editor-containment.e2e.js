@@ -845,11 +845,44 @@ test.describe("remote images load on request", () => {
       await signIn(page);
       const c = await campaign(page, `<p><img src="${remote}/beside.gif" alt="held"> two</p>`);
       await open(page, c.id);
-      const p = await page.locator(`${EDITOR} p`).boundingBox();
-      await page.mouse.click(p.x + p.width - 2, p.y + p.height / 2);
+      // Right next to the image: just past its right edge, before " two".
+      const box = await page.locator(`${EDITOR} img`).boundingBox();
+      await page.mouse.click(box.x + box.width + 2, box.y + box.height / 2);
       await page.keyboard.type("X");
       const body = await saveBody(page, c.id);
-      expect(body).toMatch(/<img[^>]*alt="held"[^>]*> twoX/);
+      expect(body).toMatch(/<img[^>]*alt="held"[^>]*>X(&nbsp;| )two/);
+    });
+
+    test("one Backspace after a click on a linked banner with whitespace in the link removes image and link (B15)", async ({
+      page,
+    }) => {
+      await signIn(page);
+      const c = await campaign(
+        page,
+        `<p>lead <a href="https://example.com/x">\n  <img src="${remote}/ws.gif" alt="banner">\n</a> tail</p>`,
+      );
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.keyboard.press("Backspace");
+      const body = await saveBody(page, c.id);
+      expect(body).not.toContain("<img");
+      expect(body).not.toContain("<a");
+      expect(body).toMatch(/lead (&nbsp;| )?tail/);
+    });
+
+    test("a banner alone in its paragraph leaves no trailing br after typing (B15)", async ({
+      page,
+    }) => {
+      await signIn(page);
+      const c = await campaign(
+        page,
+        `<p><a href="https://example.com/x"><img src="${remote}/alone.gif" alt="banner"></a></p>`,
+      );
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.keyboard.type("X");
+      const body = await saveBody(page, c.id);
+      expect(body).toMatch(/<\/a>X<\/p>/);
     });
 
     test("still resize an image that loaded", async ({ page }) => {
