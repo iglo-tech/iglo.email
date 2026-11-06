@@ -17,10 +17,10 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
   cleanups.push(() => f.close());
   return f;
 }
-async function hooked(f: TxFixture) {
+async function hooked(f: TxFixture, subscribed: string[] = events) {
   const r = startReceiver();
   cleanups.push(() => r.close());
-  const created = await f.json("/api/webhooks", "POST", { url: r.url(), events });
+  const created = await f.json("/api/webhooks", "POST", { url: r.url(), events: subscribed });
   expect(created.status).toBe(200);
   return { receiver: r, secret: created.body.data.secret as string };
 }
@@ -622,4 +622,35 @@ test("one request prunes a bounded batch of expired receipts, and a backlog stil
   expect(rowsOf(f).length).toBe(1);
   for (let i = 0; i < 20 && expiredLeft(); i++) await mailgun(f, signed(f, { event: "delivered" }));
   expect(expiredLeft()).toBe(0);
+});
+
+test("D81: the automatic blocklist action leaves the memberships unsubscribed", async () => {
+  const f = await open();
+  f.bounceSettings.actions.hard = { count: 1, action: "blocklist" };
+  const list = (await f.json("/api/lists", "POST", { name: "L", type: "public" })).body.data.id;
+  const id = await f.subscriber("bouncy@example.com", "B", {
+    lists: [list],
+    preconfirm_subscriptions: true,
+  });
+  expect((await mailgun(f, signed(f, failed("bouncy@example.com")))).status).toBe(200);
+  const body = (await f.json(`/api/subscribers/${id}`)).body.data;
+  expect(body.status).toBe("blocklisted");
+  expect(body.lists.map((l: { subscription_status: string }) => l.subscription_status)).toEqual([
+    "unsubscribed",
+  ]);
+});
+
+test("D81: the automatic blocklist action queues subscriber.unsubscribed for the memberships it ends", async () => {
+  const f = await open();
+  await hooked(f, ["subscriber.unsubscribed", "subscriber.blocklisted"]);
+  f.bounceSettings.actions.hard = { count: 1, action: "blocklist" };
+  const list = (await f.json("/api/lists", "POST", { name: "L", type: "public" })).body.data.id;
+  await f.subscriber("hook@example.com", "H", {
+    lists: [list],
+    preconfirm_subscriptions: true,
+  });
+  expect((await mailgun(f, signed(f, failed("hook@example.com")))).status).toBe(200);
+  const seen = deliveries(f).filter((d) => d.event !== "bounce.recorded");
+  expect(seen.map((d) => d.event)).toEqual(["subscriber.unsubscribed", "subscriber.blocklisted"]);
+  expect(seen[0]!.body.data.list_ids).toEqual([list]);
 });

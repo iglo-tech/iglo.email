@@ -513,7 +513,9 @@ export async function runSubscribersContract(target: {
     check(
       response.status === 200 &&
         value.status === "blocklisted" &&
-        value.lists.find((entry: any) => entry.id === list)?.subscription_status === "confirmed",
+        // D81 (deliberate difference): the add left the blocklisted subscriber unsubscribed.
+        value.lists.find((entry: any) => entry.id === list)?.subscription_status ===
+          (target.mode === "reference" ? "confirmed" : "unsubscribed"),
       "subscriber-put-omitted-status-retains-consent",
     );
     check(
