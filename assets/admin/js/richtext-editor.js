@@ -132,10 +132,13 @@ class RichtextEditor extends HTMLElement {
               link && this.content.contains(link) && !this.#visibleAfter(e.target, link);
             if (last) {
               // The whitespace right after the image in its link is invisible; left there, the
-              // first Backspace would remove it instead of the image (B15). Nothing else changes.
+              // first Backspace would remove it instead of the image (B15). It is only invisible
+              // when nothing visible follows the link in its block: in `<a><img> </a>tail` the
+              // space separates the banner from `tail` and stays (B16). Nothing else changes.
               const gap = e.target.nextSibling;
               if (
                 e.target.parentNode === link &&
+                this.#gapInvisible(link) &&
                 gap?.nodeType === Node.TEXT_NODE &&
                 gap.textContent.trim() === ''
               ) {
@@ -237,6 +240,35 @@ class RichtextEditor extends HTMLElement {
       br.remove();
       this.#bannerBlock = false;
     }
+  }
+
+  // Whether whitespace at the end of `link` renders nothing: nothing visible follows the link in
+  // its block, or the text right after the link starts with whitespace that collapses with it.
+  #gapInvisible(link) {
+    const next = link.nextSibling;
+    if (next?.nodeType === Node.TEXT_NODE && /^\s/.test(next.textContent)) {
+      return true;
+    }
+    return !this.#visibleAfterInBlock(link);
+  }
+
+  // Whether anything visible follows `link` before the end of its block: text other than
+  // whitespace, or any element except a final `<br>` (which does not render).
+  #visibleAfterInBlock(link) {
+    const root = this.editor.getRoot();
+    const isBlock = (n) => /^(P|DIV|LI|TD|TH|BLOCKQUOTE|PRE|H[1-6])$/.test(n.nodeName);
+    let block = link.parentNode;
+    while (block && block !== root && !isBlock(block)) {
+      block = block.parentNode;
+    }
+    for (let n = link; n && n !== block; n = n.parentNode) {
+      for (let s = n.nextSibling; s; s = s.nextSibling) {
+        if (s.nodeType === Node.TEXT_NODE ? s.textContent.trim() !== '' : !(s.nodeName === 'BR' && !s.nextSibling)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   // Whether anything but whitespace follows `node` inside `root`.
