@@ -262,7 +262,7 @@ export const differences: Difference[] = [
   {
     area: "Blocklisted subscribers (D81, B19)",
     summary:
-      "Every way into blocklisted unsubscribes all memberships, and no add or confirm gives a blocklisted subscriber a live one; add by query replaces an existing status like add by IDs. Upstream leaves memberships confirmed and the two adds disagree.",
+      "Every way into blocklisted unsubscribes all memberships, and no add or confirm gives a blocklisted subscriber a live one. Upstream leaves memberships confirmed.",
     applies: [
       "PUT /api/subscribers/{id}",
       "PATCH /api/subscribers/{id}",
@@ -273,7 +273,7 @@ export const differences: Difference[] = [
   {
     area: "List opt-in change (D82, B19)",
     summary:
-      "A changed optin is refused with 400 while the list has unconfirmed members; upstream changes it freely.",
+      "A change of optin from double to single is refused with 400 while the list has unconfirmed members; single to double is allowed. Upstream changes it freely.",
     applies: ["PUT /api/lists/{id}"],
   },
   {
