@@ -5,11 +5,7 @@ import { defaults } from "@/settings/defaults";
 import { trimSpace } from "@/lists/store";
 import { simpleLower } from "@/subscribers/unicode-lower";
 import { validFromAddress } from "@/settings/mail";
-import {
-  goDuration,
-  intervalStart,
-  sessionDuration,
-} from "@/settings/duration";
+import { goDuration, intervalStart, sessionDuration } from "@/settings/duration";
 import { cronError } from "@/settings/cron";
 import { cloneJson, int64, Members } from "@/settings/json";
 import { validTopicArn } from "@/bounces/ses";
@@ -113,9 +109,7 @@ function zero(shape: any): any {
   if (typeof shape === "object")
     return Object.fromEntries(
       Object.entries(shape)
-        .filter(
-          ([key]) => key !== "*" && !(shape === smtpShape && key === "dkim"),
-        )
+        .filter(([key]) => key !== "*" && !(shape === smtpShape && key === "dkim"))
         .map(([key, value]) => [key, zero(value)]),
     );
   if (typeof shape === "string") return "";
@@ -124,18 +118,15 @@ function zero(shape: any): any {
 }
 function entries(value: unknown): [string, unknown][] {
   if (value instanceof Members) return value.entries;
-  if (value && typeof value === "object" && !Array.isArray(value))
-    return Object.entries(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) return Object.entries(value);
   return fail();
 }
 // All JSON field tags here are ASCII. Go's simple folding also admits long s
 // and Kelvin sign, without multi-character expansions such as ß -> SS.
-const foldField = (value: string) =>
-  value.replace(/ſ/g, "s").replace(/K/g, "k").toLowerCase();
+const foldField = (value: string) => value.replace(/ſ/g, "s").replace(/K/g, "k").toLowerCase();
 /** Whether a decoded settings object names a top-level key, with Go field folding. */
 export function hasField(value: unknown, key: string): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value))
-    return false;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   return entries(value).some(([name]) => foldField(name) === foldField(key));
 }
 function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
@@ -146,16 +137,13 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
       ? null
       : previous;
   if (shape === null) {
-    if (typeof value !== "number" || !Number.isSafeInteger(value))
-      return fail();
+    if (typeof value !== "number" || !Number.isSafeInteger(value)) return fail();
     return value;
   }
   if (Array.isArray(shape)) {
     if (!Array.isArray(value)) return fail();
     // D48 discards truncated elements rather than retaining Go slice backing capacity.
-    return value.map((item, index) =>
-      bind(item, shape[0], previous?.[index] ?? zero(shape[0])),
-    );
+    return value.map((item, index) => bind(item, shape[0], previous?.[index] ?? zero(shape[0])));
   }
   if (typeof shape === "object") {
     const members = entries(value);
@@ -171,29 +159,17 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
       return result;
     }
     for (const [key, fallback] of Object.entries(shape))
-      if (key !== "dkim" && !Object.hasOwn(result, key))
-        result[key] = zero(fallback);
+      if (key !== "dkim" && !Object.hasOwn(result, key)) result[key] = zero(fallback);
     for (const [key, entry] of members) {
-      const match = Object.keys(shape).find(
-        (name) => foldField(name) === foldField(key),
-      );
+      const match = Object.keys(shape).find((name) => foldField(name) === foldField(key));
       if (match === "dkim" && shape === smtpShape) {
         try {
           if (entry === null) result[match] = null;
           else {
             const fields = entries(entry);
-            for (const required of [
-              "domain_name",
-              "key_selector",
-              "private_key",
-            ]) {
-              const values = fields.filter(
-                ([name]) => foldField(name) === required,
-              );
-              if (
-                !values.length ||
-                values.some(([, value]) => typeof value !== "string")
-              )
+            for (const required of ["domain_name", "key_selector", "private_key"]) {
+              const values = fields.filter(([name]) => foldField(name) === required);
+              if (!values.length || values.some(([, value]) => typeof value !== "string"))
                 return fail("Invalid DKIM configuration.");
             }
             result[match] = bind(entry, shape[match], zero(shape[match]));
@@ -201,8 +177,7 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
         } catch {
           return fail("Invalid DKIM configuration.");
         }
-      } else if (match)
-        result[match] = bind(entry, shape[match], result[match]);
+      } else if (match) result[match] = bind(entry, shape[match], result[match]);
     }
     return result;
   }
@@ -221,31 +196,22 @@ export function projectRaw(value: Settings, root: string): Settings {
   return out;
 }
 export function bindFull(value: unknown, root: string): Settings {
-  if (value !== null && (typeof value !== "object" || Array.isArray(value)))
-    return fail();
+  if (value !== null && (typeof value !== "object" || Array.isArray(value))) return fail();
   const out: Settings = {};
   for (const [key, shape] of Object.entries(shapes)) {
     if (Array.isArray(shape)) out[key] = null;
     else if (shape && typeof shape === "object") out[key] = bind({}, shape);
-    else
-      out[key] =
-        typeof shape === "string" ? "" : typeof shape === "boolean" ? false : 0;
+    else out[key] = typeof shape === "string" ? "" : typeof shape === "boolean" ? false : 0;
   }
   for (const [key, entry] of value === null ? [] : entries(value)) {
-    const match = Object.keys(shapes).find(
-      (name) => foldField(name) === foldField(key),
-    );
+    const match = Object.keys(shapes).find((name) => foldField(name) === foldField(key));
     if (match) out[match] = bind(entry, shapes[match], out[match]);
   }
   out["app.root_url"] = root;
   out["app.check_updates"] = false;
   return out;
 }
-export function bindKey(
-  current: Settings,
-  key: string,
-  value: unknown,
-): Settings {
+export function bindKey(current: Settings, key: string, value: unknown): Settings {
   if (
     !Object.hasOwn(shapes, key) ||
     (key === "app.check_updates" && value !== false) ||
@@ -262,30 +228,20 @@ function preserve(item: Settings, old: Settings[]) {
   if (!item.password && previous) item.password = previous.password;
   if (!item.password) delete item.password;
 }
-export function normalize(
-  next: Settings,
-  current: Settings,
-  roles: Roles,
-  now: number,
-): Settings {
+export function normalize(next: Settings, current: Settings, roles: Roles, now: number): Settings {
   for (const key of arrays) next[key] ??= [];
   const addresses: string[] = [];
-  if (next["app.from_email"].length > 250)
-    return fail("omax 250 `from` addresses are allowed");
+  if (next["app.from_email"].length > 250) return fail("omax 250 `from` addresses are allowed");
   for (const raw of next["app.from_email"]) {
     const value = trimSpace(raw ?? "");
     if (!value) continue;
-    if ([...value].length > 2000)
-      return fail("`from` address cannot exceed 2000 characters");
+    if ([...value].length > 2000) return fail("`from` address cannot exceed 2000 characters");
     const opening = value.indexOf("{{");
     const tpl = opening >= 0 && value.includes("}}", opening + 2);
     if (tpl && !addresses.length)
-      return fail(
-        "default (first) `from` address cannot contain template expressions",
-      );
+      return fail("default (first) `from` address cannot contain template expressions");
     if (!tpl) {
-      if (!validFromAddress(value))
-        return fail(`invalid from email address: ${value}`);
+      if (!validFromAddress(value)) return fail(`invalid from email address: ${value}`);
     }
     if (!addresses.includes(value)) addresses.push(value);
   }
@@ -303,20 +259,14 @@ export function normalize(
       names.add(name);
     }
     if (server.exclude_from_default && !name)
-      return fail(
-        "A name is required for an SMTP server excluded from the default messenger.",
-      );
+      return fail("A name is required for an SMTP server excluded from the default messenger.");
     server.name = name;
     server.host = trimSpace(server.host);
-    const prior = current.smtp.findLast(
-      (item: Settings) => item.uuid === server.uuid,
-    );
+    const prior = current.smtp.findLast((item: Settings) => item.uuid === server.uuid);
     preserve(server, current.smtp);
-    if (!Object.hasOwn(server, "dkim") && prior?.dkim)
-      server.dkim = cloneJson(prior.dkim);
+    if (!Object.hasOwn(server, "dkim") && prior?.dkim) server.dkim = cloneJson(prior.dkim);
     if (server.dkim) {
-      if (!server.dkim.private_key && prior?.dkim)
-        server.dkim.private_key = prior.dkim.private_key;
+      if (!server.dkim.private_key && prior?.dkim) server.dkim.private_key = prior.dkim.private_key;
       validateDKIM(server.dkim);
     } else delete server.dkim;
     if (server.enabled)
@@ -347,10 +297,7 @@ export function normalize(
   // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
   // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
   const storedRules = (current["bounce.actions"] ?? {}) as Settings;
-  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as [
-    string,
-    Settings,
-  ][]) {
+  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as [string, Settings][]) {
     if (
       Object.hasOwn(storedRules, name) &&
       JSON.stringify(storedRules[name]) === JSON.stringify(rule)
@@ -359,9 +306,7 @@ export function normalize(
     if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000)
       return fail("Bounce action count must be between 1 and 1000.");
     if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action))
-      return fail(
-        "Bounce action must be none, unsubscribe, blocklist or delete.",
-      );
+      return fail("Bounce action must be none, unsubscribe, blocklist or delete.");
   }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
     if (!next[key]) next[key] = current[key];
@@ -378,29 +323,18 @@ export function normalize(
     }
   if (!next["security.captcha"]?.hcaptcha?.secret) {
     if (!next["security.captcha"]?.hcaptcha) return fail();
-    next["security.captcha"].hcaptcha.secret =
-      current["security.captcha"].hcaptcha.secret;
+    next["security.captcha"].hcaptcha.secret = current["security.captcha"].hcaptcha.secret;
   }
   // A masked value read back keeps the key, as an empty one does.
   const mailgun = next["bounce.mailgun"];
   mailgun.key = trimSpace(mailgun.key);
-  if (!mailgun.key || /^•+$/.test(mailgun.key))
-    mailgun.key = current["bounce.mailgun"].key;
-  if (mailgun.enabled && !mailgun.key)
-    return fail("A Mailgun signing key is required.");
-  next["marketing.min_interval"] = trimSpace(
-    next["marketing.min_interval"] ?? "",
-  );
-  if (
-    intervalStart(next["marketing.min_interval"], new Date(now)) === undefined
-  )
-    return fail(
-      "Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.",
-    );
+  if (!mailgun.key || /^•+$/.test(mailgun.key)) mailgun.key = current["bounce.mailgun"].key;
+  if (mailgun.enabled && !mailgun.key) return fail("A Mailgun signing key is required.");
+  next["marketing.min_interval"] = trimSpace(next["marketing.min_interval"] ?? "");
+  if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined)
+    return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
   for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"])
-    next[key] = next[key]
-      .map((d: string) => simpleLower(trimSpace(d ?? "")))
-      .filter(Boolean);
+    next[key] = next[key].map((d: string) => simpleLower(trimSpace(d ?? ""))).filter(Boolean);
   next["upload.extensions"] = next["upload.extensions"].map((v: string) =>
     simpleLower(trimSpace(v ?? "").replace(/^\./, "")),
   );
@@ -414,53 +348,33 @@ export function normalize(
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
   for (const proxy of next["security.trusted_proxies"])
-    if (!parseProxy(proxy))
-      return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
+    if (!parseProxy(proxy)) return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
   next["bounce.ses_topic_arns"] = next["bounce.ses_topic_arns"]
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
   if (next["bounce.ses_topic_arns"].length > 100)
     return fail("Invalid data: at most 100 SNS topic ARNs.");
   for (const arn of next["bounce.ses_topic_arns"])
-    if (!validTopicArn(arn))
-      return fail(`Invalid data: invalid SNS topic ARN: ${arn}`);
+    if (!validTopicArn(arn)) return fail(`Invalid data: invalid SNS topic ARN: ${arn}`);
   for (const budget of Object.values(next["security.public_rate_limit"] ?? {}))
-    if (
-      !Number.isSafeInteger(budget) ||
-      (budget as number) < 1 ||
-      (budget as number) > 1_000_000
-    )
-      return fail(
-        "Invalid security.public_rate_limit: use whole requests per minute.",
-      );
+    if (!Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 1_000_000)
+      return fail("Invalid security.public_rate_limit: use whole requests per minute.");
   const oidc = next["security.oidc"];
   if (!oidc) return fail();
   if (oidc.roles === null) oidc.roles = current["security.oidc"].roles;
   const exists = (id: number | null, type: "user" | "list") =>
-    id !== null &&
-    Number.isSafeInteger(id) &&
-    id > 0 &&
-    roles.hasRole(BigInt(id), type);
+    id !== null && Number.isSafeInteger(id) && id > 0 && roles.hasRole(BigInt(id), type);
   if (
     (oidc.auto_create_users || oidc.default_user_role_id !== null) &&
     !exists(oidc.default_user_role_id, "user")
   )
-    return fail(
-      `OIDC default user role ID ${oidc.default_user_role_id ?? 0} does not exist`,
-    );
-  if (
-    oidc.default_list_role_id !== null &&
-    !exists(oidc.default_list_role_id, "list")
-  )
-    return fail(
-      `OIDC default list role ID ${oidc.default_list_role_id} does not exist`,
-    );
+    return fail(`OIDC default user role ID ${oidc.default_user_role_id ?? 0} does not exist`);
+  if (oidc.default_list_role_id !== null && !exists(oidc.default_list_role_id, "list"))
+    return fail(`OIDC default list role ID ${oidc.default_list_role_id} does not exist`);
   for (let i = 0; i < oidc.roles.length; i++) {
     const mapping = oidc.roles[i];
-    if (!mapping.claim)
-      return fail(`OIDC role mapping ${i + 1}: claim is required`);
-    if (!mapping.match)
-      return fail(`OIDC role mapping ${i + 1}: match is required`);
+    if (!mapping.claim) return fail(`OIDC role mapping ${i + 1}: claim is required`);
+    if (!mapping.match) return fail(`OIDC role mapping ${i + 1}: match is required`);
     if (mapping.user_role_id !== null && !exists(mapping.user_role_id, "user"))
       return fail(
         `OIDC role mapping ${i + 1}: user role ID ${mapping.user_role_id} does not exist`,
@@ -481,13 +395,11 @@ export function normalize(
 }
 export function masked(settings: Settings): Settings {
   const out = cloneJson(settings);
-  const mask = (value: string | undefined) =>
-    "•".repeat([...(value ?? "")].length);
+  const mask = (value: string | undefined) => "•".repeat([...(value ?? "")].length);
   for (const key of ["smtp", "messengers", "bounce.mailboxes"])
     for (const item of out[key]) {
       if (item.password) item.password = mask(item.password);
-      if (key === "smtp" && item.dkim)
-        item.dkim.private_key = mask(item.dkim.private_key);
+      if (key === "smtp" && item.dkim) item.dkim.private_key = mask(item.dkim.private_key);
     }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
     if (out[key]) out[key] = mask(out[key]);
@@ -500,14 +412,11 @@ export function masked(settings: Settings): Settings {
     ["security.oidc", "client_secret"],
   ] as const)
     out[key][field!] = mask(out[key][field!]);
-  out["security.captcha"].hcaptcha.secret = mask(
-    out["security.captcha"].hcaptcha.secret,
-  );
+  out["security.captcha"].hcaptcha.secret = mask(out["security.captcha"].hcaptcha.secret);
   for (const mapping of out["security.oidc"].roles ?? []) {
     if (mapping.user_role_id === null) delete mapping.user_role_id;
     if (mapping.list_role_id === null) delete mapping.list_role_id;
   }
-  if (!out["upload.s3.aws_secret_access_key"])
-    delete out["upload.s3.aws_secret_access_key"];
+  if (!out["upload.s3.aws_secret_access_key"]) delete out["upload.s3.aws_secret_access_key"];
   return out;
 }

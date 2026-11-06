@@ -62,8 +62,7 @@ export interface RecoveryOptions {
 
 export async function recoverPassword(options: RecoveryOptions): Promise<void> {
   const { dataDir, username, password, clock, supportedVersion } = options;
-  if (!validPassword(password))
-    throw new Error("A password must be 8 to 2000 bytes long");
+  if (!validPassword(password)) throw new Error("A password must be 8 to 2000 bytes long");
   const hash = await hashPassword(password);
   withStoppedDatabase(dataDir, supportedVersion, (db) => {
     const lists = createListReferences(db);
@@ -73,9 +72,7 @@ export async function recoverPassword(options: RecoveryOptions): Promise<void> {
       const user = users.byName(username);
       if (!user) throw new Error(`No user named ${username}`);
       if (!users.setPassword(user.id, hash))
-        throw new Error(
-          `${username} is not an enabled account with password login`,
-        );
+        throw new Error(`${username} is not an enabled account with password login`);
     } finally {
       users.close();
       roles.close();
@@ -102,15 +99,11 @@ export async function runResetPassword(
     clock: createRealClock(),
     supportedVersion: productionMigrations.length,
   });
-  process.stdout.write(
-    `Password set for ${parsed.user}; their sessions have ended\n`,
-  );
+  process.stdout.write(`Password set for ${parsed.user}; their sessions have ended\n`);
 }
 
 /** Whether the user had a TOTP to turn off. */
-export async function recoverTotp(
-  options: Omit<RecoveryOptions, "password">,
-): Promise<boolean> {
+export async function recoverTotp(options: Omit<RecoveryOptions, "password">): Promise<boolean> {
   const { dataDir, username, clock, supportedVersion } = options;
   let had = false;
   withStoppedDatabase(dataDir, supportedVersion, (db) => {

@@ -18,8 +18,7 @@ async function fixture() {
 }
 async function admin(f: Fixture) {
   const page = await fetch(`${f.origin}/admin/login`);
-  const nonce =
-    /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
   const nonceCookie = page.headers
     .getSetCookie()
     .find((v) => v.startsWith("nonce="))!
@@ -83,9 +82,7 @@ test("an operator clears a user's TOTP from the CLI and their sessions end", asy
     supportedVersion: productionMigrations.length,
   });
   const db = openDatabase(dataDir);
-  const row = db
-    .query("SELECT twofa_type, twofa_key FROM users WHERE id = ?")
-    .get(id) as any;
+  const row = db.query("SELECT twofa_type, twofa_key FROM users WHERE id = ?").get(id) as any;
   expect(row.twofa_type).toBe("none");
   expect(row.twofa_key).toBeNull();
   expect(db.query("SELECT count(*) AS n FROM sessions").get()).toEqual({
@@ -99,9 +96,9 @@ test("TOTP does not revive after password login is turned off and on, or after a
   const f = await fixture();
   const s = await admin(f);
   await call(f, s, "/fixture/totp-user", "POST");
-  const totp = (
-    (await (await call(f, s, "/api/users")).json()) as any
-  ).data.find((u: any) => u.username === "fixture-totp");
+  const totp = ((await (await call(f, s, "/api/users")).json()) as any).data.find(
+    (u: any) => u.username === "fixture-totp",
+  );
   expect(totp.twofa_type).toBe("totp");
   const update = (extra: object) =>
     call(f, s, `/api/users/${totp.id}`, "PUT", {
@@ -116,40 +113,28 @@ test("TOTP does not revive after password login is turned off and on, or after a
       ...extra,
     });
   expect((await update({ password_login: false })).status).toBe(200);
-  expect(
-    (await update({ password_login: true, password: "fixture-user-password" }))
-      .status,
-  ).toBe(200);
-  const after = (
-    (await (await call(f, s, "/api/users")).json()) as any
-  ).data.find((u: any) => u.username === "fixture-totp");
+  expect((await update({ password_login: true, password: "fixture-user-password" })).status).toBe(
+    200,
+  );
+  const after = ((await (await call(f, s, "/api/users")).json()) as any).data.find(
+    (u: any) => u.username === "fixture-totp",
+  );
   expect(after.twofa_type).toBe("none");
 });
 
 test("bounce.actions refuses a zero count and an unknown action", async () => {
   const f = await fixture();
   const s = await admin(f);
-  const current = ((await (await call(f, s, "/api/settings")).json()) as any)
-    .data["bounce.actions"];
-  const put = (value: unknown) =>
-    call(f, s, "/api/settings/bounce.actions", "PUT", value);
+  const current = ((await (await call(f, s, "/api/settings")).json()) as any).data[
+    "bounce.actions"
+  ];
+  const put = (value: unknown) => call(f, s, "/api/settings/bounce.actions", "PUT", value);
+  expect((await put({ ...current, soft: { count: 0, action: "none" } })).status).toBe(400);
+  expect((await put({ ...current, soft: { count: 1001, action: "none" } })).status).toBe(400);
+  expect((await put({ ...current, soft: { count: 2, action: "explode" } })).status).toBe(400);
+  expect((await put({ ...current, soft: { count: 2, action: "unsubscribe" } })).status).toBe(200);
   expect(
-    (await put({ ...current, soft: { count: 0, action: "none" } })).status,
-  ).toBe(400);
-  expect(
-    (await put({ ...current, soft: { count: 1001, action: "none" } })).status,
-  ).toBe(400);
-  expect(
-    (await put({ ...current, soft: { count: 2, action: "explode" } })).status,
-  ).toBe(400);
-  expect(
-    (await put({ ...current, soft: { count: 2, action: "unsubscribe" } }))
-      .status,
-  ).toBe(200);
-  expect(
-    ((await (await call(f, s, "/api/settings")).json()) as any).data[
-      "bounce.actions"
-    ].soft,
+    ((await (await call(f, s, "/api/settings")).json()) as any).data["bounce.actions"].soft,
   ).toEqual({
     count: 2,
     action: "unsubscribe",
@@ -175,13 +160,7 @@ test("a stored out-of-range bounce rule does not block saving other settings", a
   fixtures.push(f);
   const s = await admin(f);
 
-  const one = await call(
-    f,
-    s,
-    "/api/settings/app.site_name",
-    "PUT",
-    "New name",
-  );
+  const one = await call(f, s, "/api/settings/app.site_name", "PUT", "New name");
   expect(one.status).toBe(200);
 
   const body = ((await (await call(f, s, "/api/settings")).json()) as any).data;
