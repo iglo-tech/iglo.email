@@ -10,6 +10,8 @@ import {
   i18n, t, closestInSelection, PALETTE, EMOJIS, CHARS,
 } from '@/assets/admin/js/richtext/data.js';
 
+// Whitespace CSS collapses: not U+00A0 or other Unicode spaces, which render (B16).
+const isBlank = (t) => /^[ \t\r\n]*$/.test(t);
 const TRACK_SUFFIX = '@TrackLink';
 const TRACK_KEY = 'trackLink';
 
@@ -140,7 +142,7 @@ class RichtextEditor extends HTMLElement {
                 e.target.parentNode === link &&
                 this.#gapInvisible(link) &&
                 gap?.nodeType === Node.TEXT_NODE &&
-                gap.textContent.trim() === ''
+                isBlank(gap.textContent)
               ) {
                 gap.remove();
               }
@@ -245,8 +247,15 @@ class RichtextEditor extends HTMLElement {
   // Whether whitespace at the end of `link` renders nothing: nothing visible follows the link in
   // its block, or the text right after the link starts with whitespace that collapses with it.
   #gapInvisible(link) {
+    // Where spaces are preserved, none of them is invisible.
+    const root = this.editor.getRoot();
+    for (let n = link.parentNode; n && n !== root; n = n.parentNode) {
+      if (/^(pre|pre-wrap|pre-line|break-spaces)$/.test(getComputedStyle(n).whiteSpace)) {
+        return false;
+      }
+    }
     const next = link.nextSibling;
-    if (next?.nodeType === Node.TEXT_NODE && /^\s/.test(next.textContent)) {
+    if (next?.nodeType === Node.TEXT_NODE && /^[ \t\r\n]/.test(next.textContent)) {
       return true;
     }
     return !this.#visibleAfterInBlock(link);
@@ -263,7 +272,7 @@ class RichtextEditor extends HTMLElement {
     }
     for (let n = link; n && n !== block; n = n.parentNode) {
       for (let s = n.nextSibling; s; s = s.nextSibling) {
-        if (s.nodeType === Node.TEXT_NODE ? s.textContent.trim() !== '' : !(s.nodeName === 'BR' && !s.nextSibling)) {
+        if (s.nodeType === Node.TEXT_NODE ? !isBlank(s.textContent) : !(s.nodeName === 'BR' && !s.nextSibling)) {
           return true;
         }
       }
@@ -275,7 +284,7 @@ class RichtextEditor extends HTMLElement {
   #visibleAfter(node, root) {
     for (let n = node; n && n !== root; n = n.parentNode) {
       for (let s = n.nextSibling; s; s = s.nextSibling) {
-        if (s.nodeType !== Node.TEXT_NODE || s.textContent.trim() !== '') {
+        if (s.nodeType !== Node.TEXT_NODE || !isBlank(s.textContent)) {
           return true;
         }
       }
