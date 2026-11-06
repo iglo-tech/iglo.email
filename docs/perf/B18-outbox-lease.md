@@ -4,8 +4,8 @@ Bounded observation on 2026-11-06 (Linux x86-64, Bun 1.4.4, host not reserved). 
 enqueues 2000 transactional rows into a fresh database (production migrations, WAL, synchronous=FULL), starts the real
 outbox loop with an instant in-process emailer and real clock, and times until all rows are `sent`. Only the journal and
 the loop's claim and finish commits are measured; no SMTP. Three serial runs each. "Before" is main at 4be9929 (same
-script, `src/messaging` restored), "after" adds the per-pass lease expiry (one indexed-less `UPDATE ... WHERE
-status='sending' AND claimed_until <= ?`, matching zero rows in the normal case).
+script, `src/messaging` restored), "after" adds the per-pass lease expiry (one `UPDATE ... WHERE
+status='sending' AND claimed_until <= ?` that seeks `idx_sends_due` on status, matching zero rows in the normal case).
 
 | Code            | Run 1 | Run 2 | Run 3 |
 | --------------- | ----: | ----: | ----: |
