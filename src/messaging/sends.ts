@@ -160,7 +160,14 @@ export function createSends(options: {
 }) {
   const { db, clock, subscribers } = options;
   const ended = (row: Row, status: string, error: string, changes: number) => {
-    if (changes) options.ended?.({ ...row, status, error });
+    if (!changes) return;
+    // D85: `row` was read at claim time. A send anonymized since then ends silently, like the
+    // skipped retry above, so a wiped subscriber's list never reaches a `send.failed` payload.
+    const current = db
+      .query<{ to_email: string }, [bigint]>("SELECT to_email FROM sends WHERE id = ?")
+      .get(row.id);
+    if (current?.to_email === "") return;
+    options.ended?.({ ...row, status, error });
   };
   let wake = () => {};
   const get = (id: bigint) => db.query<Row, [bigint]>("SELECT * FROM sends WHERE id = ?").get(id);
@@ -184,7 +191,10 @@ export function createSends(options: {
    * from these headers by splitting on commas, so filtering the same parts here covers
    * every effective recipient. Unparseable parts are kept for the emailer to reject.
    */
-  function withoutBlockedCopies(message: Message): { message: Message; removed: number } {
+  function withoutBlockedCopies(message: Message): {
+    message: Message;
+    removed: number;
+  } {
     if (!message.headers) return { message, removed: 0 };
     let removed = 0;
     const keep = (value: string) =>
@@ -220,7 +230,10 @@ export function createSends(options: {
     // Unlinked rows (external mode, unknown-at-enqueue addresses) are rechecked by address.
     if (blocklisted(row.to_email)) return "subscriber_blocklisted";
     if (row.kind === "marketing")
-      return marketing(row.subscriber_id, row.list_id, { lineage: row.id, pending: false });
+      return marketing(row.subscriber_id, row.list_id, {
+        lineage: row.id,
+        pending: false,
+      });
     return null;
   }
   function claimOne(time: Date, lease: Date): Row | null {
@@ -466,7 +479,11 @@ export function createSends(options: {
     const indexed = rows.map((row) => {
       const rest = row.idempotency_key.slice(prefix.length);
       const at = rest.lastIndexOf(":");
-      return { row, fingerprint: rest.slice(0, at), index: Number(rest.slice(at + 1)) };
+      return {
+        row,
+        fingerprint: rest.slice(0, at),
+        index: Number(rest.slice(at + 1)),
+      };
     });
     if (indexed.some((item) => item.fingerprint !== fingerprint))
       throw new HttpError(409, "Idempotency key was already used with a different request.");
@@ -482,7 +499,12 @@ export function createSends(options: {
     sends: RequestedSend[];
     idempotency?: { key: string; fingerprint: string } | null;
     authorize?: () => void;
-  }): { replayed: boolean; ids: bigint[]; sends: SendSummary[]; queued: bigint[] } {
+  }): {
+    replayed: boolean;
+    ids: bigint[];
+    sends: SendSummary[];
+    queued: bigint[];
+  } {
     if (!Array.isArray(input.sends) || !input.sends.length || input.sends.length > 1000)
       throw new Error("Invalid prepared send");
     const fingerprint = input.idempotency?.fingerprint;
@@ -508,7 +530,11 @@ export function createSends(options: {
         (typeof send.uuid !== "string" || !uuidPattern.test(send.uuid))
       )
         throw new Error("Invalid prepared send");
-      return { send, subscriberUuid, payload: encodePayload(send.message, subscriberUuid) };
+      return {
+        send,
+        subscriberUuid,
+        payload: encodePayload(send.message, subscriberUuid),
+      };
     });
     const result = writeTransaction(db, () => {
       input.authorize?.();
@@ -564,7 +590,12 @@ export function createSends(options: {
         if (!skip) queued.push(row.id);
         rows.push(getPublic(row.id)!);
       });
-      return { replayed: false, ids: rows.map((row) => row.id), sends: rows.map(summary), queued };
+      return {
+        replayed: false,
+        ids: rows.map((row) => row.id),
+        sends: rows.map(summary),
+        queued,
+      };
     });
     if (result.queued.length) wake();
     return result;
@@ -634,7 +665,11 @@ export function createSends(options: {
     return new Date(high);
   }
   /** Validated payload of a sequence send, encoded before its write transaction. */
-  type PreparedSequenceSend = { send: PreparedSend; subscriberUuid: string; payload: string };
+  type PreparedSequenceSend = {
+    send: PreparedSend;
+    subscriberUuid: string;
+    payload: string;
+  };
   /**
    * Insert a sequence step's send, keyed by the unique `(enrollment_id, step_id)`: a queued
    * prepared message, or a skipped record with a safe reason and no payload. The caller
@@ -740,7 +775,11 @@ export function createSends(options: {
         (send.uuid !== undefined && !uuidPattern.test(send.uuid))
       )
         throw new Error("Invalid prepared send");
-      return { send, subscriberUuid, payload: encodePayload(send.message, subscriberUuid) };
+      return {
+        send,
+        subscriberUuid,
+        payload: encodePayload(send.message, subscriberUuid),
+      };
     },
     /**
      * Admission of a prepared sequence send inside the caller's write transaction, as
@@ -755,7 +794,10 @@ export function createSends(options: {
       if (current.status === "blocklisted" || blocklisted(current.email))
         return "subscriber_blocklisted";
       if (send.kind === "marketing")
-        return marketing(send.subscriberId!, send.listId ?? null, { lineage: null, pending: true });
+        return marketing(send.subscriberId!, send.listId ?? null, {
+          lineage: null,
+          pending: true,
+        });
       return null;
     },
     recordSequence,

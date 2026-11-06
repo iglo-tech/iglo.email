@@ -22,6 +22,7 @@ import enrollmentTest from "@/migrations/0013_enrollment_test.sql" with { type: 
 import retention from "@/migrations/0014_retention.sql" with { type: "text" };
 import rescheduleIndex from "@/migrations/0015_reschedule_index.sql" with { type: "text" };
 import blocklistedMemberships from "@/migrations/0016_blocklisted_memberships.sql" with { type: "text" };
+import legacyEnrollmentEndings from "@/migrations/0017_legacy_enrollment_endings.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -46,6 +47,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 14, sql: retention },
   { version: 15, sql: rescheduleIndex },
   { version: 16, sql: blocklistedMemberships },
+  { version: 17, sql: legacyEnrollmentEndings },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {
@@ -138,7 +140,10 @@ function createSnapshot(db: Database, dataDir: string, clock: Clock, version: nu
   try {
     db.run("VACUUM INTO ?", [temporary]);
     holdSnapshot(temporary, clock, version);
-    const snapshot = new Database(temporary, { readonly: true, safeIntegers: true });
+    const snapshot = new Database(temporary, {
+      readonly: true,
+      safeIntegers: true,
+    });
     try {
       const integrity = snapshot
         .query<{ integrity_check: string }, []>("PRAGMA integrity_check")
