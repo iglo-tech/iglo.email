@@ -802,3 +802,7 @@ Decided by an agent on 2026-11-06, for owner review.
 - **Guards:** `claimOne` updates only a `queued` row. A transient failure re-queues a row only while its payload exists; a row anonymized while `sending` (D25) becomes `skipped`/`subscriber_unavailable`, with no webhook, instead of being reclaimed and failing as `payload_unavailable`.
 - **Not an API difference:** listmonk has no send journal, so there is no deliberate-difference row.
 - **Tests and measurement:** `test/sends/lease.test.ts`; [B18](../perf/B18-outbox-lease.md).
+
+## D81. One enrollment status per ending reason; exit events apply to every sequence status (B20)
+
+`sequence_archived` and `blocklisted` end an enrollment as `exited` on every path; the scheduler used `canceled` for them while the archive and subscriber paths used `exited`. `canceled` stays for `manual` and `subscriber_deleted`. An `exit_on` event ends enrollments of draft and paused sequences too, so resuming cannot revive an enrollment whose exit event already arrived. Every ending clears `claimed_until` and `retry_at`. Native behavior, with no listmonk counterpart.
