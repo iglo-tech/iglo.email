@@ -76,7 +76,13 @@ async function client(origin: string, credentials?: { user: string; token: strin
     data.append("file", new File([content], name));
     return call("/api/import/subscribers", "POST", data);
   };
-  const status = async () => (await call("/api/import/subscribers")).body.data;
+  const status = async () => {
+    const response = await call("/api/import/subscribers");
+    // A reply without the data envelope is a failure of its own; name it instead of reading `undefined`.
+    if (response.body?.data === undefined)
+      throw new Error(`import status answered ${response.status}: ${response.text.slice(0, 300)}`);
+    return response.body.data;
+  };
   const settled = async () => {
     for (const deadline = Date.now() + 30_000; Date.now() < deadline; await Bun.sleep(10)) {
       const current = await status();

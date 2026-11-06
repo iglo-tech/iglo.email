@@ -115,10 +115,20 @@ class RichtextEditor extends HTMLElement {
       // `width: 0px`. One click is what selects an image for it, on the document; the double-click
       // dialog above still changes the size, from what is stored. The click on the editor releases
       // an image selected before, which Delete would otherwise remove.
+      //
+      // The caret goes just after the image (D79): a held image has no picture to hit-test, so the
+      // browser's own landing depends on the placeholder's box. Arrow keys then step over it, and
+      // a double-click keeps its selection for the dialog.
       this.content.addEventListener('click', (e) => {
         if (e.target.matches?.('img[data-rte-src]')) {
           e.stopPropagation();
           this.content.click();
+          if (e.detail < 2) {
+            const range = document.createRange();
+            range.setStartAfter(e.target);
+            range.collapse(true);
+            this.editor.setSelection(range);
+          }
         }
       });
 
