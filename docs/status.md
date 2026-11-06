@@ -5,16 +5,15 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B12 is in review: [#63](https://github.com/iglo-tech/iglo.email/pull/63). B13 is with its worker: [brief](briefs/B13.md), branch `task/B13-intermittent-caret`. B11 merged (#62, docs only: D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B13 is with its worker: [brief](briefs/B13.md), branch `task/B13-intermittent-caret`. B12 merged (#63), B11 merged (#62, docs only: D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B12: tooling, test and editor lines ([brief](briefs/B12.md)), in review.
-2. B13: intermittent tests and the held-image caret ([brief](briefs/B13.md)).
-3. Then only owner items remain: a release, the D22 / process-model decision (D77), PDF viewers on real devices, the tx memory budget.
+1. B13: intermittent tests and the held-image caret ([brief](briefs/B13.md)).
+2. Then only owner items remain: a release, the D22 / process-model decision (D77), PDF viewers on real devices, the tx memory budget.
 
 ## Owner decisions
 
@@ -43,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                            |
 | ------------ | ------------------------------------------------------ | ------- | ----------------------------------------------------------------- |
+| B12          | [#63](https://github.com/iglo-tech/iglo.email/pull/63) | 9b10ec6 | Build lock, no-undef, editor fixes, bounded tx overtaking (D78) |
 | B11          | [#62](https://github.com/iglo-tech/iglo.email/pull/62) | 8d28d54 | Event latency measured; D22 and process model left to owner (D77) |
 | E2e speed    | [#61](https://github.com/iglo-tech/iglo.email/pull/61) | 8aeb257 | Parallel e2e stacks, default 2 (17→~10 min)                       |
 | Test speed   | [#60](https://github.com/iglo-tech/iglo.email/pull/60) | 893c85f | Parallel `bun run test`, one build, `bun check` (547→~145 s)      |
