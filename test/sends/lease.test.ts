@@ -207,8 +207,8 @@ test("a send whose subscriber is deleted mid-send is skipped, not re-queued", ()
 });
 
 // B22 (D61, D85): a send anonymized while in flight ends without a `send.failed` webhook, whatever
-// its outcome. The `ended` hook is the producer's only input; no webhook receiver can observe a
-// mid-send wipe deterministically, so this is the closest boundary.
+// its outcome. The `ended` hook is the producer's only input. test/webhooks/wiped-send.test.ts
+// covers `failed` and a restart through a receiver; the cases here add `unknown`.
 for (const [name, outcome, status, error] of [
   ["a permanent rejection", permanent, "failed", "not_accepted"],
   [
@@ -246,4 +246,29 @@ test("a send that is not anonymized still reports its end", () => {
   const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
   f.journal.finishAll([{ row: claimed!.row, outcome: permanent }]);
   expect(f.ended).toEqual([{ uuid: f.uuid(id), status: "failed", error: "not_accepted" }]);
+});
+
+test("a wiped send whose lease expires in the outbox pass ends silently; an unrelated one reports", async () => {
+  const f = fixture();
+  const outbox = f.outbox();
+  const subscriber = f.subscribers.create(
+    { email: "wiped@example.test", name: "Wiped" },
+    { all: true, ids: [] },
+  );
+  const wiped = f.enqueue({ subscriberId: subscriber.id, message: message("wiped@example.test") });
+  const other = f.enqueue({ message: message("stranger@example.test") });
+  void outbox.dispatch([wiped, other]);
+  expect(f.row(wiped).status).toBe("sending");
+  expect(f.row(other).status).toBe("sending");
+  f.db.transaction(() =>
+    createSendAnonymizer(f.db)([{ id: subscriber.id, email: subscriber.email }]),
+  )();
+  await f.clock.whenSleeping();
+  for (let i = 0; i < 150; i++) {
+    f.clock.advance(1000);
+    await tick();
+  }
+  expect(f.row(wiped)).toMatchObject({ status: "unknown", error: "interrupted" });
+  expect(f.row(other)).toMatchObject({ status: "unknown", error: "interrupted" });
+  expect(f.ended).toEqual([{ uuid: f.uuid(other), status: "unknown", error: "interrupted" }]);
 });
