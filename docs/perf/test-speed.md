@@ -68,7 +68,7 @@ No assertion was removed or weakened, and no test was deleted. 956 tests before 
 
 `bun check` reported two errors tsc did not: `TS1516` on the two character-class regexes in
 `src/public/archive.tsx` (lines 45 and 49), which wrote U+D7FF and U+E000 as raw characters.
-They were rewritten with `\u` escapes (`[^\t\n\r -퟿-�\u{10000}-\u{10ffff}]`);
+They were rewritten with `\u` escapes (`[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10ffff}]`);
 a sweep of every code point shows the two regexes match identically, and `test/public` passes.
 This is the only product-source change. After it both checkers pass and `typecheck` is
 `bun check --no-script` (`--no-script` because the package.json `check` script shadows the

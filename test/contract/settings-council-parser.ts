@@ -1,4 +1,5 @@
 // Public parser regressions: listmonk cmd/settings.go at 6fcd95f.
+import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 
@@ -28,9 +29,7 @@ export async function runSettingsCouncilParser(target: {
   };
   const original = await read();
   const candidate = (snapshot: Record<string, any>) => {
-    const value = structuredClone(snapshot);
-    for (const key of ["smtp", "messengers", "bounce.mailboxes"])
-      for (const item of value[key]) item.password = "";
+    const value = withBlankPasswords(snapshot);
     return value;
   };
   async function accepted(key: string, value: unknown, label: string) {

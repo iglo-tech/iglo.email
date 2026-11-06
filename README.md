@@ -45,8 +45,6 @@ bun run ui:verify
 bun run format:check
 bun run lint
 bun run typecheck
-bun test
-bun run build
 bun run check
 bun test test/server test/contract
 bun run contract:normal

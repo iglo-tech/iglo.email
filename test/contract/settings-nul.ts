@@ -1,4 +1,5 @@
 // Public settings boundary regressions for D46; pinned listmonk 6fcd95f.
+import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSettingsNul(target: {
@@ -23,9 +24,7 @@ export async function runSettingsNul(target: {
   }
   const before = await read();
   function candidate() {
-    const out = structuredClone(before);
-    for (const key of ["smtp", "messengers", "bounce.mailboxes"])
-      for (const entry of out[key]) entry.password = "";
+    const out = withBlankPasswords(before);
     out["app.batch_size"] = 11;
     return out;
   }

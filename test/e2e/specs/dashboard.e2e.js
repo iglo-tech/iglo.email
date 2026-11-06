@@ -1,7 +1,7 @@
 // listmonk has no dashboard spec at 6fcd95f; this follows views/dashboard.html, with its data
 // made through the public API and read back from the screen.
 import { expect } from "@playwright/test";
-import { PASSWORD, api, createUser, login, logout, unique, test, signIn } from "../helpers.js";
+import { PASSWORD, api, login, logout, unique, test, signIn } from "../helpers.js";
 
 const hostile = `<img src=x onerror="window.pwned=1"> ${unique("Launch")}`;
 
@@ -53,20 +53,31 @@ test.describe("Dashboard", () => {
     await expect(row.getByText("Draft")).toBeVisible();
     expect(await page.evaluate(() => window.pwned)).toBeUndefined();
 
-    // The views chart is empty only if no earlier spec on this server recorded a view (the order of
-    // spec files is not fixed), so the screen is checked against what the charts API holds.
+    // Earlier specs on this server may have recorded views (the order of spec files is not fixed),
+    // so the screen is checked against what the charts API holds; the empty state has its own test.
     const charts = (await api(page, "/api/dashboard/charts")).body.data;
-    const views = page.locator(".chart-box").first();
+    const views = page.locator(".chart-box").nth(0);
     if (charts.campaign_views.some((day) => day.count > 0)) {
       await expect(views.locator("canvas")).toBeVisible();
       await expect(views.getByText("Nothing here")).toHaveCount(0);
-    } else {
-      await expect(views.getByText("Nothing here")).toBeVisible();
     }
     const system = page.getByTestId("system");
     await expect(system.getByText("Uptime")).toBeVisible();
     await expect(system.getByText("CPU cores")).toBeVisible();
     expect(errors).toEqual([]);
+  });
+
+  test("empty charts show the empty state, whatever the server holds", async ({ page }) => {
+    await signIn(page);
+    // The charts API answers with no data: the state belongs to this test, at any stack count.
+    await page.route("**/api/dashboard/charts", (route) =>
+      route.fulfill({
+        json: { data: { campaign_views: [], link_clicks: [] } },
+      }),
+    );
+    await page.goto("/admin");
+    await expect(page.locator(".chart-box").nth(0).getByText("Nothing here")).toBeVisible();
+    await expect(page.locator(".chart-box").nth(1).getByText("Nothing here")).toBeVisible();
   });
 
   test("a scoped role sees only the campaigns of its lists", async ({ page }) => {
