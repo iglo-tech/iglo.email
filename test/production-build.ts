@@ -4,7 +4,7 @@
 // builds once before any worker starts and sets IGLO_TEST_PREBUILT, so no test rebuilds during the
 // run. Without it (a single file run by hand) the first caller in a process builds, under a lock
 // that serializes concurrent processes.
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -29,16 +29,36 @@ function alive(pid: number): boolean {
 
 // A lock is stale when its recorded owner is gone. A lock without a readable owner yet is a
 // fresh `mkdir` whose owner has not written its PID: stale only after a few seconds.
-function stale(): boolean {
+function stale(dir = lock): boolean {
   try {
-    const pid = Number(readFileSync(ownerFile, "utf8"));
+    const pid = Number(readFileSync(join(dir, "owner"), "utf8"));
     if (Number.isInteger(pid) && pid > 0) return !alive(pid);
   } catch {}
   try {
-    return Date.now() - statSync(lock).mtimeMs > 10_000;
+    return Date.now() - statSync(dir).mtimeMs > 10_000;
   } catch {
     return false;
   }
+}
+
+// Moves a stale lock away, so that of several processes finding it only one succeeds (a second
+// `rename` finds nothing). The moved directory is checked again: if a new owner took the path in
+// between, the lock is put back and nobody has been misled.
+function takeOver(): boolean {
+  const moved = `${lock}.stale-${process.pid}-${Date.now()}`;
+  try {
+    renameSync(lock, moved);
+  } catch {
+    return false;
+  }
+  if (!stale(moved)) {
+    try {
+      renameSync(moved, lock);
+    } catch {}
+    return false;
+  }
+  rmSync(moved, { recursive: true, force: true });
+  return true;
 }
 
 async function acquire(): Promise<void> {
@@ -51,10 +71,7 @@ async function acquire(): Promise<void> {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "EEXIST") {
-        if (stale()) {
-          rmSync(lock, { recursive: true, force: true });
-          continue;
-        }
+        if (stale() && takeOver()) continue;
         if (Date.now() - start > holdLimitMs) {
           throw new Error(`Production build lock ${lock} is still held by a live process`);
         }

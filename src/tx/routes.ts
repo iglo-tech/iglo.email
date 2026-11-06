@@ -99,7 +99,7 @@ export function registerTxRoutes(
     attachments: Attachments;
     embedImages: EmbedImages;
     /** Test seam for the attachment budget; production uses the constants above. */
-    limits?: { maxBytes?: number; maxSends?: number; waitMs?: number };
+    limits?: { maxBytes?: number; maxSends?: number; waitMs?: number; maxOvertakes?: number };
   },
 ) {
   let gate: ByteGate | undefined;
@@ -116,6 +116,9 @@ export function registerTxRoutes(
         maxBytes: deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT,
         maxHolders: deps.limits?.maxSends ?? MAX_ATTACHMENT_SENDS,
         waitMs: deps.limits?.waitMs ?? ATTACHMENT_WAIT_MS,
+        ...(deps.limits?.maxOvertakes === undefined
+          ? {}
+          : { maxOvertakes: deps.limits.maxOvertakes }),
       });
       const slot: Slot = { reservation: null };
       try {
@@ -355,7 +358,7 @@ export function registerTxRoutes(
         if (held <= slot.reservation.bytes) slot.reservation.shrink(held);
         else if (!slot.reservation.grow(held - slot.reservation.bytes)) throw busy();
       } else {
-        slot.reservation = await gate.admit(held);
+        slot.reservation = gate.admit(held);
         if (!slot.reservation) throw busy();
       }
 

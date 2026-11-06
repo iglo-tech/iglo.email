@@ -25,9 +25,15 @@ function listensOn(pid: number, port: number): boolean {
   try {
     const hex = port.toString(16).toUpperCase().padStart(4, "0");
     const inodes = new Set<string>();
-    for (const line of readFileSync("/proc/net/tcp", "utf8").split("\n").slice(1)) {
-      const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
-      if (state === "0A" && local?.endsWith(`:${hex}`) && inode) inodes.add(inode);
+    for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+      let text = "";
+      try {
+        text = readFileSync(table, "utf8");
+      } catch {}
+      for (const line of text.split("\n").slice(1)) {
+        const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
+        if (state === "0A" && local?.endsWith(`:${hex}`) && inode) inodes.add(inode);
+      }
     }
     if (inodes.size === 0) return false;
     for (const fd of readdirSync(`/proc/${pid}/fd`)) {

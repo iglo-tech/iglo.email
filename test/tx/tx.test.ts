@@ -799,16 +799,21 @@ test("a steady stream of small embedded-image sends cannot keep a waiting upload
       subscriber_mode: "external",
       template_id: withImage,
     });
-  const smalls = Array.from({ length: 12 }, (_, i) => small(i));
-  // Some small sends go ahead of the waiting upload; once enough have, the rest queue behind it
-  // and are not journaled, so they cannot keep the room taken until the upload's 429.
-  await until(() => journaledSends(f) >= 9n);
-  await f.clock.whenSleeping(asleep + 2);
-  expect(journaledSends(f)).toBeLessThan(13n);
+  // Eight go ahead of the waiting upload; the other four are refused at once, not queued.
+  const refused: Awaited<ReturnType<typeof small>>[] = [];
+  const smalls = Array.from({ length: 12 }, (_, i) =>
+    small(i).then((r) => {
+      if (r.status === 429) refused.push(r);
+      return r;
+    }),
+  );
+  await until(() => refused.length === 4 && journaledSends(f) >= 9n);
+  expect(journaledSends(f)).toBe(9n);
+  // A refused send was not journaled, so its retry is not a second send.
   release();
-  const responses = await Promise.all([first, upload, ...smalls]);
-  expect(responses.map((r) => r.status)).toEqual(Array(14).fill(200));
-  expect(f.sink.messages).toHaveLength(14);
+  const done = await Promise.all([first, upload, ...smalls]);
+  expect(done.filter((r) => r.status === 200)).toHaveLength(10);
+  expect(f.sink.messages).toHaveLength(10);
 }, 30_000);
 
 test("a multipart body over the cap is a 413 even while the budget is full (B10)", async () => {

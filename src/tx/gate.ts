@@ -111,22 +111,21 @@ export function createByteGate(options: {
       return queue(cost);
     },
     /**
-     * For a send that holds nothing yet. Null at once when it does not fit now. When it fits it
-     * goes ahead of a waiter that cannot fit yet, so a few hundred bytes are not refused for a
-     * large upload's sake; but only
-     * `maxOvertakes` times per waiter. After that it queues behind the waiter like `acquire`,
-     * which bounds what can pass a waiter to the holders it already had plus that many.
+     * For a send that has already read its body and holds nothing the gate counts: it never
+     * waits, so nothing parsed or rendered sits in a queue (D74). It takes `cost` now or gets
+     * null. When it fits it goes ahead of a waiter that cannot fit yet, so a few hundred bytes
+     * are not refused for a large upload's sake; but only `maxOvertakes` times per waiter. After
+     * that it is refused like an over-budget send, which lets the room the holders free go to the
+     * waiter and bounds what can pass it to the holders it already had plus that many.
      */
-    async admit(cost: number): Promise<Reservation | null> {
-      if (cost > options.maxBytes) return null;
-      if (!fits(cost)) return null;
+    admit(cost: number): Reservation | null {
+      if (cost > options.maxBytes || !fits(cost)) return null;
       const head = waiting[0];
-      if (!head) return open(cost);
-      if (head.overtaken < (options.maxOvertakes ?? 8)) {
+      if (head) {
+        if (head.overtaken >= (options.maxOvertakes ?? 8)) return null;
         head.overtaken++;
-        return open(cost);
       }
-      return queue(cost);
+      return open(cost);
     },
     stats: () => ({ bytes, holders, waiting: waiting.length }),
   };

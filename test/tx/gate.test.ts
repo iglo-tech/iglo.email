@@ -55,7 +55,7 @@ test("a cost over the budget, a full queue and a full holder count are refused",
   a.release();
   (await waiting)!.release();
   const three = [await g.acquire(1), await g.acquire(1), await g.acquire(1)];
-  expect(await g.admit(1)).toBeNull();
+  expect(g.admit(1)).toBeNull();
   for (const r of three) r!.release();
 });
 
@@ -75,44 +75,29 @@ test("grow never waits, shrink wakes a waiter, and a released reservation holds 
   expect(g.stats()).toEqual({ bytes: 0, holders: 0, waiting: 0 });
 });
 
-test("a steady stream of small admissions cannot starve a waiter past maxOvertakes", async () => {
-  const clock = new TestClock();
-  const g = gate(clock, { maxOvertakes: 3, maxHolders: 10 });
+test("admissions overtake a waiter a bounded number of times, then are refused without waiting", async () => {
+  const g = gate(new TestClock(), { maxOvertakes: 3, maxHolders: 10 });
   const held = [(await g.acquire(70))!];
   const big = g.acquire(60);
-  let bigDone = false;
-  void big.then(() => (bigDone = true));
-  // Three small sends fit beside the first holder and go ahead of the waiter.
-  for (let i = 0; i < 3; i++) held.push((await g.admit(5))!);
+  for (let i = 0; i < 3; i++) held.push(g.admit(5)!);
   expect(g.stats()).toEqual({ bytes: 85, holders: 4, waiting: 1 });
-  // The fourth queues behind the waiter instead of passing it.
-  let late: Awaited<ReturnType<typeof g.admit>> | undefined;
-  void g.admit(5).then((r) => (late = r));
-  await Promise.resolve();
-  expect(g.stats().waiting).toBe(2);
-  // Everything ahead of the waiter leaves: the waiter gets its room first, then the late one.
+  // The fourth fits but would pass the waiter once too often: refused, and nothing queues.
+  expect(g.admit(5)).toBeNull();
+  expect(g.stats().waiting).toBe(1);
   for (const r of held) r.release();
   const reservation = (await big)!;
-  expect(bigDone).toBe(true);
   expect(reservation.bytes).toBe(60);
-  await Promise.resolve();
-  expect(late?.bytes).toBe(5);
   reservation.release();
-  late?.release();
   expect(g.stats()).toEqual({ bytes: 0, holders: 0, waiting: 0 });
 });
 
-test("an admission queued behind a waiter takes the room when the waiter's wait ends", async () => {
-  const clock = new TestClock();
-  const g = gate(clock, { maxOvertakes: 0 });
+test("an admission is refused at once when it does not fit, and never takes a waiter slot", async () => {
+  const g = gate(new TestClock(), { maxOvertakes: 0, maxWaiters: 1 });
   const held = (await g.acquire(90))!;
   const big = g.acquire(50);
-  const small = g.admit(5);
-  await clock.whenSleeping();
-  clock.advance(1000);
-  expect(await big).toBeNull();
-  const reservation = (await small)!;
-  expect(reservation.bytes).toBe(5);
-  reservation.release();
+  expect(g.admit(20)).toBeNull();
+  expect(g.admit(5)).toBeNull();
+  expect(g.stats().waiting).toBe(1);
   held.release();
+  (await big)!.release();
 });
