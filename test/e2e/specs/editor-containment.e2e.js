@@ -909,6 +909,64 @@ test.describe("remote images load on request", () => {
         expect(body).toMatch(/(<\/b>|<a [^>]*>)(&nbsp;| )<img/);
       });
 
+    test("a click on a linked banner keeps the space before text after the link (B16)", async ({
+      page,
+    }) => {
+      await signIn(page);
+      const c = await campaign(
+        page,
+        `<p>one</p><p><a href="https://example.com/x"><img src="${remote}/tail.gif" alt="banner"> </a>tail</p>`,
+      );
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.locator(`${EDITOR} p`).first().click();
+      await page.keyboard.press("End");
+      await page.keyboard.type("Z");
+      expect(await saveBody(page, c.id)).toMatch(/<img[^>]*alt="banner"[^>]*>(&nbsp;| )<\/a>tail/);
+    });
+
+    for (const [label, html, expected] of [
+      [
+        "a non-breaking space in the link",
+        `<p><a href="https://example.com/x"><img src="IMG" alt="banner">&nbsp;</a> tail</p>`,
+        /<img[^>]*alt="banner"[^>]*>(&nbsp;|\u00a0)<\/a> tail/,
+      ],
+      [
+        "a non-breaking space after the link",
+        `<p><a href="https://example.com/x"><img src="IMG" alt="banner"> </a>&nbsp;tail</p>`,
+        /<img[^>]*alt="banner"[^>]*>(&nbsp;| )<\/a>(&nbsp;|\u00a0)tail/,
+      ],
+      [
+        "preserved whitespace",
+        `<p style="white-space: pre-wrap"><a href="https://example.com/x"><img src="IMG" alt="banner"> </a> tail</p>`,
+        /<img[^>]*alt="banner"[^>]*>(&nbsp;| )<\/a>(&nbsp;| )tail/,
+      ],
+    ])
+      test(`a click on a linked banner keeps ${label} (B16)`, async ({ page }) => {
+        await signIn(page);
+        const c = await campaign(page, `<p>one</p>${html.replace("IMG", `${remote}/ws2.gif`)}`);
+        await open(page, c.id);
+        await page.locator(`${EDITOR} img`).click();
+        await page.locator(`${EDITOR} p`).first().click();
+        await page.keyboard.press("End");
+        await page.keyboard.type("Z");
+        expect(await saveBody(page, c.id)).toMatch(expected);
+      });
+
+    test("a banner alone in a table cell keeps its br after typing (B16)", async ({ page }) => {
+      await signIn(page);
+      const c = await campaign(
+        page,
+        `<table><tbody><tr><td><a href="https://example.com/x"><img src="${remote}/cell.gif" alt="banner"></a></td></tr></tbody></table>`,
+      );
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.keyboard.type("X");
+      const body = await saveBody(page, c.id);
+      // The trailing `<br>` does not render; a cell keeps it (D79).
+      expect(body).toContain("</a>X<br></td>");
+    });
+
     test("Enter at the end of a code block starts a new line (B15)", async ({ page }) => {
       await signIn(page);
       const c = await campaign(page, `<pre>code</pre>`);
