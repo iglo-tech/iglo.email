@@ -4,9 +4,9 @@ import type { Database } from "bun:sqlite";
 /**
  * The `deleting` subscriber effect. Retained rows keep their counts, statuses and timings but
  * lose the address and the prepared message, in the deletion's transaction. A queued row is
- * cancelled. A row already `sending` settles by its outcome; a retry finds no payload and fails
- * without SMTP, and `failed` or `unknown` rows can no longer be resent. Send UUIDs and
- * idempotency keys stay, so a replayed producer request cannot send again.
+ * cancelled. A row already `sending` settles by its outcome, except that a transient failure
+ * that would retry is skipped instead (D80); `failed` or `unknown` rows can no longer be resent.
+ * Send UUIDs and idempotency keys stay, so a replayed producer request cannot send again.
  */
 /** Sends to these addresses with no subscriber; the anonymizer below clears them. */
 export function createUnlinkedSends(db: Database) {

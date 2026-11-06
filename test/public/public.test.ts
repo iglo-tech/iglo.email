@@ -554,7 +554,7 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
   expect(f.sink.messages).toHaveLength(0);
 });
 
-test("a send in flight during a wipe settles without its payload and never retries", async () => {
+test("a send in flight during a wipe is skipped, without its payload, and never retries (D80)", async () => {
   const f = await open();
   const id = await f.subscriber("flight@example.test");
   const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
@@ -574,8 +574,8 @@ test("a send in flight during a wipe settles without its payload and never retri
   await f.drain();
   const { data } = (await f.json(`/api/sends/${send}`)).body;
   expect(data).toMatchObject({
-    status: "failed",
-    error: "payload_unavailable",
+    status: "skipped",
+    skip_reason: "subscriber_unavailable",
     to_email: "",
   });
   expect(f.sink.messages).toHaveLength(0);

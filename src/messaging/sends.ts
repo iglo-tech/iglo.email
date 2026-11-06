@@ -235,11 +235,11 @@ export function createSends(options: {
       )
       .get(time.toISOString());
     if (!row) return null;
-    db.run(
-      "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?, claimed_until=?, next_attempt_at=NULL WHERE id=?",
+    const { changes } = db.run(
+      "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?, claimed_until=?, next_attempt_at=NULL WHERE id=? AND status='queued'",
       [time.toISOString(), lease.toISOString(), row.id],
     );
-    return get(row.id)!;
+    return changes ? get(row.id)! : null;
   }
   /**
    * Decode and recheck a claimed row. A row that cannot be sent is settled here; a sendable
@@ -290,10 +290,16 @@ export function createSends(options: {
       ended(row, "unknown", "uncertain", changes);
     } else if (row.kind === "transactional" && outcome.retry === "transient" && row.attempts < 5n) {
       const delay = 1000 * 2 ** (Number(row.attempts) - 1);
-      db.run(
-        "UPDATE sends SET status='queued', error='temporary_rejection', next_attempt_at=?, claimed_until=NULL WHERE id=? AND status='sending'",
+      // A row anonymized while sending has no payload to retry (D25, D80): it is skipped.
+      const { changes } = db.run(
+        "UPDATE sends SET status='queued', error='temporary_rejection', next_attempt_at=?, claimed_until=NULL WHERE id=? AND status='sending' AND payload IS NOT NULL",
         [new Date(clock.now().getTime() + delay).toISOString(), row.id],
       );
+      if (!changes)
+        db.run(
+          "UPDATE sends SET status='skipped', skip_reason='subscriber_unavailable', error=NULL, claimed_until=NULL, next_attempt_at=NULL WHERE id=? AND status='sending' AND payload IS NULL",
+          [row.id],
+        );
     } else {
       const error = outcome.retry === "transient" ? "temporary_rejection" : "not_accepted";
       const { changes } = db.run(
@@ -302,6 +308,19 @@ export function createSends(options: {
       );
       ended(row, "failed", error, changes);
     }
+  }
+  /**
+   * The one `sending` -> `unknown`/`interrupted` transition. With `expiredBefore`, only rows
+   * whose lease ended by then; without, every `sending` row.
+   */
+  function interrupt(expiredBefore?: string) {
+    const interrupted = db
+      .query<Row, [string | null]>(
+        `UPDATE sends SET status='unknown', error='interrupted', claimed_until=NULL, next_attempt_at=NULL
+           WHERE status='sending' AND (?1 IS NULL OR claimed_until <= ?1) RETURNING *`,
+      )
+      .all(expiredBefore ?? null);
+    for (const row of interrupted) ended(row, "unknown", "interrupted", 1);
   }
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /**
@@ -853,15 +872,16 @@ export function createSends(options: {
           .get()?.due ?? null
       );
     },
+    /** Startup: every row still `sending` was cut off by a restart. */
     recover() {
-      writeTransaction(db, () => {
-        const interrupted = db
-          .query<Row, []>(
-            "UPDATE sends SET status='unknown', error='interrupted', claimed_until=NULL, next_attempt_at=NULL WHERE status='sending' RETURNING *",
-          )
-          .all();
-        for (const row of interrupted) ended(row, "unknown", "interrupted", 1);
-      });
+      writeTransaction(db, interrupt);
+    },
+    /**
+     * Each outbox pass (D80), inside the caller's write transaction: a `sending` row whose lease
+     * has expired is `unknown`/`interrupted`, exactly as `recover` settles it. Never re-queued.
+     */
+    expireLeases(time: Date) {
+      interrupt(time.toISOString());
     },
     /** Claim the lowest due row inside the caller's write transaction. */
     claim(time: Date, lease: Date): Row[] {
