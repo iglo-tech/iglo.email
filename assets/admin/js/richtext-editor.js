@@ -247,9 +247,9 @@ class RichtextEditor extends HTMLElement {
   // Whether whitespace at the end of `link` renders nothing: nothing visible follows the link in
   // its block, or the text right after the link starts with whitespace that collapses with it.
   #gapInvisible(link) {
-    // Where spaces are preserved, none of them is invisible.
+    // Where spaces are preserved (on the link itself or an ancestor), none of them is invisible.
     const root = this.editor.getRoot();
-    for (let n = link.parentNode; n && n !== root; n = n.parentNode) {
+    for (let n = link; n && n !== root; n = n.parentNode) {
       if (/^(pre|pre-wrap|pre-line|break-spaces)$/.test(getComputedStyle(n).whiteSpace)) {
         return false;
       }
