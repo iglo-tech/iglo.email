@@ -750,6 +750,52 @@ export async function runListsContract(target: {
       filtered.status === 200 && result.total === 1 && result.results[0]?.id === second.id,
       "list-filters",
     );
+    // D82 (deliberate difference): double to single is refused while the list has unconfirmed
+    // members; single to double is allowed, as upstream allows both.
+    const consent = await create(`d82 ${suffix} double`, {
+      type: "private",
+      optin: "double",
+    });
+    const member = await request("/api/subscribers", "POST", {
+      email: `d82-${suffix}@example.test`,
+      name: "D82",
+      lists: [consent.id],
+    });
+    const memberId = ((await member.json()) as { data: { id: number } }).data.id;
+    try {
+      const toSingle = await request(`/api/lists/${consent.id}`, "PUT", {
+        name: consent.name,
+        type: "private",
+        optin: "single",
+        tags: [],
+      });
+      check(toSingle.status === (target.mode === "reference" ? 200 : 400), "d82-double-to-single");
+      const toDouble = await request(`/api/lists/${consent.id}`, "PUT", {
+        name: consent.name,
+        type: "private",
+        optin: "double",
+        tags: [],
+      });
+      check(toDouble.status === 200, "d82-to-double");
+      const single = await create(`d82 ${suffix} single`, {
+        type: "private",
+        optin: "single",
+      });
+      await request(`/api/subscribers/lists`, "PUT", {
+        ids: [memberId],
+        action: "add",
+        target_list_ids: [single.id],
+      });
+      const singleToDouble = await request(`/api/lists/${single.id}`, "PUT", {
+        name: single.name,
+        type: "private",
+        optin: "double",
+        tags: [],
+      });
+      check(singleToDouble.status === 200, "d82-single-to-double-with-unconfirmed");
+    } finally {
+      await request(`/api/subscribers/${memberId}`, "DELETE");
+    }
     const emptyMinimal = await request(`/api/lists?minimal=true&status=archived`, "GET");
     const minimalData = (
       (await emptyMinimal.json()) as {

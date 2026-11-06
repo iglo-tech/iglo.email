@@ -405,6 +405,37 @@ export async function runPublicContract(target: {
     );
     check((await status(bobRow.id, double.id)) === "confirmed", "api-existing-stays-confirmed");
 
+    // D82 (deliberate difference): an archived list is ignored, as the form hides it; upstream
+    // subscribes to it by UUID.
+    const archivedList = await createList("archived", "public", "single");
+    const archiveSet = await call(`/api/lists/${archivedList.id}`, "PUT", {
+      name: archivedList.name,
+      type: "public",
+      optin: "single",
+      status: "archived",
+    });
+    check(archiveSet.status === 200, "archived-list-set");
+    const mixedEmail = address("mixed");
+    const mixed = await postJson("/api/public/subscription", {
+      email: mixedEmail,
+      list_uuids: [single.uuid, archivedList.uuid],
+    });
+    const mixedRow = await adminSubscriber(mixedEmail);
+    check(mixed.status === 200 && mixedRow, "archived-mixed-signup");
+    check((await status(mixedRow.id, single.id)) === "unconfirmed", "archived-mixed-live");
+    check(
+      (await status(mixedRow.id, archivedList.id)) === (reference ? "unconfirmed" : undefined),
+      "archived-mixed-ignored-d82",
+    );
+    const onlyEmail = address("archived-only");
+    const only = await postJson("/api/public/subscription", {
+      email: onlyEmail,
+      list_uuids: [archivedList.uuid],
+    });
+    check(only.status === (reference ? 200 : 400), "archived-only-d82");
+    const onlyRow = await adminSubscriber(onlyEmail);
+    check(reference ? Boolean(onlyRow) : !onlyRow, "archived-only-subscriber-d82");
+
     // An unsubscribed membership resubscribes as unconfirmed; only a public signup can.
     const carol = await createSubscriber("carol", [single.id], true);
     check(

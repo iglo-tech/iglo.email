@@ -108,7 +108,7 @@ test("D81: un-blocklisting leaves memberships unsubscribed", async () => {
   expect(await statuses(f, m.id)).toEqual(["unsubscribed", "unsubscribed"]);
 });
 
-test("D82: a list's opt-in cannot change while it has unconfirmed members", async () => {
+test("D82: double to single is refused while the list has unconfirmed members", async () => {
   const f = await open();
   const list = await f.list("Opt", "public", "double");
   await f.subscriber("u@example.test", "U", { lists: [list.id] });
@@ -128,6 +128,22 @@ test("D82: a list's opt-in cannot change while it has unconfirmed members", asyn
   // Once nobody is unconfirmed the change goes through.
   f.db.run("UPDATE subscriber_lists SET status='confirmed' WHERE list_id=?", [list.id]);
   expect((await f.json(`/api/lists/${list.id}`, "PUT", body)).body.data.optin).toBe("single");
+});
+
+test("D82: single to double is allowed with unconfirmed members", async () => {
+  const f = await open();
+  const list = await f.list("Single", "public", "single");
+  const id = await f.subscriber("s@example.test", "S", { lists: [list.id] });
+  expect(await statuses(f, id)).toEqual(["unconfirmed"]);
+  const changed = await f.json(`/api/lists/${list.id}`, "PUT", {
+    name: "Single",
+    type: "public",
+    optin: "double",
+    tags: [],
+  });
+  expect(changed.status).toBe(200);
+  expect(changed.body.data.optin).toBe("double");
+  expect(await statuses(f, id)).toEqual(["unconfirmed"]);
 });
 
 test("the public form ignores an archived list", async () => {

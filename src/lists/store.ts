@@ -160,11 +160,11 @@ export function createListStore(
       return writeTransaction(db, () => {
         const old = byId(id);
         if (!old) return null;
-        // D82: a changed opt-in would silently end or start delivery to the unconfirmed.
-        if (input.optin && input.optin !== old.optin && counts.unconfirmed(id) > 0)
+        // D82: double to single would start mailing people who never confirmed.
+        if (input.optin === "single" && old.optin === "double" && counts.unconfirmed(id) > 0)
           throw new HttpError(
             400,
-            "Cannot change the opt-in type of a list that has unconfirmed subscribers.",
+            "Cannot change a double opt-in list to single while it has unconfirmed subscribers.",
           );
         queries
           .get("update-list")
