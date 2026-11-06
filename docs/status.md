@@ -5,17 +5,16 @@ Updated 2026-11-06. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B17 merged (#69). State-machine audit (2026-11-06): B17–B21 run one worker at a time, pipelined with the previous review; host checks are serialized with `flock ~/.local/state/iglo-email-cos/verify.lock`. Lead thread ff1fe59e. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B20 merged (#72), B18 (#70), B17 (#69). State-machine audit (2026-11-06): B17–B21 run one worker at a time, pipelined with the previous review; host checks are serialized with `flock ~/.local/state/iglo-email-cos/verify.lock`. Lead thread ff1fe59e. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B18: outbox lease and stuck sends, D80 ([brief](briefs/B18.md)).
-2. B19: subscriber consent invariants, D81 and D82 ([brief](briefs/B19.md)).
-3. B20: sequence enrollment endings ([brief](briefs/B20.md)).
-4. B21: auth, bounce settings and webhook postpone ([brief](briefs/B21.md)).
+1. B19: subscriber consent invariants, D81 and D82 ([brief](briefs/B19.md)).
+2. B21: auth, bounce settings and webhook postpone ([brief](briefs/B21.md)).
+3. B22: `send.failed` after a subscriber wipe; legacy enrollment statuses ([brief](briefs/B22.md)).
 
 Shared rules: [_state-common.md](briefs/_state-common.md). Owner items are unchanged: a release, D77, PDF viewers on real devices, the tx memory budget.
 
@@ -119,4 +118,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Host load: in the B15 round-2 review, other projects' suites pushed load to 25-43 and `bun run check` hit timeouts in two backup test files (both pass alone, 9/9).
 - E2e under host stall: in the B13 review, `maintenance.e2e.js:207` and `campaign-safety.e2e.js:281` failed together after about 2.5 min against a 30 s timeout at load 12-14 (other projects' suites), then passed 23/23 on rerun. Watch for a repeat on a quiet host.
 - Runner guards ([#69](https://github.com/iglo-tech/iglo.email/pull/69)): the two lease-loss drop branches in `runner.ts` have no runner-level test; two store tests fail on old code only by return type; a stale runner that loses its lease mid-batch records its sent messages as `unknown` and does not add them to `sent` (undercount, never a double send).
+- Outbox lease ([#70](https://github.com/iglo-tech/iglo.email/pull/70)): a push that throws at once (restore hold) is journaled `unknown` though provably unsent; the lease uses wall-clock time but the push deadline does not, so a forward clock jump over 60 s mid-push marks a live send `unknown` (reporting only); `claimOne`'s status guard has no test.
+- Enrollment endings ([#72](https://github.com/iglo-tech/iglo.email/pull/72)): `contract:openapi` does not check path-parameter types, so it would not catch the old string `step`; the lease-clearing test covers only the blocklist and archive paths; the captcha probe restores ALTCHA complexity to 1000, not the default 300000 (test only).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.

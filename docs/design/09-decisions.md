@@ -792,6 +792,17 @@ Decided by agents on 2026-11-06.
 - **Why:** a held image has no picture, so where the browser put the caret depended on the placeholder's box. The click already released a selected image (it must not reach Squire's resizer), which left no defined position.
 - **Test:** `editor-containment.e2e.js`, "a click on a held image puts the caret after it, and an arrow steps over it (B13)"; B14 adds the linked image, Backspace and click-beside tests; B15 clicks right next to the image and adds the whitespace-banner Backspace and trailing-`<br>` tests; B16 adds the kept-space and table-cell `<br>` tests.
 
+## D80. A `sends` lease is enforced while the server runs; a rejected push settles its rows (B18)
+
+Decided by an agent on 2026-11-06, for owner review.
+
+- **Decision:** every outbox pass first moves `sending` rows whose `claimed_until` has passed to `unknown`/`interrupted`, with the same guarded transition and `ended` webhook as startup `recover` (one function, `interrupt`, in `sends.ts`). A row is never moved back to `queued`: sends stay at-most-once. Before, a stuck `sending` row held the subscriber's marketing cap until the next restart.
+- **Lease length:** 120 s, for the loop and for `dispatch`. A push is cut off 60 s after it starts (`dispatch` in `email.ts`, an absolute deadline that also bounds connect, greeting and queueing), so a healthy push and its journal commit finish inside the lease. The old 60 s lease equalled that deadline.
+- **Rejected push:** a push that rejects (or throws) journals its row `unknown`/`uncertain`, as the campaign runner does, in the loop path before it fails and in `dispatch` (which only logged it).
+- **Guards:** `claimOne` updates only a `queued` row. A transient failure re-queues a row only while its payload exists; a row anonymized while `sending` (D25) becomes `skipped`/`subscriber_unavailable`, with no webhook, instead of being reclaimed and failing as `payload_unavailable`.
+- **Not an API difference:** listmonk has no send journal, so there is no deliberate-difference row.
+- **Tests and measurement:** `test/sends/lease.test.ts`; [B18](../perf/B18-outbox-lease.md).
+
 ## D81. A blocklisted subscriber holds only unsubscribed memberships (B19)
 
 Decided by an agent on 2026-11-06, for owner review.
@@ -811,3 +822,7 @@ Decided by an agent on 2026-11-06, for owner review.
 - **Archived lists:** the public form and `POST /api/public/subscription` ignore archived lists as the form already hides them; a request naming only archived lists is refused with the no-lists-selected message. Upstream's `get-list-types` does not look at the status.
 - **Out of scope, kept as upstream:** a public signup on a single opt-in list re-subscribes an unsubscribed member; `disabled` subscribers and `archived` lists still receive campaigns.
 - **Tests:** `test/subscribers/consent.test.ts`; contract cases `d82-*` in `test/contract/lists.ts` and `archived-*` in `test/contract/public.ts`, marked as deliberate differences.
+
+## D83. One enrollment status per ending reason; exit events apply to every sequence status (B20)
+
+`sequence_archived` and `blocklisted` end an enrollment as `exited` on every path; the scheduler used `canceled` for them while the archive and subscriber paths used `exited`. `canceled` stays for `manual` and `subscriber_deleted`. An `exit_on` event ends enrollments of draft and paused sequences too, so resuming cannot revive an enrollment whose exit event already arrived. Every ending clears `claimed_until` and `retry_at`. Native behavior, with no listmonk counterpart.

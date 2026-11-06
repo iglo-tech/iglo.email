@@ -3,14 +3,27 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import type { ErrorLogger } from "@/app";
 import type { Claimed, Sends } from "@/messaging/sends";
-import type { createEmailer } from "@/messaging/email";
+import type { Outcome, createEmailer } from "@/messaging/email";
 import { startLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
 
 // A marketing send has exactly one SMTP recipient, its admitted subscriber.
 const copies = (row: { kind: string }) => ({ copies: row.kind !== "marketing" });
+/**
+ * A claim's lease (D80). A push is cut off 60 s after it starts (`dispatch` in email.ts), so a
+ * healthy push settles well inside this; only a row that outlives it is moved to `unknown`.
+ */
+const leaseMs = 120000;
 /** Rows claimed per commit; their SMTP calls run in parallel on the pool. */
 const batchSize = 10;
+
+const uncertain = (row: { smtp_message_id: string }): Outcome => ({
+  messageId: row.smtp_message_id,
+  status: "ambiguous",
+  stage: "unknown",
+  accepted: [],
+  rejected: [],
+});
 
 export function startOutbox(options: {
   db: Database;
@@ -60,10 +73,11 @@ export function startOutbox(options: {
     clock: options.clock,
     logger: { error: () => options.logger.error(new Error("Outbox failed"), "Outbox failed") },
     intervalMs: 1000,
-    leaseMs: 60000,
+    leaseMs,
     batchSize: 1,
     // One loop item is a batch: its claims and admissions committed together before SMTP.
     claim: (now, lease) => {
+      options.sends.expireLeases(now);
       if (sendingHeld(options.db)) return [];
       const batch = options.sends.claimBatch(now, lease, batchSize);
       return batch.length ? [batch] : [];
@@ -75,17 +89,24 @@ export function startOutbox(options: {
   });
   /**
    * Push every admitted message of a committed batch and journal all outcomes in one commit.
-   * A push that rejects leaves its row `sending` (recovered as `unknown`) and fails the caller.
+   * A push that rejects is journaled `unknown`/`uncertain`, as the campaign runner does (the
+   * message may have left; never retried), and then fails the caller.
    */
   async function deliver(batch: Claimed[]) {
-    const pending = batch.flatMap(({ row, message }) =>
-      message ? [{ row, result: options.emailer.push(message, copies(row)).result }] : [],
-    );
+    const pending = batch.flatMap(({ row, message }) => {
+      if (!message) return [];
+      try {
+        return [{ row, result: options.emailer.push(message, copies(row)).result }];
+      } catch (error) {
+        return [{ row, result: Promise.reject(error) }];
+      }
+    });
     const settled = await Promise.allSettled(pending.map((p) => p.result));
     options.sends.finishAll(
-      settled.flatMap((s, i) =>
-        s.status === "fulfilled" ? [{ row: pending[i]!.row, outcome: s.value }] : [],
-      ),
+      settled.map((s, i) => ({
+        row: pending[i]!.row,
+        outcome: s.status === "fulfilled" ? s.value : uncertain(pending[i]!.row),
+      })),
     );
     const failed = settled.find((s) => s.status === "rejected");
     if (failed) throw failed.reason;
@@ -109,7 +130,7 @@ export function startOutbox(options: {
     dispatch(ids: bigint[]): Promise<void> {
       if (stopped || sendingHeld(options.db)) return Promise.resolve();
       const now = options.clock.now();
-      const lease = new Date(now.getTime() + 60000);
+      const lease = new Date(now.getTime() + leaseMs);
       const batch = options.sends.claimQueued(ids, now, lease);
       const all = deliver(batch).then(
         () => arm(),

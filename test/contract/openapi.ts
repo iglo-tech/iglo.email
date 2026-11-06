@@ -636,6 +636,10 @@ export async function runOpenApiContract(target: {
     await op("DELETE /api/enrollments/{id}", { params: { id: enrollment.id } });
     // An editor sends the IDs back: a step without one would be replaced, not updated.
     const stored = (await op("GET /api/sequences/{id}", { params: { id: sequence.id } })).body.data;
+    await op("POST /api/conditions/validate", { body: { condition: null, field: "condition" } });
+    await op("POST /api/sequences/{id}/steps/{step}/reschedule", {
+      params: { id: sequence.id, step: stored.steps[0].id },
+    });
     const kept = (
       await op("PUT /api/sequences/{id}", {
         params: { id: sequence.id },
@@ -1036,6 +1040,16 @@ export async function runOpenApiContract(target: {
       body: { name: "P", email: "public@fixture.test", list_uuids: [list.uuid] },
     });
     await op("GET /api/public/captcha/altcha", { auth: null, expect: 404 });
+    // With ALTCHA active it answers a challenge; the setting goes back afterwards.
+    const captcha = {
+      altcha: { enabled: true, complexity: 1000 },
+      hcaptcha: { enabled: false, key: "", secret: "" },
+    };
+    await send("PUT", "/api/settings/security.captcha", { body: captcha });
+    await op("GET /api/public/captcha/altcha", { auth: null });
+    await send("PUT", "/api/settings/security.captcha", {
+      body: { ...captcha, altcha: { enabled: false, complexity: 1000 } },
+    });
 
     // Settings and logs.
     await op("GET /api/settings");
@@ -1182,7 +1196,10 @@ export async function runOpenApiContract(target: {
     );
     const placeholders = (key: string, id: string): Options => ({
       params: Object.fromEntries(
-        [...key.matchAll(/\{(\w+)\}/g)].map(([, name]) => [name!, name === "id" ? id : "x"]),
+        [...key.matchAll(/\{(\w+)\}/g)].map(([, name]) => [
+          name!,
+          name === "id" || name === "step" ? id : "x",
+        ]),
       ),
     });
     const secured = operations.filter(({ operation }) => operation.security?.length !== 0);
@@ -1210,7 +1227,9 @@ export async function runOpenApiContract(target: {
       return query.length ? `?${query.join("&")}` : "";
     };
     const filled = (key: string) =>
-      key.split(" ")[1]!.replace(/\{(\w+)\}/g, (_, name) => (name === "id" ? "999999" : "x"));
+      key
+        .split(" ")[1]!
+        .replace(/\{(\w+)\}/g, (_, name) => (name === "id" || name === "step" ? "999999" : "x"));
     const reachable = operations.filter(
       ({ operation }) =>
         operation.security?.length !== 0 && !operation.security?.[0]?.SessionCookie,

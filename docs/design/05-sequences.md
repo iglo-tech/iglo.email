@@ -42,7 +42,7 @@ A sequence is a list of steps that starts when a subscriber does something (an e
 Processing, in one transaction:
 
 1. Upsert the subscriber, insert the event.
-2. For each `active` sequence with `exit_on` containing this event name, end the subscriber's active enrollment (`exited`, `exit_reason = 'event:<name>'`).
+2. For each sequence, whatever its status, with `exit_on` containing this event name (a paused or draft sequence keeps its parked enrollments, but an exit event still ends them), end the subscriber's active enrollment (`exited`, `exit_reason = 'event:<name>'`).
 3. For each `active` sequence whose trigger matches, create an enrollment if `reentry` allows it, with `step_id` = first step and `due_at = occurred_at + wait`.
 
 Steps 2 and 3 run in that order, so an event that both exits and triggers the same sequence restarts it.
@@ -140,7 +140,8 @@ Every 15 seconds, and immediately after an event creates an enrollment due now:
    | Check | Outcome |
    |---|---|
    | Sequence `paused` | Release the claim. It runs when resumed (subject to `max_late`) |
-   | Sequence `archived`, or subscriber blocklisted or deleted | End the enrollment (`canceled`) |
+   | Sequence `archived`, or subscriber blocklisted | End the enrollment (`exited`, `sequence_archived` or `blocklisted`) |
+   | Subscriber deleted | End the enrollment (`canceled`, `subscriber_deleted`) |
    | Step `deleted` | Advance to the next active step, without waiting again |
    | Later than `max_late` | Record a `skipped` send (`skip_reason = 'late'`), advance |
    | Marketing step, no permission on `list_id` | End the enrollment (`exited`, `unsubscribed`) |
@@ -159,7 +160,7 @@ Guarantees:
 M5.4 implements this in `src/scheduler/scheduler.ts`, with enrollment SQL in `src/sequences/enrollments.ts` and send rows and marketing admission in `src/messaging/sends.ts` ([measurements and crash evidence](../perf/M5.4-scheduler.md)):
 
 - The claim skips enrollments of `paused` and `draft` sequences, so a large paused sequence cannot fill every batch; one paused after its claim is released. Writes apply only while the claim (lease and step) still holds, so an enrollment exited by an event during a decision is left alone.
-- The commit re-reads the sequence and step inside its write transaction. A sequence paused (or returned to draft) while the decision waited on its condition releases the claim; one archived ends the enrollment (`canceled`, `sequence_archived`). A change to the step's status, position, kind, template, subject, condition, `on_false`, `cap_policy`, `max_late` or the sequence's list discards the decision and releases the claim, so the step is decided again on the current definition. A stale decision never writes or sends.
+- The commit re-reads the sequence and step inside its write transaction. A sequence paused (or returned to draft) while the decision waited on its condition releases the claim; one archived ends the enrollment (`exited`, `sequence_archived`). A change to the step's status, position, kind, template, subject, condition, `on_false`, `cap_policy`, `max_late` or the sequence's list discards the decision and releases the claim, so the step is decided again on the current definition. A stale decision never writes or sends.
 - A decision that throws is logged and released for a retry in 1 minute; it never stops the loop. A failing claim (a broken database) still ends the loop and surfaces.
 - A send already recorded for the current step is checked first and only advanced past. The send insert and the advance commit in one transaction, re-checking identity, blocklist, consent and the cap (queued rows count) inside it.
 - A step whose template is missing or not `tx` (deleted templates set `template_id` to null) records a `skipped` send with the step's current (null) `template_id` with `skip_reason = 'template_unavailable'`, logs one attention message and advances. A rendering failure records `skipped` with `render_failed`, logs, and advances. A full renderer (capacity shared with the HTTP producers) retries in 15 seconds.
@@ -168,6 +169,7 @@ M5.4 implements this in `src/scheduler/scheduler.ts`, with enrollment SQL in `sr
 - A deleted current step advances to the first active step at or after its position, keeping its due time. A deleted step's position is a cursor kept by every save while an active enrollment waits on it: one past the current position of its nearest kept predecessor (0 without one). Steps deleted before migration 5 were converted once from their old position minus the steps removed before them in the same save.
 - Template data adds `subscriber.id`, `step.uuid`, `step.position` and `step.kind`; steps have no name. `trigger` is null for manual enrollments or once retention purged the event. `manage_url` is the marketing unsubscribe URL with `?manage=true` (listmonk's form; the M2.5 preferences page serves it) and empty for transactional steps.
 - Conditions get `triggerAt` from the trigger event (the enrollment start when there is none), `enrolledAt` from the enrollment, and `lastStepAt` from the enrollment's `updated_at`, which the scheduler changes only when a step ran (not for claims, deferrals or deleted steps).
+- One status per reason on every path (D83): the system-caused endings `sequence_archived`, `blocklisted`, `unsubscribed`, `condition` and `event:<name>` are `exited`; `canceled` is only `manual` and `subscriber_deleted`. Every statement that ends an enrollment clears `claimed_until` and `retry_at`.
 - A subscriber who no longer exists cancels the enrollment with `subscriber_deleted` (normally the cascade already removed it).
 
 ## Admin UI

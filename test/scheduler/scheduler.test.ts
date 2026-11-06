@@ -189,7 +189,7 @@ test("a paused sequence releases the claim and runs when resumed, subject to max
   expect(f.sink.messages).toHaveLength(1);
 });
 
-test("an archived sequence or a blocklisted subscriber found at run time cancels the enrollment", async () => {
+test("an archived sequence or a blocklisted subscriber found at run time exits the enrollment", async () => {
   const f = await open();
   const template = await f.template();
   const seq = await f.sequence({ steps: [tx(template, { wait: "PT1H" })] });
@@ -205,12 +205,12 @@ test("an archived sequence or a blocklisted subscriber found at run time cancels
   f.db.run("UPDATE subscribers SET status = 'blocklisted' WHERE email = 'b@example.test'");
   await f.pass(hour);
   expect(await f.enrollment(archived)).toMatchObject({
-    status: "canceled",
+    status: "exited",
     exit_reason: "sequence_archived",
     step_id: null,
   });
   expect(await f.enrollment(blocked)).toMatchObject({
-    status: "canceled",
+    status: "exited",
     exit_reason: "blocklisted",
   });
   expect(await f.sendLog()).toEqual([]);
@@ -698,7 +698,7 @@ test("an archive during the condition ends the enrollment instead of sending", a
   during(f, () => f.db.run("UPDATE sequences SET status = 'archived' WHERE id = ?", [seq.id]));
   await f.pass(hour);
   expect(await f.enrollment(id)).toMatchObject({
-    status: "canceled",
+    status: "exited",
     exit_reason: "sequence_archived",
   });
   expect(await sendsOf(f, id)).toEqual([]);
