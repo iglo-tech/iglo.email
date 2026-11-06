@@ -1,8 +1,8 @@
 # B11: event latency under mixed load
 
-Host: the shared VM, Bun 1.4.4, compiled build, `origin/main` at f0e7627, run on a quiet host
-(no other iglo.email suite; load average 2.2 to 3.3 at start, one other agent's work raised it to
-about 7 at the end of run 3). Command: `M61_WINDOW_MS=120000 bun test/perf/m61/mixed.ts mixed`.
+Host: the shared VM, Bun 1.4.4, compiled build, `origin/main` at f0e7627, started on a quiet host
+(no other iglo.email suite; load average 2.2 to 3.3 at start; other work raised it to about 7
+during run 3). Command: `M61_WINDOW_MS=120000 bun test/perf/m61/mixed.ts mixed`.
 Raw result lines: `B11-results.jsonl`. Not CI thresholds.
 
 ## 1. Where the write lock goes (run 2)
@@ -24,32 +24,55 @@ The whole run, 120 s window plus the 45 s seed:
 
 Events commit about once per event (11,476 commits for 12,000 events at 100/s), so a group
 rarely holds more than one. All the other loops together hold the lock about 11.5 s in 165 s.
-No commit of theirs holds it longer than 15.5 ms (the 35.6 ms claim and 36 ms migration are
-startup), and their p95 is 2 to 6 ms. Campaign progress, outcomes and claims are already batched
-(`claimBatch`, `finishAll`, once per campaign batch).
+Apart from startup (a 35.6 ms claim and a 36 ms migration), no other writer's commit holds the
+lock longer than 16.1 ms (campaign progress, 9 commits; the others peak at 15.1 ms or less), and
+their p95 is 2 to 6.5 ms (campaign progress 16.1 ms, n = 9). Campaign progress, outcomes and claims
+are already batched (`claimBatch`, `finishAll`, once per campaign batch). With `bun:sqlite`
+synchronous on one connection, the time a transaction "holds the lock" is time the main thread
+is blocked.
 
-B7's reading (the event tail comes from the other loops' commits) is not supported: with the
-host quiet, event acceptance p95 is 23 to 25 ms against 5.7 ms p50, and no other commit holds the
-lock for that long, or often enough to make a 5 % tail.
+The event writer is the largest user: 29.3 s of the run. Its transactions include sequence
+trigger evaluation (`exitThenTrigger` in `src/events/store.ts`) as well as their own fsync, so
+"not a commit problem" does not exclude the event writer's own transactions. The probe does not
+split that time between evaluation and fsync.
 
-## 2. Upper bound: no fsync at all
+B7's reading (the event tail comes from the other loops' commits) is not supported by these
+numbers: no other writer's commit is long or frequent enough to explain a 5 % tail of 23 to 25 ms
+against a 5.7 ms p50.
 
-One experiment run with `synchronous = NORMAL` (the guard in `connection.ts` relaxed for the run
-only, reverted), so no commit waits for a disk flush:
+## 2. One `synchronous = NORMAL` sample (experiment only)
 
-| Run | Events in window | p50 / p95 / p99 / max (ms) | Campaign rate | tx accept p95 (ms) |
-|---|---|---|---|---|
-| 1: FULL | 12,000 / 12,000 | 6.05 / 25.3 / 38.0 / 74.5 | 79.85/s | 28.1 |
-| 2: FULL | 12,000 / 12,000 | 5.66 / 23.0 / 33.7 / 73.5 | 79.88/s | 26.6 |
-| 3: NORMAL (experiment, not allowed by D22) | 12,000 / 12,000 | 3.58 / 21.9 / 39.4 / 151.8 | 79.86/s | 22.9 |
+Run 3 used `synchronous = NORMAL` (the guard in `connection.ts` relaxed for the run, reverted), so
+no commit waits for a disk flush. D22 forbids this; it was run only to size what a D22 change could
+buy. **It is one sample, taken under host disturbance**: other work raised the load to about 7,
+MemAvailable fell from about 11.8 to 9.6 GiB, peak in-flight requests were 16 where both FULL runs
+had 8, and the maximum latency doubled. That kind of interference inflates p95, p99 and max. One
+disturbed sample against two FULL samples can neither show that the difference is noise nor
+that it is real.
 
-Removing the fsync from every commit cut the median by about 2 ms and the p95 by about 1 to 3 ms
-(inside the 2.3 ms spread between the two FULL runs). The tail is therefore not commit time of any
-kind: it is the single JavaScript thread being busy with the campaign's rendering and SMTP pipe,
-sequence evaluation and the HTTP work for 200 requests a second, while an event waits for its turn.
-Batching or shortening the other loops' commits can recover at most the 11.5 s of lock time
-above, spread over 165 s, and the NORMAL run shows that even removing all of it would not move the
-p95 beyond noise.
+What each run carried locally (all three result lines say `dirty: true`; every run had the
+one-line `mixed.ts` change that passes `B11_PROBE_FILE` to the server):
+
+| Run | Source hash | Probe | Pragma |
+|---|---|---|---|
+| 1 | `de2db21a…` | first version (call-site stack labels) | FULL |
+| 2 | `b46d35b2…` | second version (callback-source labels) | FULL |
+| 3 | `912ef3d3…` | second version | NORMAL |
+
+So all three carried a probe; the probe version differs between runs 1 and 2, and run 3 differs
+from run 2 only by the pragma (and the host).
+
+| Run | Events | Event p50 / p95 / p99 / max (ms) | Campaign/s | Tx accept p95 (ms) | Tx delivery p50 / p95 (ms) |
+|---|---|---|---|---|---|
+| 1: FULL | 12,000 | 6.05 / 25.3 / 38.0 / 74.5 | 79.85 | 28.1 | 29.6 / 87.7 |
+| 2: FULL | 12,000 | 5.66 / 23.0 / 33.7 / 73.5 | 79.88 | 26.6 | 28.0 / 79.4 |
+| 3: NORMAL (disturbed) | 12,000 | 3.58 / 21.9 / 39.4 / 151.8 | 79.86 | 22.9 | 16.5 / 52.7 |
+
+Gains the NORMAL sample showed against the two FULL runs: event p50 −37 to −41 %, tx accept p95
+−14 to −19 %, tx delivery p50 −41 to −44 % and p95 −34 to −40 %, and a shorter seed (31 s against
+44 s). The event p95 moved from 23.0 to 25.3 ms to 21.9 ms, within the 2.3 ms spread of the two FULL
+runs and with the disturbance above. Confirming any of these needs at least three alternating
+FULL/NORMAL runs on a quiet host with the same command.
 
 ## 3. Outcome
 
@@ -59,6 +82,9 @@ smallest options were each ruled out by the numbers: coalescing campaign progres
 (about 4 s of lock time in 165 s, at 0.1 to 0.7 ms each) and a shared commit point (B7 reasoning,
 now with the lock-time evidence). The invariants were not touched.
 
-The backlog line is closed as owner-only: the remaining gain is in moving CPU work off the main
-thread (a design change to the process model, not a commit change); FULL durability (D22) is not
-the cause.
+The tail is attributed to main-thread CPU (campaign rendering, SMTP pipe, sequence evaluation,
+HTTP) by elimination: no event-loop delay histogram or CPU profile backs it, so a process-model
+change has no measured expected gain. A future measurement should split event-loop delay by cause.
+
+The backlog line stays owner-only: an owner decision on D22 (measured gain above, one disturbed
+sample) and/or a process-model change (gain not measured).
