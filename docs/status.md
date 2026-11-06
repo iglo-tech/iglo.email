@@ -5,14 +5,14 @@ Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B14 is with its worker: [brief](briefs/B14.md), branch `task/B14-caret-followups`. B13 merged (#64), B12 (#63), B11 (#62, D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B15 is with its worker: [brief](briefs/B15.md), branch `task/B15-editor-polish`. B14 merged (#65), B13 (#64), B12 (#63), B11 (#62, D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-1. B14: held-image caret follow-ups ([brief](briefs/B14.md)).
+1. B15: editor polish from the B14 reviews ([brief](briefs/B15.md)).
 2. Then only owner items remain: a release, the D22 / process-model decision (D77), PDF viewers on real devices, the tx memory budget.
 
 ## Owner decisions
@@ -42,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                            |
 | ------------ | ------------------------------------------------------ | ------- | ----------------------------------------------------------------- |
+| B14          | [#65](https://github.com/iglo-tech/iglo.email/pull/65) | 1d7a72f | Linked held-image caret rule (D79), Backspace and click tests     |
 | B13          | [#64](https://github.com/iglo-tech/iglo.email/pull/64) | c0536b9 | Held-image caret (D79); flaky tests diagnosed, not reproduced     |
 | B12          | [#63](https://github.com/iglo-tech/iglo.email/pull/63) | 9b10ec6 | Build lock, no-undef, editor fixes, bounded tx overtaking (D78) |
 | B11          | [#62](https://github.com/iglo-tech/iglo.email/pull/62) | 8d28d54 | Event latency measured; D22 and process model left to owner (D77) |
@@ -109,5 +110,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Tx budget ([#55](https://github.com/iglo-tech/iglo.email/pull/55)): peak memory is about 8x the counted bytes ([B6](perf/B6-send-media-safety.md): the journal payload, the SMTP library's encoding and uncollected garbage are outside the count; lowering `PARSE_COPIES` or the budget trades refusals for memory, an owner call); paced event retention drains about 380 rows/s (the price of not holding back sends, [D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)).
 - B7 staging ([#57](https://github.com/iglo-tech/iglo.email/pull/57)): a read queued during a forced WAL gap can wait the full 30 s and get 429 (the gap is D62's price for restarting the WAL under continuous polling; a long read holds it open, and an earlier admission would block the checkpoint); analytics responses over 64 KiB are chunked with no Content-Length (B10 tried an explicit header: Bun ignores it on streamed bodies, and sending the bytes whole would drop the egress accounting that releases when the client has read them).
 - Tests (B12): the `templates-campaigns` connection reset has no reproduction. The file takes 4.2-4.5 s on an idle host (6 clean runs), against the 5 s default timeout it had when the reset was seen at load ~12; a test that times out has its fixture closed under the request still in flight, which reads as a reset. B8 raised the file's timeout to 60 s and the parallel runner uses 30 s. Kept open only until a reset is seen with the longer timeout. B13: 12 more runs of the file under 12 CPU burners, all clean at the 30 s timeout; no change.
+- Editor ([#65](https://github.com/iglo-tech/iglo.email/pull/65)): a linked banner with whitespace inside the link (`<a>\n<img>\n</a>`) needs two Backspaces to remove the image; the click-beside test clicks at the far end of the line; a banner alone in its paragraph leaves a trailing `<br>` after typing. B15.
 - E2e under host stall: in the B13 review, `maintenance.e2e.js:207` and `campaign-safety.e2e.js:281` failed together after about 2.5 min against a 30 s timeout at load 12-14 (other projects' suites), then passed 23/23 on rerun. Watch for a repeat on a quiet host.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
