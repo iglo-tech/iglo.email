@@ -5,7 +5,7 @@ Updated 2026-11-06. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-B19 merged (#71), B20 (#72), B18 (#70), B17 (#69). State-machine audit (2026-11-06): B17–B21 run one worker at a time, pipelined with the previous review; host checks are serialized with `flock ~/.local/state/iglo-email-cos/verify.lock`. Lead thread ff1fe59e. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+B22 merged (#74), B19 (#71), B20 (#72), B18 (#70), B17 (#69). State-machine audit (2026-11-06): B17–B21 run one worker at a time, pipelined with the previous review; host checks are serialized with `flock ~/.local/state/iglo-email-cos/verify.lock`. Lead thread ff1fe59e. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
@@ -13,7 +13,6 @@ Owner-only, blocking nothing else: publishing a release. The owner sends through
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
 1. B21: auth, bounce settings and webhook postpone ([brief](briefs/B21.md)).
-2. B22: `send.failed` after a subscriber wipe; legacy enrollment statuses ([brief](briefs/B22.md)).
 
 Shared rules: [_state-common.md](briefs/_state-common.md). Owner items are unchanged: a release, D77, PDF viewers on real devices, the tx memory budget.
 
@@ -120,4 +119,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Outbox lease ([#70](https://github.com/iglo-tech/iglo.email/pull/70)): a push that throws at once (restore hold) is journaled `unknown` though provably unsent; the lease uses wall-clock time but the push deadline does not, so a forward clock jump over 60 s mid-push marks a live send `unknown` (reporting only); `claimOne`'s status guard has no test.
 - Enrollment endings ([#72](https://github.com/iglo-tech/iglo.email/pull/72)): `contract:openapi` does not check path-parameter types, so it would not catch the old string `step`; the lease-clearing test covers only the blocklist and archive paths; the captcha probe restores ALTCHA complexity to 1000, not the default 300000 (test only).
 - Consent ([#71](https://github.com/iglo-tech/iglo.email/pull/71)): add by IDs with a status does not stamp the membership `updated_at` (as upstream); migration 0016's repaired rows keep their old dates in the unsubscribe chart (deliberate, D81).
+- Wiped sends ([#74](https://github.com/iglo-tech/iglo.email/pull/74)): D85 also silences `send.failed` for admin deletes without a wipe (for owner review); lease expiry with a wiped send is tested at the `ended` hook, not a receiver.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
