@@ -117,15 +117,20 @@ class RichtextEditor extends HTMLElement {
       // an image selected before, which Delete would otherwise remove.
       //
       // The caret goes just after the image (D79): a held image has no picture to hit-test, so the
-      // browser's own landing depends on the placeholder's box. Arrow keys then step over it, and
-      // a double-click keeps its selection for the dialog.
+      // browser's own landing depends on the placeholder's box. Arrow keys then step over it, and a
+      // double-click keeps its selection for the dialog.
       this.content.addEventListener('click', (e) => {
         if (e.target.matches?.('img[data-rte-src]')) {
           e.stopPropagation();
           this.content.click();
           if (e.detail < 2) {
             const range = document.createRange();
-            range.setStartAfter(e.target);
+            // The image is the last content of a link (a linked banner): after the link, so typed
+            // text does not join it. Otherwise directly after the image.
+            const link = e.target.closest('a');
+            const last =
+              link && this.content.contains(link) && !this.#visibleAfter(e.target, link);
+            range.setStartAfter(last ? link : e.target);
             range.collapse(true);
             this.editor.setSelection(range);
           }
@@ -174,6 +179,18 @@ class RichtextEditor extends HTMLElement {
     this.#resizeObs = null;
     this.editor?.destroy();
     this.editor = null;
+  }
+
+  // Whether anything but whitespace follows `node` inside `root`.
+  #visibleAfter(node, root) {
+    for (let n = node; n && n !== root; n = n.parentNode) {
+      for (let s = n.nextSibling; s; s = s.nextSibling) {
+        if (s.nodeType !== Node.TEXT_NODE || s.textContent.trim() !== '') {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   // The body as stored, with anything held back from the page put back.

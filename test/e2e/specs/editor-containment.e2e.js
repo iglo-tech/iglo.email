@@ -539,7 +539,11 @@ test.describe("remote images load on request", () => {
         const clipboardData = new DataTransfer();
         clipboardData.setData("text/html", html);
         el.dispatchEvent(
-          new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
+          new ClipboardEvent("paste", {
+            clipboardData,
+            bubbles: true,
+            cancelable: true,
+          }),
         );
       }, `<p>head</p><p style="padding: 16px; text-align: center" data-rte-style="background-image: url('${remote}/both.gif'); padding: 99px">both</p>`);
       await expect(page.locator(EDITOR).getByText("both")).toHaveCount(1);
@@ -605,7 +609,11 @@ test.describe("remote images load on request", () => {
         const clipboardData = new DataTransfer();
         clipboardData.setData("text/html", html);
         el.dispatchEvent(
-          new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
+          new ClipboardEvent("paste", {
+            clipboardData,
+            bubbles: true,
+            cancelable: true,
+          }),
         );
       }, `<img id="moved" data-rte-src="javascript:window.__hostile=1" alt="x">`);
       await expect(page.locator(`${EDITOR} #moved`)).toHaveCount(1);
@@ -763,6 +771,85 @@ test.describe("remote images load on request", () => {
       expect(after).toMatch(/<img[^>]*alt="held"[^>]*>X/);
       const before = await typedAfter("ArrowLeft");
       expect(before).toMatch(/X<img[^>]*alt="held"[^>]*>X/);
+    });
+
+    const saveBody = async (page, id) => {
+      const save = page.waitForResponse((r) => r.request().method() === "PUT");
+      await page.keyboard.press("Control+s");
+      expect((await save).status()).toBe(200);
+      return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
+    };
+
+    for (const [label, before] of [
+      ["alone in it", ""],
+      ["last in it", "Get "],
+    ])
+      test(`a click on a held image ${label} in a link types outside the link (B14)`, async ({
+        page,
+      }) => {
+        await signIn(page);
+        const c = await campaign(
+          page,
+          `<p>lead <a href="https://example.com/x">${before}<img src="${remote}/banner.gif" alt="banner"></a> tail</p>`,
+        );
+        await open(page, c.id);
+        await page.locator(`${EDITOR} img`).click();
+        await page.keyboard.type("X");
+        const body = await saveBody(page, c.id);
+        expect(body).toMatch(/<img[^>]*alt="banner"[^>]*><\/a>X(&nbsp;| )tail/);
+      });
+
+    test("Backspace after a click on a held image with text after it in a link removes only the image (B14)", async ({
+      page,
+    }) => {
+      await signIn(page);
+      const html = `<p>Get <a href="https://example.com/x"><img src="${remote}/icon.gif" alt="icon"> Download</a> now</p>`;
+      const c = await campaign(page, html);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.keyboard.press("Backspace");
+      const removed = await saveBody(page, c.id);
+      expect(removed).not.toContain("<img");
+      expect(removed).toMatch(/<a [^>]*>(&nbsp;| )Download<\/a>/);
+    });
+
+    test("typing after a click on a held image with text after it joins the link text (B14)", async ({
+      page,
+    }) => {
+      await signIn(page);
+      const c = await campaign(
+        page,
+        `<p>Get <a href="https://example.com/x"><img src="${remote}/icon.gif" alt="icon"> Download</a> now</p>`,
+      );
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.keyboard.type("X");
+      expect(await saveBody(page, c.id)).toMatch(
+        /<img[^>]*alt="icon"[^>]*>X(&nbsp;| )Download<\/a>/,
+      );
+    });
+
+    test("Backspace after a click on a held image removes the image (B14)", async ({ page }) => {
+      await signIn(page);
+      const c = await campaign(page, `<p>one <img src="${remote}/bs.gif" alt="held"> two</p>`);
+      await open(page, c.id);
+      await page.locator(`${EDITOR} img`).click();
+      await page.keyboard.press("Backspace");
+      await page.keyboard.type("X");
+      const body = await saveBody(page, c.id);
+      expect(body).not.toContain("<img");
+      expect(body).toMatch(/one X(&nbsp;| )two/);
+    });
+
+    test("a click beside a held image is the browser's own (B14)", async ({ page }) => {
+      await signIn(page);
+      const c = await campaign(page, `<p><img src="${remote}/beside.gif" alt="held"> two</p>`);
+      await open(page, c.id);
+      const p = await page.locator(`${EDITOR} p`).boundingBox();
+      await page.mouse.click(p.x + p.width - 2, p.y + p.height / 2);
+      await page.keyboard.type("X");
+      const body = await saveBody(page, c.id);
+      expect(body).toMatch(/<img[^>]*alt="held"[^>]*> twoX/);
     });
 
     test("still resize an image that loaded", async ({ page }) => {
