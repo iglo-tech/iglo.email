@@ -117,7 +117,7 @@ export function startScheduler(options: {
       if (!current) return false;
       if (current.sequence_status !== claim.step.sequence_status) {
         if (current.sequence_status === "archived")
-          enrollments.endClaimed(claim, "canceled", "sequence_archived", clock.now());
+          enrollments.endClaimed(claim, "exited", "sequence_archived", clock.now());
         else enrollments.release(claim, null);
         return false;
       }
@@ -166,13 +166,13 @@ export function startScheduler(options: {
     // A send already recorded for this step (a crash before the advance, or a step revisited
     // after a reorder) is never written or sent again: only advance.
     if (sends.sequenceSend(row.id, row.step_id)) return advance(claim);
-    if (row.sequence_status === "archived") return end(claim, "canceled", "sequence_archived");
+    if (row.sequence_status === "archived") return end(claim, "exited", "sequence_archived");
     // Paused (or returned to draft) after the claim: release it; it runs when resumed.
     if (row.sequence_status !== "active")
       return commit(claim, () => enrollments.release(claim, null));
     const subscriber = options.subscribers.get(row.subscriber_id);
     if (!subscriber) return end(claim, "canceled", "subscriber_deleted");
-    if (subscriber.status === "blocklisted") return end(claim, "canceled", "blocklisted");
+    if (subscriber.status === "blocklisted") return end(claim, "exited", "blocklisted");
     if (row.step_status === "deleted") return advance(claim);
     const maxLate = row.max_late ?? (row.kind === "marketing" ? MARKETING_MAX_LATE : null);
     const late = maxLate === null ? undefined : parseDuration(maxLate);
@@ -305,7 +305,7 @@ export function startScheduler(options: {
         // The address or identity changed while rendering: render again on the next pass.
         enrollments.release(claim, null);
       } else if (reason === "subscriber_blocklisted") {
-        enrollments.endClaimed(claim, "canceled", "blocklisted", clock.now());
+        enrollments.endClaimed(claim, "exited", "blocklisted", clock.now());
       } else if (reason === "frequency_cap") {
         if (row.cap_policy === "skip") {
           sends.recordSequence({

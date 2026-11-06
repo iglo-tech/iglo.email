@@ -892,6 +892,7 @@ const sending: Operation[] = [
     id: "rescheduleSequenceStep",
     tag: "Sequences",
     summary: "Recompute the due time of enrollments waiting on a step from its current wait.",
+    path: { step: { type: "integer", minimum: 1 } },
     native: true,
     permissions: ["sequences:manage"],
     data: object({ changed: integer }),

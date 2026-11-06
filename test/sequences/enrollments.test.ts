@@ -202,16 +202,71 @@ test("exit_on events end active enrollments before triggers, which can restart t
   });
   const active = await enrollments(f, `?subscriber_id=${subscriber}&status=active`);
   expect(active.map((e) => e.sequence_id)).toEqual([restart.id]);
-  // Exits apply only to active sequences.
+});
+
+test("exit_on events end enrollments of paused and draft sequences too, clearing any lease", async () => {
+  const f = await open();
+  const exits = await sequence(f, { exit_on: ["refund"] });
+  const draft = await sequence(f, { exit_on: ["refund"] });
+  const first = await f.event(paid("y@example.test"));
+  const ids = first.body.data.enrollments.started.map((e: any) => e.id);
+  expect(ids).toHaveLength(2);
   await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
     status: "paused",
   });
-  await f.event(paid("y@example.test"));
-  const paused = await f.event({
+  await f.json(`/api/sequences/${draft.id}/status`, "PUT", { status: "draft" });
+  // A lease and a retry left by the scheduler must not outlive the enrollment.
+  f.db.run("UPDATE enrollments SET claimed_until = ?, retry_at = ?", [
+    new Date(f.clock.now().getTime() + 300_000).toISOString(),
+    new Date(f.clock.now().getTime() + 60_000).toISOString(),
+  ]);
+  const refund = await f.event({
     subscriber: { email: "y@example.test" },
     name: "refund",
   });
-  expect(paused.body.data.enrollments.ended).toEqual([]);
+  expect(refund.body.data.enrollments.ended.map((e: any) => e.id).sort()).toEqual([...ids].sort());
+  // Resuming does not bring them back.
+  await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
+    status: "active",
+  });
+  for (const id of ids)
+    expect((await f.json(`/api/enrollments/${id}`)).body.data).toMatchObject({
+      status: "exited",
+      exit_reason: "event:refund",
+    });
+  expect(
+    f.db
+      .query(
+        "SELECT count(*) AS n FROM enrollments WHERE claimed_until IS NOT NULL OR retry_at IS NOT NULL",
+      )
+      .get(),
+  ).toEqual({ n: 0n });
+});
+
+test("every path that ends an enrollment clears its lease", async () => {
+  const f = await open();
+  const seq = await sequence(f, { reentry: "always" });
+  const leased = () =>
+    f.db.run("UPDATE enrollments SET claimed_until = ?, retry_at = ? WHERE status = 'active'", [
+      new Date(f.clock.now().getTime() + 300_000).toISOString(),
+      new Date(f.clock.now().getTime() + 60_000).toISOString(),
+    ]);
+  const clean = () =>
+    f.db
+      .query(
+        "SELECT count(*) AS n FROM enrollments WHERE claimed_until IS NOT NULL OR retry_at IS NOT NULL",
+      )
+      .get();
+  const blocked = (await f.event(paid("lease1@example.test"))).body.data.subscriber_id;
+  leased();
+  await f.json(`/api/subscribers/${blocked}/blocklist`, "PUT");
+  expect(clean()).toEqual({ n: 0n });
+  await f.event(paid("lease2@example.test"));
+  leased();
+  await f.json(`/api/sequences/${seq.id}/status`, "PUT", {
+    status: "archived",
+  });
+  expect(clean()).toEqual({ n: 0n });
 });
 
 test("reentry never, after_exit and always", async () => {
