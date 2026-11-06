@@ -1,18 +1,24 @@
 # Status
 
-Updated 2026-11-03. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-06. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-Agent work is done: every remaining line below needs the owner or is watch-only (intermittent tests, host-load timeouts). B16 merged (#67), B15 (#66), B14 (#65), B13 (#64), B12 (#63), B11 (#62, D77). Test speed #60 (`bun run check` ~145 s, was 547 s) and e2e speed #61 (`bun run e2e` ~10 min at 2 stacks, was 17) merged. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (2026-11-06): B17–B21 run one worker at a time, pipelined with the previous review; host checks are serialized with `flock ~/.local/state/iglo-email-cos/verify.lock`. Lead thread ff1fe59e. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
 
-Empty. Only owner items remain: a release, the D22 / process-model decision (D77), PDF viewers on real devices, the tx memory budget.
+1. B17: campaign runner state guards ([brief](briefs/B17.md)).
+2. B18: outbox lease and stuck sends, D80 ([brief](briefs/B18.md)).
+3. B19: subscriber consent invariants, D81 and D82 ([brief](briefs/B19.md)).
+4. B20: sequence enrollment endings ([brief](briefs/B20.md)).
+5. B21: auth, bounce settings and webhook postpone ([brief](briefs/B21.md)).
+
+Shared rules: [_state-common.md](briefs/_state-common.md). Owner items are unchanged: a release, D77, PDF viewers on real devices, the tx memory budget.
 
 ## Owner decisions
 
