@@ -407,12 +407,16 @@ export async function runBouncesContract(target: {
     await recorded({ email: eve.email, type: "hard", source: "api" });
     check((await bounces(eve.id)).length === 2, "over-threshold");
 
-    // Blocklist leaves memberships alone, and a blocklisted subscriber's bounces add no row.
+    // Upstream's blocklist action leaves memberships alone; D81 (deliberate difference) unsubscribes
+    // them. A blocklisted subscriber's bounces add no row in either.
     const fay = await subscriber("fay", [listA]);
     await recorded({ email: fay.email, type: "complaint", source: "api" });
     const fayRow = (await call(`/api/subscribers/${fay.id}`)).body.data;
     check(fayRow.status === "blocklisted", "blocklist-action");
-    check(fayRow.lists[0].subscription_status === "confirmed", "blocklist-keeps-lists");
+    check(
+      fayRow.lists[0].subscription_status === (reference ? "confirmed" : "unsubscribed"),
+      reference ? "blocklist-keeps-lists" : "blocklist-unsubscribes-lists-d81",
+    );
     await recorded({ email: fay.email, type: "soft", source: "api" });
     check((await bounces(fay.id)).length === 1, "blocklisted-no-row");
 

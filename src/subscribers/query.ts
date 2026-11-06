@@ -90,7 +90,11 @@ export function createSubscriberQuery(options: {
       try {
         const total = Number(column(readonly, count.sql, count.args)[0] ?? 0n);
         if (!total) return { total, ids: memoryIds([]) };
-        if (!large) return { total, ids: memoryIds(column(readonly, page.sql, page.args)) };
+        if (!large)
+          return {
+            total,
+            ids: memoryIds(column(readonly, page.sql, page.args)),
+          };
         const rows = readonly.query(page.sql).iterate(...page.args) as Iterable<
           Record<string, bigint>
         >;
@@ -206,7 +210,7 @@ export function createSubscriberQuery(options: {
       const now = clock.now().toISOString();
       writes
         .get("add-memberships-by-ids")
-        .run(status || "unconfirmed", now, now, json(ids), json(lists));
+        .run(status || "unconfirmed", now, json(ids), json(lists));
       // Existing memberships keep their status; only those now unsubscribed end enrollments.
       if (status !== "unsubscribed") return;
       const pairs = writes.get("unsubscribed-memberships-by-ids").all(json(ids), json(lists)) as {

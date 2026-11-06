@@ -10,6 +10,7 @@ export interface PublicList {
   name: string;
   type: string;
   optin: string;
+  status: string;
   description: string;
 }
 export function createListReferences(db: Database) {

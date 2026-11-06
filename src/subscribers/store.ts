@@ -206,6 +206,8 @@ export function createSubscriberStore(
         q.get("membership-delete").run(id, m.list_id);
     for (const list of resolved) {
       const previous = memberships(id).find((m) => m.list_id === list);
+      // D81: a blocklisted subscriber's existing rows end in blockOne, which stamps them.
+      if (status === "blocklisted" && previous) continue;
       const target =
         status === "blocklisted"
           ? "unsubscribed"
@@ -231,14 +233,22 @@ export function createSubscriberStore(
       ) as { n: bigint };
     return Number(row.n);
   };
+  /**
+   * D81: the one way a subscriber becomes blocklisted. Every membership ends unsubscribed, and the
+   * membership `updated_at` is stamped once for each row that really changed. Returns those lists.
+   */
+  const blockOne = (id: bigint, now: string): bigint[] => {
+    q.get("subscriber-blocklist").run(now, id);
+    const rows = q.get("membership-unsubscribe-all").all(now, id) as {
+      list_id: bigint;
+    }[];
+    return rows.map((row) => row.list_id);
+  };
   const blocklist = (ids: bigint[]) => {
     effects.admitBulk?.("blocklist", () => new Set(ids).size);
     effects.blocklisting?.(ids);
     const now = clock.now().toISOString();
-    for (const id of ids) {
-      q.get("subscriber-blocklist").run(now, id);
-      q.get("membership-blocklist").run(now, id);
-    }
+    for (const id of ids) blockOne(id, now);
     effects.blocklisted(ids);
   };
   const store = {
@@ -328,10 +338,11 @@ export function createSubscriberStore(
             row.id,
             permittedLists(input.lists ?? [], scope),
             scope,
-            patch ? (input.status ?? row.status) : (input.status ?? ""),
+            status,
             input.preconfirm_subscriptions ?? false,
             now,
           );
+        if (status === "blocklisted") blockOne(row.id, now);
       } catch (error) {
         return conflict(error);
       }
@@ -364,10 +375,14 @@ export function createSubscriberStore(
         for (const list of new Set(listIDs)) {
           const existing = memberships(id).find((m) => m.list_id === list);
           if (action === "add") {
+            // D81: whatever the status, a blocklisted subscriber's membership is unsubscribed.
+            const target = get(id)?.status === "blocklisted" ? "unsubscribed" : status;
             if (!existing)
-              q.get("membership-insert").run(id, list, status || "unconfirmed", now, now);
-            else if (status) q.get("membership-status").run(status, id, list);
-            if (status === "unsubscribed") effects.unsubscribed([id], [list]);
+              q.get("membership-insert").run(id, list, target || "unconfirmed", now, now);
+            else if (target === "unsubscribed" && !status)
+              q.get("membership-force-unsubscribe").run(now, id, list);
+            else if (target) q.get("membership-status").run(target, id, list);
+            if (target === "unsubscribed") effects.unsubscribed([id], [list]);
           } else if (action === "remove") q.get("membership-delete").run(id, list);
           else if (action === "unsubscribe") {
             if (existing) q.get("membership-update").run("unsubscribed", now, id, list);
@@ -555,25 +570,25 @@ export function createSubscriberStore(
     unsubscribe(id: bigint, list: bigint, blocklist: boolean): bigint[] {
       const now = clock.now().toISOString();
       const newlyBlocklisted = blocklist && get(id)?.status !== "blocklisted";
-      // Like upstream, the subscriber's status change does not touch updated_at.
-      if (blocklist) q.get("subscriber-blocklist-only").run(id);
-      const rows = (
-        blocklist
-          ? q.get("membership-unsubscribe-all").all(now, id)
-          : q.get("membership-unsubscribe-list").all(now, id, list)
-      ) as { list_id: bigint }[];
-      const changed = rows.map((row) => row.list_id);
+      // D81: the blocklist box takes the same path as every other way in.
+      const changed = blocklist
+        ? blockOne(id, now)
+        : (
+            q.get("membership-unsubscribe-list").all(now, id, list) as {
+              list_id: bigint;
+            }[]
+          ).map((row) => row.list_id);
       consentChanged(id, newlyBlocklisted, changed);
       return changed;
     },
     /**
-     * record-bounce's block1: the status alone, so memberships stay, unlike `blocklist`. Like
-     * upstream it leaves updated_at. The caller holds the write.
+     * record-bounce's block1. Unlike upstream it also unsubscribes every membership (D81), so
+     * un-blocklisting never resumes mail. The caller holds the write.
      */
     bounceBlocklist(id: bigint) {
-      q.get("subscriber-blocklist-only").run(id);
+      const changed = blockOne(id, clock.now().toISOString());
       effects.blocklisted([id]);
-      consentChanged(id, true, []);
+      consentChanged(id, true, changed);
     },
     /**
      * record-bounce's block2: every list, keeping the status. Unlike upstream it stamps the

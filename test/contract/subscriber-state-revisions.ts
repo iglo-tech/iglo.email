@@ -175,14 +175,17 @@ export async function runSubscriberStateRevisions(target: {
       lists: [list.id],
     });
     const data = (await empty.json()).data;
+    // D81 (deliberate difference): a blocklisted subscriber never holds a live membership, so
+    // the add and the PATCH leave it unsubscribed where upstream confirms it.
+    const held = target.mode === "reference" ? "confirmed" : "unsubscribed";
     check(
       empty.status === 200 &&
         data.status === "blocklisted" &&
-        data.lists[0].subscription_status === "confirmed",
+        data.lists[0].subscription_status === held,
       "subscriber-explicit-empty-PATCH-status",
     );
     check(
-      (await get(blocked.id)).lists[0].subscription_status === "confirmed",
+      (await get(blocked.id)).lists[0].subscription_status === held,
       "subscriber-empty-status-history-persisted",
     );
   } finally {
