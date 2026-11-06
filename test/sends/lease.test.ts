@@ -34,6 +34,7 @@ const transient: Outcome = {
   rejected: [],
   retry: "transient",
 };
+const { retry: _retry, ...permanent } = transient;
 const message = (to = "recipient@example.test") => ({
   from: "sender@example.test",
   to: [to],
@@ -203,4 +204,46 @@ test("a send whose subscriber is deleted mid-send is skipped, not re-queued", ()
     f.journal.claimBatch(f.clock.now(), new Date(f.clock.now().getTime() + 120_000), 1),
   ).toEqual([]);
   expect(f.ended).toEqual([]);
+});
+
+// B22 (D61, D85): a send anonymized while in flight ends without a `send.failed` webhook, whatever
+// its outcome. The `ended` hook is the producer's only input; no webhook receiver can observe a
+// mid-send wipe deterministically, so this is the closest boundary.
+for (const [name, outcome, status, error] of [
+  ["a permanent rejection", permanent, "failed", "not_accepted"],
+  [
+    "an ambiguous outcome",
+    { ...transient, status: "ambiguous" } as Outcome,
+    "unknown",
+    "uncertain",
+  ],
+] as const) {
+  test(`a send anonymized mid-flight ends ${status} without an end event: ${name}`, () => {
+    const f = fixture();
+    const subscriber = f.subscribers.create(
+      { email: "wiped@example.test", name: "Wiped" },
+      { all: true, ids: [] },
+    );
+    const id = f.enqueue({
+      subscriberId: subscriber.id,
+      message: message("wiped@example.test"),
+    });
+    const now = f.clock.now();
+    const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
+    f.db.transaction(() =>
+      createSendAnonymizer(f.db)([{ id: subscriber.id, email: subscriber.email }]),
+    )();
+    f.journal.finishAll([{ row: claimed!.row, outcome }]);
+    expect(f.row(id)).toMatchObject({ status, error });
+    expect(f.ended).toEqual([]);
+  });
+}
+
+test("a send that is not anonymized still reports its end", () => {
+  const f = fixture();
+  const id = f.enqueue();
+  const now = f.clock.now();
+  const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
+  f.journal.finishAll([{ row: claimed!.row, outcome: permanent }]);
+  expect(f.ended).toEqual([{ uuid: f.uuid(id), status: "failed", error: "not_accepted" }]);
 });

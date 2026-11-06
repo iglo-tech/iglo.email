@@ -826,3 +826,13 @@ Decided by an agent on 2026-11-06, for owner review.
 ## D83. One enrollment status per ending reason; exit events apply to every sequence status (B20)
 
 `sequence_archived` and `blocklisted` end an enrollment as `exited` on every path; the scheduler used `canceled` for them while the archive and subscriber paths used `exited`. `canceled` stays for `manual` and `subscriber_deleted`. An `exit_on` event ends enrollments of draft and paused sequences too, so resuming cannot revive an enrollment whose exit event already arrived. Every ending clears `claimed_until` and `retry_at`. Native behavior, with no listmonk counterpart.
+
+**Legacy rows (B22):** migration 17 sets `status='exited'` on enrollments stored as `canceled` with `exit_reason` `blocklisted` or `sequence_archived`, so the `status` filter and the exited count include them. `updated_at` and `finished_at` are untouched.
+
+## D85. A send anonymized while in flight ends without `send.failed` (B22)
+
+If a subscriber is deleted or wiped while one of their sends is `sending`, the row is anonymized (`to_email = ''`, D25). When that send then ends `failed` or `unknown`, no `send.failed` webhook is queued, whatever the outcome. The `ended` hook checks the row's current address after the update, since the row it holds was read at claim time. This is the same rule B18 applies to a skipped retry (D80).
+
+- **Why:** D61 lets a wipe keep only the numeric ID and UUID. The event would otherwise carry the send's list ID, which tied to the kept UUID reveals what the person joined, and its subscriber would be `null` so a receiver could not use it anyway. The row's status stays visible in the send journal.
+- **Not chosen:** a `send.failed` with `subscriber: null` and no list IDs, which tells a receiver nothing it can act on.
+- **Tests:** `test/sends/lease.test.ts` (`failed` and `unknown`, through the `ended` hook; a mid-send wipe cannot be timed deterministically through a webhook receiver).

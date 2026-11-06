@@ -175,13 +175,13 @@ M3.4 implements this:
 
 Signed `POST` requests to URLs configured in settings.
 
-| Event                     | When                                                           |
-| ------------------------- | -------------------------------------------------------------- |
-| `subscriber.unsubscribed` | Unsubscribed from one or more lists                            |
-| `subscriber.blocklisted`  | Blocklisted by an admin, a bounce rule or the preferences page |
-| `subscriber.deleted`      | Deleted (including by bounce rule or data wipe)                |
-| `bounce.recorded`         | A bounce was stored                                            |
-| `send.failed`             | A send ended as `failed` or `unknown`                          |
+| Event                     | When                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| `subscriber.unsubscribed` | Unsubscribed from one or more lists                                                     |
+| `subscriber.blocklisted`  | Blocklisted by an admin, a bounce rule or the preferences page                          |
+| `subscriber.deleted`      | Deleted (including by bounce rule or data wipe)                                         |
+| `bounce.recorded`         | A bounce was stored                                                                     |
+| `send.failed`             | A send ended as `failed` or `unknown`; none if its subscriber was wiped meanwhile (D85) |
 
 Body: `{ "id": "<delivery uuid>", "event": "…", "occurred_at": "…", "data": { … } }`, where `data` includes `subscriber.id`, `uuid`, `email`, `external_id` and the affected list IDs. Header `X-Iglo-Email-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">`. Receivers must treat deliveries as at-least-once and dedupe by `id`.
 
