@@ -50,11 +50,20 @@ export const admin = {
   password: "fixture-admin-password",
 };
 
-export async function sequencesFixture() {
+export async function sequencesFixture(
+  options: {
+    /** Rows written at schema version 16, before the remaining migrations run. */
+    legacy?: (db: ReturnType<typeof openDatabase>) => void;
+  } = {},
+) {
   const sink = await startSink({});
   const directory = mkdtempSync(join(tmpdir(), "iglo-sequences-"));
   const clock = new TestClock();
   const db = openDatabase(directory);
+  if (options.legacy) {
+    runMigrations(db, directory, clock, productionMigrations.slice(0, 16));
+    options.legacy(db);
+  }
   runMigrations(db, directory, clock, productionMigrations);
   const errors: unknown[] = [];
   const app = createApp({
