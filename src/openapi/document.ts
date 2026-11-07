@@ -14,6 +14,7 @@ const refused: Record<number, string> = {
   400: "Invalid input.",
   403: "No valid credential, or a missing permission.",
   404: "Not found.",
+  405: "Method not allowed.",
   406: "Refused, without a retry.",
   409: "Conflict.",
   413: "Too large.",

@@ -1466,6 +1466,26 @@ const settings: Operation[] = [
   },
 ];
 
+const mcp: Operation[] = [
+  {
+    route: "GET /api/mcp",
+    id: "mcpGet",
+    tag: "MCP",
+    summary: "MCP Streamable HTTP stream probing endpoint.",
+    native: true,
+    errors: [405],
+  },
+  {
+    route: "POST /api/mcp",
+    id: "mcpEndpoint",
+    tag: "MCP",
+    summary: "MCP Streamable HTTP endpoint for AI agents.",
+    native: true,
+    body: free,
+    answer: { "application/json": free },
+  },
+];
+
 export const operations: Operation[] = [
   ...health,
   ...users,
@@ -1479,4 +1499,5 @@ export const operations: Operation[] = [
   ...webhooks,
   ...publicApi,
   ...settings,
+  ...mcp,
 ];

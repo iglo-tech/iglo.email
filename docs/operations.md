@@ -738,6 +738,25 @@ Only one provider is used: ALTCHA if both are enabled. `POST /api/public/subscri
 API, never asks for a CAPTCHA, as in listmonk; the subscribe rate limit is its protection. Keep
 lists private if that API is not meant to be public.
 
+## MCP (Model Context Protocol)
+
+iglo.email provides an MCP Streamable HTTP endpoint at `POST /api/mcp` for AI agents (Claude Code, Cursor, Cline, etc.) to list, read, edit, and preview templates and campaign content.
+
+To connect an MCP client, use the Streamable HTTP transport with an API user authorization header:
+
+```sh
+claude mcp add --transport http iglo https://<root>/api/mcp --header "Authorization: token <user>:<key>"
+```
+
+### Security and role recommendations
+
+- Do not use administrative accounts for AI agents. Create a dedicated API user (`type: "api"`) with a restricted user role holding only the necessary permissions:
+  - For template work only: `templates:get` and `templates:manage`.
+  - For campaign editing: `campaigns:get` and `campaigns:manage` (or `campaigns:get_all` / `campaigns:manage_all`), and optionally restrict access using a list role to only the lists the agent is allowed to target.
+- The endpoint validates incoming `Origin` headers against the configured root URL and rejects foreign origins with HTTP 403.
+- Unauthenticated requests receive HTTP 401 before any JSON-RPC processing.
+- All operations are dispatched in-process with the caller's credentials and permissions; the MCP server owns no direct database tables.
+
 ## Defaults for open questions
 
 From [Open questions](design/10-open-questions.md), until the owner decides otherwise:
