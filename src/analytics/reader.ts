@@ -215,8 +215,8 @@ export function createAnalyticsReader(options: ReaderOptions) {
     const tooLarge = () => new ReaderError("limit", "analytics result too large");
     const watchdog = setInterval(() => {
       try {
-        const pages = Number(readFileSync(`/proc/${pid}/statm`, "utf8").split(" ")[1]);
-        if (pages * 4096 > memoryBytes) stop(tooLarge());
+        const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+        if (found && Number(found[1]) * 1024 > memoryBytes) stop(tooLarge());
       } catch {
         /* exited, or no /proc */
       }
