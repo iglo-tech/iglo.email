@@ -575,3 +575,20 @@ test("nothing is created for a directory without a database or a bad command lin
   expect(help.exitCode).toBe(0);
   expect(help.stdout).toContain("iglo.email backup --verify");
 });
+
+test("on an empty, freshly started data directory, backup --output creates missing parent directories", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  server = await startServer(executable, dataDir);
+  const monday = join(dataDir, "backups", "monday");
+  const backup = await runBackup(executable, ["--data-dir", dataDir, "--output", monday]);
+  expect(backup.exitCode).toBe(0);
+  expect(backup.stderr).toBe("");
+  expect(statSync(join(dataDir, "backups")).mode & 0o777).toBe(0o700);
+  expect(statSync(monday).mode & 0o777).toBe(0o700);
+  expect(statSync(join(monday, "iglo-email.db")).mode & 0o777).toBe(0o600);
+  const verified = await runBackup(executable, ["--verify", monday]);
+  expect(verified.exitCode).toBe(0);
+  expect(verified.stdout).toContain("Integrity: ok");
+  await stopped();
+});

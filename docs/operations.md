@@ -114,13 +114,19 @@ Commands that need the data directory run in a second container on the same volu
 only right for those that do not [refuse beside a running server](#one-process-per-data-directory).
 A bind mount using `chown 65532` fails or maps to a different host UID under rootless Docker. To
 work under both rootful and rootless Docker, run `backup` in the running container and copy the
-verified directory out with `docker cp` (or write the backup into a named volume):
+verified directory out with `docker cp` (or write the backup into a named volume). The host
+destination must be owned by the user running `docker cp` (for example `mkdir -p ~/iglo-backups`
+without `sudo`), not a root-owned directory.
+
+Backups made with `docker exec` stay inside the data volume, and the image has no shell to remove
+them. To keep volume usage bounded using only the executable, reuse one fixed in-volume path and
+pass `--force` to replace it on each subsequent run:
 
 ```sh
-install -d -m 0700 /var/backups/iglo.email
-docker exec iglo-email iglo.email backup --output /data/backups/monday
-docker exec iglo-email iglo.email backup --verify /data/backups/monday
-docker cp iglo-email:/data/backups/monday /var/backups/iglo.email/monday
+mkdir -p -m 0700 ~/iglo-backups
+docker exec iglo-email iglo.email backup --output /data/backups/latest --force
+docker exec iglo-email iglo.email backup --verify /data/backups/latest
+docker cp iglo-email:/data/backups/latest ~/iglo-backups/monday
 ```
 
 `reset-password`, `reset-totp` and `backup --release-hold` refuse while the server runs: stop the

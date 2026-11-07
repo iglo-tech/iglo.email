@@ -312,9 +312,8 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
   if (!statSync(databasePath, { throwIfNoEntry: false }))
     throw new Error(`No database at ${databasePath}`);
   const data = realpathSync(dataDir);
-  const named = options.output === undefined;
-  if (named) mkdirSync(join(dataDir, "backups"), { recursive: true, mode: 0o700 });
   const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));
+  mkdirSync(dirname(wanted), { recursive: true, mode: 0o700 });
   const parent = realpathSync(dirname(wanted));
   const output = join(parent, basename(wanted));
   checkDestination(output, data, options.force ?? false);
