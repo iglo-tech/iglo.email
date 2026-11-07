@@ -12,7 +12,11 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B36** Completeness audit ([brief](briefs/B36.md); helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
+1. **B37** Shared send-rate cap for SES ([brief](briefs/B37.md)): one process-wide per-second limiter that the campaign runner and the outbox (tx and sequence sends) both wait on before an SMTP push, configured as one setting sized to SES's maximum send rate; measurements in `docs/perf/` (modules `src/messaging/email.ts` or `outbox.ts`, `src/campaigns/runner`, `src/settings`, settings UI; size M)
+2. **B38** Admin notification mails: send the ported `campaign-status` mail to `app.notify_emails` when a campaign finishes, is cancelled, or pauses on `app.max_send_errors`, and the `import-status` mail when an import finishes or fails; turn the input into a live field on General settings (modules `src/campaigns/runner`, `src/subscribers/import`, `src/templates/builtins`, `src/messaging`, `src/main.ts`, `src/admin/views/settings.tsx`; size M)
+3. **B39** MCP completeness for D89: add `create_campaign` (POST `/api/campaigns`), `list_lists` (GET `/api/lists`), `list_media` (GET `/api/media`), and read-only `list_sequences`/`get_sequence`; update D91 and the tests (modules `src/mcp`, `test/mcp`; size S/M)
+4. **B40** Settings UI: remove dropped and inert controls: the S3 card with `upload.provider`, the Messengers tab, the `app.check_updates` switch, and the SMTP `max_msg_retries`/`msg_retry_delay` inputs; all values keep round-tripping through `/api/settings` (D57) (modules `src/admin/views/settings.tsx`, `assets/admin/js/views/settings.js`, `i18n/en.json`, `test/e2e/specs/settings.e2e.js`; size S)
+5. **B41** Deliverability docs: SES Easy DKIM as the one way to sign, with in-app `smtp[].dkim` as API-only compatibility, plus SPF via a custom MAIL FROM domain and DMARC alignment and policy; fix the sentence cut at the end of "SMTP and DKIM"; mark the configuration set as already documented (module `docs/operations.md`; size S)
 
 ## Owner decisions
 
@@ -42,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B36 | [#88](https://github.com/iglo-tech/iglo.email/pull/88) | 2774f53 | Completeness audit ([12-completeness-audit.md](design/12-completeness-audit.md)); B37–B41 queued, drops in D89 |
 | B35 | [#87](https://github.com/iglo-tech/iglo.email/pull/87) | 2ae7e56 | SES only: Mailgun removed (migration 0019), inert providers hidden; receipts kept for SNS |
 | B34 | [#86](https://github.com/iglo-tech/iglo.email/pull/86) | 464474c | MCP endpoint `/api/mcp`, 14 tools, agent template reference (D91) |
 | B33          | [#85](https://github.com/iglo-tech/iglo.email/pull/85) | 46ee9f4 | linux-arm64 + multi-arch GHCR image; VmRSS watchdogs; backup makes parents |
