@@ -2,31 +2,19 @@
 import type { RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
-import type { Authentication } from "@/users/auth";
+import { cookie, type Authentication } from "@/users/auth";
 import { TOOLS, executeTool } from "@/mcp/tools";
 
 const MCP_BODY_LIMIT = 2 * 1024 * 1024; // 2 MiB
 
-const SUPPORTED_VERSIONS = [
-  "2026-07-28",
-  "2025-11-25",
-  "2025-06-18",
-  "2025-03-26",
-  "2024-11-05",
-] as const;
+const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
+
+const LATEST_PROTOCOL_VERSION = SUPPORTED_VERSIONS[0];
 
 export interface McpDeps {
   auth: Authentication;
   router: Router;
-  settings: () => { rootUrl: string };
-}
-
-function sessionCookie(request: Request): string {
-  const values = (request.headers.get("cookie") ?? "")
-    .split(";")
-    .map((part) => part.trim())
-    .filter((part) => part.startsWith("session="));
-  return values.length === 1 ? values[0]!.slice("session=".length) : "";
+  settings?: () => { rootUrl: string };
 }
 
 export function registerMcpRoutes(router: Router, deps: McpDeps): void {
@@ -42,32 +30,41 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
   });
 
   router.route("POST", "/api/mcp", async (context: RequestContext) => {
-    // 1. Origin validation: validate Origin when present (spec security note) and reject unknown origins with 403
-    const origin = context.request.headers.get("origin");
-    if (origin !== null) {
-      const rootUrl = deps.settings().rootUrl;
-      let allowed = false;
-      try {
-        const rootOrigin = new URL(rootUrl).origin;
-        allowed = new URL(origin).origin === rootOrigin && origin === new URL(origin).origin;
-      } catch {
-        /* foreign origin */
-      }
-      if (!allowed) {
-        throw new HttpError(403, "invalid origin");
-      }
-    }
+    // 1. Origin validation: reuse auth.checkOrigin to validate Origin when present
+    deps.auth.checkOrigin(context.request);
 
-    // 2. Auth: existing API-user authentication on every request (Authorization: token user:key / Basic).
+    // 2. Auth: existing API-user authentication on every request (Authorization: token user:key / Basic) or session cookie.
     // An unauthenticated request gets the API's normal 401 before any JSON-RPC processing.
     const authHeader = (context.request.headers.get("authorization") ?? "").trim();
-    const session = sessionCookie(context.request);
+    const session = cookie(context.request, "session");
     if (!authHeader && !session) {
       throw new HttpError(401, "unauthorized");
     }
     context.identity = deps.auth.authorize(context);
 
-    // 3. Request body bounds: 2 MiB like other API bodies.
+    // 3. MCP-Protocol-Version header validation per transport spec
+    const protocolVersionHeader = context.request.headers.get("mcp-protocol-version");
+    if (
+      protocolVersionHeader !== null &&
+      !(SUPPORTED_VERSIONS as readonly string[]).includes(protocolVersionHeader)
+    ) {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: {
+            code: -32000,
+            message: `Bad Request: Unsupported protocol version: ${protocolVersionHeader} (supported versions: ${SUPPORTED_VERSIONS.join(", ")})`,
+          },
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // 4. Request body bounds: 2 MiB like other API bodies.
     const contentLength = Number(context.request.headers.get("content-length") ?? "0");
     if (contentLength > MCP_BODY_LIMIT) {
       throw new HttpError(413, "Payload Too Large");
@@ -79,7 +76,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
     }
     const text = new TextDecoder().decode(arrayBuffer);
 
-    // 4. Parse JSON
+    // 5. Parse JSON
     let body: any;
     try {
       body = JSON.parse(text);
@@ -97,18 +94,32 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
       );
     }
 
-    // 5. Validate JSON-RPC 2.0 structure
+    // 6. JSON array batch handling
+    if (Array.isArray(body)) {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32600, message: "Batch requests are not supported" },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // 7. Validate JSON-RPC 2.0 structure
     if (
       typeof body !== "object" ||
       body === null ||
-      Array.isArray(body) ||
       body.jsonrpc !== "2.0" ||
       typeof body.method !== "string"
     ) {
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
-          id: body?.id ?? null,
+          id: null,
           error: { code: -32600, message: "Invalid Request" },
         }),
         {
@@ -118,19 +129,34 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
       );
     }
 
-    const { id, method, params } = body;
-
-    // 6. Notifications
-    if (method === "notifications/initialized") {
+    // 8. Notifications: any message without id gets HTTP 202 with no body and runs no tool
+    if (!("id" in body) || body.id === undefined) {
       return new Response(null, { status: 202 });
     }
 
-    // 7. Ping
+    const { id, method, params } = body;
+
+    // 9. Reject invalid id types with -32600
+    if (typeof id !== "string" && (typeof id !== "number" || !Number.isInteger(id))) {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32600, message: "Invalid Request: invalid id" },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // 10. Ping
     if (method === "ping") {
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
-          id: id ?? null,
+          id,
           result: {},
         }),
         {
@@ -140,39 +166,21 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
       );
     }
 
-    // 8. Initialize
+    // 11. Initialize: On an unsupported requested version, answer with the server's latest supported version as the spec says, not an error.
     if (method === "initialize") {
       const requested = params?.protocolVersion;
-      let negotiated = "2025-11-25";
-      if (typeof requested === "string") {
-        if ((SUPPORTED_VERSIONS as readonly string[]).includes(requested)) {
-          negotiated = requested;
-        } else {
-          return new Response(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: id ?? null,
-              error: {
-                code: -32022,
-                message: "Unsupported protocol version",
-                data: {
-                  supported: SUPPORTED_VERSIONS,
-                  requested,
-                },
-              },
-            }),
-            {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            },
-          );
-        }
+      let negotiated: string = LATEST_PROTOCOL_VERSION;
+      if (
+        typeof requested === "string" &&
+        (SUPPORTED_VERSIONS as readonly string[]).includes(requested)
+      ) {
+        negotiated = requested;
       }
 
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
-          id: id ?? null,
+          id,
           result: {
             protocolVersion: negotiated,
             capabilities: {
@@ -193,12 +201,12 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
       );
     }
 
-    // 9. tools/list
+    // 12. tools/list
     if (method === "tools/list") {
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
-          id: id ?? null,
+          id,
           result: {
             tools: TOOLS,
           },
@@ -210,13 +218,13 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
       );
     }
 
-    // 10. tools/call
+    // 13. tools/call
     if (method === "tools/call") {
       if (typeof params !== "object" || params === null || typeof params.name !== "string") {
         return new Response(
           JSON.stringify({
             jsonrpc: "2.0",
-            id: id ?? null,
+            id,
             error: { code: -32602, message: "Invalid params" },
           }),
           {
@@ -231,7 +239,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         return new Response(
           JSON.stringify({
             jsonrpc: "2.0",
-            id: id ?? null,
+            id,
             error: { code: -32602, message: `Unknown tool: ${params.name}` },
           }),
           {
@@ -248,6 +256,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
           ? (params.arguments as Record<string, unknown>)
           : {};
 
+      const cookieHeader = context.request.headers.get("cookie") ?? undefined;
       const toolResult = await executeTool(
         params.name,
         context.app,
@@ -255,12 +264,13 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         authHeader,
         context.peerAddress,
         args,
+        cookieHeader,
       );
 
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
-          id: id ?? null,
+          id,
           result: toolResult,
         }),
         {
@@ -274,7 +284,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
     return new Response(
       JSON.stringify({
         jsonrpc: "2.0",
-        id: id ?? null,
+        id,
         error: { code: -32601, message: "Method not found" },
       }),
       {

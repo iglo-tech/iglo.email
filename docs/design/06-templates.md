@@ -24,13 +24,106 @@ HTML templates render with `outputEscape: "escape"`, so values are HTML-escaped 
 
 M0.8 measured the selected library and found the precise library-limit semantics and capability boundaries ([evidence](../perf/M0.8-liquidjs.md)): filesystem lookup must be explicitly denied or mapped, `ownPropertyOnly` does not sanitize iteration, `memoryLimit` does not cap all output, and `renderLimit` is cooperative. D23 sets the required M1.8 boundaries; the fixture does not itself implement the production guarantee.
 
-### Current M1.8 branch subset (acceptance pending)
+### Template reference for agents
+
+#### Supported tags and filters
 
 | Capability | Current behavior |
 |---|---|
 | Tags | `if`, `unless`, `for`, `assign`, `capture`, `comment`, `raw`, `break`, `continue`; other tags, including user `include`, `render` and `layout`, are rejected |
 | Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`; other filters are rejected. These filters accept scalar inputs; `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution |
 | Dates | `now` and `today` use the injected clock; supported format directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%` in UTC. Other date strings must be a date or UTC ISO timestamp |
+
+#### Data and functions
+
+| listmonk (Go template) | iglo.email (Liquid) |
+|---|---|
+| `{{ .Subscriber.Name }}`, `.Email`, `.UUID` | `{{ subscriber.name }}`, `subscriber.email`, `subscriber.uuid` |
+| `{{ .Subscriber.FirstName }}`, `.LastName` | `{{ subscriber.first_name }}`, `subscriber.last_name` |
+| `{{ .Subscriber.Attribs.city }}` | `{{ subscriber.attribs.city }}` |
+| — | `{{ subscriber.external_id }}` |
+| `{{ .Campaign.Name }}`, `.Subject`, `.UUID` | `{{ campaign.name }}`, `campaign.subject`, `campaign.uuid` |
+| — | `{{ campaign.attribs.key }}` |
+| `{{ .Tx.Data.order_id }}` | `{{ data.order_id }}` |
+| — | `{{ trigger.data.price }}`, `{{ sequence.name }}`, `{{ step.position }}` (sequence sends) |
+| `{{ template "content" . }}` (in campaign layouts) | `{{ content \| raw }}` (already rendered HTML body) |
+| `{{ UnsubscribeURL }}` | `{{ unsubscribe_url }}`, campaigns and marketing sends |
+| `{{ UnsubscribeURL }}?manage=true` | `{{ manage_url }}` |
+| `{{ OptinURL }}` | `{{ optin_url }}` |
+| `{{ MessageURL }}` | `{{ message_url }}` (view in browser; campaigns) |
+| `{{ ArchiveURL }}` | `{{ archive_url }}` |
+| `{{ TrackLink "https://…" }}` | `{{ "https://…" \| track_link }}` |
+| `{{ TrackView }}` | `{{ track_view }}` |
+| `{{ Date "2006-01-02" }}` | `{{ "now" \| date: "%Y-%m-%d" }}` |
+| `{{ L.T "key" }}` | `{{ "key" \| t }}` |
+| `{{ Safe "<b>…</b>" }}` | `{{ "<b>…</b>" \| raw }}` |
+| Sprig (`default`, `upper`, `trim`, …) | Liquid standard filters (`default`, `upcase`, `strip`, …) |
+
+`unsubscribe_url` in a transactional send renders an empty string: a transactional email has nothing to unsubscribe from. Saving a `tx` template that references it logs nothing, because the same `tx` template also serves marketing sends (`POST /api/tx` with `kind: "marketing"`, sequence marketing steps), where it is filled in; the send kind, not the template, decides.
+
+#### Layouts
+
+As in listmonk, a **campaign template** is a layout containing `{{ content }}`, and a campaign or sequence step supplies the body. A **transactional template** is a complete message with its own subject. An already rendered HTML body is inserted as `{{ content | raw }}`; values were escaped within that body, and the raw insertion prevents double escaping during trusted layout composition. Sequence steps use either:
+
+- a transactional template;
+- a campaign template plus a body stored on the step. This lets a sequence share the newsletter's layout.
+
+#### Content types
+
+`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with `marked` after Liquid), and `plain`. Visual (drag-and-drop) templates are later.
+
+#### Example: Campaign template (layout)
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ campaign.subject }}</title>
+</head>
+<body>
+  <header>
+    <h1>{{ campaign.name }}</h1>
+  </header>
+  <main>
+    {{ content | raw }}
+  </main>
+  <footer>
+    <p><a href="{{ unsubscribe_url }}">Unsubscribe</a> | <a href="{{ manage_url }}">Manage preferences</a></p>
+    {{ track_view }}
+  </footer>
+</body>
+</html>
+```
+
+#### Example: Transactional (tx) template
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Order Confirmation #{{ data.order_id }}</title>
+</head>
+<body>
+  <h2>Hello {{ subscriber.name | default: "Valued Customer" }},</h2>
+  <p>Thank you for your order #{{ data.order_id }}.</p>
+  {% if data.items %}
+  <ul>
+    {% for item in data.items %}
+    <li>{{ item.name }} - ${{ item.price }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <p>Track your package: <a href="{{ data.tracking_url | track_link }}">Track Order</a></p>
+</body>
+</html>
+```
+
+### Internal renderer implementation notes
+
+| Capability | Current behavior |
+|---|---|
 | Lookup | No user partial lookup. Converted system templates are embedded and selected by the owning application, not by user-supplied paths or names |
 | Data | Primitive JSON strings are limited to 256 KiB UTF-8 before parsing and copied to owned dense arrays and null-prototype records; depth 16, 10,000 nodes, 1,024 entries, and 64 KiB per string |
 | Render | Source 64 KiB body/layout and 2 KiB subject; 1 MiB output per body/layout and 2 KiB subject; shared 4 MiB emission/intermediate budget, 10,000 work, depth 32 and 1,024 per range. Work includes expression tokens, property lookup, collection conversion and comparison size. Four admitted renders per instance. A caller can hold a compiled immutable snapshot; there is no retained cache |
@@ -51,7 +144,7 @@ bounded fields. Bounded decoded data is copied into dense/null-prototype values
 with the same depth/node/string/entry rules. This is an internal renderer
 interface, not a changed CRUD/preview HTTP envelope or completed acceptance.
 
-### Loop metadata and arguments
+#### Loop metadata and arguments
 
 Only the reviewed `forloop.index`, `index0`, `rindex`, `rindex0`, `first`,
 `last` and `length` properties are exposed. Helper methods such as `valueOf`
@@ -78,43 +171,6 @@ before implicit slice-count coercion can allocate an uncharged joined string.
 String values also consume work proportional to their UTF-8 byte length.
 An unset `offset:continue` register starts at zero, preserving first-use behavior
 without relying on implicit conversion of an empty object.
-
-### Data and functions
-
-| listmonk (Go template) | iglo.email (Liquid) |
-|---|---|
-| `{{ .Subscriber.Name }}`, `.Email`, `.UUID` | `{{ subscriber.name }}`, `subscriber.email`, `subscriber.uuid` |
-| `{{ .Subscriber.FirstName }}`, `.LastName` | `{{ subscriber.first_name }}`, `subscriber.last_name` |
-| `{{ .Subscriber.Attribs.city }}` | `{{ subscriber.attribs.city }}` |
-| — | `{{ subscriber.external_id }}` |
-| `{{ .Campaign.Name }}`, `.Subject`, `.UUID` | `{{ campaign.name }}`, `campaign.subject`, `campaign.uuid` |
-| `{{ .Tx.Data.order_id }}` | `{{ data.order_id }}` |
-| — | `{{ trigger.data.price }}`, `{{ sequence.name }}`, `{{ step.position }}` (sequence sends) |
-| `{{ template "content" . }}` (in campaign layouts) | `{{ content \| raw }}` (already rendered HTML body) |
-| `{{ UnsubscribeURL }}` | `{{ unsubscribe_url }}`, campaigns and marketing sends |
-| `{{ UnsubscribeURL }}?manage=true` | `{{ manage_url }}` |
-| `{{ OptinURL }}` | `{{ optin_url }}` |
-| `{{ MessageURL }}` | `{{ message_url }}` (view in browser; campaigns) |
-| `{{ ArchiveURL }}` | `{{ archive_url }}` |
-| `{{ TrackLink "https://…" }}` | `{{ "https://…" \| track_link }}` |
-| `{{ TrackView }}` | `{{ track_view }}` |
-| `{{ Date "2006-01-02" }}` | `{{ "now" \| date: "%Y-%m-%d" }}` |
-| `{{ L.T "key" }}` | `{{ "key" \| t }}` |
-| `{{ Safe "<b>…</b>" }}` | `{{ "<b>…</b>" \| raw }}` |
-| Sprig (`default`, `upper`, `trim`, …) | Liquid standard filters (`default`, `upcase`, `strip`, …) |
-
-`unsubscribe_url` in a transactional send renders an empty string: a transactional email has nothing to unsubscribe from. Saving a `tx` template that references it logs nothing, because the same `tx` template also serves marketing sends (`POST /api/tx` with `kind: "marketing"`, sequence marketing steps), where it is filled in; the send kind, not the template, decides.
-
-### Layouts
-
-As in listmonk, a **campaign template** is a layout containing `{{ content }}`, and a campaign or sequence step supplies the body. A **transactional template** is a complete message with its own subject. An already rendered HTML body is inserted as `{{ content | raw }}`; values were escaped within that body, and the raw insertion prevents double escaping during trusted layout composition. Sequence steps use either:
-
-- a transactional template;
-- a campaign template plus a body stored on the step. This lets a sequence share the newsletter's layout.
-
-### Content types
-
-`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with `marked` after Liquid), and `plain`. Visual (drag-and-drop) templates are later.
 
 ### Built-in templates
 

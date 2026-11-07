@@ -119,6 +119,25 @@ describe("B34 MCP endpoint tests", () => {
     }
 
     await client.close();
+
+    // Initialize with unsupported protocol version replies with server's latest supported version
+    const unsupportedInitRes = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 100,
+        method: "initialize",
+        params: {
+          protocolVersion: "2099-01-01",
+          capabilities: {},
+          clientInfo: { name: "test", version: "1.0.0" },
+        },
+      }),
+    });
+    expect(unsupportedInitRes.status).toBe(200);
+    const unsupportedInitBody = await unsupportedInitRes.json();
+    expect(unsupportedInitBody.result.protocolVersion).toBe("2025-11-25");
   });
 
   // 2. Create, update, preview, get and delete a template through MCP; the same template is visible through GET /api/templates/:id and vice versa.
@@ -170,6 +189,24 @@ describe("B34 MCP endpoint tests", () => {
     const apiGetData2 = (await apiGetRes2.json()).data;
     expect(apiGetData2.name).toBe("MCP Layout Updated");
     expect(apiGetData2.body).toBe('<div class="mcp-layout-updated">{{ content | raw }}</div>');
+
+    // Set default template through MCP
+    const setDefaultRes = await client.callTool({
+      name: "set_default_template",
+      arguments: { id: templateId },
+    });
+    expect(setDefaultRes.isError).toBeFalsy();
+    const defaultCheckRes = await fetch(`${production.origin}/api/templates/${templateId}`, {
+      headers: adminHeaders,
+    });
+    const defaultCheckData = (await defaultCheckRes.json()).data;
+    expect(defaultCheckData.is_default).toBe(true);
+
+    // Reset default back to template 1 so templateId can be deleted
+    await client.callTool({
+      name: "set_default_template",
+      arguments: { id: 1 },
+    });
 
     // Preview template (both saved and unsaved) through MCP
     const previewSavedRes = await client.callTool({
@@ -280,6 +317,13 @@ describe("B34 MCP endpoint tests", () => {
     const errorText = getTextContent(createRes);
     expect(errorText).toContain("permission denied: templates:manage");
 
+    // Verify create_template wrote nothing
+    const verifyListRes = await fetch(`${production.origin}/api/templates`, {
+      headers: adminHeaders,
+    });
+    const templates = (await verifyListRes.json()).data;
+    expect(templates.some((t: any) => t.name === "Forbidden Template")).toBe(false);
+
     await client.close();
   });
 
@@ -341,6 +385,16 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(updateRes.isError).toBeFalsy();
 
+    // list_campaigns through MCP
+    const listCampsRes = await client.callTool({
+      name: "list_campaigns",
+      arguments: { query: "MCP" },
+    });
+    expect(listCampsRes.isError).toBeFalsy();
+    const listedCamps = (listCampsRes.structuredContent as { data: { results: any[] } }).data
+      .results;
+    expect(listedCamps.some((c: any) => c.id === campId)).toBe(true);
+
     // Preview campaign through MCP
     const previewRes = await client.callTool({
       name: "preview_campaign",
@@ -349,6 +403,76 @@ describe("B34 MCP endpoint tests", () => {
     expect(previewRes.isError).toBeFalsy();
     const previewHtml = getTextContent(previewRes);
     expect(previewHtml).toContain("welcome to MCP campaign");
+
+    // Test 2 blocker: campaign_text {id} and preview_campaign {id, template_id} with stored body and attribs
+    const campWithAttribsRes = await fetch(`${production.origin}/api/campaigns`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        name: "Attribs Campaign",
+        subject: "Attribs Subject",
+        lists: [listId],
+        from_email: "noreply@example.test",
+        type: "regular",
+        content_type: "richtext",
+        body: "<p>STORED BODY {{ campaign.attribs.cta }}</p>",
+        attribs: { cta: "CTA-VALUE" },
+        headers: [{ "X-Test-Header": "HeaderValue" }],
+      }),
+    });
+    expect(campWithAttribsRes.status).toBe(200);
+    const campWithAttribsId = (await campWithAttribsRes.json()).data.id;
+
+    // campaign_text {id} without body must render the stored body and attribs
+    const campTextRes = await client.callTool({
+      name: "campaign_text",
+      arguments: { id: campWithAttribsId },
+    });
+    expect(campTextRes.isError).toBeFalsy();
+    const campTextOutput = getTextContent(campTextRes);
+    expect(campTextOutput).toContain("STORED BODY CTA-VALUE");
+
+    // preview_campaign {id, template_id} without body must render the stored body and attribs
+    const previewWithTplRes = await client.callTool({
+      name: "preview_campaign",
+      arguments: { id: campWithAttribsId, template_id: 1 },
+    });
+    expect(previewWithTplRes.isError).toBeFalsy();
+    const previewWithTplHtml = getTextContent(previewWithTplRes);
+    expect(previewWithTplHtml).toContain("STORED BODY CTA-VALUE");
+
+    // Test 4 blocker: update_campaign changing only subject preserves attribs, headers, and lists
+    const updateSubjectOnlyRes = await client.callTool({
+      name: "update_campaign",
+      arguments: {
+        id: campWithAttribsId,
+        subject: "Brand New Subject Only",
+      },
+    });
+    expect(updateSubjectOnlyRes.isError).toBeFalsy();
+
+    const getCampRes = await fetch(`${production.origin}/api/campaigns/${campWithAttribsId}`, {
+      headers: adminHeaders,
+    });
+    expect(getCampRes.status).toBe(200);
+    const updatedCampData = (await getCampRes.json()).data;
+    expect(updatedCampData.subject).toBe("Brand New Subject Only");
+    expect(updatedCampData.attribs).toEqual({ cta: "CTA-VALUE" });
+    expect(updatedCampData.headers).toEqual([{ "X-Test-Header": "HeaderValue" }]);
+    expect(updatedCampData.lists.map((l: any) => l.id)).toContain(listId);
+
+    // Test 3 blocker: send_campaign_test with a client sending ONLY declared fields (id and subscribers)
+    const testSendDeclaredOnlyRes = await client.callTool({
+      name: "send_campaign_test",
+      arguments: {
+        id: campWithAttribsId,
+        subscribers: [subEmail],
+      },
+    });
+    expect(testSendDeclaredOnlyRes.isError).toBeFalsy();
+
+    const mailDeclaredOnly = await mailbox.one(subEmail, "Brand New Subject Only");
+    expect(mailDeclaredOnly.body).toContain("STORED BODY CTA-VALUE");
 
     // Test send delivers one email to Mailpit / sink with rendered content
     const testSendRes = await client.callTool({
@@ -478,6 +602,14 @@ describe("B34 MCP endpoint tests", () => {
 
   // 6. Malformed JSON-RPC (bad JSON, unknown method, missing id/params) gets the spec's JSON-RPC error codes, no crash, no write; request bodies are size-bounded like other API bodies.
   test("6. Malformed JSON-RPC (bad JSON, unknown method, missing id/params) gets the spec's JSON-RPC error codes, no crash, no write; request bodies are size-bounded like other API bodies", async () => {
+    // Record baseline template and campaign counts
+    const tplCountBefore = (
+      await (await fetch(`${production.origin}/api/templates`, { headers: adminHeaders })).json()
+    ).data.length;
+    const campCountBefore = (
+      await (await fetch(`${production.origin}/api/campaigns`, { headers: adminHeaders })).json()
+    ).data.total;
+
     // 1. Bad JSON -> -32700 Parse error
     const badJsonRes = await fetch(`${production.origin}/api/mcp`, {
       method: "POST",
@@ -514,14 +646,86 @@ describe("B34 MCP endpoint tests", () => {
     const badParamsBody = await badParamsRes.json();
     expect(badParamsBody.error?.code).toBe(-32602);
 
-    // 4. GET /api/mcp -> 405 Method Not Allowed
+    // 4. Notifications: message without id returns HTTP 202 with no body and executes no tool
+    const notifCancelledRes = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/cancelled",
+        params: { requestId: 1 },
+      }),
+    });
+    expect(notifCancelledRes.status).toBe(202);
+    expect(await notifCancelledRes.text()).toBe("");
+
+    // tools/call without id is a notification: returns 202 with no body and does not create anything
+    const toolCallNoIdRes = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: "create_template",
+          arguments: {
+            name: "Notification Template",
+            type: "campaign",
+            body: "{{ content | raw }}",
+          },
+        },
+      }),
+    });
+    expect(toolCallNoIdRes.status).toBe(202);
+    expect(await toolCallNoIdRes.text()).toBe("");
+
+    // 5. Invalid id types (boolean, float, object, null) get -32600
+    for (const badId of [true, 1.5, { obj: "id" }, null]) {
+      const badIdRes = await fetch(`${production.origin}/api/mcp`, {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ jsonrpc: "2.0", id: badId, method: "ping" }),
+      });
+      expect(badIdRes.status).toBe(200);
+      const badIdBody = await badIdRes.json();
+      expect(badIdBody.error?.code).toBe(-32600);
+    }
+
+    // 6. JSON array batch gets -32600
+    const batchRes = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "ping" },
+        { jsonrpc: "2.0", id: 2, method: "ping" },
+      ]),
+    });
+    expect(batchRes.status).toBe(200);
+    const batchBody = await batchRes.json();
+    expect(batchBody.error?.code).toBe(-32600);
+    expect(batchBody.error?.message).toContain("Batch requests are not supported");
+
+    // 7. MCP-Protocol-Version request header validation
+    const badVersionHeaderRes = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: {
+        ...adminHeaders,
+        "mcp-protocol-version": "unsupported-version-1.0",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 50, method: "ping" }),
+    });
+    expect(badVersionHeaderRes.status).toBe(400);
+    const badVersionHeaderBody = await badVersionHeaderRes.json();
+    expect(badVersionHeaderBody.error?.code).toBe(-32000);
+
+    // 8. GET /api/mcp -> 405 Method Not Allowed
     const getRes = await fetch(`${production.origin}/api/mcp`, {
       method: "GET",
       headers: { authorization: adminAuth },
     });
     expect(getRes.status).toBe(405);
 
-    // 5. Foreign Origin header -> 403 Forbidden
+    // 9. Foreign Origin header -> 403 Forbidden
     const badOriginRes = await fetch(`${production.origin}/api/mcp`, {
       method: "POST",
       headers: {
@@ -532,7 +736,7 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(badOriginRes.status).toBe(403);
 
-    // 6. Request body over size limit -> 413 Payload Too Large
+    // 10. Request body over size limit -> 413 Payload Too Large
     const oversizedBody = "x".repeat(3 * 1024 * 1024);
     const oversizedRes = await fetch(`${production.origin}/api/mcp`, {
       method: "POST",
@@ -540,6 +744,16 @@ describe("B34 MCP endpoint tests", () => {
       body: oversizedBody,
     });
     expect(oversizedRes.status).toBe(413);
+
+    // Assert "writes nothing": template and campaign counts unchanged
+    const tplCountAfter = (
+      await (await fetch(`${production.origin}/api/templates`, { headers: adminHeaders })).json()
+    ).data.length;
+    const campCountAfter = (
+      await (await fetch(`${production.origin}/api/campaigns`, { headers: adminHeaders })).json()
+    ).data.total;
+    expect(tplCountAfter).toBe(tplCountBefore);
+    expect(campCountAfter).toBe(campCountBefore);
   });
 
   // 7. template_reference matches the doc section.
@@ -559,16 +773,12 @@ describe("B34 MCP endpoint tests", () => {
     const docContent = await readFile(docPath, "utf8");
 
     // The tool's text must match the documentation section: Liquid variables, tags and filters table and examples
-    expect(text).toContain("subscriber.name");
-    expect(text).toContain("unsubscribe_url");
-    expect(text).toContain("track_link");
-    expect(text).toContain("campaign");
-    expect(text).toContain("tx");
-
-    // Check that key table rows from docs/design/06-templates.md exist in the output
-    expect(text).toContain("{{ subscriber.name }}");
-    expect(text).toContain("{{ unsubscribe_url }}");
-    expect(text).toContain("{{ message_url }}");
+    const startMarker = "### Template reference for agents";
+    const endMarker = "### Internal renderer implementation notes";
+    const expectedSection = docContent
+      .slice(docContent.indexOf(startMarker), docContent.indexOf(endMarker))
+      .trim();
+    expect(text.trim()).toBe(expectedSection);
 
     await client.close();
   });
