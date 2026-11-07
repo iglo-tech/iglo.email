@@ -32,18 +32,6 @@ const platforms = {
     "c2b1ce59e76d5e225211ee7f87e28d3358b0601b60d52ebafc1dd33f2fbef827",
     "e1e45d1dc72bd497fb262a1e4100178eee057c42c5fc36d143eb8621769e1137",
   ],
-  "darwin-x64": [
-    "darwin",
-    "amd64",
-    "16655c302d6ce8e69ef71c64d6d8d688206a38a748bd37b8286cdb355ec72ec5",
-    "d7f3d0964cd2ea4c2a7d10660a12e02876718e67d88ced390d9cd90350a453da",
-  ],
-  "darwin-arm64": [
-    "darwin",
-    "arm64",
-    "af3d2f12daa0893c5864b0bb1c95541319b026b502be552e949f0af03a9fff2d",
-    "23709bd727f20da2290de6a2a40c4685c48a3127586d77370efd1a3a595f9ef6",
-  ],
 } as const;
 
 function hash(data: Uint8Array): string {
@@ -193,7 +181,7 @@ export async function prepare(signal?: AbortSignal) {
   const platform = platforms[key];
   if (!platform)
     throw new Error(
-      `Unsupported platform ${process.platform}/${process.arch}; supported: Linux and macOS x64/arm64`,
+      `Unsupported platform ${process.platform}/${process.arch}; supported: Linux x64/arm64`,
     );
   const [os, arch, listHash, mailHash] = platform;
   await mkdir(cache, { recursive: true });

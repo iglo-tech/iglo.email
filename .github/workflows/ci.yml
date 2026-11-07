@@ -4,8 +4,13 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Linux x86-64 and Linux arm64 (D89), each on its native runner.
   check:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

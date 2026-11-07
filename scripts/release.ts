@@ -7,7 +7,14 @@ import { basename, join, resolve } from "node:path";
 import { version } from "@/../package.json";
 
 const root = resolve(import.meta.dir, "..");
-const executableName = "iglo.email-linux-x64";
+// D89: Linux x86-64 and Linux arm64 only. Each runner builds and verifies its own architecture, so
+// the architecture of this process names the file. `bun build --compile --target=bun-linux-arm64`
+// cross-compiles the other one.
+const architectures: Record<string, string | undefined> = { x64: "x64", arm64: "arm64" };
+const architecture = architectures[process.arch];
+if (process.platform !== "linux" || architecture === undefined)
+  throw new Error(`Unsupported platform ${process.platform}/${process.arch}: Linux x64 and arm64`);
+const executableName = `iglo.email-linux-${architecture}`;
 const licenses = join(root, "dist/assets/admin/licenses");
 const projectLicense = "listmonk-AGPL-3.0.txt";
 
@@ -187,6 +194,7 @@ async function packageRelease(source: string, output: string): Promise<void> {
   await copyFile(join(root, "LICENSE"), join(output, "LICENSE"));
   await writeFile(join(output, "THIRD-PARTY-NOTICES.txt"), await notices());
 
+  // The publish job merges the two architectures' directories and writes the final SHA256SUMS.
   const lines: string[] = [];
   for (const name of [executableName, "LICENSE", "THIRD-PARTY-NOTICES.txt"]) {
     const hash = createHash("sha256").update(await Bun.file(join(output, name)).bytes());
