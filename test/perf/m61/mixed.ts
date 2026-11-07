@@ -104,13 +104,33 @@ async function startServer(directory: string) {
   const port = await availablePort();
   const origin = `http://127.0.0.1:${port}`;
   let stderr = "";
+  // B31, opt-in: M61_TAIL_PROBE=<dir> runs the server from source with the event-tail probe
+  // preloaded, M61_CPU_PROF=<dir> under `bun --cpu-prof` (docs/perf/B31-event-tail.md).
+  const probeDir = process.env.M61_TAIL_PROBE;
+  const profDir = process.env.M61_CPU_PROF;
+  const bunArgs = [
+    "--tsconfig-override=" + join(repository, "tsconfig.json"),
+    ...(profDir ? ["--cpu-prof", "--cpu-prof-md", `--cpu-prof-dir=${profDir}`] : []),
+    ...(probeDir ? ["--preload", join(repository, "test/perf/m61/tail-probe.ts")] : []),
+    join(repository, "src/main.ts"),
+  ];
   const child: ChildProcess = spawn(
-    executable,
-    ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", join(directory, "data")],
+    probeDir || profDir ? process.execPath : executable,
+    [
+      ...(probeDir || profDir ? bunArgs : []),
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+      "--data-dir",
+      join(directory, "data"),
+    ],
     {
       cwd: directory,
       env: {
         PATH: "",
+        ...(probeDir ? { M61_TAIL_PROBE: probeDir } : {}),
         IGLO_EMAIL_ADMIN_USER: admin.user,
         IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
       },
@@ -325,7 +345,9 @@ async function run(name: "events" | "baseline" | "mixed") {
       return { status: data.status, to_send: data.to_send, sent: data.sent };
     };
     if (campaign) {
-      await api(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
+      await api(`/api/campaigns/${campaignId}/status`, "PUT", {
+        status: "running",
+      });
       // The window starts once the runner is sending.
       await waitFor(() => sink.delivered.length > 0, 30_000, "first campaign message");
     }
@@ -359,6 +381,8 @@ async function run(name: "events" | "baseline" | "mixed") {
         });
       pending.add(p);
     };
+    const probeDir = process.env.M61_TAIL_PROBE;
+    if (probeDir) process.kill(app.pid, "SIGUSR1");
     const start = performance.now() + 50;
     const end = start + windowMs;
     const startQueue = queue();
@@ -426,6 +450,10 @@ async function run(name: "events" | "baseline" | "mixed") {
         );
       }
       await Bun.sleep(1);
+    }
+    if (probeDir) {
+      process.kill(app.pid, "SIGUSR2");
+      await Bun.sleep(500);
     }
     const inFlightAtEnd = inFlight;
     const endQueue = queue();
@@ -514,7 +542,10 @@ async function run(name: "events" | "baseline" | "mixed") {
       samples,
     };
     record(result, true);
-    if (campaign) await api(`/api/campaigns/${campaignId}/status`, "PUT", { status: "cancelled" });
+    if (campaign)
+      await api(`/api/campaigns/${campaignId}/status`, "PUT", {
+        status: "cancelled",
+      });
   } finally {
     reader?.close();
     await app?.stop();

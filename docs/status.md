@@ -111,7 +111,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 ## Hardening backlog
 
 - Media: supported PDF viewers unverified (needs real devices).
-- Event latency under full mixed load: B11 measured it ([evidence](perf/B11-event-latency.md), [D77](design/09-decisions.md)); B25 decided durability: [D86](design/09-decisions.md) keeps `synchronous = FULL` everywhere ([evidence](perf/B25-durability.md); its FULL/NORMAL series was disturbed and is not re-run, since no result could change D86). Remaining: a process-model change, with no measured expected gain (main-thread CPU is inferred by elimination).
+- Event latency tail: B31 measured it by cause ([evidence](perf/B31-event-tail.md), [D88](design/09-decisions.md)): commit fsync waits (D86 keeps FULL) and `settings.read()` CPU. Remaining: B32, fix `settings.read()` in `src/settings` (experiment: event p95 about −35 %).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
