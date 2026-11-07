@@ -415,6 +415,12 @@ export function registerTxRoutes(
       }
       // Synchronously after commit, so the outbox loop cannot claim these rows first.
       if (!m.async && result.queued.length) {
+        // The journal holds the payloads now; the request's own copy of the attachment bytes
+        // must not stay reachable while SMTP answers (B28).
+        requested.length = 0;
+        attachments.length = 0;
+        inline.length = 0;
+        m.attachments = [];
         await deps.outbox.dispatch(result.queued);
         const current = result.ids.map((id, i) => deps.sends.summary(id) ?? result.sends[i]!);
         return ok({ sends: current });

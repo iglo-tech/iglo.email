@@ -281,6 +281,9 @@ export function createSends(options: {
       );
       return null;
     }
+    // The journal text is decoded; the claimed row must not keep a second copy of it while the
+    // message is pushed (B28). Nothing after admission reads `row.payload`.
+    row.payload = null;
     // A delivered row records only how many copy recipients were dropped.
     const { message, removed } = withoutBlockedCopies(payload.message);
     db.run("UPDATE sends SET skip_reason=? WHERE id=? AND status='sending'", [
