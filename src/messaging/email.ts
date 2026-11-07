@@ -487,8 +487,11 @@ export function createEmailer(options: {
       start() {
         operation.started = true;
         pool.active++;
-        void pool.transport
-          .sendMail(data)
+        // The executor turns a synchronous throw from the transport into a rejection, so
+        // nothing after the hand-off to a pool can throw out of `push`.
+        void new Promise<{ accepted: unknown[]; rejected: unknown[] }>((resolve) =>
+          resolve(pool.transport.sendMail(data)),
+        )
           .then((info) =>
             complete({
               messageId,
@@ -579,7 +582,7 @@ export function createEmailer(options: {
       },
     };
     pool.operations.add(operation);
-    void options.clock.sleep(remaining, timer.signal).then(
+    void new Promise<void>((resolve) => resolve(options.clock.sleep(remaining, timer.signal))).then(
       () => {
         if (settled) return;
         if (operation.started) cancelPool(pool);

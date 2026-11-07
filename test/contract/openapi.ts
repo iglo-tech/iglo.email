@@ -1380,24 +1380,37 @@ export async function runOpenApiContract(target: {
     });
     // Path parameters: the document's type has to be what the route takes. Numeric IDs are
     // `integer`, everything else is text. A non-number for an integer is a plain 400.
+    const httpMethods = new Set([
+      "get",
+      "put",
+      "post",
+      "delete",
+      "options",
+      "head",
+      "patch",
+      "trace",
+    ]);
     const integerParams = new Set(["id", "step"]);
     const pathTypeProblems = (paths: Record<string, any>) =>
       Object.entries(paths).flatMap(([template, item]) =>
-        Object.entries(item as Record<string, any>).flatMap(([method, operation]) =>
-          (
-            operation.parameters as {
-              in: string;
-              name: string;
-              schema?: { type?: string };
-            }[]
+        Object.entries(item as Record<string, any>).flatMap(([method, operation]) => {
+          // Path-level keys that are not operations (`parameters`, `summary`, ...).
+          if (!httpMethods.has(method)) {
+            if (["parameters", "summary", "description", "servers"].includes(method)) return [];
+            return [`${template}: unexpected path key ${method}`];
+          }
+          if (!operation || !Array.isArray(operation.parameters))
+            return [`${method.toUpperCase()} ${template}: no parameter list`];
+          return (
+            operation.parameters as { in: string; name: string; schema?: { type?: string } }[]
           )
             .filter((parameter) => parameter.in === "path")
             .filter(({ name, schema }) => (schema?.type === "integer") !== integerParams.has(name))
             .map(
               ({ name, schema }) =>
                 `${method.toUpperCase()} ${template}: {${name}} is ${schema?.type}`,
-            ),
-        ),
+            );
+        }),
       );
     const problems = pathTypeProblems(document.paths);
     if (problems.length) throw new Error(`FAIL openapi-path-types: ${problems.join("; ")}`);
@@ -1409,6 +1422,18 @@ export async function runOpenApiContract(target: {
           if (parameter.in === "path" && parameter.name === "step")
             parameter.schema = { type: "string" };
     check(pathTypeProblems(wrong).length > 0, "openapi-path-types-detects-wrong-type");
+    check(
+      pathTypeProblems({ "/x/{id}": { parameters: [], summary: "s" } }).length === 0,
+      "openapi-path-types-skips-path-level-keys",
+    );
+    check(
+      pathTypeProblems({ "/x/{id}": { bogus: {} } })[0] === "/x/{id}: unexpected path key bogus",
+      "openapi-path-types-names-unexpected-key",
+    );
+    check(
+      pathTypeProblems({ "/x": { get: {} } })[0] === "GET /x: no parameter list",
+      "openapi-path-types-names-missing-parameters",
+    );
     for (const { key, operation } of operations) {
       const names = (operation.parameters as { in: string; name: string }[])
         .filter((parameter) => parameter.in === "path")

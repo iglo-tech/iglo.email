@@ -86,6 +86,8 @@ export async function txFixture(
     beforeDispatch?: () => Promise<void>;
     /** The sink keeps no message text (memory measurements). */
     discardData?: boolean;
+    /** An existing data directory (an older build's database); migrated on open, removed on close. */
+    persisted?: { dataDir: string };
     /** The attachment budget of `POST /api/tx`. */
     limits?: { maxBytes?: number; maxSends?: number; waitMs?: number; maxOvertakes?: number };
   } = {},
@@ -94,7 +96,7 @@ export async function txFixture(
     ...(options.reject ? { reject: options.reject } : {}),
     ...(options.discardData ? { discardData: true } : {}),
   });
-  const directory = mkdtempSync(join(tmpdir(), "iglo-tx-"));
+  const directory = options.persisted?.dataDir ?? mkdtempSync(join(tmpdir(), "iglo-tx-"));
   const testClock = new TestClock();
   const clock = options.clock ?? testClock;
   const db = openDatabase(directory);
