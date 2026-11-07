@@ -12,7 +12,7 @@ Owner-only, blocking nothing else: publishing a release and PDF viewers on real 
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B35** SES only: remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
+1. **B35** SES only ([brief](briefs/B35.md)): remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
 2. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
 
 ## Owner decisions
