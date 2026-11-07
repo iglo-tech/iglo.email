@@ -4,6 +4,7 @@
 // `subscriber.deleted` proves the wiped send queued none.
 import { afterEach, expect, test } from "bun:test";
 import { writeTransaction } from "@/db/transaction";
+import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 
@@ -29,7 +30,11 @@ const wipe = (f: Awaited<ReturnType<typeof open>>["f"], id: number, wiped: boole
 const summary = (r: ReturnType<typeof startReceiver>) =>
   r.received.map((x) => [x.body.event, x.body.data.send?.uuid ?? null]);
 const uuidOf = (f: Awaited<ReturnType<typeof open>>["f"], email: string) =>
-  (f.db.query("SELECT uuid FROM sends WHERE to_email = ?").get(email) as { uuid: string }).uuid;
+  (
+    f.db.query("SELECT uuid FROM sends WHERE to_email = ?").get(email) as {
+      uuid: string;
+    }
+  ).uuid;
 
 for (const wiped of [true, false]) {
   test(`a subscriber deleted during SMTP (wipe: ${wiped}) leaves no send.failed; a control still reports`, async () => {
@@ -58,7 +63,9 @@ for (const wiped of [true, false]) {
       ["send.failed", uuidOf(f, "kept@example.test")],
     ]);
     expect(
-      f.db.query("SELECT status FROM sends WHERE to_email = ''").get() as { status: string },
+      f.db.query("SELECT status FROM sends WHERE to_email = ''").get() as {
+        status: string;
+      },
     ).toEqual({ status: "failed" });
   });
 }
@@ -102,5 +109,57 @@ test("a restart ends a wiped in-flight send silently and an unrelated one with s
     ["send.failed", keptUuid],
     ["send.failed", uuidOf(f, "control@example.test")],
   ]);
-  expect(r.received[1]!.body.data.send).toMatchObject({ status: "unknown", error: "interrupted" });
+  expect(r.received[1]!.body.data.send).toMatchObject({
+    status: "unknown",
+    error: "interrupted",
+  });
+});
+
+test("a wiped send whose lease expires in the running loop reports nothing; an unrelated one does (B23)", async () => {
+  const { f, r } = await open(() => true);
+  const gone = await f.subscriber("gone@example.test", "Gone");
+  const kept = await f.subscriber("kept@example.test", "Kept");
+  // Held, so the loop claims nothing of its own but still expires leases each pass.
+  placeRestoreHold(f.db, f.clock.now().toISOString());
+  const message = (to: string) => ({
+    from: "sender@example.test",
+    to: [to],
+    subject: "s",
+    contentType: "plain" as const,
+    body: Buffer.from("b"),
+    headers: {},
+  });
+  for (const [id, email] of [
+    [gone, "gone@example.test"],
+    [kept, "kept@example.test"],
+  ] as const)
+    f.sends.enqueue({
+      source: "tx",
+      kind: "transactional",
+      subscriberId: BigInt(id),
+      message: message(email),
+    });
+  // In flight under a claim no push of this process holds, as another holder's.
+  const now = f.clock.now();
+  writeTransaction(f.db, () => f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2));
+  wipe(f, gone, true);
+  f.clock.advance(130_000);
+  while ((f.db.query("SELECT 1 FROM sends WHERE status = 'sending'").all() as unknown[]).length)
+    await Bun.sleep(5);
+  // Webhook deliveries are held with everything else: release now that both rows have ended.
+  releaseRestoreHold(f.db, holdRecord(f.db)!, f.clock.now().toISOString());
+  f.advanceWebhooks(0);
+  await r.waitFor(2);
+  expect(summary(r)).toEqual([
+    ["subscriber.deleted", null],
+    ["send.failed", uuidOf(f, "kept@example.test")],
+  ]);
+  expect(r.received[1]!.body.data.send).toMatchObject({
+    status: "unknown",
+    error: "interrupted",
+  });
+  expect(f.db.query("SELECT status, error FROM sends WHERE to_email = ''").get()).toEqual({
+    status: "unknown",
+    error: "interrupted",
+  });
 });
