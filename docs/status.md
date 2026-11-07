@@ -5,16 +5,15 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33 (#85) and B34 MCP (#86, D91) merged. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B34** MCP endpoint ([brief](briefs/B34.md)) for AI agents to edit templates and campaign content: native Streamable HTTP JSON-RPC at `/api/mcp`, existing API-user auth and the same permission per tool as its HTTP route; tools list/get/create/update/delete/preview/validate templates, get/update/preview campaign content, send a test, and a Liquid variable reference; tests use the official MCP client SDK (dev dependency) against the compiled server; D91 logs the native-server choice.
-2. **B35** SES only: remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
-3. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
+1. **B35** SES only: remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
+2. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
 
 ## Owner decisions
 
@@ -44,6 +43,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B34 | [#86](https://github.com/iglo-tech/iglo.email/pull/86) | 464474c | MCP endpoint `/api/mcp`, 14 tools, agent template reference (D91) |
 | B33          | [#85](https://github.com/iglo-tech/iglo.email/pull/85) | 46ee9f4 | linux-arm64 + multi-arch GHCR image; VmRSS watchdogs; backup makes parents |
 | B32          | [#84](https://github.com/iglo-tech/iglo.email/pull/84) | 3158880 | Settings fold map and row-identical cache; event p95 about 58 to 33 ms   |
 | B31          | [#83](https://github.com/iglo-tech/iglo.email/pull/83) | c964261 | D88: event tail is commit fsync plus `settings.read()` CPU; opt-in probe |
@@ -119,6 +119,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Media: supported PDF viewers unverified (needs real devices).
 - Backup ([#85](https://github.com/iglo-tech/iglo.email/pull/85) r3): a refusal after parent creation (output in uploads, unschema'd DB, low space) leaves empty folders; broken-symlink/file parents give a raw `ENOENT`/`ENOTDIR: mkdir`; docs: repeated `docker cp` into an existing dated folder nests it.
 - Test: `tracked links personalized per subscriber do not accumulate across batches` (runner.test.ts) timed out at 30 s twice under parallel load; 1.1 s alone in another run.
+- MCP ([#86](https://github.com/iglo-tech/iglo.email/pull/86) r2–r4): read-merge tools fail for a role with `campaigns:manage` but no `campaigns:get*`; GET-then-PUT can lose a concurrent edit (admin UI has the same race); `update_campaign` cannot clear `send_at`; tests lack a foreign-origin cookie case and a deleted-list case.
+- Test: `runner.test.ts:573` also timed out at 5 s in a serial `bun test test/campaigns` run (#86 fixer 4).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
