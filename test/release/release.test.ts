@@ -25,6 +25,7 @@ async function run(command: string[], env: Record<string, string> = {}, cwd = re
   return { code, stdout, stderr };
 }
 
+const name = `iglo.email-linux-${process.arch}`;
 const script = (...args: string[]) => [process.execPath, "scripts/release.ts", ...args];
 
 beforeAll(async () => {
@@ -98,16 +99,14 @@ describe("release package", () => {
       "LICENSE",
       "SHA256SUMS",
       "THIRD-PARTY-NOTICES.txt",
-      "iglo.email-linux-x64",
+      name,
     ]);
 
     const checked = await run(["sha256sum", "--check", "--strict", "SHA256SUMS"], {}, output);
     expect(checked.code).toBe(0);
-    expect(checked.stdout).toContain("iglo.email-linux-x64: OK");
+    expect(checked.stdout).toContain(`${name}: OK`);
 
-    expect((await run([join(output, "iglo.email-linux-x64"), "--version"])).stdout).toBe(
-      `${version}\n`,
-    );
+    expect((await run([join(output, name), "--version"])).stdout).toBe(`${version}\n`);
     expect(await Bun.file(join(output, "LICENSE")).text()).toContain("AFFERO GENERAL PUBLIC");
     const notices = await Bun.file(join(output, "THIRD-PARTY-NOTICES.txt")).text();
     expect(notices).toContain(`/tree/v${version}`);

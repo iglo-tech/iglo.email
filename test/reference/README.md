@@ -32,11 +32,9 @@ process. Named-zone comparisons use the same pinned identifiers as native
 validation, including `US/Eastern`, rather than depending on which aliases
 the host installed. Go retains its system fallback for names absent from the
 archive; this does not establish parity for arbitrary host extensions.
-MVP acceptance targets Linux x86-64 only (D42). The Linux Docker lifecycle
-is exercised locally and in CI. The harness retains Linux/macOS x64 and arm64
-binary selection, but macOS and Linux arm64 preparation, lifecycle verification
-and CI coverage are post-MVP. Historical native macOS preparation checks do not
-establish full macOS Docker lifecycle verification.
+Linux x86-64 and Linux arm64 are the only targets (D89). The Linux Docker lifecycle is exercised
+locally and in CI on x86-64; the harness also selects the arm64 listmonk binary, and its arm64
+lifecycle verification is not part of the release workflow.
 
 `reference:run` prepares as needed, creates one labelled Postgres container and
 volume, and launches native listmonk, Mailpit, and a loopback webhook receiver.

@@ -9,18 +9,21 @@ copies.
 
 ## Install
 
-Each release on [GitHub](https://github.com/iglo-tech/iglo.email/releases) has one Linux x86-64
-executable, `SHA256SUMS`, `LICENSE` and `THIRD-PARTY-NOTICES.txt`. The server needs glibc and an
-x86-64 CPU with SSE4.2 (Nehalem or newer, as Bun 1.4.4 targets), and neither Bun nor a checkout. Download the four files of the version you
-want into an empty directory, then:
+Each release on [GitHub](https://github.com/iglo-tech/iglo.email/releases) has one executable per
+architecture, `iglo.email-linux-x64` and `iglo.email-linux-arm64`, plus `SHA256SUMS`, `LICENSE` and
+`THIRD-PARTY-NOTICES.txt`. Linux on x86-64 (an SSE4.2 CPU, Nehalem or newer, as Bun 1.4.4 targets)
+and on arm64 are the only supported platforms; there are no macOS or Windows builds. The server
+needs glibc, and neither Bun nor a checkout. Download the files of the version you want into an
+empty directory, then pick your architecture (`uname -m` prints `x86_64` or `aarch64`):
 
 ```sh
-sha256sum --check --strict SHA256SUMS
-install -m 0755 iglo.email-linux-x64 /usr/local/bin/iglo.email
+sha256sum --check --strict --ignore-missing SHA256SUMS
+install -m 0755 iglo.email-linux-x64 /usr/local/bin/iglo.email    # or iglo.email-linux-arm64
 iglo.email --version
 ```
 
-To build it yourself instead, on a machine with Bun 1.4 or newer:
+To build it yourself instead, on a Linux machine with Bun 1.4 or newer (the build is for the
+architecture of the machine; `bun build --compile --target=bun-linux-arm64` cross-compiles):
 
 ```sh
 bun install --frozen-lockfile
@@ -77,6 +80,52 @@ needs the group.
 One server runs per data directory, because the sending loops depend on it: two servers on one
 directory could send a message twice. A second one [refuses to start](#one-process-per-data-directory).
 A backup, and the helpers the server starts itself, are read-only and do not count.
+
+## Docker
+
+An official multi-architecture image (`linux/amd64`, `linux/arm64`) is published to GitHub's
+container registry on every release: `ghcr.io/iglo-tech/iglo.email:<version>`, and `:latest` for
+a version without `-`. It only wraps the release executable of the same version; nothing is built
+inside it. It runs as the non-root user 65532, keeps its data in the volume `/data`, listens on
+port 9000 and has no shell. Prerelease versions are not for production.
+
+```sh
+docker volume create iglo-email-data
+docker run -d --name iglo-email --restart unless-stopped \
+  -v iglo-email-data:/data \
+  -p 127.0.0.1:9000:9000 \
+  -e IGLO_EMAIL_ROOT_URL=https://news.example.com \
+  -e IGLO_EMAIL_ADMIN_USER=admin \
+  -e IGLO_EMAIL_ADMIN_PASSWORD='choose-a-long-password' \
+  ghcr.io/iglo-tech/iglo.email:0.1.0
+```
+
+The admin variables are read only while no users exist: after the first start, recreate the
+container without them. Put the [reverse proxy](#reverse-proxy-and-tls) in front of the published
+port. The image sets `IGLO_EMAIL_HOST=0.0.0.0` so that the published port reaches the server, so
+publish it only where it should be reachable. The image has no `HEALTHCHECK`, since it has no HTTP
+client: have the orchestrator or the proxy probe `GET /health` (`200` and `{"data":true}`).
+Everything else in this guide applies; the data directory is `/data`, and one container runs per
+volume ([one process per data directory](#one-process-per-data-directory)).
+
+Commands that need the data directory run in a second container on the same volume, which is
+only right for those that do not [refuse beside a running server](#one-process-per-data-directory).
+The backup is written to a mounted directory, owned by 65532:
+
+```sh
+install -d -o 65532 -g 65532 -m 0700 /var/backups/iglo.email
+docker run --rm -v iglo-email-data:/data -v /var/backups/iglo.email:/backups \
+  ghcr.io/iglo-tech/iglo.email:0.1.0 backup --output /backups/monday
+docker run --rm -v /var/backups/iglo.email:/backups \
+  ghcr.io/iglo-tech/iglo.email:0.1.0 backup --verify /backups/monday
+```
+
+`reset-password`, `reset-totp` and `backup --release-hold` refuse while the server runs: stop the
+container, run them the same way with `--rm -v iglo-email-data:/data`, and start it again. A
+[restore](#restore) likewise runs in a container with the volume mounted. To upgrade, take and
+verify a backup, then `docker pull` the new tag, remove the container and run it again with the
+same volume and variables; see [Upgrades](#upgrades). To go back, restore the backup with the old
+tag.
 
 ## Environment variables
 
@@ -538,8 +587,10 @@ Executable and backup versions:
 ## Upgrades
 
 1. Take and verify a backup.
-2. Download and check the new release as in [Install](#install).
-3. Stop the server, replace the executable, start it.
+2. Download and check the new release as in [Install](#install), or pull the new image tag as in
+   [Docker](#docker).
+3. Stop the server, replace the executable (or recreate the container on the same volume), start
+   it.
 4. Check `/health` and `iglo.email --version`.
 
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
@@ -698,7 +749,10 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
   only.
 - The systemd unit as a running service, the nginx example, TLS, a mounted upload directory, and a
   restore from real off-site storage.
-- Behaviour on Linux arm64 or macOS. Only Linux x86-64 was used.
+- Running on Linux arm64. The arm64 executable is built and verified by the release workflow on a
+  native arm64 runner; it was only cross-compiled and inspected with `file` where it was written.
+- The published image from GHCR. The image was built and run locally for amd64 only; the multi-arch
+  build runs in the release workflow.
 - A download from a published release. The checksum and install commands ran on files packaged
   locally by `bun run release:package`, and the release workflow has not run yet.
 - Translations other than English have not been reviewed.

@@ -1,8 +1,11 @@
 name: Release
 
-# A pushed v* tag builds, verifies and publishes a draft release. A manual run from any ref is a
-# dry run of the same build and verification, and publishes nothing. package.json must already hold
-# the tag's version. Tag names reach shell only as environment variables.
+# A pushed v* tag builds and verifies the executable on each architecture's native runner (Linux
+# x86-64 and Linux arm64, D89), publishes a draft release with both, and pushes one multi-arch
+# image to GHCR that only wraps those two verified executables. A manual run from any ref is a dry
+# run of the same build, verification and image build, and publishes and pushes nothing.
+# package.json must already hold the tag's version. Tag names reach shell only as environment
+# variables.
 on:
   push:
     tags:
@@ -14,7 +17,15 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -31,11 +42,10 @@ jobs:
       - run: bun run release:verify
       - run: bun test/contract/cli.ts owned production
       - run: bun run release:package
-      - name: Keep the files for the publish job
-        if: github.event_name == 'push'
+      - name: Keep the files for the later jobs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release
+          name: release-${{ matrix.arch }}
           path: dist/release/
           if-no-files-found: error
           retention-days: 1
@@ -50,12 +60,27 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release
-      - run: sha256sum --check --strict SHA256SUMS
+          pattern: release-*
+      - name: Check each architecture and write one SHA256SUMS
+        run: |
+          set -eu
+          for arch in x64 arm64; do
+            (cd "release-$arch" && sha256sum --check --strict SHA256SUMS)
+          done
+          # The notices and the license do not depend on the architecture.
+          cmp release-x64/LICENSE release-arm64/LICENSE
+          cmp release-x64/THIRD-PARTY-NOTICES.txt release-arm64/THIRD-PARTY-NOTICES.txt
+          mkdir release
+          cp release-x64/iglo.email-linux-x64 release-arm64/iglo.email-linux-arm64 \
+            release-x64/LICENSE release-x64/THIRD-PARTY-NOTICES.txt release/
+          cd release
+          sha256sum iglo.email-linux-x64 iglo.email-linux-arm64 LICENSE THIRD-PARTY-NOTICES.txt > SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
       - name: Create the draft release
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+        working-directory: release
         run: |
           flags=()
           case "$GITHUB_REF_NAME" in
@@ -63,4 +88,66 @@ jobs:
           esac
           gh release create "$GITHUB_REF_NAME" \
             --draft --verify-tag --generate-notes --title "$GITHUB_REF_NAME" "${flags[@]}" \
-            iglo.email-linux-x64 LICENSE THIRD-PARTY-NOTICES.txt SHA256SUMS
+            iglo.email-linux-x64 iglo.email-linux-arm64 LICENSE THIRD-PARTY-NOTICES.txt SHA256SUMS
+
+  # One image for linux/amd64 and linux/arm64 from the two verified executables. The Dockerfile has
+  # no RUN on the target platform, so no emulation is needed. Only this job may write packages.
+  image:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: release
+      - name: Place the executables for the Dockerfile
+        run: |
+          set -eu
+          for pair in x64:amd64 arm64:arm64; do
+            arch=${pair%%:*}; target=${pair##*:}
+            (cd "release/release-$arch" && sha256sum --check --strict SHA256SUMS)
+            install -D -m 0755 "release/release-$arch/iglo.email-linux-$arch" "dist/docker/$target/iglo.email"
+          done
+      - name: Name the image
+        id: image
+        run: |
+          set -eu
+          version=${GITHUB_REF_NAME#v}
+          if [ "$PUSH" != "true" ]; then
+            printf 'tags=iglo.email:dry-run\n' >> "$GITHUB_OUTPUT"
+            printf 'version=dry-run\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tags="ghcr.io/iglo-tech/iglo.email:$version"
+          case "$version" in
+            *-*) ;;
+            *) tags="$tags,ghcr.io/iglo-tech/iglo.email:latest" ;;
+          esac
+          printf 'tags=%s\n' "$tags" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: env.PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.image.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.image.outputs.version }}
+            REVISION=${{ github.sha }}
+          provenance: false
