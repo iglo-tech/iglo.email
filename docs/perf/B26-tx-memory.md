@@ -52,3 +52,19 @@ Many requests at once (old budget 64 MiB, new 128 MiB; the new charge admits two
 | 16 x 4 MiB, one at a time | 252 and 275 MiB growth (baseline 135 MiB) | 199 and 203 MiB growth (baseline 69 MiB) |
 
 Growth is 50 to 75 MiB lower and the baseline is 66 MiB lower, so the pre-built bodies did inflate this row; the cause of the growth difference itself was not isolated. The row sits under the 256 MiB target, so the reading above holds, and the earlier "borderline" for this row was partly the harness.
+
+## B28: honest concurrent baseline, then three released copies
+
+The concurrent modes of the harness now stream each multipart body from its own request task (a 64 KiB chunk at a time; no Blob, File or FormData on the client side), so no body is held before the baseline and the in-process client adds none of the copies a real client keeps in its own process. A first attempt that built each Blob inside its request task made it worse (435 to 456 MiB, 40 clients building 4 MiB bodies at once), so it was dropped. Raw runs: `B26-results.jsonl`, variants `B28 before` and `B28 after`; head d5c2670 plus the working-tree change below; the host was shared (load 2.2 to 3.4).
+
+Honest baseline of 40 x 4 MiB at once, shipped budget, unchanged `src`: **265, 302, 266 MiB** (above the 256 MiB target).
+
+Copies found live while SMTP answers a synchronous send: the request's `TxMessage` attachments and the `requested` messages (route closure, awaited across `dispatch`); the claimed row's journal text (`Claimed.row.payload`, 5.6 MB, never read after admission); the batch's `Claimed.message` (the emailer owns the message once pushed). Released: the first two are cleared before `dispatch` in `src/tx/routes.ts`, the row's payload is nulled at the end of `admit`, and `deliver` drops `Claimed.message` when it pushes. Wire and stored formats, at-most-once behaviour, the no-network-in-transaction rule and D78 are untouched.
+
+| Scenario (shipped budget)   | Before                     | After                                  |
+| --------------------------- | -------------------------- | -------------------------------------- |
+| 40 x 4 MiB at once          | 18 / 22, 265, 302, 266 MiB | 17 to 18 / 22 to 23, 212, 224, 234 MiB |
+| 40 x (1 MiB x 4 recipients) | not re-run                 | 3 / 37, 115 MiB                        |
+| one 4 MiB send, idle        | not re-run                 | 52.5 MiB                               |
+
+The budget and `MAX_ATTACHMENT_SENDS` are unchanged: the gated burst is under 256 MiB.

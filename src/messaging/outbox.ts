@@ -96,8 +96,11 @@ export function startOutbox(options: {
    */
   async function deliver(batch: Claimed[]) {
     type Settled = { row: Claimed["row"]; refused?: unknown; result?: Promise<Outcome> };
-    const pending = batch.flatMap(({ row, message }): Settled[] => {
+    const pending = batch.flatMap((claimed): Settled[] => {
+      const { row, message } = claimed;
       if (!message) return [];
+      // The emailer owns the message from here; the batch must not keep it alive (B28).
+      claimed.message = null;
       try {
         return [{ row, result: options.emailer.push(message, copies(row)).result }];
       } catch (error) {
