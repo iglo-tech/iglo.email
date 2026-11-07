@@ -875,3 +875,14 @@ Decided by an agent on 2026-11-07, for owner review. Amends D74; the "owner call
 - **Not chosen:** a smaller budget, which would refuse the largest legal single send; calling the collector by hand; changing `sends.ts` to encode and insert one recipient at a time. Retention rate (380 rows/s) is unchanged.
 - **Tests:** `test/tx/tx.test.ts` (a three-recipient hold refuses a second upload at 30 MiB, failing before the change; the largest sends fit idle), `test/tx/payload.test.ts` (decode memory, failing before the change on 147 MiB; canonical base64 only).
 - **B28 amendment (2026-11-07):** with request bodies streamed by the harness (none held before the baseline), 40 x 4 MiB at once measured 265, 302 and 266 MiB, still over target. Three copies stayed reachable while SMTP answered and are now released: the request's parsed attachments (cleared before `dispatch`), the claimed row's journal text (`row.payload`, nulled after admission) and `Claimed.message` (dropped when the emailer takes it). The same burst is now 212, 224 and 234 MiB: **under 256 MiB**, so the budget and `MAX_ATTACHMENT_SENDS` stay. Formats, at-most-once and D78 unchanged. Evidence: [B26 doc, B28 section](../perf/B26-tx-memory.md).
+
+## D88. The event tail is fsync waits plus `settings.read()` CPU; no change in events or sequences (B31)
+
+Decided by an agent on 2026-11-07, for owner review. Completes D77's open question ("split event-loop delay by cause").
+
+- **Decision:** `src/events` and `src/sequences` do not change; neither is the cause. The tail is split between two main-thread costs ([evidence](../perf/B31-event-tail.md), a loaded host, every run disturbed):
+  - **COMMIT waits** (about 46 % of loop-blocked time; the events writer alone 29 %, 7,678 commits, mean 4.8 ms). `bun:sqlite` is synchronous, so an fsync blocks HTTP accepts too. D86 keeps FULL; moving writers to a worker or process is a process-model change that this measurement does not justify while the throughput target is met.
+  - **CPU in `settings.read()`** (`bindFull` folds field names with a nested `find`, quadratic; 38 % of main-thread time in the window, `foldField` alone 30 %). It is called on hot paths (per request, per campaign push, per scheduler decision). An experiment that precomputes the fold map (not committed, outside this task's modules) gave event p95 44.7 and 43.5 ms against 58.8 to 70.0 for the controls, two runs each.
+- **Corrects D77:** "other loops do not explain the tail" stands for their commits, but the CPU explanation was by elimination; it is now measured: settings re-binding, email/campaign work and the commit waits.
+- **Follow-up:** B32 fixes `settings.read()` in `src/settings` (fold map, then caching until the settings table changes), with tests and a before/after run on a quiet host.
+- **Probe:** `test/perf/m61/tail-probe.ts`, opt-in through `M61_TAIL_PROBE` / `M61_CPU_PROF` in `mixed.ts`; not in production paths.

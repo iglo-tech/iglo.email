@@ -1,0 +1,294 @@
+{
+  "windowMs": 130704.88,
+  "lagThresholdMs": 8,
+  "timerLateness": {
+    "samples": 7575,
+    "p50": 11.25,
+    "p95": 39.34,
+    "p99": 55.42,
+    "p999": 82.98,
+    "max": 113.57
+  },
+  "eventLoopDelayHistogramMs": {
+    "p50": 11.16,
+    "p99": 55.35,
+    "max": 113.57
+  },
+  "lateTicks": 5011,
+  "lateMsTotal": 101083,
+  "lateMsByCause": {
+    "unbracketed": 42679.62,
+    "commit:events": 29589.92,
+    "commit:sends": 11384.53,
+    "commit:settings+enrollments": 5174.53,
+    "json:parse": 4347.67,
+    "sql:other": 3821.59,
+    "sql:sequences": 1178.73,
+    "sql:events": 1131.86,
+    "sql:sends": 711.95,
+    "json:stringify": 602.12,
+    "begin": 214.28,
+    "commit:campaigns": 125.69,
+    "savepoint": 90,
+    "commit:users+roles+settings+enrollments": 25.75,
+    "commit:settings+analytics_summaries": 4.25,
+    "commit:settings+webhooks": 0.43,
+    "commit:settings": 0.03,
+    "commit:users+roles": 0.03,
+    "commit:empty": 0.02
+  },
+  "bracketedByGroup": {
+    "commit:events": {
+      "n": 7678,
+      "ms": 36780.2,
+      "max": 24.39
+    },
+    "commit:sends": {
+      "n": 3623,
+      "ms": 12149.49,
+      "max": 14.24
+    },
+    "commit:settings+enrollments": {
+      "n": 1278,
+      "ms": 5175.62,
+      "max": 16.35
+    },
+    "json:parse": {
+      "n": 1826518,
+      "ms": 5066.92,
+      "max": 66.64
+    },
+    "sql:other": {
+      "n": 201848,
+      "ms": 4824.38,
+      "max": 16.37
+    },
+    "sql:sequences": {
+      "n": 39599,
+      "ms": 1586.14,
+      "max": 13.21
+    },
+    "sql:events": {
+      "n": 25400,
+      "ms": 1537.41,
+      "max": 6.89
+    },
+    "sql:sends": {
+      "n": 17747,
+      "ms": 820.88,
+      "max": 8.6
+    },
+    "json:stringify": {
+      "n": 560089,
+      "ms": 679.3,
+      "max": 12.18
+    },
+    "begin": {
+      "n": 13719,
+      "ms": 316.73,
+      "max": 9.98
+    },
+    "commit:campaigns": {
+      "n": 752,
+      "ms": 140.67,
+      "max": 12.48
+    },
+    "savepoint": {
+      "n": 24000,
+      "ms": 121.48,
+      "max": 2.06
+    },
+    "commit:users+roles+settings+enrollments": {
+      "n": 237,
+      "ms": 33.37,
+      "max": 8.99
+    },
+    "commit:settings+analytics_summaries": {
+      "n": 1,
+      "ms": 4.25,
+      "max": 4.25
+    },
+    "commit:settings+webhooks": {
+      "n": 119,
+      "ms": 1.1,
+      "max": 0.04
+    },
+    "commit:empty": {
+      "n": 14,
+      "ms": 0.17,
+      "max": 0.05
+    },
+    "commit:users+roles": {
+      "n": 9,
+      "ms": 0.12,
+      "max": 0.02
+    },
+    "commit:settings": {
+      "n": 7,
+      "ms": 0.07,
+      "max": 0.01
+    },
+    "commit:settings+users+roles": {
+      "n": 1,
+      "ms": 0.02,
+      "max": 0.02
+    }
+  },
+  "bracketedTopLabels": [
+    {
+      "k": "commit:events | COMMIT",
+      "n": 7678,
+      "ms": 36780.2,
+      "max": 24.39
+    },
+    {
+      "k": "commit:sends | COMMIT",
+      "n": 3623,
+      "ms": 12149.49,
+      "max": 14.24
+    },
+    {
+      "k": "commit:settings+enrollments | COMMIT",
+      "n": 1278,
+      "ms": 5175.62,
+      "max": 16.35
+    },
+    {
+      "k": "json:parse | parse",
+      "n": 1826518,
+      "ms": 5066.92,
+      "max": 66.64
+    },
+    {
+      "k": "sql:events | INSERT INTO events (subscriber_id, name, data, occurred_at, created_at",
+      "n": 12000,
+      "ms": 1436.46,
+      "max": 6.89
+    },
+    {
+      "k": "sql:other | SELECT key, value FROM settings;",
+      "n": 17052,
+      "ms": 1240.39,
+      "max": 14.43
+    },
+    {
+      "k": "sql:other | UPDATE subscribers SET email=?, name=?, status=?, attribs=?, external_",
+      "n": 10000,
+      "ms": 869.93,
+      "max": 5.3
+    },
+    {
+      "k": "json:stringify | stringify",
+      "n": 560089,
+      "ms": 679.3,
+      "max": 12.18
+    },
+    {
+      "k": "sql:other | SELECT * FROM users WHERE username = ?;",
+      "n": 24481,
+      "ms": 558.28,
+      "max": 13.87
+    },
+    {
+      "k": "sql:sequences | UPDATE enrollments SET status = 'exited', exit_reason = ?, step_id = N",
+      "n": 12000,
+      "ms": 540.48,
+      "max": 13.21
+    },
+    {
+      "k": "sql:sequences | UPDATE enrollments SET claimed_until = ?1 WHERE id IN ( SELECT id FROM",
+      "n": 2399,
+      "ms": 504.36,
+      "max": 4.52
+    },
+    {
+      "k": "sql:other | SELECT status, runner_lease, runner_generation, last_subscriber_id, ma",
+      "n": 18602,
+      "ms": 441.77,
+      "max": 4.4
+    },
+    {
+      "k": "sql:other | SELECT (SELECT uuid FROM subscribers WHERE id = ?3) AS uuid, (SELECT e",
+      "n": 9254,
+      "ms": 326.52,
+      "max": 4.46
+    },
+    {
+      "k": "begin | BEGIN IMMEDIATE",
+      "n": 13719,
+      "ms": 316.73,
+      "max": 9.98
+    },
+    {
+      "k": "sql:sequences | INSERT INTO enrollments (sequence_id, subscriber_id, trigger_event_id,",
+      "n": 2400,
+      "ms": 310.09,
+      "max": 2.92
+    },
+    {
+      "k": "sql:other | INSERT INTO subscribers (uuid,email,name,status,attribs,external_id,cr",
+      "n": 2000,
+      "ms": 224.32,
+      "max": 0.48
+    },
+    {
+      "k": "sql:other | SELECT value FROM settings WHERE key = ?",
+      "n": 16356,
+      "ms": 205.52,
+      "max": 16.37
+    },
+    {
+      "k": "sql:other | SELECT id, type, name, permissions, parent_id, list_id FROM roles WHER",
+      "n": 24481,
+      "ms": 204.3,
+      "max": 13.46
+    },
+    {
+      "k": "sql:sends | UPDATE sends SET status='sent', sent_at=?, error=?, claimed_until=NULL",
+      "n": 1439,
+      "ms": 194.01,
+      "max": 4.04
+    },
+    {
+      "k": "sql:sends | UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?",
+      "n": 1440,
+      "ms": 188.54,
+      "max": 7.56
+    },
+    {
+      "k": "sql:sends | INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, templat",
+      "n": 1440,
+      "ms": 157.28,
+      "max": 3.63
+    },
+    {
+      "k": "commit:campaigns | COMMIT",
+      "n": 752,
+      "ms": 140.67,
+      "max": 12.48
+    },
+    {
+      "k": "sql:other | SELECT * FROM subscribers WHERE id = ?;",
+      "n": 15600,
+      "ms": 134.42,
+      "max": 7.72
+    },
+    {
+      "k": "sql:other | SELECT * FROM subscribers WHERE external_id = ?;",
+      "n": 12000,
+      "ms": 133.25,
+      "max": 0.19
+    },
+    {
+      "k": "sql:other | UPDATE campaign_deliveries SET status = ?3, at = ?4 WHERE campaign_id ",
+      "n": 9000,
+      "ms": 113.28,
+      "max": 4.1
+    }
+  ],
+  "gc": {
+    "n": 0,
+    "ms": 0,
+    "max": 0
+  }
+}
