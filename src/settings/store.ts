@@ -27,26 +27,49 @@ function containsNul(value: unknown): boolean {
   return false;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 export function createSettings(db: Database, clock: Clock, rootUrl: string, roles: Roles) {
   const queries = prepareNamedQueries(db, [{ name: "settings", sql }]);
   writeTransaction(db, () => {
     for (const [key, value] of Object.entries(defaults))
       queries.get("seed").run(key, JSON.stringify(value));
   });
-  function read(): Settings {
+  function fresh(rows: { key: string; value: string }[]): Settings {
     const out: Record<string, unknown> = {};
-    for (const row of queries.get("all").all() as { key: string; value: string }[]) {
+    for (const row of rows) {
       if (Object.hasOwn(defaults, row.key)) out[row.key] = parseStoredJson(row.value);
     }
     out["app.root_url"] = rootUrl;
     out["app.check_updates"] = false;
     return projectRaw(out as Settings, rootUrl);
   }
+  // B32 (D88): the projection of the stored rows, reused while every stored row is byte-identical.
+  // The rows are re-read on each call, so a write by any path (update, writeStoredValue, restore,
+  // another connection) is seen at once; only parsing and projecting are skipped. The cached value is
+  // frozen because callers share it.
+  let cached: { rows: string; value: Settings } | null = null;
+  function read(): Settings {
+    const rows = queries.get("all").all() as { key: string; value: string }[];
+    let signature = "";
+    for (const row of rows)
+      signature += `${row.key.length}:${row.key}${row.value.length}:${row.value}`;
+    if (cached?.rows === signature) return cached.value;
+    const value = deepFreeze(fresh(rows));
+    cached = { rows: signature, value };
+    return value;
+  }
   return {
     read,
     update(build: (current: Settings) => Settings): void {
       writeTransaction(db, () => {
-        const current = read();
+        const current = fresh(queries.get("all").all() as { key: string; value: string }[]);
         const proposed = build(current);
         const candidate = normalize(proposed, current, roles, clock.now().getTime());
         const writable = Object.fromEntries(
