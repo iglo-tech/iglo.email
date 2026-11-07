@@ -495,7 +495,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           webhooksEnabled: current["bounce.webhooks_enabled"],
           ses: current["bounce.ses_enabled"],
           sesTopics: current["bounce.ses_topic_arns"],
-          mailgun: current["bounce.mailgun"],
         };
       },
       // Providers post from shared addresses too, with a budget of their own. A large campaign's

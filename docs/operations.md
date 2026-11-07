@@ -163,7 +163,7 @@ Settings, or `PUT /api/settings`, and applies at once.
   .iglo-email-import/   the file of a running import
 ```
 
-The database holds SMTP passwords, API tokens, password hashes, webhook secrets, the Mailgun key
+The database holds SMTP passwords, API tokens, password hashes, webhook secrets
 and subscriber data, stored as given. Protect the directory with the host's permissions and disk
 encryption. Never copy `iglo-email.db` of a running server by hand: use `backup`.
 
@@ -277,39 +277,18 @@ curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
 It prints the public key for the DNS record
 `mail._domainkey.example.com TXT "v=DKIM1; k=rsa; p=<key>"`. The trap removes the staging directory
 on success and on failure: the key now lives in the database. Exposing `$API` on a command line
-shows it to local process listings, so keep that token to a host you trust or use a netrc file.
-
-## Mailgun bounces
-
-Copy the HTTP webhook signing key from your Mailgun account, then turn on all three settings, in
-Settings > Bounces or:
-
-```sh
-for setting in bounce.enabled bounce.webhooks_enabled; do
-  curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
-    -d 'true' "http://127.0.0.1:9000/api/settings/$setting"
-done
-curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
-  -d '{"enabled":true,"key":"<signing key>"}' \
-  http://127.0.0.1:9000/api/settings/bounce.mailgun
-```
-
-In Mailgun, point the webhooks for failures and complaints at
-`https://news.example.com/webhooks/bounce/mailgun`. Delivered, opened and other events are
-acknowledged and ignored. A request with a bad signature answers 406,
-which is what a forged one got in this check. The server's clock must be right: a signature older
-than 15 minutes is refused as stale.
-
 ## Amazon SES bounces
 
 Sending through SES is ordinary SMTP (see [SMTP and DKIM](#smtp-and-dkim)). SES reports bounces and
 complaints through Amazon SNS, and iglo.email records and acts on them as listmonk does, so the
-account's bounce and complaint rates stay low.
+account's bounce and complaint rates stay low. Amazon SES is the only sending and bounce provider (D89).
 
 1. **SMTP credentials.** In the SES console, verify your sending domain, then create SMTP
    credentials (they are not your AWS login). Add an SMTP server in Settings > SMTP with host
    `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
    credentials.
+   To assign an SES configuration set to outgoing messages, add `X-SES-CONFIGURATION-SET: <name>`
+   to the SMTP server's custom headers in Settings > SMTP (or via the API as `[{"X-SES-CONFIGURATION-SET": "<name>"}]` under `smtp[].email_headers`).
 2. **An SNS topic.** In SNS, create a Standard topic in the same region, for example
    `ses-bounces`, and note its ARN.
 3. **Send feedback to it.** In SES > Verified identities > your domain > Notifications, set the
@@ -770,9 +749,6 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 
 ## Unverified
 
-- Real Mailgun events have not reached this code: only synthetic signed requests have. Whether
-  Mailgun re-signs a retry is unknown. If it repeats a signature past 15 minutes, after a 429 or
-  5xx here, that bounce is refused as stale and lost ([D63](design/09-decisions.md#d63-bounce-receipts-and-retained-provider-text)).
 - Delivery through a real SMTP provider, and DKIM against real receivers. Tests use a local sink
   only.
 - The systemd unit as a running service, the nginx example, TLS, a mounted upload directory, and a

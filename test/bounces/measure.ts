@@ -1,7 +1,6 @@
 // Serial timing for docs/perf/M3.4-bounces.md; opt-in, not a CI threshold. Real HTTP against a
-// compiled build: signed Mailgun events, one per subscriber, each at its type's action
+// compiled build: bounce events, one per subscriber, each at its type's action
 // threshold. Usage: bun test/bounces/measure.ts <executable> <hooks> [n]
-import { createHmac } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
@@ -10,7 +9,6 @@ const repository = resolve(import.meta.dir, "../..");
 const executable = resolve(process.argv[2] ?? join(repository, "dist/iglo.email"));
 const hooks = Number(process.argv[3] ?? 0);
 const N = Number(process.argv[4] ?? 500);
-const key = "measure-mailgun-signing-key";
 
 const base = join(repository, "upstream/measurements");
 mkdirSync(base, { recursive: true });
@@ -64,7 +62,6 @@ try {
       });
       await api("/api/settings/bounce.webhooks_enabled", "PUT", true);
       await api("/api/settings/bounce.enabled", "PUT", true);
-      await api("/api/settings/bounce.mailgun", "PUT", { enabled: true, key });
       for (let i = 0; i < hooks; i++)
         await api("/api/webhooks", "POST", {
           url: `http://127.0.0.1:${receiver.port}/h/${i}`,
@@ -73,27 +70,15 @@ try {
       const list = (
         await api("/api/lists", "POST", { name: "measure", type: "public", optin: "single" })
       ).data.id as number;
-      const ingest = async (email: string, sequence: string) => {
-        const timestamp = String(Math.floor(Date.now() / 1000));
-        const token = crypto.randomUUID().replaceAll("-", "");
+      const ingest = async (email: string, _sequence: string) => {
         const started = performance.now();
-        const response = await fetch(`${origin}/webhooks/bounce/mailgun`, {
+        const response = await fetch(`${origin}/webhooks/bounce`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { authorization, "content-type": "application/json" },
           body: JSON.stringify({
-            signature: {
-              timestamp,
-              token,
-              signature: createHmac("sha256", key).update(`${timestamp}${token}`).digest("hex"),
-            },
-            "event-data": {
-              id: sequence,
-              event: "failed",
-              severity: "permanent",
-              recipient: email,
-              reason: "bounce",
-              "delivery-status": { code: 550, message: "5.1.1 user unknown" },
-            },
+            email,
+            type: "hard",
+            source: "api",
           }),
         });
         await response.text();

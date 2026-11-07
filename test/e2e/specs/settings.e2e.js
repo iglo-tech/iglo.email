@@ -2,7 +2,7 @@
 // each test restores what it changed. A save needs no restart here (D44), so there is no health
 // wait; messengers, bounce mailboxes and the other bounce providers are read-only (D44, 07-api-and-ui.md);
 // the root URL belongs to the bootstrap flags. API-only cases live in `bun run contract:settings`.
-import { generateKeyPairSync, createHmac } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import { expect } from "@playwright/test";
 import { ADMIN, ORIGIN, api, createUser, login, mailFor, test, unique } from "../helpers.js";
 
@@ -408,9 +408,7 @@ test("the CAPTCHA card turns one provider on at a time and keeps the secret mask
   ]);
 });
 
-test("persists bounce actions and the Mailgun key; other providers stay read-only", async ({
-  page,
-}) => {
+test("persists bounce actions and SES settings; only SES is shown", async ({ page }) => {
   await tab(page, "Bounces").click();
   await page.getByRole("switch", { name: "Enable bounce processing", exact: true }).check();
   const hard = page.getByRole("group", { name: "Hard", exact: true });
@@ -418,11 +416,6 @@ test("persists bounce actions and the Mailgun key; other providers stay read-onl
   await hard.getByRole("combobox").selectOption("unsubscribe");
   const webhooks = page.getByRole("switch", { name: /^Enable bounce webhooks/ });
   await webhooks.check();
-  const mailgun = page.getByRole("group", { name: "Enable Mailgun", exact: true });
-  await mailgun.getByRole("switch").check();
-  await save(page, 400);
-  await expect(page.getByText("A Mailgun signing key is required.")).toBeVisible();
-  await mailgun.getByLabel(/signing key/).fill("mailgun-signing-key");
   const ses = page.getByRole("group", { name: /SES/ });
   await ses.getByRole("switch").check();
   await ses.getByLabel(/Allowed SNS topic ARNs/).fill("arn:aws:sns:*:123456789012:*");
@@ -433,57 +426,27 @@ test("persists bounce actions and the Mailgun key; other providers stay read-onl
     "bounce.ses_topic_arns": ["arn:aws:sns:*:123456789012:*"],
     "bounce.webhooks_enabled": true,
     "bounce.actions": { hard: { count: 3, action: "unsubscribe" } },
-    "bounce.mailboxes": before["bounce.mailboxes"],
-    "bounce.mailgun": { enabled: true, key: "•".repeat("mailgun-signing-key".length) },
   });
   await page.reload();
   await tab(page, "Bounces").click();
   await expect(hard.getByRole("spinbutton")).toHaveValue("3");
   await expect(hard.getByRole("combobox")).toHaveValue("unsubscribe");
-  await expect(mailgun.getByLabel(/signing key/)).toHaveValue(/^•+$/);
-  const others = page.getByRole("group", { name: "Other bounce providers", exact: true });
-  await expect(others.getByText("Not available in this version.")).toBeVisible();
   await expect(ses.getByRole("switch")).toBeChecked();
-  await expect(others.getByRole("switch", { name: /Azure/ })).toBeDisabled();
+  await expect(page.getByRole("group", { name: "Enable Mailgun", exact: true })).toHaveCount(0);
   await expect(
-    page.getByRole("group", { name: "Enable bounce mailbox" }).getByRole("switch"),
-  ).toBeDisabled();
+    page.getByRole("group", { name: "Other bounce providers", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Enable bounce mailbox" })).toHaveCount(0);
   await webhooks.uncheck();
-  await expect(mailgun).toHaveCount(0);
-  await webhooks.check();
-
-  // The stored key survives a save of the masked field: a signature made with it still passes.
-  await save(page);
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const token = unique("token");
-  const signature = createHmac("sha256", "mailgun-signing-key")
-    .update(timestamp + token)
-    .digest("hex");
-  const post = (signed) =>
-    page.request.post("/webhooks/bounce/mailgun", {
-      data: {
-        signature: { timestamp, token, signature: signed },
-        "event-data": {
-          event: "failed",
-          severity: "permanent",
-          id: unique("event"),
-          timestamp: Number(timestamp),
-          recipient: "nobody@example.test",
-        },
-      },
-    });
-  expect((await post("0".repeat(64))).status()).toBe(406);
-  expect((await post(signature)).status()).toBe(200);
+  await expect(ses).toHaveCount(0);
 });
 
-// With the Mailgun key of the test above: the API keeps a stored key, so a test that set its own
-// would change what that test finds.
-test("a Mailgun bounce appears on the bounces screen like any other", async ({ page }) => {
+// A bounce appears on the bounces screen and its metadata dialog renders escaped.
+test("a bounce appears on the bounces screen like any other", async ({ page }) => {
   await api(page, "/api/settings", "PUT", {
     ...before,
     "bounce.enabled": true,
     "bounce.webhooks_enabled": true,
-    "bounce.mailgun": { enabled: true, key: "" },
   });
   const list = await api(page, "/api/lists", "POST", { name: unique("mailgun"), type: "private" });
   const email = `${unique("mailgun")}@example.com`;
@@ -494,22 +457,12 @@ test("a Mailgun bounce appears on the bounces screen like any other", async ({ p
     lists: [list.body.data.id],
   });
   expect(sub.status).toBe(200);
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const token = unique("token");
-  const signature = createHmac("sha256", "mailgun-signing-key")
-    .update(`${timestamp}${token}`)
-    .digest("hex");
   const message = `<img src=x onerror="window.pwned=1"> ${unique("delivery")}`;
-  const posted = await api(page, "/webhooks/bounce/mailgun", "POST", {
-    signature: { timestamp, token, signature },
-    "event-data": {
-      id: token,
-      event: "failed",
-      severity: "permanent",
-      reason: "bounce",
-      recipient: email,
-      "delivery-status": { code: 550, message },
-    },
+  const posted = await api(page, "/webhooks/bounce", "POST", {
+    email,
+    type: "hard",
+    source: "mailgun",
+    meta: { message },
   });
   expect(posted.status).toBe(200);
   await page.goto("/admin/subscribers/bounces?source=mailgun");
@@ -595,7 +548,6 @@ test("a save without edits leaves unshown values and untouched secrets alone", a
   await put("bounce.postmark", { enabled: false, username: "u", password: "postmark-secret" });
   await put("bounce.forwardemail", { enabled: false, key: "fe-secret" });
   await put("bounce.lettermint", { enabled: false, key: "lm-secret" });
-  await put("bounce.mailgun", { enabled: false, key: "mg-secret" });
   await put("security.captcha", {
     altcha: { enabled: false, complexity: 123456 },
     hcaptcha: { enabled: false, key: "site", secret: "hc-secret" },

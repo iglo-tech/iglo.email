@@ -969,53 +969,6 @@ function Bounces({ t }: { t: Translation }) {
               </template>
             </fieldset>
           </template>
-          <template x-if="form['bounce.webhooks_enabled']">
-            <fieldset class="card" data-keywords="bounce mailgun webhook signing key">
-              <legend>{t.T("settings.bounces.enableMailgun")}</legend>
-              <label data-field="">
-                <input type="checkbox" role="switch" x-model="form['bounce.mailgun'].enabled" />{" "}
-                {t.T("globals.buttons.enable")}
-              </label>
-              <template x-if="form['bounce.mailgun'].enabled">
-                <TextField
-                  model="form['bounce.mailgun'].key"
-                  type="password"
-                  label={t.T("settings.bounces.mailgunKey")}
-                  hint={t.T("globals.messages.passwordChange")}
-                />
-              </template>
-            </fieldset>
-          </template>
-          <Unavailable
-            t={t}
-            legend={t.T("settings.bounces.otherProviders")}
-            keywords="bounce azure sendgrid postmark forwardemail lettermint webhook"
-          >
-            {provider("form['bounce.azure'].enabled", t.T("settings.bounces.enableAzure"))}
-            {provider("form['bounce.sendgrid_enabled']", t.T("settings.bounces.enableSendgrid"))}
-            {provider("form['bounce.postmark'].enabled", t.T("settings.bounces.enablePostmark"))}
-            {provider(
-              "form['bounce.forwardemail'].enabled",
-              t.T("settings.bounces.enableForwardemail"),
-            )}
-            {provider(
-              "form['bounce.lettermint'].enabled",
-              t.T("settings.bounces.enableLettermint"),
-            )}
-          </Unavailable>
-          <Unavailable
-            t={t}
-            legend={t.T("settings.bounces.enableMailbox")}
-            keywords="bounce mailbox pop imap scan inbox host poll"
-          >
-            <template x-for="(item, n) in form['bounce.mailboxes']" x-bind:key="n">
-              <div>
-                <Switch model="item.enabled" label={t.T("globals.terms.enabled")} />
-                <TextField model="item.host" label={t.T("globals.fields.host")} />
-                <TextField model="item.username" label={t.T("globals.fields.username")} />
-              </div>
-            </template>
-          </Unavailable>
         </div>
       </template>
     </div>

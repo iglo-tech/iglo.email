@@ -258,7 +258,6 @@ const settings = (smtp: string, mailbox: string): Schema =>
       "bounce.sendgrid_key": string,
       "bounce.postmark": object({ enabled: boolean, username: string, password: string }),
       "bounce.forwardemail": object({ enabled: boolean, key: string }),
-      "bounce.mailgun": object({ enabled: boolean, key: string }),
       "bounce.lettermint": object({ enabled: boolean, key: string }),
       "bounce.mailboxes": array(ref(mailbox)),
       "appearance.admin.custom_css": string,
@@ -947,17 +946,6 @@ export const schemas: Record<string, Schema> = {
       created_at: time,
     },
     ["type", "source"],
-  ),
-  MailgunWebhook: input(
-    {
-      signature: input({ timestamp: string, token: string, signature: string }, [
-        "timestamp",
-        "token",
-        "signature",
-      ]),
-      "event-data": free,
-    },
-    ["signature", "event-data"],
   ),
   Webhook: object(
     {

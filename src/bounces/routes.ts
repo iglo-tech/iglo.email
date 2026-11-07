@@ -1,10 +1,9 @@
 // Adapted from listmonk cmd/bounce.go, cmd/subscribers.go (GetSubscriberBounces,
-// DeleteSubscriberBounces) and the bounce routes of cmd/handlers.go at 6fcd95f. The Mailgun
-// route is native. Upstream registers the webhook routes at startup; here settings apply live.
+// DeleteSubscriberBounces) and the bounce routes of cmd/handlers.go at 6fcd95f.
+// Upstream registers the webhook routes at startup; here settings apply live.
 import type { Database } from "bun:sqlite";
 import type { BounceStore, BounceEvent, BounceType } from "@/bounces/store";
 import { bounceTypes, reUUID } from "@/bounces/store";
-import { mailgunEvent, verifySignature } from "@/bounces/mailgun";
 import {
   SES_BODY_LIMIT,
   SNS_MAX_AGE_MS,
@@ -28,8 +27,6 @@ import type { SubscriberStore } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 import { readBodyBytes } from "@/users/input";
 
-/** A provider re-sends a delivery for hours; a day covers it, and the table stays small. */
-const EVENT_RECEIPT_MS = 86_400_000;
 const MAX_RECEIPT_ID = 256;
 const reRFC3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
 
@@ -39,7 +36,6 @@ export interface BounceSettings {
   ses: boolean;
   /** `bounce.ses_topic_arns`: empty accepts no SES message (D75). */
   sesTopics: string[];
-  mailgun: { enabled: boolean; key: string };
 }
 // Go strconv.Atoi, ignoring its error.
 const atoi = (value: string | null) => {
@@ -339,35 +335,6 @@ export function registerBounceRoutes(
     if (c.params.service === "ses" && settings().ses) return ses(c);
     throw unknownService(c);
   };
-  const mailgun: Handler = async (c) => {
-    const current = settings();
-    if (!current.enabled) throw unavailable(c);
-    if (!current.mailgun.enabled || !current.mailgun.key) throw unknownService(c);
-    // Mailgun retries anything else for hours, so refusals answer 406, which it does not.
-    const refused = () => new HttpError(406, c.app.i18n.T("globals.messages.invalidData"));
-    const raw = (await readBodyBytes(c.request)).toString("utf8");
-    let body: unknown;
-    try {
-      body = JSON.parse(raw);
-    } catch {
-      throw refused();
-    }
-    const now = clock.now();
-    const signature = verifySignature(body, current.mailgun.key, now);
-    if (!signature) throw refused();
-    const parsed = mailgunEvent(body, now);
-    const accepted = writeTransaction(db, () => {
-      store.pruneReceipts();
-      if (!store.receive(`token:${signature.token}`, signature.expiresAt)) return false;
-      const eventExpiry = new Date(now.getTime() + EVENT_RECEIPT_MS);
-      if (parsed && (!parsed.eventId || store.receive(`event:${parsed.eventId}`, eventExpiry)))
-        store.record(parsed.event);
-      return true;
-    });
-    if (!accepted) throw refused();
-    return ok(true);
-  };
-
   router.route("GET", "/api/bounces", collection, auth.middleware("bounces:get"));
   router.route("PUT", "/api/bounces/blocklist", blocklist, auth.middleware("bounces:manage"));
   router.route("GET", "/api/bounces/:id", one, auth.middleware("bounces:get"), hasID);
@@ -395,5 +362,4 @@ export function registerBounceRoutes(
     auth.middleware("webhooks:post_bounce"),
   );
   router.route("POST", "/webhooks/service/:service", service, webhooksEnabled, deps.limit);
-  router.route("POST", "/webhooks/bounce/mailgun", mailgun, webhooksEnabled, deps.limit);
 }

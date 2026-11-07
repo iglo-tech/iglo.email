@@ -1,14 +1,9 @@
 // Reference: listmonk cmd/bounce.go, internal/core/bounces.go and queries/bounces.sql at 6fcd95f.
-// The shared corpus runs against both targets; the Mailgun endpoint, send links and outbound
-// webhooks are native, so that part runs against the compiled production executable only.
-import { Database } from "bun:sqlite";
-import { createHmac } from "node:crypto";
-import { join } from "node:path";
+// The shared corpus runs against both targets; send links and outbound webhooks are native,
+// so that part runs against the compiled production executable only.
 import type { Credentials, Mode } from "@/test/contract/types";
 import { startSink } from "@/test/tx/sink";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
-
-const signingKey = "contract-mailgun-signing-key";
 
 export async function runBouncesContract(target: {
   mode: Mode;
@@ -596,15 +591,6 @@ export async function runBouncesContract(target: {
 
   /** Native behavior, through the compiled executable's real HTTP, SQLite file and restart. */
   async function production() {
-    const dataDir = target.dataDir!;
-    const stored = <T>(sql: string, ...args: (string | number)[]) => {
-      const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
-      try {
-        return reader.query(sql).all(...args) as T[];
-      } finally {
-        reader.close();
-      }
-    };
     const receiver = startReceiver();
     const sink = await startSink();
     try {
@@ -618,9 +604,9 @@ export async function runBouncesContract(target: {
         complaint: { count: 1, action: "delete" },
       });
 
-      // The key is a masked secret and survives a listmonk client's full replace.
+      // bounce.mailgun is removed in B35 (D89).
       const settings = (await call("/api/settings")).body.data;
-      check(settings["bounce.mailgun"].enabled === false, "mailgun-default");
+      check(settings["bounce.mailgun"] === undefined, "mailgun-omitted");
       // Native (D75): SES accepts only listed topics; the list is validated and survives a full PUT.
       check(JSON.stringify(settings["bounce.ses_topic_arns"]) === "[]", "ses-topics-default");
       check(
@@ -645,146 +631,6 @@ export async function runBouncesContract(target: {
         "bounce.lettermint",
       ])
         check(settings[key] && typeof settings[key].enabled === "boolean", `kept-${key}`);
-      const mailgun = async (timestamp: number, token: string, data: unknown, key = signingKey) =>
-        await call("/webhooks/bounce/mailgun", "POST", {
-          signature: {
-            timestamp: String(timestamp),
-            token,
-            signature: createHmac("sha256", key).update(`${timestamp}${token}`).digest("hex"),
-          },
-          "event-data": data,
-        });
-      const now = () => Math.floor(Date.now() / 1000);
-      const token = () => crypto.randomUUID().replaceAll("-", "");
-      const failed = (recipient: string, extra: object = {}) => ({
-        id: crypto.randomUUID(),
-        event: "failed",
-        severity: "permanent",
-        recipient,
-        reason: "bounce",
-        "delivery-status": {
-          code: 550,
-          message: `5.1.1 <${recipient}> user unknown`,
-          description: "",
-        },
-        message: { headers: { "message-id": "x@y.test" } },
-        ...extra,
-      });
-      const refused = await mailgun(now(), token(), failed("a@example.com"));
-      check(refused.status === 400 && refused.body.message === "Unknown service.", "mailgun-off");
-      check(
-        (await call("/api/settings/bounce.mailgun", "PUT", { enabled: true, key: "" })).status ===
-          400,
-        "mailgun-key-required",
-      );
-      await setting("bounce.mailgun", { enabled: true, key: signingKey });
-      const shown = (await call("/api/settings")).body.data;
-      check(!JSON.stringify(shown).includes(signingKey), "mailgun-masked");
-      check(shown["bounce.mailgun"].key === "•".repeat(signingKey.length), "mailgun-mask");
-      const replaced = { ...shown };
-      delete replaced["bounce.mailgun"];
-      check((await call("/api/settings", "PUT", replaced)).status === 200, "full-put");
-      await setting("bounce.mailgun", { enabled: true, key: shown["bounce.mailgun"].key });
-
-      // Forged, stale and replayed requests change nothing.
-      const victim = await subscriber("victim");
-      const rows = () => stored<{ n: number }>("SELECT count(*) AS n FROM bounces")[0]!.n;
-      const before = rows();
-      const data = () => failed(victim.email);
-      const forged = await mailgun(now(), token(), data(), "wrong-key");
-      check(forged.status === 406, "mailgun-forged");
-      const tampered = await call("/webhooks/bounce/mailgun", "POST", {
-        signature: { timestamp: String(now()), token: token(), signature: "0".repeat(64) },
-        "event-data": data(),
-      });
-      check(tampered.status === 406, "mailgun-zero-signature");
-      check((await mailgun(now() - 3600, token(), data())).status === 406, "mailgun-stale");
-      check((await mailgun(now() + 3600, token(), data())).status === 406, "mailgun-future");
-      check((await call("/webhooks/bounce/mailgun", "POST", "{")).status === 406, "mailgun-json");
-      check((await call("/webhooks/bounce/mailgun", "POST", {})).status === 406, "mailgun-empty");
-      const big = await call("/webhooks/bounce/mailgun", "POST", "x".repeat(70_000));
-      check(big.status === 413, "mailgun-body-limit");
-      check(rows() === before, "mailgun-refused-rows");
-      check(
-        (await call(`/api/subscribers/${victim.id}`)).body.data.status === "enabled",
-        "mailgun-refused-status",
-      );
-      // A bounce burst from one client (SNS posts one message each) is not cut at the 300/min
-      // unsubscribe budget: a refused bounce is lost once the provider stops retrying.
-      for (let i = 0; i < 400; i++)
-        check((await call("/webhooks/bounce/mailgun", "POST", "{")).status === 406, "burst-limit");
-
-      // An accepted event, whose body is what the receiver then sees signed.
-      const replay = { timestamp: now(), token: token() };
-      const event = failed(victim.email);
-      const accepted = await mailgun(replay.timestamp, replay.token, event);
-      check(accepted.status === 200 && accepted.body.data === true, "mailgun-accepted");
-      const [row] = await bounces(victim.id);
-      check(row.type === "hard" && row.source === "mailgun", "mailgun-row");
-      check(!JSON.stringify(row.meta).includes(victim.email), "mailgun-meta-address");
-      check(row.meta.code === 550 && row.meta.severity === "permanent", "mailgun-meta");
-      check(
-        (await call(`/api/subscribers/${victim.id}`)).body.data.status === "blocklisted",
-        "mailgun-action",
-      );
-      await receiver.waitFor(2);
-      const seen = receiver.received.find((r) => r.body.event === "bounce.recorded")!;
-      check(signatureValid(seen, secret), "webhook-signed");
-      check(seen.body.data.subscriber.uuid === victim.uuid, "webhook-subscriber");
-      check(seen.body.data.bounce.type === "hard", "webhook-type");
-      check(seen.body.data.bounce.source === "mailgun", "webhook-source");
-      check(!seen.text.includes("user unknown"), "webhook-no-meta");
-      check(
-        receiver.received.some((r) => r.body.event === "subscriber.blocklisted"),
-        "webhook-blocklisted",
-      );
-
-      // A replay is refused, across a restart too, and the event's ID stops a re-signed copy.
-      await call(`/api/subscribers/${victim.id}`, "PUT", {
-        email: victim.email,
-        name: "victim",
-        status: "enabled",
-        lists: [],
-      });
-      await target.restart!();
-      check(
-        (await mailgun(replay.timestamp, replay.token, event)).status === 406,
-        "mailgun-replayed",
-      );
-      const copy = await mailgun(now(), token(), event);
-      check(copy.status === 200, "mailgun-copy");
-      check((await bounces(victim.id)).length === 1, "mailgun-no-double-count");
-      check(
-        (await call(`/api/subscribers/${victim.id}`)).body.data.status === "enabled",
-        "mailgun-copy-no-action",
-      );
-
-      // Severities and complaints; events that are not bounces are acknowledged.
-      const zoe = await subscriber("zoe");
-      const temporary = failed(zoe.email, { severity: "temporary" });
-      check((await mailgun(now(), token(), temporary)).status === 200, "mailgun-temporary");
-      check((await bounces(zoe.id))[0].type === "soft", "mailgun-soft");
-      const delivered = { id: crypto.randomUUID(), event: "delivered", recipient: zoe.email };
-      check((await mailgun(now(), token(), delivered)).status === 200, "mailgun-delivered");
-      check((await bounces(zoe.id)).length === 1, "mailgun-delivered-ignored");
-      const stranger = failed(address("stranger"));
-      check((await mailgun(now(), token(), stranger)).status === 200, "mailgun-unknown");
-
-      // Complaint's `delete` is the administrative path: the bounce delivery is cleared.
-      const complained = {
-        id: crypto.randomUUID(),
-        event: "complained",
-        recipient: zoe.email,
-        message: { headers: { "message-id": "x@y.test" } },
-      };
-      const queued = receiver.received.length;
-      check((await mailgun(now(), token(), complained)).status === 200, "mailgun-complained");
-      check((await call(`/api/subscribers/${zoe.id}`)).status === 400, "mailgun-delete-action");
-      await receiver.waitFor(queued + 2);
-      const payloads = stored<{ payload: string }>(
-        "SELECT payload FROM webhook_deliveries WHERE event = 'bounce.recorded'",
-      );
-      check(!payloads.some((p) => p.payload.includes(zoe.email)), "webhook-cleared");
 
       // A transactional send to an address with no subscriber, and to a subscriber.
       const smtp = (await call("/api/settings")).body.data.smtp;
@@ -820,98 +666,6 @@ export async function runBouncesContract(target: {
         const send = (await call("/api/sends?per_page=1")).body.data.results[0];
         return send as { id: number; uuid: string; smtp_message_id: string };
       };
-      const outsider = address("outsider");
-      const send = await sendTo({ subscriber_emails: [outsider], subscriber_mode: "external" });
-      const bare = send.smtp_message_id.replace(/[<>]/g, "");
-      const onSend = failed(outsider, { message: { headers: { "message-id": bare } } });
-      check((await mailgun(now(), token(), onSend)).status === 200, "mailgun-send");
-      const [linked] = stored<{ subscriber_id: number | null; send_id: number; meta: string }>(
-        "SELECT subscriber_id, send_id, meta FROM bounces WHERE send_id = ?",
-        send.id,
-      );
-      check(linked && linked.subscriber_id === null, "send-no-subscriber");
-      const listed = (await call("/api/bounces?source=mailgun&per_page=all")).body.data.results;
-      const outsiderRow = listed.find((b: any) => b.send_id === send.id);
-      check(outsiderRow.email === outsider && !("subscriber_id" in outsiderRow), "send-listed");
-      await receiver.waitFor(queued + 3);
-      const anonymous = receiver.received.at(-1)!.body;
-      check(anonymous.event === "bounce.recorded", "send-webhook");
-      check(anonymous.data.subscriber === null, "send-webhook-subscriber");
-      check(anonymous.data.send.uuid === send.uuid, "send-webhook-send");
-      check(!JSON.stringify(anonymous).includes(outsider), "send-webhook-address");
-
-      // That address later subscribes and wipes: the unlinked bounce goes with its sends.
-      const wiper = await subscriber("outsider");
-      check(wiper.email === outsider, "wiper");
-      check(
-        (await call("/api/settings/privacy.allow_wipe", "PUT", true)).status === 200,
-        "allow-wipe",
-      );
-      const wipe = await fetch(`${target.baseUrl}/subscription/wipe/${wiper.uuid}`, {
-        method: "POST",
-      });
-      check(wipe.status === 200, "wipe");
-      check(
-        stored("SELECT 1 FROM bounces WHERE send_id = ?", send.id).length === 0,
-        "wipe-unlinked-bounce",
-      );
-
-      // A bounce arriving after the wipe finds an anonymized send and stores nothing.
-      const late = failed(outsider, { message: { headers: { "message-id": bare } } });
-      check((await mailgun(now(), token(), late)).status === 200, "mailgun-late");
-      check(
-        stored("SELECT 1 FROM bounces WHERE send_id = ?", send.id).length === 0,
-        "late-bounce-dropped",
-      );
-
-      // A campaign's Message-ID carries both UUIDs.
-      const listID = await list("mailgun");
-      const camp = await campaign("mailgun", listID);
-      const una = await subscriber("una", [listID]);
-      const carried = { message: { headers: { "message-id": `${camp.uuid}.${una.uuid}@x.test` } } };
-      const campaignEvent = failed(una.email, { severity: "temporary", ...carried });
-      check((await mailgun(now(), token(), campaignEvent)).status === 200, "mailgun-campaign");
-      const [campaignRow] = await bounces(una.id);
-      check(campaignRow.campaign.id === camp.id, "mailgun-campaign-row");
-
-      // A copy of that message has the same Message-ID: the campaign keeps the row, nobody acts.
-      const copied = failed(address("copy"), carried);
-      check((await mailgun(now(), token(), copied)).status === 200, "mailgun-campaign-copy");
-      const [copyRow] = stored<{ subscriber_id: number | null; campaign_id: number; meta: string }>(
-        "SELECT subscriber_id, campaign_id, meta FROM bounces WHERE meta ->> '$.event_id' = ?",
-        copied.id,
-      );
-      check(copyRow?.subscriber_id === null, "mailgun-campaign-copy-subscriber");
-      check(copyRow?.campaign_id === camp.id, "mailgun-campaign-copy-link");
-      check(!copyRow?.meta.includes("user unknown"), "mailgun-campaign-copy-text");
-      check((await bounces(una.id)).length === 1, "mailgun-campaign-copy-count");
-      check(
-        (await call(`/api/subscribers/${una.id}`)).body.data.status === "enabled",
-        "mailgun-campaign-copy-action",
-      );
-
-      // The subscriber's own export carries their bounces with the activity beside them.
-      check((await call("/api/settings/privacy.allow_export", "PUT", true)).status === 200, "ex");
-      const mailCount = sink.messages.length;
-      const exported = await fetch(`${target.baseUrl}/subscription/export/${una.uuid}`, {
-        method: "POST",
-      });
-      check(exported.status === 200, "export");
-      for (const deadline = Date.now() + 10_000; sink.messages.length === mailCount;) {
-        check(Date.now() < deadline, "export-mail");
-        await Bun.sleep(10);
-      }
-      const attachment = /filename="?data\.json"?[\s\S]*?\r?\n\r?\n([\s\S]*?)\r?\n--/.exec(
-        sink.messages.at(-1)!.data,
-      );
-      const report = JSON.parse(Buffer.from(attachment![1]!, "base64").toString("utf8"));
-      check(report.bounces.length === 1, "export-bounces");
-      check(
-        report.bounces[0].type === "soft" && report.bounces[0].source === "mailgun",
-        "export-row",
-      );
-      check(report.bounces[0].meta.severity === "temporary", "export-meta");
-      check(report.bounces[0].campaign === "Bounce subject", "export-campaign");
 
       // Native webhook callers can name a send.
       const vic = await subscriber("vic");
@@ -919,17 +673,12 @@ export async function runBouncesContract(target: {
       await recorded({ send_uuid: linkedSend.uuid, type: "soft", source: "api" });
       const [vicRow] = await bounces(vic.id);
       check(vicRow?.send_id === linkedSend.id, "native-send-uuid");
+      await receiver.waitFor(1);
+      const seen = receiver.received.find((r) => r.body.event === "bounce.recorded")!;
+      check(signatureValid(seen, secret), "webhook-signed");
+      check(seen.body.data.subscriber.uuid === vic.uuid, "webhook-subscriber");
+      check(seen.body.data.bounce.type === "soft", "webhook-type");
 
-      // A provider disabled by its own switch, then by the master switch, refuses everything.
-      await setting("bounce.mailgun", { enabled: false, key: "" });
-      check((await mailgun(now(), token(), data())).status === 400, "mailgun-disabled");
-      await setting("bounce.mailgun", { enabled: true, key: signingKey });
-      await setting("bounce.enabled", false);
-      check((await mailgun(now(), token(), data())).status === 503, "mailgun-bounce-off");
-      await setting("bounce.webhooks_enabled", false);
-      check((await mailgun(now(), token(), data())).status === 404, "mailgun-webhooks-off");
-      check(rows() >= before, "rows");
-      await setting("bounce.mailgun", { enabled: false, key: "" });
       await call(`/api/webhooks/${hook.body.data.id}`, "DELETE");
       await call(`/api/templates/${template.body.data.id}`, "DELETE");
 
@@ -938,16 +687,14 @@ export async function runBouncesContract(target: {
       // fills the client's counter for a minute.
       await setting("bounce.webhooks_enabled", true);
       await setting("bounce.enabled", true);
-      await setting("bounce.mailgun", { enabled: true, key: signingKey });
       const budget = (await call("/api/settings")).body.data["security.public_rate_limit"];
       check(budget.unsubscribe < 6000, "webhook-budget-default");
       try {
-        // A body that is not JSON is refused with 406 after the limit has counted it.
         const accepted = async () => {
           let count = 0;
           for (let limited = false; !limited;) {
             const batch = await Promise.all(
-              Array.from({ length: 100 }, () => call("/webhooks/bounce/mailgun", "POST", "{")),
+              Array.from({ length: 100 }, () => call("/webhooks/service/ses", "POST", "{")),
             );
             for (const answer of batch) {
               if (answer.status === 429) limited = true;

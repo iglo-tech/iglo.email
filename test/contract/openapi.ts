@@ -255,10 +255,6 @@ export async function runOpenApiContract(target: {
     });
     await send("PUT", "/api/settings/bounce.enabled", { body: true });
     await send("PUT", "/api/settings/bounce.webhooks_enabled", { body: true });
-    const signingKey = "openapi-contract-key";
-    await send("PUT", "/api/settings/bounce.mailgun", {
-      body: { enabled: true, key: signingKey },
-    });
     await send("PUT", "/api/settings/privacy.individual_tracking", {
       body: true,
     });
@@ -1130,28 +1126,6 @@ export async function runOpenApiContract(target: {
       },
     });
     await op("GET /api/subscribers/{id}/bounces", { params: { id: other.id } });
-    const now = Math.floor(Date.now() / 1000);
-    await op("POST /webhooks/bounce/mailgun", {
-      auth: null,
-      body: {
-        signature: {
-          timestamp: String(now),
-          token: "t".repeat(32),
-          signature: createHmac("sha256", signingKey)
-            .update(`${now}${"t".repeat(32)}`)
-            .digest("hex"),
-        },
-        "event-data": {
-          id: "e1",
-          event: "failed",
-          severity: "permanent",
-          recipient: other.email,
-          reason: "bounce",
-          timestamp: now,
-          "user-variables": {},
-        },
-      },
-    });
     await op("POST /webhooks/service/{service}", {
       params: { service: "ses" },
       auth: null,
