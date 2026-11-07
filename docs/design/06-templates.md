@@ -70,7 +70,7 @@ As in listmonk, a **campaign template** is a layout containing `{{ content }}`, 
 
 #### Content types
 
-`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with `marked` after Liquid), and `plain`. Visual (drag-and-drop) templates are later.
+`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with `marked` after Liquid), and `plain`. There is no visual editor; template editing for agents is via MCP.
 
 #### Example: Campaign template (layout)
 

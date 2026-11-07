@@ -14,7 +14,6 @@ const LATEST_PROTOCOL_VERSION = SUPPORTED_VERSIONS[0];
 export interface McpDeps {
   auth: Authentication;
   router: Router;
-  settings?: () => { rootUrl: string };
 }
 
 export function registerMcpRoutes(router: Router, deps: McpDeps): void {
@@ -257,6 +256,8 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
           : {};
 
       const cookieHeader = context.request.headers.get("cookie") ?? undefined;
+      const csrfHeader = context.request.headers.get("x-csrf-token") ?? undefined;
+      const originHeader = context.request.headers.get("origin") ?? undefined;
       const toolResult = await executeTool(
         params.name,
         context.app,
@@ -265,6 +266,8 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         context.peerAddress,
         args,
         cookieHeader,
+        csrfHeader,
+        originHeader,
       );
 
       return new Response(

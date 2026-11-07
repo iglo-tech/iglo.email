@@ -494,6 +494,75 @@ describe("B34 MCP endpoint tests", () => {
     const mail = await mailbox.one(subEmail, "Updated MCP Subject");
     expect(mail.body).toContain("Hello MCP Subscriber, welcome to MCP campaign!");
 
+    // Blocker 2: upload media, attach to campaign, delete media, then update_campaign and send_campaign_test succeed
+    const mediaForm = new FormData();
+    mediaForm.append(
+      "file",
+      new Blob(["fake png content"], { type: "image/png" }),
+      "deleted-test.png",
+    );
+    const uploadRes = await fetch(`${production.origin}/api/media`, {
+      method: "POST",
+      headers: { authorization: adminAuth },
+      body: mediaForm,
+    });
+    expect(uploadRes.status).toBe(200);
+    const mediaId = (await uploadRes.json()).data.id;
+
+    // Create campaign with attached media
+    const campWithMediaRes = await fetch(`${production.origin}/api/campaigns`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        name: "Media Campaign",
+        subject: "Subject Before Media Delete",
+        lists: [listId],
+        from_email: "noreply@example.test",
+        type: "regular",
+        content_type: "richtext",
+        body: "<p>Media test body</p>",
+        media: [mediaId],
+      }),
+    });
+    expect(campWithMediaRes.status).toBe(200);
+    const campWithMediaId = (await campWithMediaRes.json()).data.id;
+
+    // Delete the uploaded media
+    const deleteMediaRes = await fetch(`${production.origin}/api/media/${mediaId}`, {
+      method: "DELETE",
+      headers: adminHeaders,
+    });
+    expect(deleteMediaRes.status).toBe(200);
+
+    // update_campaign (subject only) should succeed despite deleted media (reports id: null)
+    const updateAfterMediaDelRes = await client.callTool({
+      name: "update_campaign",
+      arguments: {
+        id: campWithMediaId,
+        subject: "Subject After Media Delete",
+      },
+    });
+    expect(updateAfterMediaDelRes.isError).toBeFalsy();
+
+    const getCampAfterMediaDel = await fetch(
+      `${production.origin}/api/campaigns/${campWithMediaId}`,
+      { headers: adminHeaders },
+    );
+    expect(getCampAfterMediaDel.status).toBe(200);
+    expect((await getCampAfterMediaDel.json()).data.subject).toBe("Subject After Media Delete");
+
+    // send_campaign_test should also succeed
+    const testSendAfterMediaDelRes = await client.callTool({
+      name: "send_campaign_test",
+      arguments: {
+        id: campWithMediaId,
+        subscribers: [subEmail],
+      },
+    });
+    expect(testSendAfterMediaDelRes.isError).toBeFalsy();
+    const mailMediaDel = await mailbox.one(subEmail, "Subject After Media Delete");
+    expect(mailMediaDel.body).toContain("Media test body");
+
     // Create a second list and campaign for permission boundary check
     const otherListRes = await fetch(`${production.origin}/api/lists`, {
       method: "POST",
@@ -781,5 +850,148 @@ describe("B34 MCP endpoint tests", () => {
     expect(text.trim()).toBe(expectedSection);
 
     await client.close();
+  });
+
+  // 8. Cookie session authentication: write tool succeeds with cookie + CSRF token, and fails without/invalid CSRF token
+  test("8. Cookie session authentication: write tool succeeds with cookie + CSRF token, and fails without/invalid CSRF token", async () => {
+    // 1. Log in through real login flow
+    const loginPage = await fetch(`${production.origin}/admin/login`);
+    const loginHtml = await loginPage.text();
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(loginHtml)![1]!;
+    const nonceCookie = loginPage.headers
+      .getSetCookie()
+      .find((v) => v.startsWith("nonce="))!
+      .split(";", 1)[0]!;
+
+    const loginRes = await fetch(`${production.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        cookie: nonceCookie,
+      },
+      body: new URLSearchParams({
+        username: admin.user,
+        password: admin.password,
+        nonce,
+      }),
+    });
+    expect(loginRes.status).toBe(302);
+    const cookies = loginRes.headers.getSetCookie();
+    const sessionCookie = cookies.find((v) => v.startsWith("session="))!.split(";", 1)[0]!;
+    const csrfCookie = cookies.find((v) => v.startsWith("csrf="))!.split(";", 1)[0]!;
+    const cookieHeader = `${sessionCookie}; ${csrfCookie}`;
+    const csrfToken = csrfCookie.replace(/^csrf=/, "");
+
+    // 2. Create template via API to use as test target
+    const createTplRes = await fetch(`${production.origin}/api/templates`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        name: "Cookie Auth Template Initial",
+        type: "tx",
+        subject: "Initial Subject",
+        body: "Initial Body",
+      }),
+    });
+    expect(createTplRes.status).toBe(200);
+    const tplId = (await createTplRes.json()).data.id;
+
+    // 3. Connect via MCP SDK client using session cookie + CSRF token
+    const client = new Client(
+      { name: "mcp-cookie-client", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    const transport = new StreamableHTTPClientTransport(new URL(`${production.origin}/api/mcp`), {
+      requestInit: {
+        headers: {
+          Cookie: cookieHeader,
+          "X-CSRF-Token": csrfToken,
+        },
+      },
+    });
+    await client.connect(transport);
+
+    // Read tool over cookie session succeeds
+    const readRes = await client.callTool({
+      name: "get_template",
+      arguments: { id: tplId },
+    });
+    expect(readRes.isError).toBeFalsy();
+
+    // Write tool (update_template) over MCP with cookie + CSRF token succeeds
+    const writeRes = await client.callTool({
+      name: "update_template",
+      arguments: {
+        id: tplId,
+        name: "Updated via Cookie+CSRF",
+      },
+    });
+    expect(writeRes.isError).toBeFalsy();
+    await client.close();
+
+    // Change is visible via GET
+    const verifyGetRes = await fetch(`${production.origin}/api/templates/${tplId}`, {
+      headers: adminHeaders,
+    });
+    expect(verifyGetRes.status).toBe(200);
+    expect((await verifyGetRes.json()).data.name).toBe("Updated via Cookie+CSRF");
+
+    // 4. Same call with cookie but NO CSRF token -> refused (403) and nothing written
+    const noCsrfRes = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookieHeader,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "update_template",
+          arguments: {
+            id: tplId,
+            name: "Should Not Update - Missing CSRF",
+          },
+        },
+      }),
+    });
+    expect(noCsrfRes.status).toBe(403);
+
+    const verifyNoCsrf = await fetch(`${production.origin}/api/templates/${tplId}`, {
+      headers: adminHeaders,
+    });
+    expect(verifyNoCsrf.status).toBe(200);
+    expect((await verifyNoCsrf.json()).data.name).toBe("Updated via Cookie+CSRF");
+
+    // 5. Same call with cookie but INVALID CSRF token -> refused (403) and nothing written
+    const invalidCsrfRes = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookieHeader,
+        "x-csrf-token": "invalid-csrf-token-value",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: {
+          name: "update_template",
+          arguments: {
+            id: tplId,
+            name: "Should Not Update - Invalid CSRF",
+          },
+        },
+      }),
+    });
+    expect(invalidCsrfRes.status).toBe(403);
+
+    const verifyInvalidCsrf = await fetch(`${production.origin}/api/templates/${tplId}`, {
+      headers: adminHeaders,
+    });
+    expect(verifyInvalidCsrf.status).toBe(200);
+    expect((await verifyInvalidCsrf.json()).data.name).toBe("Updated via Cookie+CSRF");
   });
 });

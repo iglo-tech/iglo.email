@@ -270,6 +270,15 @@ export const TOOLS: ToolDefinition[] = [
   },
 ];
 
+function extractPositiveIds(items: unknown): number[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) =>
+      typeof item === "object" && item !== null ? (item as { id?: unknown }).id : item,
+    )
+    .filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0);
+}
+
 async function callEndpoint(
   app: App,
   router: Router,
@@ -280,11 +289,15 @@ async function callEndpoint(
   body?: unknown,
   contentType = "application/json",
   cookieHeader?: string,
+  csrfHeader?: string,
+  originHeader?: string,
 ): Promise<ToolResult> {
   const url = `http://127.0.0.1${path}`;
   const headers: Record<string, string> = {};
   if (authHeader) headers["authorization"] = authHeader;
   if (cookieHeader) headers["cookie"] = cookieHeader;
+  if (csrfHeader) headers["x-csrf-token"] = csrfHeader;
+  if (originHeader) headers["origin"] = originHeader;
 
   let requestBody: BodyInit | undefined;
   if (body !== undefined && method !== "GET" && method !== "HEAD") {
@@ -349,24 +362,15 @@ async function callEndpoint(
 }
 
 async function getStoredCampaign(
-  app: App,
-  router: Router,
-  authHeader: string,
-  peerAddress: string,
-  cookieHeader: string | undefined,
+  invoke: (
+    method: string,
+    path: string,
+    body?: unknown,
+    contentType?: string,
+  ) => Promise<ToolResult>,
   id: string | number,
 ): Promise<{ data?: Record<string, unknown>; error?: ToolResult }> {
-  const res = await callEndpoint(
-    app,
-    router,
-    authHeader,
-    peerAddress,
-    "GET",
-    `/api/campaigns/${encodeURIComponent(String(id))}`,
-    undefined,
-    "application/json",
-    cookieHeader,
-  );
+  const res = await invoke("GET", `/api/campaigns/${encodeURIComponent(String(id))}`);
   if (res.isError) {
     return { error: res };
   }
@@ -391,39 +395,36 @@ export async function executeTool(
   peerAddress: string,
   args: Record<string, unknown>,
   cookieHeader?: string,
+  csrfHeader?: string,
+  originHeader?: string,
 ): Promise<ToolResult> {
+  const invoke = (method: string, path: string, body?: unknown, contentType = "application/json") =>
+    callEndpoint(
+      app,
+      router,
+      authHeader,
+      peerAddress,
+      method,
+      path,
+      body,
+      contentType,
+      cookieHeader,
+      csrfHeader,
+      originHeader,
+    );
+
   switch (name) {
     case "list_templates": {
       const params = new URLSearchParams();
       if (typeof args.query === "string" && args.query) params.set("query", args.query);
       if (args.no_body === true) params.set("no_body", "true");
       const qs = params.toString() ? `?${params.toString()}` : "";
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "GET",
-        `/api/templates${qs}`,
-        undefined,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("GET", `/api/templates${qs}`);
     }
     case "get_template": {
       const id = encodeURIComponent(String(args.id));
       const qs = args.no_body === true ? "?no_body=true" : "";
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "GET",
-        `/api/templates/${id}${qs}`,
-        undefined,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("GET", `/api/templates/${id}${qs}`);
     }
     case "create_template": {
       const body: Record<string, unknown> = {
@@ -433,17 +434,7 @@ export async function executeTool(
       if (args.subject !== undefined) body.subject = args.subject;
       if (args.body !== undefined) body.body = args.body;
       if (args.is_default !== undefined) body.is_default = args.is_default;
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "POST",
-        "/api/templates",
-        body,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("POST", "/api/templates", body);
     }
     case "update_template": {
       const id = encodeURIComponent(String(args.id));
@@ -453,46 +444,16 @@ export async function executeTool(
       if (args.subject !== undefined) body.subject = args.subject;
       if (args.body !== undefined) body.body = args.body;
       if (args.is_default !== undefined) body.is_default = args.is_default;
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "PUT",
-        `/api/templates/${id}`,
-        body,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("PUT", `/api/templates/${id}`, body);
     }
     case "delete_template": {
       const id = encodeURIComponent(String(args.id));
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "DELETE",
-        `/api/templates/${id}`,
-        undefined,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("DELETE", `/api/templates/${id}`);
     }
     case "preview_template": {
       if (args.id !== undefined && args.id !== null) {
         const id = encodeURIComponent(String(args.id));
-        return callEndpoint(
-          app,
-          router,
-          authHeader,
-          peerAddress,
-          "GET",
-          `/api/templates/${id}/preview`,
-          undefined,
-          "application/json",
-          cookieHeader,
-        );
+        return invoke("GET", `/api/templates/${id}/preview`);
       }
       const form = new URLSearchParams();
       form.set(
@@ -500,31 +461,16 @@ export async function executeTool(
         typeof args.template_type === "string" ? args.template_type : "campaign",
       );
       form.set("body", typeof args.body === "string" ? args.body : "");
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
+      return invoke(
         "POST",
         "/api/templates/preview",
         form.toString(),
         "application/x-www-form-urlencoded",
-        cookieHeader,
       );
     }
     case "set_default_template": {
       const id = encodeURIComponent(String(args.id));
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "PUT",
-        `/api/templates/${id}/default`,
-        undefined,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("PUT", `/api/templates/${id}/default`);
     }
     case "list_campaigns": {
       const params = new URLSearchParams();
@@ -535,51 +481,20 @@ export async function executeTool(
       if (typeof args.order_by === "string") params.set("order_by", args.order_by);
       if (typeof args.dir === "string") params.set("dir", args.dir);
       const qs = params.toString() ? `?${params.toString()}` : "";
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "GET",
-        `/api/campaigns${qs}`,
-        undefined,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("GET", `/api/campaigns${qs}`);
     }
     case "get_campaign": {
       const id = encodeURIComponent(String(args.id));
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "GET",
-        `/api/campaigns/${id}`,
-        undefined,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("GET", `/api/campaigns/${id}`);
     }
     case "update_campaign": {
       const id = encodeURIComponent(String(args.id));
-      const stored = await getStoredCampaign(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        cookieHeader,
-        args.id as string | number,
-      );
+      const stored = await getStoredCampaign(invoke, args.id as string | number);
       if (stored.error) return stored.error;
       const data = stored.data ?? {};
 
-      const storedLists = Array.isArray(data.lists)
-        ? data.lists.map((l: any) => (typeof l === "object" && l !== null ? l.id : l))
-        : [];
-      const storedMedia = Array.isArray(data.media)
-        ? data.media.map((m: any) => (typeof m === "object" && m !== null ? m.id : m))
-        : [];
+      const storedLists = extractPositiveIds(data.lists);
+      const storedMedia = extractPositiveIds(data.media);
 
       const body: Record<string, unknown> = {
         name: args.name !== undefined ? args.name : data.name,
@@ -587,7 +502,12 @@ export async function executeTool(
         from_email: args.from_email !== undefined ? args.from_email : data.from_email,
         body: args.body !== undefined ? args.body : data.body,
         content_type: args.content_type !== undefined ? args.content_type : data.content_type,
-        lists: args.lists !== undefined ? args.lists : storedLists,
+        lists:
+          args.lists !== undefined
+            ? Array.isArray(args.lists)
+              ? extractPositiveIds(args.lists)
+              : args.lists
+            : storedLists,
         media: storedMedia,
         template_id: args.template_id !== undefined ? args.template_id : data.template_id,
         tags: args.tags !== undefined ? args.tags : data.tags,
@@ -618,17 +538,7 @@ export async function executeTool(
         body.archive_meta = data.archive_meta;
       }
 
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "PUT",
-        `/api/campaigns/${id}`,
-        body,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("PUT", `/api/campaigns/${id}`, body);
     }
     case "preview_campaign": {
       const id = encodeURIComponent(String(args.id));
@@ -637,17 +547,7 @@ export async function executeTool(
       const hasTemplateId = typeof args.template_id === "number";
 
       if (!hasBody && !hasContentType && !hasTemplateId) {
-        return callEndpoint(
-          app,
-          router,
-          authHeader,
-          peerAddress,
-          "GET",
-          `/api/campaigns/${id}/preview`,
-          undefined,
-          "application/json",
-          cookieHeader,
-        );
+        return invoke("GET", `/api/campaigns/${id}/preview`);
       }
 
       let body = hasBody ? (args.body as string) : undefined;
@@ -655,14 +555,7 @@ export async function executeTool(
       let templateId = hasTemplateId ? (args.template_id as number) : undefined;
 
       if (body === undefined || contentType === undefined || templateId === undefined) {
-        const stored = await getStoredCampaign(
-          app,
-          router,
-          authHeader,
-          peerAddress,
-          cookieHeader,
-          args.id as string | number,
-        );
+        const stored = await getStoredCampaign(invoke, args.id as string | number);
         if (stored.error) return stored.error;
         if (body === undefined) body = String(stored.data?.body ?? "");
         if (contentType === undefined)
@@ -677,16 +570,11 @@ export async function executeTool(
       if (contentType) form.set("content_type", contentType);
       if (templateId !== undefined) form.set("template_id", String(templateId));
 
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
+      return invoke(
         "POST",
         `/api/campaigns/${id}/preview`,
         form.toString(),
         "application/x-www-form-urlencoded",
-        cookieHeader,
       );
     }
     case "campaign_text": {
@@ -698,14 +586,7 @@ export async function executeTool(
         typeof args.template_id === "number" ? (args.template_id as number) : undefined;
 
       if (body === undefined || contentType === undefined || templateId === undefined) {
-        const stored = await getStoredCampaign(
-          app,
-          router,
-          authHeader,
-          peerAddress,
-          cookieHeader,
-          args.id as string | number,
-        );
+        const stored = await getStoredCampaign(invoke, args.id as string | number);
         if (stored.error) return stored.error;
         if (body === undefined) body = String(stored.data?.body ?? "");
         if (contentType === undefined)
@@ -720,37 +601,21 @@ export async function executeTool(
       if (contentType) form.set("content_type", contentType);
       if (templateId !== undefined) form.set("template_id", String(templateId));
 
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
+      return invoke(
         "POST",
         `/api/campaigns/${id}/text`,
         form.toString(),
         "application/x-www-form-urlencoded",
-        cookieHeader,
       );
     }
     case "send_campaign_test": {
       const id = encodeURIComponent(String(args.id));
-      const stored = await getStoredCampaign(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        cookieHeader,
-        args.id as string | number,
-      );
+      const stored = await getStoredCampaign(invoke, args.id as string | number);
       if (stored.error) return stored.error;
       const data = stored.data ?? {};
 
-      const storedLists = Array.isArray(data.lists)
-        ? data.lists.map((l: any) => (typeof l === "object" && l !== null ? l.id : l))
-        : [];
-      const storedMedia = Array.isArray(data.media)
-        ? data.media.map((m: any) => (typeof m === "object" && m !== null ? m.id : m))
-        : [];
+      const storedLists = extractPositiveIds(data.lists);
+      const storedMedia = extractPositiveIds(data.media);
 
       const body: Record<string, unknown> = {
         name: args.name ?? data.name,
@@ -758,7 +623,12 @@ export async function executeTool(
         from_email: args.from_email ?? data.from_email,
         body: args.body ?? data.body,
         content_type: args.content_type ?? data.content_type,
-        lists: storedLists,
+        lists:
+          args.lists !== undefined
+            ? Array.isArray(args.lists)
+              ? extractPositiveIds(args.lists)
+              : args.lists
+            : storedLists,
         media: storedMedia,
         subscribers: args.subscribers,
         messenger: data.messenger ?? "email",
@@ -775,17 +645,7 @@ export async function executeTool(
         body.altbody = data.altbody;
       }
 
-      return callEndpoint(
-        app,
-        router,
-        authHeader,
-        peerAddress,
-        "POST",
-        `/api/campaigns/${id}/test`,
-        body,
-        "application/json",
-        cookieHeader,
-      );
+      return invoke("POST", `/api/campaigns/${id}/test`, body);
     }
     case "template_reference": {
       return {

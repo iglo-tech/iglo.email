@@ -712,7 +712,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     registerMcpRoutes(router, {
       auth,
       router,
-      settings: () => ({ rootUrl: settings!.read()["app.root_url"] }),
     });
     summaryRefresh = startSummaryRefresh({
       clock,
