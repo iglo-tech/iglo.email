@@ -33,9 +33,9 @@ const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 /**
  * Memory a send with attachments may hold at once, across requests (D74, D87). Counted bytes are
  * real bytes: the multipliers below are measured peak RSS growth per attachment byte
- * (docs/perf/B26-tx-memory.md), so the budget is the growth bound for the process, on top of a
- * fixed ~25 MiB. A multipart upload costs its body about 4.3 times while it is parsed (read
- * chunks, joined body, form, file copy); after it the journal encodes and decodes one payload per
+ * (docs/perf/B26-tx-memory.md), so the budget bounds the counted, measured-per-copy memory (on top
+ * of a fixed ~25 MiB and the garbage collector's lag, which let measured peaks reach 389 MiB). A multipart upload costs its body about 4.3
+ * times while it is parsed (read chunks, joined body, form, file copy); after it the journal encodes and decodes one payload per
  * recipient, and each synchronous recipient's message is pushed concurrently with a decoded copy,
  * a base64 string and the SMTP library's own encoding.
  */
@@ -122,6 +122,7 @@ export function registerTxRoutes(
     };
   },
 ) {
+  const budget = deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT;
   let gate: ByteGate | undefined;
   const busy = () =>
     new HttpError(429, "Too many sends with attachments in progress.", {
@@ -135,7 +136,7 @@ export function registerTxRoutes(
     async (context) => {
       gate ??= createByteGate({
         clock: context.app.clock,
-        maxBytes: deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT,
+        maxBytes: budget,
         maxHolders: deps.limits?.maxSends ?? MAX_ATTACHMENT_SENDS,
         waitMs: deps.limits?.waitMs ?? ATTACHMENT_WAIT_MS,
         ...(deps.limits?.maxOvertakes === undefined
@@ -385,6 +386,10 @@ export function registerTxRoutes(
           (HELD_COPIES +
             (m.async ? ENCODED_COPIES_PER_RECIPIENT : HELD_COPIES_PER_RECIPIENT) * requested.length)
         : 0;
+      // A charge over the whole budget can never be admitted, even on an idle server, so a 429
+      // would make a retrying client loop forever. Main answered such a request with this 400.
+      if (held > budget)
+        throw new HttpError(400, t.Ts("templates.errorRendering", "error", "invalid message"));
       if (!held) {
         slot.reservation?.release();
         slot.reservation = null;

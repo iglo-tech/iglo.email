@@ -25,7 +25,7 @@ test("an attachment round-trips and only canonical base64 is accepted back", () 
 });
 
 test("decoding a 4 MiB attachment does not spike memory far above its size", async () => {
-  const child = Bun.spawn(["bun", "test/tx/payload-memory-probe.ts"], {
+  const child = Bun.spawn([process.execPath, `${import.meta.dir}/payload-memory-probe.ts`], {
     stdout: "pipe",
     stderr: "inherit",
   });

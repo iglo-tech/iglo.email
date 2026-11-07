@@ -424,6 +424,27 @@ test("an embedded image counts toward what a durable send can hold", async () =>
   expect((f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n).toBe(0n);
 });
 
+test("a charge that can never fit the budget is a 400, not a 429 a client would retry (D87)", async () => {
+  const f = await open();
+  const body = new FormData();
+  body.append("file", new File([new Uint8Array(7.5 * 1024 * 1024)], "huge.png"));
+  const stored = await f.request("/api/media", { method: "POST", headers: f.sessionHeaders, body });
+  expect(stored.status).toBe(200);
+  const template = await f.template(`<img src="huge.png" data-embed="true">`);
+  // Two recipients: 7.5 MiB x (4 + 7 x 2) = 135 MiB, over the 128 MiB budget on an idle server.
+  const refused = await f.request("/api/tx", {
+    method: "POST",
+    headers: { ...f.sessionHeaders, "content-type": "application/json" },
+    body: JSON.stringify({
+      subscriber_emails: ["a@example.test", "b@example.test"],
+      template_id: template,
+    }),
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.headers.get("retry-after")).toBeNull();
+  expect(f.count()).toBe(0);
+});
+
 test("permission, CSRF and origin use the existing authentication", async () => {
   const f = await open();
   const template = await f.template("<p>x</p>");
