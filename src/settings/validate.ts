@@ -124,6 +124,20 @@ function entries(value: unknown): [string, unknown][] {
 // All JSON field tags here are ASCII. Go's simple folding also admits long s
 // and Kelvin sign, without multi-character expansions such as ß -> SS.
 const foldField = (value: string) => value.replace(/ſ/g, "s").replace(/K/g, "k").toLowerCase();
+// Folded name -> declared name for one static shape; the first declared match wins, as with find.
+const foldedNames = new WeakMap<object, Map<string, string>>();
+function lookup(shape: object, key: string): string | undefined {
+  let names = foldedNames.get(shape);
+  if (!names) {
+    names = new Map();
+    for (const name of Object.keys(shape)) {
+      const folded = foldField(name);
+      if (!names.has(folded)) names.set(folded, name);
+    }
+    foldedNames.set(shape, names);
+  }
+  return names.get(foldField(key));
+}
 /** Whether a decoded settings object names a top-level key, with Go field folding. */
 export function hasField(value: unknown, key: string): boolean {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -161,7 +175,7 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
     for (const [key, fallback] of Object.entries(shape))
       if (key !== "dkim" && !Object.hasOwn(result, key)) result[key] = zero(fallback);
     for (const [key, entry] of members) {
-      const match = Object.keys(shape).find((name) => foldField(name) === foldField(key));
+      const match = lookup(shape, key);
       if (match === "dkim" && shape === smtpShape) {
         try {
           if (entry === null) result[match] = null;
@@ -204,7 +218,7 @@ export function bindFull(value: unknown, root: string): Settings {
     else out[key] = typeof shape === "string" ? "" : typeof shape === "boolean" ? false : 0;
   }
   for (const [key, entry] of value === null ? [] : entries(value)) {
-    const match = Object.keys(shapes).find((name) => foldField(name) === foldField(key));
+    const match = lookup(shapes, key);
     if (match) out[match] = bind(entry, shapes[match], out[match]);
   }
   out["app.root_url"] = root;
