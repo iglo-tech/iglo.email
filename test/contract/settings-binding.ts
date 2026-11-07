@@ -157,6 +157,12 @@ export async function runSettingsBinding(target: {
       "b",
     ],
     [
+      "nested-kelvin",
+      '"security.captcha":{"hcaptcha":{"\u212aey":"kelvin"}}',
+      "security.captcha.hcaptcha.key",
+      "kelvin",
+    ],
+    [
       "slice-reset",
       '"app.notify_emails":["a"],"APP.NOTIFY_EMAILS":null,"app.notify_emails":["b",null]',
       "app.notify_emails",
@@ -177,7 +183,8 @@ export async function runSettingsBinding(target: {
   ] as const) {
     check((await put("/api/settings", addMembers(members))).status === 200, label);
     let value: any = await get();
-    if (label === "nested-alias") value = value["security.captcha"].hcaptcha.key;
+    if (label === "nested-alias" || label === "nested-kelvin")
+      value = value["security.captcha"].hcaptcha.key;
     else if (label === "map-duplicate") value = value["bounce.actions"].bounce;
     else if (label === "nullable") value = value["security.oidc"].roles;
     else value = value[field];
