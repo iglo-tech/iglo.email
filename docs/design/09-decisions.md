@@ -593,6 +593,9 @@ Decided by agents on 2026-10-30, for owner review.
 
 Decided by agents on 2026-10-30, for owner review.
 
+> [!NOTE]
+> The Mailgun parts of this decision are superseded by [D89](#d89-narrow-complete-product-scope-owner-2026-11-07) and task B35: Amazon SES is the only sending and bounce provider. `bounce_receipts` is retained and now serves Amazon SNS / SES only (`sns:<MessageId>`).
+
 - **Decision:** migration 12 adds `bounce_receipts` (`key`, `expires_at`), committed in the same transaction as the bounce it admits. A key is `token:<token>`, held until the token's signature window ends, or `event:<id>`, held for 24 hours from receipt. Mailgun's retries span hours, and a day covers them.
 - **Why durable:** a replay must be refused after a restart, and a failed request must leave no receipt so that its retry can succeed. An in-memory set does the first badly and a table outside the transaction does the second badly.
 - **Pruning:** an accepted request removes at most 100 expired receipts and adds at most two, so a backlog shrinks while traffic lasts and stops growing when it does not. Deleting them all in one request held the single writer for 1.9 s over 980,000 rows, and a batch for about 1.3 ms ([measurements](../perf/M3.4-bounces.md)). An expired key still waiting for its turn counts as absent, so the backlog cannot change an answer. A receipt's validity window is bounded. Cleanup runs only on provider traffic, so expired rows stay through an idle period and until later requests drain them, and the row count has no hard limit, since there is no global admission cap beyond the public rate limit.

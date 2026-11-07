@@ -146,7 +146,7 @@ Serial, then the spikes in parallel after M0.4.
 | M3.1 | Campaigns API: CRUD, status changes, test sends, content conversion | `cmd/campaigns.go`, `queries/campaigns.sql` | M1.8, M2.1 | Campaign contract tests pass in both modes |
 | M3.2 | Campaign runner: pipeline, rate limits and sliding window, cursor, pause and resume, at-most-once batches | `internal/manager`, `cmd/manager_store.go` | M3.1, M2.2 | 10,000 subscribers through Mailpit respect the limits; a kill mid-campaign resumes without duplicates; measurements in `docs/perf/` |
 | M3.3 | Tracking and analytics: view pixel, link redirects, summary tables, dashboard counts | `cmd/campaign_analytics.go`, `cmd/dashboard.go`, `queries/links.sql` | M3.2 | Analytics contract tests pass in both modes |
-| M3.4 | Bounces: bounce API, Mailgun webhook, soft, hard and complaint actions | `cmd/bounce.go`, `internal/bounce` (API and Mailgun parts), `queries/bounces.sql` | M1.6, M2.6 | Bounce contract tests pass; actions fire webhooks |
+| M3.4 | Bounces: bounce API, Amazon SES (SNS) webhook (Mailgun removed in B35/D89), soft, hard and complaint actions | `cmd/bounce.go`, `internal/bounce` (API and bounce parts), `queries/bounces.sql` | M1.6, M2.6 | Bounce contract tests pass; actions fire webhooks |
 | M3.5 | Media: filesystem storage, upload, list, delete | `cmd/media.go`, `internal/media`, `queries/media.sql` | M1.4 | Media contract tests pass in both modes |
 
 ### M4: admin UI

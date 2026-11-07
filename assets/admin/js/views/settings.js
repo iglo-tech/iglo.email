@@ -365,7 +365,6 @@ function component() {
       secret(form['bounce.postmark'], 'password', 'postmark');
       secret(form['bounce.forwardemail'], 'key', 'forwardemail');
       secret(form['bounce.lettermint'], 'key', 'lettermint');
-      secret(form['bounce.mailgun'], 'key', 'mailgun');
 
       if (dummy) {
         u.toast(i18n.ts('globals.messages.passwordChangeFull', { name: dummy }), 'warning');

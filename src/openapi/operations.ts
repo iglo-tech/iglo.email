@@ -1250,18 +1250,6 @@ const bounces: Operation[] = [
     errors: [404, 503],
   },
   {
-    route: "POST /webhooks/bounce/mailgun",
-    id: "postMailgunBounce",
-    tag: "Bounces",
-    summary:
-      "Mailgun's signed bounce webhook; a refusal answers 406, which Mailgun does not retry.",
-    native: true,
-    anonymous: true,
-    body: ref("MailgunWebhook"),
-    data: yes,
-    errors: [404, 406, 429, 503],
-  },
-  {
     route: "POST /webhooks/service/{service}",
     id: "postServiceBounce",
     tag: "Bounces",

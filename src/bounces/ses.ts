@@ -5,9 +5,25 @@
 // certificate cache, up to 50 recipients, a topic allowlist, and no stored headers or addresses in `meta`.
 import { X509Certificate, createVerify } from "node:crypto";
 import type { BounceEvent, BounceType } from "@/bounces/store";
-import { campaignMessage, record, safeText, sendMessage } from "@/bounces/mailgun";
 import type { Clock } from "@/clock";
 import { sanitizeEmail } from "@/subscribers/email";
+
+const MAX_TEXT_LENGTH = 1000;
+const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const sendMessage = new RegExp(`^<?(${uuid})@[^@>\\s]+>?$`, "i");
+const campaignMessage = new RegExp(`^<?(${uuid})\\.(${uuid})@[^@>\\s]+>?$`, "i");
+const addresses = /[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g;
+
+const record = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+/** Provider text is bounded and loses addresses, which it often repeats. */
+function safeText(value: unknown) {
+  if (typeof value !== "string" || !value) return undefined;
+  return value.slice(0, MAX_TEXT_LENGTH).replace(addresses, "[address]");
+}
 
 /**
  * ses.go sesRegCertURL, with the region held to an AWS region's shape (`eu-west-1`, `cn-north-1`,

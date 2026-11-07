@@ -569,7 +569,7 @@ export const differences: Difference[] = [
     area: "Bounces (M3.4)",
     summary:
       "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast. `POST /webhooks/service/ses` believes only the SNS topics listed in `bounce.ses_topic_arns` and records at most 50 recipients, where upstream believes any signed message. Its certificate and confirmation URLs must name a real AWS region (`sns.eu-west-1.amazonaws.com`); upstream's pattern also matches the S3 bucket host `sns.s3.amazonaws.com`. Provider webhooks have a budget of 6,000 POSTs per client per minute, apart from the public forms, so a bounce burst is not refused at 300.",
-    applies: ["/api/bounces", "/bounces", "POST /webhooks/bounce", "POST /webhooks/service"],
+    applies: ["/api/bounces", "/bounces", "POST /webhooks/service"],
   },
   {
     area: "Media uploads (M3.5)",
@@ -646,6 +646,12 @@ export const differences: Difference[] = [
     summary:
       "`bounce.actions` refuses a `count` outside 1 to 1000 and an `action` other than `none`, `unsubscribe`, `blocklist` or `delete` with 400, where upstream stores them. Turning `password_login` off or making a user an API user clears their TOTP.",
     applies: [],
+  },
+  {
+    area: "Inert bounce provider settings (B35, D89)",
+    summary:
+      "`bounce.sendgrid_enabled`, `bounce.sendgrid_key`, `bounce.postmark`, `bounce.forwardemail`, `bounce.lettermint`, `bounce.azure` and `bounce.mailboxes` are accepted and stored by the settings API for listmonk API compatibility; no effect; SES is the only provider (D89). The admin UI Bounces tab shows only Amazon SES",
+    applies: ["/api/settings"],
   },
   {
     area: "Dropped `GET /api/config`",

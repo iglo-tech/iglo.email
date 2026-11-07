@@ -20,7 +20,7 @@ A redundant healthy check-in auto-settles only itself via `t3_thread_organize` a
 
 Owner rule, 2026-11-01: work until nothing remains that can be done without the owner doing something. A merged work plan does not end the goal: after it come the Work queue and every line of the Hardening backlog in [`status.md`](status.md).
 
-- Only these need the owner: verification against a real account (one real Mailgun event), publishing a release, and product scope excluded here: OIDC, postback messengers and the official Docker image (P.1).
+- Only these need the owner: publishing a release, and product scope excluded here: OIDC, postback messengers and the official Docker image (P.1).
 - An owner item blocks only itself. Skip it and continue. Decisions, reviews and backlog are never owner items: decide, log and go on.
 - Never disable or pause the schedule. When only owner items remain, name them and settle that run.
 
