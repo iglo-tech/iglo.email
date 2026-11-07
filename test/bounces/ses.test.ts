@@ -53,22 +53,39 @@ function issue(notAfter = "21250101000000Z") {
       "-subj",
       "/CN=sns.amazonaws.com",
     );
+    writeFileSync(
+      join(dir, "ca.cnf"),
+      `[ ca ]
+default_ca = CA_default
+
+[ CA_default ]
+database = index.txt
+new_certs_dir = .
+certificate = ca.pem
+serial = serial
+private_key = ca.key
+default_md = sha256
+policy = policy_any
+
+[ policy_any ]
+commonName = supplied
+`,
+    );
+    writeFileSync(join(dir, "index.txt"), "");
+    writeFileSync(join(dir, "serial"), "01\n");
     openssl(
       dir,
-      "x509",
-      "-req",
+      "ca",
+      "-config",
+      "ca.cnf",
+      "-batch",
       "-in",
       "leaf.csr",
-      "-CA",
-      "ca.pem",
-      "-CAkey",
-      "ca.key",
-      "-CAcreateserial",
       "-out",
       "leaf.pem",
-      "-not_before",
+      "-startdate",
       "20250101000000Z",
-      "-not_after",
+      "-enddate",
       notAfter,
     );
     return {
