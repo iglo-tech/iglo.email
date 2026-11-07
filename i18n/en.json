@@ -656,6 +656,8 @@
     "settings.performance.concurrencyHelp": "Maximum concurrent workers (threads) that will attempt to send messages simultaneously.",
     "settings.performance.maxErrThreshold": "Maximum error threshold",
     "settings.performance.maxErrThresholdHelp": "The number of errors (eg: SMTP timeouts while e-mailing) a running campaign should tolerate before it is paused for manual investigation or intervention. Set to 0 to never pause.",
+    "settings.performance.maxSendRate": "Maximum send rate",
+    "settings.performance.maxSendRateHelp": "Your SES account's maximum send rate. Every email (campaign, transactional, sequence) waits for it.",
     "settings.performance.messageRate": "Message rate",
     "settings.performance.messageRateHelp": "Maximum number of messages to be sent out per second per worker in a second. If concurrency = 10 and message_rate = 10, then up to 10x10=100 messages may be pushed out every second. This, along with concurrency, should be tweaked to keep the net messages going out per second under the target message servers rate limits if any.",
     "settings.performance.slidingWindow": "Enable sliding window limit",

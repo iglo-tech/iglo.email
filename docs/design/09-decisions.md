@@ -929,3 +929,15 @@ Lead design decisions from brief B34 ([D89](#d89-narrow-complete-product-scope-o
   - Campaigns: `list_campaigns` (`GET /api/campaigns`), `get_campaign` (`GET /api/campaigns/:id`), `update_campaign` (`PUT /api/campaigns/:id`), `preview_campaign` (`POST /api/campaigns/:id/preview` or `GET /api/campaigns/:id/preview`), `campaign_text` (`POST /api/campaigns/:id/text`), `send_campaign_test` (`POST /api/campaigns/:id/test`).
   - Reference: `template_reference` static reference generated at build time from `docs/design/06-templates.md`.
 
+## D92. One shared send-rate cap for SES (lead, 2026-11-07)
+
+Lead design decisions from brief B37 (B36 audit #88, [D89](#d89-narrow-complete-product-scope-owner-2026-11-07)).
+
+- **Setting:** One new native setting, `messaging.max_send_rate`: messages per second for the whole process, default `14` (the AWS SES production default; sandbox is 1/s), `0` = no cap. Validated as an integer 0–10,000. Configured in Settings > Performance.
+- **Why one cap:** Amazon SES enforces one account-wide maximum send rate across all connections. Previously, only campaigns were paced (`app.message_rate` per worker × `app.concurrency`), while transactional and sequence sends from the outbox were unpaced and uncounted together. When SES throttles (`454 Throttling failure: Maximum sending rate exceeded`), sequence steps (marketing at-most-once) are lost as failed, transactional messages incur retry backoffs, and campaigns risk hitting error limits. One shared send-rate limiter paces all outgoing traffic (campaigns, transactional, and sequence steps) before messages reach the SMTP pool.
+- **Limiter injection:** One limiter object (`createSendRateLimiter` in `src/messaging/rate.ts`) is created in `src/main.ts` with the injected clock and dynamic rate getter `() => settings.read()["messaging.max_send_rate"]`, and injected into `createEmailer`. No module-level state (AGENTS.md).
+- **Algorithm & pacing:** Smooth interval pacing (`interval = 1000 / rate`) so that within any sliding 1-second window no more than `rate` messages start. Token intervals smooth sends out evenly across the second, avoiding burst clustering at second boundaries. Setting changes apply immediately on the next wait without dropping queued waiters or losing accumulated tokens.
+- **Priority:** Dual-priority queue where outbox sends (`priority: "outbox"`, transactional and sequence steps) take precedence over waiting campaign messages (`priority: "campaign"`). A large background campaign broadcast cannot delay an urgent transactional email (such as a password reset) by more than one token interval. Campaign workers retain their own concurrency and sliding-window pacing on top; the global cap only ever slows sends.
+- **Clean shutdown:** Token waits use `clock.sleep` with an abort signal. Stopping the emailer or closing the app aborts pending waits cleanly; no message is sent after stop, and shutdown does not hang.
+- **No new retries:** Marketing and sequence sends remain strictly at-most-once. The shared pacing cap prevents throttling rejections at the root rather than retrying dropped marketing mail.
+

@@ -1,17 +1,19 @@
 // Minimal loopback SMTP sink for in-process tests; never a real server.
 import { createServer, type Socket } from "node:net";
+import type { Clock } from "@/clock";
 
 export interface Captured {
   from: string;
   to: string[];
   data: string;
+  at?: number;
 }
 /**
  * `pauseMs` stops reading after each chunk: an SMTP server on a slow link. `discardData` keeps
  * no message text, so a memory measurement does not count the sink's own copy (B26).
  */
 export async function startSink(
-  options: { reject?: () => boolean; pauseMs?: number; discardData?: boolean } = {},
+  options: { reject?: () => boolean; pauseMs?: number; discardData?: boolean; clock?: Clock } = {},
 ) {
   const messages: Captured[] = [];
   const sockets = new Set<Socket>();
@@ -36,6 +38,7 @@ export async function startSink(
         if (data) {
           if (line === ".") {
             current.data = options.discardData ? "" : data.join("\r\n");
+            current.at = options.clock ? options.clock.now().getTime() : Date.now();
             data = null;
             messages.push(current);
             socket.write("250 queued\r\n");

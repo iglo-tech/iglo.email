@@ -190,6 +190,9 @@ async function setup(origin: string, sinkPort: number) {
     "app.message_rate": rate,
     "app.batch_size": 1000,
     "app.message_sliding_window": false,
+    ...(process.env.M61_MAX_SEND_RATE !== undefined
+      ? { "messaging.max_send_rate": Number(process.env.M61_MAX_SEND_RATE) }
+      : {}),
   };
   const updated = await api("/api/settings", "PUT", {
     ...current,
@@ -243,8 +246,9 @@ async function waitFor(check: () => boolean, timeoutMs: number, what: string) {
 
 type Result = { deadline: number; done: number; status: number };
 
-async function run(name: "events" | "baseline" | "mixed") {
+async function run(name: "events" | "baseline" | "mixed" | "campaign") {
   const campaign = name !== "events";
+  const hasEvents = name !== "campaign";
   const sequences = name === "mixed";
   const directory = mkdtempSync(join(base, `m61-${name}-`));
   const sink = await startSink();
@@ -303,11 +307,13 @@ async function run(name: "events" | "baseline" | "mixed") {
       assert.equal(sends.status, 200, JSON.stringify(sends.body));
       assert.equal(exits.status, 200, JSON.stringify(exits.body));
     }
-    for (let i = 0; i < 20; i++)
-      await api("/api/subscriber-events", "POST", {
-        subscriber: { email: `warm${i}@example.test` },
-        name: "warmup",
-      });
+    if (hasEvents) {
+      for (let i = 0; i < 20; i++)
+        await api("/api/subscriber-events", "POST", {
+          subscriber: { email: `warm${i}@example.test` },
+          name: "warmup",
+        });
+    }
     reader = new Database(app.database, { readonly: true });
     const db = reader;
     const queue = () =>
@@ -411,7 +417,11 @@ async function run(name: "events" | "baseline" | "mixed") {
         });
         nextSample += 5000;
       }
-      while (start + eventIndex * EVENT_MS <= now && eventIndex * EVENT_MS < windowMs) {
+      while (
+        hasEvents &&
+        start + eventIndex * EVENT_MS <= now &&
+        eventIndex * EVENT_MS < windowMs
+      ) {
         const n = eventIndex++;
         // Event n goes to subscriber n % SUBSCRIBERS. The signup slot shifts by one on every
         // pass over the subscribers, so each subscriber's signup is followed by `order_paid`
@@ -486,14 +496,16 @@ async function run(name: "events" | "baseline" | "mixed") {
       windowMs,
       settings: campaign ? settings : null,
       seed: campaign ? { subscribers: audience, seconds: +seedSeconds.toFixed(1) } : null,
-      events: {
-        offered: eventIndex,
-        completedInWindow: eventsInWindow,
-        completedTotal: events.filter(ok).length,
-        failed: events.filter((r) => !ok(r)).length,
-        ratePerSecond: +(eventsInWindow / (windowMs / 1000)).toFixed(2),
-        acceptanceMs: stats(events.map((r) => r.done - r.deadline)),
-      },
+      events: hasEvents
+        ? {
+            offered: eventIndex,
+            completedInWindow: eventsInWindow,
+            completedTotal: events.filter(ok).length,
+            failed: events.filter((r) => !ok(r)).length,
+            ratePerSecond: +(eventsInWindow / (windowMs / 1000)).toFixed(2),
+            acceptanceMs: stats(events.map((r) => r.done - r.deadline)),
+          }
+        : null,
       campaign: campaign
         ? {
             deliveredInWindow: campaignMail.length,
@@ -537,7 +549,7 @@ async function run(name: "events" | "baseline" | "mixed") {
       serverErrorsSample: app.stderr.slice(0, 2000),
       targets: {
         campaignAtLeast50PerSecond: campaign ? campaignRate >= 50 : null,
-        events100PerSecondNoShed: eventsInWindow >= eventIndex - 5 && shed === 0,
+        events100PerSecondNoShed: hasEvents ? eventsInWindow >= eventIndex - 5 && shed === 0 : null,
       },
       samples,
     };
@@ -556,4 +568,4 @@ async function run(name: "events" | "baseline" | "mixed") {
 
 const scenarios = process.argv.slice(2);
 for (const name of scenarios.length ? scenarios : ["events", "baseline", "mixed"])
-  await run(name as "events" | "baseline" | "mixed");
+  await run(name as "events" | "baseline" | "mixed" | "campaign");

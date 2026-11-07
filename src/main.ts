@@ -37,6 +37,7 @@ import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import { createEmailer } from "@/messaging/email";
+import { createSendRateLimiter } from "@/messaging/rate";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
@@ -308,8 +309,13 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     });
     await importer.sweep().catch((error) => app.logger.error(error));
     registerImportRoutes(router, { importer, roles, auth });
+    const limiter = createSendRateLimiter({
+      clock,
+      rate: () => settings!.read()["messaging.max_send_rate"],
+    });
     emailer = createEmailer({
       clock,
+      limiter,
       settings: () => {
         const current = settings!.read();
         return { smtp: current.smtp, rootUrl: current["app.root_url"] };
@@ -685,7 +691,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       roles,
       renderer,
       logger: app.logger,
-      send: (message) => emailer!.push(message),
+      send: (message) => emailer!.push(message, { priority: "outbox" }),
       site: () => {
         const current = pages();
         return {

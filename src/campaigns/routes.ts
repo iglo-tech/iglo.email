@@ -57,6 +57,8 @@ export interface CampaignSettings {
   disableTracking: boolean;
   individualTracking: boolean;
 }
+import type { SendPriority } from "@/messaging/rate";
+
 export interface CampaignDeps {
   store: CampaignStore;
   templates: TemplateStore;
@@ -67,7 +69,10 @@ export interface CampaignDeps {
   subscribers: SubscriberStore;
   tracking: Tracking;
   emailer: {
-    push(message: Message, delivery?: { copies?: boolean }): { result: Promise<unknown> };
+    push(
+      message: Message,
+      delivery?: { copies?: boolean; priority?: SendPriority },
+    ): { result: Promise<unknown> };
   };
   settings: () => CampaignSettings;
   /** Reads files, so a caller holds no transaction. */
@@ -798,7 +803,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       // bytes stay in the emailer's queue, so the slot does too, until every message settles.
       const results = messages.map((message) =>
         deps.emailer
-          .push(message, { copies: false })
+          .push(message, { copies: false, priority: "outbox" })
           .result.catch((error) => context.app.logger.error(error)),
       );
       queued = true;
