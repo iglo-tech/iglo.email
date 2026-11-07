@@ -1349,6 +1349,8 @@ export async function runOpenApiContract(target: {
     await op("DELETE /api/subscribers/{id}", { params: { id: other.id } });
     await op("DELETE /api/subscribers", { query: `?id=${subscriber.id}` });
     await op("DELETE /api/templates/{id}", { params: { id: txTemplate.id } });
+    await op("GET /api/mcp", { expect: 405 });
+    await op("POST /api/mcp", { body: { jsonrpc: "2.0", id: 1, method: "ping" } });
 
     // Past the last page.
     for (const key of paged) await op(key, { query: "?page=999" });

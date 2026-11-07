@@ -101,6 +101,7 @@ import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
 import { registerOpenApiRoutes } from "@/openapi/routes";
+import { registerMcpRoutes } from "@/mcp/routes";
 
 const BOUNCE_WEBHOOK_PER_MINUTE = 6000;
 
@@ -708,6 +709,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       settings: pages,
     });
     registerOpenApiRoutes(router, auth);
+    registerMcpRoutes(router, {
+      auth,
+      router,
+    });
     summaryRefresh = startSummaryRefresh({
       clock,
       logger: app.logger,

@@ -912,3 +912,17 @@ Directed by the owner on 2026-11-07. Amends D68 (Anthropic only) and D73 for wor
 - **Switch:** delegates already running finish on their model; every new dispatch after this decision uses the new target. No Sonnet or other Claude model for implementation; no other provider. If Gemini 3.8 Flash is unavailable, record the block and wait for capacity.
 - **Amended 2026-11-07 (owner):** Gemini 3.8 Flash always runs with `thinking_level:"high"`.
 - **Brief quality:** because the worker model changes, briefs keep carrying the lead's file/line findings and explicit acceptance; the reviewer and lead check scope, tests and quality more strictly, not less.
+
+## D91. MCP endpoint for template and campaign editing (lead, 2026-11-07)
+
+Lead design decisions from brief B34 ([D89](#d89-narrow-complete-product-scope-owner-2026-11-07)).
+
+- **Scope:** No visual editor; provide an MCP (Model Context Protocol) Streamable HTTP endpoint so AI agents can edit templates and campaign content.
+- **Transport:** Stateless Streamable HTTP at `POST /api/mcp` returning `Content-Type: application/json`. No SSE stream or `Mcp-Session-Id` state; `GET /api/mcp` returns 405 Method Not Allowed as permitted by the MCP specification for servers without streams. Native JSON-RPC 2.0 implementation for `initialize`, `notifications/initialized`, `ping`, `tools/list`, and `tools/call` without runtime dependencies. Request body is size-bounded to 2 MiB like other API endpoints. Validates incoming `Origin` against the configured root URL origin and rejects foreign origins with 403.
+- **Authentication:** Standard API-user authentication (`Authorization: token <user>:<key>` or Basic), integrated via `auth.middleware()`. Unauthenticated requests receive HTTP 401 before any JSON-RPC parsing.
+- **In-process dispatch:** Every tool calls existing HTTP API endpoints in-process via `router.handle(app, request, peerAddress)` with the caller's authorization header and peer address. Tools may first read the stored object with the matching GET so a partial agent edit never clears fields (`update_campaign` performs read-modify-write, and `send_campaign_test`, `preview_campaign`, and `campaign_text` read stored fields when omitted). Tool output returns both `structuredContent` and text representation. Non-2xx responses from endpoints result in tool errors with `isError: true` and the API's error message. `src/mcp` owns no SQL tables or direct database operations.
+- **14 Tools:**
+  - Templates: `list_templates` (`GET /api/templates`), `get_template` (`GET /api/templates/:id`), `create_template` (`POST /api/templates`), `update_template` (`PUT /api/templates/:id`), `delete_template` (`DELETE /api/templates/:id`), `preview_template` (`POST /api/templates/preview` for unsaved body, `GET /api/templates/:id/preview` for saved), `set_default_template` (`PUT /api/templates/:id/default`).
+  - Campaigns: `list_campaigns` (`GET /api/campaigns`), `get_campaign` (`GET /api/campaigns/:id`), `update_campaign` (`PUT /api/campaigns/:id`), `preview_campaign` (`POST /api/campaigns/:id/preview` or `GET /api/campaigns/:id/preview`), `campaign_text` (`POST /api/campaigns/:id/text`), `send_campaign_test` (`POST /api/campaigns/:id/test`).
+  - Reference: `template_reference` static reference generated at build time from `docs/design/06-templates.md`.
+
