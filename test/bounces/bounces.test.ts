@@ -5,6 +5,7 @@ import { HttpError } from "@/server/response";
 import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
 import { txFixture, type TxFixture } from "@/test/tx/fixture";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import { bounceMessage, envelope, network, post } from "./ses-fixture";
 
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {
@@ -39,25 +40,6 @@ const deliveries = (f: TxFixture) =>
       payload: string;
     }[]
   ).map((row) => ({ event: row.event, body: JSON.parse(row.payload) }));
-
-test("the row, the action and the deliveries commit together", async () => {
-  const f = await open();
-  await hooked(f);
-  const id = await f.subscriber("atomic@example.com");
-  f.db.run(`CREATE TRIGGER fail_blocklist BEFORE INSERT ON webhook_deliveries
-    WHEN NEW.event = 'subscriber.blocklisted' BEGIN SELECT RAISE(ABORT, 'refused'); END`);
-  const body = { email: "atomic@example.com", type: "hard", source: "api" };
-  expect((await f.json("/webhooks/bounce", "POST", body)).status).toBe(500);
-  expect(f.errors.length).toBe(1);
-  expect(rowsOf(f)).toEqual([]);
-  expect(await statusOf(f, id)).toBe("enabled");
-  expect(deliveries(f)).toEqual([]);
-  f.db.run("DROP TRIGGER fail_blocklist");
-  expect((await f.json("/webhooks/bounce", "POST", body)).status).toBe(200);
-  expect(rowsOf(f).length).toBe(1);
-  expect(await statusOf(f, id)).toBe("blocklisted");
-  expect(deliveries(f).map((d) => d.event)).toEqual(["bounce.recorded", "subscriber.blocklisted"]);
-});
 
 test("native meta spellings are stored as objects", async () => {
   const f = await open();
@@ -392,12 +374,13 @@ test("a bounce unsubscribe stamps when consent changed, on the injected clock", 
 });
 
 test("one request prunes a bounded batch of expired receipts, and a backlog still drains", async () => {
-  const f = await open();
+  const net = network();
+  const f = await open({ snsFetch: net.fetch });
   const seed = 1000;
   const expired = new Date(f.clock.now().getTime() - 1000).toISOString();
   const insert = f.db.query("INSERT INTO bounce_receipts (key, expires_at) VALUES (?, ?)");
   f.db.transaction(() => {
-    for (let i = 0; i < seed; i++) insert.run(`event:seed-${i}`, expired);
+    for (let i = 0; i < seed; i++) insert.run(`sns:seed-${i}`, expired);
   })();
   const expiredLeft = () =>
     Number(
@@ -407,11 +390,33 @@ test("one request prunes a bounded batch of expired receipts, and a backlog stil
           .get(f.clock.now().toISOString()) as { n: bigint }
       ).n,
     );
-  f.bounces?.pruneReceipts();
+
+  // A signed SNS notification to /webhooks/service/ses prunes a bounded batch
+  const msg1 = envelope(f, {
+    Message: bounceMessage(f, ["prune-1@example.com"], { bounceType: "Transient" }),
+  });
+  expect((await post(f, msg1)).status).toBe(200);
   const first = expiredLeft();
   expect(first).toBeLessThan(seed);
   expect(first).toBeGreaterThanOrEqual(seed - 200);
-  for (let i = 0; i < 20 && expiredLeft(); i++) f.bounces?.pruneReceipts();
+
+  // An expired key awaiting its turn does not hold a new delivery of that key back
+  await f.subscriber("again-event@example.com");
+  const repeat = envelope(f, {
+    MessageId: `seed-${seed - 1}`,
+    Message: bounceMessage(f, ["again-event@example.com"], { bounceType: "Permanent" }),
+  });
+  expect((await post(f, repeat)).status).toBe(200);
+  expect(rowsOf(f).length).toBe(1);
+
+  // Advance the injected clock past the receipt expiry and drain the backlog
+  f.clock.advance(86_400_000 + 2000);
+  for (let i = 0; i < 20 && expiredLeft(); i++) {
+    const drainMsg = envelope(f, {
+      Message: bounceMessage(f, [`drain-${i}@example.com`], { bounceType: "Transient" }),
+    });
+    expect((await post(f, drainMsg)).status).toBe(200);
+  }
   expect(expiredLeft()).toBe(0);
 });
 

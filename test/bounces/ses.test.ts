@@ -2,193 +2,30 @@
 // and served by an injected fetch, so no test calls AWS. The refusals that need no certificate
 // also run against pinned upstream and compiled production in test/contract/bounces.ts.
 import { afterEach, expect, test } from "bun:test";
-import { createSign } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { SnsFetch } from "@/bounces/ses";
 import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { startReceiver } from "@/test/webhooks/receiver";
+import {
+  CERT,
+  OTHER_CERT,
+  bounceMessage,
+  envelope,
+  good,
+  issue,
+  network,
+  post,
+  type Network,
+} from "./ses-fixture";
 
-const CERT = "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-abc123.pem";
-const OTHER_CERT = "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-def456.pem";
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
 
-function openssl(cwd: string, ...args: string[]) {
-  const run = Bun.spawnSync(["openssl", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  if (run.exitCode !== 0) throw new Error(run.stderr.toString());
-}
-/** A leaf certificate issued by a fresh CA, and the key that signs for it. */
-function issue(notAfter = "21250101000000Z") {
-  const dir = mkdtempSync(join(tmpdir(), "iglo-ses-"));
-  try {
-    openssl(
-      dir,
-      "req",
-      "-x509",
-      "-newkey",
-      "rsa:2048",
-      "-nodes",
-      "-keyout",
-      "ca.key",
-      "-out",
-      "ca.pem",
-      "-subj",
-      "/CN=Test CA",
-      "-days",
-      "30",
-    );
-    openssl(
-      dir,
-      "req",
-      "-newkey",
-      "rsa:2048",
-      "-nodes",
-      "-keyout",
-      "leaf.key",
-      "-out",
-      "leaf.csr",
-      "-subj",
-      "/CN=sns.amazonaws.com",
-    );
-    writeFileSync(
-      join(dir, "ca.cnf"),
-      `[ ca ]
-default_ca = CA_default
-
-[ CA_default ]
-database = index.txt
-new_certs_dir = .
-certificate = ca.pem
-serial = serial
-private_key = ca.key
-default_md = sha256
-policy = policy_any
-
-[ policy_any ]
-commonName = supplied
-`,
-    );
-    writeFileSync(join(dir, "index.txt"), "");
-    writeFileSync(join(dir, "serial"), "01\n");
-    openssl(
-      dir,
-      "ca",
-      "-config",
-      "ca.cnf",
-      "-batch",
-      "-in",
-      "leaf.csr",
-      "-out",
-      "leaf.pem",
-      "-startdate",
-      "20250101000000Z",
-      "-enddate",
-      notAfter,
-    );
-    return {
-      key: readFileSync(join(dir, "leaf.key"), "utf8"),
-      pem: readFileSync(join(dir, "leaf.pem"), "utf8"),
-    };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-const good = issue();
-
-interface Network {
-  fetch: SnsFetch;
-  requests: string[];
-}
-function network(pems: Record<string, string> = { [CERT]: good.pem }): Network {
-  const requests: string[] = [];
-  return {
-    requests,
-    fetch: async (url) => {
-      requests.push(url);
-      const pem = pems[url];
-      if (pem) return new Response(pem);
-      if (url.includes("?Action=ConfirmSubscription")) return new Response("<ok/>");
-      return new Response("no", { status: 404 });
-    },
-  };
-}
 async function open(net: Network = network()) {
   const f = await txFixture({ webhooks: {}, snsFetch: net.fetch });
   cleanups.push(() => f.close());
   return f;
 }
-
-function sign(n: Record<string, string>, key = good.key, version = "1") {
-  const fields = [
-    "Message",
-    "MessageId",
-    "Subject",
-    "SubscribeURL",
-    "Timestamp",
-    "Token",
-    "TopicArn",
-    "Type",
-  ];
-  const text = fields
-    .filter((k) => n[k])
-    .map((k) => `${k}\n${n[k]}\n`)
-    .join("");
-  const signer = createSign(version === "2" ? "RSA-SHA256" : "RSA-SHA1");
-  return signer.update(text).sign(key, "base64");
-}
-function envelope(
-  f: TxFixture,
-  fields: Record<string, string>,
-  options: { key?: string; version?: string; cert?: string } = {},
-) {
-  const base: Record<string, string> = {
-    MessageId: crypto.randomUUID(),
-    TopicArn: "arn:aws:sns:eu-west-1:123456789012:bounces",
-    Timestamp: f.clock.now().toISOString(),
-    Type: "Notification",
-    ...fields,
-  };
-  const version = options.version ?? "1";
-  return {
-    ...base,
-    SignatureVersion: version,
-    Signature: sign(base, options.key, version),
-    SigningCertURL: options.cert ?? CERT,
-  };
-}
-const post = (f: TxFixture, body: unknown, type = "Notification", raw?: string) =>
-  f.json("/webhooks/service/ses", "POST", raw ?? JSON.stringify(body), {
-    "x-amz-sns-message-type": type,
-  });
-const bounceMessage = (
-  f: TxFixture,
-  recipients: string[],
-  extra: object = {},
-  headers: object[] = [],
-) =>
-  JSON.stringify({
-    notificationType: "Bounce",
-    bounce: {
-      bounceType: "Permanent",
-      bounceSubType: "General",
-      bouncedRecipients: recipients.map((emailAddress) => ({
-        emailAddress,
-        status: "5.1.1",
-        action: "failed",
-        diagnosticCode: `smtp; 550 5.1.1 user unknown <${emailAddress}>`,
-      })),
-      ...extra,
-    },
-    mail: {
-      timestamp: f.clock.now().toISOString(),
-      destination: recipients,
-      headersTruncated: false,
-      headers,
-    },
-  });
 const rows = (f: TxFixture) =>
   f.db.query("SELECT subscriber_id, type, source, meta FROM bounces ORDER BY id").all() as {
     subscriber_id: bigint | null;
@@ -554,4 +391,44 @@ test("a message dated ahead is still recorded once when replayed at the end of i
   f.clock.advance(120_000);
   expect((await post(f, ahead)).status).toBe(400);
   expect(rows(f).length).toBe(1);
+});
+
+test("the row, the action and the deliveries commit together, and a failure leaves no receipt", async () => {
+  const f = await open();
+  const r = startReceiver();
+  cleanups.push(() => r.close());
+  const hookRes = await f.json("/api/webhooks", "POST", {
+    url: r.url(),
+    events: ["bounce.recorded", "subscriber.blocklisted", "subscriber.deleted"],
+  });
+  expect(hookRes.status).toBe(200);
+
+  const id = await f.subscriber("atomic@example.com");
+  f.db.run(`CREATE TRIGGER fail_blocklist BEFORE INSERT ON webhook_deliveries
+    WHEN NEW.event = 'subscriber.blocklisted' BEGIN SELECT RAISE(ABORT, 'refused'); END`);
+
+  const message = envelope(f, {
+    Message: bounceMessage(f, ["atomic@example.com"], { bounceType: "Permanent" }),
+  });
+
+  expect((await post(f, message)).status).toBe(500);
+  expect(f.errors.length).toBe(1);
+  expect(rows(f)).toEqual([]);
+  expect(await status(f, id)).toBe("enabled");
+  expect(
+    f.db.query("SELECT key FROM bounce_receipts WHERE key = ?").all(`sns:${message.MessageId}`),
+  ).toEqual([]);
+
+  f.db.run("DROP TRIGGER fail_blocklist");
+  expect((await post(f, message)).status).toBe(200);
+  expect(rows(f).length).toBe(1);
+  expect(await status(f, id)).toBe("blocklisted");
+  const receipts = f.db
+    .query("SELECT key FROM bounce_receipts WHERE key = ?")
+    .all(`sns:${message.MessageId}`);
+  expect(receipts.length).toBe(1);
+
+  expect((await post(f, message)).status).toBe(200);
+  expect(rows(f).length).toBe(1);
+  expect(await status(f, id)).toBe("blocklisted");
 });

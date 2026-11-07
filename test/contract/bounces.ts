@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/bounce.go, internal/core/bounces.go and queries/bounces.sql at 6fcd95f.
-// The shared corpus runs against both targets; send links and outbound
+// The shared corpus runs against both targets; send links and outbound webhooks are native,
+// so that part runs against the compiled production executable only.
 import type { Credentials, Mode } from "@/test/contract/types";
 import { startSink } from "@/test/tx/sink";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";

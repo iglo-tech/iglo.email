@@ -121,6 +121,50 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
     }),
   );
   expect(putRes.status).toBe(200);
+
+  // Old client sending bounce.mailgun in a full PUT returns 200, a following GET has no bounce.mailgun, and nothing is stored
+  const putWithOldKey = await router.handle(
+    app,
+    new Request("http://fixture.test/api/settings", {
+      method: "PUT",
+      headers: {
+        cookie: `session=${session.id}`,
+        "x-csrf-token": session.csrf,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...body.data,
+        "bounce.mailgun": { enabled: true, key: "x" },
+      }),
+    }),
+  );
+  expect(putWithOldKey.status).toBe(200);
+
+  const getAfterPut = await router.handle(
+    app,
+    new Request("http://fixture.test/api/settings", {
+      headers: { cookie: `session=${session.id}` },
+    }),
+  );
+  expect(getAfterPut.status).toBe(200);
+  const bodyAfterPut = (await getAfterPut.json()) as { data: Record<string, unknown> };
+  expect(bodyAfterPut.data["bounce.mailgun"]).toBeUndefined();
+  expect(db.query("SELECT key FROM settings WHERE key = 'bounce.mailgun'").get()).toBeNull();
+
+  // Single-key PUT /api/settings/bounce.mailgun returns 400
+  const putSingleKey = await router.handle(
+    app,
+    new Request("http://fixture.test/api/settings/bounce.mailgun", {
+      method: "PUT",
+      headers: {
+        cookie: `session=${session.id}`,
+        "x-csrf-token": session.csrf,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ enabled: true, key: "x" }),
+    }),
+  );
+  expect(putSingleKey.status).toBe(400);
 });
 
 test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces and wipes with subscriber", async () => {
@@ -142,6 +186,25 @@ test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces an
   expect(listRes.status).toBe(200);
   const bounces = listRes.body.data.results as Array<{ id: number; source: string }>;
   expect(bounces.some((b) => b.source === "mailgun")).toBe(true);
+
+  // Also export the subscriber who owns the source='mailgun' bounce row
+  expect((await f.json("/api/settings/privacy.allow_export", "PUT", true)).status).toBe(200);
+  const exportRes = await f.request(`/subscription/export/${sub.uuid}`, {
+    method: "POST",
+  });
+  expect(exportRes.status).toBe(200);
+  await f.drain();
+  const [message] = f.mailTo(sub.email);
+  expect(message).toBeDefined();
+  const attachment = /filename="?data\.json"?[\s\S]*?\r?\n\r?\n([\s\S]*?)\r?\n--/.exec(
+    message!.data,
+  );
+  expect(attachment).not.toBeNull();
+  const report = JSON.parse(Buffer.from(attachment![1]!, "base64").toString("utf8"));
+  expect(report.bounces.length).toBe(1);
+  expect(report.bounces[0].source).toBe("mailgun");
+  expect(report.bounces[0].type).toBe("hard");
+  expect(report.bounces[0].meta).toEqual({ code: 550, reason: "bounce" });
 
   // Public wipe clears the bounce row with the subscriber
   const wipeRes = await f.request(`/subscription/wipe/${sub.uuid}`, {
@@ -191,20 +254,14 @@ test("5. Admin settings page Bounces tab shows only SES (no Mailgun, no inert pr
   // Shows SES
   expect(html).toContain("bounce.ses_topic_arns");
 
-  // Does NOT contain Mailgun fieldset or key
-  expect(html).not.toContain("settings.bounces.enableMailgun");
+  // Does NOT contain Mailgun or inert provider setting names
   expect(html).not.toContain("bounce.mailgun");
-
-  // Does NOT contain inert provider switches or labels
-  expect(html).not.toContain("settings.bounces.otherProviders");
-  expect(html).not.toContain("settings.bounces.enableAzure");
-  expect(html).not.toContain("settings.bounces.enableSendgrid");
-  expect(html).not.toContain("settings.bounces.enablePostmark");
-  expect(html).not.toContain("settings.bounces.enableForwardemail");
-  expect(html).not.toContain("settings.bounces.enableLettermint");
-
-  // Does NOT contain mailbox editor
-  expect(html).not.toContain("settings.bounces.enableMailbox");
+  expect(html).not.toContain("bounce.sendgrid_enabled");
+  expect(html).not.toContain("bounce.sendgrid_key");
+  expect(html).not.toContain("bounce.postmark");
+  expect(html).not.toContain("bounce.forwardemail");
+  expect(html).not.toContain("bounce.lettermint");
+  expect(html).not.toContain("bounce.azure");
   expect(html).not.toContain("bounce.mailboxes");
 });
 

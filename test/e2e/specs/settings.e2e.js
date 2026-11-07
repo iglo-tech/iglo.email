@@ -442,7 +442,7 @@ test("persists bounce actions and SES settings; only SES is shown", async ({ pag
 });
 
 // A bounce appears on the bounces screen and its metadata dialog renders escaped.
-test("a Mailgun bounce appears on the bounces screen like any other", async ({ page }) => {
+test("a bounce appears on the bounces screen like any other", async ({ page }) => {
   await api(page, "/api/settings", "PUT", {
     ...before,
     "bounce.enabled": true,

@@ -286,7 +286,7 @@ export function sesEvents(message: string, now: Date) {
     }
   }
 
-  // Our own Message-ID names the send or the campaign delivery, as the Mailgun route reads it.
+  // Our own Message-ID names the send or the campaign delivery.
   const delivery = campaignMessage.exec(messageId);
   campaignUuid ||= delivery?.[1] ?? "";
   subscriberUuid ||= delivery?.[2] ?? "";

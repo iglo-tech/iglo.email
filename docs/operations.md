@@ -288,7 +288,7 @@ account's bounce and complaint rates stay low. Amazon SES is the only sending an
    `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
    credentials.
    To assign an SES configuration set to outgoing messages, add `X-SES-CONFIGURATION-SET: <name>`
-   to the SMTP server's custom headers in Settings > SMTP (or via the API under `smtp[].email_headers`).
+   to the SMTP server's custom headers in Settings > SMTP (or via the API as `[{"X-SES-CONFIGURATION-SET": "<name>"}]` under `smtp[].email_headers`).
 2. **An SNS topic.** In SNS, create a Standard topic in the same region, for example
    `ses-bounces`, and note its ARN.
 3. **Send feedback to it.** In SES > Verified identities > your domain > Notifications, set the

@@ -66,7 +66,7 @@ interface Row {
   subscriber_status: string | null;
   campaign_name: string | null;
 }
-/** Expired receipts one provider request removes. A request adds at most two. */
+/** Expired receipts one provider request removes. A request adds at most one. */
 const RECEIPT_PRUNE_BATCH = 100;
 // Upstream's `campaign_name` names no column and fails with a 500 (07-api-and-ui.md).
 const sortColumns: Record<string, string> = {

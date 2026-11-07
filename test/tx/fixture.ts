@@ -6,9 +6,11 @@ import { createApp } from "@/app";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
-import type { SubscriberMail } from "@/public/mail";
+import { createSubscriberMail } from "@/public/mail";
 import { registerPublicRoutes } from "@/public/routes";
-import type { PublicSettings } from "@/public/settings";
+import { publicSettings as toPublicSettings } from "@/public/settings";
+import { createSettings, type SettingsStore } from "@/settings/store";
+import { registerSettingsRoutes } from "@/settings/routes";
 import type { Middleware } from "@/server/context";
 import { createListReferences } from "@/lists/references";
 import { createListStore } from "@/lists/store";
@@ -298,15 +300,34 @@ export async function txFixture(
     ...(options.effects ? { effects: options.effects } : {}),
     ...(options.page ? { page: options.page } : {}),
   });
+  let settingsStore: SettingsStore | undefined;
   if (webhooks) {
-    // Only the public wipe is reached here: it sends no mail and reads one setting.
+    settingsStore = createSettings(db, clock, "http://fixture.test", roles);
+    registerSettingsRoutes(router, settingsStore, auth);
+    const getPublicSettings = () => ({
+      ...toPublicSettings(settingsStore!.read()),
+      fromEmail: "Fixture <noreply@fixture.test>",
+    });
+    const subscriberMail = createSubscriberMail({
+      subscribers,
+      sends,
+      campaigns: { subscriberViews: () => [] },
+      tracking,
+      events: { list: () => [] },
+      bounces: bounces ?? { forExport: () => [] },
+      renderer,
+      i18n: app.i18n,
+      clock: testClock,
+      logger: app.logger,
+      settings: getPublicSettings,
+    });
     const open: Middleware = (_context, next) => next();
     registerPublicRoutes(router, {
       db,
       lists,
       subscribers,
-      mail: {} as SubscriberMail,
-      settings: () => ({ allowWipe: true }) as PublicSettings,
+      mail: subscriberMail,
+      settings: getPublicSettings,
       captcha: {} as Captcha,
       altchaComplexity: () => 0,
       limits: { subscribe: open, optin: open, privacy: open },
@@ -419,9 +440,27 @@ export async function txFixture(
       delivery = startDelivery();
     },
     count: () => Number((db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n),
+    settings: settingsStore,
+    mailTo: (address: string) => sink.messages.filter((m) => m.to.includes(address)),
+    async drain() {
+      for (
+        let i = 0;
+        i < 200 &&
+        (
+          db
+            .query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')")
+            .get() as { n: bigint }
+        ).n > 0n;
+        i++
+      ) {
+        testClock.advance(1000);
+        await Bun.sleep(5);
+      }
+    },
     async close() {
       await delivery?.halt();
       clearInterval(pump);
+      settingsStore?.close();
       bounces?.close();
       webhooks?.close();
       const stopped = outbox.stop();
