@@ -5,15 +5,14 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33 (#85) and B34 MCP (#86, D91) merged. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
-Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
+State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33 (#85), B34 MCP (#86, D91) and B35 SES only (#87) merged. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+Owner-only, blocking nothing else: publishing a release, PDF viewers on real devices, and making the GHCR package public after its first push. SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B35** SES only ([brief](briefs/B35.md)): remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
-2. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
+1. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
 
 ## Owner decisions
 
@@ -43,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B35 | [#87](https://github.com/iglo-tech/iglo.email/pull/87) | 2ae7e56 | SES only: Mailgun removed (migration 0019), inert providers hidden; receipts kept for SNS |
 | B34 | [#86](https://github.com/iglo-tech/iglo.email/pull/86) | 464474c | MCP endpoint `/api/mcp`, 14 tools, agent template reference (D91) |
 | B33          | [#85](https://github.com/iglo-tech/iglo.email/pull/85) | 46ee9f4 | linux-arm64 + multi-arch GHCR image; VmRSS watchdogs; backup makes parents |
 | B32          | [#84](https://github.com/iglo-tech/iglo.email/pull/84) | 3158880 | Settings fold map and row-identical cache; event p95 about 58 to 33 ms   |
@@ -121,6 +121,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Test: `tracked links personalized per subscriber do not accumulate across batches` (runner.test.ts) timed out at 30 s twice under parallel load; 1.1 s alone in another run.
 - MCP ([#86](https://github.com/iglo-tech/iglo.email/pull/86) r2–r4): read-merge tools fail for a role with `campaigns:manage` but no `campaigns:get*`; GET-then-PUT can lose a concurrent edit (admin UI has the same race); `update_campaign` cannot clear `send_at`; tests lack a foreign-origin cookie case and a deleted-list case.
 - Test: `runner.test.ts:573` also timed out at 5 s in a serial `bun test test/campaigns` run (#86 fixer 4).
+- Bounces tests ([#87](https://github.com/iglo-tech/iglo.email/pull/87) r1–r2): the tx fixture has two settings sources (real `/api/settings` and the `bounceSettings` object the bounce routes read); B35 test 2 hand-wires routes instead of the compiled build on an upgraded DB; the compiled contract no longer covers SNS replay after restart, provider on/off switches or campaign Message-ID rows (`ses.test.ts` covers most in-process); the SES failure test never checks its webhook receiver; small formatting in `differences.ts`.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
