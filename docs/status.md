@@ -20,7 +20,7 @@ Run in order, one at a time, through the normal stages. Write each brief from th
 ## Owner decisions
 
 [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07) (owner, 2026-11-07): Linux x64+arm64 and a Docker image only; SES only; MCP template editing instead of a visual editor; no translations/OIDC now; feature complete, one way per job.
-[D90](design/09-decisions.md#d90-gemini-38-flash-does-the-work-opus-checks-it-owner-2026-11-07) (owner, 2026-11-07): Gemini 3.8 Flash workers/fixers/testers/helpers; Opus 5.5 medium lead checks only; one Opus 5.5 high reviewer. Supersedes D73 for workers.
+[D90](design/09-decisions.md#d90-gemini-38-flash-does-the-work-opus-checks-it-owner-2026-11-07) (owner, 2026-11-07): Gemini 3.8 Flash (thinking high) workers/fixers/testers/helpers; Opus 5.5 medium lead checks only; one Opus 5.5 high reviewer. Supersedes D73 for workers.
 [D68](design/09-decisions.md#d68-anthropic-models-only-opus-reviewer): Anthropic models only, no Fable; the reviewer is a fresh Opus5.5 xhigh delegate.
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one reviewer (Opus xhigh since D68); lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.

@@ -31,7 +31,7 @@ For new dispatches, use `delegate_task`, isolation worktree, role and settings i
 | Role | Target |
 |---|---|
 | Lead (chief of staff) | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"medium"}}` |
-| Worker, fixer, tester, helper (D90) | `{providerInstanceId:"antigravity",model:"gemini-3.8-flash",options:{thinking_level:"medium"}}` |
+| Worker, fixer, tester, helper (D90) | `{providerInstanceId:"antigravity",model:"gemini-3.8-flash",options:{thinking_level:"high"}}` |
 | Single independent reviewer | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"high"}}` |
 
 D90: Gemini 3.8 Flash for all implementation and testing; Opus 5.5 for the lead and the reviewer only; no Fable, OpenAI, Codex, Sonnet-for-work or other model, and no fallback to them. The lead writes no code. The lead and **one** Opus high reviewer form the council. The reviewer is always a fresh delegate that did not write the code. Give it the reviewer suffix, PR, head, task and round; in round 1 give it no lead conclusions.
