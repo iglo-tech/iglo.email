@@ -42,3 +42,13 @@ Many requests at once (old budget 64 MiB, new 128 MiB; the new charge admits two
 - The target of about 256 MiB is met for single sends, one-at-a-time streams of 4 MiB sends (borderline) and many-recipient bursts, and missed when two 4 MiB sends overlap (up to 389 MiB). The rest is native memory the collector does not return for seconds: sixteen sends in a row reach 250 to 275 MiB with only one in flight, and `Bun.gc(false)` after each send changed nothing (not kept). A 2 GiB host stays inside it; a 1 GiB host would not.
 - Refusals: the many-recipient bursts are refused far more (3 of 40 served against 17) because each is now charged for its per-recipient copies; they are refused at once or after the 2 s wait, never after journaling, and `async` is charged less. The old count let 40 four-recipient sends grow to 400 MiB.
 - The largest legal send (a 16 MiB request: 4 MiB x 3, 3 MiB x 5, 1 MiB x 15) is admitted by an idle server; `test/tx/tx.test.ts` checks it.
+
+## B27: request bodies are built when sent
+
+`test/tx/measure-memory.ts` built every multipart body before the baseline, so the one-at-a-time rows (`serial`) held all 16 bodies (64 MiB of attachment plus their Blobs) in the baseline and the collector worked around them. "Serial" now builds each body just before it is sent; the concurrent rows still build them first, since those bodies coexist in flight anyway, so their numbers are unchanged and were not re-run. Re-run once (two rounds, `bun test/tx/measure-memory.ts 4 1 sync 16 serial`, load 2.8, measurement under the verify lock, rows tagged "bodies built when sent" in the raw file):
+
+| Scenario | Pre-built bodies (B26 after) | Built when sent |
+|---|---|---|
+| 16 x 4 MiB, one at a time | 252 and 275 MiB growth (baseline 135 MiB) | 199 and 203 MiB growth (baseline 69 MiB) |
+
+Growth is 50 to 75 MiB lower and the baseline is 66 MiB lower, so the pre-built bodies did inflate this row; the cause of the growth difference itself was not isolated. The row sits under the 256 MiB target, so the reading above holds, and the earlier "borderline" for this row was partly the harness.
