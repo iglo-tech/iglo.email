@@ -5,7 +5,7 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) merged. B23 merged (#75). B24 is with its worker: [brief](briefs/B24.md), branch `task/B24-followups`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) merged. B23 (#75) and B24 (#76) merged. B25 is with its worker: [brief](briefs/B25.md), branch `task/B25-durability`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
@@ -43,6 +43,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                            |
 | ------------ | ------------------------------------------------------ | ------- | ----------------------------------------------------------------- |
+| B24          | [#76](https://github.com/iglo-tech/iglo.email/pull/76) | 66e7003 | OpenAPI path types; migration 18 (bounce `count: 0`, stale TOTP)  |
 | B23          | [#75](https://github.com/iglo-tech/iglo.email/pull/75) | f559d00 | Unsent push not `unknown`; live pushes keep their lease (D80)     |
 | B16          | [#67](https://github.com/iglo-tech/iglo.email/pull/67) | 2511c76 | Click on a linked banner keeps visible spaces (D79)               |
 | B15          | [#66](https://github.com/iglo-tech/iglo.email/pull/66) | cfd6798 | Banner Backspace, `<br>` cleanup narrowed to banners (D79)        |
@@ -118,4 +119,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - E2e under host stall: in the B13 review, `maintenance.e2e.js:207` and `campaign-safety.e2e.js:281` failed together after about 2.5 min against a 30 s timeout at load 12-14 (other projects' suites), then passed 23/23 on rerun. Watch for a repeat on a quiet host.
 - Wiped sends ([#74](https://github.com/iglo-tech/iglo.email/pull/74)): D85 also silences `send.failed` for admin deletes without a wipe (for owner review).
 - Outbox ([#75](https://github.com/iglo-tech/iglo.email/pull/75)): any synchronous `push` throw is treated as never pooled (no realistic trigger found); the `claimOne` guard test does not reach the `UPDATE` guard.
+- B24 ([#76](https://github.com/iglo-tech/iglo.email/pull/76)): no test sends a bounce after the `count: 0` rewrite or logs in as a migrated account; a hand-edited non-object bounce rule stops migration 18 (transactional, snapshot first); the path-type check throws instead of reporting if a path entry is not an operation.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
