@@ -155,7 +155,7 @@ test("after the count 0 rewrite a bounce is recorded and its action fires", asyn
   }
 });
 
-test("migrated accounts: the API user keeps its key, the password-off user has no TOTP prompt", async () => {
+test("migrated API user keeps its key", async () => {
   const persisted = await legacy({ user: "fixture-admin", password: "fixture-admin-password" });
   const f = await startUserFixture(undefined, true, false, persisted);
   try {
@@ -164,30 +164,73 @@ test("migrated accounts: the API user keeps its key, the password-off user has n
     });
     expect(key.status).toBe(200);
     expect(((await key.json()) as any).data.username).toBe("api-user");
-    const attempt = async (username: string) => {
-      const page = await fetch(`${f.origin}/admin/login`);
-      const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
-      const nonceCookie = page.headers
-        .getSetCookie()
-        .find((v) => v.startsWith("nonce="))!
-        .split(";")[0]!;
-      const response = await fetch(`${f.origin}/admin/login`, {
-        method: "POST",
-        redirect: "manual",
-        headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
-        body: new URLSearchParams({ username, password: apiKey, nonce }),
-      });
-      return {
-        location: response.headers.get("location") ?? "",
-        session: response.headers.getSetCookie().some((v) => v.startsWith("session=")),
-      };
+  } finally {
+    await f.close();
+    rmSync(persisted.dataDir, { recursive: true, force: true });
+  }
+});
+
+test("password login turned back on for a migrated password-off user asks for no TOTP code", async () => {
+  const persisted = await legacy({ user: "fixture-admin", password: "fixture-admin-password" });
+  const f = await startUserFixture(undefined, true, false, persisted);
+  const newPassword = "re-enabled-password-123";
+  const form = async (username: string, password: string) => {
+    const page = await fetch(`${f.origin}/admin/login`);
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    const nonceCookie = page.headers
+      .getSetCookie()
+      .find((v) => v.startsWith("nonce="))!
+      .split(";")[0]!;
+    const response = await fetch(`${f.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({ username, password, nonce }),
+    });
+    const set = response.headers.getSetCookie();
+    return {
+      location: response.headers.get("location") ?? "",
+      cookies: set,
+      session: set.some((v) => v.startsWith("session=")),
     };
-    // Neither account can use a password. Neither is asked for a second factor.
-    for (const name of ["api-user", "no-password"]) {
-      const result = await attempt(name);
-      expect(result.session).toBe(false);
-      expect(result.location).not.toContain("totp");
-    }
+  };
+  try {
+    const admin = await form(f.admin.user, f.admin.password);
+    expect(admin.session).toBe(true);
+    const cookies = ["session", "csrf"].map(
+      (n) => admin.cookies.find((v) => v.startsWith(`${n}=`))!.split(";")[0]!,
+    );
+    const headers = {
+      cookie: cookies.join("; "),
+      "x-csrf-token": cookies[1]!.slice("csrf=".length),
+      "content-type": "application/json",
+    };
+    const users = ((await (await fetch(`${f.origin}/api/users`, { headers })).json()) as any).data;
+    const target = users.find((u: any) => u.username === "no-password");
+    expect(target.password_login).toBe(false);
+    const put = await fetch(`${f.origin}/api/users/${target.id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        username: target.username,
+        name: target.name,
+        email: target.email,
+        type: "user",
+        status: "enabled",
+        password_login: true,
+        password: newPassword,
+        user_role_id: target.user_role.id,
+        list_role_id: target.list_role?.id ?? 0,
+      }),
+    });
+    expect(put.status).toBe(200);
+    const login = await form("no-password", newPassword);
+    // Without migration 18 the stored key returns and login redirects to the TOTP step.
+    expect(login.location).not.toContain("twofa");
+    expect(login.location).not.toContain("totp");
+    expect(login.session).toBe(true);
+    const after = await fetch(`${f.origin}/api/users/${target.id}`, { headers });
+    expect(((await after.json()) as any).data.twofa_type).toBe("none");
   } finally {
     await f.close();
     rmSync(persisted.dataDir, { recursive: true, force: true });
