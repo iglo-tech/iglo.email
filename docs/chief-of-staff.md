@@ -31,14 +31,14 @@ For new dispatches, use `delegate_task`, isolation worktree, role and settings i
 | Role | Target |
 |---|---|
 | Lead (chief of staff) | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"medium"}}` |
-| Worker, fixer, helper | `{providerInstanceId:"claudeAgent",model:"claude-sonnet-5-5",options:{effort:"medium"}}` |
+| Worker, fixer, tester, helper (D90) | `{providerInstanceId:"antigravity",model:"gemini-3.8-flash",options:{thinking_level:"high"}}` |
 | Single independent reviewer | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"high"}}` |
 
-Anthropic models only, and no Fable: no OpenAI, Codex, Sol, Terra or other provider, as worker or reviewer, and no fallback to them. The lead and **one** Opus high reviewer form the council. The reviewer is always a fresh delegate that did not write the code. Give it the reviewer suffix, PR, head, task and round; in round 1 give it no lead conclusions.
+D90: Gemini 3.8 Flash for all implementation and testing; Opus 5.5 for the lead and the reviewer only; no Fable, OpenAI, Codex, Sonnet-for-work or other model, and no fallback to them. The lead writes no code. The lead and **one** Opus high reviewer form the council. The reviewer is always a fresh delegate that did not write the code. Give it the reviewer suffix, PR, head, task and round; in round 1 give it no lead conclusions.
 
 At most two task agents: an implementation worker/fixer and the reviewer. Helpers consume the implementation slot; no fan-out. Prefer sequential stages. **Only one role runs full checks/acceptance on this host at a time**, including the lead. Record the verification owner in the lock; release it only after the owned commands/processes finish. Every agent completes checks in the foreground before ending its turn. Async delegate dispatch remains allowed; background test processes surviving a turn do not.
 
-The project default is Sonnet medium; the lead runs on Opus medium. `t3_thread_configure` can set the current lead's model for subsequent turns. The scheduler tool has no per-task model field: keep its prompt aligned, preserve the unbound schedule, and report this limitation rather than claim a pinned scheduler model.
+The project default is Sonnet medium; the lead runs on Opus medium and never writes code (D90). `t3_thread_configure` can set the current lead's model for subsequent turns. The scheduler tool has no per-task model field: keep its prompt aligned, preserve the unbound schedule, and report this limitation rather than claim a pinned scheduler model.
 
 If capacity for a target is unavailable, record the reset/cooldown; no provider substitution and no approval inferred from an unfinished run. Provider failures receive the existing documented60-minute cooldown, not a retry loop.
 
@@ -47,10 +47,10 @@ If capacity for a target is unavailable, record the reset/cooldown; no provider 
 | Stage | Action |
 |---|---|
 | brief | Name the realistic client flows, pinned upstream sources, owned modules/tables, acceptance commands and any sending/storage measurements. Push the brief and short status. |
-| worker | One Sonnet medium worker does the implementation in its prepared isolated checkout. No shell-created worktree; fetch the intended base/head inside that checkout. |
+| worker | One Gemini 3.8 Flash worker does the implementation in its prepared isolated checkout. No shell-created worktree; fetch the intended base/head inside that checkout. |
 | verify | Worker/fixer runs `bun run check` (which already runs the whole suite in parallel workers; no separate `bun test`) and the brief's acceptance tests serially on this host, in the foreground. Record failures, justified reruns and exact head. CI is optional manual evidence, never a merge gate or a reason to wait. |
 | review | Round1: one fresh Opus high deep review. Later rounds: a fresh delegate verifies the fixes and touched code only. Give later reviewers the complete prior findings and lead dispositions, not another whole-PR audit request. Reviewer runs `bun run check` once (not `bun test` as well) and acceptance serially after the implementation role is finished. |
-| fix | Read every finding. Agree: fix small issues yourself, or give one Sonnet medium fixer all agreed findings of the round. Disagree: answer in the PR with concrete reasoning. Safely handled exotic response differences go to hardening backlog. Run affected tests, then full check/acceptance once on final code. |
+| fix | Read every finding. Agree: give one Gemini 3.8 Flash fixer all agreed findings of the round (the lead writes no code, D90). Disagree: answer in the PR with concrete reasoning. Safely handled exotic response differences go to hardening backlog. Run affected tests, then full check/acceptance once on final code. |
 | merge | Lead and reviewer agree: reviewer approves the current head, or both agree remaining items are backlog; local final-head verification passed. After three rounds without agreement the lead decides and writes reasons in the PR. Never waive actual safety/auth/format defects. Squash-merge/delete remote branch, pull main, push concise status and immediately start the next eligible task. |
 
 Do not repeat unchanged control builds or timing series without a concrete concern; verify their recorded hashes. Source/dependency/build changes require appropriate fresh evidence. Record actual local verification, not automatic-CI success claims. If branch protection unexpectedly requires CI, resolve/report that concrete repository setting; do not invent a passing check.

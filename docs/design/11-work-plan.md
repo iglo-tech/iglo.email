@@ -15,7 +15,7 @@ How the [port plan](08-port-plan.md) is split into tasks that agents do one at a
 
 ### Models and owner operating policy
 
-Owner direction2026-10-29, [D56](09-decisions.md#d56-owner-directed-models-review-and-local-verification), supersedes the earlier two-reviewer, Terra and conditional Anthropic-fallback policies. [D68](09-decisions.md#d68-anthropic-models-only-opus-reviewer) makes the fleet Anthropic-only: no Fable, and an Opus reviewer.
+Owner direction2026-10-29, [D56](09-decisions.md#d56-owner-directed-models-review-and-local-verification), supersedes the earlier two-reviewer, Terra and conditional Anthropic-fallback policies. [D68](09-decisions.md#d68-anthropic-models-only-opus-reviewer) made the fleet Anthropic-only; **D90 (2026-11-07) supersedes the table below: Gemini 3.8 Flash workers/fixers/helpers, Opus 5.5 medium lead (checks only), one Opus 5.5 high reviewer** (see `docs/chief-of-staff.md`).
 
 | Work | Model and target.options |
 |---|---|

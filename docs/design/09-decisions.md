@@ -901,3 +901,14 @@ Directed by the owner on 2026-11-07. Amends D3, D42 and the scope table.
 - **Dropped by agents under this goal:** S3 media storage (filesystem is the one way), ZIP import (CSV is the one way), the listmonk Postgres importer (no data to import, open question 3).
 - **Open to an agent audit (B36):** campaign archive/RSS, unique-count and list analytics, thumbnails, and any other gap or duplicate the audit finds. Each finding becomes a queued task or a logged drop.
 - **Implemented by B33:** `iglo.email-linux-x64` and `iglo.email-linux-arm64` are built and verified (`bun run check`, `release:verify`, the production contract) each on a native runner, `ubuntu-24.04` and `ubuntu-24.04-arm`, in `release.yml`; `ci.yml` (manual only) has the same two-runner `check` job. `release:package` names the file by the architecture it runs on, and the publish job merges the two directories into one `SHA256SUMS`. The `Dockerfile` copies the verified executable for `TARGETARCH` into a digest-pinned `gcr.io/distroless/cc-debian12` (glibc, libstdc++, no shell; its only `RUN` is a data-directory stage on the build host, so no emulation). On a `v*` tag the `image` job pushes `ghcr.io/iglo-tech/iglo.email:<version>` (and `:latest` without `-`) with `packages: write` on that job only; a manual run builds without pushing. The darwin entries of the reference harness are gone. Amends D42's "existing platform-selection code may remain".
+
+## D90. Gemini 3.8 Flash does the work; Opus checks it (owner, 2026-11-07)
+
+Directed by the owner on 2026-11-07. Amends D68 (Anthropic only) and D73 for workers.
+
+- **Decision:** every worker, fixer, tester and helper runs on Gemini 3.8 Flash: `{providerInstanceId:"antigravity",model:"gemini-3.8-flash",options:{thinking_level:"high"}}`. Coding, testing, fixes, measurements and audits go to it.
+- **Opus 5.5 only checks:** the lead (Opus medium) plans, briefs, reads results and makes sure the work was delivered as asked, with no gaps and no code-quality issues; it does not write code, including small review fixes, which go to one Gemini fixer per round. The single fresh council reviewer stays Opus 5.5 high.
+- **Why:** save tokens; the owner wants the cheaper model to do the bulk of the work.
+- **Switch:** delegates already running finish on their model; every new dispatch after this decision uses the new target. No Sonnet or other Claude model for implementation; no other provider. If Gemini 3.8 Flash is unavailable, record the block and wait for capacity.
+- **Amended 2026-11-07 (owner):** Gemini 3.8 Flash always runs with `thinking_level:"high"`.
+- **Brief quality:** because the worker model changes, briefs keep carrying the lead's file/line findings and explicit acceptance; the reviewer and lead check scope, tests and quality more strictly, not less.
