@@ -900,3 +900,13 @@ Directed by the owner on 2026-11-07. Amends D3, D42 and the scope table.
 - **Deferred, not now:** translations other than English, OIDC login.
 - **Dropped by agents under this goal:** S3 media storage (filesystem is the one way), ZIP import (CSV is the one way), the listmonk Postgres importer (no data to import, open question 3).
 - **Open to an agent audit (B36):** campaign archive/RSS, unique-count and list analytics, thumbnails, and any other gap or duplicate the audit finds. Each finding becomes a queued task or a logged drop.
+
+## D90. Gemini 3.8 Flash does the work; Opus checks it (owner, 2026-11-07)
+
+Directed by the owner on 2026-11-07. Amends D68 (Anthropic only) and D73 for workers.
+
+- **Decision:** every worker, fixer, tester and helper runs on Gemini 3.8 Flash: `{providerInstanceId:"antigravity",model:"gemini-3.8-flash",options:{thinking_level:"medium"}}`. Coding, testing, fixes, measurements and audits go to it.
+- **Opus 5.5 only checks:** the lead (Opus medium) plans, briefs, reads results and makes sure the work was delivered as asked, with no gaps and no code-quality issues; it does not write code, including small review fixes, which go to one Gemini fixer per round. The single fresh council reviewer stays Opus 5.5 high.
+- **Why:** save tokens; the owner wants the cheaper model to do the bulk of the work.
+- **Switch:** delegates already running finish on their model; every new dispatch after this decision uses the new target. No Sonnet or other Claude model for implementation; no other provider. If Gemini 3.8 Flash is unavailable, record the block and wait for capacity.
+- **Brief quality:** because the worker model changes, briefs keep carrying the lead's file/line findings and explicit acceptance; the reviewer and lead check scope, tests and quality more strictly, not less.
