@@ -84,11 +84,16 @@ export async function txFixture(
     refuse?: () => void;
     /** Holds each synchronous dispatch, as a stalled SMTP server does. */
     beforeDispatch?: () => Promise<void>;
+    /** The sink keeps no message text (memory measurements). */
+    discardData?: boolean;
     /** The attachment budget of `POST /api/tx`. */
     limits?: { maxBytes?: number; maxSends?: number; waitMs?: number; maxOvertakes?: number };
   } = {},
 ) {
-  const sink = await startSink(options.reject ? { reject: options.reject } : {});
+  const sink = await startSink({
+    ...(options.reject ? { reject: options.reject } : {}),
+    ...(options.discardData ? { discardData: true } : {}),
+  });
   const directory = mkdtempSync(join(tmpdir(), "iglo-tx-"));
   const testClock = new TestClock();
   const clock = options.clock ?? testClock;

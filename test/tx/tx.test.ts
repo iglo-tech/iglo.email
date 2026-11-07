@@ -377,10 +377,11 @@ test("synchronous sends with an embedded image hold a bounded number of bytes", 
       subscriber_mode: "external",
       template_id: template,
     });
-  const held = Array.from({ length: 21 }, (_, i) => send(i));
+  // A 3 MiB image is charged 33 MiB for one recipient (D87): three fit in the 128 MiB budget.
+  const held = Array.from({ length: 3 }, (_, i) => send(i));
   const journaled = () => (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
-  await until(() => journaled() >= 21n);
-  expect(journaled()).toBe(21n);
+  await until(() => journaled() >= 3n);
+  expect(journaled()).toBe(3n);
   const refused = await f.request("/api/tx", {
     method: "POST",
     headers: { ...f.sessionHeaders, "content-type": "application/json" },
@@ -393,7 +394,7 @@ test("synchronous sends with an embedded image hold a bounded number of bytes", 
   expect(refused.status).toBe(429);
   expect(refused.headers.get("retry-after")).toBe("1");
   // Refused before the journal, so the caller's retry is not a second send.
-  expect(journaled()).toBe(21n);
+  expect(journaled()).toBe(3n);
   // A send with no embedded image holds nothing the bound counts.
   const plain = await f.template("<p>plain</p>");
   const unheld = f.tx({
@@ -665,10 +666,10 @@ const attachmentForm = (template: number, email: string, async = false) => {
 test("synchronous multipart sends with attachments wait for room, then get a 429", async () => {
   let release = () => {};
   const stalled = new Promise<void>((resolve) => (release = resolve));
-  // A 1 MiB file costs about 5 MiB while parsed and 1 MiB while its send is held.
+  // A 1 MiB file is charged 11 MiB while parsed and while its one-recipient send is held (D87).
   const f = await open({
     beforeDispatch: () => stalled,
-    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 1000 },
+    limits: { maxBytes: 12 * 1024 * 1024, waitMs: 1000 },
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));
@@ -703,12 +704,66 @@ test("synchronous multipart sends with attachments wait for room, then get a 429
   expect(f.sink.messages.map((m) => m.to[0])).toContain("second@example.test");
 }, 30_000);
 
+test("a send to several recipients is charged for each recipient's copy (D87)", async () => {
+  let release = () => {};
+  const stalled = new Promise<void>((resolve) => (release = resolve));
+  // One 1 MiB file to three recipients is charged 4 + 3 x 7 = 25 MiB while held; a one-recipient
+  // upload is charged 11 MiB. Together they need 36 MiB, so with 30 MiB the second is refused.
+  const f = await open({
+    beforeDispatch: () => stalled,
+    limits: { maxBytes: 30 * 1024 * 1024, waitMs: 1000 },
+  });
+  const template = await f.template("<p>x</p>");
+  const many = new FormData();
+  many.set(
+    "data",
+    JSON.stringify({
+      subscriber_emails: ["a@example.test", "b@example.test", "c@example.test"],
+      template_id: template,
+    }),
+  );
+  many.append("file", new File([new Uint8Array(1024 * 1024)], "a.bin"));
+  const first = postForm(f, many);
+  await until(() => journaledSends(f) >= 3n);
+  const asleep = f.clock.sleeping;
+  const second = postForm(f, attachmentForm(template, "second@example.test"));
+  await f.clock.whenSleeping(asleep + 1);
+  f.clock.advance(1000);
+  expect((await second).status).toBe(429);
+  expect(journaledSends(f)).toBe(3n);
+  release();
+  expect((await first).status).toBe(200);
+}, 30_000);
+
+test("the largest sends the request cap allows fit the shipped budget on an idle server (D87)", async () => {
+  const f = await open();
+  const template = await f.template("<p>x</p>");
+  // 3 MiB to five recipients is 15 MiB of attachments; 1 MiB to fifteen recipients likewise.
+  for (const [mib, count] of [
+    [3, 5],
+    [4, 3],
+    [1, 15],
+  ] as const) {
+    const form = new FormData();
+    form.set(
+      "data",
+      JSON.stringify({
+        subscriber_emails: Array.from({ length: count }, (_, i) => `r${mib}-${i}@example.test`),
+        template_id: template,
+      }),
+    );
+    form.append("file", new File([new Uint8Array(mib * 1024 * 1024)], "a.bin"));
+    expect((await postForm(f, form)).status).toBe(200);
+  }
+  expect(f.sink.messages).toHaveLength(5 + 3 + 15);
+}, 60_000);
+
 test("a multipart request that waits is served when room frees", async () => {
   let release = () => {};
   const stalled = new Promise<void>((resolve) => (release = resolve));
   const f = await open({
     beforeDispatch: () => stalled,
-    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 60_000 },
+    limits: { maxBytes: 12 * 1024 * 1024, waitMs: 60_000 },
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));
@@ -729,7 +784,7 @@ test("a multipart request that waits is served when room frees", async () => {
 test("a multipart body with no declared size is charged at the body cap", async () => {
   const f = await open({ limits: { maxBytes: 8 * 1024 * 1024 } });
   const template = await f.template("<p>x</p>");
-  // 5 MiB x 3 copies can never fit 8 MiB: refused at once, nothing journaled.
+  // 5 MiB x 11 copies can never fit 8 MiB: refused at once, nothing journaled.
   const response = await f.request("/api/tx", {
     method: "POST",
     headers: f.sessionHeaders,
@@ -744,7 +799,7 @@ test("a JSON send with an embedded image is not refused because an upload waits 
   const stalled = new Promise<void>((resolve) => (release = resolve));
   const f = await open({
     beforeDispatch: () => stalled,
-    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 60_000 },
+    limits: { maxBytes: 12 * 1024 * 1024, waitMs: 60_000 },
   });
   const body = new FormData();
   body.append("file", new File([imagePng], "small.png", { type: "image/png" }));
@@ -779,7 +834,7 @@ test("a steady stream of small embedded-image sends cannot keep a waiting upload
   const stalled = new Promise<void>((resolve) => (release = resolve));
   const f = await open({
     beforeDispatch: () => stalled,
-    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 60_000 },
+    limits: { maxBytes: 12 * 1024 * 1024, waitMs: 60_000 },
   });
   const body = new FormData();
   body.append("file", new File([imagePng], "small.png", { type: "image/png" }));
@@ -821,7 +876,7 @@ test("a multipart body over the cap is a 413 even while the budget is full (B10)
   const stalled = new Promise<void>((resolve) => (release = resolve));
   const f = await open({
     beforeDispatch: () => stalled,
-    limits: { maxBytes: 6 * 1024 * 1024, waitMs: 1000 },
+    limits: { maxBytes: 12 * 1024 * 1024, waitMs: 1000 },
   });
   const template = await f.template("<p>x</p>");
   const first = postForm(f, attachmentForm(template, "first@example.test"));

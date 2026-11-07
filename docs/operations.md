@@ -634,8 +634,9 @@ A session with no stored expiry (written before sessions captured one) goes seve
 ## Attachment sends
 
 `POST /api/tx` with caller attachments, or with a template that embeds images, holds memory until
-the SMTP server answers. All such requests share 64 MiB
-([D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)):
+the SMTP server answers. All such requests share 128 MiB of measured memory
+([D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop),
+[D87](design/09-decisions.md#d87-the-tx-attachment-budget-counts-measured-memory-b26)):
 a request that finds no room waits up to 2 seconds and then gets `429` with `Retry-After: 1`,
 before anything is journaled, so retrying it is safe. A caller that sees this often should send
 `async` or fewer, smaller attachments at once. There is no setting.
