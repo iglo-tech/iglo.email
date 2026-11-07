@@ -459,42 +459,55 @@ describe("B34 MCP endpoint tests", () => {
     expect(updatedCampData.subject).toBe("Brand New Subject Only");
     expect(updatedCampData.attribs).toEqual({ cta: "CTA-VALUE" });
     expect(updatedCampData.headers).toEqual([{ "X-Test-Header": "HeaderValue" }]);
-    expect(updatedCampData.lists.map((l: any) => l.id)).toContain(listId);
+    expect(updatedCampData.lists.map((l: any) => l.id)).toEqual([listId]);
 
-    // Caller-supplied invalid list IDs must return isError and leave stored campaign lists unchanged
-    const updateInvalidTypeRes = await client.callTool({
-      name: "update_campaign",
-      arguments: {
-        id: campWithAttribsId,
-        lists: [listId, "1"],
-      },
-    });
-    expect(updateInvalidTypeRes.isError).toBe(true);
+    {
+      // Create a second list that is not attached to campWithAttribsId
+      const otherListRes = await fetch(`${production.origin}/api/lists`, {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ name: "MCP Other List", type: "public", optin: "single" }),
+      });
+      expect(otherListRes.status).toBe(200);
+      const otherListId = (await otherListRes.json()).data.id;
 
-    const getCampAfterInvalidType = await fetch(
-      `${production.origin}/api/campaigns/${campWithAttribsId}`,
-      { headers: adminHeaders },
-    );
-    expect(getCampAfterInvalidType.status).toBe(200);
-    const campDataAfterInvalidType = (await getCampAfterInvalidType.json()).data;
-    expect(campDataAfterInvalidType.lists.map((l: any) => l.id)).toEqual([listId]);
+      // Caller-supplied invalid list IDs must return isError and leave stored campaign lists unchanged
+      const updateInvalidTypeRes = await client.callTool({
+        name: "update_campaign",
+        arguments: {
+          id: campWithAttribsId,
+          lists: [otherListId, "1"],
+        },
+      });
+      expect(updateInvalidTypeRes.isError).toBe(true);
 
-    const updateNegativeIdRes = await client.callTool({
-      name: "update_campaign",
-      arguments: {
-        id: campWithAttribsId,
-        lists: [listId, -5],
-      },
-    });
-    expect(updateNegativeIdRes.isError).toBe(true);
+      const getCampAfterInvalidType = await fetch(
+        `${production.origin}/api/campaigns/${campWithAttribsId}`,
+        { headers: adminHeaders },
+      );
+      expect(getCampAfterInvalidType.status).toBe(200);
+      const campDataAfterInvalidType = (await getCampAfterInvalidType.json()).data;
+      expect(campDataAfterInvalidType.lists.map((l: any) => l.id)).toEqual([listId]);
 
-    const getCampAfterNegativeId = await fetch(
-      `${production.origin}/api/campaigns/${campWithAttribsId}`,
-      { headers: adminHeaders },
-    );
-    expect(getCampAfterNegativeId.status).toBe(200);
-    const campDataAfterNegativeId = (await getCampAfterNegativeId.json()).data;
-    expect(campDataAfterNegativeId.lists.map((l: any) => l.id)).toEqual([listId]);
+      // Negative list ID: update_campaign with [otherListId, -5] must give the same result as direct PUT
+      // (success, and stored lists become exactly [otherListId])
+      const updateNegativeIdRes = await client.callTool({
+        name: "update_campaign",
+        arguments: {
+          id: campWithAttribsId,
+          lists: [otherListId, -5],
+        },
+      });
+      expect(updateNegativeIdRes.isError).toBeFalsy();
+
+      const getCampAfterNegativeId = await fetch(
+        `${production.origin}/api/campaigns/${campWithAttribsId}`,
+        { headers: adminHeaders },
+      );
+      expect(getCampAfterNegativeId.status).toBe(200);
+      const campDataAfterNegativeId = (await getCampAfterNegativeId.json()).data;
+      expect(campDataAfterNegativeId.lists.map((l: any) => l.id)).toEqual([otherListId]);
+    }
 
     // Test 3 blocker: send_campaign_test with a client sending ONLY declared fields (id and subscribers)
     const testSendDeclaredOnlyRes = await client.callTool({
