@@ -5,18 +5,17 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) merged. B23 is with its worker: [brief](briefs/B23.md), branch `task/B23-send-lease-followups`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) merged. B23 merged (#75). B24 is with its worker: [brief](briefs/B24.md), branch `task/B24-followups`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-1. B23: sending lease follow-ups from #69, #70, #74 ([brief](briefs/B23.md)).
-2. B24: test and settings follow-ups from #71, #72, #73 (openapi path-param types, lease-clearing paths, captcha default, legacy `count: 0` bounce rule, stale TOTP keys).
-3. B25: decide D22/D77 durability: at least 3 alternating FULL/NORMAL runs on a quiet host, then a logged agent decision.
-4. B26: tx memory budget: measure and decide `PARSE_COPIES`/budget versus the ~8x peak (B6), log the decision.
-5. B27: remaining intermittent watch lines: re-run each named case once on a quiet host; close lines with no failure since their last fix, keep diagnostics.
+1. B24: test and settings follow-ups from #71, #72, #73 ([brief](briefs/B24.md)).
+2. B25: decide D22/D77 durability: at least 3 alternating FULL/NORMAL runs on a quiet host, then a logged agent decision.
+3. B26: tx memory budget: measure and decide `PARSE_COPIES`/budget versus the ~8x peak (B6), log the decision.
+4. B27: remaining intermittent watch lines: re-run each named case once on a quiet host; close lines with no failure since their last fix, keep diagnostics.
 
 ## Owner decisions
 
@@ -45,6 +44,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                            |
 | ------------ | ------------------------------------------------------ | ------- | ----------------------------------------------------------------- |
+| B23          | [#75](https://github.com/iglo-tech/iglo.email/pull/75) | f559d00 | Unsent push not `unknown`; live pushes keep their lease (D80)     |
 | B16          | [#67](https://github.com/iglo-tech/iglo.email/pull/67) | 2511c76 | Click on a linked banner keeps visible spaces (D79)               |
 | B15          | [#66](https://github.com/iglo-tech/iglo.email/pull/66) | cfd6798 | Banner Backspace, `<br>` cleanup narrowed to banners (D79)        |
 | B14          | [#65](https://github.com/iglo-tech/iglo.email/pull/65) | 1d7a72f | Linked held-image caret rule (D79), Backspace and click tests     |
@@ -121,4 +121,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Consent ([#71](https://github.com/iglo-tech/iglo.email/pull/71)): add by IDs with a status does not stamp the membership `updated_at` (as upstream); migration 0016's repaired rows keep their old dates in the unsubscribe chart (deliberate, D81).
 - Wiped sends ([#74](https://github.com/iglo-tech/iglo.email/pull/74)): D85 also silences `send.failed` for admin deletes without a wipe (for owner review).
 - Auth and bounce settings ([#73](https://github.com/iglo-tech/iglo.email/pull/73)): a legacy stored `count: 0` bounce rule stays in force and is not flagged; users converted to API or with password login off before #73 keep their old TOTP key (fails safe; `reset-totp` clears it).
+- Outbox ([#75](https://github.com/iglo-tech/iglo.email/pull/75)): any synchronous `push` throw is treated as never pooled (no realistic trigger found); the `claimOne` guard test does not reach the `UPDATE` guard.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
