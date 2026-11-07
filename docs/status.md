@@ -5,14 +5,14 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) merged. B23 (#75), B24 (#76), B25 (#77, D86) B26 (#78, D87), B27 (#79), B28 (#80), B29 (#81) and B30 (#82) merged. B31 is with its worker: [brief](briefs/B31.md), branch `task/B31-event-tail`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) merged. B23 (#75), B24 (#76), B25 (#77, D86) B26 (#78, D87), B27 (#79), B28 (#80), B29 (#81), B30 (#82) and B31 (#83, D88) merged. B32 is with its worker: [brief](briefs/B32.md), branch `task/B32-settings-read`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-1. B31: event latency tail by cause, then decide D88 ([brief](briefs/B31.md)).
+1. B32: cheaper `settings.read()` (D88) ([brief](briefs/B32.md)).
 
 ## Owner decisions
 
@@ -39,74 +39,75 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Done
 
-| Task         | PR                                                     | Merge   | Result                                                                 |
-| ------------ | ------------------------------------------------------ | ------- | ---------------------------------------------------------------------- |
-| B30          | [#82](https://github.com/iglo-tech/iglo.email/pull/82) | 2565852 | Migration 18 TOTP test that fails without the fix                      |
-| B29          | [#81](https://github.com/iglo-tech/iglo.email/pull/81) | eb5ff4c | Post-pool sync throw is `unknown`; migration 18 skips non-object rules |
-| B28          | [#80](https://github.com/iglo-tech/iglo.email/pull/80) | 5b8e3d7 | 40 x 4 MiB tx burst 265-302 to 212-254 MiB; three copies released      |
-| B27          | [#79](https://github.com/iglo-tech/iglo.email/pull/79) | 97d92b7 | Six intermittent lines closed (70 runs, 0 failures); serial harness    |
-| B26          | [#78](https://github.com/iglo-tech/iglo.email/pull/78) | cc7f009 | D87: base64 decode 147 to 16 MiB; 128 MiB measured tx budget           |
-| B25          | [#77](https://github.com/iglo-tech/iglo.email/pull/77) | 645b901 | D86: keep `synchronous = FULL` (second-send and lost-ack risk)         |
-| B24          | [#76](https://github.com/iglo-tech/iglo.email/pull/76) | 66e7003 | OpenAPI path types; migration 18 (bounce `count: 0`, stale TOTP)       |
-| B23          | [#75](https://github.com/iglo-tech/iglo.email/pull/75) | f559d00 | Unsent push not `unknown`; live pushes keep their lease (D80)          |
-| B16          | [#67](https://github.com/iglo-tech/iglo.email/pull/67) | 2511c76 | Click on a linked banner keeps visible spaces (D79)                    |
-| B15          | [#66](https://github.com/iglo-tech/iglo.email/pull/66) | cfd6798 | Banner Backspace, `<br>` cleanup narrowed to banners (D79)             |
-| B14          | [#65](https://github.com/iglo-tech/iglo.email/pull/65) | 1d7a72f | Linked held-image caret rule (D79), Backspace and click tests          |
-| B13          | [#64](https://github.com/iglo-tech/iglo.email/pull/64) | c0536b9 | Held-image caret (D79); flaky tests diagnosed, not reproduced          |
-| B12          | [#63](https://github.com/iglo-tech/iglo.email/pull/63) | 9b10ec6 | Build lock, no-undef, editor fixes, bounded tx overtaking (D78)        |
-| B11          | [#62](https://github.com/iglo-tech/iglo.email/pull/62) | 8d28d54 | Event latency measured; D22 and process model left to owner (D77)      |
-| E2e speed    | [#61](https://github.com/iglo-tech/iglo.email/pull/61) | 8aeb257 | Parallel e2e stacks, default 2 (17→~10 min)                            |
-| Test speed   | [#60](https://github.com/iglo-tech/iglo.email/pull/60) | 893c85f | Parallel `bun run test`, one build, `bun check` (547→~145 s)           |
-| B10          | [#59](https://github.com/iglo-tech/iglo.email/pull/59) | edcebf7 | Backlog defects; lead decided after round 3 (held styles)              |
-| B8           | [#58](https://github.com/iglo-tech/iglo.email/pull/58) | ae83f35 | Intermittent fixes, contract and lock tests, settings ref fixed        |
-| B7           | [#57](https://github.com/iglo-tech/iglo.email/pull/57) | fb7ea5a | Analytics egress budget, WAL gap, disk-staged selections               |
-| B9           | [#56](https://github.com/iglo-tech/iglo.email/pull/56) | 6669094 | SES/SNS bounces, topic allowlist (D75)                                 |
-| B6           | [#55](https://github.com/iglo-tech/iglo.email/pull/55) | 33d8e65 | Tx attachment budget, finishAll tests, paced events (D74)              |
-| B5           | [#54](https://github.com/iglo-tech/iglo.email/pull/54) | 92c5d90 | Reschedule, live condition validation, activity tab                    |
-| B4           | [#53](https://github.com/iglo-tech/iglo.email/pull/53) | 785594f | ALTCHA and hCaptcha on public forms (D72)                              |
-| B3           | [#52](https://github.com/iglo-tech/iglo.email/pull/52) | 5dfea64 | Admin CSP, nosniff, editor containment (D71)                           |
-| B2           | [#51](https://github.com/iglo-tech/iglo.email/pull/51) | c4a24a5 | Retention of sessions, webhook rows and send bodies (D70)              |
-| B1           | [#50](https://github.com/iglo-tech/iglo.email/pull/50) | 07e3ace | One process per data directory (D69)                                   |
-| M6.3         | [#48](https://github.com/iglo-tech/iglo.email/pull/48) | 2013ada | Release workflow, version, verification, packaging                     |
-| M6.4         | [#49](https://github.com/iglo-tech/iglo.email/pull/49) | 21e5bea | OpenAPI, subscriber export and activity routes                         |
-| M6.2         | [#47](https://github.com/iglo-tech/iglo.email/pull/47) | e191856 | Backup, restore hold (D67), reset-password, operations guide           |
-| M5.5         | [#45](https://github.com/iglo-tech/iglo.email/pull/45) | 25bf1f4 | Sequence screens, subscriber tabs, test mode                           |
-| M4.6         | [#44](https://github.com/iglo-tech/iglo.email/pull/44) | bbb6570 | Analytics, maintenance, logs; log buffer holds safe fields             |
-| M4.5         | [#43](https://github.com/iglo-tech/iglo.email/pull/43) | 6481e54 | Bounces, media, import, forms screens                                  |
-| M4.4         | [#42](https://github.com/iglo-tech/iglo.email/pull/42) | 39e710c | Settings, users, roles, profile; usable last admin                     |
-| M4.3         | [#41](https://github.com/iglo-tech/iglo.email/pull/41) | e54fe8c | Templates and campaigns screens; HTML allow-list D66                   |
-| M4.2         | [#40](https://github.com/iglo-tech/iglo.email/pull/40) | b7ab730 | Subscribers and lists screens                                          |
-| M4.1         | [#39](https://github.com/iglo-tech/iglo.email/pull/39) | 68defb0 | Admin shell, auth screens, dashboard, e2e harness; D65                 |
-| M1.9         | [#38](https://github.com/iglo-tech/iglo.email/pull/38) | 7a21684 | CSV import; log holds no personal data; D61 revised                    |
-| M3.5         | [#37](https://github.com/iglo-tech/iglo.email/pull/37) | 8b38fba | Media, attachments, data-embed; storage boundary D64                   |
-| M3.4         | [#36](https://github.com/iglo-tech/iglo.email/pull/36) | 6375f5c | Bounces, actions, signed Mailgun webhook; D63                          |
-| M3.3         | [#35](https://github.com/iglo-tech/iglo.email/pull/35) | a69abd7 | Analytics through a killable read-only child process (D62)             |
-| M2.6         | [#34](https://github.com/iglo-tech/iglo.email/pull/34) | 3b99900 | Signed outbound webhooks; wipe clears personal data                    |
-| M5.4         | [#25](https://github.com/iglo-tech/iglo.email/pull/25) | b934fb2 | Sequence scheduler                                                     |
-| Test hygiene | [#24](https://github.com/iglo-tech/iglo.email/pull/24) | a74c4c9 | Ignore host loopback port probes (lead-merged, test-only)              |
-| M5.3         | [#23](https://github.com/iglo-tech/iglo.email/pull/23) | 8bd33f6 | Sequences and enrollments                                              |
-| M5.2         | [#22](https://github.com/iglo-tech/iglo.email/pull/22) | 8b328c8 | Sequence conditions                                                    |
-| M1.7         | [#21](https://github.com/iglo-tech/iglo.email/pull/21) | 0d40045 | Subscriber query/search/export                                         |
-| M5.1         | [#20](https://github.com/iglo-tech/iglo.email/pull/20) | 4232631 | Subscriber events API                                                  |
-| M2.4         | [#19](https://github.com/iglo-tech/iglo.email/pull/19) | 5368d30 | Unsubscribe/cap/tracking                                               |
-| M2.3         | [#18](https://github.com/iglo-tech/iglo.email/pull/18) | 7a56cb7 | Transactional API                                                      |
-| M1.8         | [#17](https://github.com/iglo-tech/iglo.email/pull/17) | 17eaf1c | Templates/bounded Liquid                                               |
-| M2.2         | [#16](https://github.com/iglo-tech/iglo.email/pull/16) | 4328bf0 | Durable journal/outbox                                                 |
-| M2.1         | [#15](https://github.com/iglo-tech/iglo.email/pull/15) | 542bf92 | SMTP/outcomes                                                          |
-| M1.2         | [#14](https://github.com/iglo-tech/iglo.email/pull/14) | 043973d | Settings/session lifetime                                              |
-| M1.6         | [#13](https://github.com/iglo-tech/iglo.email/pull/13) | 7764c13 | Subscribers/external IDs                                               |
-| M1.5         | [#12](https://github.com/iglo-tech/iglo.email/pull/12) | da66ca0 | Lists CRUD/counts                                                      |
-| M1.4         | [#11](https://github.com/iglo-tech/iglo.email/pull/11) | b60a0e8 | Roles/TOTP                                                             |
-| M1.3         | [#10](https://github.com/iglo-tech/iglo.email/pull/10) | 76122c0 | Users/authentication                                                   |
-| M1.1         | [#9](https://github.com/iglo-tech/iglo.email/pull/9)   | 34a246f | v1 schema                                                              |
-| M0.8         | [#8](https://github.com/iglo-tech/iglo.email/pull/8)   | 5c048d1 | SMTP/Liquid spikes                                                     |
-| M0.7         | [#7](https://github.com/iglo-tech/iglo.email/pull/7)   | 8a0b3bf | SQLite load spike                                                      |
-| M0.6         | [#6](https://github.com/iglo-tech/iglo.email/pull/6)   | 986e3ed | JSX/page shell/assets                                                  |
-| M0.5         | [#5](https://github.com/iglo-tech/iglo.email/pull/5)   | 1147650 | Contract suite                                                         |
-| M0.4         | [#4](https://github.com/iglo-tech/iglo.email/pull/4)   | a988c62 | SQLite and loop primitives                                             |
-| M0.3         | [#3](https://github.com/iglo-tech/iglo.email/pull/3)   | cb41fd6 | HTTP/app contracts                                                     |
-| M0.2         | [#2](https://github.com/iglo-tech/iglo.email/pull/2)   | 2946b45 | Pinned reference harness                                               |
-| M0.1         | [#1](https://github.com/iglo-tech/iglo.email/pull/1)   | 7dffb86 | Skeleton                                                               |
+| Task         | PR                                                     | Merge   | Result                                                                   |
+| ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B31          | [#83](https://github.com/iglo-tech/iglo.email/pull/83) | c964261 | D88: event tail is commit fsync plus `settings.read()` CPU; opt-in probe |
+| B30          | [#82](https://github.com/iglo-tech/iglo.email/pull/82) | 2565852 | Migration 18 TOTP test that fails without the fix                        |
+| B29          | [#81](https://github.com/iglo-tech/iglo.email/pull/81) | eb5ff4c | Post-pool sync throw is `unknown`; migration 18 skips non-object rules   |
+| B28          | [#80](https://github.com/iglo-tech/iglo.email/pull/80) | 5b8e3d7 | 40 x 4 MiB tx burst 265-302 to 212-254 MiB; three copies released        |
+| B27          | [#79](https://github.com/iglo-tech/iglo.email/pull/79) | 97d92b7 | Six intermittent lines closed (70 runs, 0 failures); serial harness      |
+| B26          | [#78](https://github.com/iglo-tech/iglo.email/pull/78) | cc7f009 | D87: base64 decode 147 to 16 MiB; 128 MiB measured tx budget             |
+| B25          | [#77](https://github.com/iglo-tech/iglo.email/pull/77) | 645b901 | D86: keep `synchronous = FULL` (second-send and lost-ack risk)           |
+| B24          | [#76](https://github.com/iglo-tech/iglo.email/pull/76) | 66e7003 | OpenAPI path types; migration 18 (bounce `count: 0`, stale TOTP)         |
+| B23          | [#75](https://github.com/iglo-tech/iglo.email/pull/75) | f559d00 | Unsent push not `unknown`; live pushes keep their lease (D80)            |
+| B16          | [#67](https://github.com/iglo-tech/iglo.email/pull/67) | 2511c76 | Click on a linked banner keeps visible spaces (D79)                      |
+| B15          | [#66](https://github.com/iglo-tech/iglo.email/pull/66) | cfd6798 | Banner Backspace, `<br>` cleanup narrowed to banners (D79)               |
+| B14          | [#65](https://github.com/iglo-tech/iglo.email/pull/65) | 1d7a72f | Linked held-image caret rule (D79), Backspace and click tests            |
+| B13          | [#64](https://github.com/iglo-tech/iglo.email/pull/64) | c0536b9 | Held-image caret (D79); flaky tests diagnosed, not reproduced            |
+| B12          | [#63](https://github.com/iglo-tech/iglo.email/pull/63) | 9b10ec6 | Build lock, no-undef, editor fixes, bounded tx overtaking (D78)          |
+| B11          | [#62](https://github.com/iglo-tech/iglo.email/pull/62) | 8d28d54 | Event latency measured; D22 and process model left to owner (D77)        |
+| E2e speed    | [#61](https://github.com/iglo-tech/iglo.email/pull/61) | 8aeb257 | Parallel e2e stacks, default 2 (17→~10 min)                              |
+| Test speed   | [#60](https://github.com/iglo-tech/iglo.email/pull/60) | 893c85f | Parallel `bun run test`, one build, `bun check` (547→~145 s)             |
+| B10          | [#59](https://github.com/iglo-tech/iglo.email/pull/59) | edcebf7 | Backlog defects; lead decided after round 3 (held styles)                |
+| B8           | [#58](https://github.com/iglo-tech/iglo.email/pull/58) | ae83f35 | Intermittent fixes, contract and lock tests, settings ref fixed          |
+| B7           | [#57](https://github.com/iglo-tech/iglo.email/pull/57) | fb7ea5a | Analytics egress budget, WAL gap, disk-staged selections                 |
+| B9           | [#56](https://github.com/iglo-tech/iglo.email/pull/56) | 6669094 | SES/SNS bounces, topic allowlist (D75)                                   |
+| B6           | [#55](https://github.com/iglo-tech/iglo.email/pull/55) | 33d8e65 | Tx attachment budget, finishAll tests, paced events (D74)                |
+| B5           | [#54](https://github.com/iglo-tech/iglo.email/pull/54) | 92c5d90 | Reschedule, live condition validation, activity tab                      |
+| B4           | [#53](https://github.com/iglo-tech/iglo.email/pull/53) | 785594f | ALTCHA and hCaptcha on public forms (D72)                                |
+| B3           | [#52](https://github.com/iglo-tech/iglo.email/pull/52) | 5dfea64 | Admin CSP, nosniff, editor containment (D71)                             |
+| B2           | [#51](https://github.com/iglo-tech/iglo.email/pull/51) | c4a24a5 | Retention of sessions, webhook rows and send bodies (D70)                |
+| B1           | [#50](https://github.com/iglo-tech/iglo.email/pull/50) | 07e3ace | One process per data directory (D69)                                     |
+| M6.3         | [#48](https://github.com/iglo-tech/iglo.email/pull/48) | 2013ada | Release workflow, version, verification, packaging                       |
+| M6.4         | [#49](https://github.com/iglo-tech/iglo.email/pull/49) | 21e5bea | OpenAPI, subscriber export and activity routes                           |
+| M6.2         | [#47](https://github.com/iglo-tech/iglo.email/pull/47) | e191856 | Backup, restore hold (D67), reset-password, operations guide             |
+| M5.5         | [#45](https://github.com/iglo-tech/iglo.email/pull/45) | 25bf1f4 | Sequence screens, subscriber tabs, test mode                             |
+| M4.6         | [#44](https://github.com/iglo-tech/iglo.email/pull/44) | bbb6570 | Analytics, maintenance, logs; log buffer holds safe fields               |
+| M4.5         | [#43](https://github.com/iglo-tech/iglo.email/pull/43) | 6481e54 | Bounces, media, import, forms screens                                    |
+| M4.4         | [#42](https://github.com/iglo-tech/iglo.email/pull/42) | 39e710c | Settings, users, roles, profile; usable last admin                       |
+| M4.3         | [#41](https://github.com/iglo-tech/iglo.email/pull/41) | e54fe8c | Templates and campaigns screens; HTML allow-list D66                     |
+| M4.2         | [#40](https://github.com/iglo-tech/iglo.email/pull/40) | b7ab730 | Subscribers and lists screens                                            |
+| M4.1         | [#39](https://github.com/iglo-tech/iglo.email/pull/39) | 68defb0 | Admin shell, auth screens, dashboard, e2e harness; D65                   |
+| M1.9         | [#38](https://github.com/iglo-tech/iglo.email/pull/38) | 7a21684 | CSV import; log holds no personal data; D61 revised                      |
+| M3.5         | [#37](https://github.com/iglo-tech/iglo.email/pull/37) | 8b38fba | Media, attachments, data-embed; storage boundary D64                     |
+| M3.4         | [#36](https://github.com/iglo-tech/iglo.email/pull/36) | 6375f5c | Bounces, actions, signed Mailgun webhook; D63                            |
+| M3.3         | [#35](https://github.com/iglo-tech/iglo.email/pull/35) | a69abd7 | Analytics through a killable read-only child process (D62)               |
+| M2.6         | [#34](https://github.com/iglo-tech/iglo.email/pull/34) | 3b99900 | Signed outbound webhooks; wipe clears personal data                      |
+| M5.4         | [#25](https://github.com/iglo-tech/iglo.email/pull/25) | b934fb2 | Sequence scheduler                                                       |
+| Test hygiene | [#24](https://github.com/iglo-tech/iglo.email/pull/24) | a74c4c9 | Ignore host loopback port probes (lead-merged, test-only)                |
+| M5.3         | [#23](https://github.com/iglo-tech/iglo.email/pull/23) | 8bd33f6 | Sequences and enrollments                                                |
+| M5.2         | [#22](https://github.com/iglo-tech/iglo.email/pull/22) | 8b328c8 | Sequence conditions                                                      |
+| M1.7         | [#21](https://github.com/iglo-tech/iglo.email/pull/21) | 0d40045 | Subscriber query/search/export                                           |
+| M5.1         | [#20](https://github.com/iglo-tech/iglo.email/pull/20) | 4232631 | Subscriber events API                                                    |
+| M2.4         | [#19](https://github.com/iglo-tech/iglo.email/pull/19) | 5368d30 | Unsubscribe/cap/tracking                                                 |
+| M2.3         | [#18](https://github.com/iglo-tech/iglo.email/pull/18) | 7a56cb7 | Transactional API                                                        |
+| M1.8         | [#17](https://github.com/iglo-tech/iglo.email/pull/17) | 17eaf1c | Templates/bounded Liquid                                                 |
+| M2.2         | [#16](https://github.com/iglo-tech/iglo.email/pull/16) | 4328bf0 | Durable journal/outbox                                                   |
+| M2.1         | [#15](https://github.com/iglo-tech/iglo.email/pull/15) | 542bf92 | SMTP/outcomes                                                            |
+| M1.2         | [#14](https://github.com/iglo-tech/iglo.email/pull/14) | 043973d | Settings/session lifetime                                                |
+| M1.6         | [#13](https://github.com/iglo-tech/iglo.email/pull/13) | 7764c13 | Subscribers/external IDs                                                 |
+| M1.5         | [#12](https://github.com/iglo-tech/iglo.email/pull/12) | da66ca0 | Lists CRUD/counts                                                        |
+| M1.4         | [#11](https://github.com/iglo-tech/iglo.email/pull/11) | b60a0e8 | Roles/TOTP                                                               |
+| M1.3         | [#10](https://github.com/iglo-tech/iglo.email/pull/10) | 76122c0 | Users/authentication                                                     |
+| M1.1         | [#9](https://github.com/iglo-tech/iglo.email/pull/9)   | 34a246f | v1 schema                                                                |
+| M0.8         | [#8](https://github.com/iglo-tech/iglo.email/pull/8)   | 5c048d1 | SMTP/Liquid spikes                                                       |
+| M0.7         | [#7](https://github.com/iglo-tech/iglo.email/pull/7)   | 8a0b3bf | SQLite load spike                                                        |
+| M0.6         | [#6](https://github.com/iglo-tech/iglo.email/pull/6)   | 986e3ed | JSX/page shell/assets                                                    |
+| M0.5         | [#5](https://github.com/iglo-tech/iglo.email/pull/5)   | 1147650 | Contract suite                                                           |
+| M0.4         | [#4](https://github.com/iglo-tech/iglo.email/pull/4)   | a988c62 | SQLite and loop primitives                                               |
+| M0.3         | [#3](https://github.com/iglo-tech/iglo.email/pull/3)   | cb41fd6 | HTTP/app contracts                                                       |
+| M0.2         | [#2](https://github.com/iglo-tech/iglo.email/pull/2)   | 2946b45 | Pinned reference harness                                                 |
+| M0.1         | [#1](https://github.com/iglo-tech/iglo.email/pull/1)   | 7dffb86 | Skeleton                                                                 |
 
 ## Hardening backlog
 
