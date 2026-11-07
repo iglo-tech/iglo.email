@@ -5,7 +5,7 @@ import { HttpError } from "@/server/response";
 import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
 import { txFixture, type TxFixture } from "@/test/tx/fixture";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
-import { bounceMessage, envelope, network, post } from "./ses-fixture";
+import { bounceMessage, envelope, network, post } from "@/test/bounces/ses-fixture";
 
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {

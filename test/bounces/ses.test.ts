@@ -14,7 +14,7 @@ import {
   network,
   post,
   type Network,
-} from "./ses-fixture";
+} from "@/test/bounces/ses-fixture";
 
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {
