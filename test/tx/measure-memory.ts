@@ -35,7 +35,9 @@ const f = await txFixture({
   ...(gated ? {} : { limits: { maxBytes: 2 ** 40, maxSends: 1_000_000 } }),
 });
 const template = await f.template("<p>x</p>");
-const post = async (i: number) => {
+// Builds request i's multipart body. Concurrent runs build every body before the baseline, since
+// they coexist anyway; "serial" builds each one when it is sent, so the earlier bodies are not held.
+const build = async (i: number) => {
   const form = new FormData();
   form.set(
     "data",
@@ -48,20 +50,20 @@ const post = async (i: number) => {
   const bytes = new Uint8Array(attachmentMiB * 1048576);
   crypto.getRandomValues(bytes.subarray(0, 65536));
   form.append("file", new File([bytes], "a.bin"));
-  const encoded = await new Response(form).blob();
-  return () =>
-    f
-      .request("/api/tx", {
-        method: "POST",
-        headers: {
-          ...f.sessionHeaders,
-          "content-type": encoded.type,
-          "content-length": String(encoded.size),
-        },
-        body: encoded,
-      })
-      .then((response) => response.status);
+  return new Response(form).blob();
 };
+const send = (encoded: Blob) =>
+  f
+    .request("/api/tx", {
+      method: "POST",
+      headers: {
+        ...f.sessionHeaders,
+        "content-type": encoded.type,
+        "content-length": String(encoded.size),
+      },
+      body: encoded,
+    })
+    .then((response) => response.status);
 // A small first send, so one-time costs (compiled code, statements, pools) are not growth.
 {
   const warm = new FormData();
@@ -80,17 +82,22 @@ const post = async (i: number) => {
   });
   if (response.status !== 200) throw new Error("warm-up failed");
 }
-const sends = await Promise.all(Array.from({ length: requests }, (_, i) => post(i)));
+const bodies =
+  gating === "serial"
+    ? []
+    : await Promise.all(Array.from({ length: requests }, (_, i) => build(i)));
 Bun.gc(true);
 await Bun.sleep(200);
 const baseline = process.memoryUsage().rss;
 resetHighWater();
 const load = loadavg()[0]!;
 const begin = performance.now();
-// "serial" sends the requests one after another, to see garbage pile up without concurrency.
+// "serial" sends the requests one after another, to see garbage pile up without concurrency; each
+// body is built when it is sent, so its build time is in `seconds`.
 const statuses: number[] = [];
-if (gating === "serial") for (const send of sends) statuses.push(await send());
-else statuses.push(...(await Promise.all(sends.map((send) => send()))));
+if (gating === "serial")
+  for (let i = 0; i < requests; i++) statuses.push(await send(await build(i)));
+else statuses.push(...(await Promise.all(bodies.map(send))));
 const seconds = (performance.now() - begin) / 1000;
 const peak = highWater();
 const attachmentBytes = attachmentMiB * 1048576;
