@@ -249,6 +249,10 @@ export function createSends(options: {
       )
       .get(time.toISOString());
     if (!row) return null;
+    // `AND status='queued'` is the transition's from-state. On one connection nothing can
+    // change the row between the SELECT above and this UPDATE (single-threaded, no await), so
+    // `changes` is always 1 here and the guard is unreachable without a concurrent writer. It
+    // stays as the from-state guard, with no test that pretends to cover it.
     const { changes } = db.run(
       "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?, claimed_until=?, next_attempt_at=NULL WHERE id=? AND status='queued'",
       [time.toISOString(), lease.toISOString(), row.id],
