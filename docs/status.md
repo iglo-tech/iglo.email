@@ -12,7 +12,7 @@ Owner-only, blocking nothing else: publishing a release and PDF viewers on real 
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-1. B26: tx memory budget: measure and decide `PARSE_COPIES`/budget versus the ~8x peak (B6), log the decision.
+1. B26: tx memory budget ([brief](briefs/B26.md)).
 2. B27: remaining intermittent watch lines: re-run each named case once on a quiet host; close lines with no failure since their last fix, keep diagnostics.
 
 ## Owner decisions
