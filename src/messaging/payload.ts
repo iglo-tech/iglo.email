@@ -20,6 +20,21 @@ const invalid = (): never => {
 };
 
 export function encodePayload(message: Message, subscriberUuid: string | null): string {
+  return prepare(message, subscriberUuid, true);
+}
+/**
+ * The checks of `encodePayload` without building the payload: a decoded message was already
+ * bounded as text, and encoding it again would hold two more copies of every attachment.
+ */
+function check(message: Message, subscriberUuid: string | null): void {
+  prepare(message, subscriberUuid, false);
+}
+/** A view of the same bytes; Buffer.from(Uint8Array) would copy them. */
+const view = (content: Uint8Array) =>
+  Buffer.from(content.buffer, content.byteOffset, content.byteLength);
+function prepare(message: Message, subscriberUuid: string | null, encode: true): string;
+function prepare(message: Message, subscriberUuid: string | null, encode: false): void;
+function prepare(message: Message, subscriberUuid: string | null, encode: boolean): string | void {
   if (
     !message ||
     !address(message.from) ||
@@ -75,13 +90,14 @@ export function encodePayload(message: Message, subscriberUuid: string | null): 
     if (total > maxAttachments) invalid();
     return {
       name: a.name,
-      content: Buffer.from(a.content).toString("base64"),
+      content: encode ? view(a.content).toString("base64") : "",
       ...(a.cid === undefined ? {} : { cid: a.cid }),
       ...(a.contentType === undefined ? {} : { contentType: a.contentType }),
       ...(a.inline === undefined ? {} : { inline: a.inline }),
       ...(a.disposition === undefined ? {} : { disposition: a.disposition }),
     };
   });
+  if (!encode) return;
   const payload = JSON.stringify({
     version: 1,
     subscriberUuid,
@@ -90,10 +106,10 @@ export function encodePayload(message: Message, subscriberUuid: string | null): 
       to: [...message.to],
       subject: message.subject,
       contentType: message.contentType,
-      body: Buffer.from(message.body).toString("base64"),
+      body: view(message.body).toString("base64"),
       ...(message.altBody === undefined
         ? {}
-        : { altBody: Buffer.from(message.altBody).toString("base64") }),
+        : { altBody: view(message.altBody).toString("base64") }),
       headers,
       attachments: encodedAttachments,
       ...(message.messenger === undefined ? {} : { messenger: message.messenger }),
@@ -118,7 +134,11 @@ export function decodePayload(payload: string): {
       if (
         typeof v !== "string" ||
         v.length > Math.ceil(max / 3) * 4 ||
-        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(v)
+        v.length % 4 !== 0 ||
+        // A flat class: a repeated four-character group makes the regex engine keep a backtrack
+        // frame per group, about 25 times the string's size for a 4 MiB attachment (B26).
+        // The round trip below still rejects any padding that is not canonical.
+        !/^[A-Za-z0-9+/]*={0,2}$/.test(v)
       )
         invalid();
       const result = Buffer.from(v as string, "base64");
@@ -136,7 +156,7 @@ export function decodePayload(payload: string): {
         content: decode(a.content, maxAttachments),
       })),
     };
-    encodePayload(message, raw.subscriberUuid);
+    check(message, raw.subscriberUuid);
     return { message, subscriberUuid: raw.subscriberUuid };
   } catch {
     return invalid();

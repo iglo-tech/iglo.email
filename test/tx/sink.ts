@@ -6,8 +6,13 @@ export interface Captured {
   to: string[];
   data: string;
 }
-/** `pauseMs` stops reading after each chunk: an SMTP server on a slow link. */
-export async function startSink(options: { reject?: () => boolean; pauseMs?: number } = {}) {
+/**
+ * `pauseMs` stops reading after each chunk: an SMTP server on a slow link. `discardData` keeps
+ * no message text, so a memory measurement does not count the sink's own copy (B26).
+ */
+export async function startSink(
+  options: { reject?: () => boolean; pauseMs?: number; discardData?: boolean } = {},
+) {
   const messages: Captured[] = [];
   const sockets = new Set<Socket>();
   const server = createServer((socket) => {
@@ -30,12 +35,12 @@ export async function startSink(options: { reject?: () => boolean; pauseMs?: num
         buffer = buffer.slice(at + 2);
         if (data) {
           if (line === ".") {
-            current.data = data.join("\r\n");
+            current.data = options.discardData ? "" : data.join("\r\n");
             data = null;
             messages.push(current);
             socket.write("250 queued\r\n");
             current = { from: "", to: [], data: "" };
-          } else data.push(line.startsWith("..") ? line.slice(1) : line);
+          } else if (!options.discardData) data.push(line.startsWith("..") ? line.slice(1) : line);
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();

@@ -31,15 +31,30 @@ const MAX_RECIPIENTS = 100;
 /** Aggregate prepared bytes for one request; each payload is also bounded by messaging. */
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 /**
- * Memory a synchronous send with attachments may hold at once, across requests (D74): a
- * multipart upload costs its body about five times while it is parsed (read chunks, joined body, form, file copies), and a
- * send holds each recipient's decoded copy until SMTP answers.
+ * Memory a send with attachments may hold at once, across requests (D74, D87). Counted bytes are
+ * real bytes: the multipliers below are measured peak RSS growth per attachment byte
+ * (docs/perf/B26-tx-memory.md), so the budget bounds the counted, measured-per-copy memory (on top
+ * of a fixed ~25 MiB and the garbage collector's lag, which let measured peaks reach 389 MiB). A multipart upload costs its body about 4.3
+ * times while it is parsed (read chunks, joined body, form, file copy); after it the journal encodes and decodes one payload per
+ * recipient, and each synchronous recipient's message is pushed concurrently with a decoded copy,
+ * a base64 string and the SMTP library's own encoding.
  */
-const MAX_ATTACHMENT_BYTES_IN_FLIGHT = 64 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES_IN_FLIGHT = 128 * 1024 * 1024;
 const MAX_ATTACHMENT_SENDS = 64;
 /** How long an upload waits for room before a 429. */
 const ATTACHMENT_WAIT_MS = 2000;
-const PARSE_COPIES = 5;
+/** Held from the journal write on: a fixed part per attachment byte, then one per recipient. */
+const HELD_COPIES = 4;
+/** A synchronous recipient also keeps its decoded copy and SMTP encoding until the server answers. */
+const HELD_COPIES_PER_RECIPIENT = 7;
+/** An async recipient is only encoded into the journal here; its send happens later, in turn. */
+const ENCODED_COPIES_PER_RECIPIENT = 5;
+/**
+ * Charged against a multipart body's size before it is read: the parse itself peaks near 4.3 times
+ * the body, but the reservation is kept for the journal write and a one-recipient send after it, so
+ * a request admitted to parse does not then find the room gone and answer 429 after its work.
+ */
+const PARSE_COPIES = HELD_COPIES + HELD_COPIES_PER_RECIPIENT;
 type Slot = { reservation: Reservation | null };
 const MAX_KEY_BYTES = 255;
 const MAX_HEADERS = 64;
@@ -99,12 +114,20 @@ export function registerTxRoutes(
     attachments: Attachments;
     embedImages: EmbedImages;
     /** Test seam for the attachment budget; production uses the constants above. */
-    limits?: { maxBytes?: number; maxSends?: number; waitMs?: number; maxOvertakes?: number };
+    limits?: {
+      maxBytes?: number;
+      maxSends?: number;
+      waitMs?: number;
+      maxOvertakes?: number;
+    };
   },
 ) {
+  const budget = deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT;
   let gate: ByteGate | undefined;
   const busy = () =>
-    new HttpError(429, "Too many sends with attachments in progress.", { "Retry-After": "1" });
+    new HttpError(429, "Too many sends with attachments in progress.", {
+      "Retry-After": "1",
+    });
   /** Gives the handler its reservation slot and releases whatever it still holds on any exit. */
   const guarded =
     (
@@ -113,7 +136,7 @@ export function registerTxRoutes(
     async (context) => {
       gate ??= createByteGate({
         clock: context.app.clock,
-        maxBytes: deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT,
+        maxBytes: budget,
         maxHolders: deps.limits?.maxSends ?? MAX_ATTACHMENT_SENDS,
         waitMs: deps.limits?.waitMs ?? ATTACHMENT_WAIT_MS,
         ...(deps.limits?.maxOvertakes === undefined
@@ -262,7 +285,10 @@ export function registerTxRoutes(
 
       // Render. listmonk renders the template body, then a templated subject/alt body.
       const marketing = kind === "marketing";
-      const transactional = { mode: "html" as const, transactional: !marketing };
+      const transactional = {
+        mode: "html" as const,
+        transactional: !marketing,
+      };
       let body: ReturnType<TemplateRenderer["compile"]>;
       let alt: ReturnType<TemplateRenderer["compile"]> | null = null;
       const renderError = () =>
@@ -300,7 +326,11 @@ export function registerTxRoutes(
       for (const recipient of recipients) {
         // The send UUID is fixed before rendering so its URLs can carry it.
         const uuid = crypto.randomUUID();
-        const prepared = links({ uuid, kind, subscriberUuid: recipient.row?.uuid ?? null });
+        const prepared = links({
+          uuid,
+          kind,
+          subscriberUuid: recipient.row?.uuid ?? null,
+        });
         const unsubscribe = marketing
           ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
           : "";
@@ -348,9 +378,18 @@ export function registerTxRoutes(
         });
       }
 
-      // Each synchronous send decodes its own copy of every attachment from the journal and
-      // holds it until SMTP answers. An async send holds nothing past the request.
-      const held = !m.async && attachments.length ? attachmentBytes * requested.length : 0;
+      // The journal encodes every recipient's payload, and each synchronous send decodes its own
+      // copy of every attachment and holds it until SMTP answers. An async send is encoded in the
+      // request, then its row waits in the journal and the outbox loop sends one batch at a time.
+      const held = attachments.length
+        ? attachmentBytes *
+          (HELD_COPIES +
+            (m.async ? ENCODED_COPIES_PER_RECIPIENT : HELD_COPIES_PER_RECIPIENT) * requested.length)
+        : 0;
+      // A charge over the whole budget can never be admitted, even on an idle server, so a 429
+      // would make a retrying client loop forever. Main answered such a request with this 400.
+      if (held > budget)
+        throw new HttpError(400, t.Ts("templates.errorRendering", "error", "invalid message"));
       if (!held) {
         slot.reservation?.release();
         slot.reservation = null;
