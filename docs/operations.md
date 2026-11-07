@@ -85,9 +85,11 @@ A backup, and the helpers the server starts itself, are read-only and do not cou
 
 An official multi-architecture image (`linux/amd64`, `linux/arm64`) is published to GitHub's
 container registry on every release: `ghcr.io/iglo-tech/iglo.email:<version>`, and `:latest` for
-a version without `-`. It only wraps the release executable of the same version; nothing is built
-inside it. It runs as the non-root user 65532, keeps its data in the volume `/data`, listens on
-port 9000 and has no shell. Prerelease versions are not for production.
+a version without `-`. GitHub creates the `ghcr.io/iglo-tech/iglo.email` package as private on its
+first push, and the owner must once set its visibility to public (package settings) before the
+documented anonymous `docker pull` works. It only wraps the release executable of the same version;
+nothing is built inside it. It runs as the non-root user 65532, keeps its data in the volume
+`/data`, listens on port 9000 and has no shell. Prerelease versions are not for production.
 
 ```sh
 docker volume create iglo-email-data
@@ -110,18 +112,19 @@ volume ([one process per data directory](#one-process-per-data-directory)).
 
 Commands that need the data directory run in a second container on the same volume, which is
 only right for those that do not [refuse beside a running server](#one-process-per-data-directory).
-The backup is written to a mounted directory, owned by 65532:
+A bind mount using `chown 65532` fails or maps to a different host UID under rootless Docker. To
+work under both rootful and rootless Docker, run `backup` in the running container and copy the
+verified directory out with `docker cp` (or write the backup into a named volume):
 
 ```sh
-install -d -o 65532 -g 65532 -m 0700 /var/backups/iglo.email
-docker run --rm -v iglo-email-data:/data -v /var/backups/iglo.email:/backups \
-  ghcr.io/iglo-tech/iglo.email:0.1.0 backup --output /backups/monday
-docker run --rm -v /var/backups/iglo.email:/backups \
-  ghcr.io/iglo-tech/iglo.email:0.1.0 backup --verify /backups/monday
+install -d -m 0700 /var/backups/iglo.email
+docker exec iglo-email iglo.email backup --output /data/backups/monday
+docker exec iglo-email iglo.email backup --verify /data/backups/monday
+docker cp iglo-email:/data/backups/monday /var/backups/iglo.email/monday
 ```
 
 `reset-password`, `reset-totp` and `backup --release-hold` refuse while the server runs: stop the
-container, run them the same way with `--rm -v iglo-email-data:/data`, and start it again. A
+container, run them with `--rm -v iglo-email-data:/data`, and start it again. A
 [restore](#restore) likewise runs in a container with the volume mounted. To upgrade, take and
 verify a backup, then `docker pull` the new tag, remove the container and run it again with the
 same volume and variables; see [Upgrades](#upgrades). To go back, restore the backup with the old

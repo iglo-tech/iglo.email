@@ -30,6 +30,15 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Refuse tags with build metadata
+        if: github.ref_type == 'tag'
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *+*)
+              echo "Tag '$GITHUB_REF_NAME' contains '+' (build metadata), which is not a valid Docker tag" >&2
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -93,7 +102,11 @@ jobs:
   # One image for linux/amd64 and linux/arm64 from the two verified executables. The Dockerfile has
   # no RUN on the target platform, so no emulation is needed. Only this job may write packages.
   image:
-    needs: build
+    needs: [build, publish]
+    if: |
+      !failure() && !cancelled() &&
+      needs.build.result == 'success' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -127,6 +140,12 @@ jobs:
             printf 'version=dry-run\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          case "$version" in
+            *+*)
+              echo "Tag '$GITHUB_REF_NAME' contains '+' (build metadata), which is not a valid Docker tag" >&2
+              exit 1
+              ;;
+          esac
           tags="ghcr.io/iglo-tech/iglo.email:$version"
           case "$version" in
             *-*) ;;
