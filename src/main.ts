@@ -313,6 +313,11 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       clock,
       rate: () => settings!.read()["messaging.max_send_rate"],
     });
+    settings.onUpdate((next, current) => {
+      if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
+        limiter.wake();
+      }
+    });
     emailer = createEmailer({
       clock,
       limiter,

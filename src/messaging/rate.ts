@@ -29,6 +29,7 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
   let stopped = false;
   let sleepController: AbortController | null = null;
   let nextAvailableAt = 0;
+  let lastGrantAt = 0;
   let pumping = false;
 
   function scheduleNextWake(delay: number): void {
@@ -77,6 +78,7 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
           const waiter =
             outboxWaiters.length > 0 ? outboxWaiters.shift()! : campaignWaiters.shift()!;
           waiter.cleanup?.();
+          lastGrantAt = now;
           nextAvailableAt += interval;
           waiter.resolve();
         } else {
@@ -111,6 +113,7 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
         nextAvailableAt = now;
       }
       if (nextAvailableAt <= now) {
+        lastGrantAt = now;
         nextAvailableAt += interval;
         return Promise.resolve();
       }
@@ -183,6 +186,16 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
     if (sleepController) {
       sleepController.abort();
       sleepController = null;
+    }
+    const currentRate = options.rate();
+    if (currentRate > 0) {
+      const interval = 1000 / currentRate;
+      const earliest = lastGrantAt + interval;
+      if (earliest < nextAvailableAt) {
+        nextAvailableAt = earliest;
+      }
+    } else {
+      nextAvailableAt = 0;
     }
     pump();
   }

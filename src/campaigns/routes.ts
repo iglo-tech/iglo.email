@@ -5,6 +5,7 @@ import { refuseWhileHeld } from "@/settings/hold";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import type { Message } from "@/messaging/email";
+import type { SendPriority } from "@/messaging/rate";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
 import type { Roles } from "@/roles/roles";
@@ -57,7 +58,6 @@ export interface CampaignSettings {
   disableTracking: boolean;
   individualTracking: boolean;
 }
-import type { SendPriority } from "@/messaging/rate";
 
 export interface CampaignDeps {
   store: CampaignStore;

@@ -133,7 +133,12 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     clock,
     rate: () => settingsStore.read()["messaging.max_send_rate"],
   });
-  const emailer = createEmailer({
+  settingsStore.onUpdate((next, current) => {
+    if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
+      limiter.wake();
+    }
+  });
+  let emailer = createEmailer({
     clock,
     limiter,
     settings: () => {
@@ -168,7 +173,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   });
 
   const tracking = createTracking(db, clock);
-  const outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+  let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
   const router = createRouter();
   registerSettingsRoutes(router, settingsStore, auth);
   registerListRoutes(router, listStore, roles, auth);
@@ -178,7 +183,9 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   registerTxRoutes(router, {
     auth,
     sends,
-    outbox,
+    outbox: {
+      dispatch: (ids: bigint[]) => outbox.dispatch(ids),
+    },
     subscribers,
     templates,
     renderer,
@@ -223,7 +230,9 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     lists,
     subscribers,
     tracking,
-    emailer,
+    emailer: {
+      push: (m: any, opt: any) => emailer.push(m, opt),
+    },
     settings: campaignSettings,
     attachments,
     embedImages,
@@ -231,7 +240,24 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
 
   const recipients = createCampaignRecipients(db);
   const runnerRegistry = createCampaignRunnerRegistry();
-  const runner = startCampaignRunner({
+  const campaignRunnerSettings = () => {
+    const current = settingsStore.read();
+    return {
+      batchSize: current["app.batch_size"] ?? 1000,
+      concurrency: current["app.concurrency"] ?? 10,
+      messageRate: current["app.message_rate"] ?? 1000,
+      maxSendErrors: current["app.max_send_errors"] ?? 1000,
+      slidingWindow: false,
+      slidingWindowDuration: "1h",
+      slidingWindowRate: 10000,
+      rootUrl: root,
+      messengers: ["email", "sink"],
+      unsubscribeHeader: true,
+      disableTracking: false,
+      individualTracking: false,
+    };
+  };
+  let runner = startCampaignRunner({
     db,
     clock,
     logger: app.logger,
@@ -249,23 +275,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     emailer,
     attachments,
     embedImages,
-    settings: () => {
-      const current = settingsStore.read();
-      return {
-        batchSize: current["app.batch_size"] ?? 1000,
-        concurrency: current["app.concurrency"] ?? 10,
-        messageRate: current["app.message_rate"] ?? 1000,
-        maxSendErrors: current["app.max_send_errors"] ?? 1000,
-        slidingWindow: false,
-        slidingWindowDuration: "1h",
-        slidingWindowRate: 10000,
-        rootUrl: root,
-        messengers: ["email", "sink"],
-        unsubscribeHeader: true,
-        disableTracking: false,
-        individualTracking: false,
-      };
-    },
+    settings: campaignRunnerSettings,
     leaseMs: 30_000,
   });
 
@@ -372,9 +382,15 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     db,
     directory,
     settingsStore,
-    emailer,
-    outbox,
-    runner,
+    get emailer() {
+      return emailer;
+    },
+    get outbox() {
+      return outbox;
+    },
+    get runner() {
+      return runner;
+    },
     scheduler,
     subscribers,
     lists,
@@ -386,6 +402,49 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     json,
     drive,
     template,
+    restart() {
+      const newLimiter = createSendRateLimiter({
+        clock,
+        rate: () => settingsStore.read()["messaging.max_send_rate"],
+      });
+      settingsStore.onUpdate((next, current) => {
+        if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
+          newLimiter.wake();
+        }
+      });
+      emailer = createEmailer({
+        clock,
+        limiter: newLimiter,
+        settings: () => {
+          const current = settingsStore.read();
+          return { smtp: current.smtp, rootUrl: current["app.root_url"] };
+        },
+        copyAllowed: (addr) => !addressBlocklisted(subscribers, addr),
+      });
+      outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+      runner = startCampaignRunner({
+        db,
+        clock,
+        logger: app.logger,
+        registry: runnerRegistry,
+        store: runnerStore,
+        campaigns: campaignStore,
+        recipients,
+        lists,
+        templates: {
+          get: (id) => templates.get(id),
+          getDefault: () => templates.getDefault(),
+        },
+        renderer,
+        tracking,
+        emailer,
+        attachments,
+        embedImages,
+        settings: campaignRunnerSettings,
+        leaseMs: 30_000,
+      });
+      return { emailer, outbox, runner };
+    },
     async close() {
       scheduler.stop();
       runner.stop();
@@ -482,6 +541,96 @@ describe("B37: send rate cap", () => {
         const inWindow = times.filter((u) => u >= t && u < t + 1000).length;
         expect(inWindow).toBeLessThanOrEqual(5);
       }
+    } finally {
+      await h.close();
+    }
+  });
+
+  // Blocker 1: Limiter wait does not count toward the 60 s push cutoff:
+  // at messaging.max_send_rate = 1, run a campaign to 10 subscribers plus 70 concurrent POST /api/tx,
+  // and advance the clock until everything is done. Every row and delivery ends sent, none failed,
+  // and the sink receives every message.
+  test("1b. limiter wait does not count toward 60 s cutoff: cap 1 with outbox and campaign load", async () => {
+    const h = await createRateHarness({
+      "messaging.max_send_rate": 1,
+      "app.concurrency": 5,
+    });
+    try {
+      const listRes = await h.json("/api/lists", "POST", { name: "cutoff-list", type: "public" });
+      const listId = listRes.body.data.id;
+
+      for (let i = 0; i < 10; i++) {
+        await h.json("/api/subscribers", "POST", {
+          email: `cutoff-sub-${i}@example.test`,
+          name: `Cutoff ${i}`,
+          lists: [listId],
+          status: "enabled",
+        });
+      }
+
+      const defaultTemplate = h.templates.getDefault()!;
+      const campRes = await h.json("/api/campaigns", "POST", {
+        name: "Cutoff Campaign",
+        subject: "Cutoff Subject",
+        lists: [listId],
+        type: "regular",
+        content_type: "richtext",
+        body: "<p>Cutoff Body</p>",
+        template_id: defaultTemplate.id,
+        messenger: "email",
+      });
+      const campId = campRes.body.data.id;
+      await h.json(`/api/campaigns/${campId}/status`, "PUT", { status: "running" });
+      h.runner.wake();
+
+      const txTemplateId = await h.template();
+      const txPromises = [];
+      for (let i = 0; i < 70; i++) {
+        txPromises.push(
+          h.json("/api/tx", "POST", {
+            subscriber_email: `cutoff-tx-${i}@example.test`,
+            template_id: txTemplateId,
+            data: {},
+            messenger: "email",
+          }),
+        );
+      }
+
+      // 80 messages total at 1/s = ~80 seconds of clock time
+      await h.drive(() => h.sink.messages.length === 80, 50, 4000);
+      await Promise.all(txPromises);
+
+      expect(h.sink.messages.length).toBe(80);
+
+      // Verify no row in sends is failed
+      const sendsRows = h.db
+        .query<{ status: string; count: number }, any>(
+          "SELECT status, count(*) as count FROM sends GROUP BY status",
+        )
+        .all();
+      for (const row of sendsRows) {
+        expect(row.status).not.toBe("failed");
+      }
+      const sentSends = h.db
+        .query<{ count: number }, any>("SELECT count(*) as count FROM sends WHERE status = 'sent'")
+        .get()!.count;
+      expect(Number(sentSends)).toBe(70);
+
+      // Verify no delivery in campaign_deliveries is failed
+      const campDeliveries = h.db
+        .query<{ status: string; count: number }, any>(
+          "SELECT status, count(*) as count FROM campaign_deliveries WHERE campaign_id = ? GROUP BY status",
+        )
+        .all(campId);
+      for (const row of campDeliveries) {
+        expect(row.status).not.toBe("failed");
+      }
+      const sentDeliveries = h.db
+        .query<{ count: number }, any>(
+          "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+        )
+        .get(campId)!.count;
+      expect(Number(sentDeliveries)).toBe(10);
     } finally {
       await h.close();
     }
@@ -690,6 +839,60 @@ describe("B37: send rate cap", () => {
       h.clock.advance(1000);
       await h.drive(() => h.sink.messages.length >= countBefore + 2, 50, 50);
       expect(h.sink.messages.length).toBe(countBefore + 2);
+
+      // Now raise rate back to 10/s: delivery speeds back up
+      await h.json("/api/settings/messaging.max_send_rate", "PUT", 10);
+      const countBeforeRaise = h.sink.messages.length;
+      h.clock.advance(1000);
+      await h.drive(() => h.sink.messages.length >= countBeforeRaise + 10, 50, 50);
+      expect(h.sink.messages.length).toBe(countBeforeRaise + 10);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("5b. raising messaging.max_send_rate speeds up sends without waiting out old interval", async () => {
+    const h = await createRateHarness({
+      "messaging.max_send_rate": 1,
+    });
+    try {
+      const txTemplateId = await h.template();
+
+      const startMs = h.clock.now().getTime();
+      // Send first message at t=0
+      const p1 = h.json("/api/tx", "POST", {
+        subscriber_email: "wake-1@example.test",
+        template_id: txTemplateId,
+        data: {},
+        messenger: "email",
+      });
+      await h.drive(() => h.sink.messages.length === 1, 10, 50);
+      await p1;
+
+      // Send second message; at rate 1, it waits for t=1000
+      const p2 = h.json("/api/tx", "POST", {
+        subscriber_email: "wake-2@example.test",
+        template_id: txTemplateId,
+        data: {},
+        messenger: "email",
+      });
+      await new Promise<void>((r) => setImmediate(r));
+
+      // Advance by 100ms (t=100)
+      h.clock.advance(100);
+      for (let j = 0; j < 3; j++) await Bun.sleep(0);
+      expect(h.sink.messages.length).toBe(1);
+
+      // Raise rate to 10/s (interval 100ms). Since 100ms has elapsed since first send,
+      // message 2 should be granted immediately on wake without waiting until t=1000
+      await h.json("/api/settings/messaging.max_send_rate", "PUT", 10);
+
+      await h.drive(() => h.sink.messages.length === 2, 10, 50);
+      await p2;
+
+      expect(h.sink.messages.length).toBe(2);
+      expect(h.sink.messages[1]!.to).toContain("wake-2@example.test");
+      expect(h.clock.now().getTime() - startMs).toBeLessThan(500);
     } finally {
       await h.close();
     }
@@ -739,10 +942,13 @@ describe("B37: send rate cap", () => {
     }
   });
 
-  // Test 7: Shutdown during a wait stops cleanly. No message is sent after stop, and the test does not hang.
-  test("7. shutdown during a wait stops cleanly", async () => {
+  // Test 7: Shutdown during a wait stops cleanly. No message is sent after stop,
+  // waiting outbox rows return to queued (attempts-1) and waiting campaign deliveries are unclaimed.
+  // After restart, each is sent exactly once.
+  test("7. shutdown during a wait stops cleanly and preserves unstarted work", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 1,
+      "app.concurrency": 2,
     });
     try {
       const txTemplateId = await h.template();
@@ -769,13 +975,207 @@ describe("B37: send rate cap", () => {
       await new Promise<void>((r) => setImmediate(r));
 
       // Close emailer while p2 is waiting
-      const closePromise = h.emailer.close();
-      await closePromise;
+      await h.emailer.close();
       await p2;
 
-      // No message 2 was sent to the sink
-      expect(h.sink.messages.length).toBe(1);
-      expect(h.sink.messages[0]!.to).toContain("msg-1@example.test");
+      // Assert row 2 is queued (not failed), attempts 0
+      const row2 = h.db
+        .query<{ status: string; attempts: number }, any>(
+          "SELECT status, attempts FROM sends WHERE to_email = 'msg-2@example.test'",
+        )
+        .get();
+      expect(row2?.status).toBe("queued");
+      expect(Number(row2?.attempts)).toBe(0);
+
+      // Stop outbox and restart
+      await h.outbox.stop();
+      h.restart();
+
+      // Message 2 is sent on restart
+      await h.drive(
+        () =>
+          h.sink.messages.length === 2 &&
+          h.db
+            .query<{ status: string }, any>(
+              "SELECT status FROM sends WHERE to_email = 'msg-2@example.test'",
+            )
+            .get()?.status === "sent",
+        50,
+        200,
+      );
+
+      const row2After = h.db
+        .query<{ status: string; attempts: number }, any>(
+          "SELECT status, attempts FROM sends WHERE to_email = 'msg-2@example.test'",
+        )
+        .get();
+      expect(row2After?.status).toBe("sent");
+      expect(Number(row2After?.attempts)).toBe(1);
+      expect(h.sink.messages.length).toBe(2);
+
+      // Now campaign delivery:
+      const listRes = await h.json("/api/lists", "POST", {
+        name: "camp-stop-list",
+        type: "public",
+      });
+      const listId = listRes.body.data.id;
+      for (let i = 0; i < 2; i++) {
+        await h.json("/api/subscribers", "POST", {
+          email: `camp-stop-${i}@example.test`,
+          name: `Stop ${i}`,
+          lists: [listId],
+          status: "enabled",
+        });
+      }
+      const defaultTemplate = h.templates.getDefault()!;
+      const campRes = await h.json("/api/campaigns", "POST", {
+        name: "Camp Stop",
+        subject: "Hello",
+        lists: [listId],
+        type: "regular",
+        content_type: "richtext",
+        body: "<p>Body</p>",
+        template_id: defaultTemplate.id,
+        messenger: "email",
+      });
+      const campId = campRes.body.data.id;
+      await h.json(`/api/campaigns/${campId}/status`, "PUT", { status: "running" });
+      h.runner.wake();
+
+      // First delivery is sent (sink count reaches 3)
+      await h.drive(() => h.sink.messages.length === 3, 50, 100);
+
+      // Stop emailer & runner while delivery 2 is waiting
+      await h.emailer.close();
+      await h.runner.stop();
+
+      // Delivery 2 was never pushed so it must not be failed
+      const failedDeliveries = h.db
+        .query<{ count: number }, any>(
+          "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'failed'",
+        )
+        .get(campId)!.count;
+      expect(Number(failedDeliveries)).toBe(0);
+
+      // Restart components
+      h.restart();
+      h.runner.wake();
+
+      // Delivery 2 is sent after restart (sink reaches 4)
+      await h.drive(
+        () =>
+          h.sink.messages.length === 4 &&
+          Number(
+            h.db
+              .query<{ count: number }, any>(
+                "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+              )
+              .get(campId)?.count,
+          ) === 2,
+        50,
+        200,
+      );
+
+      const sentDeliveries = h.db
+        .query<{ count: number }, any>(
+          "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+        )
+        .get(campId)!.count;
+      expect(Number(sentDeliveries)).toBe(2);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("7b. main shutdown order (runner, outbox, emailer stopping together) preserves waiters", async () => {
+    const h = await createRateHarness({
+      "messaging.max_send_rate": 1,
+      "app.concurrency": 2,
+    });
+    try {
+      const listRes = await h.json("/api/lists", "POST", {
+        name: "main-stop-list",
+        type: "public",
+      });
+      const listId = listRes.body.data.id;
+      for (let i = 0; i < 2; i++) {
+        await h.json("/api/subscribers", "POST", {
+          email: `main-stop-${i}@example.test`,
+          name: `Main ${i}`,
+          lists: [listId],
+          status: "enabled",
+        });
+      }
+      const defaultTemplate = h.templates.getDefault()!;
+      const campRes = await h.json("/api/campaigns", "POST", {
+        name: "Main Stop Camp",
+        subject: "Hello",
+        lists: [listId],
+        type: "regular",
+        content_type: "richtext",
+        body: "<p>Body</p>",
+        template_id: defaultTemplate.id,
+        messenger: "email",
+      });
+      const campId = campRes.body.data.id;
+      await h.json(`/api/campaigns/${campId}/status`, "PUT", { status: "running" });
+      h.runner.wake();
+
+      // Campaign delivery 1 sent
+      await h.drive(() => h.sink.messages.length === 1, 50, 100);
+
+      // Queue tx message that waits behind limiter
+      const txTemplateId = await h.template();
+      const txPromise = h.json("/api/tx", "POST", {
+        subscriber_email: "main-tx-wait@example.test",
+        template_id: txTemplateId,
+        data: {},
+        messenger: "email",
+      });
+      await new Promise<void>((r) => setImmediate(r));
+
+      // Main shutdown order: runner, outbox, emailer stop concurrently
+      await Promise.allSettled([h.runner.stop(), h.outbox.stop(), h.emailer.close()]);
+      await txPromise;
+
+      // Tx row is queued, attempts 0
+      const txRow = h.db
+        .query<{ status: string; attempts: number }, any>(
+          "SELECT status, attempts FROM sends WHERE to_email = 'main-tx-wait@example.test'",
+        )
+        .get();
+      expect(txRow?.status).toBe("queued");
+      expect(Number(txRow?.attempts)).toBe(0);
+
+      // Campaign delivery 2 is not failed
+      const failedDeliveries = h.db
+        .query<{ count: number }, any>(
+          "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'failed'",
+        )
+        .get(campId)!.count;
+      expect(Number(failedDeliveries)).toBe(0);
+
+      // Restart
+      h.restart();
+      h.runner.wake();
+
+      // Messages finish sending (1 camp + 1 tx + 1 camp = 3 total)
+      await h.drive(() => h.sink.messages.length === 3, 50, 300);
+
+      const txRowAfter = h.db
+        .query<{ status: string; attempts: number }, any>(
+          "SELECT status, attempts FROM sends WHERE to_email = 'main-tx-wait@example.test'",
+        )
+        .get();
+      expect(txRowAfter?.status).toBe("sent");
+      expect(Number(txRowAfter?.attempts)).toBe(1);
+
+      const sentDeliveries = h.db
+        .query<{ count: number }, any>(
+          "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+        )
+        .get(campId)!.count;
+      expect(Number(sentDeliveries)).toBe(2);
     } finally {
       await h.close();
     }

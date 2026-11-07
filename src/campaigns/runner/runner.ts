@@ -14,6 +14,7 @@ import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message, Outcome } from "@/messaging/email";
+import type { SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
 import {
@@ -43,7 +44,6 @@ export interface RunnerSettings {
   disableTracking: boolean;
   individualTracking: boolean;
 }
-import type { SendPriority } from "@/messaging/rate";
 
 export interface RunnerDeps {
   db: Database;
@@ -589,6 +589,10 @@ export function startCampaignRunner(deps: RunnerDeps) {
             accepted: [],
             rejected: [],
           };
+        }
+        if (outcome.stage === "not-started") {
+          pushed.delete(i);
+          continue;
         }
         const at = clock.now().getTime();
         if (outcome.status === "accepted" && outcome.rejected.length === 0) {

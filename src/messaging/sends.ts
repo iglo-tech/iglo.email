@@ -297,6 +297,10 @@ export function createSends(options: {
     return { ...message, messageId: row.smtp_message_id };
   }
   function finish(row: Row, outcome: Outcome) {
+    if (outcome.stage === "not-started") {
+      unsent(row, true);
+      return;
+    }
     const at = now();
     if (outcome.status === "accepted")
       db.run(

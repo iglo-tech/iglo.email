@@ -51,7 +51,7 @@ export interface Message {
 export type Outcome = {
   messageId: string;
   status: "accepted" | "proven-not-accepted" | "ambiguous";
-  stage: "local" | "setup" | "recipients" | "smtp-complete" | "unknown";
+  stage: "local" | "setup" | "recipients" | "smtp-complete" | "unknown" | "not-started";
   accepted: string[];
   rejected: string[];
   retry?: "transient";
@@ -440,6 +440,13 @@ export function createEmailer(options: {
       accepted: [],
       rejected: [],
     });
+    const notStartedOutcome = (): Outcome => ({
+      messageId,
+      status: "proven-not-accepted",
+      stage: "not-started",
+      accepted: [],
+      rejected: [],
+    });
     const local = (): Dispatch => ({ messageId, result: Promise.resolve(localOutcome()) });
     if (closed || !server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId))
       return local();
@@ -449,10 +456,9 @@ export function createEmailer(options: {
     } catch {
       return local();
     }
-    const remaining = (temporary ? 10000 : 60000) - (options.clock.now().getTime() - startedAt);
-    if (remaining <= 0) return local();
+    if (options.clock.now().getTime() - startedAt >= (temporary ? 10000 : 60000)) return local();
 
-    const timer = new AbortController();
+    let timer: AbortController | undefined;
     let resolve!: (outcome: Outcome) => void;
     const result = new Promise<Outcome>((finish) => {
       resolve = finish;
@@ -464,7 +470,7 @@ export function createEmailer(options: {
     const complete = (outcome: Outcome) => {
       if (settled) return;
       settled = true;
-      timer.abort();
+      timer?.abort();
       if (pool && operation) {
         pool.operations.delete(operation);
         if (operation.started) pool.active--;
@@ -474,31 +480,17 @@ export function createEmailer(options: {
       resolve(outcome);
     };
 
-    void new Promise<void>((resolve) => resolve(options.clock.sleep(remaining, timer.signal))).then(
-      () => {
-        if (settled) return;
-        if (operation?.started) {
-          if (pool) cancelPool(pool);
-        } else if (operation) {
-          operation.cancel();
-        } else {
-          complete(localOutcome());
-        }
-      },
-      () => {},
-    );
-
     (async () => {
       if (options.limiter) {
         try {
-          await options.limiter.acquire(priority, timer.signal);
+          await options.limiter.acquire(priority);
         } catch {
-          if (!settled) complete(localOutcome());
+          if (!settled) complete(notStartedOutcome());
           return;
         }
       }
       if (settled || closed) {
-        if (!settled) complete(localOutcome());
+        if (!settled) complete(notStartedOutcome());
         return;
       }
       try {
@@ -507,6 +499,25 @@ export function createEmailer(options: {
         if (!settled) complete(localOutcome());
         return;
       }
+
+      const remaining = temporary ? 10000 : 60000;
+      const timeout = new AbortController();
+      timer = timeout;
+      void new Promise<void>((resolve) =>
+        resolve(options.clock.sleep(remaining, timeout.signal)),
+      ).then(
+        () => {
+          if (settled) return;
+          if (operation?.started) {
+            if (pool) cancelPool(pool);
+          } else if (operation) {
+            operation.cancel();
+          } else {
+            complete(localOutcome());
+          }
+        },
+        () => {},
+      );
 
       if (temporary) pool = createPool("", server, true);
       else {

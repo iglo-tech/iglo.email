@@ -55,6 +55,7 @@ export function createSettings(db: Database, clock: Clock, rootUrl: string, role
   // another connection) is seen at once; only parsing and projecting are skipped. The cached value is
   // frozen because callers share it.
   let cached: { rows: string; value: Settings } | null = null;
+  let onUpdateListener: ((next: Settings, current: Settings) => void) | undefined;
   function read(): Settings {
     const rows = queries.get("all").all() as { key: string; value: string }[];
     let signature = "";
@@ -68,8 +69,11 @@ export function createSettings(db: Database, clock: Clock, rootUrl: string, role
   return {
     read,
     update(build: (current: Settings) => Settings): void {
+      let before: Settings | undefined;
+      let after: Settings | undefined;
       writeTransaction(db, () => {
         const current = fresh(queries.get("all").all() as { key: string; value: string }[]);
+        before = current;
         const proposed = build(current);
         const candidate = normalize(proposed, current, roles, clock.now().getTime());
         const writable = Object.fromEntries(
@@ -79,7 +83,12 @@ export function createSettings(db: Database, clock: Clock, rootUrl: string, role
         const now = clock.now().toISOString();
         for (const key of Object.keys(defaults))
           queries.get("update").run(JSON.stringify(candidate[key]), now, key);
+        after = candidate;
       });
+      if (before && after) onUpdateListener?.(after, before);
+    },
+    onUpdate(fn: (next: Settings, current: Settings) => void): void {
+      onUpdateListener = fn;
     },
     close: () => queries.close(),
   };

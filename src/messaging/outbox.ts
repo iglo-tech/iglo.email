@@ -131,6 +131,9 @@ export function startOutbox(options: {
           return { row: p.row, unsent: held ? "held" : "failed" } as const;
         }
         if (s.status === "rejected") failure ??= { reason: s.reason };
+        if (s.status === "fulfilled" && s.value?.stage === "not-started") {
+          return { row: p.row, unsent: "held" } as const;
+        }
         return {
           row: p.row,
           outcome: s.status === "fulfilled" ? s.value! : uncertain(p.row),
