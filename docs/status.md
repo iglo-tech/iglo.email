@@ -12,10 +12,9 @@ Owner-only, blocking nothing else: publishing a release and PDF viewers on real 
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B33** Linux arm64 executable + multi-arch Docker image on GHCR; drop macOS ([brief](briefs/B33.md)).
-2. **B34** MCP endpoint for AI agents to edit templates and campaign content: native Streamable HTTP JSON-RPC at `/api/mcp`, existing API-user auth and the same permission per tool as its HTTP route; tools list/get/create/update/delete/preview/validate templates, get/update/preview campaign content, send a test, and a Liquid variable reference; tests use the official MCP client SDK (dev dependency) against the compiled server; D91 logs the native-server choice.
-3. **B35** SES only: remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
-4. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
+1. **B34** MCP endpoint ([brief](briefs/B34.md)) for AI agents to edit templates and campaign content: native Streamable HTTP JSON-RPC at `/api/mcp`, existing API-user auth and the same permission per tool as its HTTP route; tools list/get/create/update/delete/preview/validate templates, get/update/preview campaign content, send a test, and a Liquid variable reference; tests use the official MCP client SDK (dev dependency) against the compiled server; D91 logs the native-server choice.
+2. **B35** SES only: remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
+3. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
 
 ## Owner decisions
 
@@ -45,6 +44,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B33          | [#85](https://github.com/iglo-tech/iglo.email/pull/85) | 46ee9f4 | linux-arm64 + multi-arch GHCR image; VmRSS watchdogs; backup makes parents |
 | B32          | [#84](https://github.com/iglo-tech/iglo.email/pull/84) | 3158880 | Settings fold map and row-identical cache; event p95 about 58 to 33 ms   |
 | B31          | [#83](https://github.com/iglo-tech/iglo.email/pull/83) | c964261 | D88: event tail is commit fsync plus `settings.read()` CPU; opt-in probe |
 | B30          | [#82](https://github.com/iglo-tech/iglo.email/pull/82) | 2565852 | Migration 18 TOTP test that fails without the fix                        |
@@ -117,6 +117,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 ## Hardening backlog
 
 - Media: supported PDF viewers unverified (needs real devices).
+- Backup ([#85](https://github.com/iglo-tech/iglo.email/pull/85) r3): a refusal after parent creation (output in uploads, unschema'd DB, low space) leaves empty folders; broken-symlink/file parents give a raw `ENOENT`/`ENOTDIR: mkdir`; docs: repeated `docker cp` into an existing dated folder nests it.
+- Test: `tracked links personalized per subscriber do not accumulate across batches` (runner.test.ts) timed out at 30 s twice under parallel load; 1.1 s alone in another run.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
