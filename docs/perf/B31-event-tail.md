@@ -72,7 +72,13 @@ and `BEGIN` are 0.3 s.
 key it does `Object.keys(shapes).find(name => foldField(name) === foldField(key))`, which is
 quadratic with two regex replaces per comparison. It is called per subscriber request, per
 campaign message push (`main.ts` settings getter in `messaging/email.ts`), per scheduler decision
-and so on, 200,000 reads in a 130 s window. It is the single largest main-thread cost.
+and so on: the probe counted its settings query 17,052 times in the 130 s window (201,848 is the
+whole "other SQL" group, not settings reads), so each read costs about 2.6 to 2.8 ms of main-thread
+time on this host. It is the single largest main-thread cost.
+
+Commit labels are approximate: the probe charges each COMMIT to every table read since the last
+commit, including reads outside a transaction (so scheduler commits show as
+`settings+enrollments`), and COMMIT time includes WAL checkpoints run inside it, not only fsync.
 
 ## Experiment: precomputed fold map (not committed)
 
