@@ -5,14 +5,14 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) merged. B23 (#75), B24 (#76), B25 (#77, D86) B26 (#78, D87) and B27 (#79) merged. B28 is with its worker: [brief](briefs/B28.md), branch `task/B28-tx-burst`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) merged. B23 (#75), B24 (#76), B25 (#77, D86) B26 (#78, D87), B27 (#79) and B28 (#80) merged. B29 is with its worker: [brief](briefs/B29.md), branch `task/B29-test-gaps`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-1. B28: tx burst memory ([brief](briefs/B28.md)).
+1. B29: remaining test gaps from #75 and #76 ([brief](briefs/B29.md)).
 
 ## Owner decisions
 
@@ -41,6 +41,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                              |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------- |
+| B28          | [#80](https://github.com/iglo-tech/iglo.email/pull/80) | 5b8e3d7 | 40 x 4 MiB tx burst 265-302 to 212-254 MiB; three copies released   |
 | B27          | [#79](https://github.com/iglo-tech/iglo.email/pull/79) | 97d92b7 | Six intermittent lines closed (70 runs, 0 failures); serial harness |
 | B26          | [#78](https://github.com/iglo-tech/iglo.email/pull/78) | cc7f009 | D87: base64 decode 147 to 16 MiB; 128 MiB measured tx budget        |
 | B25          | [#77](https://github.com/iglo-tech/iglo.email/pull/77) | 645b901 | D86: keep `synchronous = FULL` (second-send and lost-ack risk)      |
@@ -115,4 +116,5 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Wiped sends ([#74](https://github.com/iglo-tech/iglo.email/pull/74)): D85 also silences `send.failed` for admin deletes without a wipe (for owner review).
 - Outbox ([#75](https://github.com/iglo-tech/iglo.email/pull/75)): any synchronous `push` throw is treated as never pooled (no realistic trigger found); the `claimOne` guard test does not reach the `UPDATE` guard.
 - B24 ([#76](https://github.com/iglo-tech/iglo.email/pull/76)): no test sends a bounce after the `count: 0` rewrite or logs in as a migrated account; a hand-edited non-object bounce rule stops migration 18 (transactional, snapshot first); the path-type check throws instead of reporting if a path entry is not an operation.
+- Tx burst ([#80](https://github.com/iglo-tech/iglo.email/pull/80)): 40 x 4 MiB gated peaks 212-254 MiB against D87's 256 MiB, a thin margin; if a later run exceeds it, lower `MAX_ATTACHMENT_SENDS` or the budget (do not re-measure until a run passes). The gate still charges for the copies B28 releases (stricter than needed, safe).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
