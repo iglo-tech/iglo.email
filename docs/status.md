@@ -5,14 +5,14 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) merged. B23 (#75), B24 (#76), B25 (#77, D86) B26 (#78, D87), B27 (#79), B28 (#80) and B29 (#81) merged. B30 is with its worker: [brief](briefs/B30.md), branch `task/B30-totp-reenable`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) merged. B23 (#75), B24 (#76), B25 (#77, D86) B26 (#78, D87), B27 (#79), B28 (#80), B29 (#81) and B30 (#82) merged. B31 is with its worker: [brief](briefs/B31.md), branch `task/B31-event-tail`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-1. B30: a migration 18 login test that can fail ([brief](briefs/B30.md)).
+1. B31: event latency tail by cause, then decide D88 ([brief](briefs/B31.md)).
 
 ## Owner decisions
 
@@ -41,6 +41,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                 |
 | ------------ | ------------------------------------------------------ | ------- | ---------------------------------------------------------------------- |
+| B30          | [#82](https://github.com/iglo-tech/iglo.email/pull/82) | 2565852 | Migration 18 TOTP test that fails without the fix                      |
 | B29          | [#81](https://github.com/iglo-tech/iglo.email/pull/81) | eb5ff4c | Post-pool sync throw is `unknown`; migration 18 skips non-object rules |
 | B28          | [#80](https://github.com/iglo-tech/iglo.email/pull/80) | 5b8e3d7 | 40 x 4 MiB tx burst 265-302 to 212-254 MiB; three copies released      |
 | B27          | [#79](https://github.com/iglo-tech/iglo.email/pull/79) | 97d92b7 | Six intermittent lines closed (70 runs, 0 failures); serial harness    |
@@ -110,10 +111,15 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 ## Hardening backlog
 
 - Media: supported PDF viewers unverified (needs real devices).
-- Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains (D34). B10 left it: IDs are allocated from 1 by AUTOINCREMENT, so a list ID above 9007199254740991 needs about 9e15 inserts and exists only when a test advances the allocator; a lossless parse of numeric JSON would touch every JSON body reader for no realistic client.
 - Event latency under full mixed load: B11 measured it ([evidence](perf/B11-event-latency.md), [D77](design/09-decisions.md)); B25 decided durability: [D86](design/09-decisions.md) keeps `synchronous = FULL` everywhere ([evidence](perf/B25-durability.md); its FULL/NORMAL series was disturbed and is not re-run, since no result could change D86). Remaining: a process-model change, with no measured expected gain (main-thread CPU is inferred by elimination).
+- New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
+
+## Accepted trade-offs
+
+Decided by agents and logged; not open work. Reopen only on a new failure or a new realistic client.
+
+- Role numeric JSON IDs above JavaScript safe integer range: safe rejection remains (D34). B10 left it: IDs are allocated from 1 by AUTOINCREMENT, so a list ID above 9007199254740991 needs about 9e15 inserts and exists only when a test advances the allocator; a lossless parse of numeric JSON would touch every JSON body reader for no realistic client.
 - Paced event retention drains about 380 rows/s (the price of not holding back sends, [D74](design/09-decisions.md#d74-synchronous-attachment-sends-share-a-memory-budget-event-retention-joins-the-paced-loop)).
 - B7 staging ([#57](https://github.com/iglo-tech/iglo.email/pull/57)): a read queued during a forced WAL gap can wait the full 30 s and get 429 (the gap is D62's price for restarting the WAL under continuous polling; a long read holds it open, and an earlier admission would block the checkpoint); analytics responses over 64 KiB are chunked with no Content-Length (B10 tried an explicit header: Bun ignores it on streamed bodies, and sending the bytes whole would drop the egress accounting that releases when the client has read them).
-- Wiped sends ([#74](https://github.com/iglo-tech/iglo.email/pull/74)): D85 also silences `send.failed` for admin deletes without a wipe (for owner review).
+- Wiped sends ([#74](https://github.com/iglo-tech/iglo.email/pull/74)): D85 also silences `send.failed` for admin deletes without a wipe.
 - Tx burst ([#80](https://github.com/iglo-tech/iglo.email/pull/80)): 40 x 4 MiB gated peaks 212-254 MiB against D87's 256 MiB, a thin margin; if a later run exceeds it, lower `MAX_ATTACHMENT_SENDS` or the budget (do not re-measure until a run passes). The gate still charges for the copies B28 releases (stricter than needed, safe).
-- New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
