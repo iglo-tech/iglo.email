@@ -15,6 +15,7 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 | 9 | [Decisions](09-decisions.md) | Short decision records with reasons |
 | 10 | [Open questions](10-open-questions.md) | What still needs the owner |
 | 11 | [Work plan](11-work-plan.md) | Tasks, briefs, council review and merge, run by agents |
+| 12 | [Completeness audit](12-completeness-audit.md) | Audit against typical newsletter, lifecycle and transactional needs (D89) |
 
 ## Decisions at a glance
 
