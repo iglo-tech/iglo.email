@@ -1,18 +1,22 @@
 # Status
 
-Updated 2026-11-06. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (2026-11-06) done: B17 (#69), B18 (#70), B19 (#71), B20 (#72), B21 (#73), B22 (#74); decisions D80–D85 are logged for owner review. Recovery: ~/.local/state/iglo-email-cos/lock.json.
-Owner-only, blocking nothing else: publishing a release. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
+State-machine audit (B17–B22) merged. B23 is with its worker: [brief](briefs/B23.md), branch `task/B23-send-lease-followups`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
-Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges.
+Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-Empty. The state-machine audit (B17–B22) is merged. Only owner items remain: a release, D77, PDF viewers on real devices, the tx memory budget, and review of agent decisions D80–D85.
+1. B23: sending lease follow-ups from #69, #70, #74 ([brief](briefs/B23.md)).
+2. B24: test and settings follow-ups from #71, #72, #73 (openapi path-param types, lease-clearing paths, captcha default, legacy `count: 0` bounce rule, stale TOTP keys).
+3. B25: decide D22/D77 durability: at least 3 alternating FULL/NORMAL runs on a quiet host, then a logged agent decision.
+4. B26: tx memory budget: measure and decide `PARSE_COPIES`/budget versus the ~8x peak (B6), log the decision.
+5. B27: remaining intermittent watch lines: re-run each named case once on a quiet host; close lines with no failure since their last fix, keep diagnostics.
 
 ## Owner decisions
 
