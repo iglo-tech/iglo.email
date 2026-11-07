@@ -1,7 +1,8 @@
 // Serial in-process measurement for docs/perf/B26-tx-memory.md: peak RSS growth of one
 // `POST /api/tx` multipart send per counted attachment byte. One scenario per process.
 // Usage: bun test/tx/measure-memory.ts <attachmentMiB> <recipients> sync|async [requests] [gated|serial]
-// Requests run one after another unless <requests> > 1, when they run together. Opt-in, not a
+// Requests run one after another unless <requests> > 1, when they run together. Serial runs build
+// each body just before sending it; concurrent modes build all bodies before the baseline. Opt-in, not a
 // CI threshold; hold the measurement lock and record host load.
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { loadavg } from "node:os";

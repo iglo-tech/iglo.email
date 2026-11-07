@@ -1,6 +1,6 @@
 # B26: the tx attachment budget counts measured memory (D87)
 
-Raw runs: [B26-results.jsonl](B26-results.jsonl) (`variant` before/after). Harness: `bun test/tx/measure-memory.ts <attachmentMiB> <recipients> sync|async [requests] [gated|serial]`, one scenario per process, a loopback SMTP sink that keeps no message text, a small warm-up send first, a held 100 ms dispatch, and the kernel's peak resident size (`VmHWM`, reset through `/proc/self/clear_refs`) instead of a timer, which cannot sample while the thread is busy. "Growth" is that peak minus the RSS after a full collection before the requests. In-process, so request bodies are built before the baseline; the real socket read is not included.
+Raw runs: [B26-results.jsonl](B26-results.jsonl) (`variant` before/after). Harness: `bun test/tx/measure-memory.ts <attachmentMiB> <recipients> sync|async [requests] [gated|serial]`, one scenario per process, a loopback SMTP sink that keeps no message text, a small warm-up send first, a held 100 ms dispatch, and the kernel's peak resident size (`VmHWM`, reset through `/proc/self/clear_refs`) instead of a timer, which cannot sample while the thread is busy. "Growth" is that peak minus the RSS after a full collection before the requests. In-process; the concurrent modes build request bodies before the baseline, serial runs build each just before it is sent (B27); the real socket read is not included.
 
 ## Setup
 
@@ -9,11 +9,11 @@ Raw runs: [B26-results.jsonl](B26-results.jsonl) (`variant` before/after). Harne
 
 ## Where the bytes go (4 MiB attachment, one recipient, before)
 
-| Stage | Peak growth |
-|---|---:|
-| multipart parse (read chunks, joined body, form, file copy) | about 17 MiB (4.3 x) |
-| journal write: base64, JSON text, SQLite's copy of the 5.6 MB row | about 40 MiB |
-| claim and decode the row for SMTP | about 100 MiB |
+| Stage                                                             |          Peak growth |
+| ----------------------------------------------------------------- | -------------------: |
+| multipart parse (read chunks, joined body, form, file copy)       | about 17 MiB (4.3 x) |
+| journal write: base64, JSON text, SQLite's copy of the 5.6 MB row |         about 40 MiB |
+| claim and decode the row for SMTP                                 |        about 100 MiB |
 
 The last stage was one regular expression in `decodePayload`: `^(?:[A-Za-z0-9+/]{4})*(...)?$` over a 5.6 MB string keeps a backtrack frame per four-character group (146.9 MiB measured in isolation with `test/tx/payload.test.ts`; 10 MiB after). `decodePayload` also re-encoded the message it had just decoded only to validate it (two more copies of every attachment), and `encodePayload` copied each attachment before encoding it. Those three are fixed; the parse copies, the per-recipient payload text and the concurrent push of all synchronous recipients are not, and are why the charge below is what it is. A JSON request cannot carry caller attachments, so only multipart was measured.
 
@@ -22,19 +22,19 @@ The last stage was one regular expression in `decodePayload`: `^(?:[A-Za-z0-9+/]
 Single send on an idle server (`gated` = the shipped budget):
 
 | Attachment x recipients | Before, growth | After, growth |
-|---|---:|---:|
-| 4 MiB x 1 | 162, 162 MiB | 63, 68 MiB |
-| 3 MiB x 4 | 208, 200 MiB | 113, 122 MiB |
-| 1 MiB x 15 | 168, 153 MiB | 130, 156 MiB |
+| ----------------------- | -------------: | ------------: |
+| 4 MiB x 1               |   162, 162 MiB |    63, 68 MiB |
+| 3 MiB x 4               |   208, 200 MiB |  113, 122 MiB |
+| 1 MiB x 15              |   168, 153 MiB |  130, 156 MiB |
 
 Many requests at once (old budget 64 MiB, new 128 MiB; the new charge admits two 4 MiB uploads at a time where the old admitted three):
 
-| Scenario | Before: ok / 429, growth | After: ok / 429, growth |
-|---|---|---|
-| 16 x 4 MiB, one at a time | 16 / 0, 297 and 341 MiB | 16 / 0, 252 and 275 MiB |
-| 40 x 4 MiB at once | 14 / 26, 571 and 585 MiB | 17 to 18 / 22 to 23, 290 and 389 MiB |
-| 40 x (1 MiB x 4 recipients) at once | 17 / 23, 402 and 397 MiB | 3 / 37, 125 and 160 MiB |
-| 12 x (1 MiB x 15 recipients) at once | 0 / 12, 44 MiB | 1 / 11, 137 and 152 MiB |
+| Scenario                             | Before: ok / 429, growth | After: ok / 429, growth              |
+| ------------------------------------ | ------------------------ | ------------------------------------ |
+| 16 x 4 MiB, one at a time            | 16 / 0, 297 and 341 MiB  | 16 / 0, 252 and 275 MiB              |
+| 40 x 4 MiB at once                   | 14 / 26, 571 and 585 MiB | 17 to 18 / 22 to 23, 290 and 389 MiB |
+| 40 x (1 MiB x 4 recipients) at once  | 17 / 23, 402 and 397 MiB | 3 / 37, 125 and 160 MiB              |
+| 12 x (1 MiB x 15 recipients) at once | 0 / 12, 44 MiB           | 1 / 11, 137 and 152 MiB              |
 
 ## Reading
 
@@ -47,8 +47,8 @@ Many requests at once (old budget 64 MiB, new 128 MiB; the new charge admits two
 
 `test/tx/measure-memory.ts` built every multipart body before the baseline, so the one-at-a-time rows (`serial`) held all 16 bodies (64 MiB of attachment plus their Blobs) in the baseline and the collector worked around them. "Serial" now builds each body just before it is sent; the concurrent rows still build them first, since those bodies coexist in flight anyway, so their numbers are unchanged and were not re-run. Re-run once (two rounds, `bun test/tx/measure-memory.ts 4 1 sync 16 serial`, load 2.8, measurement under the verify lock, rows tagged "bodies built when sent" in the raw file):
 
-| Scenario | Pre-built bodies (B26 after) | Built when sent |
-|---|---|---|
+| Scenario                  | Pre-built bodies (B26 after)              | Built when sent                          |
+| ------------------------- | ----------------------------------------- | ---------------------------------------- |
 | 16 x 4 MiB, one at a time | 252 and 275 MiB growth (baseline 135 MiB) | 199 and 203 MiB growth (baseline 69 MiB) |
 
 Growth is 50 to 75 MiB lower and the baseline is 66 MiB lower, so the pre-built bodies did inflate this row; the cause of the growth difference itself was not isolated. The row sits under the 256 MiB target, so the reading above holds, and the earlier "borderline" for this row was partly the harness.
