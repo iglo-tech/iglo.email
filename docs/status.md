@@ -5,15 +5,15 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) merged. B23 (#75), B24 (#76) and B25 (#77, D86) merged. B26 is with its worker: [brief](briefs/B26.md), branch `task/B26-tx-memory`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) merged. B23 (#75), B24 (#76), B25 (#77, D86) and B26 (#78, D87) merged. B27 is with its worker: [brief](briefs/B27.md), branch `task/B27-intermittent`. Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-1. B26: tx memory budget ([brief](briefs/B26.md)).
-2. B27: remaining intermittent watch lines: re-run each named case once on a quiet host; close lines with no failure since their last fix, keep diagnostics.
+1. B27: intermittent watch lines and the tx harness ([brief](briefs/B27.md)).
+2. B28: tx burst memory: 40 overlapping 4 MiB sends peak at 290-389 MiB against D87's 256 MiB target (collector lag); remove the remaining copies in `src/messaging/sends.ts`/`outbox.ts` or bound concurrency, measure, log.
 
 ## Owner decisions
 
@@ -42,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                            |
 | ------------ | ------------------------------------------------------ | ------- | ----------------------------------------------------------------- |
+| B26          | [#78](https://github.com/iglo-tech/iglo.email/pull/78) | cc7f009 | D87: base64 decode 147 to 16 MiB; 128 MiB measured tx budget      |
 | B25          | [#77](https://github.com/iglo-tech/iglo.email/pull/77) | 645b901 | D86: keep `synchronous = FULL` (second-send and lost-ack risk)    |
 | B24          | [#76](https://github.com/iglo-tech/iglo.email/pull/76) | 66e7003 | OpenAPI path types; migration 18 (bounce `count: 0`, stale TOTP)  |
 | B23          | [#75](https://github.com/iglo-tech/iglo.email/pull/75) | f559d00 | Unsent push not `unknown`; live pushes keep their lease (D80)     |
