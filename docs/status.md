@@ -12,10 +12,9 @@ Owner-only, blocking nothing else: publishing a release and PDF viewers on real 
 
 Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
 
-1. B24: test and settings follow-ups from #71, #72, #73 ([brief](briefs/B24.md)).
-2. B25: decide D22/D77 durability: at least 3 alternating FULL/NORMAL runs on a quiet host, then a logged agent decision.
-3. B26: tx memory budget: measure and decide `PARSE_COPIES`/budget versus the ~8x peak (B6), log the decision.
-4. B27: remaining intermittent watch lines: re-run each named case once on a quiet host; close lines with no failure since their last fix, keep diagnostics.
+1. B25: decide D22/D77 durability: at least 3 alternating FULL/NORMAL runs on a quiet host, then a logged agent decision.
+2. B26: tx memory budget: measure and decide `PARSE_COPIES`/budget versus the ~8x peak (B6), log the decision.
+3. B27: remaining intermittent watch lines: re-run each named case once on a quiet host; close lines with no failure since their last fix, keep diagnostics.
 
 ## Owner decisions
 
@@ -117,9 +116,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Tests (B12): the `templates-campaigns` connection reset has no reproduction. The file takes 4.2-4.5 s on an idle host (6 clean runs), against the 5 s default timeout it had when the reset was seen at load ~12; a test that times out has its fixture closed under the request still in flight, which reads as a reset. B8 raised the file's timeout to 60 s and the parallel runner uses 30 s. Kept open only until a reset is seen with the longer timeout. B13: 12 more runs of the file under 12 CPU burners, all clean at the 30 s timeout; no change.
 - Host load: in the B15 round-2 review, other projects' suites pushed load to 25-43 and `bun run check` hit timeouts in two backup test files (both pass alone, 9/9).
 - E2e under host stall: in the B13 review, `maintenance.e2e.js:207` and `campaign-safety.e2e.js:281` failed together after about 2.5 min against a 30 s timeout at load 12-14 (other projects' suites), then passed 23/23 on rerun. Watch for a repeat on a quiet host.
-- Enrollment endings ([#72](https://github.com/iglo-tech/iglo.email/pull/72)): `contract:openapi` does not check path-parameter types, so it would not catch the old string `step`; the lease-clearing test covers only the blocklist and archive paths; the captcha probe restores ALTCHA complexity to 1000, not the default 300000 (test only).
-- Consent ([#71](https://github.com/iglo-tech/iglo.email/pull/71)): add by IDs with a status does not stamp the membership `updated_at` (as upstream); migration 0016's repaired rows keep their old dates in the unsubscribe chart (deliberate, D81).
 - Wiped sends ([#74](https://github.com/iglo-tech/iglo.email/pull/74)): D85 also silences `send.failed` for admin deletes without a wipe (for owner review).
-- Auth and bounce settings ([#73](https://github.com/iglo-tech/iglo.email/pull/73)): a legacy stored `count: 0` bounce rule stays in force and is not flagged; users converted to API or with password login off before #73 keep their old TOTP key (fails safe; `reset-totp` clears it).
 - Outbox ([#75](https://github.com/iglo-tech/iglo.email/pull/75)): any synchronous `push` throw is treated as never pooled (no realistic trigger found); the `claimOne` guard test does not reach the `UPDATE` guard.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.

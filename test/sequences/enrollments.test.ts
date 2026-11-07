@@ -269,6 +269,57 @@ test("every path that ends an enrollment clears its lease", async () => {
   expect(clean()).toEqual({ n: 0n });
 });
 
+test("the other endings clear a lease: manual cancel, reentry replacement and unsubscribe", async () => {
+  const f = await open();
+  const tx = await f.template();
+  const news = await f.list("news");
+  await sequence(f, { reentry: "always" });
+  await sequence(f, {
+    trigger: { event: "go" },
+    list_id: news,
+    steps: [{ wait: "P1D", kind: "marketing", template_id: tx }],
+  });
+  const leased = () =>
+    f.db.run("UPDATE enrollments SET claimed_until = ?, retry_at = ? WHERE status = 'active'", [
+      new Date(f.clock.now().getTime() + 300_000).toISOString(),
+      new Date(f.clock.now().getTime() + 60_000).toISOString(),
+    ]);
+  const stale = () =>
+    f.db
+      .query(
+        "SELECT count(*) AS n FROM enrollments WHERE status <> 'active' AND (claimed_until IS NOT NULL OR retry_at IS NOT NULL)",
+      )
+      .get();
+  // Manual cancel through DELETE /api/enrollments/:id.
+  const first = (await f.event(paid("lease-a@example.test"))).body.data.enrollments.started[0];
+  leased();
+  expect((await f.json(`/api/enrollments/${first.id}`, "DELETE")).status).toBe(200);
+  expect(await enrollments(f, `?status=canceled`)).toHaveLength(1);
+  expect(stale()).toEqual({ n: 0n });
+  // Reentry "always" replaces the running enrollment.
+  const second = await f.event(paid("lease-b@example.test"));
+  leased();
+  const replaced = await f.event(paid("lease-b@example.test"));
+  expect(replaced.body.data.enrollments.ended).toHaveLength(1);
+  expect(second.body.data.enrollments.started).toHaveLength(1);
+  expect(stale()).toEqual({ n: 0n });
+  // Admin unsubscribe from the sequence's list.
+  const subscriber = await f.subscriber("lease-c@example.test", {
+    lists: [news],
+  });
+  await f.event({ subscriber: { email: "lease-c@example.test" }, name: "go" });
+  leased();
+  await f.json("/api/subscribers/lists", "PUT", {
+    ids: [subscriber],
+    action: "unsubscribe",
+    target_list_ids: [news],
+  });
+  expect((await enrollments(f, `?subscriber_id=${subscriber}`)).map((e) => e.exit_reason)).toEqual([
+    "unsubscribed",
+  ]);
+  expect(stale()).toEqual({ n: 0n });
+});
+
 test("reentry never, after_exit and always", async () => {
   const f = await open();
   const never = await sequence(f, { reentry: "never" });
