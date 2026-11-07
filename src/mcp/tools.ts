@@ -502,12 +502,7 @@ export async function executeTool(
         from_email: args.from_email !== undefined ? args.from_email : data.from_email,
         body: args.body !== undefined ? args.body : data.body,
         content_type: args.content_type !== undefined ? args.content_type : data.content_type,
-        lists:
-          args.lists !== undefined
-            ? Array.isArray(args.lists)
-              ? extractPositiveIds(args.lists)
-              : args.lists
-            : storedLists,
+        lists: args.lists !== undefined ? args.lists : storedLists,
         media: storedMedia,
         template_id: args.template_id !== undefined ? args.template_id : data.template_id,
         tags: args.tags !== undefined ? args.tags : data.tags,
@@ -623,12 +618,7 @@ export async function executeTool(
         from_email: args.from_email ?? data.from_email,
         body: args.body ?? data.body,
         content_type: args.content_type ?? data.content_type,
-        lists:
-          args.lists !== undefined
-            ? Array.isArray(args.lists)
-              ? extractPositiveIds(args.lists)
-              : args.lists
-            : storedLists,
+        lists: storedLists,
         media: storedMedia,
         subscribers: args.subscribers,
         messenger: data.messenger ?? "email",

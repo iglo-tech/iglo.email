@@ -84,7 +84,7 @@ const bad = (): never => {
 const text = (value: unknown) =>
   typeof value === "string" && value.length <= TEXT_LIMIT ? value.toWellFormed() : bad();
 const integer = (value: unknown) =>
-  typeof value === "number" && Number.isSafeInteger(value) ? BigInt(value) : bad();
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? BigInt(value) : bad();
 const array = (value: unknown, max: number) =>
   Array.isArray(value) && value.length <= max ? value : bad();
 const object = (value: unknown) =>

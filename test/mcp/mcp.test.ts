@@ -461,6 +461,41 @@ describe("B34 MCP endpoint tests", () => {
     expect(updatedCampData.headers).toEqual([{ "X-Test-Header": "HeaderValue" }]);
     expect(updatedCampData.lists.map((l: any) => l.id)).toContain(listId);
 
+    // Caller-supplied invalid list IDs must return isError and leave stored campaign lists unchanged
+    const updateInvalidTypeRes = await client.callTool({
+      name: "update_campaign",
+      arguments: {
+        id: campWithAttribsId,
+        lists: [listId, "1"],
+      },
+    });
+    expect(updateInvalidTypeRes.isError).toBe(true);
+
+    const getCampAfterInvalidType = await fetch(
+      `${production.origin}/api/campaigns/${campWithAttribsId}`,
+      { headers: adminHeaders },
+    );
+    expect(getCampAfterInvalidType.status).toBe(200);
+    const campDataAfterInvalidType = (await getCampAfterInvalidType.json()).data;
+    expect(campDataAfterInvalidType.lists.map((l: any) => l.id)).toEqual([listId]);
+
+    const updateNegativeIdRes = await client.callTool({
+      name: "update_campaign",
+      arguments: {
+        id: campWithAttribsId,
+        lists: [listId, -5],
+      },
+    });
+    expect(updateNegativeIdRes.isError).toBe(true);
+
+    const getCampAfterNegativeId = await fetch(
+      `${production.origin}/api/campaigns/${campWithAttribsId}`,
+      { headers: adminHeaders },
+    );
+    expect(getCampAfterNegativeId.status).toBe(200);
+    const campDataAfterNegativeId = (await getCampAfterNegativeId.json()).data;
+    expect(campDataAfterNegativeId.lists.map((l: any) => l.id)).toEqual([listId]);
+
     // Test 3 blocker: send_campaign_test with a client sending ONLY declared fields (id and subscribers)
     const testSendDeclaredOnlyRes = await client.callTool({
       name: "send_campaign_test",
@@ -562,6 +597,59 @@ describe("B34 MCP endpoint tests", () => {
     expect(testSendAfterMediaDelRes.isError).toBeFalsy();
     const mailMediaDel = await mailbox.one(subEmail, "Subject After Media Delete");
     expect(mailMediaDel.body).toContain("Media test body");
+
+    // Optional / Blocker 2: campaign with two lists, delete one list, update_campaign with subject only still succeeds
+    const listDel1Res = await fetch(`${production.origin}/api/lists`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ name: "Deleted List 1", type: "public", optin: "single" }),
+    });
+    const listDel1Id = (await listDel1Res.json()).data.id;
+    const listDel2Res = await fetch(`${production.origin}/api/lists`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ name: "Retained List 2", type: "public", optin: "single" }),
+    });
+    const listDel2Id = (await listDel2Res.json()).data.id;
+
+    const campTwoListsRes = await fetch(`${production.origin}/api/campaigns`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        name: "Two Lists Campaign",
+        subject: "Initial Two Lists Subject",
+        lists: [listDel1Id, listDel2Id],
+        from_email: "noreply@example.test",
+        type: "regular",
+        content_type: "richtext",
+        body: "<p>Two lists body</p>",
+      }),
+    });
+    expect(campTwoListsRes.status).toBe(200);
+    const campTwoListsId = (await campTwoListsRes.json()).data.id;
+
+    const delListRes = await fetch(`${production.origin}/api/lists/${listDel1Id}`, {
+      method: "DELETE",
+      headers: adminHeaders,
+    });
+    expect(delListRes.status).toBe(200);
+
+    const updateTwoListsRes = await client.callTool({
+      name: "update_campaign",
+      arguments: {
+        id: campTwoListsId,
+        subject: "Updated Subject With One List Deleted",
+      },
+    });
+    expect(updateTwoListsRes.isError).toBeFalsy();
+
+    const getCampTwoLists = await fetch(`${production.origin}/api/campaigns/${campTwoListsId}`, {
+      headers: adminHeaders,
+    });
+    expect(getCampTwoLists.status).toBe(200);
+    const campTwoListsData = (await getCampTwoLists.json()).data;
+    expect(campTwoListsData.subject).toBe("Updated Subject With One List Deleted");
+    expect(campTwoListsData.lists.some((l: any) => l.id === listDel2Id)).toBe(true);
 
     // Create a second list and campaign for permission boundary check
     const otherListRes = await fetch(`${production.origin}/api/lists`, {
