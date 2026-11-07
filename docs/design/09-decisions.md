@@ -803,6 +803,12 @@ Decided by an agent on 2026-11-06, for owner review.
 - **Not an API difference:** listmonk has no send journal, so there is no deliberate-difference row.
 - **Tests and measurement:** `test/sends/lease.test.ts`; [B18](../perf/B18-outbox-lease.md).
 
+B23 follow-ups (agent, 2026-11-07, for owner review):
+
+- **Unsent push:** a push that throws before any pool sees the message never left. Under the restore hold (D67) its claim goes back to `queued` and the attempt is not counted; the loop claims nothing until release, so it cannot spin. Any other synchronous throw journals the row `failed`/`push_failed` and still fails the caller. A rejection after the pool accepted the message stays `unknown`/`uncertain`. Each `UPDATE` names `status='sending'` and the claim's `claimed_until`. `test/sends/unsent-push.test.ts`.
+- **Clock jump over the lease:** `deliver` keeps the ids of the rows it is pushing, and the pass's expiry skips them (`expireLeases(time, live)`), so a forward jump of the injected clock cannot settle a live send under its own push. The push's own outcome (bounded at 60 s by `email.ts`) settles it. Crash recovery is unchanged: a row no push of this process holds, or any row at startup, still expires. A push that hangs past its cutoff would hold its row until restart; the emailer's deadline makes that a bug, not a state. [B23](../perf/B23-send-lease-followups.md).
+- **Stale campaign runner counts:** a runner that loses its lease mid-batch writes nothing, so messages it did send are recorded `unknown` by the next holder's `abandonClaims` and are missing from `sent` (an undercount, never a double send). Counting them would need a write under a lost lease, which the lease exists to forbid.
+
 ## D81. A blocklisted subscriber holds only unsubscribed memberships (B19)
 
 Decided by an agent on 2026-11-06, for owner review.

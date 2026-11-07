@@ -83,7 +83,9 @@ const tracked = {
   ...sends,
   finishAll(results: Parameters<typeof sends.finishAll>[0]) {
     sends.finishAll(results);
-    for (const { outcome } of results) {
+    for (const result of results) {
+      if (!("outcome" in result)) continue;
+      const { outcome } = result;
       pending.get(outcome.messageId)?.(outcome.status === "accepted");
       pending.delete(outcome.messageId);
     }

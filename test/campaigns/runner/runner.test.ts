@@ -662,10 +662,10 @@ test("a runner that lost its lease writes no cursor, count or delivery change", 
   const { id, subs, now } = await staleSetup();
   const before = f.runnerStore.state(id)!;
   const sub = BigInt(subs[0]!.id);
-  expect(f.runnerStore.advance(id, "A", 99n, now)).toBe(false);
-  expect(f.runnerStore.addSent(id, "A", 2, now)).toBe(false);
-  expect(f.runnerStore.settle(id, "A", sub, "sent", now)).toBe(false);
-  expect(f.runnerStore.unclaim(id, "A", sub)).toBe(false);
+  f.runnerStore.advance(id, "A", 99n, now);
+  f.runnerStore.addSent(id, "A", 2, now);
+  f.runnerStore.settle(id, "A", sub, "sent", now);
+  f.runnerStore.unclaim(id, "A", sub);
   expect(f.runnerStore.state(id)!.last_subscriber_id).toBe(before.last_subscriber_id);
   const sent = f.db.query("SELECT sent FROM campaigns WHERE id = ?").get(id) as { sent: bigint };
   expect(sent.sent).toBe(0n);
@@ -679,9 +679,10 @@ test("a runner cannot settle or unclaim a delivery that is no longer claimed", a
   const { id, subs, now } = await staleSetup();
   f.db.run("UPDATE campaigns SET runner_lease = 'A' WHERE id = ?", [Number(id)]);
   const sub = BigInt(subs[0]!.id);
-  expect(f.runnerStore.settle(id, "A", sub, "sent", now)).toBe(true);
-  expect(f.runnerStore.settle(id, "A", sub, "failed", now)).toBe(false);
-  expect(f.runnerStore.unclaim(id, "A", sub)).toBe(false);
+  f.runnerStore.settle(id, "A", sub, "sent", now);
+  expect(deliveries(id).map((d) => (d as { status: string }).status)).toEqual(["sent", "claimed"]);
+  f.runnerStore.settle(id, "A", sub, "failed", now);
+  f.runnerStore.unclaim(id, "A", sub);
   expect(deliveries(id).map((d) => (d as { status: string }).status)).toEqual(["sent", "claimed"]);
 });
 
@@ -691,9 +692,68 @@ test("the runner's own pause does not stop a campaign paused and resumed since",
   expect((await f.status(Number(id), "paused")).status).toBe(200);
   expect((await f.status(Number(id), "running")).status).toBe(200);
   const now = f.clock.now().toISOString();
-  expect(f.runnerStore.pause(id, "A", held.runner_generation, now)).toBe(false);
+  f.runnerStore.pause(id, "A", held.runner_generation, now);
   expect((await f.read(Number(id))).status).toBe("running");
   const current = f.runnerStore.state(id)!;
-  expect(f.runnerStore.pause(id, "A", current.runner_generation, now)).toBe(true);
+  f.runnerStore.pause(id, "A", current.runner_generation, now);
   expect((await f.read(Number(id))).status).toBe("paused");
+});
+
+// B23: the two lease-loss drop branches, through the loop on the injected clock.
+const farFuture = () => new Date(f.clock.now().getTime() + 3_600_000).toISOString();
+const stealLease = (id: number) =>
+  f.db.run("UPDATE campaigns SET runner_lease = 'B', runner_lease_until = ? WHERE id = ?", [
+    farFuture(),
+    id,
+  ]);
+const sentOf = (id: number) =>
+  (f.db.query("SELECT sent FROM campaigns WHERE id = ?").get(id) as { sent: bigint }).sent;
+const statuses = (id: number) =>
+  (
+    f.db
+      .query("SELECT status FROM campaign_deliveries WHERE campaign_id = ? ORDER BY subscriber_id")
+      .all(id) as { status: string }[]
+  ).map((d) => d.status);
+
+test("a runner that loses its lease between batches stops sending and writes nothing more", async () => {
+  f = await runnerFixture();
+  const c = await campaignOf(4);
+  Object.assign(f.settings, { concurrency: 1, batchSize: 2 });
+  await f.status(c.id, "running");
+  f.start(3_000);
+  await f.drive(() => sentOf(c.id) === 2n);
+  stealLease(c.id);
+  const cursor = f.runnerStore.state(BigInt(c.id))!.last_subscriber_id;
+  // Well past the scan interval and the lease: the second holder's lease still stands.
+  await f.drive(() => false, 500, 40).catch(() => {});
+  expect(f.pushes.length).toBe(2);
+  expect(sentOf(c.id)).toBe(2n);
+  expect(f.runnerStore.state(BigInt(c.id))!.last_subscriber_id).toBe(cursor);
+  expect(statuses(c.id)).toEqual(["sent", "sent"]);
+  // Once the other holder's lease ends, the runner resumes with the rest; nobody is sent twice.
+  f.clock.advance(3_600_001);
+  await f.until(c.id, "finished");
+  expect(recipientsOf()).toEqual(["s0000@x.test", "s0001@x.test", "s0002@x.test", "s0003@x.test"]);
+});
+
+test("a runner that loses its lease mid-batch writes nothing, and no one is sent twice", async () => {
+  f = await runnerFixture({ hold: true });
+  const c = await campaignOf(4);
+  Object.assign(f.settings, { concurrency: 2, batchSize: 2 });
+  await f.status(c.id, "running");
+  f.start(3_000);
+  await f.drive(() => f.pushes.length === 2);
+  stealLease(c.id);
+  f.control.hold = false;
+  for (const push of f.pushes) push.settle();
+  await f.drive(() => false, 500, 40).catch(() => {});
+  // The stale batch wrote no count and no settlement; its claims stay for the next holder.
+  expect(f.pushes.length).toBe(2);
+  expect(sentOf(c.id)).toBe(0n);
+  expect(statuses(c.id)).toEqual(["claimed", "claimed"]);
+  f.clock.advance(3_600_001);
+  await f.until(c.id, "finished");
+  // The two already sent are abandoned as unknown, never resent; the rest are sent once.
+  expect(recipientsOf()).toEqual(["s0000@x.test", "s0001@x.test", "s0002@x.test", "s0003@x.test"]);
+  expect(statuses(c.id)).toEqual(["unknown", "unknown", "sent", "sent"]);
 });

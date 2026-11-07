@@ -80,6 +80,8 @@ export async function txFixture(
     bounceLimit?: Middleware;
     /** The network for the SES route; the default would reach AWS. */
     snsFetch?: SnsFetch;
+    /** The emailer's last gate before a pool, as in production (the restore hold). */
+    refuse?: () => void;
     /** Holds each synchronous dispatch, as a stalled SMTP server does. */
     beforeDispatch?: () => Promise<void>;
     /** The attachment budget of `POST /api/tx`. */
@@ -178,6 +180,7 @@ export async function txFixture(
       ],
     }),
     copyAllowed: (address) => !addressBlocklisted(subscribers, address),
+    ...(options.refuse ? { refuse: options.refuse } : {}),
   });
   // Production marketing settings defaults (settings/defaults.ts), mutable per test.
   const marketing: MarketingSettings = {

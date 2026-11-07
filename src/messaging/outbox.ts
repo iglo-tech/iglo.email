@@ -33,6 +33,8 @@ export function startOutbox(options: {
   emailer: ReturnType<typeof createEmailer>;
 }) {
   options.sends.recover();
+  // Rows whose push is live in this process; their lease is not expired under them.
+  const live = new Set<bigint>();
   let deadline: AbortController | undefined;
   let stopped = false;
   let failTimer!: (error: Error) => void;
@@ -77,7 +79,7 @@ export function startOutbox(options: {
     batchSize: 1,
     // One loop item is a batch: its claims and admissions committed together before SMTP.
     claim: (now, lease) => {
-      options.sends.expireLeases(now);
+      options.sends.expireLeases(now, [...live]);
       if (sendingHeld(options.db)) return [];
       const batch = options.sends.claimBatch(now, lease, batchSize);
       return batch.length ? [batch] : [];
@@ -93,23 +95,41 @@ export function startOutbox(options: {
    * message may have left; never retried), and then fails the caller.
    */
   async function deliver(batch: Claimed[]) {
-    const pending = batch.flatMap(({ row, message }) => {
+    type Settled = { row: Claimed["row"]; refused?: unknown; result?: Promise<Outcome> };
+    const pending = batch.flatMap(({ row, message }): Settled[] => {
       if (!message) return [];
       try {
         return [{ row, result: options.emailer.push(message, copies(row)).result }];
       } catch (error) {
-        return [{ row, result: Promise.reject(error) }];
+        // Thrown before a pool saw the message (the restore hold refuses here): never sent.
+        return [{ row, refused: error }];
       }
     });
-    const settled = await Promise.allSettled(pending.map((p) => p.result));
+    const ids = pending.map((p) => p.row.id);
+    for (const id of ids) live.add(id);
+    let settled: PromiseSettledResult<Outcome | undefined>[];
+    try {
+      settled = await Promise.allSettled(pending.map((p) => p.result));
+    } finally {
+      for (const id of ids) live.delete(id);
+    }
+    const held = sendingHeld(options.db);
+    let failure: { reason: unknown } | undefined;
     options.sends.finishAll(
-      settled.map((s, i) => ({
-        row: pending[i]!.row,
-        outcome: s.status === "fulfilled" ? s.value : uncertain(pending[i]!.row),
-      })),
+      pending.map((p, i) => {
+        const s = settled[i]!;
+        if (!p.result) {
+          if (!held) failure ??= { reason: p.refused };
+          return { row: p.row, unsent: held ? "held" : "failed" } as const;
+        }
+        if (s.status === "rejected") failure ??= { reason: s.reason };
+        return {
+          row: p.row,
+          outcome: s.status === "fulfilled" ? s.value! : uncertain(p.row),
+        };
+      }),
     );
-    const failed = settled.find((s) => s.status === "rejected");
-    if (failed) throw failed.reason;
+    if (failure) throw failure.reason;
   }
   options.sends.onWake(() => {
     loop.wake();

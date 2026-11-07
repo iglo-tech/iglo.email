@@ -79,6 +79,7 @@ export interface SendSummary {
 }
 interface Row extends PublicRow {
   payload: string | null;
+  claimed_until: string | null;
 }
 /** A claimed row and its admitted message; null when admission already settled the row. */
 export interface Claimed {
@@ -323,16 +324,36 @@ export function createSends(options: {
     }
   }
   /**
+   * A push that threw before any pool saw the message: it provably never left. Under the restore
+   * hold the claim goes back to `queued` without counting the attempt (the loop claims nothing
+   * until release); any other throw fails the row. Both name the claim's lease.
+   */
+  function unsent(row: Row, held: boolean) {
+    if (held) {
+      db.run(
+        "UPDATE sends SET status='queued', attempts=attempts-1, claimed_until=NULL WHERE id=? AND status='sending' AND claimed_until=?",
+        [row.id, row.claimed_until],
+      );
+      return;
+    }
+    const { changes } = db.run(
+      "UPDATE sends SET status='failed', error='push_failed', claimed_until=NULL WHERE id=? AND status='sending' AND claimed_until=?",
+      [row.id, row.claimed_until],
+    );
+    ended(row, "failed", "push_failed", changes);
+  }
+  /**
    * The one `sending` -> `unknown`/`interrupted` transition. With `expiredBefore`, only rows
    * whose lease ended by then; without, every `sending` row.
    */
-  function interrupt(expiredBefore?: string) {
+  function interrupt(expiredBefore?: string, live: readonly bigint[] = []) {
     const interrupted = db
-      .query<Row, [string | null]>(
+      .query<Row, [string | null, string]>(
         `UPDATE sends SET status='unknown', error='interrupted', claimed_until=NULL, next_attempt_at=NULL
-           WHERE status='sending' AND (?1 IS NULL OR claimed_until <= ?1) RETURNING *`,
+           WHERE status='sending' AND (?1 IS NULL OR claimed_until <= ?1)
+             AND id NOT IN (SELECT value FROM json_each(?2)) RETURNING *`,
       )
-      .all(expiredBefore ?? null);
+      .all(expiredBefore ?? null, JSON.stringify(live.map(Number)));
     for (const row of interrupted) ended(row, "unknown", "interrupted", 1);
   }
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -921,9 +942,11 @@ export function createSends(options: {
     /**
      * Each outbox pass (D80), inside the caller's write transaction: a `sending` row whose lease
      * has expired is `unknown`/`interrupted`, exactly as `recover` settles it. Never re-queued.
+     * `live` are rows whose push is still in flight in this process: a clock jump over their
+     * lease must not settle them, their own outcome will.
      */
-    expireLeases(time: Date) {
-      interrupt(time.toISOString());
+    expireLeases(time: Date, live: readonly bigint[] = []) {
+      interrupt(time.toISOString(), live);
     },
     /** Claim the lowest due row inside the caller's write transaction. */
     claim(time: Date, lease: Date): Row[] {
@@ -948,10 +971,14 @@ export function createSends(options: {
     admit,
     finish,
     /** Journal several SMTP outcomes in one commit. */
-    finishAll(results: { row: Row; outcome: Outcome }[]) {
+    finishAll(
+      results: ({ row: Row; outcome: Outcome } | { row: Row; unsent: "held" | "failed" })[],
+    ) {
       if (!results.length) return;
       writeTransaction(db, () => {
-        for (const { row, outcome } of results) finish(row, outcome);
+        for (const result of results)
+          if ("unsent" in result) unsent(result.row, result.unsent === "held");
+          else finish(result.row, result.outcome);
       });
     },
     onWake(fn: () => void) {

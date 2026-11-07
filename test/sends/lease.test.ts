@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeTransaction } from "@/db/transaction";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createListReferences } from "@/lists/references";
@@ -128,30 +129,42 @@ function fixture() {
   };
 }
 
-test("a dispatch push that outlives its lease is moved to unknown by the next pass", async () => {
+test("a clock jump over the lease does not settle a push still in flight; its outcome lands (D80)", async () => {
   const f = fixture();
   const outbox = f.outbox();
   const id = f.enqueue();
-  void outbox.dispatch([id]);
+  const done = outbox.dispatch([id]);
   expect(f.row(id).status).toBe("sending");
-  // A healthy push is bounded at 60 s; its lease must outlast that.
   await f.clock.whenSleeping();
-  for (let i = 0; i < 90; i++) {
-    f.clock.advance(1000);
+  // Far past the lease in one jump, with several outbox passes while the push is live.
+  for (let i = 0; i < 4; i++) {
+    f.clock.advance(100_000);
     await tick();
   }
   expect(f.row(id).status).toBe("sending");
-  for (let i = 0; i < 60; i++) {
+  expect(f.ended).toEqual([]);
+  f.pushes[0]!.resolve(accepted);
+  await done;
+  expect(f.row(id).status).toBe("sent");
+  expect(f.ended).toEqual([]);
+});
+
+test("a row claimed by no live push here is moved to unknown once its lease expires", async () => {
+  const f = fixture();
+  const outbox = f.outbox();
+  void outbox;
+  const id = f.enqueue();
+  // As if another process or an earlier run claimed it: nothing in this process is pushing it.
+  const now = f.clock.now();
+  writeTransaction(f.db, () => f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1));
+  expect(f.row(id).status).toBe("sending");
+  await f.clock.whenSleeping();
+  for (let i = 0; i < 150; i++) {
     f.clock.advance(1000);
     await tick();
   }
   expect(f.row(id)).toMatchObject({ status: "unknown", error: "interrupted" });
   expect(f.ended).toEqual([{ uuid: f.uuid(id), status: "unknown", error: "interrupted" }]);
-  // The late outcome of the abandoned push does not change the row or fire a second webhook.
-  f.pushes[0]!.resolve(accepted);
-  await tick();
-  expect(f.row(id)).toMatchObject({ status: "unknown", error: "interrupted" });
-  expect(f.ended).toHaveLength(1);
 });
 
 test("a rejected dispatch push leaves its row unknown, not sending", async () => {
@@ -255,9 +268,15 @@ test("a wiped send whose lease expires in the outbox pass ends silently; an unre
     { email: "wiped@example.test", name: "Wiped" },
     { all: true, ids: [] },
   );
-  const wiped = f.enqueue({ subscriberId: subscriber.id, message: message("wiped@example.test") });
+  const wiped = f.enqueue({
+    subscriberId: subscriber.id,
+    message: message("wiped@example.test"),
+  });
   const other = f.enqueue({ message: message("stranger@example.test") });
-  void outbox.dispatch([wiped, other]);
+  void outbox;
+  // Claimed by no push of this process, as after another process's crash.
+  const now = f.clock.now();
+  writeTransaction(f.db, () => f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 2));
   expect(f.row(wiped).status).toBe("sending");
   expect(f.row(other).status).toBe("sending");
   f.db.transaction(() =>
@@ -268,7 +287,29 @@ test("a wiped send whose lease expires in the outbox pass ends silently; an unre
     f.clock.advance(1000);
     await tick();
   }
-  expect(f.row(wiped)).toMatchObject({ status: "unknown", error: "interrupted" });
-  expect(f.row(other)).toMatchObject({ status: "unknown", error: "interrupted" });
+  expect(f.row(wiped)).toMatchObject({
+    status: "unknown",
+    error: "interrupted",
+  });
+  expect(f.row(other)).toMatchObject({
+    status: "unknown",
+    error: "interrupted",
+  });
   expect(f.ended).toEqual([{ uuid: f.uuid(other), status: "unknown", error: "interrupted" }]);
+});
+
+test("claim moves only a queued row to sending", () => {
+  const f = fixture();
+  const now = f.clock.now();
+  const lease = new Date(now.getTime() + 120_000);
+  const id = f.enqueue();
+  expect(writeTransaction(f.db, () => f.journal.claim(now, lease)).length).toBe(1);
+  expect(f.row(id).status).toBe("sending");
+  // Already claimed: no second claim, and the attempt count is not counted twice.
+  expect(writeTransaction(f.db, () => f.journal.claim(now, lease))).toEqual([]);
+  // A settled row is never claimed again, even if its queue time would be due.
+  f.db.run("UPDATE sends SET status='unknown', error='uncertain' WHERE id = ?", [id]);
+  expect(writeTransaction(f.db, () => f.journal.claim(now, lease))).toEqual([]);
+  expect(f.row(id).status).toBe("unknown");
+  expect(f.db.query("SELECT attempts FROM sends WHERE id = ?").get(id)).toEqual({ attempts: 1n });
 });
