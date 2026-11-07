@@ -250,12 +250,18 @@ export async function runOpenApiContract(target: {
       ).status === 200,
       "smtp-settings",
     );
-    await send("PUT", "/api/settings/app.from_email", { body: ["Fixture <noreply@fixture.test>"] });
+    await send("PUT", "/api/settings/app.from_email", {
+      body: ["Fixture <noreply@fixture.test>"],
+    });
     await send("PUT", "/api/settings/bounce.enabled", { body: true });
     await send("PUT", "/api/settings/bounce.webhooks_enabled", { body: true });
     const signingKey = "openapi-contract-key";
-    await send("PUT", "/api/settings/bounce.mailgun", { body: { enabled: true, key: signingKey } });
-    await send("PUT", "/api/settings/privacy.individual_tracking", { body: true });
+    await send("PUT", "/api/settings/bounce.mailgun", {
+      body: { enabled: true, key: signingKey },
+    });
+    await send("PUT", "/api/settings/privacy.individual_tracking", {
+      body: true,
+    });
 
     document = (await send("GET", "/api/openapi.json")).body as Document;
     await op("GET /api/openapi.json");
@@ -283,7 +289,10 @@ export async function runOpenApiContract(target: {
     });
     await op("PUT /api/roles/users/{id}", {
       params: { id: userRole.body.data.id },
-      body: { name: "contract role 2", permissions: ["lists:get_all", "subscribers:get"] },
+      body: {
+        name: "contract role 2",
+        permissions: ["lists:get_all", "subscribers:get"],
+      },
     });
     await op("GET /api/roles/users");
     const listRole = await op("POST /api/roles/lists", {
@@ -330,9 +339,13 @@ export async function runOpenApiContract(target: {
         user_role_id: userRole.body.data.id,
       },
     });
-    await op("DELETE /api/users/{id}", { params: { id: apiUser.body.data.id } });
+    await op("DELETE /api/users/{id}", {
+      params: { id: apiUser.body.data.id },
+    });
     await op("DELETE /api/users", { query: `?id=${human.body.data.id}` });
-    await op("DELETE /api/roles/{id}", { params: { id: listRole.body.data.id } });
+    await op("DELETE /api/roles/{id}", {
+      params: { id: listRole.body.data.id },
+    });
 
     // Lists.
     const list = (
@@ -347,15 +360,22 @@ export async function runOpenApiContract(target: {
       })
     ).body.data;
     const doomed = (
-      await op("POST /api/lists", { body: { name: "doomed", type: "private", optin: "double" } })
+      await op("POST /api/lists", {
+        body: { name: "doomed", type: "private", optin: "double" },
+      })
     ).body.data;
     await op("GET /api/lists");
     await op("GET /api/lists", { query: "?per_page=all&minimal=true" });
     await op("GET /api/lists/{id}", { params: { id: list.id } });
-    await op("PUT /api/lists/{id}", { params: { id: doomed.id }, body: { name: "doomed 2" } });
+    await op("PUT /api/lists/{id}", {
+      params: { id: doomed.id },
+      body: { name: "doomed 2" },
+    });
     await op("DELETE /api/lists/{id}", { params: { id: doomed.id } });
     const doomed2 = (
-      await op("POST /api/lists", { body: { name: "doomed", type: "private", optin: "single" } })
+      await op("POST /api/lists", {
+        body: { name: "doomed", type: "private", optin: "single" },
+      })
     ).body.data;
     await op("DELETE /api/lists", { query: `?id=${doomed2.id}` });
 
@@ -385,7 +405,12 @@ export async function runOpenApiContract(target: {
     ).body.data;
     const other = (
       await op("POST /api/subscribers", {
-        body: { email: "two@fixture.test", name: "Two", status: "enabled", lists: [list.id] },
+        body: {
+          email: "two@fixture.test",
+          name: "Two",
+          status: "enabled",
+          lists: [list.id],
+        },
       })
     ).body.data;
     const external = (
@@ -399,11 +424,15 @@ export async function runOpenApiContract(target: {
       })
     ).body.data;
     await op("GET /api/subscribers");
-    await op("GET /api/subscribers", { query: `?per_page=all&list_id=${list.id}` });
+    await op("GET /api/subscribers", {
+      query: `?per_page=all&list_id=${list.id}`,
+    });
     await op("GET /api/subscribers/{id}", { params: { id: subscriber.id } });
     // A membership outside the caller's lists is masked, and a list made without tags has none.
     const bare = (
-      await op("POST /api/lists", { body: { name: "bare", type: "public", optin: "single" } })
+      await op("POST /api/lists", {
+        body: { name: "bare", type: "public", optin: "single" },
+      })
     ).body.data;
     const shared = (
       await op("POST /api/subscribers", {
@@ -422,17 +451,33 @@ export async function runOpenApiContract(target: {
       [{ id: list.id, permissions: ["list:get"] }],
     );
     const masked = (
-      await op("GET /api/subscribers/{id}", { params: { id: shared.id }, auth: narrow })
+      await op("GET /api/subscribers/{id}", {
+        params: { id: shared.id },
+        auth: narrow,
+      })
     ).body.data.lists.find(({ id }: { id: number }) => id === bare.id);
     check(masked.restricted === true && masked.name === "*Unknown", "subscriber-masked-list");
-    await op("GET /api/subscribers", { query: `?list_id=${list.id}`, auth: narrow });
+    await op("GET /api/subscribers", {
+      query: `?list_id=${list.id}`,
+      auth: narrow,
+    });
     await op("GET /api/subscribers/{id}", { params: { id: shared.id } });
     await op("PUT /api/subscribers/{id}", {
       params: { id: other.id },
-      body: { email: other.email, name: "Two b", status: "enabled", lists: [list.id] },
+      body: {
+        email: other.email,
+        name: "Two b",
+        status: "enabled",
+        lists: [list.id],
+      },
     });
-    await op("PATCH /api/subscribers/{id}", { params: { id: other.id }, body: { name: "Two c" } });
-    await op("GET /api/subscribers/external/{external_id}", { params: { external_id: "ext-3" } });
+    await op("PATCH /api/subscribers/{id}", {
+      params: { id: other.id },
+      body: { name: "Two c" },
+    });
+    await op("GET /api/subscribers/external/{external_id}", {
+      params: { external_id: "ext-3" },
+    });
     await op("GET /api/subscribers/external", { query: "?external_id=ext-3" });
     await op("PUT /api/subscribers/external/{external_id}", {
       params: { external_id: "ext-3" },
@@ -453,7 +498,12 @@ export async function runOpenApiContract(target: {
       "export-by-id",
     );
     await op("PUT /api/subscribers/lists", {
-      body: { ids: [other.id], action: "add", target_list_ids: [list.id], status: "confirmed" },
+      body: {
+        ids: [other.id],
+        action: "add",
+        target_list_ids: [list.id],
+        status: "confirmed",
+      },
     });
     await op("PUT /api/subscribers/lists/{id}", {
       params: { id: other.id },
@@ -467,9 +517,15 @@ export async function runOpenApiContract(target: {
         status: "confirmed",
       },
     });
-    await op("PUT /api/subscribers/query/blocklist", { body: { query: "subscribers.id = 0" } });
-    await op("POST /api/subscribers/query/delete", { body: { query: "subscribers.id = 0" } });
-    await op("POST /api/subscribers/{id}/optin", { params: { id: subscriber.id } });
+    await op("PUT /api/subscribers/query/blocklist", {
+      body: { query: "subscribers.id = 0" },
+    });
+    await op("POST /api/subscribers/query/delete", {
+      body: { query: "subscribers.id = 0" },
+    });
+    await op("POST /api/subscribers/{id}/optin", {
+      params: { id: subscriber.id },
+    });
 
     // Templates.
     const txTemplate = (
@@ -484,13 +540,21 @@ export async function runOpenApiContract(target: {
     ).body.data;
     const campaignTemplate = (
       await op("POST /api/templates", {
-        body: { name: "campaign", type: "campaign", body: "<html>{{ content | raw }}</html>" },
+        body: {
+          name: "campaign",
+          type: "campaign",
+          body: "<html>{{ content | raw }}</html>",
+        },
       })
     ).body.data;
     await op("GET /api/templates");
     await op("GET /api/templates", { query: "?no_body=true" });
-    await op("GET /api/templates/{id}", { params: { id: campaignTemplate.id } });
-    await op("GET /api/templates/{id}/preview", { params: { id: campaignTemplate.id } });
+    await op("GET /api/templates/{id}", {
+      params: { id: campaignTemplate.id },
+    });
+    await op("GET /api/templates/{id}/preview", {
+      params: { id: campaignTemplate.id },
+    });
     await op("POST /api/templates/preview", {
       raw: new URLSearchParams({
         template_type: "campaign",
@@ -499,9 +563,15 @@ export async function runOpenApiContract(target: {
     });
     await op("PUT /api/templates/{id}", {
       params: { id: campaignTemplate.id },
-      body: { name: "campaign 2", type: "campaign", body: "<html>{{ content | raw }}</html>" },
+      body: {
+        name: "campaign 2",
+        type: "campaign",
+        body: "<html>{{ content | raw }}</html>",
+      },
     });
-    await op("PUT /api/templates/{id}/default", { params: { id: campaignTemplate.id } });
+    await op("PUT /api/templates/{id}/default", {
+      params: { id: campaignTemplate.id },
+    });
 
     // Transactional sends, sends and subscriber activity.
     const tx = await op("POST /api/tx", {
@@ -515,7 +585,9 @@ export async function runOpenApiContract(target: {
     await op("GET /api/sends");
     const send0 = tx.body.data.sends[0];
     await op("GET /api/sends/{id}", { params: { id: send0.id } });
-    await op("GET /api/subscribers/{id}/sends", { params: { id: subscriber.id } });
+    await op("GET /api/subscribers/{id}/sends", {
+      params: { id: subscriber.id },
+    });
 
     // A failed send, which is what a resend takes.
     const smtpAt = (port: number) => ({
@@ -535,7 +607,11 @@ export async function runOpenApiContract(target: {
     });
     await send("PUT", "/api/settings/smtp", smtpAt(refusing.port));
     const failing = await op("POST /api/tx", {
-      body: { subscriber_email: subscriber.email, template_id: txTemplate.id, async: true },
+      body: {
+        subscriber_email: subscriber.email,
+        template_id: txTemplate.id,
+        async: true,
+      },
     });
     const failedId = failing.body.data.sends[0].id;
     for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
@@ -567,7 +643,9 @@ export async function runOpenApiContract(target: {
       },
     });
     check(event.body.data, "event");
-    await op("GET /api/subscribers/{id}/subscriber-events", { params: { id: subscriber.id } });
+    await op("GET /api/subscribers/{id}/subscriber-events", {
+      params: { id: subscriber.id },
+    });
 
     // Sequences and enrollments.
     const definition = {
@@ -632,11 +710,15 @@ export async function runOpenApiContract(target: {
     ).body.data;
     await op("GET /api/enrollments");
     await op("GET /api/enrollments/{id}", { params: { id: enrollment.id } });
-    await op("GET /api/enrollments/{id}/timeline", { params: { id: enrollment.id } });
+    await op("GET /api/enrollments/{id}/timeline", {
+      params: { id: enrollment.id },
+    });
     await op("DELETE /api/enrollments/{id}", { params: { id: enrollment.id } });
     // An editor sends the IDs back: a step without one would be replaced, not updated.
     const stored = (await op("GET /api/sequences/{id}", { params: { id: sequence.id } })).body.data;
-    await op("POST /api/conditions/validate", { body: { condition: null, field: "condition" } });
+    await op("POST /api/conditions/validate", {
+      body: { condition: null, field: "condition" },
+    });
     await op("POST /api/sequences/{id}/steps/{step}/reschedule", {
       params: { id: sequence.id, step: stored.steps[0].id },
     });
@@ -660,11 +742,19 @@ export async function runOpenApiContract(target: {
     );
     const forced = (
       await op("POST /api/enrollments", {
-        body: { sequence_id: sequence.id, subscriber_id: subscriber.id, force: true },
+        body: {
+          sequence_id: sequence.id,
+          subscriber_id: subscriber.id,
+          force: true,
+        },
       })
     ).body.data;
     await op("POST /api/enrollments", {
-      body: { sequence_id: sequence.id, subscriber_id: subscriber.id, force: true },
+      body: {
+        sequence_id: sequence.id,
+        subscriber_id: subscriber.id,
+        force: true,
+      },
     });
     await op("GET /api/enrollments/{id}", { params: { id: forced.id } });
     // A step outlives its template, and then has none.
@@ -716,11 +806,19 @@ export async function runOpenApiContract(target: {
       if (timeline.body.data.entries.some(({ type }: { type: string }) => type === "step")) break;
       check(Date.now() < deadline, "sequence-step-wait");
     }
-    await op("GET /api/enrollments/{id}/timeline", { params: { id: running.id } });
+    await op("GET /api/enrollments/{id}/timeline", {
+      params: { id: running.id },
+    });
     await op("GET /api/sequences/counts", { query: `?id=${immediate.id}` });
-    await op("GET /api/subscribers/{id}/enrollments", { params: { id: subscriber.id } });
-    await op("GET /api/sends/analytics", { query: "?from=2020-01-01&to=2099-01-01" });
-    await op("GET /api/sends/analytics", { query: "?from=2020-01-01&to=2099-01-01&group_by=step" });
+    await op("GET /api/subscribers/{id}/enrollments", {
+      params: { id: subscriber.id },
+    });
+    await op("GET /api/sends/analytics", {
+      query: "?from=2020-01-01&to=2099-01-01",
+    });
+    await op("GET /api/sends/analytics", {
+      query: "?from=2020-01-01&to=2099-01-01&group_by=step",
+    });
     const empty = (
       await op("POST /api/sequences", {
         body: {
@@ -770,7 +868,9 @@ export async function runOpenApiContract(target: {
     await op("GET /api/campaigns");
     await op("GET /api/campaigns", { query: "?no_body=true" });
     await op("GET /api/campaigns/{id}", { params: { id: campaign.id } });
-    await op("GET /api/campaigns/{id}/preview", { params: { id: campaign.id } });
+    await op("GET /api/campaigns/{id}/preview", {
+      params: { id: campaign.id },
+    });
     await op("POST /api/campaigns/{id}/preview", {
       params: { id: campaign.id },
       raw: new URLSearchParams({
@@ -785,11 +885,19 @@ export async function runOpenApiContract(target: {
     });
     await op("POST /api/campaigns/{id}/preview/archive", {
       params: { id: campaign.id },
-      raw: new URLSearchParams({ template_id: String(campaignTemplate.id), archive_meta: "{}" }),
+      raw: new URLSearchParams({
+        template_id: String(campaignTemplate.id),
+        archive_meta: "{}",
+      }),
     });
     await op("POST /api/campaigns/{id}/content", {
       params: { id: campaign.id },
-      body: { body: "# t", from: "markdown", to: "html", content_type: "markdown" },
+      body: {
+        body: "# t",
+        from: "markdown",
+        to: "html",
+        content_type: "markdown",
+      },
     });
     // A plain campaign previews as text, stored or posted; its archive page is still HTML.
     const plain = (
@@ -805,17 +913,27 @@ export async function runOpenApiContract(target: {
       })
     ).body.data;
     check(
-      (await op("GET /api/campaigns/{id}/preview", { params: { id: plain.id } })).type ===
-        "text/plain",
+      (
+        await op("GET /api/campaigns/{id}/preview", {
+          params: { id: plain.id },
+        })
+      ).type === "text/plain",
       "plain-preview",
     );
     const plainForm = () => new URLSearchParams({ body: "plain", content_type: "plain" });
     check(
-      (await op("POST /api/campaigns/{id}/preview", { params: { id: plain.id }, raw: plainForm() }))
-        .type === "text/plain",
+      (
+        await op("POST /api/campaigns/{id}/preview", {
+          params: { id: plain.id },
+          raw: plainForm(),
+        })
+      ).type === "text/plain",
       "plain-posted-preview",
     );
-    await op("POST /api/campaigns/{id}/text", { params: { id: plain.id }, raw: plainForm() });
+    await op("POST /api/campaigns/{id}/text", {
+      params: { id: plain.id },
+      raw: plainForm(),
+    });
     check(
       (
         await op("POST /api/campaigns/{id}/preview/archive", {
@@ -843,7 +961,12 @@ export async function runOpenApiContract(target: {
     });
     await op("PUT /api/campaigns/{id}", {
       params: { id: campaign.id },
-      body: { name: "contract 2", subject: "Hi", lists: [list.id], media: [attachment.id] },
+      body: {
+        name: "contract 2",
+        subject: "Hi",
+        lists: [list.id],
+        media: [attachment.id],
+      },
     });
     await op("PUT /api/campaigns/{id}/archive", {
       params: { id: campaign.id },
@@ -865,7 +988,9 @@ export async function runOpenApiContract(target: {
       check(Date.now() < deadline, "campaign-finish-wait");
     }
     // A view and a click, through the real pixel and redirect.
-    const db = new Database(join(target.dataDir, "iglo-email.db"), { readonly: true });
+    const db = new Database(join(target.dataDir, "iglo-email.db"), {
+      readonly: true,
+    });
     const link = db.query("SELECT uuid FROM links ORDER BY id DESC LIMIT 1").get() as {
       uuid: string;
     };
@@ -875,7 +1000,9 @@ export async function runOpenApiContract(target: {
       uuid: string;
     };
     db.close();
-    await send("GET", `/campaign/${campaign.uuid}/${subscriber.uuid}/px.png`, { auth: null });
+    await send("GET", `/campaign/${campaign.uuid}/${subscriber.uuid}/px.png`, {
+      auth: null,
+    });
     await send("GET", `/link/${link.uuid}/${campaign.uuid}/${subscriber.uuid}`, { auth: null });
     for (const type of ["views", "clicks", "bounces", "links"])
       await op("GET /api/campaigns/analytics/{type}", {
@@ -891,7 +1018,9 @@ export async function runOpenApiContract(target: {
     await send("GET", `/m/${send0.uuid}/px.png`, { auth: null });
     await send("GET", `/m/${send0.uuid}/link/${sendLink.uuid}`, { auth: null });
     const tracked = (
-      await op("GET /api/subscribers/{id}/activity", { params: { id: subscriber.id } })
+      await op("GET /api/subscribers/{id}/activity", {
+        params: { id: subscriber.id },
+      })
     ).body.data;
     check(
       tracked.campaign_views.some((row: { id: unknown }) => row.id === null) &&
@@ -906,7 +1035,9 @@ export async function runOpenApiContract(target: {
       params: { id: subscriber.id },
     });
     check(exported.body.sends.length && exported.body.events.length, "export-native-sections");
-    await op("GET /api/subscribers/{id}/activity", { params: { id: other.id } });
+    await op("GET /api/subscribers/{id}/activity", {
+      params: { id: other.id },
+    });
     for (const type of ["campaign_views", "link_clicks"])
       await op("DELETE /api/subscribers/{id}/activity/{type}", {
         params: { id: subscriber.id, type },
@@ -917,8 +1048,11 @@ export async function runOpenApiContract(target: {
     });
     check(
       JSON.stringify(
-        (await op("GET /api/subscribers/{id}/activity", { params: { id: subscriber.id } })).body
-          .data,
+        (
+          await op("GET /api/subscribers/{id}/activity", {
+            params: { id: subscriber.id },
+          })
+        ).body.data,
       ) === '{"campaign_views":[],"link_clicks":[]}',
       "activity-cleared",
     );
@@ -928,13 +1062,25 @@ export async function runOpenApiContract(target: {
     await op("GET /api/dashboard/campaigns");
     const dropped = (
       await op("POST /api/campaigns", {
-        body: { name: "doomed", subject: "x", lists: [list.id], content_type: "html", body: "x" },
+        body: {
+          name: "doomed",
+          subject: "x",
+          lists: [list.id],
+          content_type: "html",
+          body: "x",
+        },
       })
     ).body.data;
     await op("DELETE /api/campaigns/{id}", { params: { id: dropped.id } });
     const dropped2 = (
       await op("POST /api/campaigns", {
-        body: { name: "doomed", subject: "x", lists: [list.id], content_type: "html", body: "x" },
+        body: {
+          name: "doomed",
+          subject: "x",
+          lists: [list.id],
+          content_type: "html",
+          body: "x",
+        },
       })
     ).body.data;
     await op("DELETE /api/campaigns", { query: `?id=${dropped2.id}` });
@@ -1016,7 +1162,9 @@ export async function runOpenApiContract(target: {
     await op("DELETE /api/bounces/{id}", { params: { id: bounces[0].id } });
     await op("PUT /api/bounces/blocklist", { query: `?id=${bounces[1].id}` });
     await op("DELETE /api/bounces", { query: "?all=true" });
-    await op("DELETE /api/subscribers/{id}/bounces", { params: { id: other.id } });
+    await op("DELETE /api/subscribers/{id}/bounces", {
+      params: { id: other.id },
+    });
 
     // Webhooks.
     const hook = (
@@ -1025,9 +1173,16 @@ export async function runOpenApiContract(target: {
       })
     ).body.data;
     await op("GET /api/webhooks");
-    await op("PUT /api/webhooks/{id}", { params: { id: hook.id }, body: { enabled: true } });
-    await op("PUT /api/subscribers/{id}/blocklist", { params: { id: other.id } });
-    await op("PUT /api/subscribers/blocklist", { body: { ids: [external.id] } });
+    await op("PUT /api/webhooks/{id}", {
+      params: { id: hook.id },
+      body: { enabled: true },
+    });
+    await op("PUT /api/subscribers/{id}/blocklist", {
+      params: { id: other.id },
+    });
+    await op("PUT /api/subscribers/blocklist", {
+      body: { ids: [external.id] },
+    });
     await receiver.waitFor(1);
     await op("GET /api/webhooks/{id}/deliveries", { params: { id: hook.id } });
     await op("DELETE /api/webhooks/{id}", { params: { id: hook.id } });
@@ -1037,24 +1192,34 @@ export async function runOpenApiContract(target: {
     await op("GET /api/public/archive", { auth: null });
     await op("POST /api/public/subscription", {
       auth: null,
-      body: { name: "P", email: "public@fixture.test", list_uuids: [list.uuid] },
+      body: {
+        name: "P",
+        email: "public@fixture.test",
+        list_uuids: [list.uuid],
+      },
     });
     await op("GET /api/public/captcha/altcha", { auth: null, expect: 404 });
     // With ALTCHA active it answers a challenge; the setting goes back afterwards.
+    const priorCaptcha = ((await send("GET", "/api/settings")).body as any).data[
+      "security.captcha"
+    ];
     const captcha = {
       altcha: { enabled: true, complexity: 1000 },
       hcaptcha: { enabled: false, key: "", secret: "" },
     };
     await send("PUT", "/api/settings/security.captcha", { body: captcha });
     await op("GET /api/public/captcha/altcha", { auth: null });
-    await send("PUT", "/api/settings/security.captcha", {
-      body: { ...captcha, altcha: { enabled: false, complexity: 1000 } },
-    });
+    await send("PUT", "/api/settings/security.captcha", { body: priorCaptcha });
 
     // Settings and logs.
     await op("GET /api/settings");
-    await op("PUT /api/settings/{key}", { params: { key: "app.site_name" }, body: "Contract" });
-    await op("PUT /api/settings", { body: (await send("GET", "/api/settings")).body.data });
+    await op("PUT /api/settings/{key}", {
+      params: { key: "app.site_name" },
+      body: "Contract",
+    });
+    await op("PUT /api/settings", {
+      body: (await send("GET", "/api/settings")).body.data,
+    });
     await op("POST /api/settings/smtp/test", {
       body: {
         ...settings.smtp[0],
@@ -1082,7 +1247,9 @@ export async function runOpenApiContract(target: {
             dkim: {
               domain_name: "fixture.test",
               key_selector: "s1",
-              private_key: generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({
+              private_key: generateKeyPairSync("rsa", {
+                modulusLength: 2048,
+              }).privateKey.export({
                 type: "pkcs8",
                 format: "pem",
               }),
@@ -1108,7 +1275,12 @@ export async function runOpenApiContract(target: {
     await op("PUT /api/settings", {
       body: {
         ...configured,
-        smtp: [{ ...configured.smtp[0], dkim: { ...configured.smtp[0].dkim, private_key: "" } }],
+        smtp: [
+          {
+            ...configured.smtp[0],
+            dkim: { ...configured.smtp[0].dkim, private_key: "" },
+          },
+        ],
       },
     });
     check(
@@ -1143,7 +1315,9 @@ export async function runOpenApiContract(target: {
     await op("POST /api/logout", { auth: null, headers: cookies });
 
     // Maintenance.
-    await op("DELETE /api/maintenance/subscribers/{type}", { params: { type: "orphan" } });
+    await op("DELETE /api/maintenance/subscribers/{type}", {
+      params: { type: "orphan" },
+    });
     await op("DELETE /api/maintenance/analytics/{type}", {
       params: { type: "views" },
       query: "?before_date=2000-01-01T00:00:00Z",
@@ -1169,7 +1343,9 @@ export async function runOpenApiContract(target: {
     await op("DELETE /api/subscribers/external/{external_id}", {
       params: { external_id: "ext-4" },
     });
-    await op("DELETE /api/subscribers/external", { query: "?external_id=ext-5" });
+    await op("DELETE /api/subscribers/external", {
+      query: "?external_id=ext-5",
+    });
     await op("DELETE /api/subscribers/{id}", { params: { id: other.id } });
     await op("DELETE /api/subscribers", { query: `?id=${subscriber.id}` });
     await op("DELETE /api/templates/{id}", { params: { id: txTemplate.id } });
@@ -1202,18 +1378,80 @@ export async function runOpenApiContract(target: {
         ]),
       ),
     });
+    // Path parameters: the document's type has to be what the route takes. Numeric IDs are
+    // `integer`, everything else is text. A non-number for an integer is a plain 400.
+    const integerParams = new Set(["id", "step"]);
+    const pathTypeProblems = (paths: Record<string, any>) =>
+      Object.entries(paths).flatMap(([template, item]) =>
+        Object.entries(item as Record<string, any>).flatMap(([method, operation]) =>
+          (
+            operation.parameters as {
+              in: string;
+              name: string;
+              schema?: { type?: string };
+            }[]
+          )
+            .filter((parameter) => parameter.in === "path")
+            .filter(({ name, schema }) => (schema?.type === "integer") !== integerParams.has(name))
+            .map(
+              ({ name, schema }) =>
+                `${method.toUpperCase()} ${template}: {${name}} is ${schema?.type}`,
+            ),
+        ),
+      );
+    const problems = pathTypeProblems(document.paths);
+    if (problems.length) throw new Error(`FAIL openapi-path-types: ${problems.join("; ")}`);
+    // The check itself has to fail on a deliberately wrong type.
+    const wrong = structuredClone(document.paths);
+    for (const item of Object.values(wrong))
+      for (const operation of Object.values(item as Record<string, any>))
+        for (const parameter of operation.parameters)
+          if (parameter.in === "path" && parameter.name === "step")
+            parameter.schema = { type: "string" };
+    check(pathTypeProblems(wrong).length > 0, "openapi-path-types-detects-wrong-type");
+    for (const { key, operation } of operations) {
+      const names = (operation.parameters as { in: string; name: string }[])
+        .filter((parameter) => parameter.in === "path")
+        .map(({ name }) => name);
+      for (const tested of names.filter((name) => integerParams.has(name)))
+        check(
+          (
+            await send(
+              key.split(" ")[0]!,
+              key
+                .split(" ")[1]!
+                .replace(/\{(\w+)\}/g, (_, name: string) =>
+                  name === tested ? "x" : integerParams.has(name) ? "999999" : "x",
+                ),
+            )
+          ).status === 400,
+          `openapi-path-type-${key}-${tested}`,
+        );
+    }
+
     const secured = operations.filter(({ operation }) => operation.security?.length !== 0);
     for (const { key } of secured)
-      await op(key, { ...placeholders(key, "999999"), auth: null, expect: 403 });
+      await op(key, {
+        ...placeholders(key, "999999"),
+        auth: null,
+        expect: 403,
+      });
 
     // And names its permission to a caller without one. An operation refused for a permission
     // has to document it: the annotation is not optional.
     const none = (
-      await send("POST", "/api/roles/users", { body: { name: "none", permissions: [] } })
+      await send("POST", "/api/roles/users", {
+        body: { name: "none", permissions: [] },
+      })
     ).body.data;
     const caller = (
       await send("POST", "/api/users", {
-        body: { username: "none", type: "api", status: "enabled", user_role_id: none.id },
+        body: {
+          username: "none",
+          type: "api",
+          status: "enabled",
+          user_role_id: none.id,
+        },
       })
     ).body.data;
     const denied = `Basic ${btoa(`none:${caller.password}`)}`;
@@ -1221,7 +1459,13 @@ export async function runOpenApiContract(target: {
       reply.status === 403 && /^permission denied/.test(reply.body?.message ?? "");
     /** The query an operation cannot be reached without. */
     const needed = (operation: any) => {
-      const query = (operation.parameters as { in: string; name: string; required?: boolean }[])
+      const query = (
+        operation.parameters as {
+          in: string;
+          name: string;
+          required?: boolean;
+        }[]
+      )
         .filter(({ in: at, name, required }) => at === "query" && (required || name === "id"))
         .map(({ name }) => `${name}=${name === "id" ? "999999" : "2020-01-01"}`);
       return query.length ? `?${query.join("&")}` : "";
@@ -1250,7 +1494,10 @@ export async function runOpenApiContract(target: {
           : `permission denied: ${permissions[0]}`;
         check(reply.body.message === named, `permission-${key}`);
       } else {
-        const reply = await send(key.split(" ")[0]!, filled(key), { query, auth: denied });
+        const reply = await send(key.split(" ")[0]!, filled(key), {
+          query,
+          auth: denied,
+        });
         check(!refusal(reply), `unannotated-permission-${key}`);
       }
     }
@@ -1279,7 +1526,12 @@ export async function runOpenApiContract(target: {
       }
       if (also.length && grants[0])
         check(
-          refusal(await send("GET", filled(key), { query, auth: await holding([grants[0]]) })),
+          refusal(
+            await send("GET", filled(key), {
+              query,
+              auth: await holding([grants[0]]),
+            }),
+          ),
           `permission-conjunction-${key}`,
         );
     }

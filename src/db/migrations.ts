@@ -23,6 +23,7 @@ import retention from "@/migrations/0014_retention.sql" with { type: "text" };
 import rescheduleIndex from "@/migrations/0015_reschedule_index.sql" with { type: "text" };
 import blocklistedMemberships from "@/migrations/0016_blocklisted_memberships.sql" with { type: "text" };
 import legacyEnrollmentEndings from "@/migrations/0017_legacy_enrollment_endings.sql" with { type: "text" };
+import legacyBounceTotp from "@/migrations/0018_legacy_bounce_totp.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -48,6 +49,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 15, sql: rescheduleIndex },
   { version: 16, sql: blocklistedMemberships },
   { version: 17, sql: legacyEnrollmentEndings },
+  { version: 18, sql: legacyBounceTotp },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

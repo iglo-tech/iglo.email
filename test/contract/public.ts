@@ -1309,7 +1309,7 @@ export async function runPublicContract(target: {
       await withSetting(
         "security.captcha",
         {
-          altcha: { enabled: false, complexity: 1000 },
+          altcha: { enabled: false, complexity: 300000 },
           hcaptcha: { enabled: true, key: "site-key", secret: "" },
         },
         async () => {
