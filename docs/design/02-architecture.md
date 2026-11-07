@@ -5,7 +5,7 @@
 - **Runtime:** Bun ≥ 1.4, TypeScript, native ESM.
 - **HTTP:** `Bun.serve` with a small router. No Express or other framework.
 - **Database:** `bun:sqlite`, one database file, WAL mode, `foreign_keys = ON`, `synchronous = FULL`, `busy_timeout = 5000` and safe 64-bit integers.
-- **Distribution:** one executable from `bun build --compile`, with admin assets, public pages, default templates, i18n files and migrations embedded. Linux x86-64 for MVP; Linux arm64 and macOS are post-MVP (D42).
+- **Distribution:** one executable from `bun build --compile`, with admin assets, public pages, default templates, i18n files and migrations embedded. Linux x86-64 and arm64 only (D89).
 - **No external services** apart from the SMTP server and, optionally, the provider sending bounce webhooks.
 
 ## Shared ground with other iglo.\* projects
@@ -14,7 +14,7 @@ These conventions are the same as [iglo.monitor](https://github.com/iglo-tech/ig
 
 - Bun as runtime and package manager (`bun.lock`), with no npm or Node fallback paths.
 - SQLite as the only database, opened from `--data-dir`.
-- One compiled executable as the only release artifact. Releases are built on `v*` tags.
+- One compiled executable per platform (linux-x64, linux-arm64) and one multi-arch Docker image wrapping it (D89). Releases are built on `v*` tags.
 - `oxlint` and `oxfmt`, plus a pre-commit format hook.
 - Renovate for dependency updates.
 - `@/` path aliases and no relative imports. Import from the module that owns a symbol, with no barrel files.

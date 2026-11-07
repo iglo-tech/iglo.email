@@ -887,3 +887,16 @@ Decided by an agent on 2026-11-07, for owner review. Completes D77's open questi
 - **Follow-up:** B32 fixes `settings.read()` in `src/settings` (fold map, then caching until the settings table changes), with tests and a before/after run on a quiet host.
 - **Probe:** `test/perf/m61/tail-probe.ts`, opt-in through `M61_TAIL_PROBE` / `M61_CPU_PROF` in `mixed.ts`; not in production paths.
 - **Outcome (B32, [evidence](../perf/B32-settings-read.md)):** a lazily built folded-name map per static shape removed the quadratic lookups (event p95 58 → 41 ms, compiled, load 1.5 to 2.5). The profile after that still showed `settings.read()` at about 16 % inclusive, so `read()` now caches the projection while the stored rows are byte-identical. Every call still runs the one `SELECT key, value FROM settings`, so a write by any path (update, `writeStoredValue` for the restore hold and upload path, another connection, a restore) is seen at once; no counter or trigger, no migration. The cached object is deep-frozen, and `update` projects from fresh rows. p95 fell to 33 ms. The sending hold reads its row directly (`sendingHeld`), not through settings, so it never sees the cache.
+
+## D89. Narrow, complete product scope (owner, 2026-11-07)
+
+Directed by the owner on 2026-11-07. Amends D3, D42 and the scope table.
+
+- **Goal:** feature complete but not wide. Everything a typical newsletter, lifecycle or transactional project needs, with one way to do each thing. Remove a second way to do the same job when it costs maintenance for no owner use.
+- **Platforms:** Linux x86-64 and Linux arm64 only. macOS and every other target are dropped, not deferred (amends D42).
+- **Docker:** an official multi-arch (amd64, arm64) image that wraps the release executable is needed now, not after 1.0 (amends D3). It adds no second build: the image copies the same compiled executable.
+- **Templates:** no visual (drag-and-drop) editor. Editing templates and campaign content through MCP, so AI agents can do it, is in scope instead.
+- **Sending provider:** Amazon SES only, for sending (over the existing SMTP pool) and for bounces and complaints (SNS). The Mailgun webhook is removed; Postmark, SendGrid, POP3 bounce scanning and postback messengers are dropped.
+- **Deferred, not now:** translations other than English, OIDC login.
+- **Dropped by agents under this goal:** S3 media storage (filesystem is the one way), ZIP import (CSV is the one way), the listmonk Postgres importer (no data to import, open question 3).
+- **Open to an agent audit (B36):** campaign archive/RSS, unique-count and list analytics, thumbnails, and any other gap or duplicate the audit finds. Each finding becomes a queued task or a logged drop.

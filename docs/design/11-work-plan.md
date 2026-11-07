@@ -186,7 +186,7 @@ Views are ported in the order of the [port plan](08-port-plan.md#milestones). Ea
 
 | ID | Task | Depends on |
 |---|---|---|
-| P.1 | Official Docker image that wraps the release executable ([D3](09-decisions.md#d3-bun-typescript-one-executable)) | M6.3 |
+| P.1 | Moved into the queue as B33 by D89 (2026-11-07) | M6.3 |
 
 ## Order
 

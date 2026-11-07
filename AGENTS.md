@@ -20,7 +20,8 @@ The MVP work plan (M0 to M6) is complete and merged: subscribers, lists, campaig
 - Background work is rows in SQLite processed by in-process loops (`docs/design/02-architecture.md`). Do not add a job queue, workflow engine or Effect without updating `docs/design/09-decisions.md` first.
 - Admin UI and public pages are server-rendered TSX with the in-house JSX runtime. Client-side interactivity uses Alpine.js and Oat, as in listmonk v7. No client framework.
 - User-authored email templates use Liquid (LiquidJS).
-- One compiled executable is the only release artifact until 1.0. MVP targets Linux x86-64 only; macOS and Linux arm64 builds and CI coverage are post-MVP (D42). Do not add Docker, compose, or parallel distribution paths. An official Docker image that wraps the same executable is planned after 1.0 (D3). The dev-only upstream reference harness may run Postgres in a container.
+- One compiled executable per platform, Linux x86-64 and Linux arm64 only, plus one official multi-arch Docker image that only wraps that executable (D89). No macOS or other targets, no compose files and no other distribution paths. The dev-only upstream reference harness may run Postgres in a container.
+- Feature complete but not wide (D89): one way to do each thing. Amazon SES is the only sending/bounce provider. Do not add a second way to do an existing job.
 
 ## Rules
 

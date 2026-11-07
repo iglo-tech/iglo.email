@@ -43,9 +43,7 @@ Each milestone ends with something usable and tested. M4 can run in parallel wit
 | M5 | **Sequences:** subscriber events API, sequences, conditions, scheduler, frequency cap, admin screens, test mode | The worked example in [Sequences](05-sequences.md) runs end to end with shortened waits, including restart, edit and unsubscribe scenarios |
 | M6 | **1.0:** performance measurements against the targets in [Architecture](02-architecture.md), backup command, operations guide, release workflow on `v*` tags | Tagged MVP release with a working linux-x64 binary (D42) |
 
-Post-MVP: Linux arm64 and macOS builds and CI coverage (D42).
-
-After 1.0: an official Docker image that wraps the release executable ([D3](09-decisions.md#d3-bun-typescript-one-executable)).
+Owner 2026-11-07 ([D89](09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07)): Linux arm64 builds and a multi-arch Docker image now; macOS dropped. Queue in `docs/status.md`.
 
 ## Testing strategy
 

@@ -5,17 +5,21 @@ Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged. Agent queue empty (2026-11-07). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release and PDF viewers on real devices. The owner sends through Amazon SES, not Mailgun (2026-11-02), so the real Mailgun check is dropped and SES bounces shipped in B9; the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
-Run in order, one at a time, through the normal stages. Write each brief from the backlog lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue.
+Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-Empty. Only owner items remain: publishing a release and checking PDF viewers on real devices. A new failure, review backlog line or realistic client report starts B33.
+1. **B33** Linux arm64 executable + multi-arch Docker image on GHCR; drop macOS ([brief](briefs/B33.md)).
+2. **B34** MCP endpoint for AI agents to edit templates and campaign content: native Streamable HTTP JSON-RPC at `/api/mcp`, existing API-user auth and the same permission per tool as its HTTP route; tools list/get/create/update/delete/preview/validate templates, get/update/preview campaign content, send a test, and a Liquid variable reference; tests use the official MCP client SDK (dev dependency) against the compiled server; D90 logs the native-server choice.
+3. **B35** SES only: remove the Mailgun webhook, its settings, receipts table (forward migration), admin fields and OpenAPI entries (D63 superseded); document SES over SMTP (configuration set via SMTP headers) and SNS bounces/complaints as the one setup in `docs/operations.md`.
+4. **B36** Completeness audit (helper, docs only): what a typical newsletter, lifecycle and transactional project needs that is missing, and any second way to do one job; decides archive/RSS, unique counts, list analytics and thumbnails. Each finding becomes a queued task or a logged drop.
 
 ## Owner decisions
 
+[D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07) (owner, 2026-11-07): Linux x64+arm64 and a Docker image only; SES only; MCP template editing instead of a visual editor; no translations/OIDC now; feature complete, one way per job.
 [D73](design/09-decisions.md#d73-sonnet-workers-opus-lead-and-an-opus-high-reviewer): Sonnet 5.5 medium workers and project default, Opus 5.5 medium lead, Opus 5.5 high reviewer.
 [D68](design/09-decisions.md#d68-anthropic-models-only-opus-reviewer): Anthropic models only, no Fable; the reviewer is a fresh Opus5.5 xhigh delegate.
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one reviewer (Opus xhigh since D68); lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.

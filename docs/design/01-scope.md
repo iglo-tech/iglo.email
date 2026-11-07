@@ -8,9 +8,13 @@
 4. **Tell apps what happened:** outbound webhooks for unsubscribes, blocklisting and bounces, so apps can keep consent in sync.
 5. **One stack:** Bun, TypeScript, SQLite, one executable, shared conventions with other iglo.\* projects.
 
-## MVP platform
+## Platforms
 
-The MVP targets Linux x86-64 only. CI, reference acceptance and the first release artifact use that platform. macOS and Linux arm64 coverage and artifacts move to post-MVP ([D42](09-decisions.md#d42-linux-x86-64-only-for-mvp)).
+Linux x86-64 and Linux arm64 only, as release executables and as one multi-arch Docker image that wraps them. No macOS or other targets ([D89](09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07)).
+
+## Shape
+
+Feature complete but not wide (D89): everything a typical newsletter, lifecycle or transactional project needs, one way to do each thing.
 
 ## Non-goals
 
@@ -29,19 +33,19 @@ The MVP targets Linux x86-64 only. CI, reference acceptance and the first releas
 |---|---|---|---|
 | Subscribers | CRUD, attributes (JSON), search, SQL segment queries (SQLite dialect), blocklist, bulk actions, subscriber data export | | |
 | Lists | public/private/temporary, single and double opt-in, tags | | |
-| Public pages | subscription form, opt-in confirmation, unsubscribe, manage preferences | campaign archive and RSS | |
+| Public pages | subscription form, opt-in confirmation, unsubscribe, manage preferences | campaign archive and RSS (B36 decides) | |
 | Campaigns | regular and opt-in campaigns, scheduling, test sends, pause/resume, throttling and sliding-window rate limits, view and click tracking | | |
-| Templates | campaign and transactional templates, rich text (Squire), HTML, Markdown, plain text | visual (drag-and-drop) templates | Go template syntax (replaced by Liquid) |
+| Templates | campaign and transactional templates, rich text (Squire), HTML, Markdown, plain text; editing through MCP for AI agents (D89) | | visual (drag-and-drop) templates, Go template syntax (replaced by Liquid) |
 | Transactional API | `POST /api/tx`, attachments, custom headers | | |
-| Media | filesystem storage | S3 storage, thumbnails | |
-| Import | CSV import of subscribers | ZIP import, listmonk Postgres importer | |
-| Bounces | bounce API, Mailgun and Amazon SES (SNS) webhooks, soft/hard/complaint actions | Postmark, SendGrid and other webhooks, POP3 mailbox scanning | |
-| Analytics | campaign views, clicks, bounces, link stats, dashboard counts | unique-count graphs, list analytics | |
-| Users | admin users, API users and tokens, user roles and list roles, TOTP 2FA | OIDC login | |
-| Messengers | SMTP pool, multiple SMTP servers | postback (HTTP) messengers | |
+| Media | filesystem storage | thumbnails (B36 decides) | S3 storage |
+| Import | CSV import of subscribers | | ZIP import, listmonk Postgres importer |
+| Bounces | bounce API, Amazon SES (SNS) webhooks, soft/hard/complaint actions | | Mailgun (removed), Postmark, SendGrid and other webhooks, POP3 mailbox scanning |
+| Analytics | campaign views, clicks, bounces, link stats, dashboard counts | unique-count graphs, list analytics (B36 decides) | |
+| Users | admin users, API users and tokens, user roles and list roles, TOTP 2FA | OIDC login (not now) | |
+| Messengers | SMTP pool (Amazon SES over SMTP), multiple SMTP servers | | postback (HTTP) messengers |
 | Security | | CAPTCHA (Altcha) on public forms | |
-| i18n | English, with listmonk's language files carried over | other languages verified | |
-| Operations | settings UI, maintenance (purge, vacuum), logs view | official Docker image wrapping the executable, after 1.0 | update checks against GitHub, `--install`/`--upgrade` flags (replaced by automatic migrations), listmonk's Docker images and compose files, `config.toml` |
+| i18n | English, with listmonk's language files carried over | other languages verified (not now) | |
+| Operations | settings UI, maintenance (purge, vacuum), logs view, official multi-arch Docker image wrapping the executable (D89) | | update checks against GitHub, `--install`/`--upgrade` flags (replaced by automatic migrations), listmonk's Docker images and compose files, `config.toml` |
 
 ## New in iglo.email (v1)
 
