@@ -1080,3 +1080,96 @@ test("a folder that took the name of one this backup made is left alone", async 
   const [partial] = entriesStarting(join(base, "n-moved"), PARTIAL_PREFIX);
   expect(warnings.join("\n")).toContain(join(made, partial!));
 });
+
+test("a failed sync of the folder after publication is an error, names the replaced backup, and keeps it", async () => {
+  await live();
+  const output = join(base, "backup");
+  expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
+    0,
+  );
+  const warnings: string[] = [];
+  let message = "";
+  try {
+    // Without read permission the folder cannot be opened for its sync, but the rename still works.
+    message = refusal(() =>
+      createBackup({
+        dataDir,
+        output,
+        force: true,
+        clock: createRealClock(),
+        supportedVersion: version,
+        beforePublish: () => chmodSync(base, 0o300),
+        warn: (message) => warnings.push(message),
+      }),
+    );
+  } finally {
+    chmodSync(base, 0o700);
+  }
+  const [replaced] = entriesStarting(base, REPLACED_PREFIX);
+  expect(replaced).toBeDefined();
+  expect(message).toContain(`${output} is in place`);
+  expect(message).toContain("may not survive a crash");
+  expect(message).toContain(join(base, replaced!));
+  expect(warnings).toEqual([]);
+  expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
+  expect((await runBackup(executable, ["--verify", join(base, replaced!)])).exitCode).toBe(0);
+});
+
+test("a parent renamed away during the copy is refused as changed meanwhile, and the partial is named", async () => {
+  await live();
+  mkdirSync(join(base, "x"));
+  const warnings: string[] = [];
+  // The clock is read once the partial's database file is in place, before the database is copied.
+  const clock = {
+    ...createRealClock(),
+    now() {
+      if (existsSync(join(base, "x"))) renameSync(join(base, "x"), join(base, "x-moved"));
+      return new Date();
+    },
+  };
+  const message = refusal(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "x", "a", "out"),
+      clock,
+      supportedVersion: version,
+      warn: (message) => warnings.push(message),
+    }),
+  );
+  expect(message).toContain("changed meanwhile");
+  const [partial] = entriesStarting(join(base, "x-moved", "a"), PARTIAL_PREFIX);
+  expect(partial).toBeDefined();
+  expect(warnings.join("\n")).toContain(join(base, "x", "a", partial!));
+});
+
+test("an error while the partial is inspected keeps the original failure, and is not named as a change", async () => {
+  await live();
+  mkdirSync(join(base, "x"));
+  const warnings: string[] = [];
+  // Once the partial is in place, its parent loses search permission: the copy fails, and so does
+  // the look at the partial that follows it.
+  const clock = {
+    ...createRealClock(),
+    now() {
+      chmodSync(join(base, "x"), 0o000);
+      return new Date();
+    },
+  };
+  let message = "";
+  try {
+    message = refusal(() =>
+      createBackup({
+        dataDir,
+        output: join(base, "x", "a", "out"),
+        clock,
+        supportedVersion: version,
+        warn: (message) => warnings.push(message),
+      }),
+    );
+  } finally {
+    chmodSync(join(base, "x"), 0o700);
+  }
+  expect(message).not.toContain("changed meanwhile");
+  expect(message).toContain("unable to open database");
+  expect(warnings.join("\n")).toContain("could not be removed: EACCES");
+});

@@ -496,12 +496,16 @@ one the backup made and is empty: a folder another process has started using is 
 warning. If a folder on the output's path is renamed or replaced while the backup runs, the backup
 is refused as changed meanwhile and does not search for its partial directory: the warning gives
 the path the partial was last made at, and it is left for you to remove. A step after the final
-rename that fails, such as a sync, is a warning, since the backup is in place. A killed backup
-leaves its partial directory, and nothing at the final name, so a retry of the same `--output` works. `--verify` refuses it, and it can never be
-mistaken for a backup. A kill after the final rename, before the command reports success, leaves a
-complete backup at that name: check it with `--verify` before you retry, since a retry refuses the
-existing destination. The next `backup` in that place warns about it and does not delete it, as it
-could be running. When none is running, remove it:
+rename is not undone, and the cleanup does not run over the backup. A failed sync of the output's
+folder exits nonzero: the backup is in place, but it may not survive a crash. The message names the
+backup that the run replaced, which is kept beside the new one, and says to check the new one with
+`--verify`. Keep the replaced backup until the new one has been verified. A failure to remove the
+replaced backup is a warning, and the next `backup` there reports it. A killed backup leaves its
+partial directory, and nothing at the final name, so a retry of the same `--output` works.
+`--verify` refuses it, and it can never be mistaken for a backup. A kill after the final rename,
+before the command reports success, leaves a complete backup at that name: check it with `--verify`
+before you retry, since a retry refuses the existing destination. The next `backup` in that place
+warns about it and does not delete it, as it could be running. When none is running, remove it:
 
 ```sh
 rm -rf /var/backups/iglo.email/.iglo-email-backup-partial-*

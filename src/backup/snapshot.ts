@@ -378,15 +378,17 @@ function checkBoundaries(output: string, data: string, uploads: string): void {
  */
 function removeCreated(made: MadeFolder[], warn: (message: string) => void): void {
   for (const folder of [...made].reverse()) {
-    const current = currentAt(folder.path);
-    if (!current) continue;
-    if (!isMade(folder, current)) {
-      warn(
-        `${folder.path} was made by this backup, but another folder is at its place; it is left alone`,
-      );
-      continue;
-    }
+    // Each folder is inspected and removed on its own, so one that cannot be looked at does not stop
+    // the rest from being cleaned.
     try {
+      const current = currentAt(folder.path);
+      if (!current) continue;
+      if (!isMade(folder, current)) {
+        warn(
+          `${folder.path} was made by this backup, but another folder is at its place; it is left alone`,
+        );
+        continue;
+      }
       rmdirSync(folder.path);
     } catch (error) {
       const { code } = error as NodeJS.ErrnoException;
@@ -401,13 +403,13 @@ function removeCreated(made: MadeFolder[], warn: (message: string) => void): voi
  * folder is not searched: the warning gives the path it was last known at, for the operator to remove.
  */
 function removePartial(partial: MadeFolder, warn: (message: string) => void): void {
-  if (!isMade(partial)) {
-    warn(
-      `${partial.path} is an interrupted backup and was not removed: its path no longer holds the folder this backup made; remove it by hand`,
-    );
-    return;
-  }
   try {
+    if (!isMade(partial)) {
+      warn(
+        `${partial.path} is an interrupted backup and was not removed: its path no longer holds the folder this backup made; remove it by hand`,
+      );
+      return;
+    }
     rmSync(partial.path, { recursive: true, force: true });
   } catch (error) {
     const { code } = error as NodeJS.ErrnoException;
@@ -422,6 +424,18 @@ function changedMeanwhile(path: string): Error {
 }
 
 /**
+ * Whether the path verifiably no longer names the folder this call made. A path that cannot be
+ * looked at is not known to have moved, so the caller keeps the failure it has.
+ */
+function movedAway(made: MadeFolder): boolean {
+  try {
+    return !isMade(made);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Runs a step that writes into the partial backup. When the step fails and the partial is no longer
  * the folder this call made, the failure is that change, whatever its code, and is named as one.
  */
@@ -429,8 +443,8 @@ function whileMade<T>(made: MadeFolder, step: () => T): T {
   try {
     return step();
   } catch (error) {
-    if (isMade(made)) throw error;
-    throw changedMeanwhile(made.path);
+    if (movedAway(made)) throw changedMeanwhile(made.path);
+    throw error;
   }
 }
 
@@ -530,6 +544,9 @@ function openPartial(
   for (let attempt = 1; ; attempt++) {
     try {
       if (attempt > 1) {
+        // A folder made by the first attempt that no longer stands where it was made is not this
+        // call's to report or remove. The retry makes it again if it is still missing.
+        created.splice(0, created.length, ...created.filter((folder) => !movedAway(folder)));
         const again = missingFolders(dirname(wanted));
         if (resolvedParent(wanted, again) !== parent)
           throw new Error(
@@ -664,15 +681,21 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     options.beforePublish?.();
     const aside = publish(made, output, options.force ?? false, live);
     // The rename is the publication. From here nothing is undone: the partial is no longer a partial,
-    // and the folders are the backup's parents and stay. A failure in what follows is a warning, since
-    // the backup is in place and cleanup must not run over it.
+    // and the folders are the backup's parents and stay. Cleanup must not run over the backup from
+    // here. A failed sync of the folder is an error, since the backup may not be durable; a failure
+    // to remove the replaced backup is a warning.
     partial = undefined;
     created = [];
     try {
       sync(dirname(output));
     } catch (error) {
+      // The replaced backup is kept: the new one may not be durable, so it is the one to fall back on.
       const { code } = error as NodeJS.ErrnoException;
-      warn(`${output} is published, but its folder could not be synced: ${code}`);
+      throw new Error(
+        `${output} is in place, but its folder could not be synced (${code}), so it may not survive a crash; ` +
+          (aside ? `the backup it replaced is kept at ${aside}; ` : "") +
+          `check it with --verify`,
+      );
     }
     if (aside) {
       try {
