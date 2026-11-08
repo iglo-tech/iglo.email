@@ -925,6 +925,15 @@ Directed by the owner on 2026-11-08 ("resume the work using haiku 5.5 as worker 
 - **Effort:** `high`, carried over from D90's high-reasoning rule; the owner named only the model.
 - **Switch:** the quota-blocked Gemini B39 worker was cancelled and B39 restarted on Haiku from `origin/main`. The lead still re-runs format, lint, typecheck and the touched tests before review (Gemini twice reported checks it had not run).
 
+## D94. Sequence steps send a transactional template; no step body on a campaign layout (lead, 2026-11-08)
+
+Decided by agents (B47) for owner review, under D89.
+
+- **Decision:** a sequence step keeps sending one complete transactional template, with an optional subject override (`05-sequences.md`, `src/sequences/input.ts:161`). Steps get no body of their own composed into a campaign layout. The design gap noted in #91 is closed as a drop, not a task.
+- **Why:** D89 asks for one way to do each job. A step body on a campaign layout would be a second way to compose sequence content next to transactional templates, with its own editor, storage column, MCP tool fields, render path and tests. The one thing it buys, a layout shared across several emails, is also available today: transactional templates are complete messages, and since D89 AI agents edit templates through MCP (D91, B39 `update_template`), so changing a shared header or footer in each lifecycle template is one agent request. A typical lifecycle project has a handful of steps, so the duplication is small.
+- **Cost accepted:** a lifecycle email does not inherit later changes to the newsletter's campaign layout automatically; its template must be edited too.
+- **Revisit when:** the owner asks for shared layouts, or a project's sequences grow past a few dozen steps. Then the smaller change is template composition (one layout template referenced by transactional templates), not step bodies.
+
 ## D91. MCP endpoint for template and campaign editing (lead, 2026-11-07)
 
 Lead design decisions from brief B34 ([D89](#d89-narrow-complete-product-scope-owner-2026-11-07)).

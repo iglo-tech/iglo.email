@@ -13,13 +13,13 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 1. **B46** Bounces test polish ([brief](briefs/B46.md)) from #87: one settings source in the tx fixture, compiled-build upgrade test, compiled contract for SNS replay after restart/provider switches/Message-ID rows, SES failure test checks its receiver, `differences.ts` formatting (size M)
-2. **B47** Sequence step body on a campaign layout (design gap from #91, `05-sequences.md:87`): decide in a D-record whether a typical lifecycle project needs it under D89; implement or log the drop (size M)
-3. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
+2. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
 
 ## Owner decisions
 
 [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07) (owner, 2026-11-07): Linux x64+arm64 and a Docker image only; SES only; MCP template editing instead of a visual editor; no translations/OIDC now; feature complete, one way per job.
-[D90](design/09-decisions.md#d90-gemini-38-flash-does-the-work-opus-checks-it-owner-2026-11-07) (owner, 2026-11-07): Gemini 3.8 Flash (thinking high) workers/fixers/testers/helpers; Opus 5.5 medium lead checks only; one Opus 5.5 high reviewer. Supersedes D73 for workers.
+[D93](design/09-decisions.md#d93-haiku-55-replaces-gemini-as-the-worker-model-owner-2026-11-08) (owner, 2026-11-08): Claude Haiku 5.5 (effort high) workers/fixers/testers/helpers, replacing Gemini (D90); Opus 5.5 medium lead checks only; one Opus 5.5 high reviewer.
+[D94](design/09-decisions.md) (agents, for owner review): sequence steps keep sending one transactional template; a step body on a campaign layout is dropped under D89.
 [D68](design/09-decisions.md#d68-anthropic-models-only-opus-reviewer): Anthropic models only, no Fable; the reviewer is a fresh Opus5.5 xhigh delegate.
 [D56](design/09-decisions.md#d56-owner-directed-models-review-and-local-verification): Opus5.5 medium work/lead; Haiku5.5 medium mechanical bulk only; one reviewer (Opus xhigh since D68); lead+reviewer council; fix-only later rounds; serial foreground local verification; manual-only CI.
 [D57](design/09-decisions.md#d57-compatible-client-results-and-safe-input-hardening): realistic-client result compatibility; safe exotic-input response differences are backlog; formats, auth/permissions, atomicity and actual security stay mandatory.
@@ -44,6 +44,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B46 | [#99](https://github.com/iglo-tech/iglo.email/pull/99) | 7a706fe | Bounce test polish: real settings in tx fixture, compiled upgrade test, SES compiled contract cases |
+| B47 | — | D94 | Decision: steps keep transactional templates; step body on a campaign layout dropped (D89) |
 | B45 | [#98](https://github.com/iglo-tech/iglo.email/pull/98) | d014479 | Backup polish: no leftover folders, clear parent errors, realpath re-check, dev/ino guard on --force |
 | B44 | [#97](https://github.com/iglo-tech/iglo.email/pull/97) | d19f3dd | MCP polish: read-permission error, clear send_at, no-op step edit refused, coverage tests |
 | B49 | [#96](https://github.com/iglo-tech/iglo.email/pull/96) | 028345f | `drive` bounded by 3 s wall time; fixes media test broken by B42 |
@@ -140,6 +142,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - MCP ([#97](https://github.com/iglo-tech/iglo.email/pull/97) r1): the read-permission hint should also mention list access (`src/mcp/tools.ts:541`); test 16 lacks the scheduled-campaign case (status to draft); operations.md names three read-merge tools, D91 five. Remaining from #86: GET-then-PUT lost-update race (same in admin UI).
 - Backup ([#98](https://github.com/iglo-tech/iglo.email/pull/98) r1-r3): a parent swapped during the copy leaves the partial backup (0700/0600) in the moved-aside folder; clean it up by dev/ino and report "changed meanwhile" instead of a raw ENOENT; two concurrent backups sharing a new parent can race on cleanup; harmless "kept: not empty" warning after a successful publish.
 - Test: `test/bootstrap/cli.test.ts:300` once exited 1 instead of 0 on SIGTERM under parallel load (passes alone; #98 r2).
+- Bounce tests ([#99](https://github.com/iglo-tech/iglo.email/pull/99) r1): `test/contract/cli.ts` loads the SNS tunnel (openssl keygen) for every contract run, not only bounces; no tunnel test for a wrong-host certificate; upgrade test 2 duplicates bootstrap/`owned.ts` helpers.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
