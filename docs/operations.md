@@ -730,7 +730,7 @@ lists private if that API is not meant to be public.
 
 ## MCP (Model Context Protocol)
 
-iglo.email provides an MCP Streamable HTTP endpoint at `POST /api/mcp` for AI agents (Claude Code, Cursor, Cline, etc.) to list, read, edit, and preview templates and campaign content.
+iglo.email provides an MCP Streamable HTTP endpoint at `POST /api/mcp` for AI agents (Claude Code, Cursor, Cline, etc.) to list, read, edit, and preview templates and campaign content, create draft campaigns, find lists and media, and edit the content of sequence steps. The tools are listed in [D91](design/09-decisions.md#d91-mcp-endpoint-for-template-and-campaign-editing-lead-2026-11-07).
 
 To connect an MCP client, use the Streamable HTTP transport with an API user authorization header:
 
@@ -742,7 +742,9 @@ claude mcp add --transport http iglo https://<root>/api/mcp --header "Authorizat
 
 - Do not use administrative accounts for AI agents. Create a dedicated API user (`type: "api"`) with a restricted user role holding only the necessary permissions:
   - For template work only: `templates:get` and `templates:manage`.
-  - For campaign editing: `campaigns:get` and `campaigns:manage` (or `campaigns:get_all` / `campaigns:manage_all`), and optionally restrict access using a list role to only the lists the agent is allowed to target.
+  - For campaign editing: `campaigns:get` and `campaigns:manage` (or `campaigns:get_all` / `campaigns:manage_all`), and optionally restrict access using a list role to only the lists the agent is allowed to target. `list_media` also needs `media:get`.
+  - For sequence step content: `sequences:get` to read and `sequences:manage` to change a step. Changing a step of a live sequence changes the messages of everyone who has not reached that step yet. Saving a step rewrites the whole sequence, so it also needs `subscribers:sql_query` when another step of the sequence has a raw-SQL condition.
+  - `list_lists` shows only the lists the caller's role can read (`lists:get_all`, or a list role that covers the list).
 - The endpoint validates incoming `Origin` headers against the configured root URL and rejects foreign origins with HTTP 403.
 - Unauthenticated requests receive HTTP 401 before any JSON-RPC processing.
 - All operations are dispatched in-process with the caller's credentials and permissions; the MCP server owns no direct database tables.

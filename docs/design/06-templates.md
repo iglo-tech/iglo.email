@@ -63,10 +63,9 @@ M0.8 measured the selected library and found the precise library-limit semantics
 
 #### Layouts
 
-As in listmonk, a **campaign template** is a layout containing `{{ content }}`, and a campaign or sequence step supplies the body. A **transactional template** is a complete message with its own subject. An already rendered HTML body is inserted as `{{ content | raw }}`; values were escaped within that body, and the raw insertion prevents double escaping during trusted layout composition. Sequence steps use either:
+As in listmonk, a **campaign template** is a layout containing `{{ content }}`, and a campaign supplies the body. A **transactional template** is a complete message with its own subject. An already rendered HTML body is inserted as `{{ content | raw }}`; values were escaped within that body, and the raw insertion prevents double escaping during trusted layout composition.
 
-- a transactional template;
-- a campaign template plus a body stored on the step. This lets a sequence share the newsletter's layout.
+A sequence step sends a transactional template and may override its subject. Steps have no body of their own yet, so a step cannot use a campaign layout.
 
 #### Content types
 

@@ -106,6 +106,12 @@ describe("B34 MCP endpoint tests", () => {
       "campaign_text",
       "send_campaign_test",
       "template_reference",
+      "create_campaign",
+      "list_lists",
+      "list_media",
+      "list_sequences",
+      "get_sequence",
+      "update_sequence_step",
     ].sort();
 
     expect(toolNames).toEqual(expectedTools);
@@ -1094,5 +1100,516 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(verifyInvalidCsrf.status).toBe(200);
     expect((await verifyInvalidCsrf.json()).data.name).toBe("Updated via Cookie+CSRF");
+  });
+
+  // B39 helpers: plain HTTP API calls for expectations, API users with chosen permissions, and cookie login.
+  async function api(method: string, path: string, body?: unknown, headers = adminHeaders) {
+    const res = await fetch(`${production.origin}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? null : JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {}
+    return { status: res.status, text, json };
+  }
+
+  async function createApiUser(username: string, permissions: string[]) {
+    const roleRes = await api("POST", "/api/roles/users", {
+      name: `${username} role`,
+      permissions,
+    });
+    expect(roleRes.status).toBe(200);
+    const userRes = await api("POST", "/api/users", {
+      username,
+      type: "api",
+      status: "enabled",
+      user_role_id: roleRes.json.data.id,
+    });
+    expect(userRes.status).toBe(200);
+    return `token ${username}:${userRes.json.data.password}`;
+  }
+
+  async function loginCookies() {
+    const loginPage = await fetch(`${production.origin}/admin/login`);
+    const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await loginPage.text())![1]!;
+    const nonceCookie = loginPage.headers
+      .getSetCookie()
+      .find((v) => v.startsWith("nonce="))!
+      .split(";", 1)[0]!;
+    const loginRes = await fetch(`${production.origin}/admin/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+      body: new URLSearchParams({ username: admin.user, password: admin.password, nonce }),
+    });
+    expect(loginRes.status).toBe(302);
+    const cookies = loginRes.headers.getSetCookie();
+    const sessionCookie = cookies.find((v) => v.startsWith("session="))!.split(";", 1)[0]!;
+    const csrfCookie = cookies.find((v) => v.startsWith("csrf="))!.split(";", 1)[0]!;
+    return {
+      cookieHeader: `${sessionCookie}; ${csrfCookie}`,
+      csrfToken: csrfCookie.replace(/^csrf=/, ""),
+    };
+  }
+
+  async function uploadMedia(filename: string) {
+    const form = new FormData();
+    form.append("file", new Blob([`${filename} content`], { type: "image/png" }), filename);
+    const res = await fetch(`${production.origin}/api/media`, {
+      method: "POST",
+      headers: { authorization: adminAuth },
+      body: form,
+    });
+    expect(res.status).toBe(200);
+    return (await res.json()).data.id as number;
+  }
+
+  const withoutKeys = (value: Record<string, unknown>, keys: string[]) =>
+    Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+
+  // 9. list_lists and list_media return what the HTTP API returns, and their query filters the items created through it.
+  test("9. list_lists and list_media return what the HTTP API returns, and query filters them", async () => {
+    const alpha = await api("POST", "/api/lists", {
+      name: "B39 Alpha Newsletter",
+      type: "public",
+      optin: "single",
+    });
+    const beta = await api("POST", "/api/lists", {
+      name: "B39 Beta Digest",
+      type: "public",
+      optin: "single",
+    });
+    expect(alpha.status).toBe(200);
+    expect(beta.status).toBe(200);
+    const alphaId: number = alpha.json.data.id;
+    const betaId: number = beta.json.data.id;
+    const mediaId = await uploadMedia("b39-logo.png");
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+
+    const allLists = await client.callTool({ name: "list_lists", arguments: { query: "B39" } });
+    expect(allLists.isError).toBeFalsy();
+    expect(allLists.structuredContent).toEqual((await api("GET", "/api/lists?query=B39")).json);
+    const listIds = (allLists.structuredContent as any).data.results.map((l: any) => l.id);
+    expect(listIds).toEqual(expect.arrayContaining([alphaId, betaId]));
+
+    const filtered = await client.callTool({ name: "list_lists", arguments: { query: "Alpha" } });
+    expect(filtered.isError).toBeFalsy();
+    expect((filtered.structuredContent as any).data.results.map((l: any) => l.id)).toEqual([
+      alphaId,
+    ]);
+
+    const media = await client.callTool({ name: "list_media", arguments: { query: "b39-logo" } });
+    expect(media.isError).toBeFalsy();
+    expect(media.structuredContent).toEqual((await api("GET", "/api/media?query=b39-logo")).json);
+    const item = (media.structuredContent as any).data.results.find((m: any) => m.id === mediaId);
+    expect(item.filename).toBe("b39-logo.png");
+    expect(typeof item.url).toBe("string");
+
+    const mediaNone = await client.callTool({
+      name: "list_media",
+      arguments: { query: "no-such-b39-file" },
+    });
+    expect(mediaNone.isError).toBeFalsy();
+    expect((mediaNone.structuredContent as any).data.results).toEqual([]);
+
+    await client.close();
+  });
+
+  // 10. create_campaign takes list IDs from list_lists and media from list_media; update_campaign keeps the media and lists; preview and test send reach Mailpit; a non-integer list ID returns isError with the API's message and creates nothing.
+  test("10. create_campaign creates a draft from list_lists and list_media ids; update_campaign keeps its media and lists; preview and test send deliver; invalid input creates nothing", async () => {
+    const list = await api("POST", "/api/lists", {
+      name: "B39 Campaign List",
+      type: "public",
+      optin: "single",
+    });
+    const listId: number = list.json.data.id;
+    const subEmail = "b39-campaign@example.test";
+    const sub = await api("POST", "/api/subscribers", {
+      email: subEmail,
+      name: "B39 Subscriber",
+      status: "enabled",
+      lists: [listId],
+    });
+    expect(sub.status).toBe(200);
+    const heroId = await uploadMedia("b39-hero.png");
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+
+    const found = await client.callTool({
+      name: "list_lists",
+      arguments: { query: "B39 Campaign List" },
+    });
+    const foundListId = (found.structuredContent as any).data.results[0].id;
+    expect(foundListId).toBe(listId);
+    const hero = await client.callTool({ name: "list_media", arguments: { query: "b39-hero" } });
+    expect((hero.structuredContent as any).data.results[0].id).toBe(heroId);
+
+    const created = await client.callTool({
+      name: "create_campaign",
+      arguments: {
+        name: "B39 Created Campaign",
+        subject: "B39 Created Subject",
+        from_email: "noreply@example.test",
+        lists: [foundListId],
+        content_type: "richtext",
+        body: "<p>Created body for {{ subscriber.name }}</p>",
+        media: [heroId],
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    const campaign = (created.structuredContent as any).data;
+    const campId: number = campaign.id;
+    expect(campaign.status).toBe("draft");
+
+    const stored = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(stored.name).toBe("B39 Created Campaign");
+    expect(stored.subject).toBe("B39 Created Subject");
+    expect(stored.lists.map((l: any) => l.id)).toEqual([listId]);
+    expect(stored.media.map((m: any) => m.id)).toEqual([heroId]);
+
+    // Partial edit: only the body is given, so subject, lists and media are kept.
+    const updated = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, body: "<p>Updated body for {{ subscriber.name }}</p>" },
+    });
+    expect(updated.isError).toBeFalsy();
+    const afterUpdate = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(afterUpdate.body).toBe("<p>Updated body for {{ subscriber.name }}</p>");
+    expect(afterUpdate.subject).toBe("B39 Created Subject");
+    expect(afterUpdate.lists.map((l: any) => l.id)).toEqual([listId]);
+    expect(afterUpdate.media.map((m: any) => m.id)).toEqual([heroId]);
+
+    const preview = await client.callTool({ name: "preview_campaign", arguments: { id: campId } });
+    expect(preview.isError).toBeFalsy();
+    expect(getTextContent(preview)).toContain("Updated body for");
+
+    const testSend = await client.callTool({
+      name: "send_campaign_test",
+      arguments: { id: campId, subscribers: [subEmail] },
+    });
+    expect(testSend.isError).toBeFalsy();
+    const mail = await mailbox.one(subEmail, "B39 Created Subject");
+    expect(mail.body).toContain("Updated body for B39 Subscriber");
+
+    // A list ID that is not an integer is refused by the endpoint: same message, nothing created.
+    const rejectedBody = {
+      name: "B39 Rejected Campaign",
+      subject: "B39 Rejected",
+      from_email: "noreply@example.test",
+      lists: ["not-an-id"],
+      body: "<p>x</p>",
+    };
+    const rejected = await client.callTool({ name: "create_campaign", arguments: rejectedBody });
+    expect(rejected.isError).toBe(true);
+    const direct = await api("POST", "/api/campaigns", rejectedBody);
+    expect(direct.status).toBe(400);
+    expect(getTextContent(rejected)).toBe(direct.json?.message ?? direct.text);
+    expect((await api("GET", "/api/campaigns?query=B39%20Rejected")).json.data.results).toEqual([]);
+
+    await client.close();
+  });
+
+  // 11. get_sequence and list_sequences return what the HTTP API returns; update_sequence_step changes one step's subject and nothing else; an invalid step edit or an unknown step returns isError and changes nothing.
+  test("11. get_sequence and list_sequences match the HTTP API; update_sequence_step changes only the given subject; invalid edits change nothing", async () => {
+    const tpl = await api("POST", "/api/templates", {
+      name: "B39 Sequence Template",
+      type: "tx",
+      subject: "Template subject",
+      body: "<p>Hello</p>",
+    });
+    expect(tpl.status).toBe(200);
+    const tplId: number = tpl.json.data.id;
+    const layout = await api("POST", "/api/templates", {
+      name: "B39 Campaign Layout",
+      type: "campaign",
+      body: "<div>{{ content | raw }}</div>",
+    });
+    expect(layout.status).toBe(200);
+    const layoutId: number = layout.json.data.id;
+
+    const seq = await api("POST", "/api/sequences", {
+      name: "B39 Onboarding",
+      status: "draft",
+      trigger: { event: "b39_signup" },
+      exit_on: ["b39_cancel"],
+      reentry: "never",
+      list_id: null,
+      steps: [
+        {
+          wait: "PT0S",
+          kind: "transactional",
+          template_id: tplId,
+          subject: "B39 step one",
+          on_false: "exit",
+          cap_policy: "defer",
+        },
+        {
+          wait: "P2D",
+          kind: "transactional",
+          template_id: tplId,
+          subject: "B39 step two",
+          condition: { not: { event: "b39_done", since: "trigger" } },
+          on_false: "skip",
+          cap_policy: "skip",
+          max_late: "PT6H",
+        },
+      ],
+    });
+    expect(seq.status).toBe(200);
+    const seqId: number = seq.json.data.id;
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+
+    const one = await client.callTool({ name: "get_sequence", arguments: { id: seqId } });
+    expect(one.isError).toBeFalsy();
+    expect(one.structuredContent).toEqual((await api("GET", `/api/sequences/${seqId}`)).json);
+
+    const listed = await client.callTool({
+      name: "list_sequences",
+      arguments: { status: "draft", page: 1, per_page: 50 },
+    });
+    expect(listed.isError).toBeFalsy();
+    expect(listed.structuredContent).toEqual(
+      (await api("GET", "/api/sequences?status=draft&page=1&per_page=50")).json,
+    );
+
+    const before = (one.structuredContent as any).data;
+    const step2 = before.steps.find((s: any) => s.subject === "B39 step two");
+    const edited = await client.callTool({
+      name: "update_sequence_step",
+      arguments: { id: seqId, step_id: step2.id, subject: "B39 step two, edited" },
+    });
+    expect(edited.isError).toBeFalsy();
+
+    const after = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+    const omitUpdated = (value: Record<string, unknown>) => withoutKeys(value, ["updated_at"]);
+    expect(omitUpdated(withoutKeys(after, ["steps"]))).toEqual(
+      omitUpdated(withoutKeys(before, ["steps"])),
+    );
+    expect(after.steps.map((s: any) => s.id)).toEqual(before.steps.map((s: any) => s.id));
+    for (const [i, step] of before.steps.entries()) {
+      const next = after.steps[i];
+      expect(next.subject).toBe(step.id === step2.id ? "B39 step two, edited" : step.subject);
+      expect(omitUpdated(withoutKeys(next, ["subject"]))).toEqual(
+        omitUpdated(withoutKeys(step, ["subject"])),
+      );
+    }
+
+    // A template that is not transactional is refused by the endpoint; an unknown step never reaches it.
+    const badTemplate = await client.callTool({
+      name: "update_sequence_step",
+      arguments: { id: seqId, step_id: step2.id, template_id: layoutId },
+    });
+    expect(badTemplate.isError).toBe(true);
+    expect(getTextContent(badTemplate)).toContain("transactional");
+    const unknownStep = await client.callTool({
+      name: "update_sequence_step",
+      arguments: { id: seqId, step_id: 999999, subject: "Nope" },
+    });
+    expect(unknownStep.isError).toBe(true);
+    expect((await api("GET", `/api/sequences/${seqId}`)).json.data).toEqual(after);
+
+    await client.close();
+  });
+
+  // 12. Permissions: create_campaign without campaigns:manage, get_sequence and list_sequences without sequences:get, and update_sequence_step without sequences:manage return isError with the API's 403 message and write nothing.
+  test("12. Permissions: missing campaigns:manage, sequences:get or sequences:manage gives isError with the API's 403 message and writes nothing", async () => {
+    const list = await api("POST", "/api/lists", {
+      name: "B39 Denied List",
+      type: "public",
+      optin: "single",
+    });
+    const listId: number = list.json.data.id;
+    const tpl = await api("POST", "/api/templates", {
+      name: "B39 Denied Template",
+      type: "tx",
+      subject: "Denied",
+      body: "<p>Denied</p>",
+    });
+    const tplId: number = tpl.json.data.id;
+    const seq = await api("POST", "/api/sequences", {
+      name: "B39 Denied Sequence",
+      status: "draft",
+      trigger: { event: "b39_denied" },
+      exit_on: [],
+      reentry: "never",
+      steps: [
+        {
+          wait: "PT0S",
+          kind: "transactional",
+          template_id: tplId,
+          subject: "Denied step",
+        },
+      ],
+    });
+    const seqId: number = seq.json.data.id;
+    const stepId: number = seq.json.data.steps[0].id;
+    const seqBefore = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+
+    const campaignReader = await createApiUser("b39-campaign-reader", ["campaigns:get"]);
+    {
+      const { client, transport } = createClient(campaignReader);
+      await client.connect(transport);
+      const denied = await client.callTool({
+        name: "create_campaign",
+        arguments: {
+          name: "B39 Denied Campaign",
+          subject: "B39 Denied",
+          lists: [listId],
+          body: "<p>x</p>",
+        },
+      });
+      expect(denied.isError).toBe(true);
+      expect(getTextContent(denied)).toContain("permission denied: campaigns:manage");
+      await client.close();
+    }
+    expect((await api("GET", "/api/campaigns?query=B39%20Denied")).json.data.results).toEqual([]);
+
+    const noSequences = await createApiUser("b39-no-sequences", ["templates:get"]);
+    {
+      const { client, transport } = createClient(noSequences);
+      await client.connect(transport);
+      const getDenied = await client.callTool({
+        name: "get_sequence",
+        arguments: { id: seqId },
+      });
+      expect(getDenied.isError).toBe(true);
+      expect(getTextContent(getDenied)).toContain("permission denied: sequences:get");
+      const listDenied = await client.callTool({ name: "list_sequences", arguments: {} });
+      expect(listDenied.isError).toBe(true);
+      await client.close();
+    }
+
+    const sequenceReader = await createApiUser("b39-sequence-reader", ["sequences:get"]);
+    {
+      const { client, transport } = createClient(sequenceReader);
+      await client.connect(transport);
+      const readOk = await client.callTool({ name: "get_sequence", arguments: { id: seqId } });
+      expect(readOk.isError).toBeFalsy();
+      const editDenied = await client.callTool({
+        name: "update_sequence_step",
+        arguments: { id: seqId, step_id: stepId, subject: "Denied edit" },
+      });
+      expect(editDenied.isError).toBe(true);
+      expect(getTextContent(editDenied)).toContain("permission denied: sequences:manage");
+      await client.close();
+    }
+    expect((await api("GET", `/api/sequences/${seqId}`)).json.data).toEqual(seqBefore);
+  });
+
+  // 13. Cookie-session callers (login, CSRF token) can call create_campaign; without the CSRF token the request is refused and nothing is created.
+  test("13. Cookie session authentication: create_campaign succeeds with cookie + CSRF token and is refused without it", async () => {
+    const list = await api("POST", "/api/lists", {
+      name: "B39 Cookie List",
+      type: "public",
+      optin: "single",
+    });
+    const listId: number = list.json.data.id;
+    const { cookieHeader, csrfToken } = await loginCookies();
+
+    const client = new Client({ name: "mcp-cookie-b39", version: "1.0.0" }, { capabilities: {} });
+    const transport = new StreamableHTTPClientTransport(new URL(`${production.origin}/api/mcp`), {
+      requestInit: { headers: { Cookie: cookieHeader, "X-CSRF-Token": csrfToken } },
+    });
+    await client.connect(transport);
+    const created = await client.callTool({
+      name: "create_campaign",
+      arguments: {
+        name: "B39 Cookie Campaign",
+        subject: "B39 Cookie Subject",
+        from_email: "noreply@example.test",
+        lists: [listId],
+        body: "<p>Cookie body</p>",
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    const campId = (created.structuredContent as any).data.id;
+    expect((await api("GET", `/api/campaigns/${campId}`)).json.data.name).toBe(
+      "B39 Cookie Campaign",
+    );
+    await client.close();
+
+    const noCsrf = await fetch(`${production.origin}/api/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieHeader },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "create_campaign",
+          arguments: {
+            name: "B39 Cookie Refused",
+            subject: "B39 Cookie Refused",
+            lists: [listId],
+            body: "<p>x</p>",
+          },
+        },
+      }),
+    });
+    expect(noCsrf.status).toBe(403);
+    expect(
+      (await api("GET", "/api/campaigns?query=B39%20Cookie%20Refused")).json.data.results,
+    ).toEqual([]);
+  });
+
+  // 14. update_sequence_step does not send a status, so a paused or archived sequence keeps the status it has.
+  test("14. update_sequence_step keeps the stored status of a paused or archived sequence", async () => {
+    const tpl = await api("POST", "/api/templates", {
+      name: "B39 Status Template",
+      type: "tx",
+      subject: "Status subject",
+      body: "<p>Hello</p>",
+    });
+    expect(tpl.status).toBe(200);
+    const seq = await api("POST", "/api/sequences", {
+      name: "B39 Status Sequence",
+      status: "draft",
+      trigger: { event: "b39_status" },
+      exit_on: ["b39_status_cancel"],
+      reentry: "never",
+      list_id: null,
+      steps: [
+        {
+          wait: "PT0S",
+          kind: "transactional",
+          template_id: tpl.json.data.id,
+          subject: "Before",
+          on_false: "exit",
+          cap_policy: "defer",
+        },
+      ],
+    });
+    expect(seq.status).toBe(200);
+    const seqId: number = seq.json.data.id;
+    const stepId: number = seq.json.data.steps[0].id;
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+
+    for (const status of ["paused", "archived"] as const) {
+      const set = await api("PUT", `/api/sequences/${seqId}/status`, { status });
+      expect(set.status).toBe(200);
+
+      const edited = await client.callTool({
+        name: "update_sequence_step",
+        arguments: { id: seqId, step_id: stepId, subject: `Edited while ${status}` },
+      });
+      expect(edited.isError).toBeFalsy();
+
+      const after = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+      expect(after.status).toBe(status);
+      expect(after.steps[0].subject).toBe(`Edited while ${status}`);
+    }
+
+    await client.close();
   });
 });
