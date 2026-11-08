@@ -317,6 +317,65 @@ test("a new server from a provider template saves without a password", async ({ 
   expect(stored.password ?? "").toBe("");
 });
 
+test("a disabled SMTP server takes a password typed while it is off", async ({ page }) => {
+  const seeded = await settings(page);
+  const res = await api(page, "/api/settings/smtp", "PUT", [
+    { ...seeded.smtp[0], password: "" },
+    { ...seeded.smtp[1], enabled: false, auth_protocol: "login", password: "" },
+  ]);
+  expect(res.status).toBe(200);
+  await page.reload();
+  await tab(page, "SMTP").click();
+  const server = smtpServers(page).nth(1);
+  await server.locator("summary").click();
+  await expect(server.getByRole("switch", { name: /Enabled/ })).not.toBeChecked();
+
+  const password = server.getByLabel(/Password/);
+  await expect(password).toBeEnabled();
+  await password.fill("disabled-typed-secret");
+  await save(page);
+  const stored = (await settings(page)).smtp[1];
+  expect(stored.enabled).toBe(false);
+  expect(stored.password).toBe("•".repeat("disabled-typed-secret".length));
+});
+
+test("the settings page never sends two servers with one uuid", async ({ page }) => {
+  // A row saved before the duplicate refusal can hold two items with one uuid. The GET below
+  // stands in for such a stored state; the API now refuses to store it again.
+  const stored = (await settings(page)).smtp.length;
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    body.data.smtp.push({
+      ...body.data.smtp[0],
+      name: "",
+      host: "twin.example.test",
+      enabled: false,
+      password: "•".repeat(8),
+    });
+    await route.fulfill({
+      status: response.status(),
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+  await page.reload();
+  await tab(page, "SMTP").click();
+  await expect(smtpServers(page)).toHaveCount(stored + 1);
+
+  const sent = page.waitForRequest(
+    (r) => r.method() === "PUT" && new URL(r.url()).pathname === "/api/settings",
+  );
+  await save(page);
+  const body = (await sent).postDataJSON();
+  await page.unroute("**/api/settings");
+  const uuids = body.smtp.map((item) => item.uuid).filter(Boolean);
+  expect(body.smtp).toHaveLength(stored + 1);
+  expect(new Set(uuids).size).toBe(uuids.length);
+  expect((await settings(page)).smtp).toHaveLength(stored + 1);
+});
+
 test("tests custom SMTP headers and masks saved secrets", async ({ page }) => {
   await tab(page, "SMTP").click();
   const server = smtpServers(page);
