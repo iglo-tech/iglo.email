@@ -242,15 +242,18 @@ and `privacy.record_optin_ip` all use the address found this way.
 
 This is the one path to good deliverability (D89). Easy DKIM signs each message, a custom MAIL FROM
 domain lets SPF align, DMARC states the policy, SMTP credentials send, and the send-rate cap matches
-the account. Amazon SES is the only sending provider. Do the steps in order. The AWS pages each step
-follows are listed under [References](#references); they were checked on 2026-11-08.
+the account. Amazon SES is the only sending provider. Use one AWS region throughout: the identity,
+the SMTP endpoint and the SNS topic must all be in the same region. Do the steps in order. The AWS
+pages each step follows are listed under [References](#references); they were checked on
+2026-11-08.
 
 1. **Verify the domain with Easy DKIM.** In SES, open Identities, create a domain identity and keep
    Easy DKIM on. SES signs with a 2048-bit key by default. On the identity's Authentication tab,
-   copy the three CNAME records SES shows and publish them with your DNS provider. Each value is
-   the DKIM token followed by SES's signing domain, for example `<token>.dkim.<region>.amazonses.com`.
-   Wait until the identity is verified. SES signs outgoing mail with this key, so leave
-   `smtp[].dkim` empty (see [Compatibility](#compatibility-signing-in-igloemail)).
+   take the three CNAME records SES shows and publish them with your DNS provider, copying each
+   value exactly. Each value is the DKIM token followed by SES's signing domain, for example
+   `<token>.dkim.<region>.amazonses.com`. Wait until the identity is verified, which can take up to
+   72 hours. SES signs outgoing mail with this key, so leave `smtp[].dkim` empty (see
+   [Compatibility](#compatibility-signing-in-igloemail)).
 2. **Set a custom MAIL FROM domain.** Choose a subdomain of the verified domain that you use for no
    other mail, for example `bounce.example.com`, and set it on the identity's "Custom MAIL FROM
    domain" pane. Publish two records on that name:
@@ -258,19 +261,23 @@ follows are listed under [References](#references); they were checked on 2026-11
    - TXT `bounce.example.com` with the value `"v=spf1 include:amazonses.com ~all"`
 
    SPF alignment needs the MAIL FROM domain to match the From domain, so without this step the
-   message's SPF check does not align with your From address. Wait until SES stops showing the
-   status as Pending.
+   message's SPF check does not align with your From address. Wait until the MAIL FROM status is
+   Success. SES keeps checking for up to 72 hours; if it shows Failed, fix the records and set the
+   domain again.
 3. **Publish DMARC.** Add a TXT record `_dmarc.example.com` with
    `v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com`, using a mailbox you read. DMARC passes
    when SPF or DKIM passes and aligns with the From domain, and with steps 1 and 2 both align. Start
    with `p=none`, read the aggregate reports for several weeks, then move to `p=quarantine` and
-   finally `p=reject`. AWS recommends this phased rollout.
+   finally `p=reject`. AWS recommends this phased rollout. Do not set `aspf=s`, because the MAIL FROM
+   subdomain aligns with the From domain only in relaxed mode.
 4. **Create SMTP credentials and add the server.** In SES, open SMTP settings and choose Create SMTP
    credentials. The SMTP user name and password are not your AWS login, and SES shows the password
    only once, so download the credentials then. Set SMTP servers in Settings > SMTP, then send a
    test from there. The defaults are placeholders. Add a server with host
    `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
-   credentials.
+   credentials. Change the default `app.from_email` (`listmonk <noreply@listmonk.yoursite.com>`,
+   in `src/settings/defaults.ts`) to an address on the verified domain, and use that domain for
+   campaign From addresses too, because SES refuses mail from any other address.
 5. **Send through a configuration set (optional).** A configuration set carries the bounce,
    complaint and other event destinations for mail sent through SES. To assign one, add
    `X-SES-CONFIGURATION-SET: <name>` to the SMTP server's custom headers in Settings > SMTP, or via
@@ -282,11 +289,14 @@ follows are listed under [References](#references); they were checked on 2026-11
    (`src/settings/defaults.ts`). In the sandbox AWS allows one message per second, so set `1` there.
    `0` turns the cap off. Every email (campaign, transactional and sequence) waits on this shared
    limit, and outbox sends (transactional and sequence) go ahead of background campaign broadcasts.
+   SES counts both the 24-hour quota and the per-second rate per recipient, not per message, so one
+   message to three addresses uses three.
 7. **Leave the sandbox.** A new account is in the SES sandbox: 200 messages per 24 hours, one per
-   second, and mail only to verified addresses and domains or the mailbox simulator. Before real
-   sends, follow the sandbox notice on the Account dashboard to request production access. AWS
-   states that the first answer can take up to 96 hours. When it is granted, set
-   `messaging.max_send_rate` to the production rate.
+   second, and mail only to verified addresses and domains or the mailbox simulator. So a test send
+   made in the sandbox must go to a verified address or the mailbox simulator. Before real sends,
+   follow the sandbox notice on the Account dashboard to request production access. AWS states that
+   the first answer can take up to 96 hours. When it is granted, set `messaging.max_send_rate` to the
+   production rate.
 
 ### Compatibility: signing in iglo.email
 
@@ -333,7 +343,7 @@ leaves it in `ps`, so use a file or netrc in a real environment.
 
 ### References
 
-AWS Amazon SES developer guide, checked 2026-11-08:
+AWS documentation, checked 2026-11-08:
 
 - Easy DKIM: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-easy.html>
 - Verifying identities and the three CNAME records: <https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html>
@@ -341,10 +351,12 @@ AWS Amazon SES developer guide, checked 2026-11-08:
 - SPF: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-spf.html>
 - DMARC: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dmarc.html>
 - SMTP credentials: <https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html>
-- SMTP endpoint and ports: <https://docs.aws.amazon.com/ses/latest/dg/smtp-connect.html>
+- SMTP endpoints (the `email-smtp.<region>` hosts): <https://docs.aws.amazon.com/general/latest/gr/ses.html>
+- SMTP ports and TLS: <https://docs.aws.amazon.com/ses/latest/dg/smtp-connect.html>
 - Configuration sets in email, with the `X-SES-CONFIGURATION-SET` header: <https://docs.aws.amazon.com/ses/latest/dg/using-configuration-sets-in-email.html>
 - Sending quotas: <https://docs.aws.amazon.com/ses/latest/dg/manage-sending-quotas.html>
 - Moving out of the sandbox: <https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html>
+- SNS topics for bounce and complaint feedback: <https://docs.aws.amazon.com/ses/latest/dg/configure-sns-notifications.html>
 
 ## Amazon SES bounces
 
@@ -354,10 +366,12 @@ listmonk does, so the account's bounce and complaint rates stay low. Amazon SES 
 and bounce provider (D89).
 
 1. **An SNS topic.** In SNS, create a Standard topic in the same region, for example
-   `ses-bounces`, and note its ARN.
-2. **Send feedback to it.** In SES > Verified identities > your domain > Notifications, set the
-   Bounce and Complaint feedback to the topic, and tick "Include original headers" so a bounce
-   can be matched to the campaign (without them it is matched by address). With a configuration
+   `ses-bounces`, and note its ARN. Its access policy must allow SES to publish to it (see
+   [Amazon SNS notifications](https://docs.aws.amazon.com/ses/latest/dg/configure-sns-notifications.html)).
+2. **Send feedback to it.** In SES > Identities > your domain, open the Notifications tab and choose
+   Edit under Feedback notifications. Set the Bounce and Complaint feedback to the topic, and tick
+   "Include original email headers" under each so a bounce can be matched to the campaign (without
+   them it is matched by address). With a configuration
    set, add an event destination for Bounce and Complaint events to the topic instead. Other event
    types (Delivery, Send) are refused with 400 and do nothing, so do not publish them to this topic.
 3. **Turn it on** in Settings > Bounces (bounce processing, webhooks, the Amazon SES switch, and
