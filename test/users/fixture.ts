@@ -123,7 +123,6 @@ export async function startUserFixture(
         siteName: settings.read()["app.site_name"],
         faviconUrl: "",
         rootUrl: "http://fixture.test",
-        lang: "en",
         cacheSlowQueries: settings.read()["app.cache_slow_queries"],
         disableTracking: settings.read()["privacy.disable_tracking"],
         individualTracking: settings.read()["privacy.individual_tracking"],

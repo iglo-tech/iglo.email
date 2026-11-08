@@ -6,8 +6,6 @@ import { runUnsubscribeContract } from "@/test/contract/unsubscribe";
 import { runPublicContract } from "@/test/contract/public";
 import { runEventsContract } from "@/test/contract/events";
 import { runSequencesContract } from "@/test/contract/sequences";
-import { runBouncesContract } from "@/test/contract/bounces";
-import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
 import { runMaintenanceContract } from "@/test/contract/maintenance";
 import { runMediaContract } from "@/test/contract/media";
 import { runImportContract } from "@/test/contract/import";
@@ -158,8 +156,12 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       throw new Error("Invalid owned auth arguments");
     const admin = await productionAdmin();
     // The bounces contract signs SES messages; the process fetches their certificate from AWS, so
-    // it reaches a loopback stand-in instead (test/bounces/sns-tunnel.ts).
-    const tunnel = args[1] === "bounces" ? await startSnsTunnel() : undefined;
+    // it reaches a loopback stand-in instead (test/bounces/sns-tunnel.ts). Those modules generate
+    // a signing key when they load, so only the bounces run imports them.
+    const tunnel =
+      args[1] === "bounces"
+        ? await (await import("@/test/bounces/sns-tunnel")).startSnsTunnel()
+        : undefined;
     const passed = await withProduction(
       resolve(repository, "dist/iglo.email"),
       signal,
@@ -186,6 +188,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
           return true;
         }
         if (args[1] === "bounces") {
+          const { runBouncesContract } = await import("@/test/contract/bounces");
           await runBouncesContract({ mode: "normal", baseUrl, credentials, restart, dataDir });
           process.stdout.write("PASS bounces production contract\n");
           return true;

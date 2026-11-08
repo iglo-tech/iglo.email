@@ -246,7 +246,6 @@ test("5. Admin settings page Bounces tab shows only SES (no Mailgun, no inert pr
       siteName: "Test Site",
       faviconUrl: "",
       rootUrl: "http://fixture.test",
-      lang: "en",
       cacheSlowQueries: false,
       disableTracking: false,
       individualTracking: false,

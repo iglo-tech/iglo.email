@@ -19,7 +19,6 @@ export interface AdminSite {
   readonly siteName: string;
   readonly faviconUrl: string;
   readonly rootUrl: string;
-  readonly lang: string;
   readonly cacheSlowQueries: boolean;
   readonly disableTracking: boolean;
   readonly individualTracking: boolean;
@@ -166,7 +165,7 @@ export function createAdminPages(deps: {
           assetVersion,
           i18n,
           ...(page.translationKeys ? { translationKeys: page.translationKeys } : {}),
-          config: { root_url: current.rootUrl, lang: current.lang, ...page.config },
+          config: { root_url: current.rootUrl, ...page.config },
           navigation: sidebar(page.pageId, i18n, can, context.app.clock.now()),
           profile: { name: identity.user.username },
           customAssets: true,
