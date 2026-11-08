@@ -188,3 +188,19 @@ test("9. an SMTP server saved with an empty auth protocol drops its stored passw
   expect(stored.auth_protocol).toBe("");
   expect(stored.password).toBeUndefined();
 });
+
+test("10. a bounce mailbox saved with an empty auth protocol keeps its stored password, as upstream's POP login does", async () => {
+  // Upstream's POP mailbox logs in unless the protocol is "none" (pop.go), so "" is not "none" here.
+  const secret = "b57-bounce-empty-protocol-secret";
+  const first = unmasked(await read());
+  first["bounce.mailboxes"][0].password = secret;
+  expect((await save(first)).status).toBe(200);
+
+  const empty = unmasked(await read());
+  empty["bounce.mailboxes"][0].auth_protocol = "";
+  expect((await save(empty)).status).toBe(200);
+
+  const stored = (await read())["bounce.mailboxes"][0];
+  expect(stored.auth_protocol).toBe("");
+  expect(stored.password).toBe(masked(secret));
+});

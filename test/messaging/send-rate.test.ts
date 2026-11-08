@@ -178,10 +178,10 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const tracking = createTracking(db, clock);
   let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
   const router = createRouter();
-  // The settings test button goes through the same limiter as every other send (test 8).
-  registerSettingsRoutes(router, settingsStore, auth, (body, revalidate) =>
-    createSMTPTest(settingsStore, emailer, app.i18n, renderer)(body, revalidate),
-  );
+  // The settings test button goes through the same limiter as every other send (test 8). One handler
+  // serves every request, as src/main.ts builds it, so its 4-in-flight cap is shared.
+  const smtpTest = createSMTPTest(settingsStore, emailer, app.i18n, renderer);
+  registerSettingsRoutes(router, settingsStore, auth, smtpTest);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth);
