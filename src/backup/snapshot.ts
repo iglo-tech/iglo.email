@@ -40,6 +40,7 @@ import {
   rmSync,
   statfsSync,
   statSync,
+  type Stats,
   writeFileSync,
 } from "node:fs";
 import { open } from "node:fs/promises";
@@ -243,7 +244,7 @@ function standing(path: string): "missing" | "folder" {
   }
   if (!stats) return "missing";
   if (stats.isSymbolicLink()) {
-    const target = statSync(path, { throwIfNoEntry: false });
+    const target = followed(path);
     if (!target) throw new Error(`${path} is a symlink to a missing target`);
     if (target.isDirectory()) return "folder";
     throw new Error(
@@ -254,6 +255,35 @@ function standing(path: string): "missing" | "folder" {
   }
   if (stats.isDirectory()) return "folder";
   throw new Error(stats.isFile() ? `${path} is a file, not a folder` : `${path} is not a folder`);
+}
+
+/**
+ * What the symlink at `path` leads to, or undefined if nothing does. A chain through a file or a
+ * loop is refused by name, since the kernel gives no more than ENOTDIR or ELOOP for it.
+ */
+function followed(path: string): Stats | undefined {
+  try {
+    return statSync(path, { throwIfNoEntry: false });
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOTDIR")
+      throw new Error(`${path} is a symlink to a path below a file, not a folder`);
+    if (code === "ELOOP") throw new Error(`${path} is a symlink loop`);
+    throw error;
+  }
+}
+
+/**
+ * Whether `path` is a folder itself. A symlink to one is not: the folders made here must be real.
+ */
+function realFolder(path: string): boolean {
+  try {
+    return !!lstatSync(path, { throwIfNoEntry: false })?.isDirectory();
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOTDIR" || code === "ELOOP") return false;
+    throw error;
+  }
 }
 
 /**
@@ -284,8 +314,9 @@ function missingFolders(directory: string): { existing: string; missing: string[
 
 /**
  * Makes the folders shallowest first, recording each one this call makes in `made`. A folder that
- * appears in the meantime is only a folder, and is not recorded. A path that changed since the
- * check is named, rather than reported as a raw ENOENT, ENOTDIR or EEXIST; other errors pass.
+ * appears in the meantime is accepted only if it is a folder itself: a symlink, even to a folder,
+ * is refused, since mkdir would follow it to wherever it points. A path that changed since the
+ * check is named, rather than reported as a raw ENOENT, ENOTDIR, ELOOP or EEXIST; other errors pass.
  */
 function createFolders(folders: string[], made: string[]): void {
   for (const folder of folders) {
@@ -294,11 +325,23 @@ function createFolders(folders: string[], made: string[]): void {
       made.push(folder);
     } catch (error) {
       const { code } = error as NodeJS.ErrnoException;
-      if (code !== "EEXIST" && code !== "ENOENT" && code !== "ENOTDIR") throw error;
-      if (standing(folder) === "folder") continue;
-      throw new Error(`${folder} could not be created: a folder above it changed meanwhile`);
+      if (code !== "EEXIST" && code !== "ENOENT" && code !== "ENOTDIR" && code !== "ELOOP")
+        throw error;
+      if (realFolder(folder)) continue;
+      throw new Error(`${folder} changed meanwhile: it is not a folder`);
     }
   }
+}
+
+/**
+ * The places an output may never be, checked on the path it has. createBackup runs it before the
+ * folders are made, and again after, when the output's real path is known.
+ */
+function checkBoundaries(output: string, data: string, uploads: string): void {
+  if (inside(data, output))
+    throw new Error(`The output ${output} would replace the data directory`);
+  if (inside(output, uploads))
+    throw new Error(`The output ${output} is inside the upload directory`);
 }
 
 /**
@@ -421,8 +464,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     if (single<bigint>(db, "user_version") === 0n)
       throw new Error(`${databasePath} has no schema yet; start the server once`);
     const liveUploads = uploadRoot(data, storedUploadPath(db));
-    if (inside(output, liveUploads))
-      throw new Error(`The output ${output} is inside the upload directory`);
+    checkBoundaries(output, data, liveUploads);
     const pages = single<bigint>(db, "page_count") - single<bigint>(db, "freelist_count");
     const needed =
       Number(pages * single<bigint>(db, "page_size")) +
@@ -438,6 +480,12 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
         warn(`${join(parent, entry)} is a backup that a forced backup did not finish replacing`);
 
     createFolders(folders.missing, created);
+    // The checks above were of the path as it stood before the folders existed. Now that they do,
+    // the output must still be where they were made: a symlink that took a folder's place since
+    // the check would move the backup, so it is refused before anything is written.
+    if (realpathSync(dirname(wanted)) !== parent)
+      throw new Error(`${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`);
+    checkBoundaries(output, data, liveUploads);
     // The directory is 0700 from mkdtemp and the database 0600 from its first byte: SQLite writes
     // into an empty file it finds and keeps its mode.
     partial = mkdtempSync(join(parent, PARTIAL));

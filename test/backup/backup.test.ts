@@ -692,6 +692,88 @@ test("a parent through a broken symlink is named as one, not reported as a raw E
   expect(existsSync(join(base, "nowhere"))).toBe(false);
 });
 
+test("a parent that is a symlink through a file is named as one, not reported as a raw ENOTDIR", async () => {
+  await live();
+  writeFileSync(join(base, "afile"), "not a folder");
+  symlinkSync(join(base, "afile", "below"), join(base, "viafile"));
+  const result = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(base, "viafile", "out"),
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain(
+    `${join(base, "viafile")} is a symlink to a path below a file, not a folder`,
+  );
+  expect(result.stderr).not.toContain("ENOTDIR");
+  expect(names(base)).toEqual(["afile", "data", "viafile"]);
+});
+
+test("a parent that is a symlink loop is named as one, not reported as a raw ELOOP", async () => {
+  await live();
+  symlinkSync("loop", join(base, "loop"));
+  const result = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(base, "loop", "out"),
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain(`${join(base, "loop")} is a symlink loop`);
+  expect(result.stderr).not.toContain("ELOOP");
+  expect(names(base)).toEqual(["data", "loop"]);
+});
+
+test("a symlink planted in a folder the backup is about to create is refused, not followed", async () => {
+  await live();
+  const uploads = join(dataDir, "uploads");
+  const before = names(uploads);
+  // The hook runs after the checks and before the folders are made: the race the checks cannot see.
+  const planted = () => {
+    symlinkSync(uploads, join(base, "a"));
+    return Number.MAX_SAFE_INTEGER;
+  };
+  expect(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "a", "b", "out"),
+      clock: createRealClock(),
+      supportedVersion: version,
+      available: planted,
+      warn() {},
+    }),
+  ).toThrow(`${join(base, "a")} changed meanwhile`);
+  expect(names(uploads)).toEqual(before);
+  expect(existsSync(join(uploads, "b"))).toBe(false);
+  expect(names(base)).toEqual(["a", "data"]);
+});
+
+test("a symlink planted above the data directory is refused, and --force never replaces the live data", async () => {
+  await live();
+  const before = names(dataDir);
+  const size = statSync(join(dataDir, "iglo-email.db")).size;
+  // The hook plants `a` as an alias of the parent, so `a/data` would be the live data directory.
+  const planted = () => {
+    symlinkSync(base, join(base, "a"));
+    return Number.MAX_SAFE_INTEGER;
+  };
+  expect(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "a", "data"),
+      force: true,
+      clock: createRealClock(),
+      supportedVersion: version,
+      available: planted,
+      warn() {},
+    }),
+  ).toThrow(`${join(base, "a")} changed meanwhile`);
+  expect(names(dataDir)).toEqual(before);
+  expect(statSync(join(dataDir, "iglo-email.db")).size).toBe(size);
+  expect(names(base)).toEqual(["a", "data"]);
+});
+
 test("a successful backup into new nested folders creates each one 0700", async () => {
   await live();
   const output = join(base, "n1", "n2", "n3", "out");

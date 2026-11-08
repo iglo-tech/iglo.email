@@ -442,12 +442,12 @@ runuser -u iglo-email -- iglo.email backup --data-dir /var/lib/iglo.email \
 runuser -u iglo-email -- iglo.email backup --verify /var/backups/iglo.email/monday
 ```
 
-Run it as the service user, while the server runs or while it is stopped: files in the backup
-keep that owner through a restore. Missing parent folders of `--output` are created, mode 0700; the
+Run it as the service user, while the server runs or while it is stopped: files in the backup keep
+that owner through a restore. Missing parent folders of `--output` are created, mode 0700; the
 nearest one that exists must be writable by that user, as [Install](#install) sets up. A refused
-backup creates no folder and keeps every folder that existed, and so does a failed one: it removes
-exactly the folders it made, and only while they are empty. With no `--output` the backup goes to
-`backups/iglo-email-<time>` in the data directory. That is not off-site, so copy it away.
+backup leaves no folder it made and keeps every folder that existed. A failed one does the same: it
+removes exactly the folders it made, and only while they are empty. With no `--output` the backup
+goes to `backups/iglo-email-<time>` in the data directory. That is not off-site, so copy it away.
 `--force` replaces an earlier backup, and only something that looks like one: never another
 directory or the data directory, and it checks what it actually moved. Without it, an existing
 path is refused, also one that appears while the backup runs: publishing is one rename, which
@@ -490,11 +490,13 @@ pages of the database and the uploads, about the size of the data directory. It 
 and refuses if there is too little.
 
 **Failure.** The backup is built in `.iglo-email-backup-partial-<random>` beside its destination,
-synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and
-removes that directory, and any parent folder it created for it. A killed one leaves it, and nothing at the final name, so a retry of the
-same `--output` works. `--verify` refuses it, and it can never be mistaken for a backup. A kill after the final rename, before the command reports success, leaves a complete backup at that name: check it with `--verify` before you retry, since a retry refuses the existing destination. The next
-`backup` in that place warns about it and does not delete it, as it could be running. When none
-is running, remove it:
+synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and removes
+that directory, and any parent folder it created for it. A killed one leaves it, and nothing at the
+final name, so a retry of the same `--output` works. `--verify` refuses it, and it can never be
+mistaken for a backup. A kill after the final rename, before the command reports success, leaves a
+complete backup at that name: check it with `--verify` before you retry, since a retry refuses the
+existing destination. The next `backup` in that place warns about it and does not delete it, as it
+could be running. When none is running, remove it:
 
 ```sh
 rm -rf /var/backups/iglo.email/.iglo-email-backup-partial-*
