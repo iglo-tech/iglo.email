@@ -238,11 +238,63 @@ curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
 `API` is `username:token` of an API user, created under Users. Public rate limits, login limits
 and `privacy.record_optin_ip` all use the address found this way.
 
-## SMTP and DKIM
+## Sending with Amazon SES
 
-Set SMTP servers in Settings > SMTP, then send a test from there. The defaults are placeholders.
-Most providers sign for you. To sign here, add `dkim` to a server. The admin UI keeps it but does
-not show it, so this goes through the API. A masked password sent back unchanged is kept.
+This is the one path to good deliverability (D89). Easy DKIM signs each message, a custom MAIL FROM
+domain lets SPF align, DMARC states the policy, SMTP credentials send, and the send-rate cap matches
+the account. Amazon SES is the only sending provider. Do the steps in order. The AWS pages each step
+follows are listed under [References](#references); they were checked on 2026-11-08.
+
+1. **Verify the domain with Easy DKIM.** In SES, open Identities, create a domain identity and keep
+   Easy DKIM on. SES signs with a 2048-bit key by default. On the identity's Authentication tab,
+   copy the three CNAME records SES shows and publish them with your DNS provider. Each value is
+   the DKIM token followed by SES's signing domain, for example `<token>.dkim.<region>.amazonses.com`.
+   Wait until the identity is verified. SES signs outgoing mail with this key, so leave
+   `smtp[].dkim` empty (see [Compatibility](#compatibility-signing-in-igloemail)).
+2. **Set a custom MAIL FROM domain.** Choose a subdomain of the verified domain that you use for no
+   other mail, for example `bounce.example.com`, and set it on the identity's "Custom MAIL FROM
+   domain" pane. Publish two records on that name:
+   - MX `bounce.example.com` with the value `10 feedback-smtp.<region>.amazonses.com`
+   - TXT `bounce.example.com` with the value `"v=spf1 include:amazonses.com ~all"`
+
+   SPF alignment needs the MAIL FROM domain to match the From domain, so without this step the
+   message's SPF check does not align with your From address. Wait until SES stops showing the
+   status as Pending.
+3. **Publish DMARC.** Add a TXT record `_dmarc.example.com` with
+   `v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com`, using a mailbox you read. DMARC passes
+   when SPF or DKIM passes and aligns with the From domain, and with steps 1 and 2 both align. Start
+   with `p=none`, read the aggregate reports for several weeks, then move to `p=quarantine` and
+   finally `p=reject`. AWS recommends this phased rollout.
+4. **Create SMTP credentials and add the server.** In SES, open SMTP settings and choose Create SMTP
+   credentials. The SMTP user name and password are not your AWS login, and SES shows the password
+   only once, so download the credentials then. Set SMTP servers in Settings > SMTP, then send a
+   test from there. The defaults are placeholders. Add a server with host
+   `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
+   credentials.
+5. **Send through a configuration set (optional).** A configuration set carries the bounce,
+   complaint and other event destinations for mail sent through SES. To assign one, add
+   `X-SES-CONFIGURATION-SET: <name>` to the SMTP server's custom headers in Settings > SMTP, or via
+   the API as `[{"X-SES-CONFIGURATION-SET": "<name>"}]` under `smtp[].email_headers`. The header goes
+   with every message sent through that server.
+6. **Set the send rate.** `messaging.max_send_rate` (Settings > Performance, or
+   `PUT /api/settings/messaging.max_send_rate`) is the account-wide cap in messages per second across
+   all connections. Set it to the maximum sending rate your SES account has. The code default is `14`
+   (`src/settings/defaults.ts`). In the sandbox AWS allows one message per second, so set `1` there.
+   `0` turns the cap off. Every email (campaign, transactional and sequence) waits on this shared
+   limit, and outbox sends (transactional and sequence) go ahead of background campaign broadcasts.
+7. **Leave the sandbox.** A new account is in the SES sandbox: 200 messages per 24 hours, one per
+   second, and mail only to verified addresses and domains or the mailbox simulator. Before real
+   sends, follow the sandbox notice on the Account dashboard to request production access. AWS
+   states that the first answer can take up to 96 hours. When it is granted, set
+   `messaging.max_send_rate` to the production rate.
+
+### Compatibility: signing in iglo.email
+
+`smtp[].dkim` makes iglo.email sign messages itself. It exists for listmonk API compatibility and
+is not needed with SES Easy DKIM (step 1). SES already signs every message for the verified domain,
+so a key here only adds a second signature from the same domain. Do not set both. To sign here, add
+`dkim` to a server. The admin UI keeps it but does not show it, so this goes through the API. A
+masked password sent back unchanged is kept. The key script below is for anyone who needs it.
 
 The private key passes through two files. Keep them in a private directory, created under a
 restrictive umask before either exists, and removed even if a command fails. Run this in a
@@ -279,35 +331,36 @@ It prints the public key for the DNS record
 on success and on failure: the key now lives in the database. Exposing `$API` on a command line
 leaves it in `ps`, so use a file or netrc in a real environment.
 
-### Admin notifications
+### References
 
-Operators can receive notifications for campaign and import events by configuring `app.notify_emails` (a comma-separated list of email addresses on the General settings tab in the Admin UI, or an array of strings in `PUT /api/settings`). When configured, system notification emails are sent using listmonk's built-in templates from `app.from_email[0]`, with at most one notification per status change, sent after the change commits when:
-- A campaign **finishes** (audience exhausted or zero recipients), is **cancelled** via the API, or **pauses automatically** upon reaching `app.max_send_errors`.
-- A subscriber CSV import **finishes** or **fails**.
+AWS Amazon SES developer guide, checked 2026-11-08:
 
-If `app.notify_emails` is empty or unset, no notifications are generated. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
+- Easy DKIM: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-easy.html>
+- Verifying identities and the three CNAME records: <https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html>
+- Custom MAIL FROM domain: <https://docs.aws.amazon.com/ses/latest/dg/mail-from.html>
+- SPF: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-spf.html>
+- DMARC: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dmarc.html>
+- SMTP credentials: <https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html>
+- SMTP endpoint and ports: <https://docs.aws.amazon.com/ses/latest/dg/smtp-connect.html>
+- Configuration sets in email, with the `X-SES-CONFIGURATION-SET` header: <https://docs.aws.amazon.com/ses/latest/dg/using-configuration-sets-in-email.html>
+- Sending quotas: <https://docs.aws.amazon.com/ses/latest/dg/manage-sending-quotas.html>
+- Moving out of the sandbox: <https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html>
 
 ## Amazon SES bounces
 
-Sending through SES is ordinary SMTP (see [SMTP and DKIM](#smtp-and-dkim)). SES reports bounces and
-complaints through Amazon SNS, and iglo.email records and acts on them as listmonk does, so the
-account's bounce and complaint rates stay low. Amazon SES is the only sending and bounce provider (D89).
+Sending through SES is ordinary SMTP (see [Sending with Amazon SES](#sending-with-amazon-ses)). SES
+reports bounces and complaints through Amazon SNS, and iglo.email records and acts on them as
+listmonk does, so the account's bounce and complaint rates stay low. Amazon SES is the only sending
+and bounce provider (D89).
 
-1. **SMTP credentials.** In the SES console, verify your sending domain, then create SMTP
-   credentials (they are not your AWS login). Add an SMTP server in Settings > SMTP with host
-   `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
-   credentials.
-   To assign an SES configuration set to outgoing messages, add `X-SES-CONFIGURATION-SET: <name>`
-   to the SMTP server's custom headers in Settings > SMTP (or via the API as `[{"X-SES-CONFIGURATION-SET": "<name>"}]` under `smtp[].email_headers`).
-   **Send rate limit.** SES enforces an account-wide maximum send rate (messages per second across all connections). Set `messaging.max_send_rate` in Settings > Performance (or `PUT /api/settings/messaging.max_send_rate`) to match your SES quota (default `14` messages/s for SES production; set to `1` in the SES sandbox, or `0` to disable the cap). Every email (campaign, transactional, and sequence) waits on this shared token bucket, with outbox sends (transactional and sequence) prioritized over background campaign broadcasts.
-2. **An SNS topic.** In SNS, create a Standard topic in the same region, for example
+1. **An SNS topic.** In SNS, create a Standard topic in the same region, for example
    `ses-bounces`, and note its ARN.
-3. **Send feedback to it.** In SES > Verified identities > your domain > Notifications, set the
+2. **Send feedback to it.** In SES > Verified identities > your domain > Notifications, set the
    Bounce and Complaint feedback to the topic, and tick "Include original headers" so a bounce
    can be matched to the campaign (without them it is matched by address). With a configuration
    set, add an event destination for Bounce and Complaint events to the topic instead. Other event
    types (Delivery, Send) are refused with 400 and do nothing, so do not publish them to this topic.
-4. **Turn it on** in Settings > Bounces (bounce processing, webhooks, the Amazon SES switch, and
+3. **Turn it on** in Settings > Bounces (bounce processing, webhooks, the Amazon SES switch, and
    the allowed topic ARNs), or:
 
    ```sh
@@ -324,12 +377,12 @@ account's bounce and complaint rates stay low. Amazon SES is the only sending an
    AWS account. **Until a topic is listed, every SES message is refused**, including the
    subscription confirmation.
 
-5. **Subscribe the endpoint.** In SNS, create a subscription on the topic with protocol HTTPS and
+4. **Subscribe the endpoint.** In SNS, create a subscription on the topic with protocol HTTPS and
    endpoint `https://news.example.com/webhooks/service/ses`. SNS posts a
    `SubscriptionConfirmation`; with the switch on, iglo.email verifies it and confirms by itself,
    and the subscription shows "Confirmed". Turn the switch on first: a confirmation sent while it
    is off is refused, and SNS needs a new request (delete and recreate the subscription).
-6. **Check it.** Send to SES's mailbox simulator, `bounce@simulator.amazonses.com` (hard) and
+5. **Check it.** Send to SES's mailbox simulator, `bounce@simulator.amazonses.com` (hard) and
    `complaint@simulator.amazonses.com`, from a campaign or `/api/tx`. Then open Bounces: rows
    appear with source `ses`, and the subscriber is acted on at the thresholds you set. If nothing
    appears, check in SNS that the subscription is confirmed and read its delivery logs, where a
@@ -606,6 +659,14 @@ snapshot taken before this rule existed has no hold and must not be started with
 review; `--verify` prints no `Hold:` line for it. The install the snapshot came from is not held.
 A migration that fails rolls its own transaction back and the server exits: the live database
 stays at its previous version, without a hold, and nothing is restored from the snapshot.
+
+## Admin notifications
+
+Operators can receive notifications for campaign and import events by configuring `app.notify_emails` (a comma-separated list of email addresses on the General settings tab in the Admin UI, or an array of strings in `PUT /api/settings`). When configured, system notification emails are sent using listmonk's built-in templates from `app.from_email[0]`, with at most one notification per status change, sent after the change commits when:
+- A campaign **finishes** (audience exhausted or zero recipients), is **cancelled** via the API, or **pauses automatically** upon reaching `app.max_send_errors`.
+- A subscriber CSV import **finishes** or **fails**.
+
+If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error; the valid entries still receive the mail. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
 
 ## Monitoring
 
