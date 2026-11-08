@@ -12,7 +12,8 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B48** Leftovers ([brief](briefs/B48.md)): unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
+1. **B50** Backup test port race ([brief](briefs/B50.md)): `test/backup/fixture.ts:58-62` probes a free port, releases it, then starts the server on it; under parallel load another test takes it and `bun run check` fails (twice on #100 r1). Fix the race in every fixture that probes-then-binds (size S)
+2. **B51** New settings items never inherit another item's secret ([brief](briefs/B51.md)): `preserve()` (`src/settings/validate.ts:239-244`) and the DKIM `prior` match (`:279`) treat an empty uuid as a match, so a new SMTP/bounce-mailbox/messenger item copies a uuid-less stored item's password or DKIM key (LOW: only seeded placeholders lack uuids; upstream `cmd/settings.go:206-292` does the same). Deliberate difference (size S)
 
 ## Owner decisions
 
@@ -43,6 +44,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B48 | [#100](https://github.com/iglo-tech/iglo.email/pull/100) | 0e70a82 | Leftovers: unused `lang` removed, contract runs skip the SNS tunnel, MCP hint names list roles |
 | B46 | [#99](https://github.com/iglo-tech/iglo.email/pull/99) | 7a706fe | Bounce test polish: real settings in tx fixture, compiled upgrade test, SES compiled contract cases |
 | B47 | — | D94 | Decision: steps keep transactional templates; step body on a campaign layout dropped (D89) |
 | B45 | [#98](https://github.com/iglo-tech/iglo.email/pull/98) | d014479 | Backup polish: no leftover folders, clear parent errors, realpath re-check, dev/ino guard on --force |
@@ -134,14 +136,13 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Bounces tests ([#87](https://github.com/iglo-tech/iglo.email/pull/87) r1–r2): the tx fixture has two settings sources (real `/api/settings` and the `bounceSettings` object the bounce routes read); B35 test 2 hand-wires routes instead of the compiled build on an upgraded DB; the compiled contract no longer covers SNS replay after restart, provider on/off switches or campaign Message-ID rows (`ses.test.ts` covers most in-process); the SES failure test never checks its webhook receiver; small formatting in `differences.ts`.
 - Send rate (addressed by B43 #95 except): ([#89](https://github.com/iglo-tech/iglo.email/pull/89) r2): `runner.ts:593` should `return` not `continue` on not-started (only reachable if the emailer closes before the runner); lowering the rate applies one send late; duplicate not-started guard in `sends.ts`; `settings.onUpdate` is single-slot; SMTP test send waits behind the limiter unbounded; perf doc wording (15 at cap 14 is sink jitter; 20 s run cannot show the 60 s cutoff).
 - Notifications ([#90](https://github.com/iglo-tech/iglo.email/pull/90) r2): no regression test for the post-commit status re-read; bad-CSV notification missing from the `differences.ts` CSV entry; operations.md should say invalid entries are skipped and logged; invalid `from_email` falls back to `noreply@localhost` silently; unused `siteName`/`runner_generation`, `logoUrl` never passed; tests poll with `Bun.sleep(5)`.
-- Settings ([#92](https://github.com/iglo-tech/iglo.email/pull/92) r1): unused `lang` still passed into `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx:22,169`); the unit round trip omits the browser-only SMTP keys (the e2e covers them).
 - Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it. The send-rate test keeps its own 20,000-iteration loop (`test/messaging`).
 - Sending ([#95](https://github.com/iglo-tech/iglo.email/pull/95) r1): bad `app.from_email` is logged once per distinct value (docs say once); D92 should note a window straddling a rate lowering can hold the old rate; test 15 does not cover `main.ts` passing `logoUrl`; test 8 not over HTTP; a fixed-count `drainOutbox` loop remains; every send now allocates an AbortController (create only with a wait bound).
 - Test loops ([#96](https://github.com/iglo-tech/iglo.email/pull/96) r1): `test/media/storage.test.ts:201` and `test/messaging/send-rate.test.ts:373` count zero-length yields while waiting on real I/O (same latent bug as B42/B49); media waits could advance the injected clock only while no real read is pending.
-- MCP ([#97](https://github.com/iglo-tech/iglo.email/pull/97) r1): the read-permission hint should also mention list access (`src/mcp/tools.ts:541`); test 16 lacks the scheduled-campaign case (status to draft); operations.md names three read-merge tools, D91 five. Remaining from #86: GET-then-PUT lost-update race (same in admin UI).
+- MCP ([#97](https://github.com/iglo-tech/iglo.email/pull/97) r1): test 16 lacks the scheduled-campaign case (status to draft). Remaining from #86: GET-then-PUT lost-update race (same in admin UI).
 - Backup ([#98](https://github.com/iglo-tech/iglo.email/pull/98) r1-r3): a parent swapped during the copy leaves the partial backup (0700/0600) in the moved-aside folder; clean it up by dev/ino and report "changed meanwhile" instead of a raw ENOENT; two concurrent backups sharing a new parent can race on cleanup; harmless "kept: not empty" warning after a successful publish.
 - Test: `test/bootstrap/cli.test.ts:300` once exited 1 instead of 0 on SIGTERM under parallel load (passes alone; #98 r2).
-- Bounce tests ([#99](https://github.com/iglo-tech/iglo.email/pull/99) r1): `test/contract/cli.ts` loads the SNS tunnel (openssl keygen) for every contract run, not only bounces; no tunnel test for a wrong-host certificate; upgrade test 2 duplicates bootstrap/`owned.ts` helpers.
+- Bounce tests ([#99](https://github.com/iglo-tech/iglo.email/pull/99) r1): no tunnel test for a wrong-host certificate; upgrade test 2 duplicates bootstrap/`owned.ts` helpers.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
