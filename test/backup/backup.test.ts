@@ -1157,10 +1157,11 @@ test("an error while the partial is inspected keeps the original failure, and is
   };
   let message = "";
   try {
+    // Two folders are made (x/a and x/a/b), so cleanup has a second folder after the first fails.
     message = refusal(() =>
       createBackup({
         dataDir,
-        output: join(base, "x", "a", "out"),
+        output: join(base, "x", "a", "b", "out"),
         clock,
         supportedVersion: version,
         warn: (message) => warnings.push(message),
@@ -1171,5 +1172,11 @@ test("an error while the partial is inspected keeps the original failure, and is
   }
   expect(message).not.toContain("changed meanwhile");
   expect(message).toContain("unable to open database");
-  expect(warnings.join("\n")).toContain("could not be removed: EACCES");
+  // Both made folders are named: removal continues past the first one that cannot be inspected.
+  expect(warnings.join("\n")).toContain(
+    `${join(base, "x", "a", "b")} was made by this backup and could not be removed: EACCES`,
+  );
+  expect(warnings.join("\n")).toContain(
+    `${join(base, "x", "a")} was made by this backup and could not be removed: EACCES`,
+  );
 });

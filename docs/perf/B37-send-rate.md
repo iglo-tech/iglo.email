@@ -25,3 +25,18 @@ Configuration: campaign workers `app.concurrency = 8`, `app.message_rate = 10` (
 
 3. **Low-Cap Under Concurrent Load:**
    A 20-second run at cap 1 (`messaging.max_send_rate = 1`) under concurrent campaign, sequences, and transactional load (`POST /api/tx`) produced 219 queued sends and 10 sending in the outbox at window end, with 0 failed outbox rows and 0 failed transactions (`tx.failed = 0`, `events.failed = 0`). Waiters delayed by the limiter do not time out against the 60 s cutoff and nothing is marked failed. A 20-second run cannot show the 60 s cutoff itself: that is covered on the injected clock by test 1b (`test/messaging/send-rate.test.ts`), which advances past 60 s.
+
+## B53: per-send abort controller (2026-11-08)
+
+Item 6 of the final nits sweep (B53) allocates the `AbortController` of a send-rate wait in `src/messaging/email.ts` only when a wait bound is in use (the SMTP settings test). Other sends pass no signal, because the limiter's `stop()` already rejects every waiter. The change is on the per-message path, so it was measured with the B37 harness (`bun run perf:mixed campaign`, cap 0, 30 s window, same configuration as above). The rows are the last four records of [B37-results.jsonl](B37-results.jsonl).
+
+| Run | Variant | Executable | Delivered in window | Throughput (messages/s) | Min / Max 10 s bucket (/s) | Server peak RSS |
+|---|---|---|---|---|---|---|
+| 1 | Before (`email.ts` at `e9a38cd`) | `38ffbf17227d5598` | 2,370 | 79.00 | 77.2 / 80.2 | 113 MiB |
+| 2 | Before (`email.ts` at `e9a38cd`) | `311934895f02d0aa` | 2,374 | 79.13 | 77.6 / 80.2 | 112 MiB |
+| 3 | After (per-send controller removed) | `b9198511b6083164` | 2,406 | 80.20 | 79.8 / 80.8 | 116 MiB |
+| 4 | After (per-send controller removed) | `b9198511b6083164` | 2,386 | 79.53 | 78.5 / 80.3 | 110 MiB |
+
+Run 1 is the untouched `e9a38cd`. Run 2 was built with the other B53 source changes (a comment in `src/main.ts`, and the empty-`auth_protocol` rule in `src/settings/validate.ts`, neither on the campaign path) and with `email.ts` still at `e9a38cd`, so the executable hashes differ. Both "after" runs use the same executable.
+
+Means: before 79.07 messages/s, after 79.87 messages/s. The spread between runs of one variant (about 1.2 messages/s) is as large as the gap between the variants, and all four runs sit within 79 to 80.2 messages/s, the same band as the B37 runs above. **The difference is noise.** There is no throughput regression, and the change removes an allocation per message without changing any send.

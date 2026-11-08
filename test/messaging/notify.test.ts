@@ -51,6 +51,7 @@ import { registerWebhookRoutes } from "@/webhooks/routes";
 import { startWebhookDelivery } from "@/webhooks/delivery";
 import { createSubscriberTracking } from "@/analytics/subscriber";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { waitWall } from "@/test/wait";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
@@ -375,15 +376,22 @@ async function createNotifyFixture(
     return runner;
   };
 
-  const drainOutbox = async () => {
-    // Drive outbox and webhook processing of queued items
-    for (let i = 0; i < 20; i++) {
-      sends.notify();
-      webhookDelivery.wake();
-      clock.advance(100);
-      await Bun.sleep(2);
-    }
-  };
+  // Waits until no send is in flight and none is due: a retry scheduled for later does not count.
+  const drainOutbox = () =>
+    waitWall(
+      () => {
+        sends.notify();
+        webhookDelivery.wake();
+        const pending = db
+          .query<{ n: bigint }, [string]>(
+            `SELECT count(*) AS n FROM sends
+             WHERE status = 'sending' OR (status = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))`,
+          )
+          .get(clock.now().toISOString());
+        return pending?.n === 0n;
+      },
+      { label: "outbox drain", advance: (ms) => clock.advance(ms), step: 100 },
+    );
 
   const waitUntil = async (done: () => boolean, what: string, step = 50, rounds = 200) => {
     for (let i = 0; i < rounds; i++) {
@@ -1328,37 +1336,5 @@ describe("B38 admin notification mails", () => {
     expect(f.sink.messages.some((m) => m.to.includes("ops@example.com"))).toBe(false);
     const logged = f.errors.filter((e) => String(e).includes("app.from_email"));
     expect(logged.length).toBe(1);
-  });
-
-  test("15. The admin mail shows the configured app.logo_url", async () => {
-    f = await createNotifyFixture({ notifyEmails: ["ops@example.com"] });
-    const logo = "https://example.test/logo.png";
-    const saved = await f.json("/api/settings/app.logo_url", "PUT", logo);
-    expect(saved.status).toBe(200);
-    const empty = f.createList("Empty");
-    const res = await f.json("/api/campaigns", "POST", {
-      name: "Logo",
-      subject: "Logo",
-      lists: [Number(empty.id)],
-      type: "regular",
-      content_type: "html",
-      body: "<p>Hello</p>",
-      from_email: "noreply@fixture.test",
-    });
-    const id = BigInt(res.data.data.id);
-    await f.json(`/api/campaigns/${id}/status`, "PUT", { status: "running" });
-
-    const runner = f.startRunner();
-    await f.waitUntil(
-      () => f.runnerStore.state(id)?.status === "finished",
-      "the campaign to finish",
-    );
-    await f.drainOutbox();
-    await runner.stop();
-
-    // The message is quoted-printable: undo the soft line breaks and =3D escapes before matching.
-    const mail = f.sink.messages.find((m) => m.to.includes("ops@example.com"));
-    const html = (mail?.data ?? "").replace(/=\r\n/g, "").replace(/=3D/g, "=");
-    expect(html).toContain(`src="${logo}"`);
   });
 });

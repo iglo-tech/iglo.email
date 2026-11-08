@@ -31,6 +31,9 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
   let errors = "";
 
   const launch = async (listenPort: number) => {
+    // This attempt's stderr only: restartOnPort retries a start that reports its port in use, so an
+    // earlier attempt's message must not make a later, different failure look like one.
+    errors = "";
     child = spawn(
       copy,
       [
@@ -52,10 +55,10 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
         stdio: ["ignore", "ignore", "pipe"],
       },
     );
-    child.stderr!.on("data", (chunk: Buffer) => {
-      errors = (errors + chunk.toString()).slice(-8000);
-    });
     const current = child;
+    current.stderr!.on("data", (chunk: Buffer) => {
+      if (child === current) errors = (errors + chunk.toString()).slice(-8000);
+    });
     exited = new Promise((r) => current.once("exit", (code) => r(code)));
     const deadline = Date.now() + 10_000;
     for (;;) {

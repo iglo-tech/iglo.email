@@ -146,7 +146,9 @@ export async function runnerFixture(
       describe: async () =>
         `clock ${f.clock.now().toISOString()} (+${f.clock.now().getTime() - clockStart} ms); ` +
         `pushes ${pushes.length}, pending sends ${inFlight}, ` +
-        `sink messages ${f.sink.messages.length}; ${await stuckState()}`,
+        `sink messages ${f.sink.messages.length}; ` +
+        // Only the state read is replaced on failure: the clock, pushes and sink counts still show.
+        (await stuckState().catch((error: unknown) => `state unavailable (${error})`)),
     });
   };
   const read = async (id: number) => (await f.json(`/api/campaigns/${id}`)).body.data;

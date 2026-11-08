@@ -174,3 +174,17 @@ test("8. new items with no uuid are not duplicates of each other", async () => {
   expect(added).toHaveLength(2);
   expect(added[0].uuid).not.toBe(added[1].uuid);
 });
+
+test("9. an SMTP server saved with an empty auth protocol drops its stored password, as auth none does", async () => {
+  // Mail sends with no login for an empty protocol (email.ts makeTransport), so the password is
+  // dead weight, exactly as under auth none.
+  await storeSmtpSecret("b56-smtp-empty-protocol-secret");
+
+  const body = unmasked(await read());
+  body.smtp[0].auth_protocol = "";
+  expect((await save(body)).status).toBe(200);
+
+  const stored = (await read()).smtp[0];
+  expect(stored.auth_protocol).toBe("");
+  expect(stored.password).toBeUndefined();
+});

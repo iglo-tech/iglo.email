@@ -21,6 +21,9 @@ let child: ChildProcess | undefined;
 let errors = "";
 
 async function start(listenPort: number) {
+  // This attempt's stderr only: restartOnPort retries a start that reports its port in use, so an
+  // earlier attempt's message must not make a later, different failure look like one.
+  errors = "";
   child = spawn(
     executable,
     [
@@ -42,8 +45,9 @@ async function start(listenPort: number) {
       stdio: ["ignore", "ignore", "pipe"],
     },
   );
-  child.stderr!.on("data", (chunk: Buffer) => {
-    errors = (errors + chunk.toString()).slice(-4000);
+  const attempt = child;
+  attempt.stderr!.on("data", (chunk: Buffer) => {
+    if (child === attempt) errors = (errors + chunk.toString()).slice(-4000);
   });
   const deadline = Date.now() + 10_000;
   for (;;) {
