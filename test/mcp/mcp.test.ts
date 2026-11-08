@@ -1612,4 +1612,338 @@ describe("B34 MCP endpoint tests", () => {
 
     await client.close();
   });
+
+  // B44. Read-merge tools read the stored object first. A caller who can save but not read gets a tool error that names the tool and the read permission, and nothing is written.
+  test("15. Read-merge tools need the read permission too: manage without get gives a tool error naming the tool and the permission, and writes nothing", async () => {
+    const list = await api("POST", "/api/lists", {
+      name: "B44 Read List",
+      type: "public",
+      optin: "single",
+    });
+    const listId: number = list.json.data.id;
+    const created = await api("POST", "/api/campaigns", {
+      name: "B44 Read Campaign",
+      subject: "B44 Read Subject",
+      from_email: "noreply@example.test",
+      lists: [listId],
+      body: "<p>Stored body</p>",
+      content_type: "html",
+    });
+    expect(created.status).toBe(200);
+    const campId: number = created.json.data.id;
+    const campBefore = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+
+    const tpl = await api("POST", "/api/templates", {
+      name: "B44 Read Template",
+      type: "tx",
+      subject: "Read",
+      body: "<p>Read</p>",
+    });
+    const seq = await api("POST", "/api/sequences", {
+      name: "B44 Read Sequence",
+      status: "draft",
+      trigger: { event: "b44_read" },
+      exit_on: [],
+      reentry: "never",
+      steps: [
+        {
+          wait: "PT0S",
+          kind: "transactional",
+          template_id: tpl.json.data.id,
+          subject: "B44 read step",
+        },
+      ],
+    });
+    expect(seq.status).toBe(200);
+    const seqId: number = seq.json.data.id;
+    const stepId: number = seq.json.data.steps[0].id;
+    const seqBefore = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+
+    const writerOnly = await createApiUser("b44-manage-only", [
+      "campaigns:manage",
+      "sequences:manage",
+    ]);
+    const { client, transport } = createClient(writerOnly);
+    await client.connect(transport);
+
+    const updateDenied = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, subject: "B44 Changed" },
+    });
+    expect(updateDenied.isError).toBe(true);
+    expect(getTextContent(updateDenied)).toContain("update_campaign");
+    expect(getTextContent(updateDenied)).toContain("campaigns:get");
+
+    const textDenied = await client.callTool({ name: "campaign_text", arguments: { id: campId } });
+    expect(textDenied.isError).toBe(true);
+    expect(getTextContent(textDenied)).toContain("campaign_text");
+    expect(getTextContent(textDenied)).toContain("campaigns:get");
+
+    const stepDenied = await client.callTool({
+      name: "update_sequence_step",
+      arguments: { id: seqId, step_id: stepId, subject: "B44 Changed" },
+    });
+    expect(stepDenied.isError).toBe(true);
+    expect(getTextContent(stepDenied)).toContain("update_sequence_step");
+    expect(getTextContent(stepDenied)).toContain("sequences:get");
+    await client.close();
+
+    expect((await api("GET", `/api/campaigns/${campId}`)).json.data).toEqual(campBefore);
+    expect((await api("GET", `/api/sequences/${seqId}`)).json.data).toEqual(seqBefore);
+  });
+
+  // B44. update_campaign sets send_at, keeps it when the argument is omitted, and clears it on an explicit null.
+  test("16. update_campaign sets send_at, keeps the stored schedule when send_at is omitted, and clears it on null", async () => {
+    const list = await api("POST", "/api/lists", {
+      name: "B44 Schedule List",
+      type: "public",
+      optin: "single",
+    });
+    const created = await api("POST", "/api/campaigns", {
+      name: "B44 Schedule Campaign",
+      subject: "B44 Schedule Subject",
+      from_email: "noreply@example.test",
+      lists: [list.json.data.id],
+      body: "<p>Schedule</p>",
+      content_type: "html",
+    });
+    expect(created.status).toBe(200);
+    const campId: number = created.json.data.id;
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+
+    const listed = await client.listTools();
+    const updateTool = listed.tools.find((t) => t.name === "update_campaign");
+    const properties = updateTool?.inputSchema.properties as Record<string, any> | undefined;
+    expect(properties?.send_at.type).toEqual(["string", "null"]);
+
+    const scheduled = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, send_at: "2030-01-02T03:04:05Z" },
+    });
+    expect(scheduled.isError).toBeFalsy();
+    const withSchedule = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(Date.parse(withSchedule.send_at)).toBe(Date.parse("2030-01-02T03:04:05Z"));
+
+    const renamed = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, subject: "B44 Schedule Renamed" },
+    });
+    expect(renamed.isError).toBeFalsy();
+    const kept = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(kept.subject).toBe("B44 Schedule Renamed");
+    expect(kept.send_at).toBe(withSchedule.send_at);
+
+    const cleared = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, send_at: null },
+    });
+    expect(cleared.isError).toBeFalsy();
+    const unscheduled = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(unscheduled.send_at).toBeNull();
+    expect(unscheduled.subject).toBe("B44 Schedule Renamed");
+
+    await client.close();
+  });
+
+  // B44. A step edit with neither subject nor template_id changes nothing, so it is refused before any write.
+  test("17. update_sequence_step with neither subject nor template_id is refused and saves nothing", async () => {
+    const tpl = await api("POST", "/api/templates", {
+      name: "B44 Noop Template",
+      type: "tx",
+      subject: "Noop",
+      body: "<p>Noop</p>",
+    });
+    const seq = await api("POST", "/api/sequences", {
+      name: "B44 Noop Sequence",
+      status: "draft",
+      trigger: { event: "b44_noop" },
+      exit_on: [],
+      reentry: "never",
+      steps: [
+        {
+          wait: "PT0S",
+          kind: "transactional",
+          template_id: tpl.json.data.id,
+          subject: "B44 noop step",
+        },
+      ],
+    });
+    expect(seq.status).toBe(200);
+    const seqId: number = seq.json.data.id;
+    const stepId: number = seq.json.data.steps[0].id;
+    const before = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+    const noop = await client.callTool({
+      name: "update_sequence_step",
+      arguments: { id: seqId, step_id: stepId },
+    });
+    expect(noop.isError).toBe(true);
+    expect(getTextContent(noop)).toContain("Nothing to change");
+    await client.close();
+
+    expect((await api("GET", `/api/sequences/${seqId}`)).json.data).toEqual(before);
+  });
+
+  // B44. Cookie-session writes carry the caller's Origin, so a foreign Origin is refused before any write; the site's own Origin is the control.
+  test("18. Cookie session: an MCP write with a foreign Origin is refused with 403 and writes nothing; the same write with the site's Origin succeeds", async () => {
+    const tpl = await api("POST", "/api/templates", {
+      name: "B44 Origin Template",
+      type: "tx",
+      subject: "Origin",
+      body: "<p>Origin</p>",
+    });
+    const tplId: number = tpl.json.data.id;
+    const { cookieHeader, csrfToken } = await loginCookies();
+
+    const writeTemplate = (origin: string, name: string) =>
+      fetch(`${production.origin}/api/mcp`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: cookieHeader,
+          "x-csrf-token": csrfToken,
+          origin,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/call",
+          params: { name: "update_template", arguments: { id: tplId, name } },
+        }),
+      });
+
+    const foreign = await writeTemplate("https://evil.example", "B44 Foreign Origin");
+    expect(foreign.status).toBe(403);
+    expect((await api("GET", `/api/templates/${tplId}`)).json.data.name).toBe(
+      "B44 Origin Template",
+    );
+
+    const own = await writeTemplate(production.origin, "B44 Own Origin");
+    expect(own.status).toBe(200);
+    const ownResult = (await own.json()) as { result: { isError?: boolean } };
+    expect(ownResult.result.isError).toBeFalsy();
+    expect((await api("GET", `/api/templates/${tplId}`)).json.data.name).toBe("B44 Own Origin");
+  });
+
+  // B44. A campaign whose one list was deleted keeps working: the update succeeds and the other list stays attached.
+  test("19. update_campaign on a campaign whose one list was deleted still works and keeps the other list", async () => {
+    const keep = await api("POST", "/api/lists", {
+      name: "B44 Keep List",
+      type: "public",
+      optin: "single",
+    });
+    const gone = await api("POST", "/api/lists", {
+      name: "B44 Gone List",
+      type: "public",
+      optin: "single",
+    });
+    const keepId: number = keep.json.data.id;
+    const goneId: number = gone.json.data.id;
+    const created = await api("POST", "/api/campaigns", {
+      name: "B44 Partial Campaign",
+      subject: "B44 Partial Subject",
+      from_email: "noreply@example.test",
+      lists: [keepId, goneId],
+      body: "<p>Partial</p>",
+      content_type: "html",
+    });
+    expect(created.status).toBe(200);
+    const campId: number = created.json.data.id;
+
+    const deleted = await api("DELETE", `/api/lists/${goneId}`);
+    expect(deleted.status).toBe(200);
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+    const updated = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, subject: "B44 Partial Updated" },
+    });
+    expect(updated.isError).toBeFalsy();
+    await client.close();
+
+    const after = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(after.subject).toBe("B44 Partial Updated");
+    const positiveListIds = (after.lists as { id: number }[])
+      .map((list) => list.id)
+      .filter((id) => id > 0);
+    expect(positiveListIds).toEqual([keepId]);
+  });
+
+  // B44. A step edit on an active sequence updates the step in place: a subscriber waiting on that step keeps the same enrollment, step and due time.
+  test("20. update_sequence_step on an active sequence with a live enrollment keeps the enrollment's step and due time", async () => {
+    const tpl = await api("POST", "/api/templates", {
+      name: "B44 Live Template",
+      type: "tx",
+      subject: "Live",
+      body: "<p>Live</p>",
+    });
+    const tplId: number = tpl.json.data.id;
+    const seq = await api("POST", "/api/sequences", {
+      name: "B44 Live Sequence",
+      status: "draft",
+      trigger: { event: "b44_live" },
+      exit_on: ["b44_live_cancel"],
+      reentry: "never",
+      list_id: null,
+      steps: [
+        {
+          wait: "P30D",
+          kind: "transactional",
+          template_id: tplId,
+          subject: "B44 waiting step",
+          on_false: "exit",
+          cap_policy: "defer",
+        },
+        {
+          wait: "P30D",
+          kind: "transactional",
+          template_id: tplId,
+          subject: "B44 later step",
+        },
+      ],
+    });
+    expect(seq.status).toBe(200);
+    const seqId: number = seq.json.data.id;
+    const waitingStepId: number = seq.json.data.steps[0].id;
+    const activated = await api("PUT", `/api/sequences/${seqId}/status`, { status: "active" });
+    expect(activated.status).toBe(200);
+
+    const sub = await api("POST", "/api/subscribers", {
+      email: "b44-live@example.test",
+      name: "B44 Live Subscriber",
+      status: "enabled",
+      lists: [],
+    });
+    expect(sub.status).toBe(200);
+    const enrolled = await api("POST", "/api/enrollments", {
+      sequence_id: seqId,
+      subscriber_id: sub.json.data.id,
+    });
+    expect(enrolled.status).toBe(200);
+    const enrollmentId: number = enrolled.json.data.id;
+    const enrollmentBefore = (await api("GET", `/api/enrollments/${enrollmentId}`)).json.data;
+    expect(enrollmentBefore.status).toBe("active");
+    expect(enrollmentBefore.step_id).toBe(waitingStepId);
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+    const edited = await client.callTool({
+      name: "update_sequence_step",
+      arguments: { id: seqId, step_id: waitingStepId, subject: "B44 waiting step, edited" },
+    });
+    expect(edited.isError).toBeFalsy();
+    await client.close();
+
+    const sequenceAfter = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+    expect(sequenceAfter.status).toBe("active");
+    expect(sequenceAfter.steps[0].id).toBe(waitingStepId);
+    expect(sequenceAfter.steps[0].subject).toBe("B44 waiting step, edited");
+    const enrollmentAfter = (await api("GET", `/api/enrollments/${enrollmentId}`)).json.data;
+    expect(enrollmentAfter).toEqual(enrollmentBefore);
+  });
 });
