@@ -820,6 +820,7 @@ claude mcp add --transport http iglo https://<root>/api/mcp --header "Authorizat
   - For campaign editing: `campaigns:get` and `campaigns:manage` (or `campaigns:get_all` / `campaigns:manage_all`), and optionally restrict access using a list role to only the lists the agent is allowed to target. `list_media` also needs `media:get`.
   - For sequence step content: `sequences:get` to read and `sequences:manage` to change a step. Changing a step of a live sequence changes the messages of everyone who has not reached that step yet. Saving a step rewrites the whole sequence, so it also needs `subscribers:sql_query` when another step of the sequence has a raw-SQL condition.
   - `list_lists` shows only the lists the caller's role can read (`lists:get_all`, or a list role that covers the list).
+  - Read-merge tools (`update_campaign`, `send_campaign_test`, `update_sequence_step`) read the stored object before they save it. A role with the write permission but not the read permission gets a tool error that names the read permission, and nothing is written; give the role both.
 - The endpoint validates incoming `Origin` headers against the configured root URL and rejects foreign origins with HTTP 403.
 - Unauthenticated requests receive HTTP 401 before any JSON-RPC processing.
 - All operations are dispatched in-process with the caller's credentials and permissions; the MCP server owns no direct database tables.

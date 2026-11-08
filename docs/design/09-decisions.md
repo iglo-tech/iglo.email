@@ -939,6 +939,10 @@ Lead design decisions from brief B34 ([D89](#d89-narrow-complete-product-scope-o
   - Lists and media (finding IDs to target or attach): `list_lists` (`GET /api/lists`, `query`, `page`, `per_page`), `list_media` (`GET /api/media`, `query`, `page`, `per_page`).
   - Sequences (step content is message content, as campaign bodies are): `list_sequences` (`GET /api/sequences`), `get_sequence` (`GET /api/sequences/:id`), `update_sequence_step` (`PUT /api/sequences/:id`, changes one step's `subject` or `template_id`). Steps are identified by their ID from `get_sequence`. Editing an active sequence is allowed, as in the HTTP API ([sequences](05-sequences.md#sequence-definition)).
   - Reference: `template_reference` static reference generated at build time from `docs/design/06-templates.md`.
+- **Polish (B44, 2026-11-08):**
+  - *Read before write:* a read-merge tool needs the read permission as well as the write permission. Without it (`campaigns:get` or `campaigns:get_all` for `update_campaign`, `send_campaign_test`, and the partial-input cases of `preview_campaign` and `campaign_text`; `sequences:get` for `update_sequence_step`), the tool returns an error that names the tool and the read permission, and writes nothing. Skipping the read when the input looks complete was not taken: `update_campaign` and `update_sequence_step` need the stored object for most calls, so one rule is simpler and easier to explain.
+  - *Clear send_at:* `update_campaign` advertises `send_at` as a string or null. `null` clears the schedule and is passed to the PUT; an omitted `send_at` keeps the stored one.
+  - *No-op step edit:* `update_sequence_step` with neither `subject` nor `template_id` returns "Nothing to change" before any read or write. Saving would rewrite the definition and bump `updated_at` with nothing changed.
 
 ## D92. One shared send-rate cap for SES (lead, 2026-11-07)
 

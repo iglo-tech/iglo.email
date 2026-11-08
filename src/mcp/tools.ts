@@ -195,8 +195,9 @@ export const TOOLS: ToolDefinition[] = [
         },
         attribs: { type: "object", description: "Custom subscriber/campaign attributes" },
         send_at: {
-          type: "string",
-          description: "Optional scheduled send timestamp (ISO 8601)",
+          type: ["string", "null"],
+          description:
+            "Scheduled send timestamp (ISO 8601). null clears the schedule; omit to keep the stored one.",
         },
       },
       required: ["id"],
@@ -429,6 +430,12 @@ function toolError(text: string): ToolResult {
   return { content: [{ type: "text", text }], isError: true, resultType: "complete" };
 }
 
+/** A tool's answer and the HTTP status it came from, so a read-merge tool can tell a refused read apart. */
+interface EndpointReply {
+  status: number;
+  result: ToolResult;
+}
+
 async function callEndpoint(
   app: App,
   router: Router,
@@ -441,7 +448,7 @@ async function callEndpoint(
   cookieHeader?: string,
   csrfHeader?: string,
   originHeader?: string,
-): Promise<ToolResult> {
+): Promise<EndpointReply> {
   const url = `http://127.0.0.1${path}`;
   const headers: Record<string, string> = {};
   if (authHeader) headers["authorization"] = authHeader;
@@ -485,9 +492,12 @@ async function callEndpoint(
       } catch {}
     }
     return {
-      content: [{ type: "text", text: errorMessage || `HTTP ${response.status}` }],
-      isError: true,
-      resultType: "complete",
+      status: response.status,
+      result: {
+        content: [{ type: "text", text: errorMessage || `HTTP ${response.status}` }],
+        isError: true,
+        resultType: "complete",
+      },
     };
   }
 
@@ -495,36 +505,59 @@ async function callEndpoint(
     try {
       const parsed = JSON.parse(text) as unknown;
       return {
-        content: [{ type: "text", text: JSON.stringify(parsed, null, 2) }],
-        structuredContent: parsed,
-        isError: false,
-        resultType: "complete",
+        status: response.status,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(parsed, null, 2) }],
+          structuredContent: parsed,
+          isError: false,
+          resultType: "complete",
+        },
       };
     } catch {}
   }
 
   return {
-    content: [{ type: "text", text }],
-    structuredContent: { text },
-    isError: false,
-    resultType: "complete",
+    status: response.status,
+    result: {
+      content: [{ type: "text", text }],
+      structuredContent: { text },
+      isError: false,
+      resultType: "complete",
+    },
   };
 }
 
-async function getStoredCampaign(
-  invoke: (
-    method: string,
-    path: string,
-    body?: unknown,
-    contentType?: string,
-  ) => Promise<ToolResult>,
-  id: string | number,
-): Promise<{ data?: Record<string, unknown>; error?: ToolResult }> {
-  const res = await invoke("GET", `/api/campaigns/${encodeURIComponent(String(id))}`);
-  if (res.isError) {
-    return { error: res };
+/**
+ * A read-merge tool reads the stored object before it writes or renders. When the caller may not read
+ * it, the error names the tool and the read permission; the tool has not written anything at that point.
+ */
+function storedReadError(
+  reply: EndpointReply,
+  tool: string,
+  readPermission: string,
+): ToolResult | undefined {
+  if (reply.status === 403) {
+    const reason = reply.result.content[0]?.text ?? "permission denied";
+    return toolError(
+      `${tool} reads the stored object first, so the caller needs ${readPermission}. Nothing was changed. (${reason})`,
+    );
   }
-  const structured = res.structuredContent as { data?: Record<string, unknown> } | undefined;
+  return reply.result.isError ? reply.result : undefined;
+}
+
+async function getStoredCampaign(
+  call: (method: string, path: string) => Promise<EndpointReply>,
+  id: string | number,
+  tool: string,
+): Promise<{ data?: Record<string, unknown>; error?: ToolResult }> {
+  const reply = await call("GET", `/api/campaigns/${encodeURIComponent(String(id))}`);
+  const readError = storedReadError(reply, tool, "campaigns:get or campaigns:get_all");
+  if (readError) {
+    return { error: readError };
+  }
+  const structured = reply.result.structuredContent as
+    | { data?: Record<string, unknown> }
+    | undefined;
   if (!structured?.data) {
     return {
       error: {
@@ -548,7 +581,7 @@ export async function executeTool(
   csrfHeader?: string,
   originHeader?: string,
 ): Promise<ToolResult> {
-  const invoke = (method: string, path: string, body?: unknown, contentType = "application/json") =>
+  const call = (method: string, path: string, body?: unknown, contentType = "application/json") =>
     callEndpoint(
       app,
       router,
@@ -562,6 +595,13 @@ export async function executeTool(
       csrfHeader,
       originHeader,
     );
+  const invoke = async (
+    method: string,
+    path: string,
+    body?: unknown,
+    contentType = "application/json",
+  ): Promise<ToolResult> => (await call(method, path, body, contentType)).result;
+  const storedCampaign = (id: string | number) => getStoredCampaign(call, id, name);
 
   switch (name) {
     case "list_templates": {
@@ -639,7 +679,7 @@ export async function executeTool(
     }
     case "update_campaign": {
       const id = encodeURIComponent(String(args.id));
-      const stored = await getStoredCampaign(invoke, args.id as string | number);
+      const stored = await storedCampaign(args.id as string | number);
       if (stored.error) return stored.error;
       const data = stored.data ?? {};
 
@@ -700,7 +740,7 @@ export async function executeTool(
       let templateId = hasTemplateId ? (args.template_id as number) : undefined;
 
       if (body === undefined || contentType === undefined || templateId === undefined) {
-        const stored = await getStoredCampaign(invoke, args.id as string | number);
+        const stored = await storedCampaign(args.id as string | number);
         if (stored.error) return stored.error;
         if (body === undefined) body = String(stored.data?.body ?? "");
         if (contentType === undefined)
@@ -731,7 +771,7 @@ export async function executeTool(
         typeof args.template_id === "number" ? (args.template_id as number) : undefined;
 
       if (body === undefined || contentType === undefined || templateId === undefined) {
-        const stored = await getStoredCampaign(invoke, args.id as string | number);
+        const stored = await storedCampaign(args.id as string | number);
         if (stored.error) return stored.error;
         if (body === undefined) body = String(stored.data?.body ?? "");
         if (contentType === undefined)
@@ -755,7 +795,7 @@ export async function executeTool(
     }
     case "send_campaign_test": {
       const id = encodeURIComponent(String(args.id));
-      const stored = await getStoredCampaign(invoke, args.id as string | number);
+      const stored = await storedCampaign(args.id as string | number);
       if (stored.error) return stored.error;
       const data = stored.data ?? {};
 
@@ -830,12 +870,18 @@ export async function executeTool(
       return invoke("GET", `/api/sequences/${id}`);
     }
     case "update_sequence_step": {
+      // Nothing to change: refuse before any read or write, so the sequence is not saved or re-stamped.
+      if (args.subject === undefined && args.template_id === undefined) {
+        return toolError("Nothing to change: give subject or template_id.");
+      }
       // PUT replaces the whole definition and omitted steps are deleted, so read every field first.
       const id = encodeURIComponent(String(args.id));
-      const current = await invoke("GET", `/api/sequences/${id}`);
-      if (current.isError) return current;
-      const sequence = (current.structuredContent as { data?: Record<string, unknown> } | undefined)
-        ?.data;
+      const current = await call("GET", `/api/sequences/${id}`);
+      const readError = storedReadError(current, name, "sequences:get");
+      if (readError) return readError;
+      const sequence = (
+        current.result.structuredContent as { data?: Record<string, unknown> } | undefined
+      )?.data;
       if (!sequence) return toolError("Sequence not found");
       const stored = Array.isArray(sequence.steps)
         ? (sequence.steps as Record<string, unknown>[])
