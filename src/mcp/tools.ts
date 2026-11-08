@@ -182,6 +182,11 @@ export const TOOLS: ToolDefinition[] = [
         },
         template_id: { type: "integer", description: "ID of template to use as layout" },
         lists: { type: "array", items: { type: "integer" }, description: "Target list IDs" },
+        media: {
+          type: "array",
+          items: { type: "integer" },
+          description: "Attached media IDs (from list_media); omit to keep the stored media",
+        },
         tags: { type: "array", items: { type: "string" }, description: "Campaign tags" },
         headers: {
           type: "array",
@@ -260,6 +265,137 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "create_campaign",
+    description:
+      "Create a draft email campaign. Get list IDs from list_lists and media IDs from list_media. Returns the created campaign.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Campaign name" },
+        subject: { type: "string", description: "Email subject line" },
+        from_email: {
+          type: "string",
+          description: "Sender email address (omit to use the default sender)",
+        },
+        lists: {
+          type: "array",
+          items: { type: "integer" },
+          description: "Target list IDs (at least one)",
+        },
+        body: { type: "string", description: "Campaign body content in Liquid" },
+        altbody: { type: "string", description: "Optional plain-text alternative body" },
+        content_type: {
+          type: "string",
+          enum: ["richtext", "html", "markdown", "plain"],
+          description: "Content type (default richtext)",
+        },
+        template_id: { type: "integer", description: "ID of template to use as layout" },
+        media: {
+          type: "array",
+          items: { type: "integer" },
+          description: "Media IDs to attach (from list_media)",
+        },
+        headers: {
+          type: "array",
+          items: { type: "object" },
+          description: "Optional custom email headers",
+        },
+        attribs: { type: "object", description: "Custom subscriber/campaign attributes" },
+        tags: { type: "array", items: { type: "string" }, description: "Campaign tags" },
+        send_at: {
+          type: "string",
+          description: "Optional scheduled send timestamp (ISO 8601)",
+        },
+        messenger: {
+          type: "string",
+          enum: ["email"],
+          description: "Sending channel (email)",
+        },
+      },
+      required: ["name", "subject", "lists"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_lists",
+    description:
+      "List mailing lists with their ID, name, type, opt-in and subscriber counts. Use the IDs with create_campaign and update_campaign.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Optional search term to filter lists by name" },
+        page: { type: "integer", description: "Page number (1-based)" },
+        per_page: { type: "integer", description: "Results per page" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_media",
+    description:
+      "List uploaded media files with their ID, filename and URL. Use the IDs to attach media to a campaign or reference the URL in a body.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Optional search term to filter media by filename" },
+        page: { type: "integer", description: "Page number (1-based)" },
+        per_page: { type: "integer", description: "Results per page" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_sequences",
+    description: "List sequences with optional status filtering and pagination.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["draft", "active", "paused", "archived"],
+          description: "Optional sequence status filter",
+        },
+        page: { type: "integer", description: "Page number (1-based)" },
+        per_page: { type: "integer", description: "Results per page" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_sequence",
+    description: "Get a single sequence by its ID, with all of its steps.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", description: "Sequence ID" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_sequence_step",
+    description:
+      "Change the subject or the transactional template of one step of a sequence. The sequence settings and every other step are kept as stored. Get step IDs from get_sequence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", description: "Sequence ID" },
+        step_id: { type: "integer", description: "Step ID to change (from get_sequence)" },
+        subject: {
+          type: ["string", "null"],
+          description: "Subject for the step; null removes the subject override",
+        },
+        template_id: {
+          type: "integer",
+          description: "ID of the transactional template the step sends",
+        },
+      },
+      required: ["id", "step_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "template_reference",
     description:
       "Returns documentation of supported Liquid variables, tags, and filters for template and campaign editing, with examples.",
@@ -277,6 +413,20 @@ function extractPositiveIds(items: unknown): number[] {
       typeof item === "object" && item !== null ? (item as { id?: unknown }).id : item,
     )
     .filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0);
+}
+
+/** Query string from caller-supplied values, passed as given; absent and null values are left out. */
+function queryString(params: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+function toolError(text: string): ToolResult {
+  return { content: [{ type: "text", text }], isError: true, resultType: "complete" };
 }
 
 async function callEndpoint(
@@ -503,7 +653,7 @@ export async function executeTool(
         body: args.body !== undefined ? args.body : data.body,
         content_type: args.content_type !== undefined ? args.content_type : data.content_type,
         lists: args.lists !== undefined ? args.lists : storedLists,
-        media: storedMedia,
+        media: args.media !== undefined ? args.media : storedMedia,
         template_id: args.template_id !== undefined ? args.template_id : data.template_id,
         tags: args.tags !== undefined ? args.tags : data.tags,
         headers: args.headers !== undefined ? args.headers : data.headers,
@@ -636,6 +786,86 @@ export async function executeTool(
       }
 
       return invoke("POST", `/api/campaigns/${id}/test`, body);
+    }
+    case "create_campaign": {
+      const fields = [
+        "name",
+        "subject",
+        "from_email",
+        "lists",
+        "body",
+        "altbody",
+        "content_type",
+        "template_id",
+        "media",
+        "headers",
+        "attribs",
+        "tags",
+        "send_at",
+        "messenger",
+      ];
+      const body: Record<string, unknown> = {};
+      for (const field of fields) {
+        if (args[field] !== undefined) body[field] = args[field];
+      }
+      return invoke("POST", "/api/campaigns", body);
+    }
+    case "list_lists":
+      return invoke(
+        "GET",
+        `/api/lists${queryString({ query: args.query, page: args.page, per_page: args.per_page })}`,
+      );
+    case "list_media":
+      return invoke(
+        "GET",
+        `/api/media${queryString({ query: args.query, page: args.page, per_page: args.per_page })}`,
+      );
+    case "list_sequences":
+      return invoke(
+        "GET",
+        `/api/sequences${queryString({ status: args.status, page: args.page, per_page: args.per_page })}`,
+      );
+    case "get_sequence": {
+      const id = encodeURIComponent(String(args.id));
+      return invoke("GET", `/api/sequences/${id}`);
+    }
+    case "update_sequence_step": {
+      // PUT replaces the whole definition and omitted steps are deleted, so read every field first.
+      const id = encodeURIComponent(String(args.id));
+      const current = await invoke("GET", `/api/sequences/${id}`);
+      if (current.isError) return current;
+      const sequence = (current.structuredContent as { data?: Record<string, unknown> } | undefined)
+        ?.data;
+      if (!sequence) return toolError("Sequence not found");
+      const stored = Array.isArray(sequence.steps)
+        ? (sequence.steps as Record<string, unknown>[])
+        : [];
+      const index = stored.findIndex((step) => step.id === args.step_id);
+      if (index < 0) {
+        return toolError(`Step ${String(args.step_id)} is not a step of sequence ${id}`);
+      }
+      const steps = stored.map((step) => ({
+        id: step.id,
+        wait: step.wait,
+        kind: step.kind,
+        template_id: step.template_id,
+        subject: step.subject,
+        condition: step.condition,
+        on_false: step.on_false,
+        cap_policy: step.cap_policy,
+        max_late: step.max_late,
+      }));
+      if (args.subject !== undefined) steps[index]!.subject = args.subject;
+      if (args.template_id !== undefined) steps[index]!.template_id = args.template_id;
+      return invoke("PUT", `/api/sequences/${id}`, {
+        name: sequence.name,
+        status: sequence.status,
+        trigger: sequence.trigger,
+        exit_on: sequence.exit_on,
+        reentry: sequence.reentry,
+        list_id: sequence.list_id,
+        steps,
+      });
     }
     case "template_reference": {
       return {
