@@ -671,8 +671,11 @@ Executable and backup versions:
    it.
 4. Check `/health` and `iglo.email --version`.
 
-On an upgraded install, the seeded placeholder SMTP password (`password`) disappears on the first
-full save of the settings page, so enter the real SMTP password before that save.
+This applies only to an install whose settings were never saved before the upgrade. On such an
+install, the seeded placeholder passwords (`password`, on both seeded SMTP servers and on the seeded bounce
+mailbox) are not carried over by the first full save of the settings page, so enter the real
+passwords before that save. Any earlier save gave these items their uuids, and they keep their
+passwords, so this note does not apply to them.
 
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain

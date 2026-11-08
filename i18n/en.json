@@ -704,7 +704,7 @@
     "settings.smtp.heloHost": "HELO hostname",
     "settings.smtp.heloHostHelp": "Optional. Some SMTP servers require a FQDN in the hostname. By default, HELLOs go with `localhost`. Set this if a custom hostname should be used.",
     "settings.smtp.name": "SMTP",
-    "settings.smtp.passwordRequired": "Enter the password again: a provider template does not keep the saved one.",
+    "settings.smtp.passwordRequired": "Enter the password again for '{name}' on the SMTP tab: a provider template does not keep the saved one.",
     "settings.smtp.sendTest": "Send e-mail",
     "settings.smtp.setCustomHeaders": "Set custom headers",
     "settings.smtp.testEnterEmail": "Re-enter password to test",

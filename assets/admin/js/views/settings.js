@@ -242,7 +242,8 @@ function component() {
     },
 
     // A template names a provider's host, and a saved password is sent with a blank field as "keep".
-    // So a template always empties the password and marks the server: onSubmit asks for it again.
+    // So a template on a saved server empties the password and marks it: onSubmit asks for it again
+    // unless auth is none. A new server (no uuid) has no saved password to protect, so it is not marked.
     // Comparing the host with the form's would miss a host typed by hand before the template.
     fillSMTP(n, key) {
       this.form.smtp[n] = {
@@ -250,7 +251,7 @@ function component() {
         ...smtpTemplates[key],
         username: '',
         password: '',
-        needsPassword: true,
+        needsPassword: !!this.form.smtp[n].uuid,
         hello_hostname: smtpTemplates[key].hello_hostname ? new URL(config.root_url).hostname : '',
         tls_skip_verify: false,
       };
@@ -354,8 +355,9 @@ function component() {
 
       for (let i = 0; i < form.smtp.length; i += 1) {
         form.smtp[i].host = form.smtp[i].host?.trim();
-        if (form.smtp[i].needsPassword && isDummy(form.smtp[i].password)) {
-          u.toast(i18n.ts('settings.smtp.passwordRequired'), 'warning');
+        // Auth none sends no password, so there is nothing to re-enter (the field is disabled then).
+        if (form.smtp[i].needsPassword && form.smtp[i].auth_protocol !== 'none' && isDummy(form.smtp[i].password)) {
+          u.toast(i18n.ts('settings.smtp.passwordRequired', { name: form.smtp[i].host || `smtp #${i + 1}` }), 'warning');
           return;
         }
         secret(form.smtp[i], 'password', `smtp #${i + 1}`);
