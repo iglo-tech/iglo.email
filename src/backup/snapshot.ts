@@ -36,9 +36,11 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statfsSync,
   statSync,
+  type Stats,
   writeFileSync,
 } from "node:fs";
 import { open } from "node:fs/promises";
@@ -228,6 +230,140 @@ function replaceable(path: string): boolean {
   );
 }
 
+/**
+ * What stands at one path of a folder chain: nothing, or a folder. It refuses, naming the path, a
+ * file, a symlink to a file and a symlink to nothing, since none of them can hold a backup.
+ */
+function standing(path: string): "missing" | "folder" {
+  let stats;
+  try {
+    stats = lstatSync(path, { throwIfNoEntry: false });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
+    throw new Error(`${path} is below something that is not a folder`);
+  }
+  if (!stats) return "missing";
+  if (stats.isSymbolicLink()) {
+    const target = followed(path);
+    if (!target) throw new Error(`${path} is a symlink to a missing target`);
+    if (target.isDirectory()) return "folder";
+    throw new Error(
+      target.isFile()
+        ? `${path} is a symlink to a file, not a folder`
+        : `${path} is a symlink to something other than a folder`,
+    );
+  }
+  if (stats.isDirectory()) return "folder";
+  throw new Error(stats.isFile() ? `${path} is a file, not a folder` : `${path} is not a folder`);
+}
+
+/**
+ * What the symlink at `path` leads to, or undefined if nothing does. A chain through a file or a
+ * loop is refused by name, since the kernel gives no more than ENOTDIR or ELOOP for it.
+ */
+function followed(path: string): Stats | undefined {
+  try {
+    return statSync(path, { throwIfNoEntry: false });
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOTDIR")
+      throw new Error(`${path} is a symlink to a path below a file, not a folder`);
+    if (code === "ELOOP") throw new Error(`${path} is a symlink loop`);
+    throw error;
+  }
+}
+
+/**
+ * Whether `path` is a folder itself. A symlink to one is not: the folders made here must be real.
+ */
+function realFolder(path: string): boolean {
+  try {
+    return !!lstatSync(path, { throwIfNoEntry: false })?.isDirectory();
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOTDIR" || code === "ELOOP") return false;
+    throw error;
+  }
+}
+
+/**
+ * The folders of `directory` that do not exist, shallowest first, and the deepest one that does.
+ * Each component is checked from the root, so the first problem named is the one nearest the root.
+ * It creates nothing: the refusals after it leave no folder behind, and the folders are made later
+ * with createFolders. The caller resolves the parent as the realpath of `existing`, joined with the
+ * folders still to be made, so an alias in the existing part is followed as the kernel would.
+ */
+function missingFolders(directory: string): { existing: string; missing: string[] } {
+  const names = directory.split(sep).filter(Boolean);
+  let existing: string = sep;
+  for (const [index, name] of names.entries()) {
+    const current = join(existing, name);
+    if (standing(current) === "missing") {
+      const missing: string[] = [];
+      let path = existing;
+      for (const next of names.slice(index)) {
+        path = join(path, next);
+        missing.push(path);
+      }
+      return { existing, missing };
+    }
+    existing = current;
+  }
+  return { existing, missing: [] };
+}
+
+/**
+ * Makes the folders shallowest first, recording each one this call makes in `made`. A folder that
+ * appears in the meantime is accepted only if it is a folder itself: a symlink, even to a folder,
+ * is refused, since mkdir would follow it to wherever it points. A path that changed since the
+ * check is named, rather than reported as a raw ENOENT, ENOTDIR, ELOOP or EEXIST; other errors pass.
+ */
+function createFolders(folders: string[], made: string[]): void {
+  for (const folder of folders) {
+    try {
+      mkdirSync(folder, { mode: 0o700 });
+      made.push(folder);
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      if (code !== "EEXIST" && code !== "ENOENT" && code !== "ENOTDIR" && code !== "ELOOP")
+        throw error;
+      if (realFolder(folder)) continue;
+      throw new Error(`${folder} changed meanwhile: it is not a folder`);
+    }
+  }
+}
+
+/**
+ * The places an output may never be, checked on the path it has. createBackup runs it once, before
+ * the folders are made; the realpath check after them is what keeps that answer true.
+ */
+function checkBoundaries(output: string, data: string, uploads: string): void {
+  if (inside(data, output))
+    throw new Error(`The output ${output} would replace the data directory`);
+  if (inside(output, uploads))
+    throw new Error(`The output ${output} is inside the upload directory`);
+}
+
+/**
+ * Removes the folders a failed or refused backup made, deepest first. Only an empty folder goes:
+ * one that is not empty is kept and reported, and a folder that was already gone is nothing.
+ */
+function removeCreated(made: string[], warn: (message: string) => void): void {
+  for (const folder of [...made].reverse()) {
+    try {
+      rmdirSync(folder);
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      if (code === "ENOENT") continue;
+      warn(
+        code === "ENOTEMPTY"
+          ? `${folder} was made by this backup and is kept: it is not empty`
+          : `${folder} was made by this backup and could not be removed: ${code}`,
+      );
+    }
+  }
+}
+
 /** Refuses what no flag may replace; a forced replacement must hold a backup or nothing. */
 function checkDestination(output: string, data: string, force: boolean): void {
   if (inside(data, output))
@@ -253,15 +389,22 @@ function putBack(aside: string, output: string): void {
 
 /**
  * Rename cannot replace a directory that holds files, so a forced old backup steps aside and goes
- * only once the new one has its name. The check comes after the move, so it is of what moved.
+ * only once the new one has its name. The checks come after the move, so they are of what moved.
+ * The live data directory holds a database, so `replaceable` would accept it. It is refused by
+ * identity instead: a path that came to name it cannot fool a comparison of device and inode.
  */
-function stepAside(output: string): string | undefined {
+function stepAside(output: string, live: Stats): string | undefined {
   const aside = join(dirname(output), `${REPLACED}${crypto.randomUUID()}`);
   try {
     renameSync(output, aside);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
+  }
+  const moved = lstatSync(aside);
+  if (moved.dev === live.dev && moved.ino === live.ino) {
+    putBack(aside, output);
+    throw new Error(`${output} is the live data directory; not replacing it`);
   }
   if (replaceable(aside)) return aside;
   putBack(aside, output);
@@ -273,8 +416,8 @@ function stepAside(output: string): string | undefined {
  * holds anything and a file, atomically, so nothing is moved or deleted, and there is no earlier
  * step for a kill to leave behind. It does replace an empty directory, which loses nothing.
  */
-function publish(partial: string, output: string, force: boolean): void {
-  const aside = force ? stepAside(output) : undefined;
+function publish(partial: string, output: string, force: boolean, live: Stats): void {
+  const aside = force ? stepAside(output, live) : undefined;
   try {
     renameSync(partial, output);
   } catch (error) {
@@ -312,13 +455,17 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
   if (!statSync(databasePath, { throwIfNoEntry: false }))
     throw new Error(`No database at ${databasePath}`);
   const data = realpathSync(dataDir);
+  // The identity of the live data directory, taken before anything can move: see stepAside.
+  const live = statSync(data);
   const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));
-  mkdirSync(dirname(wanted), { recursive: true, mode: 0o700 });
-  const parent = realpathSync(dirname(wanted));
+  // Folders are created only after every check that can refuse; see missingFolders.
+  const folders = missingFolders(dirname(wanted));
+  const parent = join(realpathSync(folders.existing), relative(folders.existing, dirname(wanted)));
   const output = join(parent, basename(wanted));
   checkDestination(output, data, options.force ?? false);
 
   const db = new Database(databasePath, { readonly: true, strict: true, safeIntegers: true });
+  let created: string[] = [];
   let partial: string | undefined;
   let flusher: Bun.Subprocess | undefined;
   try {
@@ -326,21 +473,29 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     if (single<bigint>(db, "user_version") === 0n)
       throw new Error(`${databasePath} has no schema yet; start the server once`);
     const liveUploads = uploadRoot(data, storedUploadPath(db));
-    if (inside(output, liveUploads))
-      throw new Error(`The output ${output} is inside the upload directory`);
+    checkBoundaries(output, data, liveUploads);
     const pages = single<bigint>(db, "page_count") - single<bigint>(db, "freelist_count");
     const needed =
       Number(pages * single<bigint>(db, "page_size")) +
       uploadedFiles(liveUploads).reduce((sum, { size }) => sum + size, 0);
-    const available = (options.available ?? freeBytes)(parent);
+    const available = (options.available ?? freeBytes)(realpathSync(folders.existing));
     if (needed > available)
       throw new Error(`A backup needs about ${needed} bytes and ${parent} has ${available} free`);
-    for (const entry of readdirSync(parent))
+    // A folder that does not exist yet has no leftovers in it.
+    for (const entry of folders.missing.length === 0 ? readdirSync(parent) : [])
       if (entry.startsWith(PARTIAL))
         warn(`${join(parent, entry)} is left from an interrupted backup or is one still running`);
       else if (entry.startsWith(REPLACED))
         warn(`${join(parent, entry)} is a backup that a forced backup did not finish replacing`);
 
+    createFolders(folders.missing, created);
+    // The checks above were of the path as it stood before the folders existed. Now that they do,
+    // the output must still be where they were made: a symlink that took a folder's place since
+    // the check would move the backup, so it is refused before anything is written.
+    // Once this holds, output is parent joined with the basename, which is the real path of the
+    // output. The boundaries were checked on that path above, so they are not checked again.
+    if (realpathSync(dirname(wanted)) !== parent)
+      throw new Error(`${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`);
     // The directory is 0700 from mkdtemp and the database 0600 from its first byte: SQLite writes
     // into an empty file it finds and keeps its mode.
     partial = mkdtempSync(join(parent, PARTIAL));
@@ -381,13 +536,19 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
 
     const inspection = inspect(partial, clock, options.supportedVersion);
     options.beforePublish?.();
-    publish(partial, output, options.force ?? false);
+    publish(partial, output, options.force ?? false, live);
     partial = undefined;
+    // The backup is in the folders now, so they are its parents and stay.
+    created = [];
     return { ...inspection, path: output };
   } finally {
     flusher?.kill();
     db.close(true);
-    if (partial) rmSync(partial, { recursive: true, force: true });
+    try {
+      if (partial) rmSync(partial, { recursive: true, force: true });
+    } finally {
+      removeCreated(created, warn);
+    }
   }
 }
 

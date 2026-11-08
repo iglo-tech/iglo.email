@@ -126,8 +126,16 @@ pass `--force` to replace it on each subsequent run:
 mkdir -p -m 0700 ~/iglo-backups
 docker exec iglo-email iglo.email backup --output /data/backups/latest --force
 docker exec iglo-email iglo.email backup --verify /data/backups/latest
-docker cp iglo-email:/data/backups/latest ~/iglo-backups/monday
+docker cp iglo-email:/data/backups/latest/. ~/iglo-backups/monday
 ```
+
+Copy into a destination that does not exist yet, and give each run a new name (`monday`,
+`tuesday`, and so on). `docker cp` creates a missing destination and fills it with the backup's
+contents. With the `/.` suffix, an existing destination gets those contents merged into it, so a
+repeated copy to the same name mixes two backups. Without the suffix, an existing destination
+gets the directory nested inside it, as `monday/latest`. `docker cp` does not create the parent
+folder either, which `mkdir -p` does above. See the
+[`docker container cp` reference](https://docs.docker.com/reference/cli/docker/container/cp/).
 
 `reset-password`, `reset-totp` and `backup --release-hold` refuse while the server runs: stop the
 container, run them with `--rm -v iglo-email-data:/data`, and start it again. A
@@ -434,10 +442,12 @@ runuser -u iglo-email -- iglo.email backup --data-dir /var/lib/iglo.email \
 runuser -u iglo-email -- iglo.email backup --verify /var/backups/iglo.email/monday
 ```
 
-Run it as the service user, while the server runs or while it is stopped: files in the backup
-keep that owner through a restore. The parent directory must exist and be writable by that user,
-as [Install](#install) sets up. With no `--output` the backup goes to
-`backups/iglo-email-<time>` in the data directory. That is not off-site, so copy it away.
+Run it as the service user, while the server runs or while it is stopped: files in the backup keep
+that owner through a restore. Missing parent folders of `--output` are created, mode 0700; the
+nearest one that exists must be writable by that user, as [Install](#install) sets up. A refused
+backup leaves no folder it made and keeps every folder that existed. A failed one does the same: it
+removes exactly the folders it made, and only while they are empty. With no `--output` the backup
+goes to `backups/iglo-email-<time>` in the data directory. That is not off-site, so copy it away.
 `--force` replaces an earlier backup, and only something that looks like one: never another
 directory or the data directory, and it checks what it actually moved. Without it, an existing
 path is refused, also one that appears while the backup runs: publishing is one rename, which
@@ -480,11 +490,13 @@ pages of the database and the uploads, about the size of the data directory. It 
 and refuses if there is too little.
 
 **Failure.** The backup is built in `.iglo-email-backup-partial-<random>` beside its destination,
-synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and
-removes that directory. A killed one leaves it, and nothing at the final name, so a retry of the
-same `--output` works. `--verify` refuses it, and it can never be mistaken for a backup. A kill after the final rename, before the command reports success, leaves a complete backup at that name: check it with `--verify` before you retry, since a retry refuses the existing destination. The next
-`backup` in that place warns about it and does not delete it, as it could be running. When none
-is running, remove it:
+synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and removes
+that directory, and any parent folder it created for it. A killed one leaves it, and nothing at the
+final name, so a retry of the same `--output` works. `--verify` refuses it, and it can never be
+mistaken for a backup. A kill after the final rename, before the command reports success, leaves a
+complete backup at that name: check it with `--verify` before you retry, since a retry refuses the
+existing destination. The next `backup` in that place warns about it and does not delete it, as it
+could be running. When none is running, remove it:
 
 ```sh
 rm -rf /var/backups/iglo.email/.iglo-email-backup-partial-*
