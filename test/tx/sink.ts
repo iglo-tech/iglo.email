@@ -13,7 +13,12 @@ export interface Captured {
  * no message text, so a memory measurement does not count the sink's own copy (B26).
  */
 export async function startSink(
-  options: { reject?: () => boolean; pauseMs?: number; discardData?: boolean; clock?: Clock } = {},
+  options: {
+    reject?: ((to: string) => boolean) | undefined;
+    pauseMs?: number | undefined;
+    discardData?: boolean | undefined;
+    clock?: Clock | undefined;
+  } = {},
 ) {
   const messages: Captured[] = [];
   const sockets = new Set<Socket>();
@@ -52,11 +57,14 @@ export async function startSink(
         else if (verb === "MAIL") {
           current.from = /<([^>]*)>/.exec(line)?.[1] ?? "";
           socket.write("250 ok\r\n");
-        } else if (verb === "RCPT" && options.reject?.()) {
-          socket.write("550 no such user\r\n");
         } else if (verb === "RCPT") {
-          current.to.push(/<([^>]*)>/.exec(line)?.[1] ?? "");
-          socket.write("250 ok\r\n");
+          const to = /<([^>]*)>/.exec(line)?.[1] ?? "";
+          if (options.reject?.(to)) {
+            socket.write("550 no such user\r\n");
+          } else {
+            current.to.push(to);
+            socket.write("250 ok\r\n");
+          }
         } else if (verb === "DATA") {
           data = [];
           socket.write("354 go\r\n");

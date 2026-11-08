@@ -277,6 +277,16 @@ curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
 It prints the public key for the DNS record
 `mail._domainkey.example.com TXT "v=DKIM1; k=rsa; p=<key>"`. The trap removes the staging directory
 on success and on failure: the key now lives in the database. Exposing `$API` on a command line
+leaves it in `ps`, so use a file or netrc in a real environment.
+
+### Admin notifications
+
+Operators can receive notifications for campaign and import events by configuring `app.notify_emails` (a comma-separated list of email addresses on the General settings tab in the Admin UI, or an array of strings in `PUT /api/settings`). When configured, system notification emails are sent using listmonk's built-in templates from `app.from_email[0]`, with at most one notification per status change, sent after the change commits when:
+- A campaign **finishes** (audience exhausted or zero recipients), is **cancelled** via the API, or **pauses automatically** upon reaching `app.max_send_errors`.
+- A subscriber CSV import **finishes** or **fails**.
+
+If `app.notify_emails` is empty or unset, no notifications are generated. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
+
 ## Amazon SES bounces
 
 Sending through SES is ordinary SMTP (see [SMTP and DKIM](#smtp-and-dkim)). SES reports bounces and

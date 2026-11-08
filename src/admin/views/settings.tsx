@@ -153,7 +153,7 @@ function General({ t }: { t: Translation }) {
           placeholder="https://mail.yoursite.com/favicon.png"
         />
       </fieldset>
-      <fieldset class="card" data-keywords="from email address sender">
+      <fieldset class="card" data-keywords="from email address sender admin notification emails">
         <legend>{t.T("globals.fields.email")}</legend>
         <label data-field="">
           {t.T("settings.general.fromEmail")}
@@ -165,6 +165,13 @@ function General({ t }: { t: Translation }) {
           ></textarea>
           <Hint>{t.T("settings.general.fromEmailHelp")}</Hint>
         </label>
+        <TextField
+          model="form['app.notify_emails']"
+          name="app.notify_emails"
+          label={t.T("settings.general.adminNotifEmails")}
+          hint={t.T("settings.general.adminNotifEmailsHelp")}
+          placeholder="you@yoursite.com"
+        />
       </fieldset>
       <fieldset
         class="card"
@@ -203,15 +210,11 @@ function General({ t }: { t: Translation }) {
       <Unavailable
         t={t}
         legend={t.T("settings.unavailableTitle")}
-        keywords="language locale admin notification emails check updates version"
+        keywords="language locale check updates version"
       >
         <label data-field="">
           {t.T("globals.fields.language")}
           <input x-model="form['app.lang']" />
-        </label>
-        <label data-field="">
-          {t.T("settings.general.adminNotifEmails")}
-          <input x-bind:value="(form['app.notify_emails'] || []).join(', ')" />
         </label>
         <Switch model="form['app.check_updates']" label={t.T("settings.general.checkUpdates")} />
       </Unavailable>

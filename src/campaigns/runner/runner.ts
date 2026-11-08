@@ -14,6 +14,7 @@ import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message, Outcome } from "@/messaging/email";
+import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
@@ -78,6 +79,7 @@ export interface RunnerDeps {
   /** Idle scan interval; listmonk scans every five seconds. */
   scanIntervalMs?: number;
   leaseMs?: number;
+  notify?: AdminNotifier;
 }
 
 interface Pipe {
@@ -152,6 +154,34 @@ export function startCampaignRunner(deps: RunnerDeps) {
   const iso = (ms: number) => new Date(ms).toISOString();
   const log = (safe: SafeMessage, message: string) => deps.logger.error(new Error(message), safe);
   const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
+
+  const pendingNotifications: Array<{
+    campaign: { id: bigint; name: string; status: string; sent: number; to_send: number };
+    reason?: string;
+  }> = [];
+
+  function flushNotifications() {
+    if (!deps.notify || pendingNotifications.length === 0) return;
+    const batch = pendingNotifications.splice(0, pendingNotifications.length);
+    for (const item of batch) {
+      const current = store.state(item.campaign.id);
+      if (current?.status !== item.campaign.status) continue;
+      try {
+        deps.notify.campaignStatus(item.campaign, item.reason);
+      } catch (error) {
+        deps.logger.error(error);
+      }
+    }
+  }
+
+  function enqueueNotification(item: {
+    campaign: { id: bigint; name: string; status: string; sent: number; to_send: number };
+    reason?: string;
+  }) {
+    if (!deps.notify) return;
+    pendingNotifications.push(item);
+    queueMicrotask(flushNotifications);
+  }
 
   /** Ends the pipe. Its batch has drained: nothing it pushed is still outstanding. */
   function drop(id: bigint) {
@@ -256,6 +286,16 @@ export function startCampaignRunner(deps: RunnerDeps) {
       // No recipients: listmonk's pipe ends at once and the campaign is finished.
       store.finish(id, iso(now));
       store.release(id, token);
+      const counts = store.counts(id);
+      enqueueNotification({
+        campaign: {
+          id,
+          name: campaign.name,
+          status: "finished",
+          sent: counts ? Number(counts.sent) : 0,
+          to_send: counts ? Number(counts.to_send) : 0,
+        },
+      });
       return;
     }
     const started = store.start(id, token, measured.count, measured.max, iso(now));
@@ -299,6 +339,16 @@ export function startCampaignRunner(deps: RunnerDeps) {
       // Subscribers are exhausted: the campaign is finished.
       store.finish(id, iso(now));
       release(pipe);
+      const counts = store.counts(id);
+      enqueueNotification({
+        campaign: {
+          id,
+          name: pipe.campaign.name,
+          status: "finished",
+          sent: counts ? Number(counts.sent) : 0,
+          to_send: counts ? Number(counts.to_send) : 0,
+        },
+      });
       return null;
     }
     const at = iso(now);
@@ -635,6 +685,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
     // Progress for the batch: sent count, outcomes, and the unsent rest returned to the cursor.
     const now = iso(clock.now().getTime());
     const unsent = recipients.filter((_, i) => !pushed.has(i) && !outcomes.has(i));
+    let paused = false;
     writeTransaction(db, () => {
       // A runner whose lease has passed to another holder writes nothing and drops the pipe.
       if (store.state(c.id)?.runner_lease !== token || !store.addSent(c.id, token, sent, now)) {
@@ -648,10 +699,27 @@ export function startCampaignRunner(deps: RunnerDeps) {
         store.rewind(c.id, token, unsent[0]!.id - 1n, now);
       }
       if (stop === "errors") {
-        store.pause(c.id, token, c.runner_generation, now);
+        paused = store.pause(c.id, token, c.runner_generation, now);
         release(pipe);
       } else if (stop === "status") release(pipe);
     });
+    if (paused) {
+      try {
+        const counts = store.counts(c.id);
+        deps.notify?.campaignStatus(
+          {
+            id: c.id,
+            name: c.name,
+            status: "paused",
+            sent: counts ? Number(counts.sent) : 0,
+            to_send: counts ? Number(counts.to_send) : 0,
+          },
+          "Too many errors",
+        );
+      } catch (error) {
+        deps.logger.error(error);
+      }
+    }
   }
 
   recoverOrphans();
@@ -700,9 +768,11 @@ export function startCampaignRunner(deps: RunnerDeps) {
     /** Stops claims, lets the batch in flight finish, then releases every lease. */
     async stop(): Promise<void> {
       stopping.abort();
+      flushNotifications();
       try {
         await loop.done;
       } finally {
+        flushNotifications();
         registry.end(token);
         if (pipes.size)
           writeTransaction(db, () => {
