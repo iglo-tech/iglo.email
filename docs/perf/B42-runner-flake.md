@@ -41,12 +41,27 @@ A temporary copy of the test body (not committed) recorded what the loop does.
 ## Not ruled out
 
 - Host-level stalls. A roughly 1.2 s test would need a 25× slowdown to reach the 30 s limit and about 4× to reach the 5 s serial default. That fits memory pressure (the tmpfs `/tmp` held about 5.4 GiB at the time) or CPU contention from unlocked checks. This was not reproduced.
-- Failure shape. `drive` waits up to 20000 iterations, about 140 s of real time at 7 ms per iteration. That exceeds the 30 s limit, so a stall appears as a bare timeout with no state recorded.
+- Failure shape. `drive` waited up to 20000 iterations, about 140 s of real time at 7 ms per iteration. Its loop is the likely mechanism for the reported symptom, though not for any stall itself. If the waited-on condition never became true (pushes never reached the count), the loop spun until the 30 s test timeout, and the timeout was the only record. Every measured run met the condition by iteration 73, so such a stall was not observed here.
 
 ## Experiment not valid
 
 A `dd` run with `oflag=dsync` was meant to add fsync contention. `/tmp` is a tmpfs, so the result says nothing about disk fsync.
 
-## Next step
+## Bounded wait (this change)
 
-Capture state when the flake does occur: per-test durations from a JUnit report, memory pressure (`/proc/pressure/memory`) and the `drive` iteration count, all from inside the failing worker. Changing `drive` to fail with the pushed count and runner status after a bounded number of iterations would turn a timeout into a diagnosable failure. That is a diagnostic improvement, not a root-cause fix, and was not made here.
+`drive` in `test/campaigns/runner/fixture.ts` now stops after 2,000 iterations, not 20,000. The bound is far above the 73 iterations measured for the tracked-link test. When it is reached, the error names the stuck state:
+
+- iteration count, step, and the last condition value (always `false` at that point);
+- injected clock time and the clock advance since the wait began, and wall time elapsed;
+- pushes made, pending sends (unsettled pushes), and sink messages;
+- each campaign created through the fixture: status, `sent`, `to_send`, and whether the runner lease is held.
+
+Normal runs take the same path as before: the condition is checked once per iteration in the same order. A regression test (`runner.test.ts`, "a wait that never completes fails with the stuck state") checks the message for a campaign whose send never settles.
+
+This is a diagnostic change, not a fix. It makes the next occurrence name its stuck state instead of timing out, and it does not identify the stall itself.
+
+The send-rate test (`test/messaging/send-rate.test.ts`) has its own copy of this loop with the same 20,000 bound. It is outside `test/campaigns`, so it is unchanged here.
+
+## Backlog
+
+- When this test next fails, the error now names the stuck state; open a task from it.

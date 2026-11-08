@@ -95,14 +95,61 @@ export async function runnerFixture(
     runners.push(runner);
     return runner;
   };
-  /** Lets I/O and microtasks run, then advances the clock by `step`, until `done()`. */
-  const drive = async (done: () => boolean | Promise<boolean>, step = 50, limit = 20_000) => {
+  /** Campaigns this fixture created, so a stuck wait can report their state. */
+  const campaignIds: number[] = [];
+  const campaign = async (input: object) => {
+    const created = await f.campaign(input);
+    campaignIds.push(created.id);
+    return created;
+  };
+  /**
+   * The state of the campaigns a stuck wait was waiting on, from public reads and the runner
+   * store. It runs only while a wait's own error is being reported, so it never throws.
+   */
+  async function stuckState(): Promise<string> {
+    const parts = await Promise.all(
+      campaignIds.map(async (id) => {
+        try {
+          const body = (await read(id)) as { status: string; sent: number; to_send: number };
+          const lease = store.state(BigInt(id))?.runner_lease ? "held" : "free";
+          return (
+            `campaign ${id} status ${body.status} sent ${body.sent} ` +
+            `to_send ${body.to_send} lease ${lease}`
+          );
+        } catch (error) {
+          return `campaign ${id} unreadable (${error instanceof Error ? error.message : String(error)})`;
+        }
+      }),
+    );
+    return parts.join("; ") || "no campaigns";
+  }
+  /**
+   * Lets I/O and microtasks run, then advances the clock by `step`, until `done()`.
+   *
+   * The bound is 2,000 iterations. The longest wait the runner tests need is 73 iterations
+   * (the tracked-link test, measured in docs/perf/B42-runner-flake.md), so this leaves a wide
+   * margin. A wait that never completes fails here with its state, rather than spinning until
+   * the test timeout.
+   */
+  const drive = async (done: () => boolean | Promise<boolean>, step = 50, limit = 2_000) => {
+    const wallStart = performance.now();
+    const clockStart = f.clock.now().getTime();
+    let last = false;
     for (let i = 0; i < limit; i++) {
       for (let j = 0; j < 3; j++) await Bun.sleep(0);
-      if (await done()) return;
+      last = await done();
+      if (last) return;
       f.clock.advance(step);
     }
-    throw new Error("drive: condition not reached");
+    const state = await stuckState().catch((error: unknown) => `state unavailable (${error})`);
+    throw new Error(
+      `drive: condition not reached after ${limit} iterations (step ${step} ms): ` +
+        `last condition value ${last}; clock ${f.clock.now().toISOString()} ` +
+        `(+${f.clock.now().getTime() - clockStart} ms); ` +
+        `wall ${Math.round(performance.now() - wallStart)} ms; ` +
+        `pushes ${pushes.length}, pending sends ${inFlight}, ` +
+        `sink messages ${f.sink.messages.length}; ${state}`,
+    );
   };
   const read = async (id: number) => (await f.json(`/api/campaigns/${id}`)).body.data;
   const until = (id: number, value: string) => drive(async () => (await read(id)).status === value);
@@ -135,6 +182,7 @@ export async function runnerFixture(
     )?.subscription_status as string | undefined;
   return {
     ...f,
+    campaign,
     pushes,
     control,
     runnerStore: store,

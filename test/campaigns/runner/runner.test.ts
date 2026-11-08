@@ -616,6 +616,27 @@ test("tracked links personalized per subscriber do not accumulate across batches
   expect((await f.request(link)).status).toBe(307);
 });
 
+test("a wait that never completes fails with the stuck state, not at the test timeout", async () => {
+  f = await runnerFixture({ hold: true });
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const c = await f.campaign({ name: "stuck", subject: "s", lists: [list] });
+  await f.status(c.id, "running");
+  f.start();
+  // The push is never settled, so the send stays pending and the condition never holds.
+  const error = await f
+    .drive(() => false, 10, 50)
+    .then(
+      () => "",
+      (failure: Error) => failure.message,
+    );
+  expect(error).toContain("condition not reached after 50 iterations");
+  expect(error).toContain("last condition value false");
+  expect(error).toContain("pending sends 1");
+  expect(error).toContain(`campaign ${c.id} status running`);
+  expect(error).toContain("lease held");
+});
+
 test("a due scheduled campaign sends its first batch on the first scan that finds it due", async () => {
   f = await runnerFixture();
   const list = await f.list("l");
