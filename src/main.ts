@@ -401,7 +401,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           notifyEmails: current["app.notify_emails"],
           fromEmail: current["app.from_email"][0] ?? "",
           rootUrl: current["app.root_url"],
-          siteName: current["app.site_name"],
+          logoUrl: current["app.logo_url"],
         };
       },
     });

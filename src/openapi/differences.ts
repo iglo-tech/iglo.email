@@ -621,7 +621,7 @@ export const differences: Difference[] = [
   {
     area: "CSV import (M1.9)",
     summary:
-      "`POST /api/import/subscribers` takes at most 100 MiB (the request may add 256 KiB of framing), else 413, and one upload at a time, else 400 as for a running import.",
+      "`POST /api/import/subscribers` takes at most 100 MiB (the request may add 256 KiB of framing), else 413, and one upload at a time, else 400 as for a running import. A bad CSV that fails the import sends the `import-status` `failed` mail to `app.notify_emails` when configured: upstream's `LoadCSV` errors set `failed` without notifying (B38).",
     applies: ["/api/import/subscribers"],
   },
   {

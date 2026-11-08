@@ -162,7 +162,8 @@ describe("messaging absolute deadlines", () => {
     expect(emailer.close()).toBe(close);
     const refused = emailer.push({ ...message, messageId: "<known@example.test>" });
     expect(refused.messageId).toBe("<known@example.test>");
-    expect((await refused.result).stage).toBe("local");
+    // Refused after close: the message never starts, so it is not-started, not failed.
+    expect((await refused.result).stage).toBe("not-started");
     clock.advance(4999);
     await Promise.resolve();
     clock.advance(1);

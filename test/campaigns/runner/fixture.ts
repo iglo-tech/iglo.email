@@ -33,6 +33,7 @@ export async function runnerFixture(
     outcome: "accepted" as Outcome["status"],
   };
   const emailer = {
+    closed: false,
     push(message: Message) {
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);

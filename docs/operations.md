@@ -680,7 +680,7 @@ Operators can receive notifications for campaign and import events by configurin
 - A campaign **finishes** (audience exhausted or zero recipients), is **cancelled** via the API, or **pauses automatically** upon reaching `app.max_send_errors`.
 - A subscriber CSV import **finishes** or **fails**.
 
-If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error; the valid entries still receive the mail. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
+If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error on every notification; the valid entries still receive the mail. If `app.from_email[0]` is not a valid address, no admin notification is sent and the bad value is logged once per process, because the sender would be refused by SES. Nothing falls back to another sender. A notification that cannot be queued is logged and never changes the campaign or import it reports on. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
 
 ## Monitoring
 

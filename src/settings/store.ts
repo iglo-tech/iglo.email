@@ -87,7 +87,12 @@ export function createSettings(db: Database, clock: Clock, rootUrl: string, role
       });
       if (before && after) onUpdateListener?.(after, before);
     },
+    /**
+     * One listener per store, called after each committed update. A second registration throws:
+     * a silent replacement would drop the first listener (main.ts wires the send-rate limiter here).
+     */
     onUpdate(fn: (next: Settings, current: Settings) => void): void {
+      if (onUpdateListener) throw new Error("A settings update listener is already registered");
       onUpdateListener = fn;
     },
     close: () => queries.close(),

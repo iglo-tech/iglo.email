@@ -18,10 +18,10 @@ Configuration: campaign workers `app.concurrency = 8`, `app.message_rate = 10` (
 ## Observations
 
 1. **Pacing Accuracy:**
-   With the default SES production limit (`messaging.max_send_rate = 14`), delivery is paced smoothly at 13.73 messages/s across the 30-second window (13.7 / 13.8 in 10 s buckets). In every one-second window, the maximum number of messages dispatched is at most 15 (due to interval spacing boundary), conforming to the Amazon SES account rate limit.
+   With the default SES production limit (`messaging.max_send_rate = 14`), delivery is paced smoothly at 13.73 messages/s across the 30-second window (13.7 / 13.8 in 10 s buckets). The limiter's own starts never exceed the cap: each start is at least one interval (1000 / 14 ms) after the last, so a one-second window holds at most 14 starts. The 15 in the table is wall-clock arrival jitter at the loopback sink, not a limiter overrun. The run does not show conformance to the SES account limit; the injected-clock tests check the cap (test 1 of `test/messaging/send-rate.test.ts`).
 
 2. **Hot-Path Limiter Overhead:**
    Comparing Cap 0 (limiter disabled) at 79.97 messages/s and High Cap 1,000 (limiter check on the active send path) at 80.00 messages/s against the baseline before B37 (79.37 messages/s on clean `origin/main`) demonstrates that the in-memory rate limiter introduces zero measurable throughput degradation on the hot path when capacity is available.
 
 3. **Low-Cap Under Concurrent Load:**
-   A 20-second run at cap 1 (`messaging.max_send_rate = 1`) under concurrent campaign, sequences, and transactional load (`POST /api/tx`) produced 219 queued sends and 10 sending in the outbox at window end, with 0 failed outbox rows and 0 failed transactions (`tx.failed = 0`, `events.failed = 0`). Waiters delayed by the limiter do not time out against the 60 s cutoff and nothing is marked failed.
+   A 20-second run at cap 1 (`messaging.max_send_rate = 1`) under concurrent campaign, sequences, and transactional load (`POST /api/tx`) produced 219 queued sends and 10 sending in the outbox at window end, with 0 failed outbox rows and 0 failed transactions (`tx.failed = 0`, `events.failed = 0`). Waiters delayed by the limiter do not time out against the 60 s cutoff and nothing is marked failed. A 20-second run cannot show the 60 s cutoff itself: that is covered on the injected clock by test 1b (`test/messaging/send-rate.test.ts`), which advances past 60 s.

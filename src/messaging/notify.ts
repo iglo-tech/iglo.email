@@ -14,7 +14,6 @@ export interface AdminNotifierSettings {
   fromEmail: string;
   rootUrl: string;
   logoUrl?: string;
-  siteName?: string;
 }
 
 export interface CampaignNotificationData {
@@ -23,7 +22,6 @@ export interface CampaignNotificationData {
   status: string;
   sent: number;
   to_send: number;
-  runner_generation?: bigint;
 }
 
 export interface ImportNotificationData {
@@ -42,6 +40,13 @@ function capitalize(value: string): string {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
 }
 
+/** A bare or display-name address that fits the sender and recipient limits. */
+function usableAddress(value: string): boolean {
+  return (
+    Buffer.byteLength(value) <= 2048 && !/[\r\n\0]/.test(value) && parseAddress(value) !== undefined
+  );
+}
+
 export function createAdminNotifier(deps: {
   sends: Pick<Sends, "enqueueRequest">;
   renderer: TemplateRenderer;
@@ -51,6 +56,8 @@ export function createAdminNotifier(deps: {
   const logError = (error: unknown) => {
     (deps.logger ?? console).error(error);
   };
+  /** Each unusable sender is reported once per notifier, not on every notification. */
+  const reportedFrom = new Set<string>();
 
   const enqueue = (subject: string, html: string) => {
     const current = deps.settings();
@@ -65,11 +72,7 @@ export function createAdminNotifier(deps: {
 
     const validEmails: string[] = [];
     for (const email of rawEmails) {
-      if (
-        Buffer.byteLength(email) <= 2048 &&
-        !/[\r\n\0]/.test(email) &&
-        parseAddress(email) !== undefined
-      ) {
+      if (usableAddress(email)) {
         validEmails.push(email);
       } else {
         logError(new Error(`Skipping invalid admin notification email address: ${email}`));
@@ -77,13 +80,20 @@ export function createAdminNotifier(deps: {
     }
     if (!validEmails.length) return;
 
-    const fromCandidate = (current.fromEmail || "").trim();
-    const fromEmail =
-      Buffer.byteLength(fromCandidate) <= 2048 &&
-      !/[\r\n\0]/.test(fromCandidate) &&
-      parseAddress(fromCandidate) !== undefined
-        ? fromCandidate
-        : "noreply@localhost";
+    // An unusable sender would only be rejected by SES, so nothing is sent: the notification is
+    // skipped and the bad value is logged once.
+    const fromEmail = (current.fromEmail || "").trim();
+    if (!usableAddress(fromEmail)) {
+      if (!reportedFrom.has(fromEmail)) {
+        reportedFrom.add(fromEmail);
+        logError(
+          new Error(
+            `Admin notifications not sent: app.from_email is not a valid address: ${fromEmail}`,
+          ),
+        );
+      }
+      return;
+    }
 
     deps.sends.enqueueRequest({
       sends: validEmails.map((to) => ({
