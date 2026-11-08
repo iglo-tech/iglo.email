@@ -655,6 +655,12 @@ export const differences: Difference[] = [
     applies: ["/api/settings"],
   },
   {
+    area: "Inert admin settings (B40, D89)",
+    summary:
+      "`upload.s3.*`, `messengers`, `app.lang`, and the SMTP `max_msg_retries` and `msg_retry_delay` are accepted and stored by the settings API for listmonk API compatibility; no effect; no admin control (D89).",
+    applies: ["/api/settings"],
+  },
+  {
     area: "Dropped `GET /api/config`",
     summary:
       "404. The admin pages get what they need in the `window._LM_CONFIG` of each page, and each setting has its own API.",

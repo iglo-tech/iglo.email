@@ -71,15 +71,9 @@ process.exitCode = await withStack(async ({ origin }) => {
       "eval",
       `document.querySelector("#bounces").click(); [...document.querySelectorAll("input[type=checkbox]")].find((i) => i.closest("label")?.innerText.includes("Enable bounce processing")).click()`,
     );
-    see(
-      "unavailable cards",
-      value(`[...document.querySelectorAll("[data-unavailable] legend")].map((l) => l.innerText)`),
-    );
-    for (const name of ["messengers", "appearance"]) {
-      browser("eval", `document.querySelector("#${name}").click()`);
-      if (shots) browser("screenshot", `${shots}/settings-${name}.png`);
-      see(name, text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 200));
-    }
+    browser("eval", `document.querySelector("#appearance").click()`);
+    if (shots) browser("screenshot", `${shots}/settings-appearance.png`);
+    see("appearance", text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 200));
 
     visit("/admin/users", "users");
     see("users heading", text(".page-title"));

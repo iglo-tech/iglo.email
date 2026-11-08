@@ -1,6 +1,6 @@
 // Adapted from listmonk tests/specs/settings.spec.js at 6fcd95f. The run shares one database, so
 // each test restores what it changed. A save needs no restart here (D44), so there is no health
-// wait; messengers, bounce mailboxes and the other bounce providers are read-only (D44, 07-api-and-ui.md);
+// wait; messengers, bounce mailboxes and the other bounce providers have no admin control (D44, D89, 07-api-and-ui.md);
 // the root URL belongs to the bootstrap flags. API-only cases live in `bun run contract:settings`.
 import { generateKeyPairSync } from "node:crypto";
 import { expect } from "@playwright/test";
@@ -534,9 +534,13 @@ test("a save without edits leaves unshown values and untouched secrets alone", a
     {
       ...seeded.smtp[0],
       password: "smtp-secret",
+      max_msg_retries: 7,
+      msg_retry_delay: "3s",
       dkim: { domain_name: "example.test", key_selector: "s1", private_key: privateKey },
     },
   ]);
+  await put("app.lang", "de");
+  await put("upload.s3.bucket", "e2e-bucket");
   await put("messengers", [
     { name: "postback", root_url: "http://messenger.test", enabled: false, password: "m-secret" },
   ]);
@@ -582,20 +586,16 @@ test("a save without edits leaves unshown values and untouched secrets alone", a
   }
 });
 
-test("messengers are shown and kept, not edited", async ({ page }) => {
+test("messengers have no control, a save keeps them, and the media provider is read-only", async ({
+  page,
+}) => {
   const res = await api(page, "/api/settings/messengers", "PUT", [
     { name: "sms-test", root_url: "http://localhost:9999/send", enabled: false },
   ]);
   expect(res.status).toBe(200);
   await page.reload();
-  await tab(page, "Messengers").click();
-  const messenger = page.getByTestId("messenger");
-  await expect(messenger).toHaveCount(1);
-  await expect(messenger.getByRole("textbox", { name: "Name" })).toHaveValue("sms-test");
-  await expect(messenger.getByRole("textbox", { name: "Name" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Add new" }).locator("visible=true")).toHaveCount(
-    0,
-  );
+  await expect(tab(page, "Messengers")).toHaveCount(0);
+  await expect(page.locator('[name="upload.provider"]')).toBeEditable({ editable: false });
   await save(page);
   expect((await settings(page)).messengers).toMatchObject([{ name: "sms-test", enabled: false }]);
 });

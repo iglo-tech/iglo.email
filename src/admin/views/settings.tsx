@@ -98,30 +98,10 @@ function TextField(props: {
     </label>
   );
 }
-/** Settings that are stored but do nothing in this build: shown, and not editable. */
-function Unavailable(props: {
-  t: Translation;
-  legend: string;
-  keywords: string;
-  note?: string;
-  children: Child;
-}) {
-  return (
-    <fieldset class="card" disabled data-unavailable="" data-keywords={props.keywords}>
-      <legend>{props.legend}</legend>
-      <p class="text-light">{props.note ?? props.t.T("settings.unavailable")}</p>
-      {props.children}
-    </fieldset>
-  );
-}
-
 function General({ t }: { t: Translation }) {
   return (
     <div class="settings-items">
-      <fieldset
-        class="card"
-        data-keywords="site name root url logo favicon language locale branding domain title"
-      >
+      <fieldset class="card" data-keywords="site name root url logo favicon branding domain title">
         <legend>{t.T("globals.terms.general")}</legend>
         <TextField
           model="form['app.site_name']"
@@ -207,17 +187,6 @@ function General({ t }: { t: Translation }) {
           hint={t.T("settings.general.enablePublicArchiveRSSContentHelp")}
         />
       </fieldset>
-      <Unavailable
-        t={t}
-        legend={t.T("settings.unavailableTitle")}
-        keywords="language locale check updates version"
-      >
-        <label data-field="">
-          {t.T("globals.fields.language")}
-          <input x-model="form['app.lang']" />
-        </label>
-        <Switch model="form['app.check_updates']" label={t.T("settings.general.checkUpdates")} />
-      </Unavailable>
     </div>
   );
 }
@@ -566,9 +535,6 @@ function Security({ t }: { t: Translation }) {
 }
 
 function Media({ t }: { t: Translation }) {
-  const s3 = (key: string, label: string) => (
-    <TextField model={`form['upload.s3.${key}']`} label={label} />
-  );
   return (
     <div class="settings-items">
       <fieldset
@@ -580,8 +546,15 @@ function Media({ t }: { t: Translation }) {
           <input placeholder="jpg, png, gif .." />
         </ot-taginput>
       </fieldset>
-      <fieldset class="card" data-keywords="filesystem local upload path uri directory disk">
+      <fieldset
+        class="card"
+        data-keywords="filesystem local upload path uri directory disk provider"
+      >
         <legend>filesystem</legend>
+        <label data-field="">
+          {t.T("globals.fields.provider")}
+          <input name="upload.provider" readonly x-model="form['upload.provider']" />
+        </label>
         <TextField
           model="form['upload.filesystem.upload_path']"
           label={t.T("settings.media.upload.path")}
@@ -597,26 +570,6 @@ function Media({ t }: { t: Translation }) {
           placeholder="/uploads"
         />
       </fieldset>
-      <Unavailable
-        t={t}
-        legend="S3"
-        keywords="media upload provider storage s3 aws bucket region access key secret cloud object storage endpoint"
-      >
-        <TextField model="form['upload.provider']" label={t.T("globals.fields.provider")} />
-        {s3("url", t.T("settings.media.s3.url"))}
-        {s3("aws_default_region", t.T("globals.fields.region"))}
-        {s3("aws_access_key_id", t.T("settings.media.s3.key"))}
-        <TextField
-          model="form['upload.s3.aws_secret_access_key']"
-          type="password"
-          label={t.T("settings.media.s3.secret")}
-        />
-        {s3("bucket", t.T("settings.media.s3.bucket"))}
-        {s3("bucket_path", t.T("settings.media.s3.bucketPath"))}
-        {s3("bucket_type", t.T("settings.media.s3.bucketType"))}
-        {s3("expiry", t.T("settings.media.s3.uploadExpiry"))}
-        {s3("public_url", t.T("settings.media.s3.publicURL"))}
-      </Unavailable>
     </div>
   );
 }
@@ -663,7 +616,7 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
     <>
       <div
         class="mb-6 settings-items mail-servers"
-        data-keywords="smtp mail server outgoing email sending host port tls authentication login relay gmail ses sendgrid mailgun postmark from headers retries"
+        data-keywords="smtp mail server outgoing email sending host port tls authentication login relay gmail ses sendgrid mailgun postmark from headers"
       >
         <template x-for="(item, n) in form.smtp" x-bind:key="n">
           <details
@@ -833,27 +786,6 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
                     maxlength="10"
                     placeholder="5s"
                   />
-                  <div class="row" data-field="">
-                    <div class="col-6">
-                      <NumberField
-                        model="item.max_msg_retries"
-                        label={t.T("globals.fields.retries")}
-                        hint={t.T("settings.mailserver.retriesHelp")}
-                        min="1"
-                        max="1000"
-                        placeholder="2"
-                      />
-                    </div>
-                    <div class="col-6">
-                      <TextField
-                        model="item.msg_retry_delay"
-                        label={t.T("globals.fields.retryDelay")}
-                        hint={t.T("settings.smtp.retryDelayHelp")}
-                        maxlength="10"
-                        placeholder="0s"
-                      />
-                    </div>
-                  </div>
                 </fieldset>
                 <fieldset class="card" x-bind:disabled={off}>
                   <legend>{t.T("globals.fields.name")}</legend>
@@ -987,26 +919,6 @@ function Bounces({ t }: { t: Translation }) {
   );
 }
 
-function Messengers({ t }: { t: Translation }) {
-  return (
-    <div class="settings-items messengers">
-      <Unavailable
-        t={t}
-        legend={t.T("settings.messengers.name")}
-        keywords="messenger sms push notification webhook postback external channel"
-      >
-        <template x-for="(item, n) in form.messengers" x-bind:key="n">
-          <div data-testid="messenger">
-            <Switch model="item.enabled" label={t.T("globals.terms.enabled")} />
-            <TextField model="item.name" label={t.T("globals.fields.name")} />
-            <TextField model="item.root_url" label={t.T("globals.terms.url")} />
-          </div>
-        </template>
-      </Unavailable>
-    </div>
-  );
-}
-
 function Appearance({ t }: { t: Translation }) {
   const editor = (key: string, lang: string, legend: string, keywords: string) => (
     <fieldset class="card" data-keywords={keywords}>
@@ -1075,7 +987,6 @@ export const settingsView: AdminView = ({ context, can }) => {
     ["media", t.T("settings.media.title"), <Media t={t} />],
     ["smtp", t.T("settings.smtp.name"), <Smtp t={t} canManage={canManage} />],
     ["bounces", t.T("globals.terms.bounces"), <Bounces t={t} />],
-    ["messengers", t.T("settings.messengers.name"), <Messengers t={t} />],
     ["appearance", t.T("globals.terms.appearance"), <Appearance t={t} />],
   ] as const;
   return {
