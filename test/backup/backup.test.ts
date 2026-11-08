@@ -891,3 +891,285 @@ test("a failure after folders were created removes exactly those, and keeps what
   expect(names(kept)).toEqual(["keep.txt"]);
   expect(readFileSync(join(kept, "keep.txt"), "utf8")).toBe("kept");
 });
+
+const PARTIAL_PREFIX = ".iglo-email-backup-partial-";
+const REPLACED_PREFIX = ".iglo-email-backup-replaced-";
+const entriesStarting = (directory: string, prefix: string) =>
+  readdirSync(directory).filter((name) => name.startsWith(prefix));
+
+/** The message of a refusal. The test fails if the call does not refuse. */
+function refusal(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error("the call did not refuse");
+}
+
+test("a parent renamed away after the partial exists is refused as changed meanwhile, and the partial is named", async () => {
+  await live();
+  const parent = join(base, "x", "a");
+  mkdirSync(join(base, "x"), { recursive: true });
+  const warnings: string[] = [];
+  // The parent moves once the partial backup is made, so the partial is no longer where it was made.
+  const message = refusal(() =>
+    createBackup({
+      dataDir,
+      output: join(parent, "out"),
+      clock: createRealClock(),
+      supportedVersion: version,
+      beforePublish: () => renameSync(join(base, "x"), join(base, "x-moved")),
+      warn: (message) => warnings.push(message),
+    }),
+  );
+  expect(message).toContain("changed meanwhile");
+  expect(message).not.toContain("ENOENT");
+  const [partial] = entriesStarting(join(base, "x-moved", "a"), PARTIAL_PREFIX);
+  expect(partial).toBeDefined();
+  expect(existsSync(join(base, "x-moved", "a", partial!, "iglo-email.db"))).toBe(true);
+  expect(warnings.join("\n")).toContain(join(parent, partial!));
+  expect(names(base)).toEqual(["data", "x-moved"]);
+});
+
+test("two backups into one parent that the first one made both succeed", async () => {
+  await live();
+  const shared = join(base, "shared");
+  const secondWarnings: string[] = [];
+  const firstWarnings: string[] = [];
+  let nested = false;
+  // The first backup's clock is read once its partial is in the new parent. The second backup then
+  // finds that parent with the first one's partial in it, and writes its own backup beside it.
+  const clock = {
+    ...createRealClock(),
+    now() {
+      if (!nested) {
+        nested = true;
+        createBackup({
+          dataDir,
+          output: join(shared, "b"),
+          clock: createRealClock(),
+          supportedVersion: version,
+          warn: (message) => secondWarnings.push(message),
+        });
+      }
+      return new Date();
+    },
+  };
+  const first = createBackup({
+    dataDir,
+    output: join(shared, "a"),
+    clock,
+    supportedVersion: version,
+    warn: (message) => firstWarnings.push(message),
+  });
+  expect(first.path).toBe(join(shared, "a"));
+  expect(names(shared)).toEqual(["a", "b"]);
+  expect((await runBackup(executable, ["--verify", join(shared, "a")])).exitCode).toBe(0);
+  expect((await runBackup(executable, ["--verify", join(shared, "b")])).exitCode).toBe(0);
+  expect(firstWarnings.join("\n")).not.toContain("could not be removed");
+  expect(secondWarnings.join("\n")).not.toContain("could not be removed");
+});
+
+test("a parent that another backup creates after this one checked it is used, and both succeed", async () => {
+  await live();
+  const shared = join(base, "shared");
+  const warnings: string[] = [];
+  // The other backup runs inside this one's free-space check, so the parent appears after the check
+  // that found it missing, and before this backup makes its folders.
+  const otherBackup = () => {
+    createBackup({
+      dataDir,
+      output: join(shared, "b"),
+      clock: createRealClock(),
+      supportedVersion: version,
+      warn() {},
+    });
+    return Number.MAX_SAFE_INTEGER;
+  };
+  const first = createBackup({
+    dataDir,
+    output: join(shared, "a"),
+    clock: createRealClock(),
+    supportedVersion: version,
+    available: otherBackup,
+    warn: (message) => warnings.push(message),
+  });
+  expect(first.path).toBe(join(shared, "a"));
+  expect(names(shared)).toEqual(["a", "b"]);
+  expect(warnings).toEqual([]);
+});
+
+test("a folder another process starts using is kept, and no warning is given", async () => {
+  await live();
+  const parent = join(base, "new");
+  const warnings: string[] = [];
+  const message = refusal(() =>
+    createBackup({
+      dataDir,
+      output: join(parent, "out"),
+      clock: createRealClock(),
+      supportedVersion: version,
+      beforePublish() {
+        writeFileSync(join(parent, "theirs.txt"), "theirs");
+        throw new Error("stopped before publication");
+      },
+      warn: (message) => warnings.push(message),
+    }),
+  );
+  expect(message).toBe("stopped before publication");
+  expect(warnings).toEqual([]);
+  expect(names(parent)).toEqual(["theirs.txt"]);
+});
+
+test("a forced backup whose replaced copy cannot be removed is published, warned about, and not cleaned up", async () => {
+  await live();
+  const output = join(base, "backup");
+  const args = ["--data-dir", dataDir, "--output", output];
+  expect((await runBackup(executable, args)).exitCode).toBe(0);
+  // A file in the old backup's upload folder, which the folder's read-only mode keeps from being removed.
+  writeFileSync(join(output, "uploads", "held.txt"), "held");
+  const restore = () => {
+    for (const name of entriesStarting(base, REPLACED_PREFIX))
+      chmodSync(join(base, name, "uploads"), 0o700);
+  };
+  const warnings: string[] = [];
+  try {
+    const result = createBackup({
+      dataDir,
+      output,
+      force: true,
+      clock: createRealClock(),
+      supportedVersion: version,
+      beforePublish: () => chmodSync(join(output, "uploads"), 0o500),
+      warn: (message) => warnings.push(message),
+    });
+    expect(result.path).toBe(output);
+    const [replaced] = entriesStarting(base, REPLACED_PREFIX);
+    expect(replaced).toBeDefined();
+    expect(warnings).toEqual([expect.stringContaining(join(base, replaced!))]);
+    expect(warnings.join("\n")).not.toContain("kept");
+    expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
+  } finally {
+    restore();
+  }
+});
+
+test("a folder that took the name of one this backup made is left alone", async () => {
+  await live();
+  const made = join(base, "n");
+  const warnings: string[] = [];
+  // The folder this backup made is moved away with its partial, and an empty folder takes its name.
+  const message = refusal(() =>
+    createBackup({
+      dataDir,
+      output: join(made, "out"),
+      clock: createRealClock(),
+      supportedVersion: version,
+      beforePublish() {
+        renameSync(made, join(base, "n-moved"));
+        mkdirSync(made);
+      },
+      warn: (message) => warnings.push(message),
+    }),
+  );
+  expect(message).toContain("changed meanwhile");
+  expect(message).not.toContain("ENOENT");
+  expect(names(base)).toEqual(["data", "n", "n-moved"]);
+  expect(names(made)).toEqual([]);
+  const [partial] = entriesStarting(join(base, "n-moved"), PARTIAL_PREFIX);
+  expect(warnings.join("\n")).toContain(join(made, partial!));
+});
+
+test("a failed sync of the folder after publication is an error, names the replaced backup, and keeps it", async () => {
+  await live();
+  const output = join(base, "backup");
+  expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
+    0,
+  );
+  const warnings: string[] = [];
+  let message = "";
+  try {
+    // Without read permission the folder cannot be opened for its sync, but the rename still works.
+    message = refusal(() =>
+      createBackup({
+        dataDir,
+        output,
+        force: true,
+        clock: createRealClock(),
+        supportedVersion: version,
+        beforePublish: () => chmodSync(base, 0o300),
+        warn: (message) => warnings.push(message),
+      }),
+    );
+  } finally {
+    chmodSync(base, 0o700);
+  }
+  const [replaced] = entriesStarting(base, REPLACED_PREFIX);
+  expect(replaced).toBeDefined();
+  expect(message).toContain(`${output} is in place`);
+  expect(message).toContain("may not survive a crash");
+  expect(message).toContain(join(base, replaced!));
+  expect(warnings).toEqual([]);
+  expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
+  expect((await runBackup(executable, ["--verify", join(base, replaced!)])).exitCode).toBe(0);
+});
+
+test("a parent renamed away during the copy is refused as changed meanwhile, and the partial is named", async () => {
+  await live();
+  mkdirSync(join(base, "x"));
+  const warnings: string[] = [];
+  // The clock is read once the partial's database file is in place, before the database is copied.
+  const clock = {
+    ...createRealClock(),
+    now() {
+      if (existsSync(join(base, "x"))) renameSync(join(base, "x"), join(base, "x-moved"));
+      return new Date();
+    },
+  };
+  const message = refusal(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "x", "a", "out"),
+      clock,
+      supportedVersion: version,
+      warn: (message) => warnings.push(message),
+    }),
+  );
+  expect(message).toContain("changed meanwhile");
+  const [partial] = entriesStarting(join(base, "x-moved", "a"), PARTIAL_PREFIX);
+  expect(partial).toBeDefined();
+  expect(warnings.join("\n")).toContain(join(base, "x", "a", partial!));
+});
+
+test("an error while the partial is inspected keeps the original failure, and is not named as a change", async () => {
+  await live();
+  mkdirSync(join(base, "x"));
+  const warnings: string[] = [];
+  // Once the partial is in place, its parent loses search permission: the copy fails, and so does
+  // the look at the partial that follows it.
+  const clock = {
+    ...createRealClock(),
+    now() {
+      chmodSync(join(base, "x"), 0o000);
+      return new Date();
+    },
+  };
+  let message = "";
+  try {
+    message = refusal(() =>
+      createBackup({
+        dataDir,
+        output: join(base, "x", "a", "out"),
+        clock,
+        supportedVersion: version,
+        warn: (message) => warnings.push(message),
+      }),
+    );
+  } finally {
+    chmodSync(join(base, "x"), 0o700);
+  }
+  expect(message).not.toContain("changed meanwhile");
+  expect(message).toContain("unable to open database");
+  expect(warnings.join("\n")).toContain("could not be removed: EACCES");
+});
