@@ -12,8 +12,7 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B51** New settings items never inherit another item's secret ([brief](briefs/B51.md)): `preserve()` (`src/settings/validate.ts:239-244`) and the DKIM `prior` match (`:279`) treat an empty uuid as a match, so a new SMTP/bounce-mailbox/messenger item copies a uuid-less stored item's password or DKIM key (LOW: only seeded placeholders lack uuids; upstream `cmd/settings.go:206-292` does the same). Deliberate difference (size S)
-2. **B52** Bind the HTTP port before starting background loops (#101 r1): the outbox and campaign runner start at `src/main.ts:412`/`:553`, before the bind at `:761`, so a start that fails on the port can claim and touch sends before exiting. Bind first (or start loops only after a successful bind); keep the instance lock first. Test: a start on an occupied port exits with no send claimed (size S)
+1. **B52** ([brief](briefs/B52.md)) Bind the HTTP port before starting background loops (#101 r1): the outbox and campaign runner start at `src/main.ts:412`/`:553`, before the bind at `:761`, so a start that fails on the port can claim and touch sends before exiting. Bind first (or start loops only after a successful bind); keep the instance lock first. Test: a start on an occupied port exits with no send claimed (size S)
 
 ## Owner decisions
 
@@ -44,6 +43,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B51 | [#102](https://github.com/iglo-tech/iglo.email/pull/102) | 4f32b88 | New settings items never inherit another item's secret; provider template asks for the password again |
 | B50 | [#101](https://github.com/iglo-tech/iglo.email/pull/101) | b57478e | Race-free test ports: shared `test/serve-port.ts` in 11 fixtures |
 | B48 | [#100](https://github.com/iglo-tech/iglo.email/pull/100) | 0e70a82 | Leftovers: unused `lang` removed, contract runs skip the SNS tunnel, MCP hint names list roles |
 | B46 | [#99](https://github.com/iglo-tech/iglo.email/pull/99) | 7a706fe | Bounce test polish: real settings in tx fixture, compiled upgrade test, SES compiled contract cases |
@@ -145,9 +145,12 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Test: `test/bootstrap/cli.test.ts:300` once exited 1 instead of 0 on SIGTERM under parallel load (passes alone; #98 r2).
 - Bounce tests ([#99](https://github.com/iglo-tech/iglo.email/pull/99) r1): no tunnel test for a wrong-host certificate; upgrade test 2 duplicates bootstrap/`owned.ts` helpers.
 - Test ports ([#101](https://github.com/iglo-tech/iglo.email/pull/101) r1): restarts in `owned.ts`, worked-example, `webhooks/crash.ts` and one bootstrap test reuse the just-freed port without retry; `scheduler/crash.ts` now hides post-start stderr; two timeout paths kill without reaping; note in `test/serve-port.ts` that adding `reusePort` to the server breaks the retry and `listensOn`; measurement scripts and the Docker reference harness still probe-then-bind.
+- Settings secrets ([#102](https://github.com/iglo-tech/iglo.email/pull/102) r2): a saved server switched to auth `none` keeps its stored password, and a later switch back to login without retyping sends it to the new host (needs an explicit clear in the API); a disabled server cannot take a password until re-enabled; two items with the same uuid in one save share a secret.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
+
+- A hand-typed host change on a saved SMTP server keeps its stored password (lead, B51 #102): editing a host is deliberate, only `settings:manage` admins can, and upstream does the same. A provider template, which swaps the host as a side effect, clears it instead.
 
 Decided by agents and logged; not open work. Reopen only on a new failure or a new realistic client.
 
