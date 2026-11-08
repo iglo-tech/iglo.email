@@ -252,3 +252,91 @@ test("7. a seeded SMTP server has a uuid before its first save, and that save ke
   expect(after.smtp[0].uuid).toBe(before.smtp[0].uuid);
   expect(after.smtp[0].password).toBe("•".repeat("password".length));
 });
+
+// The pre-B51 state: every list is stored with uuid-less rows that hold real passwords. The new
+// items below are uuid-less too, so a lookup that matches "" to "" would hand them these secrets.
+test("8. new SMTP, bounce and messenger items with blank passwords take none from uuid-less rows", async () => {
+  const seeded = unmasked(await read());
+  const db = openDatabase(f.persisted.dataDir);
+  try {
+    writeStoredValue(db, "smtp", [
+      {
+        ...seeded.smtp[0],
+        uuid: "",
+        name: "",
+        host: "b51-stored-smtp.example.test",
+        password: "b51-smtp-stored-secret",
+      },
+    ]);
+    writeStoredValue(db, "bounce.mailboxes", [
+      {
+        ...seeded["bounce.mailboxes"][0],
+        uuid: "",
+        host: "b51-stored-bounce.example.test",
+        password: "b51-bounce-stored-secret",
+      },
+    ]);
+    writeStoredValue(db, "messengers", [
+      {
+        uuid: "",
+        enabled: false,
+        name: "b51-stored-chat",
+        root_url: "https://chat.example.test",
+        username: "b51-stored-bot",
+        password: "b51-messenger-stored-secret",
+        max_conns: 10,
+        timeout: "5s",
+        max_msg_retries: 2,
+      },
+    ]);
+  } finally {
+    db.close();
+  }
+
+  const body = unmasked(await read());
+  body.smtp.push({
+    ...seeded.smtp[0],
+    uuid: "",
+    name: "b51-new-smtp",
+    host: "b51-new-smtp.example.test",
+    username: "b51-new-smtp-user",
+    password: "",
+    enabled: false,
+    from_addresses: [],
+  });
+  body["bounce.mailboxes"].push({
+    ...seeded["bounce.mailboxes"][0],
+    uuid: "",
+    host: "b51-new-bounce.example.test",
+    username: "b51-new-bounce-user",
+    password: "",
+    return_path: "bounces@b51.example.test",
+  });
+  body.messengers.push({
+    uuid: "",
+    enabled: false,
+    name: "b51-new-chat",
+    root_url: "https://chat.example.test",
+    username: "b51-new-bot",
+    password: "",
+    max_conns: 10,
+    timeout: "5s",
+    max_msg_retries: 2,
+  });
+  expect((await save(body)).status).toBe(200);
+
+  const after = await read();
+  const smtp = after.smtp.find(
+    (item: { host: string }) => item.host === "b51-new-smtp.example.test",
+  );
+  const bounce = after["bounce.mailboxes"].find(
+    (item: { host: string }) => item.host === "b51-new-bounce.example.test",
+  );
+  const messenger = after.messengers.find((item: { name: string }) => item.name === "b51-new-chat");
+  expect(smtp).toBeDefined();
+  expect(bounce).toBeDefined();
+  expect(messenger).toBeDefined();
+  expect(smtp.password).toBeUndefined();
+  expect(bounce.password).toBeUndefined();
+  expect(messenger.password).toBeUndefined();
+});

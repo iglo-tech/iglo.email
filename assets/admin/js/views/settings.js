@@ -241,12 +241,16 @@ function component() {
       this.form.smtp.splice(n, 1);
     },
 
+    // A template names a provider's host, and a saved password is sent with a blank field as "keep".
+    // So a template always empties the password and marks the server: onSubmit asks for it again.
+    // Comparing the host with the form's would miss a host typed by hand before the template.
     fillSMTP(n, key) {
       this.form.smtp[n] = {
         ...this.form.smtp[n],
         ...smtpTemplates[key],
         username: '',
         password: '',
+        needsPassword: true,
         hello_hostname: smtpTemplates[key].hello_hostname ? new URL(config.root_url).hostname : '',
         tls_skip_verify: false,
       };
@@ -323,7 +327,7 @@ function component() {
       if (s.noFromAddresses && !s.from_addresses.length) {
         s.from_addresses = null;
       }
-      ['strEmailHeaders', 'savedHeaders', 'showHeaders', 'open', 'noFromAddresses'].forEach((key) => delete s[key]);
+      ['strEmailHeaders', 'savedHeaders', 'showHeaders', 'open', 'noFromAddresses', 'needsPassword'].forEach((key) => delete s[key]);
       return s;
     },
 
@@ -350,6 +354,10 @@ function component() {
 
       for (let i = 0; i < form.smtp.length; i += 1) {
         form.smtp[i].host = form.smtp[i].host?.trim();
+        if (form.smtp[i].needsPassword && isDummy(form.smtp[i].password)) {
+          u.toast(i18n.ts('settings.smtp.passwordRequired'), 'warning');
+          return;
+        }
         secret(form.smtp[i], 'password', `smtp #${i + 1}`);
         secret(form.smtp[i].dkim, 'private_key', `dkim #${i + 1}`);
         if (!this._server(form.smtp[i])) {

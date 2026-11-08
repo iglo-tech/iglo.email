@@ -59,7 +59,7 @@ export async function runSettingsContract(target: {
   const after = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
     .data;
   check(JSON.stringify(after) === JSON.stringify(snapshot), "invalid-no-write");
-  // Before the first successful save: the seeded items are still as the install wrote them.
+  // Order-independent: it finds its items by host and restores the snapshot it read.
   await runSettingsNewItems(target);
   await runSettingsNul(target);
   await runSettingsCouncilSmall(target);

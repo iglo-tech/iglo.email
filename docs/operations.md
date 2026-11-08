@@ -671,6 +671,9 @@ Executable and backup versions:
    it.
 4. Check `/health` and `iglo.email --version`.
 
+On an upgraded install, the seeded placeholder SMTP password (`password`) disappears on the first
+full save of the settings page, so enter the real SMTP password before that save.
+
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
