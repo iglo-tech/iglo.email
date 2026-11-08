@@ -730,6 +730,18 @@ describe("B34 MCP endpoint tests", () => {
     const forbiddenText = getTextContent(forbiddenCampRes);
     expect(forbiddenText.toLowerCase()).toContain("permission denied: campaigns:get");
 
+    // A read-merge tool gets the same refusal, and its hint names the list access that is also needed.
+    const mergeDenied = await scopedClient.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, subject: "B48 must not be saved" },
+    });
+    expect(mergeDenied.isError).toBe(true);
+    const mergeText = getTextContent(mergeDenied);
+    expect(mergeText).toContain("Nothing was changed");
+    expect(mergeText).toContain(
+      "campaigns:get_all, or campaigns:get with a list role that includes one of the campaign's lists",
+    );
+
     await scopedClient.close();
     await client.close();
   });

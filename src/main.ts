@@ -726,7 +726,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           siteName: current.siteName,
           faviconUrl: current.faviconUrl,
           rootUrl: current.rootUrl,
-          lang: settings!.read()["app.lang"],
           cacheSlowQueries: settings!.read()["app.cache_slow_queries"],
           disableTracking: settings!.read()["privacy.disable_tracking"],
           individualTracking: settings!.read()["privacy.individual_tracking"],

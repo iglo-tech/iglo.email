@@ -551,7 +551,11 @@ async function getStoredCampaign(
   tool: string,
 ): Promise<{ data?: Record<string, unknown>; error?: ToolResult }> {
   const reply = await call("GET", `/api/campaigns/${encodeURIComponent(String(id))}`);
-  const readError = storedReadError(reply, tool, "campaigns:get or campaigns:get_all");
+  const readError = storedReadError(
+    reply,
+    tool,
+    "campaigns:get_all, or campaigns:get with a list role that includes one of the campaign's lists",
+  );
   if (readError) {
     return { error: readError };
   }

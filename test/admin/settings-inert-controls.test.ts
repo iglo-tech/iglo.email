@@ -60,11 +60,36 @@ test("2. a save from the settings page keeps the values of the keys that have no
   expect(smtp.length).toBeGreaterThan(0);
   smtp[0]!["max_msg_retries"] = 7;
   smtp[0]!["msg_retry_delay"] = "3s";
+  // An item added on the page, as its add button builds it: no uuid yet, and the UI-only fields
+  // (strEmailHeaders, savedHeaders, showHeaders, open, noFromAddresses) are gone before the request.
+  smtp.push({
+    name: "",
+    enabled: true,
+    exclude_from_default: false,
+    host: "smtp.b40-added.test",
+    hello_hostname: "",
+    port: 587,
+    auth_protocol: "none",
+    username: "",
+    password: "b40-added-secret",
+    email_headers: [],
+    from_addresses: [],
+    max_conns: 10,
+    max_msg_retries: 2,
+    msg_retry_delay: "10ms",
+    idle_timeout: "15s",
+    wait_timeout: "5s",
+    tls_type: "STARTTLS",
+    tls_skip_verify: false,
+  });
   expect((await api(f, cookie, "/api/settings/smtp", "PUT", smtp)).status).toBe(200);
 
   const before = await settings();
   expect(before["upload.s3.bucket"]).toBe("b40-bucket");
   expect(before["app.lang"]).toBe("de");
+  const added = before["smtp"].at(-1) as Record<string, unknown>;
+  expect(added["host"]).toBe("smtp.b40-added.test");
+  expect(typeof added["uuid"] === "string" && added["uuid"].length > 0).toBe(true);
 
   // The page's own request: the whole object it read, with the shown fields edited (none here).
   const saved = await api(f, cookie, "/api/settings", "PUT", unmasked(before));
