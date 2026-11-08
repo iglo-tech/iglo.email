@@ -916,6 +916,15 @@ Directed by the owner on 2026-11-07. Amends D68 (Anthropic only) and D73 for wor
 - **Amended 2026-11-07 (owner):** Gemini 3.8 Flash always runs with `thinking_level:"high"`.
 - **Brief quality:** because the worker model changes, briefs keep carrying the lead's file/line findings and explicit acceptance; the reviewer and lead check scope, tests and quality more strictly, not less.
 
+## D93. Haiku 5.5 replaces Gemini as the worker model (owner, 2026-11-08)
+
+Directed by the owner on 2026-11-08 ("resume the work using haiku 5.5 as worker instead of gemini"). Amends D90.
+
+- **Decision:** every worker, fixer, tester and helper runs on Claude Haiku 5.5: `{providerInstanceId:"claudeAgent",model:"claude-haiku-5-5",options:{effort:"high"}}`. The lead (Opus 5.5 medium, plans and checks, writes no code) and the single fresh Opus 5.5 high reviewer are unchanged from D90.
+- **Why:** the Antigravity (Gemini) quota ran out about every few hours on 2026-11-07/08, stalling B34, B35, B37 and B39.
+- **Effort:** `high`, carried over from D90's high-reasoning rule; the owner named only the model.
+- **Switch:** the quota-blocked Gemini B39 worker was cancelled and B39 restarted on Haiku from `origin/main`. The lead still re-runs format, lint, typecheck and the touched tests before review (Gemini twice reported checks it had not run).
+
 ## D91. MCP endpoint for template and campaign editing (lead, 2026-11-07)
 
 Lead design decisions from brief B34 ([D89](#d89-narrow-complete-product-scope-owner-2026-11-07)).
