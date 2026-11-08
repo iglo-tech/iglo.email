@@ -49,7 +49,7 @@ A `dd` run with `oflag=dsync` was meant to add fsync contention. `/tmp` is a tmp
 
 ## Bounded wait (this change)
 
-`drive` in `test/campaigns/runner/fixture.ts` now stops after 2,000 iterations, not 20,000. The bound is far above the 73 iterations measured for the tracked-link test. When it is reached, the error names the stuck state:
+`drive` in `test/campaigns/runner/fixture.ts` now stops after 2,000 iterations, not 20,000. **Superseded by B49** (`docs/perf/B49-drive-bound.md`): an iteration cap that small starved real file reads, so the wait is now bounded by 10 s of real time, with the iteration cap as a runaway guard. The error still names the stuck state. The bound was far above the 73 iterations measured for the tracked-link test. When it is reached, the error names the stuck state:
 
 - iteration count, step, and the last condition value (always `false` at that point);
 - injected clock time and the clock advance since the wait began, and wall time elapsed;
