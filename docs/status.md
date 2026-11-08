@@ -1,11 +1,11 @@
 # Status
 
-Updated 2026-11-07. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-08. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
 All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33 (#85), B34 MCP (#86, D91) and B35 SES only (#87) merged. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B58 (#85–#109) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 Owner-only, blocking nothing else: publishing a release, PDF viewers on real devices, and making the GHCR package public after its first push. SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
@@ -13,9 +13,6 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Empty: every agent-doable item is merged (2026-11-08). Only owner items and one watch note remain (Active, Hardening backlog). New review findings or a recurrence of the runner flake reopen the queue.
-
-
-
 
 ## Owner decisions
 
