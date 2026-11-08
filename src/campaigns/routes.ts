@@ -557,13 +557,17 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     try {
       const updated = store.updateStatus(id, input.status ?? "");
       if (input.status === "cancelled") {
-        deps.notify?.campaignStatus({
-          id,
-          name: updated.name,
-          status: "cancelled",
-          sent: Number(updated.sent),
-          to_send: Number(updated.to_send),
-        });
+        try {
+          deps.notify?.campaignStatus({
+            id,
+            name: updated.name,
+            status: "cancelled",
+            sent: Number(updated.sent),
+            to_send: Number(updated.to_send),
+          });
+        } catch (error) {
+          context.app.logger.error(error);
+        }
       }
       return ok(projectCampaign(updated));
     } catch (error) {

@@ -292,23 +292,31 @@ export function createImporter(deps: {
       }
       log.add("imported finished");
       status.status = "finished";
-      deps.notify?.importStatus({
-        name: status.name,
-        status: "finished",
-        imported: status.imported,
-        total: status.total,
-      });
+      try {
+        deps.notify?.importStatus({
+          name: status.name,
+          status: "finished",
+          imported: status.imported,
+          total: status.total,
+        });
+      } catch (error) {
+        logger.error(error);
+      }
     } catch (error) {
       // A batch rolls back whole, so what is stored is the batches counted in `imported`.
       if (error instanceof CsvError) failed(`error reading CSV: ${error.message}`);
       else if (error instanceof HttpError) failed(error.message);
       else failed(`error importing: ${(error as Error).message}`);
-      deps.notify?.importStatus({
-        name: status.name,
-        status: "failed",
-        imported: status.imported,
-        total: status.total,
-      });
+      try {
+        deps.notify?.importStatus({
+          name: status.name,
+          status: "failed",
+          imported: status.imported,
+          total: status.total,
+        });
+      } catch (notifyError) {
+        logger.error(notifyError);
+      }
     } finally {
       await file?.close().catch(() => {});
       await rm(path, { force: true }).catch((error) => logger.error(error));

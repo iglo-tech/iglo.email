@@ -46,6 +46,11 @@ import {
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
+import { registerSubscriberRoutes } from "@/subscribers/routes";
+import { registerWebhookRoutes } from "@/webhooks/routes";
+import { startWebhookDelivery } from "@/webhooks/delivery";
+import { createSubscriberTracking } from "@/analytics/subscriber";
+import { startReceiver } from "@/test/webhooks/receiver";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
@@ -200,6 +205,7 @@ async function createNotifyFixture(
   const notifier = createAdminNotifier({
     sends,
     renderer,
+    logger: app.logger,
     settings: () => {
       const current = settingsStore.read();
       return {
@@ -252,6 +258,42 @@ async function createNotifyFixture(
     attachments,
     embedImages,
     notify: notifier,
+  });
+
+  const subscriberTracking = createSubscriberTracking(db);
+  registerSubscriberRoutes(
+    router,
+    subscribers,
+    roles,
+    auth,
+    () => ({
+      "privacy.domain_allowlist": [],
+      "privacy.domain_blocklist": [],
+    }),
+    {
+      afterAdminWrite: () => {},
+      send: () => {},
+    },
+    {
+      events: () => [],
+      enrollments: () => ({ count: 0, results: [] }),
+      sends: (id, page, perPage) => sends.list({ subscriberId: id, page, perPage }),
+    },
+    {
+      activity: (id) => subscriberTracking.activity(id),
+      clearActivity: (id, type) => subscriberTracking.clear(id, type),
+      exportSections: () => ({}) as any,
+    },
+  );
+  registerWebhookRoutes(router, { webhooks, auth });
+
+  const webhookDelivery = startWebhookDelivery({
+    db,
+    clock,
+    logger: app.logger,
+    webhooks,
+    blockPrivate: () => false,
+    transport: { fetch: globalThis.fetch },
   });
 
   registerSettingsRoutes(router, settingsStore, auth, undefined, () => true);
@@ -320,11 +362,12 @@ async function createNotifyFixture(
   };
 
   const drainOutbox = async () => {
-    // Drive outbox processing of queued items
+    // Drive outbox and webhook processing of queued items
     for (let i = 0; i < 20; i++) {
       sends.notify();
+      webhookDelivery.wake();
       clock.advance(100);
-      await new Promise((r) => setTimeout(r, 5));
+      await Bun.sleep(2);
     }
   };
 
@@ -363,6 +406,7 @@ async function createNotifyFixture(
     async close() {
       for (const runner of runners) await runner.stop();
       await outbox.stop();
+      await webhookDelivery.stop();
       sink.close();
       db.close();
       rmSync(directory, { recursive: true, force: true });
@@ -752,43 +796,70 @@ describe("B38 admin notification mails", () => {
   test("6. A notification never reaches a subscriber's activity, analytics or send.failed webhooks as if it were a subscriber send", async () => {
     f = await createNotifyFixture({
       notifyEmails: ["ops@example.com"],
+      sinkReject: (to) => to.includes("ops@example.com"),
     });
 
-    const list = f.createList();
-    const sub = f.subscribers.create(
-      {
-        email: "ops@example.com", // Subscriber with the same address as the admin!
-        name: "Ops Person",
-        status: "enabled",
-        lists: [list.id],
-        attribs: {},
-      },
-      { all: true, ids: [] },
-    );
+    const receiver = startReceiver();
+    try {
+      const hookRes = await f.json("/api/webhooks", "POST", {
+        url: receiver.url("/failed-hook"),
+        events: ["send.failed"],
+      });
+      expect(hookRes.status).toBe(200);
 
-    // Create and cancel campaign to trigger notification
-    const c = await f.json("/api/campaigns", "POST", {
-      name: "Camp",
-      subject: "Hello",
-      lists: [Number(list.id)],
-      type: "regular",
-      content_type: "html",
-      body: "<p>Hello</p>",
-      from_email: "noreply@fixture.test",
-    });
-    const cId = BigInt(c.data.data.id);
-    await f.json(`/api/campaigns/${cId}/status`, "PUT", { status: "running" });
-    await f.json(`/api/campaigns/${cId}/status`, "PUT", { status: "cancelled" });
+      const list = f.createList();
+      const sub = f.subscribers.create(
+        {
+          email: "ops@example.com", // Subscriber with the same address as the admin!
+          name: "Ops Person",
+          status: "enabled",
+          lists: [list.id],
+          attribs: {},
+        },
+        { all: true, ids: [] },
+      );
 
-    // Check sends table: the notification row has subscriber_id NULL
-    const rows = f.sends.list({ page: 1, perPage: 10 }).results;
-    const notifSend = rows.find((r) => r.to_email === "ops@example.com");
-    expect(notifSend).toBeDefined();
-    expect(notifSend!.subscriber_id).toBeNull();
+      // Create and cancel campaign to trigger notification
+      const c = await f.json("/api/campaigns", "POST", {
+        name: "Camp",
+        subject: "Hello",
+        lists: [Number(list.id)],
+        type: "regular",
+        content_type: "html",
+        body: "<p>Hello</p>",
+        from_email: "noreply@fixture.test",
+      });
+      const cId = BigInt(c.data.data.id);
+      await f.json(`/api/campaigns/${cId}/status`, "PUT", { status: "running" });
+      await f.json(`/api/campaigns/${cId}/status`, "PUT", { status: "cancelled" });
 
-    // Subscriber's own sends list must not include the notification
-    const subSends = f.sends.list({ page: 1, perPage: 10, subscriberId: sub.id }).results;
-    expect(subSends.length).toBe(0);
+      // Drain outbox so outbox attempts send, sink rejects, and send fails
+      await f.drainOutbox();
+
+      // Webhook delivery delivers send.failed to receiver
+      for (let i = 0; i < 20 && receiver.received.length === 0; i++) {
+        f.clock.advance(1000);
+        await Bun.sleep(5);
+      }
+      expect(receiver.received.length).toBeGreaterThanOrEqual(1);
+      const delivery = receiver.received.find((r) => r.body.event === "send.failed");
+      expect(delivery).toBeDefined();
+      expect(delivery!.body.data.subscriber).toBeNull();
+      expect(delivery!.body.data.send.source).toBe("tx");
+
+      // Subscriber activity API: no activity recorded
+      const activityRes = await f.json(`/api/subscribers/${sub.id}/activity`);
+      expect(activityRes.status).toBe(200);
+      expect(activityRes.data.data.campaign_views.length).toBe(0);
+      expect(activityRes.data.data.link_clicks.length).toBe(0);
+
+      // Subscriber sends API: no sends attributed
+      const subSendsRes = await f.json(`/api/subscribers/${sub.id}/sends`);
+      expect(subSendsRes.status).toBe(200);
+      expect(subSendsRes.data.data.results.length).toBe(0);
+    } finally {
+      await receiver.close();
+    }
   });
 
   test("7. Admin settings page: the field is live, saving it round-trips", async () => {
@@ -803,5 +874,367 @@ describe("B38 admin notification mails", () => {
 
     const read = f.settings.read();
     expect(read["app.notify_emails"]).toEqual(["ops@example.com", "alerts@example.com"]);
+  });
+
+  test("8. A malformed entry in app.notify_emails (ops@) together with a valid one: campaign finish, cancel and import succeed normally", async () => {
+    f = await createNotifyFixture({
+      notifyEmails: ["ops@example.com", "ops@"],
+    });
+
+    const list = f.createList();
+    f.subscribers.create(
+      {
+        email: "sub@example.com",
+        name: "Subscriber",
+        status: "enabled",
+        lists: [list.id],
+        attribs: {},
+      },
+      { all: true, ids: [] },
+    );
+
+    // 1. Campaign finish
+    const createRes = await f.json("/api/campaigns", "POST", {
+      name: "Finish Malformed",
+      subject: "Hello",
+      lists: [Number(list.id)],
+      type: "regular",
+      content_type: "html",
+      body: "<p>Hello</p>",
+      from_email: "noreply@fixture.test",
+    });
+    const c1Id = BigInt(createRes.data.data.id);
+    await f.json(`/api/campaigns/${c1Id}/status`, "PUT", { status: "running" });
+
+    const runner = f.startRunner();
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.runnerStore.state(c1Id)?.status === "finished") break;
+    }
+    expect(f.runnerStore.state(c1Id)?.status).toBe("finished");
+    await f.drainOutbox();
+    await runner.stop();
+
+    let notif = f.sink.messages.find(
+      (m) =>
+        m.to.includes("ops@example.com") && m.data.includes("Subject: Finished: Finish Malformed"),
+    );
+    expect(notif).toBeDefined();
+
+    // 2. Campaign cancel (API returns 200, not 500)
+    const c2 = await f.json("/api/campaigns", "POST", {
+      name: "Cancel Malformed",
+      subject: "Hello",
+      lists: [Number(list.id)],
+      type: "regular",
+      content_type: "html",
+      body: "<p>Hello</p>",
+      from_email: "noreply@fixture.test",
+    });
+    const c2Id = BigInt(c2.data.data.id);
+    await f.json(`/api/campaigns/${c2Id}/status`, "PUT", { status: "running" });
+
+    const cancelRes = await f.json(`/api/campaigns/${c2Id}/status`, "PUT", { status: "cancelled" });
+    expect(cancelRes.status).toBe(200);
+    await f.drainOutbox();
+
+    notif = f.sink.messages.find(
+      (m) =>
+        m.to.includes("ops@example.com") && m.data.includes("Subject: Cancelled: Cancel Malformed"),
+    );
+    expect(notif).toBeDefined();
+
+    // 3. Import (succeeds normally and ends finished, not failed)
+    const slot = f.importer.reserve()!;
+    writeFileSync(slot.path, "email,name\nimp@example.com,Imported\n");
+    f.importer.start(slot, {
+      mode: "subscribe",
+      status: "confirmed",
+      overwriteUserInfo: true,
+      overwriteStatus: true,
+      delimiter: 44,
+      listIds: [list.id],
+    });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.importer.status().status === "finished") break;
+    }
+    expect(f.importer.status().status).toBe("finished");
+    await f.drainOutbox();
+
+    notif = f.sink.messages.find(
+      (m) =>
+        m.to.includes("ops@example.com") &&
+        m.data.includes("Subject: Finished: subscribers.csv import"),
+    );
+    expect(notif).toBeDefined();
+
+    // 4. Process keeps serving normally
+    const ping = await f.json("/api/campaigns");
+    expect(ping.status).toBe(200);
+  });
+
+  test("9. Two consecutive bad-CSV imports each send a mail", async () => {
+    f = await createNotifyFixture({
+      notifyEmails: ["ops@example.com"],
+    });
+
+    const list = f.createList("Bad List");
+
+    const slot1 = f.importer.reserve()!;
+    writeFileSync(slot1.path, "name,phone\nAlice,1234\n");
+    f.importer.start(slot1, {
+      mode: "subscribe",
+      status: "confirmed",
+      overwriteUserInfo: true,
+      overwriteStatus: true,
+      delimiter: 44,
+      listIds: [list.id],
+    });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.importer.status().status === "failed") break;
+    }
+    expect(f.importer.status().status).toBe("failed");
+    await f.drainOutbox();
+
+    const slot2 = f.importer.reserve()!;
+    writeFileSync(slot2.path, "name,phone\nBob,5678\n");
+    f.importer.start(slot2, {
+      mode: "subscribe",
+      status: "confirmed",
+      overwriteUserInfo: true,
+      overwriteStatus: true,
+      delimiter: 44,
+      listIds: [list.id],
+    });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.importer.status().status === "failed") break;
+    }
+    expect(f.importer.status().status).toBe("failed");
+    await f.drainOutbox();
+
+    const failedMails = f.sink.messages.filter(
+      (m) =>
+        m.to.includes("ops@example.com") &&
+        m.data.includes("Subject: Failed: subscribers.csv import"),
+    );
+    expect(failedMails.length).toBe(2);
+  });
+
+  test("10. An address added between two imports with the same counts: the second import ends finished, with no false failed", async () => {
+    f = await createNotifyFixture({
+      notifyEmails: ["admin1@example.com"],
+    });
+
+    const list = f.createList("Count List");
+
+    // First import
+    const slot1 = f.importer.reserve()!;
+    writeFileSync(slot1.path, "email,name\nu1@example.com,User One\n");
+    f.importer.start(slot1, {
+      mode: "subscribe",
+      status: "confirmed",
+      overwriteUserInfo: true,
+      overwriteStatus: true,
+      delimiter: 44,
+      listIds: [list.id],
+    });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.importer.status().status === "finished") break;
+    }
+    expect(f.importer.status().status).toBe("finished");
+    await f.drainOutbox();
+
+    // Add address
+    await f.json("/api/settings", "PUT", {
+      ...f.settings.read(),
+      "app.notify_emails": ["admin1@example.com", "admin2@example.com"],
+    });
+
+    // Second import with same counts: 1 row
+    const slot2 = f.importer.reserve()!;
+    writeFileSync(slot2.path, "email,name\nu2@example.com,User Two\n");
+    f.importer.start(slot2, {
+      mode: "subscribe",
+      status: "confirmed",
+      overwriteUserInfo: true,
+      overwriteStatus: true,
+      delimiter: 44,
+      listIds: [list.id],
+    });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.importer.status().status === "finished" || f.importer.status().status === "failed")
+        break;
+    }
+    expect(f.importer.status().status).toBe("finished");
+    await f.drainOutbox();
+
+    const notifs1 = f.sink.messages.filter((m) => m.to.includes("admin1@example.com"));
+    const notifs2 = f.sink.messages.filter((m) => m.to.includes("admin2@example.com"));
+    expect(notifs1.length).toBe(2);
+    expect(notifs2.length).toBe(1);
+  });
+
+  test("11. A second auto-pause after a resume sends a second Paused", async () => {
+    f = await createNotifyFixture({
+      notifyEmails: ["ops@example.com"],
+      sinkReject: (to) => !to.includes("ops@example.com"),
+    });
+
+    const list = f.createList();
+    f.subscribers.create(
+      {
+        email: "sub1@example.com",
+        name: "Sub 1",
+        status: "enabled",
+        lists: [list.id],
+        attribs: {},
+      },
+      { all: true, ids: [] },
+    );
+    f.subscribers.create(
+      {
+        email: "sub2@example.com",
+        name: "Sub 2",
+        status: "enabled",
+        lists: [list.id],
+        attribs: {},
+      },
+      { all: true, ids: [] },
+    );
+
+    const createRes = await f.json("/api/campaigns", "POST", {
+      name: "Repeated Pause Campaign",
+      subject: "Hello",
+      lists: [Number(list.id)],
+      type: "regular",
+      content_type: "html",
+      body: "<p>Hello</p>",
+      from_email: "noreply@fixture.test",
+    });
+    const campaignId = BigInt(createRes.data.data.id);
+    await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
+
+    let runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.runnerStore.state(campaignId)?.status === "paused") break;
+    }
+    expect(f.runnerStore.state(campaignId)?.status).toBe("paused");
+    await f.drainOutbox();
+    await runner.stop();
+
+    let pauseMails = f.sink.messages.filter(
+      (m) => m.to.includes("ops@example.com") && m.data.includes("Subject: Paused:"),
+    );
+    expect(pauseMails.length).toBe(1);
+
+    // Resume campaign
+    await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
+    runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (f.runnerStore.state(campaignId)?.status === "paused") break;
+    }
+    expect(f.runnerStore.state(campaignId)?.status).toBe("paused");
+    await f.drainOutbox();
+    await runner.stop();
+
+    pauseMails = f.sink.messages.filter(
+      (m) => m.to.includes("ops@example.com") && m.data.includes("Subject: Paused:"),
+    );
+    expect(pauseMails.length).toBe(2);
+  });
+
+  test("12. A cancel during a failing batch sends no Paused mail", async () => {
+    let cancelled = false;
+    let cancelPromise: Promise<any> | null = null;
+    let campaignId = 0n;
+
+    f = await createNotifyFixture({
+      notifyEmails: ["ops@example.com"],
+      sinkReject: (to) => {
+        if (!to.includes("ops@example.com")) {
+          if (!cancelled && campaignId !== 0n) {
+            cancelled = true;
+            cancelPromise = f.json(`/api/campaigns/${campaignId}/status`, "PUT", {
+              status: "cancelled",
+            });
+          }
+          return true;
+        }
+        return false;
+      },
+    });
+
+    const list = f.createList();
+    f.subscribers.create(
+      {
+        email: "sub1@example.com",
+        name: "Sub 1",
+        status: "enabled",
+        lists: [list.id],
+        attribs: {},
+      },
+      { all: true, ids: [] },
+    );
+    f.subscribers.create(
+      {
+        email: "sub2@example.com",
+        name: "Sub 2",
+        status: "enabled",
+        lists: [list.id],
+        attribs: {},
+      },
+      { all: true, ids: [] },
+    );
+
+    const createRes = await f.json("/api/campaigns", "POST", {
+      name: "Racing Cancel Campaign",
+      subject: "Hello",
+      lists: [Number(list.id)],
+      type: "regular",
+      content_type: "html",
+      body: "<p>Hello</p>",
+      from_email: "noreply@fixture.test",
+    });
+    campaignId = BigInt(createRes.data.data.id);
+    await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
+
+    const runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      if (cancelled) break;
+    }
+    if (cancelPromise) await cancelPromise;
+    for (let i = 0; i < 50; i++) {
+      f.clock.advance(50);
+      await Bun.sleep(5);
+      const state = f.runnerStore.state(campaignId);
+      if (state?.status === "cancelled") break;
+    }
+
+    await f.drainOutbox();
+    await runner.stop();
+
+    const notifs = f.sink.messages.filter((m) => m.to.includes("ops@example.com"));
+    const cancelMails = notifs.filter((m) => m.data.includes("Subject: Cancelled:"));
+    const pauseMails = notifs.filter((m) => m.data.includes("Subject: Paused:"));
+
+    expect(cancelMails.length).toBe(1);
+    expect(pauseMails.length).toBe(0);
   });
 });

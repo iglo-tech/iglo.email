@@ -394,6 +394,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     notifier = createAdminNotifier({
       sends,
       renderer,
+      logger: app.logger,
       settings: () => {
         const current = settings!.read();
         return {

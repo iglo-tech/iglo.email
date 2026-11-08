@@ -281,7 +281,7 @@ leaves it in `ps`, so use a file or netrc in a real environment.
 
 ### Admin notifications
 
-Operators can receive notifications for campaign and import events by configuring `app.notify_emails` (a comma-separated list of email addresses on the General settings tab in the Admin UI, or an array of strings in `PUT /api/settings`). When configured, system notification emails are sent using listmonk's built-in templates from `app.from_email[0]` when:
+Operators can receive notifications for campaign and import events by configuring `app.notify_emails` (a comma-separated list of email addresses on the General settings tab in the Admin UI, or an array of strings in `PUT /api/settings`). When configured, system notification emails are sent using listmonk's built-in templates from `app.from_email[0]`, with at most one notification per status change, sent after the change commits when:
 - A campaign **finishes** (audience exhausted or zero recipients), is **cancelled** via the API, or **pauses automatically** upon reaching `app.max_send_errors`.
 - A subscriber CSV import **finishes** or **fails**.
 

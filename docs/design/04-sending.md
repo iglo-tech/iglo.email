@@ -197,9 +197,10 @@ M2.6 implements this ([D61](09-decisions.md#d61-outbound-webhook-delivery-and-pr
 
 ## Admin Notifications
 
-Admin notification emails are sent to all addresses configured in `app.notify_emails` (validated as email addresses) using listmonk's built-in notification templates and triggers:
+Admin notification emails are sent to all valid addresses configured in `app.notify_emails` (unparseable entries are skipped and logged) using listmonk's built-in notification templates, with at most one notification per status change, sent after the change commits:
 - **Campaigns:** sends `campaign-status` notification when a campaign finishes (0 recipients or all subscribers exhausted), is cancelled via the API, or is auto-paused by the runner upon reaching `app.max_send_errors`. Manual pause via the API does not trigger notification, matching upstream behavior.
 - **Imports:** sends `import-status` notification when a CSV import finishes or fails.
 
-Notifications are delivered via the durable transactional send path (`sends.enqueueRequest` with unlinked transactional format `subscriberId: null, subscriberUuid: null`). The `from` address is the primary configured address (`app.from_email[0]`). If `app.notify_emails` is empty, no notifications are enqueued. Notifications run outside database transaction blocks to prevent nested write transactions, and unlinked transactional sends never reach subscriber activity feeds, analytics or subscriber webhooks.
+Notifications are delivered via the durable transactional send path (`sends.enqueueRequest` with unlinked transactional format `subscriberId: null, subscriberUuid: null`). The `from` address is the primary configured address (`app.from_email[0]`). If `app.notify_emails` is empty, no notifications are enqueued. A crash in the instant between commit and enqueue loses it. Notifications run outside database transaction blocks to prevent nested write transactions, and unlinked transactional sends never reach subscriber activity feeds, analytics or subscriber webhooks.
+
 

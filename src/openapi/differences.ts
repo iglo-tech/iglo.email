@@ -433,8 +433,9 @@ export const differences: Difference[] = [
     applies: ["PUT /api/campaigns/{id}/status"],
   },
   {
-    area: "Campaign runner notifications (M3.2)",
-    summary: "No admin notification email when a campaign finishes or is paused by errors.",
+    area: "Campaign cancel notification (B38)",
+    summary:
+      "`PUT /api/campaigns/:id/status` to `cancelled` sends `campaign-status` notification to `app.notify_emails` when configured. Upstream sends no notification on manual API cancel (`cmd/campaigns.go:571`, `pipe.go:273`), mailing `cancelled` only if a cancel races the pipe's last fetch (`pipe.go:281-300`).",
     applies: ["PUT /api/campaigns/{id}/status"],
   },
   {
