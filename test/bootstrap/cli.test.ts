@@ -3,6 +3,7 @@ import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { listensOn, startOnFreePort } from "@/test/serve-port";
 import { ensureProductionBuild } from "@/test/production-build";
 import { startDbFixture } from "@/test/db/fixture";
 import { startSchemaFixture } from "@/test/schema/fixture";
@@ -71,19 +72,23 @@ async function runCli(args: string[], env: Record<string, string> = {}) {
   }
 }
 
-async function availablePort() {
-  const socket = createServer();
-  await new Promise<void>((resolveListen, reject) => {
-    socket.once("error", reject);
-    socket.listen(0, "127.0.0.1", resolveListen);
+/**
+ * The executable started on a free port and answering /health on it. `args` builds the arguments
+ * from the port; a start that reports its port in use is retried on another port.
+ */
+function startOnPort(build: (port: number) => { args: string[]; env?: Record<string, string> }) {
+  return startOnFreePort(async (port) => {
+    const { args, env = {} } = build(port);
+    const child = start(args, env);
+    try {
+      await healthWhenReady(child, port);
+    } catch (error) {
+      child.kill("SIGKILL");
+      await child.exited;
+      throw error;
+    }
+    return { child, port };
   });
-  const address = socket.address();
-  if (!address || typeof address === "string") throw new Error("No test port was assigned");
-  const port = address.port;
-  await new Promise<void>((resolveClose, reject) => {
-    socket.close((error) => (error ? reject(error) : resolveClose()));
-  });
-  return port;
 }
 
 async function healthWhenReady(child: ReturnType<typeof start>, port: number) {
@@ -94,14 +99,16 @@ async function healthWhenReady(child: ReturnType<typeof start>, port: number) {
       throw new Error(`Server exited before it became ready: ${stderr}`);
     }
     try {
-      return await fetch(`http://127.0.0.1:${port}/health`, {
+      const response = await fetch(`http://127.0.0.1:${port}/health`, {
         headers: { Connection: "close" },
         signal: AbortSignal.timeout(500),
       });
+      // Another server can hold the port and answer first: ready only when this child listens on it.
+      if (child.pid !== undefined && listensOn(child.pid, port)) return response;
     } catch {
       // This delay is only for bounded process readiness, not application time.
-      await Bun.sleep(25);
     }
+    await Bun.sleep(25);
   }
   throw new Error("Server did not become ready within five seconds");
 }
@@ -126,9 +133,10 @@ async function login(port: number, username: string, password: string) {
 
 describe("compiled executable", () => {
   test("unprovisioned startup denies login and partial bootstrap pairs fail", async () => {
-    const port = await availablePort();
     const dataDir = join(temporaryDirectory, "unprovisioned-auth");
-    const child = start(["--port", String(port), "--data-dir", dataDir]);
+    const { child, port } = await startOnPort((listenPort) => ({
+      args: ["--port", String(listenPort), "--data-dir", dataDir],
+    }));
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
       const attempt = await login(port, adminUser, adminPassword);
@@ -158,20 +166,19 @@ describe("compiled executable", () => {
   });
 
   test("compiled sessions survive restart and existing users ignore bootstrap inputs", async () => {
-    const port = await availablePort();
     const dataDir = join(temporaryDirectory, "persistent-auth");
-    const args = [
+    const args = (listenPort: number) => [
       "--port",
-      String(port),
+      String(listenPort),
       "--data-dir",
       dataDir,
       "--root-url",
-      `https://127.0.0.1:${port}`,
+      `https://127.0.0.1:${listenPort}`,
     ];
-    const first = start(args, {
-      IGLO_EMAIL_ADMIN_USER: adminUser,
-      IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
-    });
+    const { child: first, port } = await startOnPort((listenPort) => ({
+      args: args(listenPort),
+      env: { IGLO_EMAIL_ADMIN_USER: adminUser, IGLO_EMAIL_ADMIN_PASSWORD: adminPassword },
+    }));
     let session = "";
     try {
       expect((await healthWhenReady(first, port)).status).toBe(200);
@@ -187,7 +194,7 @@ describe("compiled executable", () => {
     } finally {
       expect(await stop(first, "SIGTERM")).toBe(0);
     }
-    const second = start(args, { IGLO_EMAIL_ADMIN_USER: "replacement-admin" });
+    const second = start(args(port), { IGLO_EMAIL_ADMIN_USER: "replacement-admin" });
     try {
       expect((await healthWhenReady(second, port)).status).toBe(200);
       const profile = await fetch(`http://127.0.0.1:${port}/api/profile`, {
@@ -204,11 +211,10 @@ describe("compiled executable", () => {
     }
   });
   test("serves the upstream health response outside the checkout and stops on SIGTERM", async () => {
-    const port = await availablePort();
-    const child = start(["serve", "--port", String(port)], {
-      IGLO_EMAIL_ADMIN_USER: adminUser,
-      IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
-    });
+    const { child, port } = await startOnPort((listenPort) => ({
+      args: ["serve", "--port", String(listenPort)],
+      env: { IGLO_EMAIL_ADMIN_USER: adminUser, IGLO_EMAIL_ADMIN_PASSWORD: adminPassword },
+    }));
     try {
       const response = await healthWhenReady(child, port);
       expect(response.status).toBe(200);
@@ -249,24 +255,23 @@ describe("compiled executable", () => {
   });
 
   test("flags override environment values and SIGINT closes the server", async () => {
-    const port = await availablePort();
-    const child = start(
-      [
+    const { child, port } = await startOnPort((listenPort) => ({
+      args: [
         "serve",
-        `--port=${port}`,
+        `--port=${listenPort}`,
         "--host",
         "127.0.0.1",
         "--data-dir",
         "./chosen-data",
         "--root-url=https://example.test/root",
       ],
-      {
+      env: {
         IGLO_EMAIL_PORT: "invalid",
         IGLO_EMAIL_HOST: "invalid host",
         IGLO_EMAIL_DATA_DIR: "",
         IGLO_EMAIL_ROOT_URL: "not-a-url",
       },
-    );
+    }));
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
     } finally {
@@ -275,13 +280,15 @@ describe("compiled executable", () => {
   });
 
   test("environment bootstrap values work without flags or admin credentials", async () => {
-    const port = await availablePort();
-    const child = start([], {
-      IGLO_EMAIL_PORT: String(port),
-      IGLO_EMAIL_HOST: "127.0.0.1",
-      IGLO_EMAIL_DATA_DIR: "./env-data",
-      IGLO_EMAIL_ROOT_URL: "https://example.test",
-    });
+    const { child, port } = await startOnPort((listenPort) => ({
+      args: [],
+      env: {
+        IGLO_EMAIL_PORT: String(listenPort),
+        IGLO_EMAIL_HOST: "127.0.0.1",
+        IGLO_EMAIL_DATA_DIR: "./env-data",
+        IGLO_EMAIL_ROOT_URL: "https://example.test",
+      },
+    }));
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
     } finally {
@@ -290,10 +297,11 @@ describe("compiled executable", () => {
   });
 
   test("opens the persistent version-two production schema on standalone restart", async () => {
-    const port = await availablePort();
     const dataDir = join(temporaryDirectory, "persistent-db");
     for (let i = 0; i < 2; i++) {
-      const child = start(["--port", String(port), "--data-dir", dataDir]);
+      const { child, port } = await startOnPort((listenPort) => ({
+        args: ["--port", String(listenPort), "--data-dir", dataDir],
+      }));
       try {
         expect((await healthWhenReady(child, port)).status).toBe(200);
       } finally {

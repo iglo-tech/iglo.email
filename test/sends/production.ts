@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { provisionApiUser } from "@/test/contract/owned";
+import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";
@@ -75,14 +76,6 @@ async function fixture(dataDir: string, smtpPort: number) {
     get: (id: number) => call(`/api/sends/${id}`, "GET", undefined, { cookie: session.cookie }),
   };
 }
-async function freePort() {
-  const server = createServer();
-  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("No port");
-  await new Promise<void>((ok, fail) => server.close((error) => (error ? fail(error) : ok())));
-  return address.port;
-}
 // A second invocation-owned sink observes its own intake without forwarding.
 async function localSink() {
   const sockets = new Set<Socket>();
@@ -132,8 +125,10 @@ async function localSink() {
   };
 }
 async function production(dataDir: string) {
-  const port = await freePort(),
-    origin = `http://127.0.0.1:${port}`;
+  return startOnFreePort((port) => launchProduction(dataDir, port));
+}
+async function launchProduction(dataDir: string, port: number) {
+  const origin = `http://127.0.0.1:${port}`;
   const child = spawn(
     resolve("dist/iglo.email"),
     ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
@@ -146,12 +141,21 @@ async function production(dataDir: string) {
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
+  let errors = "";
+  child.stderr.on("data", (chunk: Buffer) => {
+    errors = (errors + chunk.toString()).slice(-4000);
+  });
   active.add(child);
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error("Production exited before readiness");
+    if (child.exitCode !== null) {
+      await stderrDrained(child);
+      throw new Error(`Production exited before readiness: ${errors}`);
+    }
     try {
-      if ((await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) })).status === 200)
+      const healthy = (await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }))
+        .status;
+      if (healthy === 200 && child.pid !== undefined && listensOn(child.pid, port))
         return { child, origin };
     } catch {
       /* startup */

@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { isPortInUse, startOnFreePort } from "@/test/serve-port";
 import {
   admin,
   apiClient,
@@ -72,14 +73,15 @@ async function run(args: string[], options: { stdin?: string; cwd?: string } = {
 
 /** On a port of its own, so only the lock can stop it. */
 function secondServer(dataDir: string, options?: { cwd?: string }) {
-  const probe = Bun.listen({
-    hostname: "127.0.0.1",
-    port: 0,
-    socket: { data() {} },
+  return startOnFreePort(async (port) => {
+    const result = await run(
+      ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
+      options,
+    );
+    // A port taken in the meantime is not the lock's answer: the start is retried on another port.
+    if (result.exitCode !== 0 && isPortInUse(result.stderr)) throw new Error(result.stderr);
+    return result;
   });
-  const port = String(probe.port);
-  probe.stop(true);
-  return run(["serve", "--host", "127.0.0.1", "--port", port, "--data-dir", dataDir], options);
 }
 
 /** The database as it stands on disk. */

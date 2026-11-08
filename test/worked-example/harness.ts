@@ -3,10 +3,10 @@
 // Everything runs against generated data; mail never leaves the loopback sink.
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { startSink } from "@/test/tx/sink";
 
 export const admin = { user: "worked-admin", password: "worked-example-admin-password" };
@@ -16,21 +16,14 @@ export function check(condition: unknown, label: string): asserts condition {
   if (!condition) throw new Failure(`FAIL worked-example: ${label}`);
 }
 
-async function freePort() {
-  const server = createServer();
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
-  await new Promise<void>((r) => server.close(() => r()));
-  return port;
-}
-
 /** The compiled executable, started, stopped and restarted on one data directory and port. */
 export async function startProduction(executable = resolve("dist/iglo.email")) {
   const directory = await mkdtemp(join(tmpdir(), "iglo-worked-example-"));
   const copy = join(directory, "iglo.email");
   await copyFile(executable, copy);
-  const port = await freePort();
-  const origin = `http://127.0.0.1:${port}`;
+  // Set by the first start, which takes a port from startOnFreePort; restarts reuse it.
+  let port = 0;
+  let origin = "";
   let child: ChildProcess | undefined;
   let exited: Promise<number | null> | undefined;
   /** Everything the process wrote to stderr: application code logs only what needs attention. */
@@ -65,10 +58,14 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
     exited = new Promise((r) => current.once("exit", (code) => r(code)));
     const deadline = Date.now() + 10_000;
     for (;;) {
-      if (current.exitCode !== null) throw new Error(`production exited early: ${errors}`);
+      if (current.exitCode !== null) {
+        await stderrDrained(current);
+        throw new Error(`production exited early: ${errors}`);
+      }
       try {
         const response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) });
-        if (response.status === 200) return;
+        if (response.status === 200 && current.pid !== undefined && listensOn(current.pid, port))
+          return;
       } catch {}
       if (Date.now() > deadline) throw new Error("production readiness timed out");
       await Bun.sleep(25);
@@ -85,7 +82,11 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
     child = undefined;
     check(code === 0, `graceful shutdown exit code ${code}`);
   };
-  await start();
+  await startOnFreePort(async (free) => {
+    port = free;
+    origin = `http://127.0.0.1:${port}`;
+    await start();
+  });
   return {
     origin,
     dataDir: join(directory, "data"),

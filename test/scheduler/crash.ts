@@ -8,6 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
 
 interface Sink {
   port: number;
@@ -192,10 +193,10 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
 }
 // The real production executable: kill it while SMTP delivery of step 0 is in flight.
 async function production(dir: string) {
-  const server = createServer();
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
-  await new Promise<void>((r) => server.close(() => r()));
+  return startOnFreePort((port) => launchProduction(dir, port));
+}
+// Returns once this process listens on its port; a start that fails in use is retried by the caller.
+async function launchProduction(dir: string, port: number) {
   const child = spawn(
     resolve("dist/iglo.email"),
     ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dir],
@@ -205,12 +206,29 @@ async function production(dir: string) {
         IGLO_EMAIL_ADMIN_USER: "fixture-admin",
         IGLO_EMAIL_ADMIN_PASSWORD: "fixture-admin-password",
       },
-      stdio: ["ignore", "ignore", "inherit"],
+      stdio: ["ignore", "ignore", "pipe"],
     },
   );
+  let errors = "";
+  child.stderr!.on("data", (chunk: Buffer) => {
+    errors = (errors + chunk.toString()).slice(-4000);
+  });
   const exited = new Promise<{ code: number | null; signal: string | null }>((r) =>
     child.once("exit", (code, signal) => r({ code, signal })),
   );
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      await stderrDrained(child);
+      throw new Error(`production exited before listening: ${errors}`);
+    }
+    if (child.pid !== undefined && listensOn(child.pid, port)) break;
+    if (Date.now() > deadline) {
+      child.kill("SIGKILL");
+      throw new Error("production did not listen");
+    }
+    await Bun.sleep(25);
+  }
   return { child, exited };
 }
 {
