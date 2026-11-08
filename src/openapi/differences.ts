@@ -326,7 +326,7 @@ export const differences: Difference[] = [
   {
     area: "Secrets of new settings items (B51)",
     summary:
-      "A new SMTP server, bounce mailbox or messenger never takes another item's password, and a new SMTP server never takes a DKIM key from a stored item without a uuid. Upstream copies a stored password or DKIM key into any new item whose uuid is blank. Seeded SMTP and bounce defaults carry fixed uuids. B56: an SMTP server or bounce mailbox with auth none stores no password, typed or stored (upstream keeps the stored one), and so does an SMTP server with an empty auth protocol, which sends without login. B57: a bounce mailbox with an empty auth protocol keeps its password, since upstream's POP login runs for it, and a save with two items of one list sharing a uuid is refused with 400 (upstream keeps both secrets).",
+      "A new SMTP server, bounce mailbox or messenger never takes another item's password, and a new SMTP server never takes a DKIM key from a stored item without a uuid. Upstream copies a stored password or DKIM key into any new item whose uuid is blank. Seeded SMTP and bounce defaults carry fixed uuids. B56: an SMTP server or bounce mailbox with auth none stores no password, typed or stored (upstream keeps the stored one), and so does an SMTP server with an empty auth protocol, which sends without login. A save with two items of one list sharing a uuid is refused with 400 (upstream keeps both secrets). B57: a bounce mailbox with an empty auth protocol keeps its password, since upstream's POP login runs for it.",
     applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
   },
   {
