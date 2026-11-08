@@ -4,7 +4,7 @@ import type { Clock } from "@/clock";
 import type { ErrorLogger } from "@/app";
 import type { Claimed, Sends } from "@/messaging/sends";
 import type { Outcome, createEmailer } from "@/messaging/email";
-import { startLoop } from "@/loops/loop";
+import { createLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
 
 // A marketing send has exactly one SMTP recipient, its admitted subscriber.
@@ -25,14 +25,23 @@ const uncertain = (row: { smtp_message_id: string }): Outcome => ({
   rejected: [],
 });
 
-export function startOutbox(options: {
+/** Create and start, for callers that claim at once. The server creates, then starts (B52). */
+export function startOutbox(options: OutboxOptions) {
+  const outbox = createOutbox(options);
+  outbox.start();
+  return outbox;
+}
+
+export interface OutboxOptions {
   db: Database;
   clock: Clock;
   logger: ErrorLogger;
   sends: Sends;
   emailer: ReturnType<typeof createEmailer>;
-}) {
-  options.sends.recover();
+}
+
+/** Creates the outbox without claiming: nothing is recovered, claimed or armed before `start`. */
+export function createOutbox(options: OutboxOptions) {
   // Rows whose push is live in this process; their lease is not expired under them.
   const live = new Set<bigint>();
   let deadline: AbortController | undefined;
@@ -70,7 +79,7 @@ export function startOutbox(options: {
       },
     );
   };
-  const loop = startLoop({
+  const loop = createLoop({
     db: options.db,
     clock: options.clock,
     logger: { error: () => options.logger.error(new Error("Outbox failed"), "Outbox failed") },
@@ -143,16 +152,24 @@ export function startOutbox(options: {
     );
     if (failure) throw failure.reason;
   }
-  options.sends.onWake(() => {
-    loop.wake();
-    arm();
-  });
-  arm();
   const inflight = new Set<Promise<void>>();
   const done = Promise.race([loop.done, timerFailure]);
   void done.catch(() => {});
   return {
     done,
+    /**
+     * Recovers the rows a previous process left, then claims. Called once, after the port is
+     * bound, so a start that cannot listen recovers and claims nothing.
+     */
+    start() {
+      options.sends.recover();
+      loop.start();
+      options.sends.onWake(() => {
+        loop.wake();
+        arm();
+      });
+      arm();
+    },
     /**
      * Send specific just-committed queued rows now and resolve after their outcomes
      * are journaled. Call synchronously after the enqueue commit so the loop cannot

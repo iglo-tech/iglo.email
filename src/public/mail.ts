@@ -11,7 +11,7 @@ import type { Clock } from "@/clock";
 import type { BounceStore } from "@/bounces/store";
 import type { EventRow } from "@/events/store";
 import type { Translation } from "@/i18n/i18n";
-import { startLoop } from "@/loops/loop";
+import { createLoop } from "@/loops/loop";
 import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
 import { createThrottle } from "@/public/rate-limit";
@@ -231,7 +231,15 @@ export type SubscriberMail = ReturnType<typeof createSubscriberMail>;
  * to any response. The queue is in memory: the committed `unconfirmed` membership is the
  * durable record, and a lost mail is recovered by signing up again.
  */
-export function startSignupMail(deps: {
+/** Create and start, for callers that prepare at once. The server creates, then starts (B52). */
+export function startSignupMail(deps: Parameters<typeof createSignupMail>[0]) {
+  const signups = createSignupMail(deps);
+  signups.start();
+  return signups;
+}
+
+/** Creates the opt-in mail loop without starting it; the server starts it after the bind (B52). */
+export function createSignupMail(deps: {
   db: Database;
   clock: Clock;
   logger: ErrorLogger;
@@ -246,7 +254,7 @@ export function startSignupMail(deps: {
       }
     }
   };
-  const loop = startLoop({
+  const loop = createLoop({
     db: deps.db,
     clock: deps.clock,
     logger: {
@@ -264,6 +272,7 @@ export function startSignupMail(deps: {
   });
   return {
     done: loop.done,
+    start: () => loop.start(),
     async stop() {
       await loop.stop();
       prepare(deps.mail.takeSignups(signupBatch));
