@@ -12,7 +12,8 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B53** Sending and startup nits ([brief](briefs/B53.md), #95, #103, #104): bad `app.from_email` log wording vs docs; D92 note that a window straddling a rate lowering can hold the old rate; test 15 covers `main.ts` passing `logoUrl`; test 8 over HTTP; replace the fixed-count `drainOutbox` loop; allocate the send AbortController only with a wait bound (measure); comment at `src/main.ts:823` that no `await` may sit between the bind and the loop starts (size S)
+1. **B57** Last review nits ([brief](briefs/B57.md), #107 r1): the auth `""` rule should apply to SMTP only (upstream mailboxes log in with `""`, `pop.go:92`) or the docs must say mailboxes too; send-rate harness shares one SMTP-test handler like production; `drainOutbox` waits through the API not the `sends` table; add `notify-wiring.test.ts` to `test/timings.json` (size S)
+
 
 
 ## Owner decisions
@@ -44,6 +45,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B53 | [#107](https://github.com/iglo-tech/iglo.email/pull/107) | fd2e361 | Final nits sweep: 14 review-backlog items |
 | B55 | [#106](https://github.com/iglo-tech/iglo.email/pull/106) | b060149 | Backup residuals: removal by dev/ino, changed-meanwhile, shared parent, failed post-publish sync keeps the old backup |
 | B56 | [#105](https://github.com/iglo-tech/iglo.email/pull/105) | 9874d7f | Settings secrets: auth `none` keeps no password, duplicate uuids refused, disabled server takes a password |
 | B54 | [#104](https://github.com/iglo-tech/iglo.email/pull/104) | 5a4dd18 | Test reliability: wall-bounded waits, port-safe restarts, reaping, two coverage gaps; cli SIGTERM flake attributed to the B50 port race |
@@ -139,11 +141,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 ## Hardening backlog
 
 - Media: supported PDF viewers unverified (needs real devices).
-- Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it. The send-rate test keeps its own 20,000-iteration loop (`test/messaging`).
-- (queued as B53) Sending ([#95](https://github.com/iglo-tech/iglo.email/pull/95) r1): bad `app.from_email` is logged once per distinct value (docs say once); D92 should note a window straddling a rate lowering can hold the old rate; test 15 does not cover `main.ts` passing `logoUrl`; test 8 not over HTTP; a fixed-count `drainOutbox` loop remains; every send now allocates an AbortController (create only with a wait bound).
-- Test helpers ([#104](https://github.com/iglo-tech/iglo.email/pull/104) r1): `cli.test.ts:98` `shutDown` waits 5 s before SIGKILL (pass 3 s, under the 5 s single-file timeout); runner fixture `stuckState()` failure hides the whole state line (catch it alone); `webhooks/crash.ts` and worked-example accumulate stderr across restarts, so a later failure is misread as port-in-use.
-- Settings ([#105](https://github.com/iglo-tech/iglo.email/pull/105) r1): an install already holding duplicate uuids (only from hand-made API calls) gets 400 on every API settings save until the page is saved once — say so in the upgrade note; a stored duplicate with a DKIM key gives a confusing "Invalid DKIM configuration" on page save; `auth_protocol: ""` keeps the stored password though mail treats it as none.
-- Backup ([#106](https://github.com/iglo-tech/iglo.email/pull/106) r1-r2): `removePartial` could rename aside then check dev/ino (as `stepAside`); check what sits at the output after the publishing rename; EACCES test makes one folder, so `continue`→`return` in `removeCreated` stays green; docs "names the replaced backup" → "if any".
+- Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
