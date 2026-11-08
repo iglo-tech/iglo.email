@@ -133,10 +133,6 @@ test("after the count 0 rewrite a bounce is recorded and its action fires", asyn
   );
   const f = await txFixture({ webhooks: {}, persisted });
   try {
-    const stored = f.db.query("SELECT value FROM settings WHERE key = 'bounce.actions'").get() as {
-      value: string;
-    };
-    Object.assign(f.bounceSettings.actions, JSON.parse(stored.value));
     const id = await f.subscriber("legacy-bounce@example.com");
     const post = await f.json("/webhooks/bounce", "POST", {
       email: "legacy-bounce@example.com",

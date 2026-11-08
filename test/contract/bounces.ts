@@ -1,7 +1,8 @@
 // Reference: listmonk cmd/bounce.go, internal/core/bounces.go and queries/bounces.sql at 6fcd95f.
-// The shared corpus runs against both targets; send links and outbound webhooks are native,
-// so that part runs against the compiled production executable only.
+// The shared corpus runs against both targets; send links, outbound webhooks and the signed
+// Amazon SES cases are native, so that part runs against the compiled production executable only.
 import type { Credentials, Mode } from "@/test/contract/types";
+import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { startSink } from "@/test/tx/sink";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 
@@ -175,8 +176,9 @@ export async function runBouncesContract(target: {
       check(answer.status === 400 && answer.body.message === "Unknown service.", service);
     }
 
-    // Amazon SES: enabled, a message that cannot be verified is refused and records nothing. A
-    // signed one needs a certificate from AWS, so those cases are in test/bounces/ses.test.ts.
+    // Amazon SES: enabled, a message that cannot be verified is refused and records nothing. The
+    // signed cases need a certificate from AWS: test/bounces/ses.test.ts injects it, and the
+    // compiled run fetches it through the loopback tunnel at the end of production().
     await setting("bounce.ses_enabled", true);
     const sesBefore = (await call("/api/bounces?per_page=1")).body.data.total;
     const sesBody = {
@@ -681,6 +683,63 @@ export async function runBouncesContract(target: {
 
       await call(`/api/webhooks/${hook.body.data.id}`, "DELETE");
       await call(`/api/templates/${template.body.data.id}`, "DELETE");
+
+      // Amazon SES with signed notifications (native only: the process fetches the certificate
+      // through the tunnel, test/bounces/sns-tunnel.ts). The messages are signed with the
+      // current time, as the route checks their age against the real clock.
+      const real = { clock: { now: () => new Date() } };
+      const sesPost = (body: unknown) =>
+        call("/webhooks/service/ses", "POST", body, {
+          "content-type": "text/plain",
+          "x-amz-sns-message-type": "Notification",
+        });
+      await setting("bounce.ses_topic_arns", [TOPIC]);
+      await setting("bounce.ses_enabled", true);
+      try {
+        // The route records a signed message while SES is on, and answers as a disabled
+        // provider once it is off, recording nothing.
+        const sesRow = await subscriber("ses-row");
+        const first = envelope(real, {
+          Message: bounceMessage(real, [sesRow.email], { bounceType: "Transient" }),
+        });
+        check((await sesPost(first)).status === 200, "ses-accepted");
+        const [recorded] = await bounces(sesRow.id);
+        check(recorded?.source === "ses" && recorded.type === "soft", "ses-recorded");
+        await setting("bounce.ses_enabled", false);
+        const off = await sesPost(
+          envelope(real, {
+            Message: bounceMessage(real, [sesRow.email], { bounceType: "Transient" }),
+          }),
+        );
+        check(off.status === 400 && off.body?.message === "Unknown service.", "ses-switch-off");
+        check((await bounces(sesRow.id)).length === 1, "ses-switch-off-rows");
+        await setting("bounce.ses_enabled", true);
+
+        // A provider's retry of an accepted message is a no-op, also after the process restarts.
+        check(target.restart !== undefined, "ses-restart-available");
+        await target.restart!();
+        check((await sesPost(first)).status === 200, "ses-replay-after-restart");
+        check((await bounces(sesRow.id)).length === 1, "ses-replay-once");
+
+        // A delivery's Message-ID, `<campaign.subscriber@host>`, names the campaign it came from.
+        const sesList = await list("ses");
+        const sesCampaign = await campaign("ses", sesList);
+        const linked = await subscriber("ses-linked", [sesList]);
+        const messageId = `<${sesCampaign.uuid}.${linked.uuid}@fixture.test>`;
+        const copy = await sesPost(
+          envelope(real, {
+            Message: bounceMessage(real, [linked.email], { bounceType: "Transient" }, [
+              { name: "Message-ID", value: messageId },
+            ]),
+          }),
+        );
+        check(copy.status === 200, "ses-campaign-accepted");
+        const [linkedRow] = await bounces(linked.id);
+        check(linkedRow?.campaign?.id === sesCampaign.id, "ses-campaign-linked");
+      } finally {
+        await setting("bounce.ses_enabled", false);
+        await setting("bounce.ses_topic_arns", []);
+      }
 
       // Provider webhooks have a budget of their own: the larger of 6,000 a minute and the
       // unsubscribe setting, so an operator never gets less than before. This runs last, as it

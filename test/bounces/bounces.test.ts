@@ -44,7 +44,7 @@ const deliveries = (f: TxFixture) =>
 test("native meta spellings are stored as objects", async () => {
   const f = await open();
   await f.subscriber("meta@example.com");
-  f.bounceSettings.actions.soft = { count: 9, action: "none" };
+  f.setBounceAction("soft", { count: 9, action: "none" });
   for (const meta of ['{"a":1}', "plain text", 7, ["x"], null])
     expect(
       (
@@ -117,7 +117,7 @@ test("a stored bounce delivery is cleared by the delete action and by a wipe", a
   // The administrative path keeps the app's own key on the deletion event (D61).
   expect(deleted!.body.data.subscriber.external_id).toBe("app-2");
 
-  f.bounceSettings.actions.soft = { count: 9, action: "none" };
+  f.setBounceAction("soft", { count: 9, action: "none" });
   const wiped = await f.json("/api/subscribers", "POST", {
     email: "wiped@example.com",
     name: "Wiped",
@@ -353,7 +353,7 @@ test("POST /webhooks/bounce: a send_uuid is authoritative, and only then is the 
 
 test("a bounce unsubscribe stamps when consent changed, on the injected clock", async () => {
   const f = await open();
-  f.bounceSettings.actions.hard = { count: 1, action: "unsubscribe" };
+  f.setBounceAction("hard", { count: 1, action: "unsubscribe" });
   const list = await f.json("/api/lists", "POST", {
     name: "stamped",
     type: "private",
@@ -422,7 +422,7 @@ test("one request prunes a bounded batch of expired receipts, and a backlog stil
 
 test("D81: the automatic blocklist action leaves the memberships unsubscribed", async () => {
   const f = await open();
-  f.bounceSettings.actions.hard = { count: 1, action: "blocklist" };
+  f.setBounceAction("hard", { count: 1, action: "blocklist" });
   const list = (await f.json("/api/lists", "POST", { name: "L", type: "public" })).body.data.id;
   const id = await f.subscriber("bouncy@example.com", "B", {
     lists: [list],
@@ -447,7 +447,7 @@ test("D81: the automatic blocklist action leaves the memberships unsubscribed", 
 test("D81: the automatic blocklist action queues subscriber.unsubscribed for the memberships it ends", async () => {
   const f = await open();
   await hooked(f, ["subscriber.unsubscribed", "subscriber.blocklisted"]);
-  f.bounceSettings.actions.hard = { count: 1, action: "blocklist" };
+  f.setBounceAction("hard", { count: 1, action: "blocklist" });
   const list = (await f.json("/api/lists", "POST", { name: "L", type: "public" })).body.data.id;
   await f.subscriber("hook@example.com", "H", {
     lists: [list],

@@ -266,8 +266,6 @@ test("finished deliveries go after 30 days, pending ones never, and the API stay
 
 test("an old email keeps working after its body is dropped, and only finished rows change", async () => {
   const f = await open({ webhooks: {} });
-  f.bounceSettings.enabled = true;
-  f.bounceSettings.webhooksEnabled = true;
   f.marketing.minInterval = "";
   const target = "https://example.test/landing?campaign=1";
   const template = await f.template(

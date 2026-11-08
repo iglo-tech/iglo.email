@@ -7,6 +7,7 @@ import { runPublicContract } from "@/test/contract/public";
 import { runEventsContract } from "@/test/contract/events";
 import { runSequencesContract } from "@/test/contract/sequences";
 import { runBouncesContract } from "@/test/contract/bounces";
+import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
 import { runMaintenanceContract } from "@/test/contract/maintenance";
 import { runMediaContract } from "@/test/contract/media";
 import { runImportContract } from "@/test/contract/import";
@@ -156,6 +157,9 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
     )
       throw new Error("Invalid owned auth arguments");
     const admin = await productionAdmin();
+    // The bounces contract signs SES messages; the process fetches their certificate from AWS, so
+    // it reaches a loopback stand-in instead (test/bounces/sns-tunnel.ts).
+    const tunnel = args[1] === "bounces" ? await startSnsTunnel() : undefined;
     const passed = await withProduction(
       resolve(repository, "dist/iglo.email"),
       signal,
@@ -283,7 +287,8 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       admin,
       // The bounces contract sends about 7,000 requests to measure the provider webhook budget.
       args[1] === "bounces" ? 120_000 : undefined,
-    );
+      tunnel?.environment,
+    ).finally(() => tunnel?.close());
     if (!passed) process.exitCode = 1;
     return;
   }

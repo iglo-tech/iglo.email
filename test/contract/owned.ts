@@ -67,6 +67,7 @@ export async function withProduction<T>(
   ) => Promise<T>,
   admin?: { user: string; password: string },
   timeoutMs = 30_000,
+  environment: Record<string, string> = {},
 ): Promise<T> {
   const lifetime = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
   const directory = await mkdtemp(join(tmpdir(), "iglo-contract-production-"));
@@ -102,6 +103,7 @@ export async function withProduction<T>(
             ...(admin
               ? { IGLO_EMAIL_ADMIN_USER: admin.user, IGLO_EMAIL_ADMIN_PASSWORD: admin.password }
               : {}),
+            ...environment,
           },
           stdio: ["ignore", "ignore", "pipe"],
         },
