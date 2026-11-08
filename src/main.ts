@@ -41,7 +41,7 @@ import { createSendRateLimiter } from "@/messaging/rate";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
-import { startOutbox } from "@/messaging/outbox";
+import { createOutbox } from "@/messaging/outbox";
 import { createSendCompaction } from "@/messaging/retention";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
@@ -59,9 +59,9 @@ import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
 import { createEventPurge } from "@/events/retention";
-import { startPurge } from "@/loops/purge";
+import { createPurge } from "@/loops/purge";
 import { createConditionEvaluator } from "@/conditions/evaluate";
-import { startScheduler } from "@/scheduler/scheduler";
+import { createScheduler } from "@/scheduler/scheduler";
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
@@ -76,17 +76,17 @@ import { createEmbeds, createPublicImages } from "@/media/embed";
 import { registerMediaRoutes, uploadPathCheck } from "@/media/routes";
 import { createMediaStore } from "@/media/store";
 import { createRunnerStore } from "@/campaigns/runner/store";
-import { startCampaignRunner } from "@/campaigns/runner/runner";
+import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import { registerArchiveRoutes } from "@/public/archive";
-import { createSubscriberMail, startSignupMail, type SubscriberMail } from "@/public/mail";
+import { createSubscriberMail, createSignupMail, type SubscriberMail } from "@/public/mail";
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { createCaptcha } from "@/captcha/captcha";
 import { publicSettings } from "@/public/settings";
 import { createBounceStore } from "@/bounces/store";
 import { registerBounceRoutes } from "@/bounces/routes";
-import { startWebhookDelivery } from "@/webhooks/delivery";
+import { createWebhookDelivery } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
@@ -101,7 +101,7 @@ import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { registerAdminRoutes } from "@/admin/routes";
 import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
-import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
+import { createSummaries, createSummaryRefresh } from "@/analytics/summaries";
 import { registerOpenApiRoutes } from "@/openapi/routes";
 import { registerMcpRoutes } from "@/mcp/routes";
 
@@ -152,28 +152,28 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   let sends: ReturnType<typeof createSends> | undefined;
   let templateReferences: ReturnType<typeof createCampaignTemplateReferences> | undefined;
   let templates: ReturnType<typeof createTemplateStore> | undefined;
-  let outbox: ReturnType<typeof startOutbox> | undefined;
+  let outbox: ReturnType<typeof createOutbox> | undefined;
   let tracking: ReturnType<typeof createTracking> | undefined;
   let subscriberTracking: ReturnType<typeof createSubscriberTracking> | undefined;
   let events: ReturnType<typeof createEventStore> | undefined;
-  let purge: ReturnType<typeof startPurge> | undefined;
+  let purge: ReturnType<typeof createPurge> | undefined;
   let enrollments: ReturnType<typeof createEnrollments> | undefined;
   let sequences: ReturnType<typeof createSequenceStore> | undefined;
   let conditions: ReturnType<typeof createConditionEvaluator> | undefined;
-  let scheduler: ReturnType<typeof startScheduler> | undefined;
+  let scheduler: ReturnType<typeof createScheduler> | undefined;
   let campaignStore: ReturnType<typeof createCampaignStore> | undefined;
   let mediaStore: ReturnType<typeof createMediaStore> | undefined;
   let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
   let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
-  let runner: ReturnType<typeof startCampaignRunner> | undefined;
+  let runner: ReturnType<typeof createCampaignRunner> | undefined;
   let mail: SubscriberMail | undefined;
-  let signups: ReturnType<typeof startSignupMail> | undefined;
+  let signups: ReturnType<typeof createSignupMail> | undefined;
   let webhooks: ReturnType<typeof createWebhookStore> | undefined;
   let bounces: ReturnType<typeof createBounceStore> | undefined;
-  let deliveries: ReturnType<typeof startWebhookDelivery> | undefined;
+  let deliveries: ReturnType<typeof createWebhookDelivery> | undefined;
   let analyticsReader: ReturnType<typeof createAnalyticsReader> | undefined;
   let summaries: ReturnType<typeof createSummaries> | undefined;
-  let summaryRefresh: ReturnType<typeof startSummaryRefresh> | undefined;
+  let summaryRefresh: ReturnType<typeof createSummaryRefresh> | undefined;
   let analyticsPurge: ReturnType<typeof createAnalyticsPurge> | undefined;
   let maintenance: ReturnType<typeof registerMaintenanceRoutes> | undefined;
   let importer: ReturnType<typeof createImporter> | undefined;
@@ -409,7 +409,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     subscriberTracking = createSubscriberTracking(db);
     registerSendRoutes(router, sends, auth);
     registerWebhookRoutes(router, { webhooks, auth });
-    outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+    outbox = createOutbox({ db, clock, logger: app.logger, sends, emailer });
     const attachments = createAttachments(media, files);
     const embedImages = createEmbeds(media, app.logger);
     registerTxRoutes(router, {
@@ -550,7 +550,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     });
     recipients = createCampaignRecipients(db);
     const templateStore = templates;
-    runner = startCampaignRunner({
+    runner = createCampaignRunner({
       db,
       clock,
       logger: app.logger,
@@ -612,7 +612,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       logger: app.logger,
       settings: pages,
     });
-    signups = startSignupMail({ db, clock, logger: app.logger, mail });
+    signups = createSignupMail({ db, clock, logger: app.logger, mail });
     const captchaOptions = () => settings!.read()["security.captcha"];
     registerPublicRoutes(router, {
       db,
@@ -649,7 +649,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       roles,
       auth,
     });
-    purge = startPurge({
+    purge = createPurge({
       db,
       clock,
       logger: app.logger,
@@ -661,7 +661,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       ],
     });
     conditions = createConditionEvaluator({ readonly, runner: queryRunner });
-    scheduler = startScheduler({
+    scheduler = createScheduler({
       db,
       clock,
       logger: app.logger,
@@ -682,7 +682,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
     });
     enrollments.onDue(() => scheduler!.wake());
-    deliveries = startWebhookDelivery({
+    deliveries = createWebhookDelivery({
       db,
       clock,
       logger: app.logger,
@@ -745,7 +745,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       auth,
       router,
     });
-    summaryRefresh = startSummaryRefresh({
+    summaryRefresh = createSummaryRefresh({
       clock,
       logger: app.logger,
       summaries,
@@ -758,6 +758,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
     });
     inspect?.(router);
+    // The port is bound before any loop starts (B52). A bind that fails throws here, with nothing
+    // started, so the finally block closes the stores and releases the lock and nothing else.
     server = startServer(app, router);
     const listening = server;
     await new Promise<void>((resolve, reject) => {
@@ -818,6 +820,19 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       void scheduler!.done.catch(() => shutdown(new Error("Sequence scheduler failed")));
       void runner!.done.catch(() => shutdown(new Error("Campaign runner failed")));
       void summaryRefresh!.done.catch(() => shutdown(new Error("Summary refresh failed")));
+      // The loops are created above and start here, in the order they were wired, once the
+      // server listens. A start that throws shuts the server down with the rest.
+      try {
+        outbox!.start();
+        runner!.start();
+        signups!.start();
+        purge!.start();
+        scheduler!.start();
+        deliveries!.start();
+        summaryRefresh!.start();
+      } catch (error) {
+        shutdown(error);
+      }
     });
   } finally {
     enrollments?.onDue(() => {});

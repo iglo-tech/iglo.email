@@ -9,7 +9,7 @@ import type { ConditionEvaluator } from "@/conditions/evaluate";
 import { parseDuration } from "@/conditions/duration";
 import { writeTransaction } from "@/db/transaction";
 import type { EventStore } from "@/events/store";
-import { startLoop } from "@/loops/loop";
+import { createLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Message } from "@/messaging/email";
@@ -71,7 +71,14 @@ export interface SchedulerSettings {
   marketing: MarketingSettings;
 }
 
-export function startScheduler(options: {
+/** Create and start, for callers that decide at once. The server calls `createScheduler` (B52). */
+export function startScheduler(options: SchedulerOptions) {
+  const scheduler = createScheduler(options);
+  scheduler.start();
+  return scheduler;
+}
+
+export interface SchedulerOptions {
   db: Database;
   clock: Clock;
   logger: ErrorLogger;
@@ -85,7 +92,10 @@ export function startScheduler(options: {
   conditions: Pick<ConditionEvaluator, "evaluate">;
   settings: () => SchedulerSettings;
   signal?: AbortSignal;
-}) {
+}
+
+/** Creates the scheduler without claiming; the server starts it after the bind (B52). */
+export function createScheduler(options: SchedulerOptions) {
   const { db, clock, logger, enrollments, sends } = options;
   const attention = (safe: SafeMessage, message: string, cause?: unknown) => {
     try {
@@ -334,7 +344,7 @@ export function startScheduler(options: {
     if (queued) sends.notify();
   }
 
-  const loop = startLoop<{ id: bigint; lease: string }>({
+  const loop = createLoop<{ id: bigint; lease: string }>({
     db,
     clock,
     logger: { error: () => attention("Sequence scheduler failed", "Sequence scheduler failed") },
@@ -374,6 +384,7 @@ export function startScheduler(options: {
     done: loop.done,
     /** Claim promptly, e.g. after an event or manual enroll created a due enrollment. */
     wake: () => loop.wake(),
+    start: () => loop.start(),
     /** Stop claiming; resolves after the current decision commits. */
     stop: () => loop.stop(),
   };

@@ -24,7 +24,19 @@ export interface RunningLoop {
   wake(): void;
 }
 
+/** A loop that claims nothing until `start`. `stop` before `start` ends it at once (B52). */
+export interface PendingLoop extends RunningLoop {
+  start(): void;
+}
+
+/** Create and start: for callers that may claim at once. */
 export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
+  const loop = createLoop(options);
+  loop.start();
+  return loop;
+}
+
+export function createLoop<T>(options: LoopOptions<T>): PendingLoop {
   for (const [name, value, max] of [
     ["intervalMs", options.intervalMs, 2_147_483_647],
     ["leaseMs", options.leaseMs, 2_147_483_647],
@@ -40,6 +52,24 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
     throw new TypeError("Claim callback must be synchronous");
   }
   const controller = new AbortController();
+  // Nothing runs until `start`, so nothing is claimed before it. `done` settles when the loop
+  // ends, or at once when it is stopped before it starts.
+  let started = false;
+  let finish!: () => void;
+  let fail!: (error: unknown) => void;
+  const done = new Promise<void>((resolve, reject) => {
+    finish = resolve;
+    fail = reject;
+  });
+  // The caller can await `done` later without an interim unhandled rejection.
+  void done.catch(() => undefined);
+  controller.signal.addEventListener(
+    "abort",
+    () => {
+      if (!started) finish();
+    },
+    { once: true },
+  );
   const stopFromSignal = () => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) stopFromSignal();
   else options.signal?.addEventListener("abort", stopFromSignal, { once: true });
@@ -105,11 +135,14 @@ export function startLoop<T>(options: LoopOptions<T>): RunningLoop {
       options.signal?.removeEventListener("abort", stopFromSignal);
     }
   };
-  const done = run();
-  // The caller can await `done` later without an interim unhandled rejection.
-  void done.catch(() => undefined);
   return {
     done,
+    /** Runs the loop: its first claim happens here, synchronously, as before. */
+    start() {
+      if (started || controller.signal.aborted) return;
+      started = true;
+      run().then(finish, fail);
+    },
     wake() {
       notified = true;
       if (wakeable) {

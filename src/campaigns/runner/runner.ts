@@ -8,7 +8,7 @@ import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
-import { startLoop } from "@/loops/loop";
+import { createLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
 import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
@@ -139,7 +139,15 @@ export function createCampaignRunnerRegistry() {
 }
 export type CampaignRunnerRegistry = ReturnType<typeof createCampaignRunnerRegistry>;
 
+/** Create and start, for callers that claim at once. The server creates, then starts (B52). */
 export function startCampaignRunner(deps: RunnerDeps) {
+  const runner = createCampaignRunner(deps);
+  runner.start();
+  return runner;
+}
+
+/** Creates the runner without starting it: no orphan is recovered and nothing is claimed yet. */
+export function createCampaignRunner(deps: RunnerDeps) {
   const { db, clock, store } = deps;
   const leaseMs = deps.leaseMs ?? defaultLease;
   const token = crypto.randomUUID();
@@ -731,8 +739,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
     }
   }
 
-  recoverOrphans();
-  const loop = startLoop<Batch>({
+  const loop = createLoop<Batch>({
     db,
     clock,
     logger: deps.logger,
@@ -774,6 +781,11 @@ export function startCampaignRunner(deps: RunnerDeps) {
   return {
     done: loop.done,
     wake: () => loop.wake(),
+    /** Recovers the batches a previous process left, then claims. Called once, after the bind. */
+    start() {
+      recoverOrphans();
+      loop.start();
+    },
     /** Stops claims, lets the batch in flight finish, then releases every lease. */
     async stop(): Promise<void> {
       stopping.abort();

@@ -161,7 +161,10 @@ data/
 ```
 
 Startup takes the instance lock, opens `iglo-email.db`, validates and applies the embedded migration
-manifest, then starts HTTP. It closes the connection after HTTP shutdown or a
+manifest, then wires every store, route and loop without starting any of them. The port is bound
+next, and only then does each background loop start, in wiring order ([B52](../briefs/B52.md)). So a
+start that cannot listen claims no send, campaign batch or webhook delivery and recovers nothing.
+The shutdown path stops whatever did start. It closes the connection after HTTP shutdown or a
 startup failure. A nonempty database with pending migrations gets one verified
 SQLite `VACUUM INTO` snapshot before the batch, held as a backup is. `iglo.email backup` takes a live
 snapshot from a separate read-only process, with a short-lived helper that syncs its

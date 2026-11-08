@@ -8,7 +8,7 @@ import { isIP } from "node:net";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
-import { startLoop } from "@/loops/loop";
+import { createLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
 import { blockedAddress } from "@/webhooks/address";
 import type { ClaimedDelivery, WebhookStore } from "@/webhooks/store";
@@ -77,14 +77,24 @@ async function drain(response: Response) {
 export const signature = (secret: string, unix: number, body: string) =>
   `t=${unix},v1=${createHmac("sha256", secret).update(`${unix}.${body}`).digest("hex")}`;
 
-export function startWebhookDelivery(options: {
+/** Create and start, for callers that deliver at once. The server creates, then starts (B52). */
+export function startWebhookDelivery(options: WebhookDeliveryOptions) {
+  const delivery = createWebhookDelivery(options);
+  delivery.start();
+  return delivery;
+}
+
+export interface WebhookDeliveryOptions {
   db: Database;
   clock: Clock;
   logger: ErrorLogger;
   webhooks: WebhookStore;
   blockPrivate: () => boolean;
   transport?: WebhookTransport;
-}) {
+}
+
+/** Creates the delivery loop without recovering or claiming; `start` does that (B52). */
+export function createWebhookDelivery(options: WebhookDeliveryOptions) {
   const { clock, webhooks } = options;
   const transport = options.transport ?? {};
   const send = transport.fetch ?? fetch;
@@ -92,7 +102,6 @@ export function startWebhookDelivery(options: {
   const running = new Set<Promise<void>>();
   const logged = new Map<bigint, number>();
   const abandon = new AbortController();
-  writeTransaction(options.db, () => webhooks.recover());
   /** Finished attempts, settled together in the next claim's commit. */
   const finished: { delivery: ClaimedDelivery; error: string | null }[] = [];
   const settleFinished = () => {
@@ -175,7 +184,7 @@ export function startWebhookDelivery(options: {
     );
   }
 
-  const loop = startLoop<ClaimedDelivery>({
+  const loop = createLoop<ClaimedDelivery>({
     db: options.db,
     clock,
     logger: {
@@ -208,10 +217,15 @@ export function startWebhookDelivery(options: {
       running.add(run);
     },
   });
-  webhooks.onWake(() => loop.wake());
   return {
     done: loop.done,
     wake: () => loop.wake(),
+    /** Recovers the attempts a previous process left, then claims. Called once, after the bind. */
+    start() {
+      writeTransaction(options.db, () => webhooks.recover());
+      webhooks.onWake(() => loop.wake());
+      loop.start();
+    },
     /** Stop claiming and abandon attempts in flight, whose rows keep only their lease. */
     async halt() {
       webhooks.onWake(() => {});

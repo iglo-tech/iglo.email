@@ -60,20 +60,41 @@ export type Summaries = ReturnType<typeof createSummaries>;
 /** Longest sleep, which is how soon a changed setting takes effect. */
 const CHECK_MS = 60_000;
 
+/** Create and start, for callers that refresh at once. The server creates, then starts (B52). */
+export function startSummaryRefresh(options: SummaryRefreshOptions) {
+  const refresh = createSummaryRefresh(options);
+  refresh.start();
+  return refresh;
+}
+
+export interface SummaryRefreshOptions {
+  clock: Clock;
+  logger: ErrorLogger;
+  summaries: Summaries;
+  settings: () => { enabled: boolean; interval: string };
+}
+
 /**
  * The app.cache_slow_queries cron job. It sleeps to the schedule's next due time, so it does
  * not use src/loops/loop.ts, whose interval is fixed and whose claims are write transactions:
  * @every can be one second, and there is no work row to lease. A setting or a refresh that
  * fails is logged and keeps the stored rows; neither stops the server.
+ *
+ * Creating it runs nothing; `start` runs the first check, after the port is bound (B52).
  */
-export function startSummaryRefresh(options: {
-  clock: Clock;
-  logger: ErrorLogger;
-  summaries: Summaries;
-  settings: () => { enabled: boolean; interval: string };
-}) {
+export function createSummaryRefresh(options: SummaryRefreshOptions) {
   const { clock, logger, summaries } = options;
   const controller = new AbortController();
+  // Nothing runs until `start`; `done` settles when the job ends, or at once if stopped first.
+  let started = false;
+  let finish!: () => void;
+  let fail!: (error: unknown) => void;
+  const done = new Promise<void>((resolve, reject) => {
+    finish = resolve;
+    fail = reject;
+  });
+  // The caller can await `done` later without an interim unhandled rejection.
+  void done.catch(() => undefined);
   let current: { interval: string; schedule: Schedule } | undefined;
   let refused: string | undefined;
   const schedule = (interval: string, now: Date) => {
@@ -127,13 +148,16 @@ export function startSummaryRefresh(options: {
       }
     }
   };
-  const done = run();
-  // The caller can await `done` later without an interim unhandled rejection.
-  void done.catch(() => undefined);
   return {
     done,
+    start() {
+      if (started || controller.signal.aborted) return;
+      started = true;
+      run().then(finish, fail);
+    },
     stop() {
       controller.abort();
+      if (!started) finish();
       return done;
     },
   };

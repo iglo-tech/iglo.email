@@ -2,7 +2,7 @@
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
-import { startLoop } from "@/loops/loop";
+import { createLoop, type PendingLoop } from "@/loops/loop";
 
 export const PURGE_INTERVAL_MS = 3_600_000;
 const BATCH = 100;
@@ -18,16 +18,26 @@ export type Purge = (now: Date, limit: number) => readonly unknown[];
  * pause; when every owner has nothing, the loop waits `intervalMs`. The rows are the state, so a
  * restart resumes.
  */
-export function startPurge(options: {
+/** Create and start, for callers that purge at once. The server calls `createPurge` (B52). */
+export function startPurge(options: PurgeOptions) {
+  const purge = createPurge(options);
+  purge.start();
+  return purge;
+}
+
+export interface PurgeOptions {
   db: Database;
   clock: Clock;
   logger: ErrorLogger;
   purges: readonly Purge[];
   batchSize?: number;
-}) {
+}
+
+/** Creates the retention loop without starting it; the server starts it after the bind (B52). */
+export function createPurge(options: PurgeOptions): PendingLoop {
   const { purges } = options;
   let next = 0;
-  return startLoop<unknown>({
+  return createLoop<unknown>({
     db: options.db,
     clock: options.clock,
     logger: options.logger,
