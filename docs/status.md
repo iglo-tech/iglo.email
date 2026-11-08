@@ -12,8 +12,7 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B40** Settings UI ([brief](briefs/B40.md)): remove dropped and inert controls: the S3 card with `upload.provider`, the Messengers tab, the `app.check_updates` switch, and the SMTP `max_msg_retries`/`msg_retry_delay` inputs; all values keep round-tripping through `/api/settings` (D57) (modules `src/admin/views/settings.tsx`, `assets/admin/js/views/settings.js`, `i18n/en.json`, `test/e2e/specs/settings.e2e.js`; size S)
-2. **B41** Deliverability docs: SES Easy DKIM as the one way to sign, with in-app `smtp[].dkim` as API-only compatibility, plus SPF via a custom MAIL FROM domain and DMARC alignment and policy; fix the sentence cut at the end of "SMTP and DKIM"; mark the configuration set as already documented (module `docs/operations.md`; size S)
+1. **B41** Deliverability docs ([brief](briefs/B41.md)): SES Easy DKIM as the one way to sign, with in-app `smtp[].dkim` as API-only compatibility, plus SPF via a custom MAIL FROM domain and DMARC alignment and policy; fix the sentence cut at the end of "SMTP and DKIM"; mark the configuration set as already documented (module `docs/operations.md`; size S)
 
 ## Owner decisions
 
@@ -43,6 +42,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B40 | [#92](https://github.com/iglo-tech/iglo.email/pull/92) | 0707e37 | Inert settings controls removed (S3, Messengers, update check, SMTP retries, language); values still round-trip |
 | B39 | [#91](https://github.com/iglo-tech/iglo.email/pull/91) | c850cc6 | MCP completeness: 20 tools (create_campaign, lists, media, sequences, update_sequence_step); first Haiku worker (D93) |
 | B38 | [#90](https://github.com/iglo-tech/iglo.email/pull/90) | 0803f41 | Admin notification mails (campaign finished/cancelled/auto-paused, import finished/failed) |
 | B37 | [#89](https://github.com/iglo-tech/iglo.email/pull/89) | e7af5ed | Shared SES send-rate cap `messaging.max_send_rate` (D92), outbox priority |
@@ -130,6 +130,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - Send rate ([#89](https://github.com/iglo-tech/iglo.email/pull/89) r2): `runner.ts:593` should `return` not `continue` on not-started (only reachable if the emailer closes before the runner); lowering the rate applies one send late; duplicate not-started guard in `sends.ts`; `settings.onUpdate` is single-slot; SMTP test send waits behind the limiter unbounded; perf doc wording (15 at cap 14 is sink jitter; 20 s run cannot show the 60 s cutoff).
 - Notifications ([#90](https://github.com/iglo-tech/iglo.email/pull/90) r2): no regression test for the post-commit status re-read; bad-CSV notification missing from the `differences.ts` CSV entry; operations.md should say invalid entries are skipped and logged; invalid `from_email` falls back to `noreply@localhost` silently; unused `siteName`/`runner_generation`, `logoUrl` never passed; tests poll with `Bun.sleep(5)`.
 - MCP ([#91](https://github.com/iglo-tech/iglo.email/pull/91) r1): sequence steps have no body, so a step cannot use a campaign layout (design gap, `05-sequences.md:87`); no test of a step edit on an active sequence with a live enrollment; an `update_sequence_step` call with neither field still saves and bumps the timestamp.
+- Settings ([#92](https://github.com/iglo-tech/iglo.email/pull/92) r1): unused `lang` still passed into `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx:22,169`); the unit round trip omits the browser-only SMTP keys (the e2e covers them).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
