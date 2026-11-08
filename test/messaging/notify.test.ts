@@ -396,11 +396,11 @@ async function createNotifyFixture(
       async () => {
         sends.notify();
         webhookDelivery.wake();
-        if ((await sendsWithStatus("sending")).length > 0) return false;
         const now = clock.now().getTime();
         const due = (await sendsWithStatus("queued")).filter(
           (row) => row.next_attempt_at === null || Date.parse(row.next_attempt_at) <= now,
         );
+        if ((await sendsWithStatus("sending")).length > 0) return false;
         return due.length === 0;
       },
       { label: "outbox drain", advance: (ms) => clock.advance(ms), step: 100 },
