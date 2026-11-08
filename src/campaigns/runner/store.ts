@@ -131,6 +131,16 @@ export function createRunnerStore(db: Database) {
       } | null;
       return row?.at ? { at: row.at, outstanding: row.outstanding === 1n } : null;
     },
+    counts(id: bigint) {
+      return q.get("campaign-counts").get(id) as {
+        id: bigint;
+        name: string;
+        status: string;
+        sent: number;
+        to_send: number;
+        runner_generation: bigint;
+      } | null;
+    },
     close: () => q.close(),
   };
 }

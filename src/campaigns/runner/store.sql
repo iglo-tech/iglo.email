@@ -107,3 +107,6 @@ SELECT (SELECT MAX(at) FROM (
     UNION ALL SELECT (SELECT MAX(at) FROM campaign_deliveries WHERE subscriber_id = ?1 AND status = 'unknown')
   )) AS at,
   EXISTS (SELECT 1 FROM campaign_deliveries WHERE subscriber_id = ?1 AND status = 'claimed') AS outstanding;
+
+-- name: campaign-counts
+SELECT id, name, status, sent, to_send, runner_generation FROM campaigns WHERE id = ?;

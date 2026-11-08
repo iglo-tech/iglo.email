@@ -194,3 +194,12 @@ M2.6 implements this ([D61](09-decisions.md#d61-outbound-webhook-delivery-and-pr
 - **Disabling** a webhook queues nothing new and sends nothing. Rows already queued keep their retry schedule without requests: enabling resumes them, and the 24-hour limit fails them with `webhook_disabled`. Deleting a webhook deletes its rows.
 - **Deletion and wipe (D25):** the same transaction clears `email` and `external_id` from every stored delivery of the subscriber, delivered or pending; pending rows then go out cleared, including an attempt still waiting on DNS. A row that disappeared, as when its webhook was deleted, sends nothing. A public wipe also clears `list_ids` from those deliveries, and its `subscriber.deleted` carries only `id` and `uuid` (`email` is `""`, `external_id` null and `list_ids` empty). An administrative delete's also carries the `external_id`, which is the key an app matches, and the delivery's end (delivered or failed) clears that too. A request already started cannot be recalled; with address blocking off, that includes the DNS lookup inside the HTTP client.
 - **Private targets:** `webhooks.block_private_addresses` (default off, since self-hosted receivers are often private) refuses a target if any resolved address is outside public unicast. The request then connects to the checked address, with the configured `Host` and TLS name, so a second lookup cannot rebind it.
+
+## Admin Notifications
+
+Admin notification emails are sent to all addresses configured in `app.notify_emails` (validated as email addresses) using listmonk's built-in notification templates and triggers:
+- **Campaigns:** sends `campaign-status` notification when a campaign finishes (0 recipients or all subscribers exhausted), is cancelled via the API, or is auto-paused by the runner upon reaching `app.max_send_errors`. Manual pause via the API does not trigger notification, matching upstream behavior.
+- **Imports:** sends `import-status` notification when a CSV import finishes or fails.
+
+Notifications are delivered via the durable transactional send path (`sends.enqueueRequest` with unlinked transactional format `subscriberId: null, subscriberUuid: null`). The `from` address is the primary configured address (`app.from_email[0]`). If `app.notify_emails` is empty, no notifications are enqueued. Notifications run outside database transaction blocks to prevent nested write transactions, and unlinked transactional sends never reach subscriber activity feeds, analytics or subscriber webhooks.
+

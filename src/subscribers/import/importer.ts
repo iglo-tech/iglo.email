@@ -11,6 +11,7 @@ import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
 import { trimSpace } from "@/lists/store";
+import type { AdminNotifier } from "@/messaging/notify";
 import { HttpError } from "@/server/response";
 import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
 import {
@@ -106,6 +107,7 @@ export function createImporter(deps: {
   >;
   touchLists(ids: bigint[]): void;
   domainPolicy(): { allow: string[]; block: string[] };
+  notify?: AdminNotifier;
 }) {
   const { clock, logger, i18n, store } = deps;
   const directory = join(deps.dataDir, TEMPORARY);
@@ -290,11 +292,23 @@ export function createImporter(deps: {
       }
       log.add("imported finished");
       status.status = "finished";
+      deps.notify?.importStatus({
+        name: status.name,
+        status: "finished",
+        imported: status.imported,
+        total: status.total,
+      });
     } catch (error) {
       // A batch rolls back whole, so what is stored is the batches counted in `imported`.
       if (error instanceof CsvError) failed(`error reading CSV: ${error.message}`);
       else if (error instanceof HttpError) failed(error.message);
       else failed(`error importing: ${(error as Error).message}`);
+      deps.notify?.importStatus({
+        name: status.name,
+        status: "failed",
+        imported: status.imported,
+        total: status.total,
+      });
     } finally {
       await file?.close().catch(() => {});
       await rm(path, { force: true }).catch((error) => logger.error(error));

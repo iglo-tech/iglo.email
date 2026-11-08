@@ -5,6 +5,7 @@ import { refuseWhileHeld } from "@/settings/hold";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import type { Message } from "@/messaging/email";
+import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
@@ -78,6 +79,7 @@ export interface CampaignDeps {
   /** Reads files, so a caller holds no transaction. */
   attachments(ids: bigint[], inline: InlineImage[]): Promise<NonNullable<Message["attachments"]>>;
   embedImages: EmbedImages;
+  notify?: AdminNotifier;
 }
 
 const idValue = (id: bigint | null) =>
@@ -553,7 +555,17 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     checkCampaign(context, true, id);
     if (input.status === "running" || input.status === "scheduled") refuseWhileHeld(context.app.db);
     try {
-      return ok(projectCampaign(store.updateStatus(id, input.status ?? "")));
+      const updated = store.updateStatus(id, input.status ?? "");
+      if (input.status === "cancelled") {
+        deps.notify?.campaignStatus({
+          id,
+          name: updated.name,
+          status: "cancelled",
+          sent: Number(updated.sent),
+          to_send: Number(updated.to_send),
+        });
+      }
+      return ok(projectCampaign(updated));
     } catch (error) {
       return translate(context, error);
     }

@@ -65,6 +65,7 @@ import { startScheduler } from "@/scheduler/scheduler";
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
+import { createAdminNotifier, type AdminNotifier } from "@/messaging/notify";
 import { createImporter } from "@/subscribers/import/importer";
 import { registerImportRoutes } from "@/subscribers/import/routes";
 import { backupHelp, runBackup } from "@/backup/cli";
@@ -176,6 +177,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   let analyticsPurge: ReturnType<typeof createAnalyticsPurge> | undefined;
   let maintenance: ReturnType<typeof registerMaintenanceRoutes> | undefined;
   let importer: ReturnType<typeof createImporter> | undefined;
+  let notifier: ReturnType<typeof createAdminNotifier> | undefined;
   try {
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
@@ -292,6 +294,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
     const touchLists = listStore.touch;
+    const adminNotifier: AdminNotifier = {
+      campaignStatus: (c, r) => notifier?.campaignStatus(c, r),
+      importStatus: (s) => notifier?.importStatus(s),
+    };
     importer = createImporter({
       dataDir: bootstrap.config.dataDir,
       clock,
@@ -306,6 +312,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           block: current["privacy.domain_blocklist"],
         };
       },
+      notify: adminNotifier,
     });
     await importer.sweep().catch((error) => app.logger.error(error));
     registerImportRoutes(router, { importer, roles, auth });
@@ -383,6 +390,19 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         settings: marketing,
         campaignDeliveries: runnerStore,
       }),
+    });
+    notifier = createAdminNotifier({
+      sends,
+      renderer,
+      settings: () => {
+        const current = settings!.read();
+        return {
+          notifyEmails: current["app.notify_emails"],
+          fromEmail: current["app.from_email"][0] ?? "",
+          rootUrl: current["app.root_url"],
+          siteName: current["app.site_name"],
+        };
+      },
     });
     tracking = createTracking(db, clock);
     subscriberTracking = createSubscriberTracking(db);
@@ -473,6 +493,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       settings: campaignSettings,
       attachments,
       embedImages,
+      notify: notifier,
     });
     registerCampaignPublicRoutes(router, {
       db,
@@ -563,6 +584,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           individualTracking: campaign.individualTracking,
         };
       },
+      notify: notifier,
     });
     events = createEventStore(db, subscriberStore, {
       emailAllowed: (email) => {

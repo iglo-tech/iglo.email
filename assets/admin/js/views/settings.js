@@ -71,6 +71,8 @@ function component() {
       d[key] = (d[key] || []).join('\n');
     });
 
+    d['app.notify_emails'] = (d['app.notify_emails'] || []).join(', ');
+
     return d;
   };
 
@@ -378,6 +380,10 @@ function component() {
       ['privacy.domain_blocklist', 'privacy.domain_allowlist'].forEach((key) => {
         form[key] = form[key].map((v) => v.toLowerCase());
       });
+
+      form['app.notify_emails'] = typeof form['app.notify_emails'] === 'string'
+        ? form['app.notify_emails'].split(',').map((v) => v.trim()).filter((v) => v !== '')
+        : (form['app.notify_emails'] || []);
 
       try {
         await api('settings', '/settings', 'PUT', form);
