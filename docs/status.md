@@ -12,7 +12,8 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B58** Two micro nits ([brief](briefs/B58.md), #108 r1): the duplicate-uuid 400 clause sits after the `B57:` label in `docs/design/07-api-and-ui.md:67` and `src/openapi/differences.ts:329` (it is B56); `drainOutbox` reads `sending` before `queued` (`test/messaging/notify.test.ts:398-403`) so a send moving between the reads is missed — read `queued` first (size XS)
+Empty: every agent-doable item is merged (2026-11-08). Only owner items and one watch note remain (Active, Hardening backlog). New review findings or a recurrence of the runner flake reopen the queue.
+
 
 
 
@@ -45,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B58 | [#109](https://github.com/iglo-tech/iglo.email/pull/109) | 14aac56 | Two micro nits (docs label, outbox wait order) |
 | B57 | [#108](https://github.com/iglo-tech/iglo.email/pull/108) | 9ff7bd2 | Last nits: auth `""` SMTP-only, shared SMTP-test handler, API-based outbox wait, timings |
 | B53 | [#107](https://github.com/iglo-tech/iglo.email/pull/107) | fd2e361 | Final nits sweep: 14 review-backlog items |
 | B55 | [#106](https://github.com/iglo-tech/iglo.email/pull/106) | b060149 | Backup residuals: removal by dev/ino, changed-meanwhile, shared parent, failed post-publish sync keeps the old backup |
