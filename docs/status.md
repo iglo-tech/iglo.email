@@ -12,7 +12,7 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B57** Last review nits ([brief](briefs/B57.md), #107 r1): the auth `""` rule should apply to SMTP only (upstream mailboxes log in with `""`, `pop.go:92`) or the docs must say mailboxes too; send-rate harness shares one SMTP-test handler like production; `drainOutbox` waits through the API not the `sends` table; add `notify-wiring.test.ts` to `test/timings.json` (size S)
+1. **B58** Two micro nits ([brief](briefs/B58.md), #108 r1): the duplicate-uuid 400 clause sits after the `B57:` label in `docs/design/07-api-and-ui.md:67` and `src/openapi/differences.ts:329` (it is B56); `drainOutbox` reads `sending` before `queued` (`test/messaging/notify.test.ts:398-403`) so a send moving between the reads is missed — read `queued` first (size XS)
 
 
 
@@ -45,6 +45,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B57 | [#108](https://github.com/iglo-tech/iglo.email/pull/108) | 9ff7bd2 | Last nits: auth `""` SMTP-only, shared SMTP-test handler, API-based outbox wait, timings |
 | B53 | [#107](https://github.com/iglo-tech/iglo.email/pull/107) | fd2e361 | Final nits sweep: 14 review-backlog items |
 | B55 | [#106](https://github.com/iglo-tech/iglo.email/pull/106) | b060149 | Backup residuals: removal by dev/ino, changed-meanwhile, shared parent, failed post-publish sync keeps the old backup |
 | B56 | [#105](https://github.com/iglo-tech/iglo.email/pull/105) | 9874d7f | Settings secrets: auth `none` keeps no password, duplicate uuids refused, disabled server takes a password |
