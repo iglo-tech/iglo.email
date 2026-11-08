@@ -45,12 +45,12 @@ PROBE iterations 1540 wall 11 ms
 The wall bound was then measured with a temporary probe test that waits on a condition that never
 holds (not committed): it stopped at 10,001 ms after 3,212,255 iterations, about 3.1 µs each, with
 the `wall limit 10000 ms` diagnostic. That probe ran with the first 10 s bound. The bound is now
-4 s (see "Why 4 s"), so the same wait ends at `wall limit 4000 ms`.
+3 s (see "Why 3 s"), so the same wait ends at `wall limit 3000 ms`.
 
 ## Change
 
-`drive` stops at `WAIT_WALL_MS` (4 s) of real time or at its iteration cap, whichever comes first.
-A fourth optional argument, `wallMs`, replaces the 4 s budget for one wait. The new wall-path test
+`drive` stops at `WAIT_WALL_MS` (3 s) of real time or at its iteration cap, whichever comes first.
+A fourth optional argument, `wallMs`, replaces the 3 s budget for one wait. The new wall-path test
 uses 200 ms. The cap is 10,000,000, a runaway guard that the wall bound always reaches first at
 about 3 µs per iteration. The diagnostic error is the same as before (B42's stuck-state message),
 and it now says which limit was reached. The B42 regression test passes an explicit limit of 50 and
@@ -61,23 +61,24 @@ iteration limit and a 200 ms budget. It asserts `wall limit 200 ms`, asserts tha
 is absent, and asserts that the wait returns in under 2 s. It sits next to the B42 test in
 `test/campaigns/runner/runner.test.ts`.
 
-## Why 4 s
+## Why 3 s
 
 - Bun's default per-test timeout is 5 s. A serial `bun test test/campaigns/runner/runner.test.ts`
   or `bun test test/media/media.test.ts` uses it. `bun run test` and `bun run check` pass
   `--timeout=30000`. A wall bound above 5 s would hit the test timeout first in serial runs, and the
   state dump would be lost. That is B42's second symptom. The bound must sit below the smallest
   timeout the documented commands use.
-- Margin, measured: a temporary probe with no budget override (since deleted), run serially with
-  the default 5 s timeout, stopped at `wall limit 4000 ms` after 4,001 ms with the full state dump.
-  The whole test took 4.70 s, because fixture setup runs inside the test. The margin under 5 s is
-  therefore about 0.3 s, not 1 s. A 3 s bound would leave about 1.3 s, if the margin proves too
-  thin under load.
+- Margin, measured: with a 4 s bound, a temporary probe with no budget override (since deleted),
+  run serially with the default 5 s timeout, stopped at `wall limit 4000 ms` after 4,001 ms with the
+  full state dump. The whole test took 4.70 s, because fixture setup runs inside the test. That left
+  about 0.3 s under 5 s, too thin, so the lead set the bound to 3 s. At 3 s the same test has about
+  1.3 s of room for setup. Under load, the setup margin is the number to watch.
 - The media waits that failed need 7–12 ms of wall time (the 1,540–2,349 iteration probes above).
   With four CPU burners (`yes > /dev/null`), the slowest whole test across the runner and media files
-  (serial, JUnit) took 1.88 s (the tracked-link test). That leaves more than 2× headroom for a
-  progressing wait. These numbers come from the independent review of 19adf2c.
-- A wait that never completes spends about 4 s of one core before it fails. Real waits finish in
+  (serial, JUnit) took 1.88 s (the tracked-link test). That is a whole test, so a single wait is
+  shorter and has at least about 1.6× headroom under the 3 s bound.
+  These numbers come from the independent review of 19adf2c.
+- A wait that never completes spends about 3 s of one core before it fails. Real waits finish in
   milliseconds, so the cost falls only on tests that fail anyway.
 
 ## Rule

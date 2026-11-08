@@ -645,7 +645,7 @@ test("a wait with no iteration limit ends at the wall bound and names it", async
   await f.status(c.id, "running");
   f.start();
   // No iteration limit (undefined takes the default cap), so only the wall budget can end the
-  // wait. The budget is 200 ms here instead of the 4 s default, which keeps the test fast.
+  // wait. The budget is 200 ms here instead of the 3 s default, which keeps the test fast.
   const started = performance.now();
   const error = await f
     .drive(() => false, 50, undefined, 200)

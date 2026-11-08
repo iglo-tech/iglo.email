@@ -127,13 +127,13 @@ export async function runnerFixture(
   /**
    * Default real-time budget of a wait before it fails with its state. Bun's default per-test
    * timeout is 5 s for `bun test <path>` (serial single-file and directory runs), and
-   * `bun run test` / `check` pass `--timeout=30000`. 4 s is below both, so a stuck wait reports
+   * `bun run test` / `check` pass `--timeout=30000`. 3 s is below both, so a stuck wait reports
    * its state in every run rather than being cut off by the test timeout. Fixture setup runs
-   * inside the test too: a serial single-test run that waits for the full 4 s took 4.70 s in
-   * total, so the margin under 5 s is about 0.3 s, not 1 s (docs/perf/B49-drive-bound.md, "Why
-   * 4 s"). Media waits need 7–12 ms, and the slowest whole test took 1.88 s under four CPU burners.
+   * inside the test too: with a 4 s wait, a serial single-test run took 4.70 s in total, leaving
+   * about 0.3 s under 5 s, so the bound is 3 s (docs/perf/B49-drive-bound.md, "Why 3 s"). A single
+   * wait needs at most about 1.9 s even under four CPU burners.
    */
-  const WAIT_WALL_MS = 4_000;
+  const WAIT_WALL_MS = 3_000;
   /**
    * Lets I/O and microtasks run, then advances the clock by `step`, until `done()`.
    *
