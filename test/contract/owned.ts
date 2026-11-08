@@ -2,7 +2,7 @@ import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
-import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
   if (child.exitCode === null && child.signalCode === null) stopGroup(child);
@@ -38,10 +38,11 @@ export async function withProduction<T>(
     const copy = join(directory, "iglo.email");
     await copyFile(executable, copy);
     // The first start takes a port from startOnFreePort, which retries on a new port when the
-    // process reports its port in use. A restart reuses the port its predecessor just freed.
+    // process reports its port in use. A restart reuses the port its predecessor just freed,
+    // through restartOnPort, which retries on that same port because the origin must not change.
     let port = 0;
     let origin = "";
-    const start = async () => {
+    const start = async (listenPort: number) => {
       lifetime.throwIfAborted();
       child = spawnGroup(
         copy,
@@ -50,7 +51,7 @@ export async function withProduction<T>(
           "--host",
           "127.0.0.1",
           "--port",
-          String(port),
+          String(listenPort),
           "--data-dir",
           join(directory, "data"),
         ],
@@ -93,7 +94,7 @@ export async function withProduction<T>(
             response.status === 200 &&
             (await response.text()) === '{"data":true}\n' &&
             child.pid !== undefined &&
-            listensOn(child.pid, port)
+            listensOn(child.pid, listenPort)
           ) {
             ready = true;
             break;
@@ -105,20 +106,24 @@ export async function withProduction<T>(
       }
       if (!ready) throw new Error("Compiled production process readiness timed out");
     };
-    const restart = async () => {
-      if (!child || !closed || (await stop(child, closed)) !== 0)
-        throw new Error("Compiled production restart shutdown failed");
-      await start();
-    };
-    await startOnFreePort(async (free) => {
-      port = free;
-      origin = `http://127.0.0.1:${port}`;
+    // A start that fails leaves no process running: the child it spawned is stopped first.
+    const launch = async (listenPort: number) => {
       try {
-        await start();
+        await start(listenPort);
       } catch (error) {
         if (child && closed) await stop(child, closed).catch(() => 0);
         throw error;
       }
+    };
+    const restart = async () => {
+      if (!child || !closed || (await stop(child, closed)) !== 0)
+        throw new Error("Compiled production restart shutdown failed");
+      await restartOnPort(port, launch);
+    };
+    await startOnFreePort(async (free) => {
+      port = free;
+      origin = `http://127.0.0.1:${port}`;
+      await launch(free);
     });
     let abort!: () => void;
     const cancelled = new Promise<never>((_, reject) => {
@@ -152,8 +157,11 @@ export async function withProduction<T>(
   return result as T;
 }
 
-// Provision only through the compiled process's real login and protected user API.
-export async function provisionApiUser(origin: string, admin: { user: string; password: string }) {
+/**
+ * The admin login form, as a browser sends it: returns the session and CSRF cookies, with the CSRF
+ * token that a request sends in its header.
+ */
+export async function adminLogin(origin: string, admin: { user: string; password: string }) {
   const page = await fetch(`${origin}/admin/login`);
   const html = await page.text();
   const nonce = /name="nonce"\s+value="([^"]+)"/.exec(html)?.[1];
@@ -184,13 +192,19 @@ export async function provisionApiUser(origin: string, admin: { user: string; pa
     ?.split(";", 1)[0];
   if (login.status !== 302 || !session || !csrf)
     throw new Error("Unable to log into production bootstrap account");
+  return { cookie: `${session}; ${csrf}`, token: csrf.slice("csrf=".length) };
+}
+
+// Provision only through the compiled process's real login and protected user API.
+export async function provisionApiUser(origin: string, admin: { user: string; password: string }) {
+  const { cookie, token } = await adminLogin(origin, admin);
   const user = "m13-contract-api";
   const response = await fetch(`${origin}/api/users`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Cookie: `${session}; ${csrf}`,
-      "X-CSRF-Token": csrf.slice("csrf=".length),
+      Cookie: cookie,
+      "X-CSRF-Token": token,
     },
     body: JSON.stringify({ username: user, type: "api", status: "enabled", user_role_id: 1 }),
   });

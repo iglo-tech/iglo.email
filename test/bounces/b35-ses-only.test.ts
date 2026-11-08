@@ -11,7 +11,8 @@ import { settingsView } from "@/admin/views/settings";
 import { render } from "@/jsx/render";
 import { buildDocument } from "@/openapi/document";
 import { ensureProductionBuild } from "@/test/production-build";
-import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
+import { adminLogin } from "@/test/contract/owned";
 import { TestClock } from "@/test/server/fixture";
 import { txFixture } from "@/test/tx/fixture";
 
@@ -34,44 +35,6 @@ test("1. POST /webhooks/bounce/mailgun answers the same as an unknown route (404
   expect(mailgun.status).toBe(unknown.status);
   expect(mailgun.status).toBe(404);
 });
-
-async function stop(child: Bun.Subprocess) {
-  if (child.exitCode === null) child.kill("SIGTERM");
-  const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
-  try {
-    return await child.exited;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** The admin login form, as a browser sends it: returns the session and CSRF cookies. */
-async function login(origin: string) {
-  const page = await fetch(`${origin}/admin/login`);
-  const html = await page.text();
-  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(html)?.[1];
-  const nonceCookie = page.headers
-    .getSetCookie()
-    .find((item) => item.startsWith("nonce="))
-    ?.split(";", 1)[0];
-  if (!nonce || !nonceCookie) throw new Error("Login form is missing its nonce");
-  const response = await fetch(`${origin}/admin/login`, {
-    method: "POST",
-    redirect: "manual",
-    headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
-    body: new URLSearchParams({
-      username: admin.user,
-      password: admin.password,
-      nonce,
-      next: "/api/profile",
-    }),
-  });
-  const cookies = response.headers.getSetCookie();
-  const session = cookies.find((item) => item.startsWith("session="))?.split(";", 1)[0];
-  const csrf = cookies.find((item) => item.startsWith("csrf="))?.split(";", 1)[0];
-  if (response.status !== 302 || !session || !csrf) throw new Error("Login failed");
-  return { cookie: `${session}; ${csrf}`, token: csrf.slice("csrf=".length) };
-}
 
 test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings omits it, and PUT round-trips", async () => {
   // The schema before migration 0019 (B35), with a stored Mailgun secret.
@@ -115,25 +78,13 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
         stderr: "pipe",
       },
     );
-    cleanups.push(() => stop(started));
-    let ready = false;
-    for (
-      const deadline = Date.now() + 10_000;
-      !ready && Date.now() < deadline;
-      await Bun.sleep(25)
-    ) {
-      if (started.exitCode !== null) throw new Error(await new Response(started.stderr).text());
-      ready = await fetch(`http://127.0.0.1:${listenPort}/health`).then(
-        (r) => r.ok && listensOn(started.pid, listenPort),
-        () => false,
-      );
-    }
-    expect(ready).toBe(true);
+    cleanups.push(() => stopChild(started));
+    await healthWhenReady(started, listenPort, 10_000);
     return { child: started, port: listenPort };
   });
   const origin = `http://127.0.0.1:${port}`;
 
-  const session = await login(origin);
+  const session = await adminLogin(origin, admin);
   const api = (path: string, method = "GET", body?: unknown) =>
     fetch(`${origin}${path}`, {
       method,
@@ -174,7 +125,7 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
   ).toBe(400);
 
   // Migration 0019 removed the stored row, and nothing wrote it back.
-  expect(await stop(child)).toBe(0);
+  expect(await stopChild(child)).toBe(0);
   expect(await new Response(child.stderr).text()).not.toContain(legacySecret);
   const after = openDatabase(dataDir);
   expect(after.query("SELECT key FROM settings WHERE key = 'bounce.mailgun'").get()).toBeNull();

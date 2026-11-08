@@ -105,8 +105,10 @@ async function within<T>(promise: Promise<T>, ms: number, label: string): Promis
 }
 async function stop(child: ChildProcess, exited: Promise<unknown>) {
   if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-  await within(exited, 15_000, "fixture stop").catch(() => {
+  await within(exited, 15_000, "fixture stop").catch(async () => {
     child.kill("SIGKILL");
+    // Reaped before the caller goes on: a process still running would outlive the test.
+    await exited;
   });
 }
 interface SendRow {
@@ -192,10 +194,14 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
   }
 }
 // The real production executable: kill it while SMTP delivery of step 0 is in flight.
-async function production(dir: string) {
-  return startOnFreePort((port) => launchProduction(dir, port));
+type Launched = Awaited<ReturnType<typeof launchProduction>>;
+async function production(dir: string, launched: Launched[]) {
+  const running = await startOnFreePort((port) => launchProduction(dir, port));
+  launched.push(running);
+  return running;
 }
 // Returns once this process listens on its port; a start that fails in use is retried by the caller.
+// Its stderr is kept, and printed only if the run fails: a healthy start writes nothing to read.
 async function launchProduction(dir: string, port: number) {
   const child = spawn(
     resolve("dist/iglo.email"),
@@ -225,27 +231,29 @@ async function launchProduction(dir: string, port: number) {
     if (child.pid !== undefined && listensOn(child.pid, port)) break;
     if (Date.now() > deadline) {
       child.kill("SIGKILL");
-      throw new Error("production did not listen");
+      await exited;
+      throw new Error(`production did not listen: ${errors}`);
     }
     await Bun.sleep(25);
   }
-  return { child, exited };
+  return { child, exited, errors: () => errors };
 }
 {
   const dir = await mkdtemp(join(tmpdir(), "iglo-scheduler-production-"));
   const sink = await startSink(true);
+  const launched: Launched[] = [];
   try {
     const seeded = launch(dir, sink.port, {
       SCHEDULER_CRASH_SEED: "1",
       SCHEDULER_CRASH_AT: "seed",
     });
     assert.equal((await within(seeded.exited, 20_000, "seed")).code, 0);
-    const first = await production(dir);
+    const first = await production(dir, launched);
     await within(sink.held, 20_000, "production held SMTP data");
     first.child.kill("SIGKILL");
     assert.equal((await within(first.exited, 20_000, "production kill")).signal, "SIGKILL");
     const before = state(dir);
-    const second = await production(dir);
+    const second = await production(dir, launched);
     const deadline = Date.now() + 30_000;
     let after = state(dir);
     while (
@@ -269,6 +277,15 @@ async function launchProduction(dir: string, port: number) {
     console.log(
       `production smtp: killed with [${before.sends.map((s) => `${s.step}:${s.status}`).join(", ")}]; after restart [${after.sends.map((s) => `${s.step}:${s.status}`).join(", ")}], SMTP data ${sink.subjects.length}`,
     );
+  } catch (error) {
+    // A failed run stops every production process it started, and prints what they wrote.
+    for (const [index, running] of launched.entries()) {
+      console.error(`production process ${index + 1} stderr:\n${running.errors()}`);
+      if (running.child.exitCode === null && running.child.signalCode === null)
+        running.child.kill("SIGKILL");
+      await running.exited;
+    }
+    throw error;
   } finally {
     await sink.close();
     await rm(dir, { recursive: true, force: true });

@@ -81,6 +81,8 @@ async function launchServer(executable: string, dataDir: string, port: number) {
     if (up?.ok && listensOn(child.pid, port)) break;
     if (Date.now() > deadline) {
       child.kill("SIGKILL");
+      // Reaped before the failure is reported: the process must not outlive its start.
+      await child.exited;
       throw new Error("The server did not start");
     }
   }

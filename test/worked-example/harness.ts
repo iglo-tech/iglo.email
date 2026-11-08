@@ -6,7 +6,7 @@ import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
-import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { startSink } from "@/test/tx/sink";
 
 export const admin = { user: "worked-admin", password: "worked-example-admin-password" };
@@ -21,7 +21,8 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
   const directory = await mkdtemp(join(tmpdir(), "iglo-worked-example-"));
   const copy = join(directory, "iglo.email");
   await copyFile(executable, copy);
-  // Set by the first start, which takes a port from startOnFreePort; restarts reuse it.
+  // Set by the first start, which takes a port from startOnFreePort; restarts reuse it, through
+  // restartOnPort, since callers keep this origin.
   let port = 0;
   let origin = "";
   let child: ChildProcess | undefined;
@@ -29,7 +30,7 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
   /** Everything the process wrote to stderr: application code logs only what needs attention. */
   let errors = "";
 
-  const start = async () => {
+  const launch = async (listenPort: number) => {
     child = spawn(
       copy,
       [
@@ -37,7 +38,7 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
         "--host",
         "127.0.0.1",
         "--port",
-        String(port),
+        String(listenPort),
         "--data-dir",
         join(directory, "data"),
       ],
@@ -64,7 +65,11 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
       }
       try {
         const response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) });
-        if (response.status === 200 && current.pid !== undefined && listensOn(current.pid, port))
+        if (
+          response.status === 200 &&
+          current.pid !== undefined &&
+          listensOn(current.pid, listenPort)
+        )
           return;
       } catch {}
       if (Date.now() > deadline) throw new Error("production readiness timed out");
@@ -85,12 +90,12 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
   await startOnFreePort(async (free) => {
     port = free;
     origin = `http://127.0.0.1:${port}`;
-    await start();
+    await launch(free);
   });
   return {
     origin,
     dataDir: join(directory, "data"),
-    start,
+    start: () => restartOnPort(port, launch),
     stop,
     errors: () => errors,
     async close() {

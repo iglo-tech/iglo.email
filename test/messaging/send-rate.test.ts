@@ -51,6 +51,7 @@ import { allowedDomain } from "@/subscribers/email";
 import { startScheduler } from "@/scheduler/scheduler";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
+import { waitWall } from "@/test/wait";
 
 const admin = { user: "rate-admin", password: "rate-admin-password" };
 const root = "http://fixture.test";
@@ -370,14 +371,11 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     return created.body.data.id as number;
   };
 
-  const drive = async (done: () => boolean | Promise<boolean>, step = 50, limit = 20_000) => {
-    for (let i = 0; i < limit; i++) {
-      for (let j = 0; j < 3; j++) await Bun.sleep(0);
-      if (await done()) return;
-      clock.advance(step);
-    }
-    throw new Error("drive timed out");
-  };
+  // Waits for a sink or store condition, advancing the injected clock by `step` per unmet check. The
+  // wait is bounded by real time, not by an iteration count: an iteration costs microseconds, so a
+  // count ends a wait that needs real I/O early (test/wait.ts, docs/perf/B49-drive-bound.md).
+  const drive = (done: () => boolean | Promise<boolean>, step = 50) =>
+    waitWall(done, { label: "drive", advance: (ms) => clock.advance(ms), step });
 
   return {
     app,
@@ -507,7 +505,7 @@ describe("B37: send rate cap", () => {
         data: {},
         messenger: "email",
       });
-      await h.drive(() => h.sink.messages.length === 1, 10, 50);
+      await h.drive(() => h.sink.messages.length === 1, 10);
       await warmup;
       h.sink.messages.length = 0;
       h.clock.advance(1000);
@@ -530,7 +528,7 @@ describe("B37: send rate cap", () => {
       }
 
       // Drive clock until all 70 messages are delivered to the sink
-      await h.drive(() => h.sink.messages.length === 70, 50, 2000);
+      await h.drive(() => h.sink.messages.length === 70, 50);
       await Promise.all(txPromises);
 
       expect(h.sink.messages.length).toBe(70);
@@ -597,7 +595,7 @@ describe("B37: send rate cap", () => {
       }
 
       // 80 messages total at 1/s = ~80 seconds of clock time
-      await h.drive(() => h.sink.messages.length === 80, 50, 4000);
+      await h.drive(() => h.sink.messages.length === 80, 50);
       await Promise.all(txPromises);
 
       expect(h.sink.messages.length).toBe(80);
@@ -674,7 +672,7 @@ describe("B37: send rate cap", () => {
       h.runner.wake();
 
       // Let campaign fill the initial window (2 messages sent at t=0)
-      await h.drive(() => h.sink.messages.length >= 2, 20, 100);
+      await h.drive(() => h.sink.messages.length >= 2, 20);
 
       const startTxTime = h.clock.now().getTime();
       // Now a transactional send is dispatched while campaign messages are waiting
@@ -686,11 +684,7 @@ describe("B37: send rate cap", () => {
       });
 
       // Drive clock until transactional message arrives
-      await h.drive(
-        () => h.sink.messages.some((m) => m.to.includes("urgent@example.test")),
-        50,
-        500,
-      );
+      await h.drive(() => h.sink.messages.some((m) => m.to.includes("urgent@example.test")), 50);
       await txPromise;
 
       const txMsg = h.sink.messages.find((m) => m.to.includes("urgent@example.test"))!;
@@ -746,7 +740,7 @@ describe("B37: send rate cap", () => {
       h.scheduler.wake();
 
       // Drive until all 15 sequence step emails arrive
-      await h.drive(() => h.sink.messages.length === 15, 50, 1000);
+      await h.drive(() => h.sink.messages.length === 15, 50);
       expect(h.sink.messages.length).toBe(15);
 
       // Verify pacing
@@ -782,7 +776,7 @@ describe("B37: send rate cap", () => {
         );
       }
 
-      await h.drive(() => h.sink.messages.length === 10, 10, 50);
+      await h.drive(() => h.sink.messages.length === 10, 10);
       await Promise.all(txPromises);
 
       // With no cap, all messages finish without waiting on the limiter (all under 1 second)
@@ -829,7 +823,7 @@ describe("B37: send rate cap", () => {
       h.runner.wake();
 
       // First window at 10/s
-      await h.drive(() => h.sink.messages.length >= 10, 50, 100);
+      await h.drive(() => h.sink.messages.length >= 10, 50);
 
       // Lower rate to 2/s
       await h.json("/api/settings/messaging.max_send_rate", "PUT", 2);
@@ -837,14 +831,14 @@ describe("B37: send rate cap", () => {
       // Advance by 1 second: at 2/s, only 2 more messages should arrive
       const countBefore = h.sink.messages.length;
       h.clock.advance(1000);
-      await h.drive(() => h.sink.messages.length >= countBefore + 2, 50, 50);
+      await h.drive(() => h.sink.messages.length >= countBefore + 2, 50);
       expect(h.sink.messages.length).toBe(countBefore + 2);
 
       // Now raise rate back to 10/s: delivery speeds back up
       await h.json("/api/settings/messaging.max_send_rate", "PUT", 10);
       const countBeforeRaise = h.sink.messages.length;
       h.clock.advance(1000);
-      await h.drive(() => h.sink.messages.length >= countBeforeRaise + 10, 50, 50);
+      await h.drive(() => h.sink.messages.length >= countBeforeRaise + 10, 50);
       expect(h.sink.messages.length).toBe(countBeforeRaise + 10);
     } finally {
       await h.close();
@@ -866,7 +860,7 @@ describe("B37: send rate cap", () => {
         data: {},
         messenger: "email",
       });
-      await h.drive(() => h.sink.messages.length === 1, 10, 50);
+      await h.drive(() => h.sink.messages.length === 1, 10);
       await p1;
 
       // Send second message; at rate 1, it waits for t=1000
@@ -887,7 +881,7 @@ describe("B37: send rate cap", () => {
       // message 2 should be granted immediately on wake without waiting until t=1000
       await h.json("/api/settings/messaging.max_send_rate", "PUT", 10);
 
-      await h.drive(() => h.sink.messages.length === 2, 10, 50);
+      await h.drive(() => h.sink.messages.length === 2, 10);
       await p2;
 
       expect(h.sink.messages.length).toBe(2);
@@ -959,7 +953,7 @@ describe("B37: send rate cap", () => {
       h.runner.wake();
 
       // One recipient holds the only token; the rest of the batch waits in the limiter.
-      await h.drive(() => h.sink.messages.length === 1, 10, 100);
+      await h.drive(() => h.sink.messages.length === 1, 10);
 
       // The emailer closes while the runner is alive. The batch's waiting recipients are refused and
       // handed back, and the rest of the batch never starts. Time passes, as the paced workers and
@@ -997,7 +991,7 @@ describe("B37: send rate cap", () => {
           messenger: "email",
         }),
       );
-      await h.drive(() => h.sink.messages.length >= 1, 10, 50);
+      await h.drive(() => h.sink.messages.length >= 1, 10);
 
       const smtpTest = createSMTPTest(h.settingsStore, h.emailer, h.app.i18n, h.renderer);
       const server = h.settingsStore.read().smtp[0]!;
@@ -1010,7 +1004,7 @@ describe("B37: send rate cap", () => {
         .finally(() => {
           finished = true;
         });
-      await h.drive(() => finished, 100, 300);
+      await h.drive(() => finished, 100);
       await attempt;
 
       // The bound is 10 s of injected time: the test is not sent, and the error names the cap.
@@ -1019,7 +1013,7 @@ describe("B37: send rate cap", () => {
       expect((failure as HttpError).message).toContain("send-rate");
       expect(h.sink.messages.some((m) => m.to.includes("admin@example.test"))).toBe(false);
 
-      await h.drive(() => h.sink.messages.length === 15, 100, 300);
+      await h.drive(() => h.sink.messages.length === 15, 100);
       await Promise.all(queued);
     } finally {
       await h.close();
@@ -1088,7 +1082,7 @@ describe("B37: send rate cap", () => {
         data: {},
         messenger: "email",
       });
-      await h.drive(() => h.sink.messages.length === 1, 10, 50);
+      await h.drive(() => h.sink.messages.length === 1, 10);
       await p1;
 
       // Push second message (must wait for next token)
@@ -1129,7 +1123,6 @@ describe("B37: send rate cap", () => {
             )
             .get()?.status === "sent",
         50,
-        200,
       );
 
       const row2After = h.db
@@ -1171,7 +1164,7 @@ describe("B37: send rate cap", () => {
       h.runner.wake();
 
       // First delivery is sent (sink count reaches 3)
-      await h.drive(() => h.sink.messages.length === 3, 50, 100);
+      await h.drive(() => h.sink.messages.length === 3, 50);
 
       // Stop emailer & runner while delivery 2 is waiting
       await h.emailer.close();
@@ -1201,7 +1194,6 @@ describe("B37: send rate cap", () => {
               .get(campId)?.count,
           ) === 2,
         50,
-        200,
       );
 
       const sentDeliveries = h.db
@@ -1250,7 +1242,7 @@ describe("B37: send rate cap", () => {
       h.runner.wake();
 
       // Campaign delivery 1 sent
-      await h.drive(() => h.sink.messages.length === 1, 50, 100);
+      await h.drive(() => h.sink.messages.length === 1, 50);
 
       // Queue tx message that waits behind limiter
       const txTemplateId = await h.template();
@@ -1288,7 +1280,7 @@ describe("B37: send rate cap", () => {
       h.runner.wake();
 
       // Messages finish sending (1 camp + 1 tx + 1 camp = 3 total)
-      await h.drive(() => h.sink.messages.length === 3, 50, 300);
+      await h.drive(() => h.sink.messages.length === 3, 50);
 
       const txRowAfter = h.db
         .query<{ status: string; attempts: number }, any>(
