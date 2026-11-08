@@ -38,3 +38,5 @@ and array lengths 2, 1, 2. No SMTP connection or credential proof is performed.
 Round-2 parser cases use synthetic `example.invalid` addresses, encoded words,
 cron expressions and timezone identifiers. Rejected full writes carry a synthetic
 site-name sentinel and compare the complete masked settings projection.
+
+B51 new-item cases use only synthetic names, `b51-*` hosts under `example.test` and `example.invalid`, the passwords `b51-messenger-secret` and `b51-stored-secret`, and a 2048-bit RSA DKIM key generated inside each test. Nothing connects to SMTP or a bounce mailbox.

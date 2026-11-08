@@ -79,8 +79,11 @@ export const defaults = {
   "upload.s3.bucket_path": "/",
   "upload.s3.bucket_type": "public",
   "upload.s3.expiry": "167h",
+  // Native (B51): seeded items carry fixed uuids, so a stored default keeps its password on its first
+  // save. A new item without a uuid never takes a stored one's secret (validate.ts preserve).
   smtp: [
     {
+      uuid: "c2c9f916-4ef3-4ef8-af8f-cad47d772a76",
       enabled: true,
       exclude_from_default: false,
       host: "smtp.yoursite.com",
@@ -100,6 +103,7 @@ export const defaults = {
       from_addresses: [],
     },
     {
+      uuid: "134e4236-5b7c-4b5a-a7c7-9a433a7d0063",
       enabled: false,
       exclude_from_default: false,
       host: "smtp.gmail.com",
@@ -161,6 +165,7 @@ export const defaults = {
   },
   "bounce.mailboxes": [
     {
+      uuid: "8d918b63-9838-46d2-a924-dcb0c64ddd3b",
       enabled: false,
       type: "pop",
       host: "pop.yoursite.com",
