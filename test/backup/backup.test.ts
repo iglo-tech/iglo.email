@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -772,6 +773,86 @@ test("a symlink planted above the data directory is refused, and --force never r
   expect(names(dataDir)).toEqual(before);
   expect(statSync(join(dataDir, "iglo-email.db")).size).toBe(size);
   expect(names(base)).toEqual(["a", "data"]);
+});
+
+test("an existing parent swapped for a symlink during the checks is refused, not followed", async () => {
+  await live();
+  const uploads = join(dataDir, "uploads");
+  const before = names(uploads);
+  mkdirSync(join(base, "x"));
+  // `x` existed when it was checked. The hook runs after the checks and before the folders are made.
+  const swapped = () => {
+    renameSync(join(base, "x"), join(base, "x-moved"));
+    symlinkSync(uploads, join(base, "x"));
+    return Number.MAX_SAFE_INTEGER;
+  };
+  expect(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "x", "a", "out"),
+      clock: createRealClock(),
+      supportedVersion: version,
+      available: swapped,
+      warn() {},
+    }),
+  ).toThrow(`${join(base, "x", "a")} changed meanwhile: it no longer resolves to`);
+  expect(names(uploads)).toEqual(before);
+  expect(names(join(base, "x-moved"))).toEqual([]);
+});
+
+test("--force to a path whose existing parent is swapped for an alias of the base is refused, and the live data is intact", async () => {
+  await live();
+  const before = names(dataDir);
+  const size = statSync(join(dataDir, "iglo-email.db")).size;
+  mkdirSync(join(base, "x"));
+  const swapped = () => {
+    renameSync(join(base, "x"), join(base, "x-moved"));
+    symlinkSync(base, join(base, "x"));
+    return Number.MAX_SAFE_INTEGER;
+  };
+  expect(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "x", "data"),
+      force: true,
+      clock: createRealClock(),
+      supportedVersion: version,
+      available: swapped,
+      warn() {},
+    }),
+  ).toThrow(`${join(base, "x")} changed meanwhile: it no longer resolves to`);
+  expect(names(dataDir)).toEqual(before);
+  expect(statSync(join(dataDir, "iglo-email.db")).size).toBe(size);
+  expect(names(base)).toEqual(["data", "x", "x-moved"]);
+  expect(names(join(base, "x-moved"))).toEqual([]);
+});
+
+test("--force refuses to move the live data directory aside, even when the output came to name it", async () => {
+  await live();
+  const before = names(dataDir);
+  const size = statSync(join(dataDir, "iglo-email.db")).size;
+  mkdirSync(join(base, "x"));
+  // The swap comes after the realpath check, so only the identity check in stepAside can see it:
+  // `x/data` then names the live data directory, which holds a database and would pass `replaceable`.
+  const swapped = () => {
+    renameSync(join(base, "x"), join(base, "x-moved"));
+    symlinkSync(base, join(base, "x"));
+  };
+  expect(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "x", "data"),
+      force: true,
+      clock: createRealClock(),
+      supportedVersion: version,
+      beforePublish: swapped,
+      warn() {},
+    }),
+  ).toThrow(`${join(base, "x", "data")} is the live data directory; not replacing it`);
+  expect(names(dataDir)).toEqual(before);
+  expect(statSync(join(dataDir, "iglo-email.db")).size).toBe(size);
+  expect(names(base)).toEqual(["data", "x", "x-moved"]);
+  expect(existsSync(join(base, "x-moved", "data"))).toBe(false);
 });
 
 test("a successful backup into new nested folders creates each one 0700", async () => {

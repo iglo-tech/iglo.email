@@ -334,8 +334,8 @@ function createFolders(folders: string[], made: string[]): void {
 }
 
 /**
- * The places an output may never be, checked on the path it has. createBackup runs it before the
- * folders are made, and again after, when the output's real path is known.
+ * The places an output may never be, checked on the path it has. createBackup runs it once, before
+ * the folders are made; the realpath check after them is what keeps that answer true.
  */
 function checkBoundaries(output: string, data: string, uploads: string): void {
   if (inside(data, output))
@@ -389,15 +389,22 @@ function putBack(aside: string, output: string): void {
 
 /**
  * Rename cannot replace a directory that holds files, so a forced old backup steps aside and goes
- * only once the new one has its name. The check comes after the move, so it is of what moved.
+ * only once the new one has its name. The checks come after the move, so they are of what moved.
+ * The live data directory holds a database, so `replaceable` would accept it. It is refused by
+ * identity instead: a path that came to name it cannot fool a comparison of device and inode.
  */
-function stepAside(output: string): string | undefined {
+function stepAside(output: string, live: Stats): string | undefined {
   const aside = join(dirname(output), `${REPLACED}${crypto.randomUUID()}`);
   try {
     renameSync(output, aside);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
+  }
+  const moved = lstatSync(aside);
+  if (moved.dev === live.dev && moved.ino === live.ino) {
+    putBack(aside, output);
+    throw new Error(`${output} is the live data directory; not replacing it`);
   }
   if (replaceable(aside)) return aside;
   putBack(aside, output);
@@ -409,8 +416,8 @@ function stepAside(output: string): string | undefined {
  * holds anything and a file, atomically, so nothing is moved or deleted, and there is no earlier
  * step for a kill to leave behind. It does replace an empty directory, which loses nothing.
  */
-function publish(partial: string, output: string, force: boolean): void {
-  const aside = force ? stepAside(output) : undefined;
+function publish(partial: string, output: string, force: boolean, live: Stats): void {
+  const aside = force ? stepAside(output, live) : undefined;
   try {
     renameSync(partial, output);
   } catch (error) {
@@ -448,6 +455,8 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
   if (!statSync(databasePath, { throwIfNoEntry: false }))
     throw new Error(`No database at ${databasePath}`);
   const data = realpathSync(dataDir);
+  // The identity of the live data directory, taken before anything can move: see stepAside.
+  const live = statSync(data);
   const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));
   // Folders are created only after every check that can refuse; see missingFolders.
   const folders = missingFolders(dirname(wanted));
@@ -483,9 +492,10 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     // The checks above were of the path as it stood before the folders existed. Now that they do,
     // the output must still be where they were made: a symlink that took a folder's place since
     // the check would move the backup, so it is refused before anything is written.
+    // Once this holds, output is parent joined with the basename, which is the real path of the
+    // output. The boundaries were checked on that path above, so they are not checked again.
     if (realpathSync(dirname(wanted)) !== parent)
       throw new Error(`${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`);
-    checkBoundaries(output, data, liveUploads);
     // The directory is 0700 from mkdtemp and the database 0600 from its first byte: SQLite writes
     // into an empty file it finds and keeps its mode.
     partial = mkdtempSync(join(parent, PARTIAL));
@@ -526,7 +536,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
 
     const inspection = inspect(partial, clock, options.supportedVersion);
     options.beforePublish?.();
-    publish(partial, output, options.force ?? false);
+    publish(partial, output, options.force ?? false, live);
     partial = undefined;
     // The backup is in the folders now, so they are its parents and stay.
     created = [];
