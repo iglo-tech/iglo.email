@@ -51,6 +51,7 @@ import { registerWebhookRoutes } from "@/webhooks/routes";
 import { startWebhookDelivery } from "@/webhooks/delivery";
 import { createSubscriberTracking } from "@/analytics/subscriber";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { waitWall } from "@/test/wait";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
@@ -377,7 +378,7 @@ async function createNotifyFixture(
 
   // Waits until no send is in flight and none is due: a retry scheduled for later does not count.
   const drainOutbox = () =>
-    waitUntil(
+    waitWall(
       () => {
         sends.notify();
         webhookDelivery.wake();
@@ -389,9 +390,7 @@ async function createNotifyFixture(
           .get(clock.now().toISOString());
         return pending?.n === 0n;
       },
-      "the outbox to drain",
-      100,
-      200,
+      { label: "outbox drain", advance: (ms) => clock.advance(ms), step: 100 },
     );
 
   const waitUntil = async (done: () => boolean, what: string, step = 50, rounds = 200) => {
