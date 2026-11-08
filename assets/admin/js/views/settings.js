@@ -341,6 +341,22 @@ function component() {
       const form = JSON.parse(JSON.stringify(this.form));
       let dummy = '';
 
+      // B56: the API refuses two items of one list with the same uuid. A later duplicate (only a
+      // row saved before that rule can hold one) goes as a new item, so it takes no stored secret.
+      [form.smtp, form['bounce.mailboxes'], form.messengers].forEach((items) => {
+        const seen = new Set();
+        (items || []).forEach((item) => {
+          if (!item?.uuid) {
+            return;
+          }
+          if (seen.has(item.uuid)) {
+            item.uuid = '';
+          } else {
+            seen.add(item.uuid);
+          }
+        });
+      });
+
       // Blank a masked secret. A partly masked one is a mistake to point out, not a value to store.
       const secret = (obj, key, name) => {
         if (!obj) {

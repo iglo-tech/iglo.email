@@ -204,7 +204,8 @@ export async function runDKIMSettings(target: {
     assert.equal((await request("/api/settings/smtp", "PUT", retaining)).status, 200);
     assert.equal(Object.hasOwn((await read()).smtp[0], "dkim"), false);
     await send("cleared", false);
-    // The final saved entry with a duplicate UUID supplies the retained secret.
+    // B56 deliberate difference: two items sharing a uuid would share one DKIM key, so the save is
+    // refused with 400 and nothing changes. The stored key is then restored with a plain save.
     const other = generateKeyPairSync("rsa", {
       modulusLength: 2048,
       privateKeyEncoding: { type: "pkcs8", format: "pem" },
@@ -218,12 +219,13 @@ export async function runDKIMSettings(target: {
     const first = structuredClone(saved.smtp[0]);
     first.password = "";
     first.dkim.private_key = privateKey;
-    assert.equal((await request("/api/settings/smtp", "PUT", [first, duplicate])).status, 200);
-    const retainingLast = structuredClone((await read()).smtp[0]);
-    retainingLast.password = "";
-    retainingLast.dkim.private_key = "";
-    assert.equal((await request("/api/settings/smtp", "PUT", [retainingLast])).status, 200);
-    await send("last-duplicate", true, other.publicKey);
+    const beforeRefused = await read();
+    const refused = await request("/api/settings/smtp", "PUT", [first, duplicate]);
+    assert.equal(refused.status, 400);
+    assert.match(((await refused.json()) as { message: string }).message, /uuid/i);
+    assert.deepEqual(await read(), beforeRefused);
+    assert.equal((await request("/api/settings/smtp", "PUT", [first])).status, 200);
+    await send("restored", true);
     assert.equal(relay.authenticated(), 8);
   } finally {
     await relay.close();

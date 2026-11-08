@@ -237,14 +237,31 @@ export function bindKey(current: Settings, key: string, value: unknown): Setting
   return out;
 }
 // B51: an item without a uuid is new and matches no stored item, so it never takes another's secret.
+// B56: an item with auth none stores no password, typed or stored (deliberate difference, 07-api-and-ui.md):
+// a server with no authentication has no use for one, and switching back to login needs a new one.
 function preserve(item: Settings, old: Settings[]) {
   const previous = item.uuid ? old.findLast((v) => v.uuid === item.uuid) : undefined;
   if (!item.uuid) item.uuid = crypto.randomUUID();
-  if (!item.password && previous) item.password = previous.password;
+  if (item.auth_protocol === "none") delete item.password;
+  else if (!item.password && previous) item.password = previous.password;
   if (!item.password) delete item.password;
+}
+// B56: two items of one list with the same uuid would share a secret, so the whole save is refused.
+// Items without a uuid are new and are not compared.
+function refuseDuplicateUUIDs(items: Settings[], label: string) {
+  const seen = new Set<string>();
+  for (const item of items) {
+    const uuid = item?.uuid;
+    if (!uuid) continue;
+    if (seen.has(uuid)) fail(`Duplicate uuid in ${label}: each item needs its own.`);
+    seen.add(uuid);
+  }
 }
 export function normalize(next: Settings, current: Settings, roles: Roles, now: number): Settings {
   for (const key of arrays) next[key] ??= [];
+  refuseDuplicateUUIDs(next.smtp, "SMTP servers");
+  refuseDuplicateUUIDs(next["bounce.mailboxes"], "bounce mailboxes");
+  refuseDuplicateUUIDs(next.messengers, "messengers");
   const addresses: string[] = [];
   if (next["app.from_email"].length > 250) return fail("omax 250 `from` addresses are allowed");
   for (const raw of next["app.from_email"]) {

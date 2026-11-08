@@ -115,7 +115,10 @@ export async function runSettingsCouncilSmall(target: {
     // B56 deliberate difference (07-api-and-ui.md): two items sharing a uuid share a secret, so the
     // save is refused with 400 and nothing changes.
     const before = await read();
-    check((await request("/api/settings", "PUT", secrets)).status === 400, "duplicate-uuid-refused");
+    check(
+      (await request("/api/settings", "PUT", secrets)).status === 400,
+      "duplicate-uuid-refused",
+    );
     check(JSON.stringify(await read()) === JSON.stringify(before), "duplicate-uuid-unchanged");
   }
   check((await request("/api/settings", "PUT", candidate())).status === 200, "restore-config");

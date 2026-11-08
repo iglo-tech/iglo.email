@@ -677,6 +677,10 @@ mailbox) are not carried over by the first full save of the settings page, so en
 passwords before that save. Any earlier save gave these items their uuids, and they keep their
 passwords, so this note does not apply to them.
 
+From this version, an SMTP server or bounce mailbox saved with auth `none` keeps no password, so
+switching it back to login needs the password entered again. A save that would give two SMTP
+servers, bounce mailboxes or messengers the same uuid is refused with 400 and changes nothing.
+
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,

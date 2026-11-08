@@ -667,7 +667,7 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
             </summary>
             <div class="accordion-body">
               <SmtpTest t={t} />
-              <div x-bind:aria-disabled={off}>
+              <div>
                 <fieldset class="card" x-bind:disabled={off}>
                   <legend>{t.T("globals.fields.host")}</legend>
                   <div class="row">
@@ -699,11 +699,12 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
                     ))}
                   </div>
                 </fieldset>
-                <fieldset class="card" x-bind:disabled={off}>
+                {/* B56: not disabled as a whole, so the password can be typed while the server is off. */}
+                <fieldset class="card">
                   <legend>{t.T("globals.fields.authProtocol")}</legend>
                   <div data-field="">
                     <label>{t.T("globals.fields.authProtocol")}</label>
-                    <select x-model="item.auth_protocol">
+                    <select x-model="item.auth_protocol" x-bind:disabled={off}>
                       <option value="login">LOGIN</option>
                       <option value="cram">CRAM</option>
                       <option value="plain">PLAIN</option>
@@ -716,7 +717,7 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
                     maxlength="200"
                     placeholder="mysmtp"
                     class="'smtp-username-' + n"
-                    disabled={none}
+                    disabled={`${off} || ${none}`}
                   />
                   <TextField
                     model="item.password"
@@ -815,23 +816,27 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
                     <Hint>{t.T("settings.smtp.excludeFromDefaultHelp")}</Hint>
                   </label>
                 </fieldset>
-                <template x-if="(item.strEmailHeaders === '[]') && !item.showHeaders">
-                  <p>
-                    <a href="#" {...{ "x-on:click.prevent": "item.showHeaders = true" }}>
-                      <Icon name="plus" /> {t.T("settings.smtp.setCustomHeaders")}
-                    </a>
-                  </p>
-                </template>
-                <template x-if="(item.strEmailHeaders !== '[]') || item.showHeaders">
-                  <label data-field="">
-                    <textarea
-                      rows="4"
-                      x-model="item.strEmailHeaders"
-                      placeholder='[{"X-Custom": "value"}]'
-                    ></textarea>
-                    <Hint>{t.T("settings.smtp.customHeadersHelp")}</Hint>
-                  </label>
-                </template>
+                {/* B56: the cards above dim through their own disabled fieldsets. Only these lack one, and the
+                  password of a disabled server must stay editable, so it is not under an aria-disabled wrapper. */}
+                <div x-bind:aria-disabled={off}>
+                  <template x-if="(item.strEmailHeaders === '[]') && !item.showHeaders">
+                    <p>
+                      <a href="#" {...{ "x-on:click.prevent": "item.showHeaders = true" }}>
+                        <Icon name="plus" /> {t.T("settings.smtp.setCustomHeaders")}
+                      </a>
+                    </p>
+                  </template>
+                  <template x-if="(item.strEmailHeaders !== '[]') || item.showHeaders">
+                    <label data-field="">
+                      <textarea
+                        rows="4"
+                        x-model="item.strEmailHeaders"
+                        placeholder='[{"X-Custom": "value"}]'
+                      ></textarea>
+                      <Hint>{t.T("settings.smtp.customHeadersHelp")}</Hint>
+                    </label>
+                  </template>
+                </div>
               </div>
             </div>
           </details>
