@@ -54,7 +54,7 @@ import { startSink } from "@/test/tx/sink";
 import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
 import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
-import { registerBounceRoutes, type BounceSettings } from "@/bounces/routes";
+import { registerBounceRoutes } from "@/bounces/routes";
 import { createSnsClient, type SnsFetch } from "@/bounces/ses";
 
 const refuseNetwork: SnsFetch = () => Promise.reject(new Error("no network in tests"));
@@ -118,6 +118,7 @@ export async function txFixture(
     logger: { error: (error) => errors.push(error) },
   });
   let bounces: ReturnType<typeof createBounceStore> | undefined;
+  let settingsStore: SettingsStore | undefined;
   const lists = createListReferences(db),
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
@@ -202,17 +203,6 @@ export async function txFixture(
     disableTracking: false,
     ...options.marketing,
   };
-  const bounceSettings: BounceSettings & { actions: Record<string, BounceAction> } = {
-    enabled: true,
-    webhooksEnabled: true,
-    ses: true,
-    sesTopics: ["arn:aws:sns:*:123456789012:*"],
-    actions: {
-      soft: { count: 2, action: "none" },
-      hard: { count: 1, action: "blocklist" },
-      complaint: { count: 1, action: "delete" },
-    },
-  };
   const sends = createSends({
     db,
     clock,
@@ -232,13 +222,33 @@ export async function txFixture(
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
   if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
+  // The one settings source, as in src/main.ts: the bounce routes read the store, so a `bounce.*`
+  // write through the API or `setBounce` reaches them at once.
   if (webhooks) {
+    settingsStore = createSettings(db, clock, "http://fixture.test", roles);
+    // Fresh fixtures run with bounces on. A migrated database keeps the rules it was given.
+    settingsStore.update((current) => ({
+      ...current,
+      "bounce.enabled": true,
+      "bounce.webhooks_enabled": true,
+      "bounce.ses_enabled": true,
+      "bounce.ses_topic_arns": ["arn:aws:sns:*:123456789012:*"],
+      ...(options.persisted
+        ? {}
+        : {
+            "bounce.actions": {
+              soft: { count: 2, action: "none" },
+              hard: { count: 1, action: "blocklist" },
+              complaint: { count: 1, action: "delete" },
+            },
+          }),
+    }));
     bounces = createBounceStore(db, clock, {
       subscribers: () => subscribers,
       sendTarget: (uuid) => sends.bounceTarget(uuid),
       campaignID: () => null,
       recorded: webhookEffects!.bounceRecorded,
-      actions: () => bounceSettings.actions,
+      actions: () => settingsStore!.read()["bounce.actions"],
     });
     registerBounceRoutes(router, {
       db,
@@ -247,7 +257,15 @@ export async function txFixture(
       subscribers,
       roles,
       auth,
-      settings: () => bounceSettings,
+      settings: () => {
+        const current = settingsStore!.read();
+        return {
+          enabled: current["bounce.enabled"],
+          webhooksEnabled: current["bounce.webhooks_enabled"],
+          ses: current["bounce.ses_enabled"],
+          sesTopics: current["bounce.ses_topic_arns"],
+        };
+      },
       limit: options.bounceLimit ?? ((_context, next) => next()),
       sns: createSnsClient({ clock, fetch: options.snsFetch ?? refuseNetwork }),
     });
@@ -300,10 +318,8 @@ export async function txFixture(
     ...(options.effects ? { effects: options.effects } : {}),
     ...(options.page ? { page: options.page } : {}),
   });
-  let settingsStore: SettingsStore | undefined;
   if (webhooks) {
-    settingsStore = createSettings(db, clock, "http://fixture.test", roles);
-    registerSettingsRoutes(router, settingsStore, auth);
+    registerSettingsRoutes(router, settingsStore!, auth);
     const getPublicSettings = () => ({
       ...toPublicSettings(settingsStore!.read()),
       fromEmail: "Fixture <noreply@fixture.test>",
@@ -424,7 +440,17 @@ export async function txFixture(
     },
     webhooks,
     bounces,
-    bounceSettings,
+    /** Change `bounce.*` settings in the store the bounce routes read (no separate copy). */
+    setBounce(changes: Record<string, unknown>) {
+      settingsStore!.update((current) => ({ ...current, ...changes }));
+    },
+    /** Change one rule of `bounce.actions`: `soft`, `hard` or `complaint`. */
+    setBounceAction(kind: "soft" | "hard" | "complaint", rule: BounceAction) {
+      settingsStore!.update((current) => ({
+        ...current,
+        "bounce.actions": { ...current["bounce.actions"], [kind]: rule },
+      }));
+    },
     blockPrivate,
     /** Move the injected clock, then let the delivery loop see it without its idle poll. */
     advanceWebhooks(milliseconds: number) {

@@ -1,6 +1,7 @@
 // B9: Amazon SES bounces through SNS. Messages are signed by a certificate issued by a test CA
 // and served by an injected fetch, so no test calls AWS. The refusals that need no certificate
-// also run against pinned upstream and compiled production in test/contract/bounces.ts.
+// also run against pinned upstream, and the signed cases against compiled production, in
+// test/contract/bounces.ts (through a loopback certificate tunnel, test/bounces/sns-tunnel.ts).
 import { afterEach, expect, test } from "bun:test";
 import { txFixture, type TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
@@ -288,7 +289,7 @@ test("a verified subscription confirmation fetches only its own SNS URL", async 
 
 test("the route answers as a disabled provider does until SES is enabled", async () => {
   const f = await open();
-  f.bounceSettings.ses = false;
+  f.setBounce({ "bounce.ses_enabled": false });
   const r = await post(f, envelope(f, { Message: "{}" }));
   expect(r.status).toBe(400);
   expect(r.body.message).toBe("Unknown service.");
@@ -303,7 +304,7 @@ test("a topic that is not on the list is refused, and a foreign confirmation is 
   const url = "https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&Token=t";
   const message = bounceMessage(f, ["topic@example.com"]);
   const attempts = (topics: string[]) => {
-    f.bounceSettings.sesTopics = topics;
+    f.setBounce({ "bounce.ses_topic_arns": topics });
     return [
       () => post(f, envelope(f, { Message: message, TopicArn: foreign })),
       () =>
@@ -325,9 +326,9 @@ test("a topic that is not on the list is refused, and a foreign confirmation is 
     expect((await run()).status).toBe(400);
   // An exact ARN does not match its neighbour; an empty list accepts nothing, even the right topic.
   const own = "arn:aws:sns:eu-west-1:123456789012:bounces";
-  f.bounceSettings.sesTopics = [`${own}-other`];
+  f.setBounce({ "bounce.ses_topic_arns": [`${own}-other`] });
   expect((await post(f, envelope(f, { Message: message }))).status).toBe(400);
-  f.bounceSettings.sesTopics = [];
+  f.setBounce({ "bounce.ses_topic_arns": [] });
   expect((await post(f, envelope(f, { Message: message }))).status).toBe(400);
   expect(
     (
@@ -347,7 +348,7 @@ test("a topic that is not on the list is refused, and a foreign confirmation is 
   expect(await status(f, id)).toBe("enabled");
   expect(net.requests.includes(url)).toBe(false);
   // The exact ARN and the account pattern both accept.
-  f.bounceSettings.sesTopics = [own];
+  f.setBounce({ "bounce.ses_topic_arns": [own] });
   expect((await post(f, envelope(f, { Message: message }))).status).toBe(200);
   expect(rows(f).length).toBe(1);
 });
@@ -418,6 +419,10 @@ test("the row, the action and the deliveries commit together, and a failure leav
   expect(
     f.db.query("SELECT key FROM bounce_receipts WHERE key = ?").all(`sns:${message.MessageId}`),
   ).toEqual([]);
+  // The failed request committed no delivery, so the receiver hears nothing, even as time passes.
+  f.advanceWebhooks(60_000);
+  await Bun.sleep(20);
+  expect(r.received.length).toBe(0);
 
   f.db.run("DROP TRIGGER fail_blocklist");
   expect((await post(f, message)).status).toBe(200);
@@ -427,8 +432,19 @@ test("the row, the action and the deliveries commit together, and a failure leav
     .query("SELECT key FROM bounce_receipts WHERE key = ?")
     .all(`sns:${message.MessageId}`);
   expect(receipts.length).toBe(1);
+  // The retry's row and action each reach the receiver once. The clock is not moved while the
+  // first attempt is in flight: a jump past its lease would count that attempt as abandoned.
+  await r.waitFor(2);
+  await Bun.sleep(20);
+  expect(r.received.map((delivery) => delivery.body.event).sort()).toEqual([
+    "bounce.recorded",
+    "subscriber.blocklisted",
+  ]);
 
+  // A provider's repeat of the same message adds no row and no delivery.
   expect((await post(f, message)).status).toBe(200);
   expect(rows(f).length).toBe(1);
   expect(await status(f, id)).toBe("blocklisted");
+  expect(f.db.query("SELECT count(*) AS n FROM webhook_deliveries").get()).toEqual({ n: 2n });
+  expect(r.received.length).toBe(2);
 });

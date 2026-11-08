@@ -6,6 +6,11 @@ import type { SnsFetch } from "@/bounces/ses";
 import type { TxFixture } from "@/test/tx/fixture";
 
 export const CERT = "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-abc123.pem";
+export const TOPIC = "arn:aws:sns:eu-west-1:123456789012:bounces";
+/** What the messages need from a clock: a fixture's injected one, or real time in the compiled corpus. */
+export interface Clocked {
+  clock: { now(): Date };
+}
 export const OTHER_CERT =
   "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-def456.pem";
 
@@ -132,7 +137,7 @@ export function sign(n: Record<string, string>, key = good.key, version = "1") {
 }
 
 export function envelope(
-  f: TxFixture,
+  f: Clocked,
   fields: Record<string, string>,
   options: { key?: string; version?: string; cert?: string } = {},
 ): Record<string, string> & {
@@ -143,7 +148,7 @@ export function envelope(
 } {
   const base: Record<string, string> = {
     MessageId: crypto.randomUUID(),
-    TopicArn: "arn:aws:sns:eu-west-1:123456789012:bounces",
+    TopicArn: TOPIC,
     Timestamp: f.clock.now().toISOString(),
     Type: "Notification",
     ...fields,
@@ -164,7 +169,7 @@ export const post = (f: TxFixture, body: unknown, type = "Notification", raw?: s
   });
 
 export const bounceMessage = (
-  f: TxFixture,
+  f: Clocked,
   recipients: string[],
   extra: object = {},
   headers: object[] = [],

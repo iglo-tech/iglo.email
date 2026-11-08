@@ -1,26 +1,23 @@
 // B35 (D89): Amazon SES is the only provider.
 // Public boundary tests for Mailgun removal, migration, existing history, and UI.
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createApp } from "@/app";
+import { join, resolve } from "node:path";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
-import { createRouter } from "@/server/server";
-import { createSettings } from "@/settings/store";
-import { registerSettingsRoutes } from "@/settings/routes";
-import { createRoles } from "@/roles/roles";
-import { createListReferences } from "@/lists/references";
-import { createUserStore } from "@/users/store";
-import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
-import { bootstrapAdmin } from "@/users/bootstrap";
 import { settingsView } from "@/admin/views/settings";
 import { render } from "@/jsx/render";
 import { buildDocument } from "@/openapi/document";
+import { ensureProductionBuild } from "@/test/production-build";
 import { TestClock } from "@/test/server/fixture";
 import { txFixture } from "@/test/tx/fixture";
+
+const repository = resolve(import.meta.dir, "../..");
+const admin = { user: "b35-upgrade-admin", password: "b35-upgrade-synthetic-password" };
+const legacySecret = "super-secret-mailgun-key";
 
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {
@@ -38,134 +35,150 @@ test("1. POST /webhooks/bounce/mailgun answers the same as an unknown route (404
   expect(mailgun.status).toBe(404);
 });
 
-test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings omits it, and PUT round-trips", async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "b35-upgrade-test-"));
-  cleanups.push(() => rmSync(dataDir, { recursive: true, force: true }));
-  const clock = new TestClock();
-  const rawDb = openDatabase(dataDir);
-
-  // Run migrations up to 18 (before B35)
-  runMigrations(rawDb, dataDir, clock, productionMigrations.slice(0, 18));
-
-  // Insert a stored bounce.mailgun row with a secret key
-  rawDb.run(
-    'INSERT OR REPLACE INTO settings (key, value) VALUES (\'bounce.mailgun\', \'{"enabled": true, "key": "super-secret-mailgun-key"}\')',
-  );
-  expect(
-    rawDb.query("SELECT key, value FROM settings WHERE key = 'bounce.mailgun'").get(),
-  ).toBeDefined();
-
-  // Now run all current migrations (including forward migration 19)
-  runMigrations(rawDb, dataDir, clock, productionMigrations);
-
-  // The stored row must be deleted by migration
-  const storedRow = rawDb.query("SELECT key FROM settings WHERE key = 'bounce.mailgun'").get();
-  expect(storedRow).toBeNull();
-  rawDb.close(true);
-
-  // Boot the app with the upgraded database and test GET/PUT /api/settings
-  const db = openDatabase(dataDir);
-  cleanups.push(() => db.close(true));
-  const lists = createListReferences(db);
-  const roles = createRoles(db, lists);
-  const users = createUserStore(db, clock, roles);
-  const settings = createSettings(db, clock, "http://fixture.test", roles);
-  const auth = await createAuthentication(
-    users,
-    roles,
-    clock,
-    "http://fixture.test",
-    defaultAuthPolicy,
-  );
-  await bootstrapAdmin(users, auth, { user: "admin", password: "admin-password" });
-  const session = await auth.login("admin", "admin-password");
-  if (!session || !("id" in session)) throw new Error("login failed");
-
-  const app = createApp({
-    bootstrap: {
-      host: "127.0.0.1",
-      port: 0,
-      dataDir,
-      rootUrl: "http://fixture.test",
-      initialAdmin: { user: "admin", password: "admin-password" },
-    },
-    db,
-    clock,
-    i18n: createTranslation(),
-    logger: { error() {} },
+/** A loopback port that nothing holds: bound, read and released before the child takes it. */
+async function availablePort() {
+  const socket = createServer();
+  await new Promise<void>((resolveListen, reject) => {
+    socket.once("error", reject);
+    socket.listen(0, "127.0.0.1", resolveListen);
   });
-  const router = createRouter();
-  registerSettingsRoutes(router, settings, auth);
-
-  const getRes = await router.handle(
-    app,
-    new Request("http://fixture.test/api/settings", {
-      headers: { cookie: `session=${session.id}` },
-    }),
+  const address = socket.address();
+  if (!address || typeof address === "string") throw new Error("No test port was assigned");
+  await new Promise<void>((resolveClose, reject) =>
+    socket.close((error) => (error ? reject(error) : resolveClose())),
   );
+  return address.port;
+}
+
+async function stop(child: Bun.Subprocess) {
+  if (child.exitCode === null) child.kill("SIGTERM");
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+  try {
+    return await child.exited;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The admin login form, as a browser sends it: returns the session and CSRF cookies. */
+async function login(origin: string) {
+  const page = await fetch(`${origin}/admin/login`);
+  const html = await page.text();
+  const nonce = /name="nonce"\s+value="([^"]+)"/.exec(html)?.[1];
+  const nonceCookie = page.headers
+    .getSetCookie()
+    .find((item) => item.startsWith("nonce="))
+    ?.split(";", 1)[0];
+  if (!nonce || !nonceCookie) throw new Error("Login form is missing its nonce");
+  const response = await fetch(`${origin}/admin/login`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie: nonceCookie },
+    body: new URLSearchParams({
+      username: admin.user,
+      password: admin.password,
+      nonce,
+      next: "/api/profile",
+    }),
+  });
+  const cookies = response.headers.getSetCookie();
+  const session = cookies.find((item) => item.startsWith("session="))?.split(";", 1)[0];
+  const csrf = cookies.find((item) => item.startsWith("csrf="))?.split(";", 1)[0];
+  if (response.status !== 302 || !session || !csrf) throw new Error("Login failed");
+  return { cookie: `${session}; ${csrf}`, token: csrf.slice("csrf=".length) };
+}
+
+test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings omits it, and PUT round-trips", async () => {
+  // The schema before migration 0019 (B35), with a stored Mailgun secret.
+  const dataDir = mkdtempSync(join(tmpdir(), "b35-upgrade-data-"));
+  const directory = mkdtempSync(join(tmpdir(), "b35-upgrade-exe-"));
+  cleanups.push(() => rmSync(dataDir, { recursive: true, force: true }));
+  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  const before = openDatabase(dataDir);
+  runMigrations(before, dataDir, new TestClock(), productionMigrations.slice(0, 18));
+  before.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('bounce.mailgun', ?)", [
+    JSON.stringify({ enabled: true, key: legacySecret }),
+  ]);
+  before.close(true);
+
+  // The compiled executable starts on that database: it runs migration 0019 and serves settings.
+  await ensureProductionBuild();
+  const executable = join(directory, "iglo.email");
+  copyFileSync(join(repository, "dist", "iglo.email"), executable);
+  chmodSync(executable, 0o755);
+  const port = await availablePort();
+  const origin = `http://127.0.0.1:${port}`;
+  const child = Bun.spawn(
+    [executable, "serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
+    {
+      cwd: directory,
+      env: {
+        PATH: "",
+        IGLO_EMAIL_ADMIN_USER: admin.user,
+        IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
+      },
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+  );
+  cleanups.push(() => stop(child));
+  let ready = false;
+  for (const deadline = Date.now() + 10_000; !ready && Date.now() < deadline; await Bun.sleep(25)) {
+    if (child.exitCode !== null) break;
+    ready = await fetch(`${origin}/health`).then(
+      (r) => r.ok,
+      () => false,
+    );
+  }
+  expect(ready).toBe(true);
+
+  const session = await login(origin);
+  const api = (path: string, method = "GET", body?: unknown) =>
+    fetch(`${origin}${path}`, {
+      method,
+      headers: {
+        cookie: session.cookie,
+        ...(method === "GET"
+          ? {}
+          : { "x-csrf-token": session.token, "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  const getRes = await api("/api/settings");
   expect(getRes.status).toBe(200);
   const body = (await getRes.json()) as { data: Record<string, unknown> };
   expect(body.data["bounce.mailgun"]).toBeUndefined();
 
   // PUT round-trip succeeds
-  const putRes = await router.handle(
-    app,
-    new Request("http://fixture.test/api/settings", {
-      method: "PUT",
-      headers: {
-        cookie: `session=${session.id}`,
-        "x-csrf-token": session.csrf,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body.data),
-    }),
-  );
-  expect(putRes.status).toBe(200);
+  expect((await api("/api/settings", "PUT", body.data)).status).toBe(200);
 
-  // Old client sending bounce.mailgun in a full PUT returns 200, a following GET has no bounce.mailgun, and nothing is stored
-  const putWithOldKey = await router.handle(
-    app,
-    new Request("http://fixture.test/api/settings", {
-      method: "PUT",
-      headers: {
-        cookie: `session=${session.id}`,
-        "x-csrf-token": session.csrf,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+  // An old client sends bounce.mailgun in a full PUT: 200, the key is not stored or returned.
+  expect(
+    (
+      await api("/api/settings", "PUT", {
         ...body.data,
         "bounce.mailgun": { enabled: true, key: "x" },
-      }),
-    }),
-  );
-  expect(putWithOldKey.status).toBe(200);
-
-  const getAfterPut = await router.handle(
-    app,
-    new Request("http://fixture.test/api/settings", {
-      headers: { cookie: `session=${session.id}` },
-    }),
-  );
+      })
+    ).status,
+  ).toBe(200);
+  const getAfterPut = await api("/api/settings");
   expect(getAfterPut.status).toBe(200);
   const bodyAfterPut = (await getAfterPut.json()) as { data: Record<string, unknown> };
   expect(bodyAfterPut.data["bounce.mailgun"]).toBeUndefined();
-  expect(db.query("SELECT key FROM settings WHERE key = 'bounce.mailgun'").get()).toBeNull();
 
   // Single-key PUT /api/settings/bounce.mailgun returns 400
-  const putSingleKey = await router.handle(
-    app,
-    new Request("http://fixture.test/api/settings/bounce.mailgun", {
-      method: "PUT",
-      headers: {
-        cookie: `session=${session.id}`,
-        "x-csrf-token": session.csrf,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ enabled: true, key: "x" }),
-    }),
-  );
-  expect(putSingleKey.status).toBe(400);
-});
+  expect(
+    (await api("/api/settings/bounce.mailgun", "PUT", { enabled: true, key: "x" })).status,
+  ).toBe(400);
+
+  // Migration 0019 removed the stored row, and nothing wrote it back.
+  expect(await stop(child)).toBe(0);
+  expect(await new Response(child.stderr).text()).not.toContain(legacySecret);
+  const after = openDatabase(dataDir);
+  expect(after.query("SELECT key FROM settings WHERE key = 'bounce.mailgun'").get()).toBeNull();
+  after.close(true);
+}, 120_000);
 
 test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces and wipes with subscriber", async () => {
   const f = await txFixture({ webhooks: {} });

@@ -651,7 +651,7 @@ export const differences: Difference[] = [
   {
     area: "Inert bounce provider settings (B35, D89)",
     summary:
-      "`bounce.sendgrid_enabled`, `bounce.sendgrid_key`, `bounce.postmark`, `bounce.forwardemail`, `bounce.lettermint`, `bounce.azure` and `bounce.mailboxes` are accepted and stored by the settings API for listmonk API compatibility; no effect; SES is the only provider (D89). The admin UI Bounces tab shows only Amazon SES",
+      "`bounce.sendgrid_enabled`, `bounce.sendgrid_key`, `bounce.postmark`, `bounce.forwardemail`, `bounce.lettermint`, `bounce.azure` and `bounce.mailboxes` are accepted and stored by the settings API for listmonk API compatibility; no effect; SES is the only provider (D89). The admin UI Bounces tab shows only Amazon SES.",
     applies: ["/api/settings"],
   },
   {
