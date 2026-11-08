@@ -1001,6 +1001,7 @@ export const settingsView: AdminView = ({ context, can }) => {
       "globals.messages.passwordChangeFull",
       "globals.messages.updated",
       "globals.terms.settings",
+      "settings.smtp.passwordRequired",
       "settings.smtp.testEnterEmail",
     ],
     body: (

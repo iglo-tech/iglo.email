@@ -2,6 +2,7 @@
 import { runSettingsCouncilParser } from "@/test/contract/settings-council-parser";
 import { runSettingsNul } from "@/test/contract/settings-nul";
 import { runSettingsCouncilSmall } from "@/test/contract/settings-council-small";
+import { runSettingsNewItems } from "@/test/contract/settings-new-items";
 import { runSettingsCouncilFinal } from "@/test/contract/settings-council-final";
 import { runSettingsBinding } from "@/test/contract/settings-binding";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
@@ -58,6 +59,8 @@ export async function runSettingsContract(target: {
   const after = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
     .data;
   check(JSON.stringify(after) === JSON.stringify(snapshot), "invalid-no-write");
+  // Order-independent: it finds its items by host and restores the snapshot it read.
+  await runSettingsNewItems(target);
   await runSettingsNul(target);
   await runSettingsCouncilSmall(target);
   await runSettingsCouncilParser(target);

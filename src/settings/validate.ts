@@ -236,8 +236,9 @@ export function bindKey(current: Settings, key: string, value: unknown): Setting
   out[key] = bind(value, shapes[key]);
   return out;
 }
+// B51: an item without a uuid is new and matches no stored item, so it never takes another's secret.
 function preserve(item: Settings, old: Settings[]) {
-  const previous = old.findLast((v) => v.uuid === item.uuid);
+  const previous = item.uuid ? old.findLast((v) => v.uuid === item.uuid) : undefined;
   if (!item.uuid) item.uuid = crypto.randomUUID();
   if (!item.password && previous) item.password = previous.password;
   if (!item.password) delete item.password;
@@ -276,7 +277,10 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
       return fail("A name is required for an SMTP server excluded from the default messenger.");
     server.name = name;
     server.host = trimSpace(server.host);
-    const prior = current.smtp.findLast((item: Settings) => item.uuid === server.uuid);
+    // B51: a DKIM key is inherited only from the stored item with this uuid, never from one without.
+    const prior = server.uuid
+      ? current.smtp.findLast((item: Settings) => item.uuid === server.uuid)
+      : undefined;
     preserve(server, current.smtp);
     if (!Object.hasOwn(server, "dkim") && prior?.dkim) server.dkim = cloneJson(prior.dkim);
     if (server.dkim) {

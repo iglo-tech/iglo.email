@@ -219,6 +219,104 @@ test("SMTP presets reset credentials and preserve unrelated fields and accordion
   await expect(server.getByPlaceholder("smtp.yourmailserver.net")).toBeHidden();
 });
 
+test("a provider template on a saved server asks for its password before a save", async ({
+  page,
+}) => {
+  const seeded = await settings(page);
+  const res = await api(page, "/api/settings/smtp", "PUT", [
+    {
+      ...seeded.smtp[0],
+      host: "old-host.example.test",
+      port: 587,
+      auth_protocol: "login",
+      username: "old-user",
+      password: "stored-smtp-secret",
+      enabled: true,
+    },
+  ]);
+  expect(res.status).toBe(200);
+  await page.reload();
+  await tab(page, "SMTP").click();
+  const server = smtpServers(page);
+  await server.locator("summary").click();
+  await expect(server.getByPlaceholder("smtp.yourmailserver.net")).toHaveValue(
+    "old-host.example.test",
+  );
+  await expect(server.getByLabel(/Password/)).toHaveValue(/^•+$/);
+
+  await server.getByRole("link", { name: "Gmail", exact: true }).click();
+  await expect(server.getByPlaceholder("smtp.yourmailserver.net")).toHaveValue("smtp.gmail.com");
+  await expect(server.getByLabel(/Password/)).toBeEmpty();
+
+  // The save is refused on the page: nothing is sent, so the old password goes nowhere.
+  const sent = [];
+  page.on("request", (r) => {
+    if (r.method() === "PUT" && new URL(r.url()).pathname === "/api/settings") sent.push(r);
+  });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Enter the password again/)).toBeVisible();
+  expect(sent).toHaveLength(0);
+  expect((await settings(page)).smtp[0].host).toBe("old-host.example.test");
+
+  await server.getByLabel(/Password/).fill("gmail-new-secret");
+  await save(page);
+  const stored = (await settings(page)).smtp[0];
+  expect(stored.host).toBe("smtp.gmail.com");
+  expect(stored.password).toBe("•".repeat("gmail-new-secret".length));
+});
+
+test("a provider template on a saved server with auth none saves without a password", async ({
+  page,
+}) => {
+  const seeded = await settings(page);
+  const res = await api(page, "/api/settings/smtp", "PUT", [
+    {
+      ...seeded.smtp[0],
+      host: "old-host.example.test",
+      port: 587,
+      auth_protocol: "login",
+      username: "old-user",
+      password: "stored-smtp-secret",
+      enabled: true,
+    },
+  ]);
+  expect(res.status).toBe(200);
+  await page.reload();
+  await tab(page, "SMTP").click();
+  const server = smtpServers(page);
+  await server.locator("summary").click();
+
+  await server.getByRole("link", { name: "Gmail Relay", exact: true }).click();
+  await server
+    .getByRole("group", { name: "Auth protocol", exact: true })
+    .getByRole("combobox")
+    .selectOption("none");
+  await expect(server.getByLabel(/Password/)).toBeDisabled();
+
+  // Auth none sends no password, so the save needs none re-entered.
+  await save(page);
+  const stored = (await settings(page)).smtp[0];
+  expect(stored.host).toBe("smtp-relay.gmail.com");
+  expect(stored.auth_protocol).toBe("none");
+});
+
+test("a new server from a provider template saves without a password", async ({ page }) => {
+  await tab(page, "SMTP").click();
+  await page.getByRole("button", { name: "Add new", exact: true }).click();
+  // A new server has no saved password to protect, so the template asks for none.
+  const added = smtpServers(page).last();
+  await added.getByRole("link", { name: "Gmail", exact: true }).click();
+  await expect(added.getByPlaceholder("smtp.yourmailserver.net")).toHaveValue("smtp.gmail.com");
+  await added.getByRole("textbox", { name: /^Username/ }).fill("new-user");
+
+  await save(page);
+  const stored = (await settings(page)).smtp.at(-1);
+  expect(stored.host).toBe("smtp.gmail.com");
+  expect(stored.username).toBe("new-user");
+  // The API omits an empty password, so an absent or blank value both mean none is stored.
+  expect(stored.password ?? "").toBe("");
+});
+
 test("tests custom SMTP headers and masks saved secrets", async ({ page }) => {
   await tab(page, "SMTP").click();
   const server = smtpServers(page);

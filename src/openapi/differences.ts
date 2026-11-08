@@ -324,6 +324,12 @@ export const differences: Difference[] = [
     applies: ["PUT /api/settings"],
   },
   {
+    area: "Secrets of new settings items (B51)",
+    summary:
+      "A new SMTP server, bounce mailbox or messenger never takes another item's password, and a new SMTP server never takes a DKIM key from a stored item without a uuid. Upstream copies a stored password or DKIM key into any new item whose uuid is blank. Seeded SMTP and bounce defaults carry fixed uuids.",
+    applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
+  },
+  {
     area: "Settings SMTP test",
     summary:
       "Authorized sends return data:[] on SMTP acceptance, safe error categories on failure, and 429 at capacity.",
