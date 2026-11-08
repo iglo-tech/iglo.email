@@ -1560,4 +1560,56 @@ describe("B34 MCP endpoint tests", () => {
       (await api("GET", "/api/campaigns?query=B39%20Cookie%20Refused")).json.data.results,
     ).toEqual([]);
   });
+
+  // 14. update_sequence_step does not send a status, so a paused or archived sequence keeps the status it has.
+  test("14. update_sequence_step keeps the stored status of a paused or archived sequence", async () => {
+    const tpl = await api("POST", "/api/templates", {
+      name: "B39 Status Template",
+      type: "tx",
+      subject: "Status subject",
+      body: "<p>Hello</p>",
+    });
+    expect(tpl.status).toBe(200);
+    const seq = await api("POST", "/api/sequences", {
+      name: "B39 Status Sequence",
+      status: "draft",
+      trigger: { event: "b39_status" },
+      exit_on: ["b39_status_cancel"],
+      reentry: "never",
+      list_id: null,
+      steps: [
+        {
+          wait: "PT0S",
+          kind: "transactional",
+          template_id: tpl.json.data.id,
+          subject: "Before",
+          on_false: "exit",
+          cap_policy: "defer",
+        },
+      ],
+    });
+    expect(seq.status).toBe(200);
+    const seqId: number = seq.json.data.id;
+    const stepId: number = seq.json.data.steps[0].id;
+
+    const { client, transport } = createClient();
+    await client.connect(transport);
+
+    for (const status of ["paused", "archived"] as const) {
+      const set = await api("PUT", `/api/sequences/${seqId}/status`, { status });
+      expect(set.status).toBe(200);
+
+      const edited = await client.callTool({
+        name: "update_sequence_step",
+        arguments: { id: seqId, step_id: stepId, subject: `Edited while ${status}` },
+      });
+      expect(edited.isError).toBeFalsy();
+
+      const after = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+      expect(after.status).toBe(status);
+      expect(after.steps[0].subject).toBe(`Edited while ${status}`);
+    }
+
+    await client.close();
+  });
 });

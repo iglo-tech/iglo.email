@@ -376,7 +376,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "update_sequence_step",
     description:
-      "Change the subject or the transactional template of one step of a sequence. The sequence settings and every other step are kept as stored. Get step IDs from get_sequence.",
+      "Change the subject or the transactional template of one step of a sequence. The sequence settings and every other step are kept as stored. Get step IDs from get_sequence. Saving rewrites every step, so the caller must be allowed to save all of them: if another step has a raw-SQL condition, the caller also needs subscribers:sql_query, or the save is refused.",
     inputSchema: {
       type: "object",
       properties: {
@@ -857,9 +857,9 @@ export async function executeTool(
       }));
       if (args.subject !== undefined) steps[index]!.subject = args.subject;
       if (args.template_id !== undefined) steps[index]!.template_id = args.template_id;
+      // status is left out: the endpoint keeps the stored status, so a status change made since the read is not reverted.
       return invoke("PUT", `/api/sequences/${id}`, {
         name: sequence.name,
-        status: sequence.status,
         trigger: sequence.trigger,
         exit_on: sequence.exit_on,
         reentry: sequence.reentry,
