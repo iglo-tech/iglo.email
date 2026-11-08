@@ -12,13 +12,12 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B42** Flaky runner test ([brief](briefs/B42.md)): find and fix the root cause of `runner.test.ts:573` timing out (5 s serial, 30 s parallel); no timeout bumps (modules `test/campaigns/runner`, the runner only if the test exposes a real defect; size S)
-2. **B43** Sending polish from #89/#90 review backlog: runner `return` on not-started, rate-lowering applies at once, duplicate not-started guard, `settings.onUpdate` single-slot, SMTP test send bounded wait, perf doc wording; notification re-read regression test, bad-CSV entry in `differences.ts`, invalid `from_email` fallback logged, unused `siteName`/`runner_generation`/`logoUrl`, tests wait on sink/outbox not `Bun.sleep` (size M)
-3. **B44** MCP polish from #86/#91 backlog: read-merge for a role with manage but not get (clear error or skip read), `update_campaign` can clear `send_at`, no-op `update_sequence_step` refused, tests for foreign-origin cookie, deleted list, step edit with a live enrollment (size S)
-4. **B45** Backup polish from #85: no empty folders left on refusal, clear messages for broken-symlink/file parents, docs on repeated `docker cp` (size S)
-5. **B46** Bounces test polish from #87: one settings source in the tx fixture, compiled-build upgrade test, compiled contract for SNS replay after restart/provider switches/Message-ID rows, SES failure test checks its receiver, `differences.ts` formatting (size M)
-6. **B47** Sequence step body on a campaign layout (design gap from #91, `05-sequences.md:87`): decide in a D-record whether a typical lifecycle project needs it under D89; implement or log the drop (size M)
-7. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
+1. **B43** Sending polish ([brief](briefs/B43.md)) from #89/#90 review backlog: runner `return` on not-started, rate-lowering applies at once, duplicate not-started guard, `settings.onUpdate` single-slot, SMTP test send bounded wait, perf doc wording; notification re-read regression test, bad-CSV entry in `differences.ts`, invalid `from_email` fallback logged, unused `siteName`/`runner_generation`/`logoUrl`, tests wait on sink/outbox not `Bun.sleep` (size M)
+2. **B44** MCP polish from #86/#91 backlog: read-merge for a role with manage but not get (clear error or skip read), `update_campaign` can clear `send_at`, no-op `update_sequence_step` refused, tests for foreign-origin cookie, deleted list, step edit with a live enrollment (size S)
+3. **B45** Backup polish from #85: no empty folders left on refusal, clear messages for broken-symlink/file parents, docs on repeated `docker cp` (size S)
+4. **B46** Bounces test polish from #87: one settings source in the tx fixture, compiled-build upgrade test, compiled contract for SNS replay after restart/provider switches/Message-ID rows, SES failure test checks its receiver, `differences.ts` formatting (size M)
+5. **B47** Sequence step body on a campaign layout (design gap from #91, `05-sequences.md:87`): decide in a D-record whether a typical lifecycle project needs it under D89; implement or log the drop (size M)
+6. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
 
 ## Owner decisions
 
@@ -48,6 +47,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B42 | [#94](https://github.com/iglo-tech/iglo.email/pull/94) | ead051f | Runner flake not reproduced; `drive` now fails fast with the stuck state |
 | B41 | [#93](https://github.com/iglo-tech/iglo.email/pull/93) | 4b5411c | Deliverability docs: one SES path (Easy DKIM, MAIL FROM/SPF, DMARC, send rate, sandbox) |
 | B40 | [#92](https://github.com/iglo-tech/iglo.email/pull/92) | 0707e37 | Inert settings controls removed (S3, Messengers, update check, SMTP retries, language); values still round-trip |
 | B39 | [#91](https://github.com/iglo-tech/iglo.email/pull/91) | c850cc6 | MCP completeness: 20 tools (create_campaign, lists, media, sequences, update_sequence_step); first Haiku worker (D93) |
@@ -130,14 +130,13 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 - Media: supported PDF viewers unverified (needs real devices).
 - Backup ([#85](https://github.com/iglo-tech/iglo.email/pull/85) r3): a refusal after parent creation (output in uploads, unschema'd DB, low space) leaves empty folders; broken-symlink/file parents give a raw `ENOENT`/`ENOTDIR: mkdir`; docs: repeated `docker cp` into an existing dated folder nests it.
-- Test: `tracked links personalized per subscriber do not accumulate across batches` (runner.test.ts) timed out at 30 s twice under parallel load; 1.1 s alone in another run.
 - MCP ([#86](https://github.com/iglo-tech/iglo.email/pull/86) r2–r4): read-merge tools fail for a role with `campaigns:manage` but no `campaigns:get*`; GET-then-PUT can lose a concurrent edit (admin UI has the same race); `update_campaign` cannot clear `send_at`; tests lack a foreign-origin cookie case and a deleted-list case.
-- Test: `runner.test.ts:573` also timed out at 5 s in a serial `bun test test/campaigns` run (#86 fixer 4).
 - Bounces tests ([#87](https://github.com/iglo-tech/iglo.email/pull/87) r1–r2): the tx fixture has two settings sources (real `/api/settings` and the `bounceSettings` object the bounce routes read); B35 test 2 hand-wires routes instead of the compiled build on an upgraded DB; the compiled contract no longer covers SNS replay after restart, provider on/off switches or campaign Message-ID rows (`ses.test.ts` covers most in-process); the SES failure test never checks its webhook receiver; small formatting in `differences.ts`.
 - Send rate ([#89](https://github.com/iglo-tech/iglo.email/pull/89) r2): `runner.ts:593` should `return` not `continue` on not-started (only reachable if the emailer closes before the runner); lowering the rate applies one send late; duplicate not-started guard in `sends.ts`; `settings.onUpdate` is single-slot; SMTP test send waits behind the limiter unbounded; perf doc wording (15 at cap 14 is sink jitter; 20 s run cannot show the 60 s cutoff).
 - Notifications ([#90](https://github.com/iglo-tech/iglo.email/pull/90) r2): no regression test for the post-commit status re-read; bad-CSV notification missing from the `differences.ts` CSV entry; operations.md should say invalid entries are skipped and logged; invalid `from_email` falls back to `noreply@localhost` silently; unused `siteName`/`runner_generation`, `logoUrl` never passed; tests poll with `Bun.sleep(5)`.
 - MCP ([#91](https://github.com/iglo-tech/iglo.email/pull/91) r1): sequence steps have no body, so a step cannot use a campaign layout (design gap, `05-sequences.md:87`); no test of a step edit on an active sequence with a live enrollment; an `update_sequence_step` call with neither field still saves and bumps the timestamp.
 - Settings ([#92](https://github.com/iglo-tech/iglo.email/pull/92) r1): unused `lang` still passed into `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx:22,169`); the unit round trip omits the browser-only SMTP keys (the e2e covers them).
+- Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it. The send-rate test keeps its own 20,000-iteration loop (`test/messaging`).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
