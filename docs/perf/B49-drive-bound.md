@@ -44,15 +44,49 @@ PROBE iterations 1540 wall 11 ms
 
 The wall bound was then measured with a temporary probe test that waits on a condition that never
 holds (not committed): it stopped at 10,001 ms after 3,212,255 iterations, about 3.1 µs each, with
-the `wall limit 10000 ms` diagnostic.
+the `wall limit 10000 ms` diagnostic. That probe ran with the first 10 s bound. The bound is now
+4 s (see "Why 4 s"), so the same wait ends at `wall limit 4000 ms`.
 
 ## Change
 
-`drive` stops at `WAIT_WALL_MS` (10 s) of real time or at its iteration cap, whichever comes first.
-The cap is 10,000,000, a runaway guard that the wall bound always reaches first at about 3 µs per
-iteration. The diagnostic error is the same as before (B42's stuck-state message), and it now says
-which limit was reached. The B42 regression test passes an explicit limit of 50 and still fails
-fast with `condition not reached after 50 iterations`.
+`drive` stops at `WAIT_WALL_MS` (4 s) of real time or at its iteration cap, whichever comes first.
+A fourth optional argument, `wallMs`, replaces the 4 s budget for one wait. The new wall-path test
+uses 200 ms. The cap is 10,000,000, a runaway guard that the wall bound always reaches first at
+about 3 µs per iteration. The diagnostic error is the same as before (B42's stuck-state message),
+and it now says which limit was reached. The B42 regression test passes an explicit limit of 50 and
+still fails fast with `condition not reached after 50 iterations`.
+
+The wall-path test, "a wait with no iteration limit ends at the wall bound and names it", passes no
+iteration limit and a 200 ms budget. It asserts `wall limit 200 ms`, asserts that `iteration limit`
+is absent, and asserts that the wait returns in under 2 s. It sits next to the B42 test in
+`test/campaigns/runner/runner.test.ts`.
+
+## Why 4 s
+
+- Bun's default per-test timeout is 5 s. A serial `bun test test/campaigns/runner/runner.test.ts`
+  or `bun test test/media/media.test.ts` uses it. `bun run test` and `bun run check` pass
+  `--timeout=30000`. A wall bound above 5 s would hit the test timeout first in serial runs, and the
+  state dump would be lost. That is B42's second symptom. The bound must sit below the smallest
+  timeout the documented commands use.
+- Margin, measured: a temporary probe with no budget override (since deleted), run serially with
+  the default 5 s timeout, stopped at `wall limit 4000 ms` after 4,001 ms with the full state dump.
+  The whole test took 4.70 s, because fixture setup runs inside the test. The margin under 5 s is
+  therefore about 0.3 s, not 1 s. A 3 s bound would leave about 1.3 s, if the margin proves too
+  thin under load.
+- The media waits that failed need 7–12 ms of wall time (the 1,540–2,349 iteration probes above).
+  With four CPU burners (`yes > /dev/null`), the slowest whole test across the runner and media files
+  (serial, JUnit) took 1.88 s (the tracked-link test). That leaves more than 2× headroom for a
+  progressing wait. These numbers come from the independent review of 19adf2c.
+- A wait that never completes spends about 4 s of one core before it fails. Real waits finish in
+  milliseconds, so the cost falls only on tests that fail anyway.
+
+## Rule
+
+When a shared test helper changes, run every file that imports it in isolation, one at a time, and
+do not rely on the full suite alone. B42 changed `drive` and measured one consumer. Its full runs
+passed while the media tests failed intermittently under `--parallel=4`. List the consumers with
+`grep -rl runnerFixture test`. Today they are `test/campaigns/runner/runner.test.ts` and
+`test/media/media.test.ts`. `test/media/measure.ts` is an opt-in measurement script, not a test.
 
 Rejected: sleeping 1 ms of real time per iteration after the first 100 iterations. It fixed the
 media tests, but the rate-limit tests in the runner file wait on fake-clock time for many
@@ -78,8 +112,11 @@ the disk.
 - B42 regression test ("a wait that never completes fails with the stuck state"), run alone:
   686 ms before the change, 659 ms after. Its own limit (50) is reached, so the wall bound does
   not apply to it.
+- Wall-path test ("a wait with no iteration limit ends at the wall bound and names it") and the
+  B42 test, run together by name (`--test-name-pattern`), serially under the lock: 1.53 s for both,
+  including fixture setup.
 - Media file (`test/media/media.test.ts`): 26 of 26 pass in 10 of 10 isolated runs, 13.95–14.30 s
-  each.
+  each. This run, alone: 26 pass, 14.17 s. Runner file, alone: 31 pass, 18.21 s.
 
 ## Other `drive`-style loops
 

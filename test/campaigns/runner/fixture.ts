@@ -124,30 +124,43 @@ export async function runnerFixture(
     );
     return parts.join("; ") || "no campaigns";
   }
-  /** Real time a wait may take before it fails with its state (the test timeout is 30 s). */
-  const WAIT_WALL_MS = 10_000;
+  /**
+   * Default real-time budget of a wait before it fails with its state. Bun's default per-test
+   * timeout is 5 s for `bun test <path>` (serial single-file and directory runs), and
+   * `bun run test` / `check` pass `--timeout=30000`. 4 s is below both, so a stuck wait reports
+   * its state in every run rather than being cut off by the test timeout. Fixture setup runs
+   * inside the test too: a serial single-test run that waits for the full 4 s took 4.70 s in
+   * total, so the margin under 5 s is about 0.3 s, not 1 s (docs/perf/B49-drive-bound.md, "Why
+   * 4 s"). Media waits need 7–12 ms, and the slowest whole test took 1.88 s under four CPU burners.
+   */
+  const WAIT_WALL_MS = 4_000;
   /**
    * Lets I/O and microtasks run, then advances the clock by `step`, until `done()`.
    *
-   * A wait stops after `WAIT_WALL_MS` of real time or `limit` iterations, whichever comes first.
-   * The wall bound is the limit that matters. Real I/O, such as an attachment read on the thread
-   * pool, finishes in real time, and one zero-length iteration costs only a few microseconds, so
-   * an iteration count cannot bound it (docs/perf/B49-drive-bound.md). The cap is a runaway guard.
-   * A wait that never completes fails here with its state, rather than spinning until the test
-   * timeout.
+   * A wait stops after `wallMs` (default `WAIT_WALL_MS`) of real time or `limit` iterations,
+   * whichever comes first. The wall bound is the limit that matters. Real I/O, such as an
+   * attachment read on the thread pool, finishes in real time, and one zero-length iteration costs
+   * only a few microseconds, so an iteration count cannot bound it (docs/perf/B49-drive-bound.md).
+   * The iteration cap is a runaway guard. A wait that never completes fails here with its state,
+   * rather than spinning until the test timeout.
    */
-  const drive = async (done: () => boolean | Promise<boolean>, step = 50, limit = 10_000_000) => {
+  const drive = async (
+    done: () => boolean | Promise<boolean>,
+    step = 50,
+    limit = 10_000_000,
+    wallMs = WAIT_WALL_MS,
+  ) => {
     const wallStart = performance.now();
     const clockStart = f.clock.now().getTime();
     let last = false;
     let i = 0;
-    for (; i < limit && performance.now() - wallStart < WAIT_WALL_MS; i++) {
+    for (; i < limit && performance.now() - wallStart < wallMs; i++) {
       for (let j = 0; j < 3; j++) await Bun.sleep(0);
       last = await done();
       if (last) return;
       f.clock.advance(step);
     }
-    const reason = i >= limit ? `iteration limit ${limit}` : `wall limit ${WAIT_WALL_MS} ms`;
+    const reason = i >= limit ? `iteration limit ${limit}` : `wall limit ${wallMs} ms`;
     const state = await stuckState().catch((error: unknown) => `state unavailable (${error})`);
     throw new Error(
       `drive: condition not reached after ${i} iterations (${reason}, step ${step} ms): ` +
