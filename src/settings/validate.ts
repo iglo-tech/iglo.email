@@ -239,11 +239,12 @@ export function bindKey(current: Settings, key: string, value: unknown): Setting
 // B51: an item without a uuid is new and matches no stored item, so it never takes another's secret.
 // B56: an item with auth none stores no password, typed or stored (deliberate difference, 07-api-and-ui.md):
 // a server with no authentication has no use for one, and switching back to login needs a new one.
-// An empty auth protocol is no authentication too (email.ts makeTransport), so it is treated as none.
-function preserve(item: Settings, old: Settings[]) {
+// B57: for an SMTP server, an empty auth protocol is no authentication too (email.ts makeTransport), so
+// it is treated as none. A bounce mailbox with "" still logs in (upstream pop.go), so it keeps its password.
+function preserve(item: Settings, old: Settings[], smtp: boolean) {
   const previous = item.uuid ? old.findLast((v) => v.uuid === item.uuid) : undefined;
   if (!item.uuid) item.uuid = crypto.randomUUID();
-  if (item.auth_protocol === "none" || item.auth_protocol === "") delete item.password;
+  if (item.auth_protocol === "none" || (smtp && item.auth_protocol === "")) delete item.password;
   else if (!item.password && previous) item.password = previous.password;
   if (!item.password) delete item.password;
 }
@@ -299,7 +300,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     const prior = server.uuid
       ? current.smtp.findLast((item: Settings) => item.uuid === server.uuid)
       : undefined;
-    preserve(server, current.smtp);
+    preserve(server, current.smtp, true);
     if (!Object.hasOwn(server, "dkim") && prior?.dkim) server.dkim = cloneJson(prior.dkim);
     if (server.dkim) {
       if (!server.dkim.private_key && prior?.dkim) server.dkim.private_key = prior.dkim.private_key;
@@ -319,11 +320,11 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     box.host = trimSpace(box.host);
     if (!(goDuration(box.scan_interval) >= 60000))
       return fail("Bounce scan interval should be minimum 1 minute.");
-    preserve(box, current["bounce.mailboxes"]);
+    preserve(box, current["bounce.mailboxes"], false);
   }
   for (const item of next.messengers) {
     if (!item || typeof item !== "object") return fail();
-    preserve(item, current.messengers);
+    preserve(item, current.messengers, false);
     const name = simpleLower(item.name).replace(/[^a-z0-9-]/g, "");
     if (names.has(name)) return fail(`Duplicate messenger name: ${name}`);
     if (!name) return fail("Invalid messenger name.");

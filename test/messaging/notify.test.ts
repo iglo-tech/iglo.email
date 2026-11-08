@@ -29,6 +29,7 @@ import { createEmbeds } from "@/media/embed";
 import { createSettings } from "@/settings/store";
 import { createEmailer } from "@/messaging/email";
 import { createSends } from "@/messaging/sends";
+import { registerSendRoutes } from "@/messaging/routes";
 import { startOutbox } from "@/messaging/outbox";
 import { createWebhookStore } from "@/webhooks/store";
 import { createWebhookEffects } from "@/webhooks/effects";
@@ -293,6 +294,7 @@ async function createNotifyFixture(
     },
   );
   registerWebhookRoutes(router, { webhooks, auth });
+  registerSendRoutes(router, sends, auth);
 
   const webhookDelivery = startWebhookDelivery({
     db,
@@ -376,19 +378,30 @@ async function createNotifyFixture(
     return runner;
   };
 
+  // Every send with this status, read through GET /api/sends as a client reads it (B57).
+  const sendsWithStatus = async (status: "queued" | "sending") => {
+    const rows: { next_attempt_at: string | null }[] = [];
+    for (let page = 1; ; page++) {
+      const response = await json(`/api/sends?status=${status}&per_page=100&page=${page}`);
+      if (response.status !== 200)
+        throw new Error(`GET /api/sends?status=${status} answered ${response.status}`);
+      const list = response.data.data;
+      rows.push(...list.results);
+      if (page * 100 >= list.total) return rows;
+    }
+  };
   // Waits until no send is in flight and none is due: a retry scheduled for later does not count.
   const drainOutbox = () =>
     waitWall(
-      () => {
+      async () => {
         sends.notify();
         webhookDelivery.wake();
-        const pending = db
-          .query<{ n: bigint }, [string]>(
-            `SELECT count(*) AS n FROM sends
-             WHERE status = 'sending' OR (status = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))`,
-          )
-          .get(clock.now().toISOString());
-        return pending?.n === 0n;
+        if ((await sendsWithStatus("sending")).length > 0) return false;
+        const now = clock.now().getTime();
+        const due = (await sendsWithStatus("queued")).filter(
+          (row) => row.next_attempt_at === null || Date.parse(row.next_attempt_at) <= now,
+        );
+        return due.length === 0;
       },
       { label: "outbox drain", advance: (ms) => clock.advance(ms), step: 100 },
     );

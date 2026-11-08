@@ -686,12 +686,13 @@ mailbox) are not carried over by the first full save of the settings page, so en
 passwords before that save. Any earlier save gave these items their uuids, and they keep their
 passwords, so this note does not apply to them.
 
-From this version, an SMTP server or bounce mailbox saved with auth `none` (or an empty auth
-protocol) keeps no password, so switching it back to login needs the password entered again. A save
-that would give two SMTP servers, bounce mailboxes or messengers the same uuid is refused with 400
-and changes nothing. An install that already holds duplicate uuids (only hand-made API calls could
-store them) gets 400 on every API settings save (`PUT /api/settings` or a per-key update), until the
-settings page is saved once.
+From this version, an SMTP server or bounce mailbox saved with auth `none` keeps no password, and so
+does an SMTP server saved with an empty auth protocol, so switching it back to login needs the password
+entered again. A bounce mailbox saved with an empty auth protocol keeps its password, as upstream's POP
+login runs for it. A save that would give two SMTP servers, bounce mailboxes or messengers the same
+uuid is refused with 400 and changes nothing. An install that already holds duplicate uuids (only
+hand-made API calls could store them) gets 400 on every API settings save (`PUT /api/settings` or a
+per-key update), until the settings page is saved once.
 
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
