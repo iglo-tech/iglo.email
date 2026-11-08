@@ -14,6 +14,7 @@ import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message, Outcome } from "@/messaging/email";
+import type { SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
 import {
@@ -43,6 +44,7 @@ export interface RunnerSettings {
   disableTracking: boolean;
   individualTracking: boolean;
 }
+
 export interface RunnerDeps {
   db: Database;
   clock: Clock;
@@ -58,7 +60,10 @@ export interface RunnerDeps {
   renderer: TemplateRenderer;
   tracking: Pick<Tracking, "link" | "get">;
   emailer: {
-    push(message: Message, delivery?: { copies?: boolean }): { result: Promise<Outcome> };
+    push(
+      message: Message,
+      delivery?: { copies?: boolean; priority?: SendPriority },
+    ): { result: Promise<Outcome> };
   };
   settings: () => RunnerSettings;
   /** Reads a campaign's files, so never inside the claim transaction. */
@@ -560,7 +565,7 @@ export function startCampaignRunner(deps: RunnerDeps) {
         pushed.add(i);
         // The pace counts from the push, after any sliding-window hold.
         times[slot] = clock.now().getTime();
-        const dispatch = deps.emailer.push(message, { copies: false });
+        const dispatch = deps.emailer.push(message, { copies: false, priority: "campaign" });
         if (sliding) {
           const nowMs = clock.now().getTime();
           if (nowMs - slidingStart >= windowMs) {
@@ -584,6 +589,10 @@ export function startCampaignRunner(deps: RunnerDeps) {
             accepted: [],
             rejected: [],
           };
+        }
+        if (outcome.stage === "not-started") {
+          pushed.delete(i);
+          continue;
         }
         const at = clock.now().getTime();
         if (outcome.status === "accepted" && outcome.rejected.length === 0) {

@@ -2,6 +2,7 @@
 import nodemailer from "nodemailer";
 import { createConnection, isIP, type Socket } from "node:net";
 import type { Clock } from "@/clock";
+import type { SendRateLimiter, SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
 import { requiredAuth } from "@/messaging/auth";
 import { parseAddress } from "@/settings/mail";
@@ -50,7 +51,7 @@ export interface Message {
 export type Outcome = {
   messageId: string;
   status: "accepted" | "proven-not-accepted" | "ambiguous";
-  stage: "local" | "setup" | "recipients" | "smtp-complete" | "unknown";
+  stage: "local" | "setup" | "recipients" | "smtp-complete" | "unknown" | "not-started";
   accepted: string[];
   rejected: string[];
   retry?: "transient";
@@ -330,6 +331,7 @@ function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
 export function createEmailer(options: {
   settings: () => { smtp: SMTPServer[]; rootUrl: string };
   clock: Clock;
+  limiter?: SendRateLimiter;
   select?: (count: number) => number;
   id?: () => string;
   /** Delivery policy for Cc/Bcc mailboxes, applied to message and server headers. */
@@ -421,6 +423,7 @@ export function createEmailer(options: {
     temporary = false,
     startedAt = options.clock.now().getTime(),
     copies = true,
+    priority: SendPriority = "outbox",
   ): Dispatch {
     const serverId = suppliedId(server, message);
     let domain = "localhost";
@@ -437,6 +440,13 @@ export function createEmailer(options: {
       accepted: [],
       rejected: [],
     });
+    const notStartedOutcome = (): Outcome => ({
+      messageId,
+      status: "proven-not-accepted",
+      stage: "not-started",
+      accepted: [],
+      rejected: [],
+    });
     const local = (): Dispatch => ({ messageId, result: Promise.resolve(localOutcome()) });
     if (closed || !server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId))
       return local();
@@ -446,162 +456,205 @@ export function createEmailer(options: {
     } catch {
       return local();
     }
-    const remaining = (temporary ? 10000 : 60000) - (options.clock.now().getTime() - startedAt);
-    if (remaining <= 0) return local();
-    let pool: Pool;
-    if (temporary) pool = createPool("", server, true);
-    else {
-      const key = JSON.stringify(server);
-      pool = pools.get(key) ?? createPool(key, server);
-      pools.set(key, pool);
-    }
-    if (temporary) {
-      pool.retired = true;
-      retired.add(pool);
-    }
-    const timer = new AbortController();
+    if (options.clock.now().getTime() - startedAt >= (temporary ? 10000 : 60000)) return local();
+
+    let timer: AbortController | undefined;
     let resolve!: (outcome: Outcome) => void;
     const result = new Promise<Outcome>((finish) => {
       resolve = finish;
     });
     let settled = false;
+    let pool: Pool | undefined;
+    let operation: Operation | undefined;
+
     const complete = (outcome: Outcome) => {
       if (settled) return;
       settled = true;
-      timer.abort();
-      pool.operations.delete(operation);
-      if (operation.started) pool.active--;
+      timer?.abort();
+      if (pool && operation) {
+        pool.operations.delete(operation);
+        if (operation.started) pool.active--;
+        finishPool(pool);
+        pump(pool);
+      }
       resolve(outcome);
-      finishPool(pool);
-      pump(pool);
     };
-    const operation: Operation = {
-      started: false,
-      cancel() {
-        complete(
-          operation.started
-            ? { messageId, status: "ambiguous", stage: "unknown", accepted: [], rejected: [] }
-            : localOutcome(),
-        );
-      },
-      start() {
-        operation.started = true;
-        pool.active++;
-        // The executor turns a synchronous throw from the transport into a rejection, so
-        // nothing after the hand-off to a pool can throw out of `push`.
-        void new Promise<{ accepted: unknown[]; rejected: unknown[] }>((resolve) =>
-          resolve(pool.transport.sendMail(data)),
-        )
-          .then((info) =>
-            complete({
-              messageId,
-              status: "accepted",
-              stage: "smtp-complete",
-              accepted: info.accepted.map(String),
-              rejected: info.rejected.map(String),
-            }),
+
+    (async () => {
+      if (options.limiter) {
+        try {
+          await options.limiter.acquire(priority);
+        } catch {
+          if (!settled) complete(notStartedOutcome());
+          return;
+        }
+      }
+      if (settled || closed) {
+        if (!settled) complete(notStartedOutcome());
+        return;
+      }
+      try {
+        options.refuse?.();
+      } catch {
+        if (!settled) complete(localOutcome());
+        return;
+      }
+
+      const remaining = temporary ? 10000 : 60000;
+      const timeout = new AbortController();
+      timer = timeout;
+      void new Promise<void>((resolve) =>
+        resolve(options.clock.sleep(remaining, timeout.signal)),
+      ).then(
+        () => {
+          if (settled) return;
+          if (operation?.started) {
+            if (pool) cancelPool(pool);
+          } else if (operation) {
+            operation.cancel();
+          } else {
+            complete(localOutcome());
+          }
+        },
+        () => {},
+      );
+
+      if (temporary) pool = createPool("", server, true);
+      else {
+        const key = JSON.stringify(server);
+        pool = pools.get(key) ?? createPool(key, server);
+        pools.set(key, pool);
+      }
+      if (temporary) {
+        pool.retired = true;
+        retired.add(pool);
+      }
+
+      operation = {
+        started: false,
+        cancel() {
+          complete(
+            operation!.started
+              ? { messageId, status: "ambiguous", stage: "unknown", accepted: [], rejected: [] }
+              : localOutcome(),
+          );
+        },
+        start() {
+          operation!.started = true;
+          pool!.active++;
+          // The executor turns a synchronous throw from the transport into a rejection, so
+          // nothing after the hand-off to a pool can throw out of `push`.
+          void new Promise<{ accepted: unknown[]; rejected: unknown[] }>((resolve) =>
+            resolve(pool!.transport.sendMail(data)),
           )
-          .catch((error: unknown) => {
-            const e = error as {
-              command?: string;
-              ownerConnectRefused?: boolean;
-              ownerAuthNotAccepted?: boolean;
-              response?: string;
-              responseCode?: number;
-              rejected?: unknown[];
-              rejectedErrors?: Array<{
-                recipient?: string;
-                responseCode?: number;
-                command?: string;
-                response?: string;
-              }>;
-            };
-            const rejected =
-              e.rejected?.map(String) ??
-              e.rejectedErrors?.flatMap((r) => (r.recipient ? [r.recipient] : [])) ??
-              [];
-            if (
-              e.ownerConnectRefused ||
-              e.ownerAuthNotAccepted ||
-              (e.command?.startsWith("AUTH ") &&
-                e.responseCode &&
-                e.responseCode >= 400 &&
-                e.responseCode < 600 &&
-                /^\d{3}[ -]/.test(e.response ?? ""))
-            ) {
+            .then((info) =>
               complete({
                 messageId,
-                status: "proven-not-accepted",
-                stage: "setup",
-                accepted: [],
-                rejected: [],
-                ...(e.ownerConnectRefused ||
+                status: "accepted",
+                stage: "smtp-complete",
+                accepted: info.accepted.map(String),
+                rejected: info.rejected.map(String),
+              }),
+            )
+            .catch((error: unknown) => {
+              const e = error as {
+                command?: string;
+                ownerConnectRefused?: boolean;
+                ownerAuthNotAccepted?: boolean;
+                response?: string;
+                responseCode?: number;
+                rejected?: unknown[];
+                rejectedErrors?: Array<{
+                  recipient?: string;
+                  responseCode?: number;
+                  command?: string;
+                  response?: string;
+                }>;
+              };
+              const rejected =
+                e.rejected?.map(String) ??
+                e.rejectedErrors?.flatMap((r) => (r.recipient ? [r.recipient] : [])) ??
+                [];
+              if (
+                e.ownerConnectRefused ||
+                e.ownerAuthNotAccepted ||
                 (e.command?.startsWith("AUTH ") &&
                   e.responseCode &&
                   e.responseCode >= 400 &&
-                  e.responseCode < 500 &&
-                  /^4\d{2}[ -]/.test(e.response ?? ""))
-                  ? { retry: "transient" as const }
-                  : {}),
-              });
-            } else if (
-              e.command === "RCPT TO" &&
-              Array.isArray(e.rejected) &&
-              e.rejected.length &&
-              e.rejectedErrors?.length === e.rejected.length &&
-              e.rejectedErrors.every(
-                (r) =>
-                  r.recipient &&
-                  r.command === "RCPT TO" &&
-                  r.responseCode &&
-                  r.responseCode >= 400 &&
-                  r.responseCode < 600 &&
-                  r.response?.startsWith(`${r.responseCode} `),
-              )
-            ) {
-              complete({
-                messageId,
-                status: "proven-not-accepted",
-                stage: "recipients",
-                accepted: [],
-                rejected,
-                ...(e.rejectedErrors.some((r) => r.responseCode! < 500)
-                  ? { retry: "transient" as const }
-                  : {}),
-              });
-            } else {
-              complete({
-                messageId,
-                status: "ambiguous",
-                stage: rejected.length ? "recipients" : "unknown",
-                accepted: [],
-                rejected,
-              });
-            }
-          });
-      },
-    };
-    pool.operations.add(operation);
-    void new Promise<void>((resolve) => resolve(options.clock.sleep(remaining, timer.signal))).then(
-      () => {
-        if (settled) return;
-        if (operation.started) cancelPool(pool);
-        else operation.cancel();
-      },
-      () => {},
-    );
-    pump(pool);
+                  e.responseCode < 600 &&
+                  /^\d{3}[ -]/.test(e.response ?? ""))
+              ) {
+                complete({
+                  messageId,
+                  status: "proven-not-accepted",
+                  stage: "setup",
+                  accepted: [],
+                  rejected: [],
+                  ...(e.ownerConnectRefused ||
+                  (e.command?.startsWith("AUTH ") &&
+                    e.responseCode &&
+                    e.responseCode >= 400 &&
+                    e.responseCode < 500 &&
+                    /^4\d{2}[ -]/.test(e.response ?? ""))
+                    ? { retry: "transient" as const }
+                    : {}),
+                });
+              } else if (
+                e.command === "RCPT TO" &&
+                Array.isArray(e.rejected) &&
+                e.rejected.length &&
+                e.rejectedErrors?.length === e.rejected.length &&
+                e.rejectedErrors.every(
+                  (r) =>
+                    r.recipient &&
+                    r.command === "RCPT TO" &&
+                    r.responseCode &&
+                    r.responseCode >= 400 &&
+                    r.responseCode < 600 &&
+                    r.response?.startsWith(`${r.responseCode} `),
+                )
+              ) {
+                complete({
+                  messageId,
+                  status: "proven-not-accepted",
+                  stage: "recipients",
+                  accepted: [],
+                  rejected,
+                  ...(e.rejectedErrors.some((r) => r.responseCode! < 500)
+                    ? { retry: "transient" as const }
+                    : {}),
+                });
+              } else {
+                complete({
+                  messageId,
+                  status: "ambiguous",
+                  stage: rejected.length ? "recipients" : "unknown",
+                  accepted: [],
+                  rejected,
+                });
+              }
+            });
+        },
+      };
+      pool.operations.add(operation);
+      pump(pool);
+    })();
+
     return { messageId, result };
   }
   /**
    * `copies: false` sends to `message.to` only: Cc/Bcc from the message and from the
    * server's `email_headers` are dropped. Marketing sends use it (one admitted recipient).
    */
-  function push(message: Message, delivery: { copies?: boolean } = {}): Dispatch {
+  function push(
+    message: Message,
+    delivery: { copies?: boolean; priority?: SendPriority } = {},
+  ): Dispatch {
     options.refuse?.();
     const startedAt = options.clock.now().getTime();
     const copies = delivery.copies ?? true;
-    if (closed) return dispatch(undefined, message, "", false, startedAt, copies);
+    const priority = delivery.priority ?? "outbox";
+    if (closed) return dispatch(undefined, message, "", false, startedAt, copies, priority);
     const current = options.settings();
     const servers = structuredClone(current.smtp).filter((s) => s.enabled);
     reconcile(servers);
@@ -623,18 +676,19 @@ export function createEmailer(options: {
       bucket = exact.length ? exact : domains.length ? domains : bucket;
     }
     const index = bucket.length ? selection(bucket.length) : -1;
-    return dispatch(bucket[index], message, current.rootUrl, false, startedAt, copies);
+    return dispatch(bucket[index], message, current.rootUrl, false, startedAt, copies, priority);
   }
   return {
     push,
     test: (server: SMTPServer, message: Message, rootUrl: string) => {
       options.refuse?.();
       const startedAt = options.clock.now().getTime();
-      return dispatch(structuredClone(server), message, rootUrl, true, startedAt);
+      return dispatch(structuredClone(server), message, rootUrl, true, startedAt, true, "outbox");
     },
     close() {
       if (closing) return closing;
       closed = true;
+      options.limiter?.stop();
       for (const pool of pools.values()) retire(pool);
       pools.clear();
       const draining = [...retired];

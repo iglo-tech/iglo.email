@@ -195,6 +195,7 @@ const settings = (smtp: string, mailbox: string): Schema =>
       "privacy.domain_allowlist": array(string),
       "privacy.record_optin_ip": boolean,
       "marketing.min_interval": string,
+      "messaging.max_send_rate": integer,
       "webhooks.block_private_addresses": boolean,
       "security.captcha": object({
         altcha: object({ enabled: boolean, complexity: integer }),

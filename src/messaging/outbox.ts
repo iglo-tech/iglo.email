@@ -102,7 +102,12 @@ export function startOutbox(options: {
       // The emailer owns the message from here; the batch must not keep it alive (B28).
       claimed.message = null;
       try {
-        return [{ row, result: options.emailer.push(message, copies(row)).result }];
+        return [
+          {
+            row,
+            result: options.emailer.push(message, { ...copies(row), priority: "outbox" }).result,
+          },
+        ];
       } catch (error) {
         // Thrown before a pool saw the message (the restore hold refuses here): never sent.
         return [{ row, refused: error }];
@@ -126,6 +131,9 @@ export function startOutbox(options: {
           return { row: p.row, unsent: held ? "held" : "failed" } as const;
         }
         if (s.status === "rejected") failure ??= { reason: s.reason };
+        if (s.status === "fulfilled" && s.value?.stage === "not-started") {
+          return { row: p.row, unsent: "held" } as const;
+        }
         return {
           row: p.row,
           outcome: s.status === "fulfilled" ? s.value! : uncertain(p.row),

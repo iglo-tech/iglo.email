@@ -289,6 +289,7 @@ account's bounce and complaint rates stay low. Amazon SES is the only sending an
    credentials.
    To assign an SES configuration set to outgoing messages, add `X-SES-CONFIGURATION-SET: <name>`
    to the SMTP server's custom headers in Settings > SMTP (or via the API as `[{"X-SES-CONFIGURATION-SET": "<name>"}]` under `smtp[].email_headers`).
+   **Send rate limit.** SES enforces an account-wide maximum send rate (messages per second across all connections). Set `messaging.max_send_rate` in Settings > Performance (or `PUT /api/settings/messaging.max_send_rate`) to match your SES quota (default `14` messages/s for SES production; set to `1` in the SES sandbox, or `0` to disable the cap). Every email (campaign, transactional, and sequence) waits on this shared token bucket, with outbox sends (transactional and sequence) prioritized over background campaign broadcasts.
 2. **An SNS topic.** In SNS, create a Standard topic in the same region, for example
    `ses-bounces`, and note its ARN.
 3. **Send feedback to it.** In SES > Verified identities > your domain > Notifications, set the

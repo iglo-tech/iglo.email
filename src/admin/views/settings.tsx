@@ -265,6 +265,15 @@ function Performance({ t }: { t: Translation }) {
           max="100000"
           placeholder="1999"
         />
+        <NumberField
+          model="form['messaging.max_send_rate']"
+          name="messaging.max_send_rate"
+          label={t.T("settings.performance.maxSendRate")}
+          hint={t.T("settings.performance.maxSendRateHelp")}
+          min="0"
+          max="10000"
+          placeholder="14"
+        />
       </fieldset>
       <fieldset
         class="card"

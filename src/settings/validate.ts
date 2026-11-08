@@ -342,6 +342,14 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   next["marketing.min_interval"] = trimSpace(next["marketing.min_interval"] ?? "");
   if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined)
     return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
+  const sendRate = next["messaging.max_send_rate"];
+  if (
+    typeof sendRate !== "number" ||
+    !Number.isInteger(sendRate) ||
+    sendRate < 0 ||
+    sendRate > 10000
+  )
+    return fail("Invalid messaging.max_send_rate: use an integer between 0 and 10000.");
   for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"])
     next[key] = next[key].map((d: string) => simpleLower(trimSpace(d ?? ""))).filter(Boolean);
   next["upload.extensions"] = next["upload.extensions"].map((v: string) =>
