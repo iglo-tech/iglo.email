@@ -12,7 +12,13 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B41** Deliverability docs ([brief](briefs/B41.md)): SES Easy DKIM as the one way to sign, with in-app `smtp[].dkim` as API-only compatibility, plus SPF via a custom MAIL FROM domain and DMARC alignment and policy; fix the sentence cut at the end of "SMTP and DKIM"; mark the configuration set as already documented (module `docs/operations.md`; size S)
+1. **B42** Flaky runner test ([brief](briefs/B42.md)): find and fix the root cause of `runner.test.ts:573` timing out (5 s serial, 30 s parallel); no timeout bumps (modules `test/campaigns/runner`, the runner only if the test exposes a real defect; size S)
+2. **B43** Sending polish from #89/#90 review backlog: runner `return` on not-started, rate-lowering applies at once, duplicate not-started guard, `settings.onUpdate` single-slot, SMTP test send bounded wait, perf doc wording; notification re-read regression test, bad-CSV entry in `differences.ts`, invalid `from_email` fallback logged, unused `siteName`/`runner_generation`/`logoUrl`, tests wait on sink/outbox not `Bun.sleep` (size M)
+3. **B44** MCP polish from #86/#91 backlog: read-merge for a role with manage but not get (clear error or skip read), `update_campaign` can clear `send_at`, no-op `update_sequence_step` refused, tests for foreign-origin cookie, deleted list, step edit with a live enrollment (size S)
+4. **B45** Backup polish from #85: no empty folders left on refusal, clear messages for broken-symlink/file parents, docs on repeated `docker cp` (size S)
+5. **B46** Bounces test polish from #87: one settings source in the tx fixture, compiled-build upgrade test, compiled contract for SNS replay after restart/provider switches/Message-ID rows, SES failure test checks its receiver, `differences.ts` formatting (size M)
+6. **B47** Sequence step body on a campaign layout (design gap from #91, `05-sequences.md:87`): decide in a D-record whether a typical lifecycle project needs it under D89; implement or log the drop (size M)
+7. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
 
 ## Owner decisions
 
@@ -42,6 +48,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B41 | [#93](https://github.com/iglo-tech/iglo.email/pull/93) | 4b5411c | Deliverability docs: one SES path (Easy DKIM, MAIL FROM/SPF, DMARC, send rate, sandbox) |
 | B40 | [#92](https://github.com/iglo-tech/iglo.email/pull/92) | 0707e37 | Inert settings controls removed (S3, Messengers, update check, SMTP retries, language); values still round-trip |
 | B39 | [#91](https://github.com/iglo-tech/iglo.email/pull/91) | c850cc6 | MCP completeness: 20 tools (create_campaign, lists, media, sequences, update_sequence_step); first Haiku worker (D93) |
 | B38 | [#90](https://github.com/iglo-tech/iglo.email/pull/90) | 0803f41 | Admin notification mails (campaign finished/cancelled/auto-paused, import finished/failed) |
