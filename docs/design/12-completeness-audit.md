@@ -107,7 +107,7 @@ Every "present" claim is verified against code and public endpoints with file:li
 | Signed webhooks out | Present | `src/webhooks/delivery.ts:1-250`, HMAC SHA-256 signatures with retry backoff | Keep |
 | Settings UI | Present | `src/admin/views/settings.tsx:1-1161`, mounted at `/admin/settings` | Keep |
 | Docker image | Present | `Dockerfile:1-55`, official multi-arch Docker image (amd64, arm64) built in `.github/workflows/release.yml` wrapping compiled binary (D89) | Keep |
-| MCP endpoint | Present (Partial) / Gap | `POST /api/mcp`, 14 tools (`src/mcp/routes.ts:1`, `src/mcp/tools.ts:1-656`, D91). Missing `create_campaign` (POST `/api/campaigns`), `list_lists` (GET `/api/lists`), `list_media` (GET `/api/media`), and read-only `list_sequences`/`get_sequence` | Task (add missing MCP tools for D89 completeness, update D91 and tests, task B39) |
+| MCP endpoint | Present (B39 #91 closed the gap: 20 tools) | `POST /api/mcp`, 14 tools at audit time (`src/mcp/routes.ts:1`, `src/mcp/tools.ts:1-656`, D91). Missing `create_campaign` (POST `/api/campaigns`), `list_lists` (GET `/api/lists`), `list_media` (GET `/api/media`), and read-only `list_sequences`/`get_sequence` | Task (add missing MCP tools for D89 completeness, update D91 and tests, task B39) |
 
 ---
 
