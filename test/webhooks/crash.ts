@@ -4,22 +4,18 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 
 const admin = { user: "crash-admin", password: "crash-admin-password" };
 const executable = resolve(import.meta.dir, "../../dist/iglo.email");
 const directory = mkdtempSync(join(tmpdir(), "iglo-webhook-crash-"));
-const port = await new Promise<number>((done) => {
-  const probe = createServer().listen(0, "127.0.0.1", () => {
-    const { port } = probe.address() as { port: number };
-    probe.close(() => done(port));
-  });
-});
-const origin = `http://127.0.0.1:${port}`;
+// Set by the first start, which takes a port that startOnFreePort finds free; restarts reuse it.
+let port = 0;
+let origin = "";
 let child: ChildProcess | undefined;
 let errors = "";
 
@@ -42,8 +38,13 @@ async function start() {
   });
   const deadline = Date.now() + 10_000;
   for (;;) {
+    // An exit here is a failed start (the port in use, for one); /health alone could be another server's.
+    if (child.exitCode !== null) {
+      await stderrDrained(child!);
+      throw new Error(`not ready: ${errors}`);
+    }
     const response = await fetch(`${origin}/health`).catch(() => null);
-    if (response?.status === 200) return;
+    if (response?.status === 200 && child.pid !== undefined && listensOn(child.pid, port)) return;
     assert(Date.now() < deadline, `not ready: ${errors}`);
     await Bun.sleep(20);
   }
@@ -61,7 +62,11 @@ const receiver = startReceiver(async () => {
   return new Response("too late");
 });
 try {
-  await start();
+  await startOnFreePort(async (free) => {
+    port = free;
+    origin = `http://127.0.0.1:${port}`;
+    await start();
+  });
   const { user, token } = await provisionApiUser(origin, admin);
   const authorization = `Basic ${btoa(`${user}:${token}`)}`;
   const api = async (path: string, method = "GET", body?: unknown) => {

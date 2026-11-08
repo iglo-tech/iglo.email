@@ -5,6 +5,7 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { listensOn, startOnFreePort } from "@/test/serve-port";
 
 const repository = resolve(import.meta.dir, "../..");
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
@@ -18,9 +19,9 @@ function temporary() {
   return directory;
 }
 async function serve(dataDir: string) {
-  const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const { port } = probe;
-  probe.stop(true);
+  return startOnFreePort((port) => launch(dataDir, port));
+}
+async function launch(dataDir: string, port: number) {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -41,16 +42,18 @@ async function serve(dataDir: string) {
         IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
       },
       stdout: "ignore",
-      stderr: "ignore",
+      stderr: "pipe",
     },
   );
   children.push(child);
   const origin = `http://127.0.0.1:${port}`;
   for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(25)) {
+    // A start that failed (the port in use, for one) reports why on stderr, and is retried.
+    if (child.exitCode !== null) throw new Error(await new Response(child.stderr).text());
     const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
       () => null,
     );
-    if (up?.ok) return { child, origin };
+    if (up?.ok && listensOn(child.pid, port)) return { child, origin };
   }
   throw new Error("Server did not start");
 }

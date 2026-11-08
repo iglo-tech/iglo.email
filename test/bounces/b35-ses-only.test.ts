@@ -2,7 +2,6 @@
 // Public boundary tests for Mailgun removal, migration, existing history, and UI.
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openDatabase } from "@/db/connection";
@@ -12,6 +11,7 @@ import { settingsView } from "@/admin/views/settings";
 import { render } from "@/jsx/render";
 import { buildDocument } from "@/openapi/document";
 import { ensureProductionBuild } from "@/test/production-build";
+import { listensOn, startOnFreePort } from "@/test/serve-port";
 import { TestClock } from "@/test/server/fixture";
 import { txFixture } from "@/test/tx/fixture";
 
@@ -34,21 +34,6 @@ test("1. POST /webhooks/bounce/mailgun answers the same as an unknown route (404
   expect(mailgun.status).toBe(unknown.status);
   expect(mailgun.status).toBe(404);
 });
-
-/** A loopback port that nothing holds: bound, read and released before the child takes it. */
-async function availablePort() {
-  const socket = createServer();
-  await new Promise<void>((resolveListen, reject) => {
-    socket.once("error", reject);
-    socket.listen(0, "127.0.0.1", resolveListen);
-  });
-  const address = socket.address();
-  if (!address || typeof address === "string") throw new Error("No test port was assigned");
-  await new Promise<void>((resolveClose, reject) =>
-    socket.close((error) => (error ? reject(error) : resolveClose())),
-  );
-  return address.port;
-}
 
 async function stop(child: Bun.Subprocess) {
   if (child.exitCode === null) child.kill("SIGTERM");
@@ -106,31 +91,47 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
   const executable = join(directory, "iglo.email");
   copyFileSync(join(repository, "dist", "iglo.email"), executable);
   chmodSync(executable, 0o755);
-  const port = await availablePort();
-  const origin = `http://127.0.0.1:${port}`;
-  const child = Bun.spawn(
-    [executable, "serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
-    {
-      cwd: directory,
-      env: {
-        PATH: "",
-        IGLO_EMAIL_ADMIN_USER: admin.user,
-        IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
+  // Ready when this child answers /health and listens on the port: another server can hold it.
+  const { child, port } = await startOnFreePort(async (listenPort) => {
+    const started = Bun.spawn(
+      [
+        executable,
+        "serve",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(listenPort),
+        "--data-dir",
+        dataDir,
+      ],
+      {
+        cwd: directory,
+        env: {
+          PATH: "",
+          IGLO_EMAIL_ADMIN_USER: admin.user,
+          IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
+        },
+        stdout: "ignore",
+        stderr: "pipe",
       },
-      stdout: "ignore",
-      stderr: "pipe",
-    },
-  );
-  cleanups.push(() => stop(child));
-  let ready = false;
-  for (const deadline = Date.now() + 10_000; !ready && Date.now() < deadline; await Bun.sleep(25)) {
-    if (child.exitCode !== null) break;
-    ready = await fetch(`${origin}/health`).then(
-      (r) => r.ok,
-      () => false,
     );
-  }
-  expect(ready).toBe(true);
+    cleanups.push(() => stop(started));
+    let ready = false;
+    for (
+      const deadline = Date.now() + 10_000;
+      !ready && Date.now() < deadline;
+      await Bun.sleep(25)
+    ) {
+      if (started.exitCode !== null) throw new Error(await new Response(started.stderr).text());
+      ready = await fetch(`http://127.0.0.1:${listenPort}/health`).then(
+        (r) => r.ok && listensOn(started.pid, listenPort),
+        () => false,
+      );
+    }
+    expect(ready).toBe(true);
+    return { child: started, port: listenPort };
+  });
+  const origin = `http://127.0.0.1:${port}`;
 
   const session = await login(origin);
   const api = (path: string, method = "GET", body?: unknown) =>

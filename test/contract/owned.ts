@@ -1,50 +1,8 @@
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
-import { readFileSync, readdirSync, readlinkSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
-
-async function availablePort(): Promise<number> {
-  const socket = createServer();
-  await new Promise<void>((resolve, reject) => {
-    socket.once("error", reject);
-    socket.listen(0, "127.0.0.1", resolve);
-  });
-  const address = socket.address();
-  if (!address || typeof address === "string") throw new Error("Unable to reserve a loopback port");
-  await new Promise<void>((resolve, reject) =>
-    socket.close((error) => (error ? reject(error) : resolve())),
-  );
-  return address.port;
-}
-
-// Whether `pid` itself listens on loopback `port`: a /health answer alone could come from another
-// server that took the reserved port while the child died at bind. Linux only, like the MVP.
-function listensOn(pid: number, port: number): boolean {
-  try {
-    const hex = port.toString(16).toUpperCase().padStart(4, "0");
-    const inodes = new Set<string>();
-    for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
-      let text = "";
-      try {
-        text = readFileSync(table, "utf8");
-      } catch {}
-      for (const line of text.split("\n").slice(1)) {
-        const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
-        if (state === "0A" && local?.endsWith(`:${hex}`) && inode) inodes.add(inode);
-      }
-    }
-    if (inodes.size === 0) return false;
-    for (const fd of readdirSync(`/proc/${pid}/fd`)) {
-      try {
-        const match = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/${fd}`));
-        if (match && inodes.has(match[1]!)) return true;
-      } catch {}
-    }
-  } catch {}
-  return false;
-}
+import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
   if (child.exitCode === null && child.signalCode === null) stopGroup(child);
@@ -79,10 +37,10 @@ export async function withProduction<T>(
   try {
     const copy = join(directory, "iglo.email");
     await copyFile(executable, copy);
-    // A reserved port can be taken between release and bind, so the first start retries on a new
-    // port when the process dies at bind. A restart reuses the port its predecessor just freed.
-    let port = await availablePort();
-    let origin = `http://127.0.0.1:${port}`;
+    // The first start takes a port from startOnFreePort, which retries on a new port when the
+    // process reports its port in use. A restart reuses the port its predecessor just freed.
+    let port = 0;
+    let origin = "";
     const start = async () => {
       lifetime.throwIfAborted();
       child = spawnGroup(
@@ -122,8 +80,10 @@ export async function withProduction<T>(
       let ready = false;
       while (Date.now() < deadline) {
         lifetime.throwIfAborted();
-        if (child.exitCode !== null || child.signalCode !== null)
+        if (child.exitCode !== null || child.signalCode !== null) {
+          await stderrDrained(child);
           throw new Error(`Compiled production process exited before readiness: ${errors}`);
+        }
         try {
           const response = await fetch(`${origin}/health`, {
             headers: { Connection: "close" },
@@ -150,18 +110,16 @@ export async function withProduction<T>(
         throw new Error("Compiled production restart shutdown failed");
       await start();
     };
-    for (let attempt = 1; ; attempt++) {
+    await startOnFreePort(async (free) => {
+      port = free;
+      origin = `http://127.0.0.1:${port}`;
       try {
         await start();
-        break;
       } catch (error) {
-        const bind = /in use|EADDRINUSE|bind/i.test(String(error));
-        if (!bind || attempt >= 5) throw error;
         if (child && closed) await stop(child, closed).catch(() => 0);
-        port = await availablePort();
-        origin = `http://127.0.0.1:${port}`;
+        throw error;
       }
-    }
+    });
     let abort!: () => void;
     const cancelled = new Promise<never>((_, reject) => {
       abort = () => reject(lifetime.reason);

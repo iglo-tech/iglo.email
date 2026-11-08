@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { ensureProductionBuild } from "@/test/production-build";
+import { listensOn, startOnFreePort } from "@/test/serve-port";
 
 const repository = resolve(import.meta.dir, "../..");
 // Generated for these tests; see test/backup/fixtures.md.
@@ -54,10 +55,11 @@ export async function runBackup(executable: string, args: string[]) {
 export type Server = Awaited<ReturnType<typeof startServer>>;
 
 /** The server on a data directory, answering /health, or an error with its stderr. */
-export async function startServer(executable: string, dataDir: string) {
-  const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const { port } = probe;
-  probe.stop(true);
+export function startServer(executable: string, dataDir: string) {
+  return startOnFreePort((port) => launchServer(executable, dataDir, port));
+}
+
+async function launchServer(executable: string, dataDir: string, port: number) {
   const child = Bun.spawn(
     [executable, "serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
     {
@@ -76,7 +78,7 @@ export async function startServer(executable: string, dataDir: string) {
     const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1_000) }).catch(
       () => null,
     );
-    if (up?.ok) break;
+    if (up?.ok && listensOn(child.pid, port)) break;
     if (Date.now() > deadline) {
       child.kill("SIGKILL");
       throw new Error("The server did not start");

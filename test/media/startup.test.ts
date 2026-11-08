@@ -3,6 +3,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { listensOn, startOnFreePort } from "@/test/serve-port";
 
 const repository = resolve(import.meta.dir, "../..");
 const directories: string[] = [];
@@ -15,10 +16,7 @@ function temporary() {
   directories.push(directory);
   return directory;
 }
-function serve(dataDir: string) {
-  const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const { port } = probe;
-  probe.stop(true);
+function serve(dataDir: string, port: number) {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -46,7 +44,11 @@ function serve(dataDir: string) {
 }
 /** Started and stopped: the startup work is done by the first healthy answer. */
 async function bootOnce(dataDir: string) {
-  const { child, origin } = serve(dataDir);
+  return startOnFreePort((port) => bootAt(dataDir, port));
+}
+
+async function bootAt(dataDir: string, port: number) {
+  const { child, origin } = serve(dataDir, port);
   try {
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
@@ -54,7 +56,7 @@ async function bootOnce(dataDir: string) {
       const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
         () => null,
       );
-      if (up?.ok) break;
+      if (up?.ok && listensOn(child.pid, port)) break;
       await Bun.sleep(25);
     }
     if (child.exitCode !== null) throw new Error(await new Response(child.stderr).text());
