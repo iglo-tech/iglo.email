@@ -55,7 +55,11 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const)
     let partial: string | undefined;
     for (const deadline = Date.now() + 20_000; !partial && Date.now() < deadline;) {
       partial = names(destination).find((name) => name.startsWith(PARTIAL));
-      if (!partial || statSync(join(destination, partial, "iglo-email.db")).size === 0) {
+      // The folder exists before its database file does: a missing or empty file is not ready yet.
+      const size =
+        partial &&
+        statSync(join(destination, partial, "iglo-email.db"), { throwIfNoEntry: false })?.size;
+      if (!size) {
         partial = undefined;
         await Bun.sleep(1);
       }

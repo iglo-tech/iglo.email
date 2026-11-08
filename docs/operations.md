@@ -491,8 +491,13 @@ and refuses if there is too little.
 
 **Failure.** The backup is built in `.iglo-email-backup-partial-<random>` beside its destination,
 synced, checked with `PRAGMA integrity_check` and renamed. A failed backup exits nonzero and removes
-that directory, and any parent folder it created for it. A killed one leaves it, and nothing at the
-final name, so a retry of the same `--output` works. `--verify` refuses it, and it can never be
+that directory, and any parent folder it created for it. A folder is removed only if it is still the
+one the backup made and is empty: a folder another process has started using is kept without a
+warning. If a folder on the output's path is renamed or replaced while the backup runs, the backup
+is refused as changed meanwhile and does not search for its partial directory: the warning gives
+the path the partial was last made at, and it is left for you to remove. A step after the final
+rename that fails, such as a sync, is a warning, since the backup is in place. A killed backup
+leaves its partial directory, and nothing at the final name, so a retry of the same `--output` works. `--verify` refuses it, and it can never be
 mistaken for a backup. A kill after the final rename, before the command reports success, leaves a
 complete backup at that name: check it with `--verify` before you retry, since a retry refuses the
 existing destination. The next `backup` in that place warns about it and does not delete it, as it

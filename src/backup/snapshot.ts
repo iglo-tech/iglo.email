@@ -274,16 +274,41 @@ function followed(path: string): Stats | undefined {
 }
 
 /**
+ * A folder this call made, with the identity it had then. A path alone cannot show that it is still
+ * that folder once a parent has been renamed or replaced, so cleanup compares identities first.
+ */
+interface MadeFolder {
+  path: string;
+  dev: number;
+  ino: number;
+}
+
+/** What `path` names: nothing if nothing is there, or if the path runs through a file or a loop. */
+function currentAt(path: string): Stats | undefined {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false });
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOTDIR" || code === "ELOOP") return undefined;
+    throw error;
+  }
+}
+
+function madeAt(path: string): MadeFolder {
+  const { dev, ino } = lstatSync(path);
+  return { path, dev, ino };
+}
+
+/** Whether the path still names the folder this call made: a real folder with the same identity. */
+function isMade(made: MadeFolder, current: Stats | undefined = currentAt(made.path)): boolean {
+  return !!current?.isDirectory() && current.dev === made.dev && current.ino === made.ino;
+}
+
+/**
  * Whether `path` is a folder itself. A symlink to one is not: the folders made here must be real.
  */
 function realFolder(path: string): boolean {
-  try {
-    return !!lstatSync(path, { throwIfNoEntry: false })?.isDirectory();
-  } catch (error) {
-    const { code } = error as NodeJS.ErrnoException;
-    if (code === "ENOTDIR" || code === "ELOOP") return false;
-    throw error;
-  }
+  return !!currentAt(path)?.isDirectory();
 }
 
 /**
@@ -316,17 +341,18 @@ function missingFolders(directory: string): { existing: string; missing: string[
  * Makes the folders shallowest first, recording each one this call makes in `made`. A folder that
  * appears in the meantime is accepted only if it is a folder itself: a symlink, even to a folder,
  * is refused, since mkdir would follow it to wherever it points. A path that changed since the
- * check is named, rather than reported as a raw ENOENT, ENOTDIR, ELOOP or EEXIST; other errors pass.
+ * check is named, rather than reported as a raw ENOTDIR, ELOOP or EEXIST. A missing folder above
+ * one that was made is left as ENOENT: openPartial makes the chain again, and names it if that fails.
  */
-function createFolders(folders: string[], made: string[]): void {
+function createFolders(folders: string[], made: MadeFolder[]): void {
   for (const folder of folders) {
     try {
       mkdirSync(folder, { mode: 0o700 });
-      made.push(folder);
+      made.push(madeAt(folder));
     } catch (error) {
       const { code } = error as NodeJS.ErrnoException;
-      if (code !== "EEXIST" && code !== "ENOENT" && code !== "ENOTDIR" && code !== "ELOOP")
-        throw error;
+      if (code === "ENOENT") throw error;
+      if (code !== "EEXIST" && code !== "ENOTDIR" && code !== "ELOOP") throw error;
       if (realFolder(folder)) continue;
       throw new Error(`${folder} changed meanwhile: it is not a folder`);
     }
@@ -345,22 +371,66 @@ function checkBoundaries(output: string, data: string, uploads: string): void {
 }
 
 /**
- * Removes the folders a failed or refused backup made, deepest first. Only an empty folder goes:
- * one that is not empty is kept and reported, and a folder that was already gone is nothing.
+ * Removes the folders a failed or refused backup made, deepest first. Only the folder this call made
+ * goes, and only if it is empty. A folder that another process has started using is left without a
+ * word, since it is not this backup's to remove. A different folder at a made folder's path is left
+ * alone and named. rmdir never follows a symlink, so a link at the path is refused too.
  */
-function removeCreated(made: string[], warn: (message: string) => void): void {
+function removeCreated(made: MadeFolder[], warn: (message: string) => void): void {
   for (const folder of [...made].reverse()) {
+    const current = currentAt(folder.path);
+    if (!current) continue;
+    if (!isMade(folder, current)) {
+      warn(
+        `${folder.path} was made by this backup, but another folder is at its place; it is left alone`,
+      );
+      continue;
+    }
     try {
-      rmdirSync(folder);
+      rmdirSync(folder.path);
     } catch (error) {
       const { code } = error as NodeJS.ErrnoException;
-      if (code === "ENOENT") continue;
-      warn(
-        code === "ENOTEMPTY"
-          ? `${folder} was made by this backup and is kept: it is not empty`
-          : `${folder} was made by this backup and could not be removed: ${code}`,
-      );
+      if (code === "ENOENT" || code === "ENOTEMPTY" || code === "EEXIST") continue;
+      warn(`${folder.path} was made by this backup and could not be removed: ${code}`);
     }
+  }
+}
+
+/**
+ * Removes the partial backup where this call made it, or names it. A path that no longer holds that
+ * folder is not searched: the warning gives the path it was last known at, for the operator to remove.
+ */
+function removePartial(partial: MadeFolder, warn: (message: string) => void): void {
+  if (!isMade(partial)) {
+    warn(
+      `${partial.path} is an interrupted backup and was not removed: its path no longer holds the folder this backup made; remove it by hand`,
+    );
+    return;
+  }
+  try {
+    rmSync(partial.path, { recursive: true, force: true });
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    warn(`${partial.path} is an interrupted backup and could not be removed: ${code}`);
+  }
+}
+
+function changedMeanwhile(path: string): Error {
+  return new Error(
+    `${path} changed meanwhile: the backup in progress is no longer where it was made`,
+  );
+}
+
+/**
+ * Runs a step that writes into the partial backup. When the step fails and the partial is no longer
+ * the folder this call made, the failure is that change, whatever its code, and is named as one.
+ */
+function whileMade<T>(made: MadeFolder, step: () => T): T {
+  try {
+    return step();
+  } catch (error) {
+    if (isMade(made)) throw error;
+    throw changedMeanwhile(made.path);
   }
 }
 
@@ -415,20 +485,72 @@ function stepAside(output: string, live: Stats): string | undefined {
  * One rename is the whole publication, and its result is the answer. It refuses a directory that
  * holds anything and a file, atomically, so nothing is moved or deleted, and there is no earlier
  * step for a kill to leave behind. It does replace an empty directory, which loses nothing.
+ * Returns the old backup it moved aside, which the caller removes once the new one has its name.
  */
-function publish(partial: string, output: string, force: boolean, live: Stats): void {
+function publish(
+  partial: MadeFolder,
+  output: string,
+  force: boolean,
+  live: Stats,
+): string | undefined {
+  if (!isMade(partial)) throw changedMeanwhile(partial.path);
   const aside = force ? stepAside(output, live) : undefined;
   try {
-    renameSync(partial, output);
+    renameSync(partial.path, output);
   } catch (error) {
     if (aside) putBack(aside, output);
     const { code } = error as NodeJS.ErrnoException;
     if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR")
       throw new Error(`${output} already exists; pass --force to replace it`);
+    if (code === "ENOENT") throw changedMeanwhile(partial.path);
     throw error;
   }
-  sync(dirname(output));
-  if (aside) rmSync(aside, { recursive: true, force: true });
+  return aside;
+}
+
+/** The output's parent as the kernel resolves it: the realpath of the existing part, then the rest. */
+function resolvedParent(wanted: string, folders: { existing: string }): string {
+  return join(realpathSync(folders.existing), relative(folders.existing, dirname(wanted)));
+}
+
+/**
+ * Makes the folders the output needs, then the partial folder in its parent. The folders were checked
+ * when they were missing, but another backup can make one, use it and remove it again before this one
+ * writes into it. So the chain is checked and made again once. The parent must still resolve where it
+ * did, and the partial's folder must still be the one made: a symlink that took a folder's place since
+ * the check would move the backup, so it is refused before anything is written.
+ */
+function openPartial(
+  wanted: string,
+  parent: string,
+  missing: string[],
+  created: MadeFolder[],
+): MadeFolder {
+  let folders = missing;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      if (attempt > 1) {
+        const again = missingFolders(dirname(wanted));
+        if (resolvedParent(wanted, again) !== parent)
+          throw new Error(
+            `${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`,
+          );
+        folders = again.missing;
+      }
+      createFolders(folders, created);
+      if (realpathSync(dirname(wanted)) !== parent)
+        throw new Error(`${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`);
+      // The directory is 0700 from mkdtemp: see the database file in createBackup.
+      return madeAt(mkdtempSync(join(parent, PARTIAL)));
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      if (attempt > 1)
+        throw new Error(
+          `${dirname(wanted)} changed meanwhile: a folder in it was removed or replaced`,
+        );
+    }
+  }
 }
 
 /** The snapshot's one write: see the header. It leaves no journal or WAL beside the file. */
@@ -460,13 +582,13 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
   const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));
   // Folders are created only after every check that can refuse; see missingFolders.
   const folders = missingFolders(dirname(wanted));
-  const parent = join(realpathSync(folders.existing), relative(folders.existing, dirname(wanted)));
+  const parent = resolvedParent(wanted, folders);
   const output = join(parent, basename(wanted));
   checkDestination(output, data, options.force ?? false);
 
   const db = new Database(databasePath, { readonly: true, strict: true, safeIntegers: true });
-  let created: string[] = [];
-  let partial: string | undefined;
+  let created: MadeFolder[] = [];
+  let partial: MadeFolder | undefined;
   let flusher: Bun.Subprocess | undefined;
   try {
     db.run("PRAGMA busy_timeout = 5000");
@@ -488,64 +610,86 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       else if (entry.startsWith(REPLACED))
         warn(`${join(parent, entry)} is a backup that a forced backup did not finish replacing`);
 
-    createFolders(folders.missing, created);
-    // The checks above were of the path as it stood before the folders existed. Now that they do,
-    // the output must still be where they were made: a symlink that took a folder's place since
-    // the check would move the backup, so it is refused before anything is written.
-    // Once this holds, output is parent joined with the basename, which is the real path of the
-    // output. The boundaries were checked on that path above, so they are not checked again.
-    if (realpathSync(dirname(wanted)) !== parent)
-      throw new Error(`${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`);
+    // Once openPartial has checked the path, output is parent joined with the basename, which is the
+    // real path of the output. The boundaries were checked on that path above, so they are not
+    // checked again.
+    const made = openPartial(wanted, parent, folders.missing, created);
+    partial = made;
+    const snapshot = join(made.path, DATABASE);
     // The directory is 0700 from mkdtemp and the database 0600 from its first byte: SQLite writes
     // into an empty file it finds and keeps its mode.
-    partial = mkdtempSync(join(parent, PARTIAL));
-    const snapshot = join(partial, DATABASE);
-    closeSync(openSync(snapshot, "wx", 0o600));
-    flusher = Bun.spawn([process.execPath, flushChildArgument, snapshot], {
-      stdin: "pipe",
-      stdout: "ignore",
-      stderr: "ignore",
+    const source = whileMade(made, () => {
+      closeSync(openSync(snapshot, "wx", 0o600));
+      flusher = Bun.spawn([process.execPath, flushChildArgument, snapshot], {
+        stdin: "pipe",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      const since = clock.now().toISOString();
+      db.run("VACUUM INTO ?", [snapshot]);
+      flusher.kill();
+      const sealed = sealSnapshot(snapshot, since, data);
+      sync(snapshot);
+      return sealed;
     });
-    const since = clock.now().toISOString();
-    db.run("VACUUM INTO ?", [snapshot]);
-    flusher.kill();
-    const source = sealSnapshot(snapshot, since, data);
-    sync(snapshot);
 
     // The database comes first. A file that arrives after it is one no row names, which nothing
     // serves. A file deleted after it is a row without a file, reported below.
     const uploads = relative(data, source);
-    const target = join(partial, uploads);
-    mkdirSync(target, { recursive: true, mode: 0o700 });
-    chmodSync(target, 0o700);
-    for (const { name } of uploadedFiles(source)) {
-      try {
-        copyFileSync(join(source, name), join(target, name), constants.COPYFILE_EXCL);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-        throw error;
+    whileMade(made, () => {
+      const target = join(made.path, uploads);
+      mkdirSync(target, { recursive: true, mode: 0o700 });
+      chmodSync(target, 0o700);
+      for (const { name } of uploadedFiles(source)) {
+        try {
+          copyFileSync(join(source, name), join(target, name), constants.COPYFILE_EXCL);
+        } catch (error) {
+          // A file the live server deleted after it was listed is skipped. Anything else missing is
+          // the backup's own path, which whileMade names.
+          const gone = !lstatSync(join(source, name), { throwIfNoEntry: false });
+          if ((error as NodeJS.ErrnoException).code === "ENOENT" && gone) continue;
+          throw error;
+        }
+        chmodSync(join(target, name), 0o600);
+        sync(join(target, name));
       }
-      chmodSync(join(target, name), 0o600);
-      sync(join(target, name));
-    }
-    const manifest = join(partial, MANIFEST);
-    writeFileSync(manifest, `${JSON.stringify({ uploads })}\n`, { mode: 0o600, flag: "wx" });
-    sync(manifest);
-    for (let directory = target; directory !== parent; directory = dirname(directory))
-      sync(directory);
+      const manifest = join(made.path, MANIFEST);
+      writeFileSync(manifest, `${JSON.stringify({ uploads })}\n`, { mode: 0o600, flag: "wx" });
+      sync(manifest);
+      for (let directory = target; directory !== parent; directory = dirname(directory))
+        sync(directory);
+    });
 
-    const inspection = inspect(partial, clock, options.supportedVersion);
+    const inspection = whileMade(made, () => inspect(made.path, clock, options.supportedVersion));
     options.beforePublish?.();
-    publish(partial, output, options.force ?? false, live);
+    const aside = publish(made, output, options.force ?? false, live);
+    // The rename is the publication. From here nothing is undone: the partial is no longer a partial,
+    // and the folders are the backup's parents and stay. A failure in what follows is a warning, since
+    // the backup is in place and cleanup must not run over it.
     partial = undefined;
-    // The backup is in the folders now, so they are its parents and stay.
     created = [];
+    try {
+      sync(dirname(output));
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      warn(`${output} is published, but its folder could not be synced: ${code}`);
+    }
+    if (aside) {
+      try {
+        rmSync(aside, { recursive: true, force: true });
+      } catch (error) {
+        const { code } = error as NodeJS.ErrnoException;
+        warn(
+          `${aside} is the backup that ${output} replaced, and it could not be removed: ${code}`,
+        );
+      }
+    }
     return { ...inspection, path: output };
   } finally {
     flusher?.kill();
     db.close(true);
     try {
-      if (partial) rmSync(partial, { recursive: true, force: true });
+      if (partial) removePartial(partial, warn);
     } finally {
       removeCreated(created, warn);
     }
