@@ -21,8 +21,6 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { createEmailer } from "@/messaging/email";
-import { createSMTPTest } from "@/messaging/test";
-import { HttpError } from "@/server/response";
 import { createSendRateLimiter } from "@/messaging/rate";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
@@ -35,6 +33,7 @@ import { createEmbeds } from "@/media/embed";
 import { createFilesystem } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
 import { createSettings } from "@/settings/store";
+import { createSMTPTest } from "@/messaging/test";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { createCampaignStore } from "@/campaigns/store";
@@ -179,7 +178,10 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const tracking = createTracking(db, clock);
   let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
   const router = createRouter();
-  registerSettingsRoutes(router, settingsStore, auth);
+  // The settings test button goes through the same limiter as every other send (test 8).
+  registerSettingsRoutes(router, settingsStore, auth, (body, revalidate) =>
+    createSMTPTest(settingsStore, emailer, app.i18n, renderer)(body, revalidate),
+  );
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth);
@@ -993,24 +995,20 @@ describe("B37: send rate cap", () => {
       );
       await h.drive(() => h.sink.messages.length >= 1, 10);
 
-      const smtpTest = createSMTPTest(h.settingsStore, h.emailer, h.app.i18n, h.renderer);
+      // The settings page's test button: the request goes through the route, as the admin sends it.
       const server = h.settingsStore.read().smtp[0]!;
-      let failure: unknown;
-      let finished = false;
-      const attempt = smtpTest({ ...server, email: "admin@example.test" }, () => {})
-        .catch((error: unknown) => {
-          failure = error;
-        })
-        .finally(() => {
-          finished = true;
+      const answers: { status: number; body: { message?: string } }[] = [];
+      const attempt = h
+        .json("/api/settings/smtp/test", "POST", { ...server, email: "admin@example.test" })
+        .then((answer: { status: number; body: { message?: string } }) => {
+          answers.push(answer);
         });
-      await h.drive(() => finished, 100);
+      await h.drive(() => answers.length === 1, 100);
       await attempt;
 
-      // The bound is 10 s of injected time: the test is not sent, and the error names the cap.
-      expect(failure).toBeInstanceOf(HttpError);
-      expect((failure as HttpError).status).toBe(503);
-      expect((failure as HttpError).message).toContain("send-rate");
+      // The bound is 10 s of injected time: the test is not sent, and the answer names the cap.
+      expect(answers[0]?.status).toBe(503);
+      expect(answers[0]?.body.message).toContain("send-rate");
       expect(h.sink.messages.some((m) => m.to.includes("admin@example.test"))).toBe(false);
 
       await h.drive(() => h.sink.messages.length === 15, 100);

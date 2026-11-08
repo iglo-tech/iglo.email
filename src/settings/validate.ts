@@ -239,10 +239,11 @@ export function bindKey(current: Settings, key: string, value: unknown): Setting
 // B51: an item without a uuid is new and matches no stored item, so it never takes another's secret.
 // B56: an item with auth none stores no password, typed or stored (deliberate difference, 07-api-and-ui.md):
 // a server with no authentication has no use for one, and switching back to login needs a new one.
+// An empty auth protocol is no authentication too (email.ts makeTransport), so it is treated as none.
 function preserve(item: Settings, old: Settings[]) {
   const previous = item.uuid ? old.findLast((v) => v.uuid === item.uuid) : undefined;
   if (!item.uuid) item.uuid = crypto.randomUUID();
-  if (item.auth_protocol === "none") delete item.password;
+  if (item.auth_protocol === "none" || item.auth_protocol === "") delete item.password;
   else if (!item.password && previous) item.password = previous.password;
   if (!item.password) delete item.password;
 }

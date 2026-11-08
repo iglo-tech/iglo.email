@@ -498,7 +498,7 @@ is refused as changed meanwhile and does not search for its partial directory: t
 the path the partial was last made at, and it is left for you to remove. A step after the final
 rename is not undone, and the cleanup does not run over the backup. A failed sync of the output's
 folder exits nonzero: the backup is in place, but it may not survive a crash. The message names the
-backup that the run replaced, which is kept beside the new one, and says to check the new one with
+replaced backup, if any, which is kept beside the new one, and says to check the new one with
 `--verify`. Keep the replaced backup until the new one has been verified. A failure to remove the
 replaced backup is a warning, and the next `backup` there reports it. A killed backup leaves its
 partial directory, and nothing at the final name, so a retry of the same `--output` works.
@@ -686,9 +686,12 @@ mailbox) are not carried over by the first full save of the settings page, so en
 passwords before that save. Any earlier save gave these items their uuids, and they keep their
 passwords, so this note does not apply to them.
 
-From this version, an SMTP server or bounce mailbox saved with auth `none` keeps no password, so
-switching it back to login needs the password entered again. A save that would give two SMTP
-servers, bounce mailboxes or messengers the same uuid is refused with 400 and changes nothing.
+From this version, an SMTP server or bounce mailbox saved with auth `none` (or an empty auth
+protocol) keeps no password, so switching it back to login needs the password entered again. A save
+that would give two SMTP servers, bounce mailboxes or messengers the same uuid is refused with 400
+and changes nothing. An install that already holds duplicate uuids (only hand-made API calls could
+store them) gets 400 on every API settings save (`PUT /api/settings` or a per-key update), until the
+settings page is saved once.
 
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
@@ -711,7 +714,7 @@ Operators can receive notifications for campaign and import events by configurin
 - A campaign **finishes** (audience exhausted or zero recipients), is **cancelled** via the API, or **pauses automatically** upon reaching `app.max_send_errors`.
 - A subscriber CSV import **finishes** or **fails**.
 
-If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error on every notification; the valid entries still receive the mail. If `app.from_email[0]` is not a valid address, no admin notification is sent and the bad value is logged once per process, because the sender would be refused by SES. Nothing falls back to another sender. A notification that cannot be queued is logged and never changes the campaign or import it reports on. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
+If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error on every notification; the valid entries still receive the mail. If `app.from_email[0]` is not a valid address, no admin notification is sent and the bad value is logged once per distinct value per process, because the sender would be refused by SES. Nothing falls back to another sender. A notification that cannot be queued is logged and never changes the campaign or import it reports on. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
 
 ## Monitoring
 

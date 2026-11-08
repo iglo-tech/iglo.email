@@ -488,20 +488,24 @@ export function createEmailer(options: {
     (async () => {
       if (options.limiter) {
         // A bounded wait (the SMTP settings test) gives up with not-started; the wait itself is
-        // on the injected clock and ends as soon as the grant arrives.
-        const bound = new AbortController();
-        if (waitBound !== undefined)
-          void options.clock.sleep(waitBound, bound.signal).then(
-            () => bound.abort(new Error("Send-rate wait bound reached")),
+        // on the injected clock and ends as soon as the grant arrives. Any other wait needs no
+        // abort signal: the limiter's stop rejects it.
+        let bound: AbortController | undefined;
+        if (waitBound !== undefined) {
+          const limit = new AbortController();
+          bound = limit;
+          void options.clock.sleep(waitBound, limit.signal).then(
+            () => limit.abort(new Error("Send-rate wait bound reached")),
             () => {},
           );
+        }
         try {
-          await options.limiter.acquire(priority, bound.signal);
+          await options.limiter.acquire(priority, bound?.signal);
         } catch {
           if (!settled) complete(notStartedOutcome());
           return;
         } finally {
-          bound.abort();
+          bound?.abort();
         }
       }
       if (settled || closed) {

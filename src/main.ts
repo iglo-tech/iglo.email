@@ -822,6 +822,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       void summaryRefresh!.done.catch(() => shutdown(new Error("Summary refresh failed")));
       // The loops are created above and start here, in the order they were wired, once the
       // server listens. A start that throws shuts the server down with the rest.
+      // These starts run in the same synchronous turn as the bind (startServer above): no await may
+      // sit between them. Each start recovers its in-flight rows (sends, runner leases, webhook
+      // deliveries) before the first request is handled, and a request handled earlier could claim
+      // a row that recovery then marks interrupted.
       try {
         outbox!.start();
         runner!.start();

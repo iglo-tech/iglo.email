@@ -95,7 +95,8 @@ function startOnPort(build: (port: number) => { args: string[]; env?: Record<str
  * so a failure says why the process ended and not only its code.
  */
 async function shutDown(child: ReturnType<typeof start>, signal: "SIGTERM" | "SIGINT") {
-  const code = await stopChild(child, signal);
+  // 3 s, not the helper's 5 s: a serial `bun test` gives each test 5 s, so SIGKILL must come first.
+  const code = await stopChild(child, signal, 3_000);
   if (code !== 0) {
     const stderr = await new Response(child.stderr).text();
     throw new Error(
