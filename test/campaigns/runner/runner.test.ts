@@ -637,6 +637,29 @@ test("a wait that never completes fails with the stuck state, not at the test ti
   expect(error).toContain("lease held");
 });
 
+test("a wait with no iteration limit ends at the wall bound and names it", async () => {
+  f = await runnerFixture({ hold: true });
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const c = await f.campaign({ name: "stuck wall", subject: "s", lists: [list] });
+  await f.status(c.id, "running");
+  f.start();
+  // No iteration limit (undefined takes the default cap), so only the wall budget can end the
+  // wait. The budget is 200 ms here instead of the 3 s default, which keeps the test fast.
+  const started = performance.now();
+  const error = await f
+    .drive(() => false, 50, undefined, 200)
+    .then(
+      () => "",
+      (failure: Error) => failure.message,
+    );
+  expect(performance.now() - started).toBeLessThan(2_000);
+  expect(error).toContain("wall limit 200 ms");
+  expect(error).not.toContain("iteration limit");
+  expect(error).toContain("last condition value false");
+  expect(error).toContain(`campaign ${c.id} status running`);
+});
+
 test("a due scheduled campaign sends its first batch on the first scan that finds it due", async () => {
   f = await runnerFixture();
   const list = await f.list("l");

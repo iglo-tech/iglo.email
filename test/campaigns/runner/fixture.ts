@@ -125,26 +125,45 @@ export async function runnerFixture(
     return parts.join("; ") || "no campaigns";
   }
   /**
+   * Default real-time budget of a wait before it fails with its state. Bun's default per-test
+   * timeout is 5 s for `bun test <path>` (serial single-file and directory runs), and
+   * `bun run test` / `check` pass `--timeout=30000`. 3 s is below both, so a stuck wait reports
+   * its state in every run rather than being cut off by the test timeout. Fixture setup runs
+   * inside the test too: with a 4 s wait, a serial single-test run took 4.70 s in total, leaving
+   * about 0.3 s under 5 s, so the bound is 3 s (docs/perf/B49-drive-bound.md, "Why 3 s"). A single
+   * wait needs at most about 1.9 s even under four CPU burners.
+   */
+  const WAIT_WALL_MS = 3_000;
+  /**
    * Lets I/O and microtasks run, then advances the clock by `step`, until `done()`.
    *
-   * The bound is 2,000 iterations. The longest wait the runner tests need is 73 iterations
-   * (the tracked-link test, measured in docs/perf/B42-runner-flake.md), so this leaves a wide
-   * margin. A wait that never completes fails here with its state, rather than spinning until
-   * the test timeout.
+   * A wait stops after `wallMs` (default `WAIT_WALL_MS`) of real time or `limit` iterations,
+   * whichever comes first. The wall bound is the limit that matters. Real I/O, such as an
+   * attachment read on the thread pool, finishes in real time, and one zero-length iteration costs
+   * only a few microseconds, so an iteration count cannot bound it (docs/perf/B49-drive-bound.md).
+   * The iteration cap is a runaway guard. A wait that never completes fails here with its state,
+   * rather than spinning until the test timeout.
    */
-  const drive = async (done: () => boolean | Promise<boolean>, step = 50, limit = 2_000) => {
+  const drive = async (
+    done: () => boolean | Promise<boolean>,
+    step = 50,
+    limit = 10_000_000,
+    wallMs = WAIT_WALL_MS,
+  ) => {
     const wallStart = performance.now();
     const clockStart = f.clock.now().getTime();
     let last = false;
-    for (let i = 0; i < limit; i++) {
+    let i = 0;
+    for (; i < limit && performance.now() - wallStart < wallMs; i++) {
       for (let j = 0; j < 3; j++) await Bun.sleep(0);
       last = await done();
       if (last) return;
       f.clock.advance(step);
     }
+    const reason = i >= limit ? `iteration limit ${limit}` : `wall limit ${wallMs} ms`;
     const state = await stuckState().catch((error: unknown) => `state unavailable (${error})`);
     throw new Error(
-      `drive: condition not reached after ${limit} iterations (step ${step} ms): ` +
+      `drive: condition not reached after ${i} iterations (${reason}, step ${step} ms): ` +
         `last condition value ${last}; clock ${f.clock.now().toISOString()} ` +
         `(+${f.clock.now().getTime() - clockStart} ms); ` +
         `wall ${Math.round(performance.now() - wallStart)} ms; ` +
