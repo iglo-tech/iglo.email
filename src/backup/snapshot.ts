@@ -36,6 +36,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statfsSync,
   statSync,
@@ -228,6 +229,98 @@ function replaceable(path: string): boolean {
   );
 }
 
+/**
+ * What stands at one path of a folder chain: nothing, or a folder. It refuses, naming the path, a
+ * file, a symlink to a file and a symlink to nothing, since none of them can hold a backup.
+ */
+function standing(path: string): "missing" | "folder" {
+  let stats;
+  try {
+    stats = lstatSync(path, { throwIfNoEntry: false });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
+    throw new Error(`${path} is below something that is not a folder`);
+  }
+  if (!stats) return "missing";
+  if (stats.isSymbolicLink()) {
+    const target = statSync(path, { throwIfNoEntry: false });
+    if (!target) throw new Error(`${path} is a symlink to a missing target`);
+    if (target.isDirectory()) return "folder";
+    throw new Error(
+      target.isFile()
+        ? `${path} is a symlink to a file, not a folder`
+        : `${path} is a symlink to something other than a folder`,
+    );
+  }
+  if (stats.isDirectory()) return "folder";
+  throw new Error(stats.isFile() ? `${path} is a file, not a folder` : `${path} is not a folder`);
+}
+
+/**
+ * The folders of `directory` that do not exist, shallowest first, and the deepest one that does.
+ * Each component is checked from the root, so the first problem named is the one nearest the root.
+ * It creates nothing: the refusals after it leave no folder behind, and the folders are made later
+ * with createFolders. The caller resolves the parent as the realpath of `existing`, joined with the
+ * folders still to be made, so an alias in the existing part is followed as the kernel would.
+ */
+function missingFolders(directory: string): { existing: string; missing: string[] } {
+  const names = directory.split(sep).filter(Boolean);
+  let existing: string = sep;
+  for (const [index, name] of names.entries()) {
+    const current = join(existing, name);
+    if (standing(current) === "missing") {
+      const missing: string[] = [];
+      let path = existing;
+      for (const next of names.slice(index)) {
+        path = join(path, next);
+        missing.push(path);
+      }
+      return { existing, missing };
+    }
+    existing = current;
+  }
+  return { existing, missing: [] };
+}
+
+/**
+ * Makes the folders shallowest first, recording each one this call makes in `made`. A folder that
+ * appears in the meantime is only a folder, and is not recorded. A path that changed since the
+ * check is named, rather than reported as a raw ENOENT, ENOTDIR or EEXIST; other errors pass.
+ */
+function createFolders(folders: string[], made: string[]): void {
+  for (const folder of folders) {
+    try {
+      mkdirSync(folder, { mode: 0o700 });
+      made.push(folder);
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      if (code !== "EEXIST" && code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      if (standing(folder) === "folder") continue;
+      throw new Error(`${folder} could not be created: a folder above it changed meanwhile`);
+    }
+  }
+}
+
+/**
+ * Removes the folders a failed or refused backup made, deepest first. Only an empty folder goes:
+ * one that is not empty is kept and reported, and a folder that was already gone is nothing.
+ */
+function removeCreated(made: string[], warn: (message: string) => void): void {
+  for (const folder of [...made].reverse()) {
+    try {
+      rmdirSync(folder);
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      if (code === "ENOENT") continue;
+      warn(
+        code === "ENOTEMPTY"
+          ? `${folder} was made by this backup and is kept: it is not empty`
+          : `${folder} was made by this backup and could not be removed: ${code}`,
+      );
+    }
+  }
+}
+
 /** Refuses what no flag may replace; a forced replacement must hold a backup or nothing. */
 function checkDestination(output: string, data: string, force: boolean): void {
   if (inside(data, output))
@@ -313,12 +406,14 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     throw new Error(`No database at ${databasePath}`);
   const data = realpathSync(dataDir);
   const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));
-  mkdirSync(dirname(wanted), { recursive: true, mode: 0o700 });
-  const parent = realpathSync(dirname(wanted));
+  // Folders are created only after every check that can refuse; see missingFolders.
+  const folders = missingFolders(dirname(wanted));
+  const parent = join(realpathSync(folders.existing), relative(folders.existing, dirname(wanted)));
   const output = join(parent, basename(wanted));
   checkDestination(output, data, options.force ?? false);
 
   const db = new Database(databasePath, { readonly: true, strict: true, safeIntegers: true });
+  let created: string[] = [];
   let partial: string | undefined;
   let flusher: Bun.Subprocess | undefined;
   try {
@@ -332,15 +427,17 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     const needed =
       Number(pages * single<bigint>(db, "page_size")) +
       uploadedFiles(liveUploads).reduce((sum, { size }) => sum + size, 0);
-    const available = (options.available ?? freeBytes)(parent);
+    const available = (options.available ?? freeBytes)(realpathSync(folders.existing));
     if (needed > available)
       throw new Error(`A backup needs about ${needed} bytes and ${parent} has ${available} free`);
-    for (const entry of readdirSync(parent))
+    // A folder that does not exist yet has no leftovers in it.
+    for (const entry of folders.missing.length === 0 ? readdirSync(parent) : [])
       if (entry.startsWith(PARTIAL))
         warn(`${join(parent, entry)} is left from an interrupted backup or is one still running`);
       else if (entry.startsWith(REPLACED))
         warn(`${join(parent, entry)} is a backup that a forced backup did not finish replacing`);
 
+    createFolders(folders.missing, created);
     // The directory is 0700 from mkdtemp and the database 0600 from its first byte: SQLite writes
     // into an empty file it finds and keeps its mode.
     partial = mkdtempSync(join(parent, PARTIAL));
@@ -383,11 +480,17 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     options.beforePublish?.();
     publish(partial, output, options.force ?? false);
     partial = undefined;
+    // The backup is in the folders now, so they are its parents and stay.
+    created = [];
     return { ...inspection, path: output };
   } finally {
     flusher?.kill();
     db.close(true);
-    if (partial) rmSync(partial, { recursive: true, force: true });
+    try {
+      if (partial) rmSync(partial, { recursive: true, force: true });
+    } finally {
+      removeCreated(created, warn);
+    }
   }
 }
 

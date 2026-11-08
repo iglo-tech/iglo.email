@@ -592,3 +592,140 @@ test("on an empty, freshly started data directory, backup --output creates missi
   expect(verified.stdout).toContain("Integrity: ok");
   await stopped();
 });
+
+test("a backup refused for no schema creates none of the folders its output would need", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  mkdirSync(dataDir);
+  new Database(join(dataDir, "iglo-email.db")).close();
+  const result = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(base, "a", "b", "c", "out"),
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("has no schema yet");
+  expect(existsSync(join(base, "a"))).toBe(false);
+});
+
+test("a backup refused for an output inside the uploads creates none of the folders it needs", async () => {
+  await live();
+  const result = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(dataDir, "uploads", "a", "b", "c", "out"),
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("is inside the upload directory");
+  expect(existsSync(join(dataDir, "uploads", "a"))).toBe(false);
+});
+
+test("a backup refused for too little space creates none of the folders its output would need", async () => {
+  await live();
+  expect(() =>
+    createBackup({
+      dataDir,
+      output: join(base, "x", "y", "z", "backup"),
+      clock: createRealClock(),
+      supportedVersion: version,
+      available: () => 1024,
+      warn() {},
+    }),
+  ).toThrow("A backup needs about");
+  expect(existsSync(join(base, "x"))).toBe(false);
+});
+
+test("a refusal keeps the folders that already existed, and what is in them", async () => {
+  await live();
+  const taken = join(base, "taken");
+  mkdirSync(taken);
+  writeFileSync(join(taken, "keep.txt"), "kept");
+  const exists = await runBackup(executable, ["--data-dir", dataDir, "--output", taken]);
+  expect(exists.exitCode).toBe(1);
+  expect(exists.stderr).toContain("already exists");
+  expect(readFileSync(join(taken, "keep.txt"), "utf8")).toBe("kept");
+
+  const kept = join(dataDir, "uploads", "kept");
+  mkdirSync(kept);
+  writeFileSync(join(kept, "keep.txt"), "kept too");
+  const inside = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(kept, "new", "out"),
+  ]);
+  expect(inside.exitCode).toBe(1);
+  expect(inside.stderr).toContain("is inside the upload directory");
+  expect(names(kept)).toEqual(["keep.txt"]);
+  expect(readFileSync(join(kept, "keep.txt"), "utf8")).toBe("kept too");
+});
+
+test("a parent that is a regular file is named as a file, not reported as a raw ENOTDIR", async () => {
+  await live();
+  writeFileSync(join(base, "afile"), "not a folder");
+  const result = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(base, "afile", "out"),
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain(`${join(base, "afile")} is a file, not a folder`);
+  expect(result.stderr).not.toContain("ENOTDIR");
+  expect(readFileSync(join(base, "afile"), "utf8")).toBe("not a folder");
+});
+
+test("a parent through a broken symlink is named as one, not reported as a raw ENOENT", async () => {
+  await live();
+  symlinkSync(join(base, "nowhere"), join(base, "dangling"));
+  const result = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(base, "dangling", "out"),
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain(`${join(base, "dangling")} is a symlink to a missing target`);
+  expect(result.stderr).not.toContain("ENOENT");
+  expect(existsSync(join(base, "nowhere"))).toBe(false);
+});
+
+test("a successful backup into new nested folders creates each one 0700", async () => {
+  await live();
+  const output = join(base, "n1", "n2", "n3", "out");
+  const backup = await runBackup(executable, ["--data-dir", dataDir, "--output", output]);
+  expect(backup.exitCode).toBe(0);
+  expect(backup.stderr).toBe("");
+  for (const folder of [
+    join(base, "n1"),
+    join(base, "n1", "n2"),
+    join(base, "n1", "n2", "n3"),
+    output,
+  ])
+    expect(statSync(folder).mode & 0o777).toBe(0o700);
+  expect(statSync(join(output, "iglo-email.db")).mode & 0o777).toBe(0o600);
+  const verified = await runBackup(executable, ["--verify", output]);
+  expect(verified.exitCode).toBe(0);
+  expect(verified.stdout).toContain("Integrity: ok");
+});
+
+test("a failure after folders were created removes exactly those, and keeps what existed", async () => {
+  const client = await live();
+  await uploadFile(client, "unreadable.txt", "bytes");
+  chmodSync(join(dataDir, "uploads", "unreadable.txt"), 0o000);
+  const kept = join(base, "keep");
+  mkdirSync(kept);
+  writeFileSync(join(kept, "keep.txt"), "kept");
+  const result = await runBackup(executable, [
+    "--data-dir",
+    dataDir,
+    "--output",
+    join(kept, "f2", "out"),
+  ]);
+  chmodSync(join(dataDir, "uploads", "unreadable.txt"), 0o644);
+  expect(result.exitCode).toBe(1);
+  expect(names(kept)).toEqual(["keep.txt"]);
+  expect(readFileSync(join(kept, "keep.txt"), "utf8")).toBe("kept");
+});
