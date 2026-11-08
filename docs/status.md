@@ -12,8 +12,7 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B46** Bounces test polish ([brief](briefs/B46.md)) from #87: one settings source in the tx fixture, compiled-build upgrade test, compiled contract for SNS replay after restart/provider switches/Message-ID rows, SES failure test checks its receiver, `differences.ts` formatting (size M)
-2. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
+1. **B48** Leftovers ([brief](briefs/B48.md)): unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
 
 ## Owner decisions
 
