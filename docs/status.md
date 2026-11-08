@@ -12,11 +12,10 @@ Owner-only, blocking nothing else: publishing a release, PDF viewers on real dev
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-1. **B44** MCP polish ([brief](briefs/B44.md)) from #86/#91 backlog: read-merge for a role with manage but not get (clear error or skip read), `update_campaign` can clear `send_at`, no-op `update_sequence_step` refused, tests for foreign-origin cookie, deleted list, step edit with a live enrollment (size S)
-2. **B45** Backup polish from #85: no empty folders left on refusal, clear messages for broken-symlink/file parents, docs on repeated `docker cp` (size S)
-3. **B46** Bounces test polish from #87: one settings source in the tx fixture, compiled-build upgrade test, compiled contract for SNS replay after restart/provider switches/Message-ID rows, SES failure test checks its receiver, `differences.ts` formatting (size M)
-4. **B47** Sequence step body on a campaign layout (design gap from #91, `05-sequences.md:87`): decide in a D-record whether a typical lifecycle project needs it under D89; implement or log the drop (size M)
-5. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
+1. **B45** Backup polish ([brief](briefs/B45.md)) from #85: no empty folders left on refusal, clear messages for broken-symlink/file parents, docs on repeated `docker cp` (size S)
+2. **B46** Bounces test polish from #87: one settings source in the tx fixture, compiled-build upgrade test, compiled contract for SNS replay after restart/provider switches/Message-ID rows, SES failure test checks its receiver, `differences.ts` formatting (size M)
+3. **B47** Sequence step body on a campaign layout (design gap from #91, `05-sequences.md:87`): decide in a D-record whether a typical lifecycle project needs it under D89; implement or log the drop (size M)
+4. **B48** Leftovers: unused `lang` in `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx`), settings unit round trip with browser SMTP keys (size S)
 
 ## Owner decisions
 
@@ -46,6 +45,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B44 | [#97](https://github.com/iglo-tech/iglo.email/pull/97) | d19f3dd | MCP polish: read-permission error, clear send_at, no-op step edit refused, coverage tests |
 | B49 | [#96](https://github.com/iglo-tech/iglo.email/pull/96) | 028345f | `drive` bounded by 3 s wall time; fixes media test broken by B42 |
 | B43 | [#95](https://github.com/iglo-tech/iglo.email/pull/95) | be0e0ab | Sending polish: 11 items from the #89/#90 reviews |
 | B42 | [#94](https://github.com/iglo-tech/iglo.email/pull/94) | ead051f | Runner flake not reproduced; `drive` now fails fast with the stuck state |
@@ -131,15 +131,14 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 - Media: supported PDF viewers unverified (needs real devices).
 - Backup ([#85](https://github.com/iglo-tech/iglo.email/pull/85) r3): a refusal after parent creation (output in uploads, unschema'd DB, low space) leaves empty folders; broken-symlink/file parents give a raw `ENOENT`/`ENOTDIR: mkdir`; docs: repeated `docker cp` into an existing dated folder nests it.
-- MCP ([#86](https://github.com/iglo-tech/iglo.email/pull/86) r2–r4): read-merge tools fail for a role with `campaigns:manage` but no `campaigns:get*`; GET-then-PUT can lose a concurrent edit (admin UI has the same race); `update_campaign` cannot clear `send_at`; tests lack a foreign-origin cookie case and a deleted-list case.
 - Bounces tests ([#87](https://github.com/iglo-tech/iglo.email/pull/87) r1–r2): the tx fixture has two settings sources (real `/api/settings` and the `bounceSettings` object the bounce routes read); B35 test 2 hand-wires routes instead of the compiled build on an upgraded DB; the compiled contract no longer covers SNS replay after restart, provider on/off switches or campaign Message-ID rows (`ses.test.ts` covers most in-process); the SES failure test never checks its webhook receiver; small formatting in `differences.ts`.
 - Send rate (addressed by B43 #95 except): ([#89](https://github.com/iglo-tech/iglo.email/pull/89) r2): `runner.ts:593` should `return` not `continue` on not-started (only reachable if the emailer closes before the runner); lowering the rate applies one send late; duplicate not-started guard in `sends.ts`; `settings.onUpdate` is single-slot; SMTP test send waits behind the limiter unbounded; perf doc wording (15 at cap 14 is sink jitter; 20 s run cannot show the 60 s cutoff).
 - Notifications ([#90](https://github.com/iglo-tech/iglo.email/pull/90) r2): no regression test for the post-commit status re-read; bad-CSV notification missing from the `differences.ts` CSV entry; operations.md should say invalid entries are skipped and logged; invalid `from_email` falls back to `noreply@localhost` silently; unused `siteName`/`runner_generation`, `logoUrl` never passed; tests poll with `Bun.sleep(5)`.
-- MCP ([#91](https://github.com/iglo-tech/iglo.email/pull/91) r1): sequence steps have no body, so a step cannot use a campaign layout (design gap, `05-sequences.md:87`); no test of a step edit on an active sequence with a live enrollment; an `update_sequence_step` call with neither field still saves and bumps the timestamp.
 - Settings ([#92](https://github.com/iglo-tech/iglo.email/pull/92) r1): unused `lang` still passed into `_LM_CONFIG` (`src/main.ts:729`, `src/admin/page.tsx:22,169`); the unit round trip omits the browser-only SMTP keys (the e2e covers them).
 - Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it. The send-rate test keeps its own 20,000-iteration loop (`test/messaging`).
 - Sending ([#95](https://github.com/iglo-tech/iglo.email/pull/95) r1): bad `app.from_email` is logged once per distinct value (docs say once); D92 should note a window straddling a rate lowering can hold the old rate; test 15 does not cover `main.ts` passing `logoUrl`; test 8 not over HTTP; a fixed-count `drainOutbox` loop remains; every send now allocates an AbortController (create only with a wait bound).
 - Test loops ([#96](https://github.com/iglo-tech/iglo.email/pull/96) r1): `test/media/storage.test.ts:201` and `test/messaging/send-rate.test.ts:373` count zero-length yields while waiting on real I/O (same latent bug as B42/B49); media waits could advance the injected clock only while no real read is pending.
+- MCP ([#97](https://github.com/iglo-tech/iglo.email/pull/97) r1): the read-permission hint should also mention list access (`src/mcp/tools.ts:541`); test 16 lacks the scheduled-campaign case (status to draft); operations.md names three read-merge tools, D91 five. Remaining from #86: GET-then-PUT lost-update race (same in admin UI).
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
