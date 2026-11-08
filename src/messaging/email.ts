@@ -209,6 +209,8 @@ function makeTransport(
   });
 }
 const safeValue = (value: string) => !/[\r\n\0]/.test(value);
+/** The SMTP settings test waits at most this long for a send-rate token (D92), then is not sent. */
+const smtpTestWaitMs = 10_000;
 const headerName = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 function bareAddress(value: string): string {
   const parsed = parseAddress(trimSpace(value));
@@ -424,6 +426,7 @@ export function createEmailer(options: {
     startedAt = options.clock.now().getTime(),
     copies = true,
     priority: SendPriority = "outbox",
+    waitBound?: number,
   ): Dispatch {
     const serverId = suppliedId(server, message);
     let domain = "localhost";
@@ -448,7 +451,9 @@ export function createEmailer(options: {
       rejected: [],
     });
     const local = (): Dispatch => ({ messageId, result: Promise.resolve(localOutcome()) });
-    if (closed || !server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId))
+    // A closed emailer never starts a message: the work is handed back (not-started), not failed.
+    if (closed) return { messageId, result: Promise.resolve(notStartedOutcome()) };
+    if (!server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId))
       return local();
     let data: ReturnType<typeof build>;
     try {
@@ -482,11 +487,21 @@ export function createEmailer(options: {
 
     (async () => {
       if (options.limiter) {
+        // A bounded wait (the SMTP settings test) gives up with not-started; the wait itself is
+        // on the injected clock and ends as soon as the grant arrives.
+        const bound = new AbortController();
+        if (waitBound !== undefined)
+          void options.clock.sleep(waitBound, bound.signal).then(
+            () => bound.abort(new Error("Send-rate wait bound reached")),
+            () => {},
+          );
         try {
-          await options.limiter.acquire(priority);
+          await options.limiter.acquire(priority, bound.signal);
         } catch {
           if (!settled) complete(notStartedOutcome());
           return;
+        } finally {
+          bound.abort();
         }
       }
       if (settled || closed) {
@@ -683,7 +698,20 @@ export function createEmailer(options: {
     test: (server: SMTPServer, message: Message, rootUrl: string) => {
       options.refuse?.();
       const startedAt = options.clock.now().getTime();
-      return dispatch(structuredClone(server), message, rootUrl, true, startedAt, true, "outbox");
+      return dispatch(
+        structuredClone(server),
+        message,
+        rootUrl,
+        true,
+        startedAt,
+        true,
+        "outbox",
+        smtpTestWaitMs,
+      );
+    },
+    /** True once close() has begun: nothing new starts, and the loops claim nothing. */
+    get closed() {
+      return closed;
     },
     close() {
       if (closing) return closing;

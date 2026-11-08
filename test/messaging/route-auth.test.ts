@@ -305,9 +305,10 @@ test("SMTP capacity releases after absolute timeout, malformed input and shutdow
     expect(invalid.status).toBe(400);
     expect((await send(healthy.port)).status).toBe(200);
     await f.closeMessaging();
+    // After shutdown the test message is not started: a clear 503, not a failed delivery.
     const closed = await send(healthy.port);
-    expect(closed.status).toBe(500);
-    expect(await closed.json()).toEqual({ message: "SMTP test failed." });
+    expect(closed.status).toBe(503);
+    expect((await closed.json()).message).toContain("was not sent");
     expect(healthy.count()).toBe(1);
   } finally {
     await held.close();

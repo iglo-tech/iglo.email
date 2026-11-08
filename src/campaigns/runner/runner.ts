@@ -65,6 +65,7 @@ export interface RunnerDeps {
       message: Message,
       delivery?: { copies?: boolean; priority?: SendPriority },
     ): { result: Promise<Outcome> };
+    readonly closed: boolean;
   };
   settings: () => RunnerSettings;
   /** Reads a campaign's files, so never inside the claim transaction. */
@@ -99,7 +100,11 @@ interface Batch {
   pipe: Pipe;
   recipients: CampaignRecipient[];
 }
-type Stop = "status" | "errors" | "shutdown";
+/**
+ * Why a batch stopped early. "emailer": the emailer closed under the batch, so nothing more of it
+ * is pushed and the unsent recipients are handed back.
+ */
+type Stop = "status" | "errors" | "shutdown" | "emailer";
 
 const scanInterval = 5_000;
 const defaultLease = 30_000;
@@ -363,7 +368,8 @@ export function startCampaignRunner(deps: RunnerDeps) {
   }
 
   function claim(nowDate: Date): Batch[] {
-    if (sendingHeld(db)) return [];
+    // Held (D67) or closed: nothing is claimed, so no batch is handed back and claimed again.
+    if (sendingHeld(db) || deps.emailer.closed) return [];
     const now = nowDate.getTime();
     const settings = deps.settings();
     // Another runner in this process is sending a batch: wait for it.
@@ -641,8 +647,11 @@ export function startCampaignRunner(deps: RunnerDeps) {
           };
         }
         if (outcome.stage === "not-started") {
+          // The message never reached the emailer's pools: it is not failed, and no later
+          // recipient of this batch is pushed into the same closed emailer.
           pushed.delete(i);
-          continue;
+          stop ??= "emailer";
+          return;
         }
         const at = clock.now().getTime();
         if (outcome.status === "accepted" && outcome.rejected.length === 0) {

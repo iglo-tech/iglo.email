@@ -182,6 +182,10 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
     }
   }
 
+  /**
+   * A rate change applies to the next grant: the next start is one interval of the new rate after
+   * the last start, whether the rate went up or down.
+   */
   function wake(): void {
     if (sleepController) {
       sleepController.abort();
@@ -189,11 +193,7 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
     }
     const currentRate = options.rate();
     if (currentRate > 0) {
-      const interval = 1000 / currentRate;
-      const earliest = lastGrantAt + interval;
-      if (earliest < nextAvailableAt) {
-        nextAvailableAt = earliest;
-      }
+      nextAvailableAt = lastGrantAt + 1000 / currentRate;
     } else {
       nextAvailableAt = 0;
     }

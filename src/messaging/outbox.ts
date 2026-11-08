@@ -80,7 +80,8 @@ export function startOutbox(options: {
     // One loop item is a batch: its claims and admissions committed together before SMTP.
     claim: (now, lease) => {
       options.sends.expireLeases(now, [...live]);
-      if (sendingHeld(options.db)) return [];
+      // Held (D67) or closed: nothing is claimed, so refused rows are not claimed again at once.
+      if (sendingHeld(options.db) || options.emailer.closed) return [];
       const batch = options.sends.claimBatch(now, lease, batchSize);
       return batch.length ? [batch] : [];
     },

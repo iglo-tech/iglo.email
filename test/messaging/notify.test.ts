@@ -74,6 +74,12 @@ interface Fixture {
   json(path: string, method?: string, body?: unknown): Promise<any>;
   createList(name?: string): { id: bigint; uuid: string; name: string };
   drainOutbox(): Promise<void>;
+  /** Errors logged through the app logger, in order. */
+  errors: unknown[];
+  /** Makes the runner's open of a campaign fail when `fn` is true for its audience. */
+  failOpen(fn: ((audience: { lists: { id: unknown }[] }) => boolean) | undefined): void;
+  /** Advances the clock until `done` holds; fails with `what` if it never does. */
+  waitUntil(done: () => boolean, what: string, step?: number, rounds?: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -212,7 +218,7 @@ async function createNotifyFixture(
         notifyEmails: current["app.notify_emails"],
         fromEmail: current["app.from_email"][0] ?? "",
         rootUrl: current["app.root_url"],
-        siteName: current["app.site_name"],
+        logoUrl: current["app.logo_url"],
       };
     },
   });
@@ -316,7 +322,15 @@ async function createNotifyFixture(
     return { status: response.status, data: text ? JSON.parse(text) : null };
   };
 
-  const recipients = createCampaignRecipients(db);
+  let openFailure: ((audience: { lists: { id: unknown }[] }) => boolean) | undefined;
+  const recipientStore = createCampaignRecipients(db);
+  const recipients: typeof recipientStore = {
+    ...recipientStore,
+    measure(audience) {
+      if (openFailure?.(audience)) throw new Error("injected open failure");
+      return recipientStore.measure(audience);
+    },
+  };
   const registry = createCampaignRunnerRegistry();
   const runners: ReturnType<typeof startCampaignRunner>[] = [];
 
@@ -371,9 +385,23 @@ async function createNotifyFixture(
     }
   };
 
+  const waitUntil = async (done: () => boolean, what: string, step = 50, rounds = 200) => {
+    for (let i = 0; i < rounds; i++) {
+      if (done()) return;
+      clock.advance(step);
+      await Bun.sleep(5);
+    }
+    if (!done()) throw new Error(`timed out waiting for ${what}`);
+  };
+
   return {
     db,
     clock,
+    errors,
+    failOpen(fn) {
+      openFailure = fn;
+    },
+    waitUntil,
     settings: settingsStore,
     campaignStore,
     runnerStore,
@@ -404,7 +432,8 @@ async function createNotifyFixture(
     },
     drainOutbox,
     async close() {
-      for (const runner of runners) await runner.stop();
+      // A runner whose claim failed reports that again at stop; a test that expects it has asserted it.
+      for (const runner of runners) await runner.stop().catch(() => undefined);
       await outbox.stop();
       await webhookDelivery.stop();
       sink.close();
@@ -460,12 +489,11 @@ describe("B38 admin notification mails", () => {
     const runner = f.startRunner();
 
     // Drive runner until campaign finishes
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await new Promise((r) => setTimeout(r, 5));
-      const state = f.runnerStore.state(campaignId);
-      if (state?.status === "finished") break;
-    }
+    await f.waitUntil(
+      () => f.runnerStore.state(campaignId)?.status === "finished",
+      "the campaign to finish",
+      50,
+    );
     const state = f.runnerStore.state(campaignId);
     expect(state?.status).toBe("finished");
 
@@ -580,12 +608,11 @@ describe("B38 admin notification mails", () => {
     // Start runner with maxSendErrors = 1
     const runner = f.startRunner({ maxSendErrors: 1 });
 
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await new Promise((r) => setTimeout(r, 5));
-      const state = f.runnerStore.state(campaignId);
-      if (state?.status === "paused") break;
-    }
+    await f.waitUntil(
+      () => f.runnerStore.state(campaignId)?.status === "paused",
+      "the campaign to be paused",
+      50,
+    );
     const state = f.runnerStore.state(campaignId);
     expect(state?.status).toBe("paused");
 
@@ -666,11 +693,11 @@ describe("B38 admin notification mails", () => {
     });
 
     // Wait for importer to finish
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await new Promise((r) => setTimeout(r, 5));
-      if (f.importer.status().status === "finished") break;
-    }
+    await f.waitUntil(
+      () => f.importer.status().status === "finished",
+      "the import to be finished",
+      50,
+    );
     expect(f.importer.status().status).toBe("finished");
 
     await f.drainOutbox();
@@ -696,11 +723,7 @@ describe("B38 admin notification mails", () => {
       listIds: [list.id],
     });
 
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await new Promise((r) => setTimeout(r, 5));
-      if (f.importer.status().status === "failed") break;
-    }
+    await f.waitUntil(() => f.importer.status().status === "failed", "the import to be failed", 50);
     expect(f.importer.status().status).toBe("failed");
 
     await f.drainOutbox();
@@ -742,11 +765,11 @@ describe("B38 admin notification mails", () => {
     await f.json(`/api/campaigns/${cId}/status`, "PUT", { status: "running" });
 
     const runner = f.startRunner();
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await new Promise((r) => setTimeout(r, 5));
-      if (f.runnerStore.state(cId)?.status === "finished") break;
-    }
+    await f.waitUntil(
+      () => f.runnerStore.state(cId)?.status === "finished",
+      "the campaign to finish",
+      50,
+    );
     await f.drainOutbox();
     await runner.stop();
 
@@ -775,11 +798,11 @@ describe("B38 admin notification mails", () => {
       delimiter: 44,
       listIds: [list.id],
     });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await new Promise((r) => setTimeout(r, 5));
-      if (f.importer.status().status === "finished") break;
-    }
+    await f.waitUntil(
+      () => f.importer.status().status === "finished",
+      "the import to be finished",
+      50,
+    );
 
     await f.drainOutbox();
 
@@ -837,10 +860,11 @@ describe("B38 admin notification mails", () => {
       await f.drainOutbox();
 
       // Webhook delivery delivers send.failed to receiver
-      for (let i = 0; i < 20 && receiver.received.length === 0; i++) {
-        f.clock.advance(1000);
-        await Bun.sleep(5);
-      }
+      await f.waitUntil(
+        () => receiver.received.some((r) => r.body.event === "send.failed"),
+        "the send.failed webhook",
+        1000,
+      );
       expect(receiver.received.length).toBeGreaterThanOrEqual(1);
       const delivery = receiver.received.find((r) => r.body.event === "send.failed");
       expect(delivery).toBeDefined();
@@ -907,11 +931,11 @@ describe("B38 admin notification mails", () => {
     await f.json(`/api/campaigns/${c1Id}/status`, "PUT", { status: "running" });
 
     const runner = f.startRunner();
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.runnerStore.state(c1Id)?.status === "finished") break;
-    }
+    await f.waitUntil(
+      () => f.runnerStore.state(c1Id)?.status === "finished",
+      "the campaign to finish",
+      50,
+    );
     expect(f.runnerStore.state(c1Id)?.status).toBe("finished");
     await f.drainOutbox();
     await runner.stop();
@@ -956,11 +980,11 @@ describe("B38 admin notification mails", () => {
       delimiter: 44,
       listIds: [list.id],
     });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.importer.status().status === "finished") break;
-    }
+    await f.waitUntil(
+      () => f.importer.status().status === "finished",
+      "the import to be finished",
+      50,
+    );
     expect(f.importer.status().status).toBe("finished");
     await f.drainOutbox();
 
@@ -993,11 +1017,7 @@ describe("B38 admin notification mails", () => {
       delimiter: 44,
       listIds: [list.id],
     });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.importer.status().status === "failed") break;
-    }
+    await f.waitUntil(() => f.importer.status().status === "failed", "the import to be failed", 50);
     expect(f.importer.status().status).toBe("failed");
     await f.drainOutbox();
 
@@ -1011,11 +1031,7 @@ describe("B38 admin notification mails", () => {
       delimiter: 44,
       listIds: [list.id],
     });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.importer.status().status === "failed") break;
-    }
+    await f.waitUntil(() => f.importer.status().status === "failed", "the import to be failed", 50);
     expect(f.importer.status().status).toBe("failed");
     await f.drainOutbox();
 
@@ -1045,11 +1061,11 @@ describe("B38 admin notification mails", () => {
       delimiter: 44,
       listIds: [list.id],
     });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.importer.status().status === "finished") break;
-    }
+    await f.waitUntil(
+      () => f.importer.status().status === "finished",
+      "the import to be finished",
+      50,
+    );
     expect(f.importer.status().status).toBe("finished");
     await f.drainOutbox();
 
@@ -1070,12 +1086,10 @@ describe("B38 admin notification mails", () => {
       delimiter: 44,
       listIds: [list.id],
     });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.importer.status().status === "finished" || f.importer.status().status === "failed")
-        break;
-    }
+    await f.waitUntil(
+      () => f.importer.status().status === "finished" || f.importer.status().status === "failed",
+      "the second import to end",
+    );
     expect(f.importer.status().status).toBe("finished");
     await f.drainOutbox();
 
@@ -1126,11 +1140,11 @@ describe("B38 admin notification mails", () => {
     await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
 
     let runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.runnerStore.state(campaignId)?.status === "paused") break;
-    }
+    await f.waitUntil(
+      () => f.runnerStore.state(campaignId)?.status === "paused",
+      "the campaign to be paused",
+      50,
+    );
     expect(f.runnerStore.state(campaignId)?.status).toBe("paused");
     await f.drainOutbox();
     await runner.stop();
@@ -1143,11 +1157,11 @@ describe("B38 admin notification mails", () => {
     // Resume campaign
     await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
     runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (f.runnerStore.state(campaignId)?.status === "paused") break;
-    }
+    await f.waitUntil(
+      () => f.runnerStore.state(campaignId)?.status === "paused",
+      "the campaign to be paused",
+      50,
+    );
     expect(f.runnerStore.state(campaignId)?.status).toBe("paused");
     await f.drainOutbox();
     await runner.stop();
@@ -1214,18 +1228,13 @@ describe("B38 admin notification mails", () => {
     await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
 
     const runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      if (cancelled) break;
-    }
+    await f.waitUntil(() => cancelled, "the cancel to be issued", 50);
     if (cancelPromise) await cancelPromise;
-    for (let i = 0; i < 50; i++) {
-      f.clock.advance(50);
-      await Bun.sleep(5);
-      const state = f.runnerStore.state(campaignId);
-      if (state?.status === "cancelled") break;
-    }
+    await f.waitUntil(
+      () => f.runnerStore.state(campaignId)?.status === "cancelled",
+      "the campaign to be cancelled",
+      50,
+    );
 
     await f.drainOutbox();
     await runner.stop();
@@ -1236,5 +1245,120 @@ describe("B38 admin notification mails", () => {
 
     expect(cancelMails.length).toBe(1);
     expect(pauseMails.length).toBe(0);
+  });
+
+  test("13. A finish whose claim transaction rolls back sends no Finished mail", async () => {
+    f = await createNotifyFixture({ notifyEmails: ["ops@example.com"] });
+    const empty = f.createList("Empty");
+    const full = f.createList("Full");
+    f.subscribers.create(
+      {
+        email: "full-sub@example.com",
+        name: "Full",
+        status: "enabled",
+        lists: [full.id],
+        attribs: {},
+      },
+      { all: true, ids: [] },
+    );
+    // Campaign A has no subscribers, so its claim finishes it. Campaign B's open fails in the same
+    // claim transaction, which rolls A's finish back: A stays running and no mail is sent.
+    const create = async (name: string, list: bigint) => {
+      const res = await f.json("/api/campaigns", "POST", {
+        name,
+        subject: name,
+        lists: [Number(list)],
+        type: "regular",
+        content_type: "html",
+        body: "<p>Hello</p>",
+        from_email: "noreply@fixture.test",
+      });
+      return BigInt(res.data.data.id);
+    };
+    const aId = await create("Rolled Back", empty.id);
+    const bId = await create("Failing Open", full.id);
+    await f.json(`/api/campaigns/${aId}/status`, "PUT", { status: "running" });
+    await f.json(`/api/campaigns/${bId}/status`, "PUT", { status: "running" });
+    f.failOpen((audience) => audience.lists.some((l) => Number(l.id) === Number(full.id)));
+
+    const runner = f.startRunner();
+    await f.waitUntil(() => f.errors.length > 0, "the failed claim to be logged");
+    await f.drainOutbox();
+    // The claim failure ends the runner's loop, and stop() reports it.
+    await expect(runner.stop()).rejects.toThrow("injected open failure");
+
+    expect(f.runnerStore.state(aId)?.status).toBe("running");
+    const finished = f.sink.messages.filter((m) =>
+      m.data.includes("Subject: Finished: Rolled Back"),
+    );
+    expect(finished.length).toBe(0);
+  });
+
+  test("14. An unusable app.from_email sends no admin mail, and the bad value is logged once", async () => {
+    f = await createNotifyFixture({ notifyEmails: ["ops@example.com"] });
+    // Settings validation refuses such a value, so only a restored or legacy row can hold one.
+    f.db.run("UPDATE settings SET value = ? WHERE key = 'app.from_email'", [
+      JSON.stringify(["not an address"]),
+    ]);
+    const empty = f.createList("Empty");
+    const ids: bigint[] = [];
+    for (const name of ["First", "Second"]) {
+      const res = await f.json("/api/campaigns", "POST", {
+        name,
+        subject: name,
+        lists: [Number(empty.id)],
+        type: "regular",
+        content_type: "html",
+        body: "<p>Hello</p>",
+        from_email: "noreply@fixture.test",
+      });
+      const id = BigInt(res.data.data.id);
+      ids.push(id);
+      await f.json(`/api/campaigns/${id}/status`, "PUT", { status: "running" });
+    }
+
+    const runner = f.startRunner();
+    await f.waitUntil(
+      () => f.runnerStore.state(ids[1]!)?.status === "finished",
+      "the campaigns to finish",
+    );
+    await f.drainOutbox();
+    await runner.stop();
+
+    expect(f.sink.messages.some((m) => m.to.includes("ops@example.com"))).toBe(false);
+    const logged = f.errors.filter((e) => String(e).includes("app.from_email"));
+    expect(logged.length).toBe(1);
+  });
+
+  test("15. The admin mail shows the configured app.logo_url", async () => {
+    f = await createNotifyFixture({ notifyEmails: ["ops@example.com"] });
+    const logo = "https://example.test/logo.png";
+    const saved = await f.json("/api/settings/app.logo_url", "PUT", logo);
+    expect(saved.status).toBe(200);
+    const empty = f.createList("Empty");
+    const res = await f.json("/api/campaigns", "POST", {
+      name: "Logo",
+      subject: "Logo",
+      lists: [Number(empty.id)],
+      type: "regular",
+      content_type: "html",
+      body: "<p>Hello</p>",
+      from_email: "noreply@fixture.test",
+    });
+    const id = BigInt(res.data.data.id);
+    await f.json(`/api/campaigns/${id}/status`, "PUT", { status: "running" });
+
+    const runner = f.startRunner();
+    await f.waitUntil(
+      () => f.runnerStore.state(id)?.status === "finished",
+      "the campaign to finish",
+    );
+    await f.drainOutbox();
+    await runner.stop();
+
+    // The message is quoted-printable: undo the soft line breaks and =3D escapes before matching.
+    const mail = f.sink.messages.find((m) => m.to.includes("ops@example.com"));
+    const html = (mail?.data ?? "").replace(/=\r\n/g, "").replace(/=3D/g, "=");
+    expect(html).toContain(`src="${logo}"`);
   });
 });

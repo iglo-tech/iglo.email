@@ -21,6 +21,8 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { createEmailer } from "@/messaging/email";
+import { createSMTPTest } from "@/messaging/test";
+import { HttpError } from "@/server/response";
 import { createSendRateLimiter } from "@/messaging/rate";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
@@ -128,8 +130,9 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     return s;
   });
 
-  // Wiring matching src/main.ts
-  const limiter = createSendRateLimiter({
+  // Wiring matching src/main.ts: one settings listener for the process, which wakes whichever
+  // limiter is current (restart() replaces the limiter, not the listener).
+  let limiter = createSendRateLimiter({
     clock,
     rate: () => settingsStore.read()["messaging.max_send_rate"],
   });
@@ -377,6 +380,8 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   };
 
   return {
+    app,
+    renderer,
     clock,
     sink,
     db,
@@ -403,18 +408,13 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     drive,
     template,
     restart() {
-      const newLimiter = createSendRateLimiter({
+      limiter = createSendRateLimiter({
         clock,
         rate: () => settingsStore.read()["messaging.max_send_rate"],
       });
-      settingsStore.onUpdate((next, current) => {
-        if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
-          newLimiter.wake();
-        }
-      });
       emailer = createEmailer({
         clock,
-        limiter: newLimiter,
+        limiter,
         settings: () => {
           const current = settingsStore.read();
           return { smtp: current.smtp, rootUrl: current["app.root_url"] };
@@ -893,6 +893,134 @@ describe("B37: send rate cap", () => {
       expect(h.sink.messages.length).toBe(2);
       expect(h.sink.messages[1]!.to).toContain("wake-2@example.test");
       expect(h.clock.now().getTime() - startMs).toBeLessThan(500);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("4b. a second settings update listener is refused instead of replacing the first", async () => {
+    const h = await createRateHarness();
+    try {
+      expect(() => h.settingsStore.onUpdate(() => {})).toThrow();
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("5c. lowering the rate applies to the very next grant, not the old interval", async () => {
+    const clock = new TestClock();
+    let rate = 14;
+    const limiter = createSendRateLimiter({ clock, rate: () => rate });
+    await limiter.acquire("outbox");
+
+    // Lower to 1/s just after a grant. The next grant must wait a full second; the old 71 ms
+    // slot must not carry it, which would put two starts in one second under the new rate.
+    rate = 1;
+    limiter.wake();
+    let granted = false;
+    const next = limiter.acquire("outbox").then(() => {
+      granted = true;
+    });
+    clock.advance(100);
+    for (let j = 0; j < 5; j++) await Bun.sleep(0);
+    expect(granted).toBe(false);
+
+    clock.advance(900);
+    await next;
+    expect(granted).toBe(true);
+    limiter.stop();
+  });
+
+  test("7c. emailer closed while a campaign batch waits: no recipient of that batch ends failed", async () => {
+    const h = await createRateHarness({ "messaging.max_send_rate": 1, "app.concurrency": 5 });
+    try {
+      const listRes = await h.json("/api/lists", "POST", { name: "closing-list", type: "public" });
+      const listId = listRes.body.data.id;
+      for (let i = 0; i < 6; i++) {
+        await h.json("/api/subscribers", "POST", {
+          email: `closing-${i}@example.test`,
+          name: `Closing ${i}`,
+          lists: [listId],
+          status: "enabled",
+        });
+      }
+      const campRes = await h.json("/api/campaigns", "POST", {
+        name: "Closing Campaign",
+        subject: "Hello",
+        lists: [listId],
+        type: "regular",
+        content_type: "richtext",
+        body: "<p>Body</p>",
+        template_id: h.templates.getDefault()!.id,
+        messenger: "email",
+      });
+      const campId = campRes.body.data.id;
+      await h.json(`/api/campaigns/${campId}/status`, "PUT", { status: "running" });
+      h.runner.wake();
+
+      // One recipient holds the only token; the rest of the batch waits in the limiter.
+      await h.drive(() => h.sink.messages.length === 1, 10, 100);
+
+      // The emailer closes while the runner is alive. The batch's waiting recipients are refused and
+      // handed back, and the rest of the batch never starts. Time passes, as the paced workers and
+      // scans would take it, and the runner stops only at the end.
+      await h.emailer.close();
+      for (let i = 0; i < 12; i++) {
+        h.clock.advance(1000);
+        for (let j = 0; j < 5; j++) await Bun.sleep(0);
+      }
+      await h.runner.stop();
+
+      const deliveries = h.db
+        .query<{ status: string; n: number }, any>(
+          "SELECT status, count(*) AS n FROM campaign_deliveries WHERE campaign_id = ? GROUP BY status",
+        )
+        .all(campId);
+      expect(deliveries.find((d) => d.status === "failed")).toBeUndefined();
+      expect(Number(deliveries.find((d) => d.status === "sent")?.n)).toBe(1);
+      expect(h.sink.messages.length).toBe(1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("8. SMTP settings test waits a bounded time for the send-rate cap, then fails clearly", async () => {
+    const h = await createRateHarness({ "messaging.max_send_rate": 1 });
+    try {
+      const txTemplateId = await h.template();
+      // Fifteen sends queue ahead of the test message: at 1/s they hold the cap for about 15 s.
+      const queued = Array.from({ length: 15 }, (_, i) =>
+        h.json("/api/tx", "POST", {
+          subscriber_email: `queued-${i}@example.test`,
+          template_id: txTemplateId,
+          data: {},
+          messenger: "email",
+        }),
+      );
+      await h.drive(() => h.sink.messages.length >= 1, 10, 50);
+
+      const smtpTest = createSMTPTest(h.settingsStore, h.emailer, h.app.i18n, h.renderer);
+      const server = h.settingsStore.read().smtp[0]!;
+      let failure: unknown;
+      let finished = false;
+      const attempt = smtpTest({ ...server, email: "admin@example.test" }, () => {})
+        .catch((error: unknown) => {
+          failure = error;
+        })
+        .finally(() => {
+          finished = true;
+        });
+      await h.drive(() => finished, 100, 300);
+      await attempt;
+
+      // The bound is 10 s of injected time: the test is not sent, and the error names the cap.
+      expect(failure).toBeInstanceOf(HttpError);
+      expect((failure as HttpError).status).toBe(503);
+      expect((failure as HttpError).message).toContain("send-rate");
+      expect(h.sink.messages.some((m) => m.to.includes("admin@example.test"))).toBe(false);
+
+      await h.drive(() => h.sink.messages.length === 15, 100, 300);
+      await Promise.all(queued);
     } finally {
       await h.close();
     }

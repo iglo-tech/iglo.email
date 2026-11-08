@@ -161,6 +161,12 @@ export function createSMTPTest(
         current["app.root_url"],
       );
       const outcome = await send.result;
+      // Not started: no send-rate slot came within its bound, or the server is stopping.
+      if (outcome.stage === "not-started")
+        throw new HttpError(
+          503,
+          "SMTP test was not sent: the send-rate limit (messaging.max_send_rate) is busy or the server is stopping. Try again.",
+        );
       if (outcome.status === "ambiguous") throw new HttpError(500, "SMTP test outcome is unknown.");
       if (outcome.status !== "accepted") throw new HttpError(500, "SMTP test failed.");
       if (outcome.rejected.length)
