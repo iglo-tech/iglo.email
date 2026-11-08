@@ -1705,7 +1705,7 @@ describe("B34 MCP endpoint tests", () => {
   });
 
   // B44. update_campaign sets send_at, keeps it when the argument is omitted, and clears it on an explicit null.
-  test("16. update_campaign sets send_at, keeps the stored schedule when send_at is omitted, and clears it on null", async () => {
+  test("16. update_campaign sets send_at, keeps the stored schedule when send_at is omitted, and clears it on null (a scheduled campaign goes back to draft)", async () => {
     const list = await api("POST", "/api/lists", {
       name: "B44 Schedule List",
       type: "public",
@@ -1755,6 +1755,36 @@ describe("B34 MCP endpoint tests", () => {
     const unscheduled = (await api("GET", `/api/campaigns/${campId}`)).json.data;
     expect(unscheduled.send_at).toBeNull();
     expect(unscheduled.subject).toBe("B44 Schedule Renamed");
+
+    // A scheduled campaign: an omitted send_at keeps it scheduled, and null moves it to draft.
+    const rescheduled = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, send_at: "2030-01-02T03:04:05Z" },
+    });
+    expect(rescheduled.isError).toBeFalsy();
+    const onSchedule = await api("PUT", `/api/campaigns/${campId}/status`, { status: "scheduled" });
+    expect(onSchedule.status).toBe(200);
+    const scheduledNow = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(scheduledNow.status).toBe("scheduled");
+
+    const renamedWhileScheduled = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, subject: "B44 Schedule Still Scheduled" },
+    });
+    expect(renamedWhileScheduled.isError).toBeFalsy();
+    const stillScheduled = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(stillScheduled.status).toBe("scheduled");
+    expect(stillScheduled.subject).toBe("B44 Schedule Still Scheduled");
+    expect(Date.parse(stillScheduled.send_at)).toBe(Date.parse("2030-01-02T03:04:05Z"));
+
+    const clearedWhileScheduled = await client.callTool({
+      name: "update_campaign",
+      arguments: { id: campId, send_at: null },
+    });
+    expect(clearedWhileScheduled.isError).toBeFalsy();
+    const moved = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    expect(moved.status).toBe("draft");
+    expect(moved.send_at).toBeNull();
 
     await client.close();
   });

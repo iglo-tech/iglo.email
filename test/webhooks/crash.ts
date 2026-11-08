@@ -7,22 +7,31 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
-import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 
 const admin = { user: "crash-admin", password: "crash-admin-password" };
 const executable = resolve(import.meta.dir, "../../dist/iglo.email");
 const directory = mkdtempSync(join(tmpdir(), "iglo-webhook-crash-"));
-// Set by the first start, which takes a port that startOnFreePort finds free; restarts reuse it.
+// Set by the first start, which takes a port that startOnFreePort finds free; restarts reuse it
+// through restartOnPort, since the origin above is kept.
 let port = 0;
 let origin = "";
 let child: ChildProcess | undefined;
 let errors = "";
 
-async function start() {
+async function start(listenPort: number) {
   child = spawn(
     executable,
-    ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", join(directory, "d")],
+    [
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(listenPort),
+      "--data-dir",
+      join(directory, "d"),
+    ],
     {
       cwd: directory,
       env: {
@@ -44,7 +53,8 @@ async function start() {
       throw new Error(`not ready: ${errors}`);
     }
     const response = await fetch(`${origin}/health`).catch(() => null);
-    if (response?.status === 200 && child.pid !== undefined && listensOn(child.pid, port)) return;
+    if (response?.status === 200 && child.pid !== undefined && listensOn(child.pid, listenPort))
+      return;
     assert(Date.now() < deadline, `not ready: ${errors}`);
     await Bun.sleep(20);
   }
@@ -65,7 +75,7 @@ try {
   await startOnFreePort(async (free) => {
     port = free;
     origin = `http://127.0.0.1:${port}`;
-    await start();
+    await start(free);
   });
   const { user, token } = await provisionApiUser(origin, admin);
   const authorization = `Basic ${btoa(`${user}:${token}`)}`;
@@ -91,7 +101,7 @@ try {
 
   child!.kill("SIGKILL");
   await exit(child!);
-  await start();
+  await restartOnPort(port, start);
   await receiver.waitFor(2);
   const [first, second] = receiver.received;
   assert.equal(second!.body.id, first!.body.id);

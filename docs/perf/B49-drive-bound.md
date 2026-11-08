@@ -121,13 +121,11 @@ the disk.
 
 ## Other `drive`-style loops
 
-- `test/messaging/send-rate.test.ts` has its own `drive` with a 20,000-iteration cap and no
-  wall bound (`:373-380`). Its waits that use small explicit caps (for example `:677`, `:832`,
-  `:840`, `:847`, `:1013`, `:1022`) wait on real sink I/O, so they share the risk class. They
-  have not failed here, so this change leaves them alone.
-- `test/media/storage.test.ts:201` waits for an upload's temporary write with a 20,000-iteration
-  zero-length loop and no wall bound. It has not failed here either. If it does, it needs the
-  same wall bound.
+- `test/messaging/send-rate.test.ts` and `test/media/storage.test.ts` moved to the same wall-time
+  bound in B54 (`test/wait.ts`, `waitWall`), which `drive` also uses now. Their iteration caps are
+  gone. A real-time pause per check was tried and rejected: it moved sink timestamps (taken from
+  the injected clock at receipt) far enough to break the one-second pacing check in
+  `send-rate.test.ts` ("paces campaign and tx sends together").
 - Single `Bun.sleep(0)` yields elsewhere (`test/events`, `test/tx/gate`, `test/analytics`,
   `test/import`, `test/maintenance`) are single steps, not waits, so they are unaffected.
 

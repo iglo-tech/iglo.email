@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
+import { waitWall } from "@/test/wait";
 
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {
@@ -198,8 +199,8 @@ test("an upload that outlives a root change is refused and leaves nothing behind
   const content = new Uint8Array(24 * 1024 * 1024);
   const pending = upload(f, "race.bin", content);
   const writing = () => existsSync(temporary) && readdirSync(temporary).length > 0;
-  for (let i = 0; i < 20_000 && !writing(); i++) await Bun.sleep(0);
-  expect(writing()).toBe(true);
+  // The temporary write runs on the thread pool, so the wait is bounded in real time.
+  await waitWall(writing, { label: "upload's temporary write" });
   expect((await setRoot(f, "other")).status).toBe(200);
   const created = await pending;
   expect(created.status).toBe(409);

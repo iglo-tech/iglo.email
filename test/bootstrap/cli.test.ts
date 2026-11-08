@@ -3,7 +3,7 @@ import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { healthWhenReady, restartOnPort, startOnFreePort, stopChild } from "@/test/serve-port";
 import { ensureProductionBuild } from "@/test/production-build";
 import { startDbFixture } from "@/test/db/fixture";
 import { startSchemaFixture } from "@/test/schema/fixture";
@@ -42,16 +42,6 @@ function start(args: string[], env: Record<string, string> = {}) {
   });
 }
 
-async function stop(child: ReturnType<typeof start>, signal: "SIGTERM" | "SIGINT") {
-  if (child.exitCode === null) child.kill(signal);
-  const timer = setTimeout(() => child.kill("SIGKILL"), 3_000);
-  try {
-    return await child.exited;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function runCli(args: string[], env: Record<string, string> = {}) {
   const child = start(args, env);
   let timedOut = false;
@@ -73,44 +63,46 @@ async function runCli(args: string[], env: Record<string, string> = {}) {
 }
 
 /**
- * The executable started on a free port and answering /health on it. `args` builds the arguments
- * from the port; a start that reports its port in use is retried on another port.
+ * One start on `port`: the executable answers /health on it and listens on it, or the child is
+ * killed and the start fails. `build` gives the arguments for the port.
  */
-function startOnPort(build: (port: number) => { args: string[]; env?: Record<string, string> }) {
-  return startOnFreePort(async (port) => {
-    const { args, env = {} } = build(port);
-    const child = start(args, env);
-    try {
-      await healthWhenReady(child, port);
-    } catch (error) {
-      child.kill("SIGKILL");
-      await child.exited;
-      throw error;
-    }
-    return { child, port };
-  });
+async function launch(
+  port: number,
+  build: (port: number) => { args: string[]; env?: Record<string, string> },
+) {
+  const { args, env = {} } = build(port);
+  const child = start(args, env);
+  try {
+    await healthWhenReady(child, port);
+  } catch (error) {
+    child.kill("SIGKILL");
+    await child.exited;
+    throw error;
+  }
+  return child;
 }
 
-async function healthWhenReady(child: ReturnType<typeof start>, port: number) {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      const stderr = await new Response(child.stderr).text();
-      throw new Error(`Server exited before it became ready: ${stderr}`);
-    }
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/health`, {
-        headers: { Connection: "close" },
-        signal: AbortSignal.timeout(500),
-      });
-      // Another server can hold the port and answer first: ready only when this child listens on it.
-      if (child.pid !== undefined && listensOn(child.pid, port)) return response;
-    } catch {
-      // This delay is only for bounded process readiness, not application time.
-    }
-    await Bun.sleep(25);
+/**
+ * The executable started on a free port. `build` gives the arguments from the port; a start that
+ * reports its port in use is retried on another port.
+ */
+function startOnPort(build: (port: number) => { args: string[]; env?: Record<string, string> }) {
+  return startOnFreePort(async (port) => ({ child: await launch(port, build), port }));
+}
+
+/**
+ * Stops a child and returns its exit code. A non-zero exit fails with the stderr the child wrote,
+ * so a failure says why the process ended and not only its code.
+ */
+async function shutDown(child: ReturnType<typeof start>, signal: "SIGTERM" | "SIGINT") {
+  const code = await stopChild(child, signal);
+  if (code !== 0) {
+    const stderr = await new Response(child.stderr).text();
+    throw new Error(
+      `Server exited with ${code} after ${signal} (signal ${child.signalCode}): ${stderr}`,
+    );
   }
-  throw new Error("Server did not become ready within five seconds");
+  return code;
 }
 
 async function login(port: number, username: string, password: string) {
@@ -148,7 +140,7 @@ describe("compiled executable", () => {
       const api = await fetch(`http://127.0.0.1:${port}/api/health`);
       expect(api.status).toBe(403);
     } finally {
-      expect(await stop(child, "SIGTERM")).toBe(0);
+      expect(await shutDown(child, "SIGTERM")).toBe(0);
     }
     for (const env of [
       { IGLO_EMAIL_ADMIN_USER: adminUser },
@@ -192,9 +184,15 @@ describe("compiled executable", () => {
       session = sessionCookie.split(";", 1)[0] ?? "";
       expect(session).not.toBe("");
     } finally {
-      expect(await stop(first, "SIGTERM")).toBe(0);
+      expect(await shutDown(first, "SIGTERM")).toBe(0);
     }
-    const second = start(args(port), { IGLO_EMAIL_ADMIN_USER: "replacement-admin" });
+    // The restart reuses the port its predecessor released, with the same retry as a fresh start.
+    const second = await restartOnPort(port, (listenPort) =>
+      launch(listenPort, () => ({
+        args: args(listenPort),
+        env: { IGLO_EMAIL_ADMIN_USER: "replacement-admin" },
+      })),
+    );
     try {
       expect((await healthWhenReady(second, port)).status).toBe(200);
       const profile = await fetch(`http://127.0.0.1:${port}/api/profile`, {
@@ -207,7 +205,7 @@ describe("compiled executable", () => {
       expect((await login(port, adminUser, adminPassword)).status).toBe(302);
       expect((await login(port, "replacement-admin", adminPassword)).status).toBe(200);
     } finally {
-      expect(await stop(second, "SIGTERM")).toBe(0);
+      expect(await shutDown(second, "SIGTERM")).toBe(0);
     }
   });
   test("serves the upstream health response outside the checkout and stops on SIGTERM", async () => {
@@ -244,7 +242,7 @@ describe("compiled executable", () => {
       expect(protectedHealth.status).toBe(403);
       expect(await protectedHealth.text()).toBe('{"message":"invalid session"}\n');
     } finally {
-      expect(await stop(child, "SIGTERM")).toBe(0);
+      expect(await shutDown(child, "SIGTERM")).toBe(0);
     }
     const [stdout, stderr] = await Promise.all([
       new Response(child.stdout).text(),
@@ -275,7 +273,7 @@ describe("compiled executable", () => {
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
     } finally {
-      expect(await stop(child, "SIGINT")).toBe(0);
+      expect(await shutDown(child, "SIGINT")).toBe(0);
     }
   });
 
@@ -292,7 +290,7 @@ describe("compiled executable", () => {
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
     } finally {
-      expect(await stop(child, "SIGTERM")).toBe(0);
+      expect(await shutDown(child, "SIGTERM")).toBe(0);
     }
   });
 
@@ -305,7 +303,7 @@ describe("compiled executable", () => {
       try {
         expect((await healthWhenReady(child, port)).status).toBe(200);
       } finally {
-        expect(await stop(child, "SIGTERM")).toBe(0);
+        expect(await shutDown(child, "SIGTERM")).toBe(0);
       }
       if (i === 0) {
         const seed = startSchemaFixture(dataDir);

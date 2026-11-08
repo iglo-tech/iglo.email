@@ -19,7 +19,14 @@ export interface SnsTunnel {
   close(): Promise<void>;
 }
 
-export async function startSnsTunnel(): Promise<SnsTunnel> {
+/**
+ * `certificateHost` issues the certificate for another name, so a client that verifies the host
+ * must refuse it (test/bounces/sns-tunnel.test.ts). The CONNECT target stays the SNS host.
+ */
+export async function startSnsTunnel(
+  options: { certificateHost?: string } = {},
+): Promise<SnsTunnel> {
+  const certificateHost = options.certificateHost ?? host;
   const dir = mkdtempSync(join(tmpdir(), "iglo-sns-tunnel-"));
   const keyPath = join(dir, "tls.key");
   const certFile = join(dir, "tls.pem");
@@ -37,9 +44,9 @@ export async function startSnsTunnel(): Promise<SnsTunnel> {
         "-out",
         certFile,
         "-subj",
-        `/CN=${host}`,
+        `/CN=${certificateHost}`,
         "-addext",
-        `subjectAltName=DNS:${host}`,
+        `subjectAltName=DNS:${certificateHost}`,
         "-days",
         "2",
       ],
