@@ -4,15 +4,15 @@ Updated 2026-11-08. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-All 44 plan tasks are merged. `v0.1.0` (B59 #110, tag on 1ac9f03) built, verified and pushed to GHCR by release run 42641174775 (2026-11-09); its draft release awaits the owner's Publish. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
+All 44 plan tasks are merged. `v0.1.0` (B59 #110, tag on 1ac9f03) built, verified and pushed to GHCR by release run 42641174775 (2026-11-09); the owner published it and made the GHCR package public; the lead verified the download checksum and an anonymous pull and run of `:0.1.0` (amd64+arm64). Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
 State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B60 (#85–#111) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
-Owner-only, blocking nothing else: publishing the v0.1.0 draft release, making the GHCR package (now pushed) public, and opening a PDF on iOS/Android (desktop Chromium/Firefox checked by B60 #111). SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
+No owner items remain (2026-11-09): owner dropped the mobile PDF check as unneeded. SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-Empty: every agent-doable item is merged (2026-11-08). Only owner items and one watch note remain (Active, Hardening backlog). New review findings or a recurrence of the runner flake reopen the queue.
+- B61 [post-release cleanup](briefs/B61.md): Unverified docs after v0.1.0, owner's PDF decision, 27 oxlint warnings to zero.
 
 ## Owner decisions
 
@@ -140,7 +140,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
-- Media: PDF viewers on iOS/Android untested (owner, real devices); desktop Chromium/Firefox checked (B60 #111).
 - Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
