@@ -51,7 +51,7 @@ The first start creates the first administrator from `IGLO_EMAIL_ADMIN_USER` and
 `IGLO_EMAIL_ADMIN_PASSWORD`. They are read only while no users exist, and there is no public
 first-account form. Without them `/health` works and login is denied.
 
-A systemd unit. On 2026-11-09 it ran as a service in a Debian 13 container with systemd as PID 1
+A systemd unit, saved as `/etc/systemd/system/iglo.email.service`. On 2026-11-09 it ran as a service in a Debian 13 container with systemd as PID 1
 (not on a host): it started, answered `/health`, restarted after `kill -9` and stopped cleanly.
 
 ```ini
@@ -81,7 +81,12 @@ needs the group. Start the service with the variables in place, then remove them
 
 ```sh
 systemctl enable --now iglo.email
-curl -fsS http://127.0.0.1:9000/health
+curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:9000/health
+```
+
+When it prints `{"data":true}`, the administrator exists; then remove the variables and restart:
+
+```sh
 sed -i '/^IGLO_EMAIL_ADMIN_/d' /etc/iglo.email/env
 systemctl restart iglo.email
 ```
@@ -442,7 +447,7 @@ Rules from [D64](design/09-decisions.md#d64-the-upload-directory-is-a-fixed-boun
   directory, with every symlink resolved. For other storage, mount it at that directory.
 - A refused directory stops media and nothing else. The reason is logged at startup and shown in
   the API error, and campaigns with media pause.
-- A mounted upload directory starts owned by root, so after mounting it, the service user must own
+- A mounted upload directory is often owned by root, so after mounting it, the service user must own
   it: run `chown iglo-email:iglo-email /var/lib/iglo.email/uploads` as root. Until then an upload
   fails with `500`, and the log shows `EACCES` on `mkdir`. On 2026-11-09 a file uploaded into a
   bind-mounted directory was served before and after `systemctl restart`, once the directory was

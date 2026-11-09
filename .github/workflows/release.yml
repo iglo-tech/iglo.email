@@ -100,12 +100,14 @@ jobs:
             iglo.email-linux-x64 iglo.email-linux-arm64 LICENSE THIRD-PARTY-NOTICES.txt SHA256SUMS
 
   # One image for linux/amd64 and linux/arm64 from the two verified executables. The Dockerfile has
-  # no RUN on the target platform, so no emulation is needed. Only this job may write packages.
+  # no RUN on the target platform, so no emulation is needed. The image is pushed only after
+  # image-smoke passes on both architectures. Only this job may write packages.
   image:
-    needs: [build, publish]
+    needs: [build, publish, image-smoke]
     if: |
       !failure() && !cancelled() &&
       needs.build.result == 'success' &&
+      needs.image-smoke.result == 'success' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -174,7 +176,8 @@ jobs:
   # Runs the image as a user would, on each architecture's native runner, on every run, dry or not.
   # It builds that platform's image from the same verified executable and loads it locally, so
   # nothing is pushed, no emulation is needed and no package permission is granted. It depends on
-  # build only: a skipped image job must not skip this check.
+  # build only, so the image job's condition cannot skip it. Its result gates image: a failure here
+  # blocks the push.
   image-smoke:
     needs: build
     if: ${{ !cancelled() && needs.build.result == 'success' }}
@@ -235,7 +238,7 @@ jobs:
             -e IGLO_EMAIL_ROOT_URL=http://127.0.0.1:9000 iglo.email:smoke
           body=
           for _ in $(seq 1 60); do
-            body=$(curl -fsS http://127.0.0.1:9000/health 2>/dev/null || true)
+            body=$(curl -fsS --max-time 2 http://127.0.0.1:9000/health 2>/dev/null || true)
             if [ -n "$body" ]; then break; fi
             sleep 1
           done
