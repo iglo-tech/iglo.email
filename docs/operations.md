@@ -51,7 +51,8 @@ The first start creates the first administrator from `IGLO_EMAIL_ADMIN_USER` and
 `IGLO_EMAIL_ADMIN_PASSWORD`. They are read only while no users exist, and there is no public
 first-account form. Without them `/health` works and login is denied.
 
-A systemd unit (`systemd-analyze verify` accepts it; it was not run as a service):
+A systemd unit, saved as `/etc/systemd/system/iglo.email.service`. On 2026-11-09 it ran as a service in a Debian 13 container with systemd as PID 1
+(not on a host): it started, answered `/health`, restarted after `kill -9` and stopped cleanly.
 
 ```ini
 [Unit]
@@ -75,7 +76,20 @@ WantedBy=multi-user.target
 
 Put the two admin variables in `/etc/iglo.email/env`, owned by root, mode 0640, group `iglo-email`,
 and remove them after the first start. systemd reads this file as root; a shell run as the account
-needs the group.
+needs the group. Start the service with the variables in place, then remove them and restart it.
+`enable` makes the unit start at boot; without it the service stays down after a reboot:
+
+```sh
+systemctl enable --now iglo.email
+curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:9000/health
+```
+
+When it prints `{"data":true}`, the administrator exists; then remove the variables and restart:
+
+```sh
+sed -i '/^IGLO_EMAIL_ADMIN_/d' /etc/iglo.email/env
+systemctl restart iglo.email
+```
 
 One server runs per data directory, because the sending loops depend on it: two servers on one
 directory could send a message twice. A second one [refuses to start](#one-process-per-data-directory).
@@ -216,7 +230,9 @@ directory on a local disk; a mounted upload directory inside it is fine.
 ## Reverse proxy and TLS
 
 iglo.email serves plain HTTP. Keep it on `127.0.0.1` and terminate TLS in a reverse proxy. An
-example for nginx, not run here:
+example for nginx. On 2026-11-09 it ran verbatim in front of the service, with a self-signed test
+certificate in place of Let's Encrypt's: the admin login, `/health`, a media upload and download,
+and the public subscription page all worked through it:
 
 ```nginx
 server {
@@ -431,6 +447,11 @@ Rules from [D64](design/09-decisions.md#d64-the-upload-directory-is-a-fixed-boun
   directory, with every symlink resolved. For other storage, mount it at that directory.
 - A refused directory stops media and nothing else. The reason is logged at startup and shown in
   the API error, and campaigns with media pause.
+- A mounted upload directory is often owned by root, so after mounting it, the service user must own
+  it: run `chown iglo-email:iglo-email /var/lib/iglo.email/uploads` as root. Until then an upload
+  fails with `500`, and the log shows `EACCES` on `mkdir`. On 2026-11-09 a file uploaded into a
+  bind-mounted directory was served before and after `systemctl restart`, once the directory was
+  owned by the service user.
 - Only a file with a `media` row of that exact name is served.
 - The path cannot change while any media row exists. To move media, delete it first.
 - A crash can leave a file with no row. It is never served and is safe to delete or keep.
@@ -876,11 +897,12 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 
 - Delivery through a real SMTP provider, and DKIM against real receivers. Tests use a local sink
   only.
-- The systemd unit as a running service, the nginx example, TLS, a mounted upload directory, and a
-  restore from real off-site storage.
-- Running on Linux arm64: the server as a service, and the `linux/arm64` image at all. The release
-  workflow verifies the arm64 executable on a native arm64 runner; the published image was run only
-  on amd64.
+- TLS with a certificate from a certificate authority: the nginx example ran with a self-signed
+  test certificate only, since issuing one needs a public domain.
+- A restore from real off-site storage.
+- Running on Linux arm64: the server as a service, and the published `linux/arm64` image. The
+  release workflow's `image-smoke` job runs the arm64 executable and an image built from the
+  Dockerfile on a native arm64 runner; the published image itself was run only on amd64.
 - Translations other than English have not been reviewed.
 - PDF viewers other than desktop Chromium and Firefox. Those two were checked on 2026-11-09 with a
   hostile PDF: its JavaScript ran only inside the viewer and sent no request to `/api/*`
