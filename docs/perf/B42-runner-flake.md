@@ -76,10 +76,12 @@ expired. That was progress, not a stall. Local measurements, idle host, `--timeo
 - Every other `drive`/`until` call in `runner.test.ts` and `media.test.ts` stayed under 0.2 s, except
   the two that fail by design: the 200 ms bound test (line 651) and the iteration-limited wait (line 628).
 
-Change: only the `drive` at `runner.test.ts:601` takes a 6 s bound (about 4× the 20-run max). The
-default `WAIT_WALL_MS` and the other calls are unchanged. Consequence to decide: a plain serial
-`bun test` (Bun's 5 s default timeout) can now hit the test timeout before this wait's own 6 s bound
-if the wait really stalls. Under `bun run check` (30 s) the bound is what fires.
+Change: only the `drive` at `runner.test.ts:601` takes a 15 s bound, and the tracked-link test gets a
+30 s per-test timeout (`}, 30_000);`). The CI run took over 3 s for a `drive` that takes about 0.6 s
+here, at least 5× slower, so 6 s left too little margin. The default `WAIT_WALL_MS` and the other
+calls are unchanged. With the 30 s test timeout, a plain serial `bun test` (Bun's 5 s default) no
+longer fires first: the 15 s wall bound fires, and the stuck-state message is kept.
 
-After the change, the same 20-run loop of the tracked-link test passed 20 of 20, at 1.19–1.41 s, and
-`bun run check` passed (1119 tests, 0 failures).
+The earlier 20-run loop of the tracked-link test (1.19–1.41 s, 20 of 20) was measured with the 6 s
+bound. The 15 s bound and 30 s timeout were checked with the 5-run `-t "do not accumulate"` loop
+recorded in the B72 PR.

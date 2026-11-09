@@ -598,8 +598,8 @@ test("tracked links personalized per subscriber do not accumulate across batches
   };
   let first = 0;
   // Settle everything but the last message, measuring after the first few batches.
-  // Wall bound 6 s: this whole test took at most 1.39 s over 20 local runs (B72), and it renders
-  // ~13 MB and forces a GC, so it needs a wider bound than the 3 s default. It is progress-bound.
+  // Wall bound 15 s: about 0.6 s here, over 3 s on the arm64 CI runner (release run 42707478326).
+  // It renders ~13 MB and forces a GC, so it needs a wider bound than the 3 s default. It is progress-bound.
   await f.drive(
     () => {
       if (f.pushes.length >= 60 && !first) first = heap();
@@ -609,7 +609,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
     },
     10,
     undefined,
-    6_000,
+    15_000,
   );
   const last = heap();
   // About 13 MB of distinct tracked URLs were rendered since the first measurement.
@@ -621,7 +621,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
   const body = Buffer.from(f.pushes.at(-1)!.message.body).toString();
   const link = /http:\/\/fixture\.test(\/link\/[^"]+)/.exec(body)![1]!;
   expect((await f.request(link)).status).toBe(307);
-});
+}, 30_000);
 
 test("a wait that never completes fails with the stuck state, not at the test timeout", async () => {
   f = await runnerFixture({ hold: true });
