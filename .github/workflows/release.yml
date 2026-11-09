@@ -230,6 +230,7 @@ jobs:
             echo "$TARGET image printed '$got' for --version, want '$want'" >&2
             exit 1
           fi
+          echo "$TARGET --version: $got"
           docker run -d --name iglo-smoke -p 127.0.0.1:9000:9000 \
             -e IGLO_EMAIL_ROOT_URL=http://127.0.0.1:9000 iglo.email:smoke
           body=
@@ -243,6 +244,7 @@ jobs:
             echo "$TARGET image did not answer /health with {\"data\":true}" >&2
             exit 1
           fi
+          echo "$TARGET /health: $body"
       - name: Remove the smoke container
         if: always()
         run: docker rm -f -v iglo-smoke || true
