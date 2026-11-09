@@ -970,3 +970,12 @@ Lead design decisions from brief B37 (B36 audit #88, [D89](#d89-narrow-complete-
   - *SMTP settings test:* it is an interactive test of one message, but it is not exempt from the cap. It waits at most 10 s of injected time for a token, at outbox priority, then answers 503 "not sent" without sending, so an operator sees a clear reason and nothing is marked failed. A bypass would add an unpaced message to the account rate.
   - *Closed emailer:* a push after `close()` is not started (`not-started`), and so is a waiter refused by `close()`. The runner and the outbox claim nothing once the emailer is closed. A batch that meets a not-started outcome pushes no later recipient, and hands its unsent recipients back to the cursor. No delivery ends `failed` because the emailer was closed under it. Main's shutdown order (runner, outbox, emailer) still applies.
   - *Outcome mapping:* the outbox maps `not-started` to a held row (`queued`, attempt not counted). The `not-started` check in `sends.ts` `finish` is removed, so there is one path.
+
+## D95. Uploaded PDFs stay inline; phone viewers are not checked (lead, 2026-11-09)
+
+Decided by the lead after the owner asked who can upload media; for owner review.
+
+- **Decision:** keep serving PDFs inline without the CSP sandbox (as listmonk does) and do not test iOS/Android PDF viewers.
+- **Why:** uploading needs `media:manage` (`POST /api/media`), which only the super admin has unless the owner grants it to a limited role. A hostile PDF could at most let such a limited account act as a full admin when one opens it, and B60 showed that desktop Chromium and Firefox give PDF JavaScript no page, cookie or network access. For a single-owner instance that is not worth a device test or making PDF links download.
+- **Revisit:** if a limited role that is not fully trusted gets `media:manage`, serve PDFs as `Content-Disposition: attachment` instead.
+
