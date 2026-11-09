@@ -6,7 +6,7 @@ Updated 2026-11-08. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 All 44 plan tasks are merged. `v0.1.0` (B59 #110, tag on 1ac9f03) built, verified and pushed to GHCR by release run 42641174775 (2026-11-09); the owner published it and made the GHCR package public; the lead verified the download checksum and an anonymous pull and run of `:0.1.0` (amd64+arm64). Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
 State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B61 (#85–#112) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
-No owner items remain (2026-11-09): owner dropped the mobile PDF check as unneeded. SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
+Owner question open: [open question 5](design/10-open-questions.md) (PDFs on phones). The 2026-11-09 entry that said the owner dropped it was wrong (the owner asked what it meant) and is corrected. SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
