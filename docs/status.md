@@ -5,13 +5,15 @@ Updated 2026-11-08. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged. `v0.1.0` (B59 #110, tag on 1ac9f03) built, verified and pushed to GHCR by release run 42641174775 (2026-11-09); the owner published it and made the GHCR package public; the lead verified the download checksum and an anonymous pull and run of `:0.1.0` (amd64+arm64). Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B61 (#85–#112) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B63 (#85–#114) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 No owner items remain: phone PDF viewers need no check ([D95](design/09-decisions.md), after the owner's question). SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
+- B72 [runner test wall bound](briefs/B72.md): the watch note fired on arm64 (release dry run 42707478326); progressing, not stuck.
+- Backlog (lead, from the B64 review): `runner.wake` (`src/campaigns/runner/runner.ts:783`) is never called, so a start or resume waits for the next 5 s scan; consider waking on status change.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
 - B64 = E1 sending lifecycle to the sink.
 - B65 = E2 consent and unsubscribe from the mail (sink headers).
@@ -153,7 +155,6 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
-- Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
 ## Accepted trade-offs
