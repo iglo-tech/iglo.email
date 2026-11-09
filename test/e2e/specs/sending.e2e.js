@@ -194,8 +194,14 @@ test("a scheduled campaign fires within one scan of its send_at", async ({ page 
   // (src/campaigns/runner/runner.ts, scanInterval), so the first mail must follow within that.
   const at = new Date(Math.ceil((Date.now() + 8000) / 1000) * 1000);
   await page.goto(`${CAMPAIGNS}/${c.id}`);
+  // The form is hidden until campaign.js has loaded the campaign (x-show="ready"), and the status
+  // badge shows Draft only then. Wait for that, not for the switch, which is enabled before load
+  // for an administrator. Then wait for the date field to be enabled before filling it.
+  await expect(page.locator("header .status-draft")).toBeVisible();
   await page.getByRole("switch", { name: "Send later", exact: true }).check();
-  await page.locator('input[name="send_at"]').fill(localInput(at));
+  const sendAt = page.locator('input[name="send_at"]');
+  await expect(sendAt).toBeEnabled();
+  await sendAt.fill(localInput(at));
   await button(page, "Schedule campaign").click();
   await confirm(page);
   await expect(page).toHaveURL(/\/admin\/campaigns$/);
