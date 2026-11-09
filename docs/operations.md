@@ -884,7 +884,10 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
 - A download from a published release. The checksum and install commands ran on files packaged
   locally by `bun run release:package`, and the release workflow has not run yet.
 - Translations other than English have not been reviewed.
-- Supported PDF viewers for attachments.
+- PDF viewers for attachments on iOS and Android, which are untested. On desktop, Chromium
+  156.0.8078.4 and Firefox 153.6.0 ESR were checked on 2026-11-09 with a hostile PDF: its
+  JavaScript ran only inside the viewer and sent no request to `/api/*`
+  (see the media serving row in [07-api-and-ui.md](design/07-api-and-ui.md)).
 
 Known limits rather than unknowns: a [hold](#restore)
 is in what `backup` and the migration runner write, so a disk image or a hand copy does not add
