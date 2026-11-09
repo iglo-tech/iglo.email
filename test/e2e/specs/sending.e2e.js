@@ -71,11 +71,21 @@ async function menu(page, name, action) {
   }).toPass({ timeout: 20_000 });
 }
 
+// A listing action (start, pause, resume, cancel) changes the status over the API and then
+// reloads the listing (campaigns.js onChangeStatus). Start waiting for the load before the click:
+// a page.evaluate that runs while the reload is in flight fails with "Execution context was
+// destroyed". Confirms that navigate elsewhere wait with toHaveURL instead.
+async function confirmAndReload(page) {
+  const loaded = page.waitForEvent("load");
+  await confirm(page);
+  await loaded;
+}
+
 // Starts a draft from the listing, as a user does, and leaves the listing showing it.
 async function startFromListing(page, c) {
   await page.goto(`${CAMPAIGNS}?query=${c.name}`);
   await menu(page, c.name, "Start campaign");
-  await confirm(page);
+  await confirmAndReload(page);
 }
 
 // The page's date control is local time at whole seconds, as the browser sees it.
@@ -161,12 +171,12 @@ test("pause stops mail within the settle window, and resume delivers the rest on
   await startFromListing(page, c);
   await expect.poll(async () => sum(await mailCounts(emails)), FINISH).toBeGreaterThanOrEqual(2);
   await menu(page, c.name, "Pause");
-  await confirm(page);
+  await confirmAndReload(page);
   await expect(row(page, c.name)).toHaveClass(/status-paused/);
   const paused = await settledMail(emails);
   expect(sum(paused)).toBeLessThan(40);
   await menu(page, c.name, "Send");
-  await confirm(page);
+  await confirmAndReload(page);
   await expect.poll(() => status(page, c.id), FINISH).toBe("finished");
   expect(await settledMail(emails)).toEqual(emails.map(() => 1));
 });
@@ -178,7 +188,7 @@ test("cancel stops mail, and nothing arrives after the settle window", async ({ 
   await startFromListing(page, c);
   await expect.poll(async () => sum(await mailCounts(emails)), FINISH).toBeGreaterThanOrEqual(2);
   await menu(page, c.name, "Cancel");
-  await confirm(page);
+  await confirmAndReload(page);
   await expect(row(page, c.name)).toHaveClass(/status-cancelled/);
   const atCancel = await settledMail(emails);
   expect(sum(atCancel)).toBeLessThan(40);
