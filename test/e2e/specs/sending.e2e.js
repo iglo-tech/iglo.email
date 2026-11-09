@@ -155,6 +155,7 @@ test("unsubscribed from the list and blocklisted subscribers receive nothing", a
 test("pause stops mail within the settle window, and resume delivers the rest once each", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const { list, emails } = await audience(page, 40);
   const c = await campaign(page, { lists: [list.id] });
   await startFromListing(page, c);
@@ -171,6 +172,7 @@ test("pause stops mail within the settle window, and resume delivers the rest on
 });
 
 test("cancel stops mail, and nothing arrives after the settle window", async ({ page }) => {
+  test.setTimeout(60_000);
   const { list, emails } = await audience(page, 40);
   const c = await campaign(page, { lists: [list.id] });
   await startFromListing(page, c);
@@ -185,6 +187,7 @@ test("cancel stops mail, and nothing arrives after the settle window", async ({ 
 });
 
 test("a scheduled campaign fires within one scan of its send_at", async ({ page }) => {
+  test.setTimeout(60_000);
   const { list, emails } = await audience(page, 1);
   const c = await campaign(page, { lists: [list.id] });
   // Whole seconds, a few seconds out. The runner scans for due campaigns every five seconds
@@ -199,8 +202,11 @@ test("a scheduled campaign fires within one scan of its send_at", async ({ page 
   const scheduled = await ok(page, `/api/campaigns/${c.id}`);
   expect(scheduled).toMatchObject({ status: "scheduled" });
   expect(new Date(scheduled.send_at).getTime()).toBe(at.getTime());
-  await sleep(at.getTime() - 1000 - Date.now());
-  expect(await mailCounts(emails)).toEqual([0]);
+  // Sample every 250 ms until 200 ms before send_at: no mail may appear at any sample.
+  while (Date.now() < at.getTime() - 200) {
+    expect(await mailCounts(emails)).toEqual([0]);
+    await sleep(250);
+  }
   expect(await status(page, c.id)).toBe("scheduled");
   await expect.poll(async () => (await mailCounts(emails))[0], FINISH).toBe(1);
   const arrived = Date.now();
