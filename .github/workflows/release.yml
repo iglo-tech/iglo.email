@@ -171,11 +171,13 @@ jobs:
             REVISION=${{ github.sha }}
           provenance: false
 
-  # Runs the image as a user would, on each architecture's native runner, after the image job. It
-  # builds that platform's image from the same verified executable and loads it locally, so nothing
-  # is pushed, no emulation is needed and no package permission is granted.
+  # Runs the image as a user would, on each architecture's native runner, on every run, dry or not.
+  # It builds that platform's image from the same verified executable and loads it locally, so
+  # nothing is pushed, no emulation is needed and no package permission is granted. It depends on
+  # build only: a skipped image job must not skip this check.
   image-smoke:
-    needs: image
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
