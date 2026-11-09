@@ -5,14 +5,14 @@ Updated 2026-11-08. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 ## Active
 
 All 44 plan tasks are merged. `v0.1.0` (B59 #110, tag on 1ac9f03) built, verified and pushed to GHCR by release run 42641174775 (2026-11-09); the owner published it and made the GHCR package public; the lead verified the download checksum and an anonymous pull and run of `:0.1.0` (amd64+arm64). Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B60 (#85–#111) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B61 (#85–#112) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
 No owner items remain (2026-11-09): owner dropped the mobile PDF check as unneeded. SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-- B61 [post-release cleanup](briefs/B61.md): Unverified docs after v0.1.0, owner's PDF decision, 27 oxlint warnings to zero.
+Empty: every agent-doable item is merged (2026-11-09, B61 #112). No owner items remain. New review findings or a recurrence of the runner flake reopen the queue.
 
 ## Owner decisions
 
@@ -43,6 +43,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B61 | [#112](https://github.com/iglo-tech/iglo.email/pull/112) | 52fd05a | Post-release Unverified docs; 27 oxlint warnings to 0 |
+| B60 | [#111](https://github.com/iglo-tech/iglo.email/pull/111) | fbe9c5e | Hostile PDF in desktop Chromium/Firefox: no origin access |
+| B59 | [#110](https://github.com/iglo-tech/iglo.email/pull/110) | 1ac9f03 | Version 0.1.0; tag v0.1.0 released |
 | B58 | [#109](https://github.com/iglo-tech/iglo.email/pull/109) | 14aac56 | Two micro nits (docs label, outbox wait order) |
 | B57 | [#108](https://github.com/iglo-tech/iglo.email/pull/108) | 9ff7bd2 | Last nits: auth `""` SMTP-only, shared SMTP-test handler, API-based outbox wait, timings |
 | B53 | [#107](https://github.com/iglo-tech/iglo.email/pull/107) | fd2e361 | Final nits sweep: 14 review-backlog items |
