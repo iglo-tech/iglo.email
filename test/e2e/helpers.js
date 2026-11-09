@@ -134,6 +134,45 @@ export function api(page, path, method = "GET", body = undefined) {
   );
 }
 
+// A session-authenticated API call that must succeed; returns `data`.
+export async function ok(page, path, method, body) {
+  const response = await api(page, path, method, body);
+  expect(response.status, JSON.stringify(response.body)).toBe(200);
+  return response.body.data;
+}
+
+export const makeList = (page, name = unique("Audience"), optin = "single") =>
+  ok(page, "/api/lists", "POST", { name, type: "private", optin });
+
+// One subscriber on a new list, for mail the sink can be asked about.
+export async function audience(page, count = 1) {
+  const list = await makeList(page);
+  const emails = Array.from({ length: count }, () => `${unique("reader")}@example.com`);
+  // One round trip for all of them, in order; the first refusal is reported with its answer.
+  const refused = await page.evaluate(
+    async ([listID, addresses]) => {
+      const csrf =
+        document.cookie
+          .split("; ")
+          .find((c) => c.startsWith("csrf="))
+          ?.slice(5) ?? "";
+      for (const [i, email] of addresses.entries()) {
+        const response = await fetch("/api/subscribers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+          body: JSON.stringify({ email, name: `Reader ${i}`, status: "enabled", lists: [listID] }),
+        });
+        if (response.status !== 200)
+          return { status: response.status, body: await response.text() };
+      }
+      return null;
+    },
+    [list.id, emails],
+  );
+  expect(refused, "seeding the audience").toBeNull();
+  return { list, emails };
+}
+
 // Create a user with its own role. The page must hold an admin session.
 export async function createUser(page, permissions = null) {
   const name = unique("e2e");
@@ -168,4 +207,34 @@ export async function mailFor(address, count = 1) {
     expect(mails.length).toBeGreaterThanOrEqual(count);
   }).toPass({ timeout: 15000 });
   return mails;
+}
+
+// How many mails the sink holds for each address, right now.
+export async function mailCounts(addresses) {
+  return Promise.all(
+    addresses.map(async (address) => {
+      const response = await fetch(`${process.env.E2E_MAIL}?to=${encodeURIComponent(address)}`);
+      return (await response.json()).length;
+    }),
+  );
+}
+
+// Counts per address once they have held still for `settle` ms of real time. Nothing is
+// signalled when a send finishes, so a quiet window is the only evidence that no more are coming.
+// Bounded by `timeout`, which fails the test rather than waiting for a count that keeps moving.
+export async function settledMail(addresses, { settle = 1500, timeout = 30000 } = {}) {
+  const deadline = Date.now() + timeout;
+  let counts = await mailCounts(addresses);
+  let stillSince = Date.now();
+  while (Date.now() - stillSince < settle) {
+    if (Date.now() > deadline)
+      throw new Error(`mail counts kept changing for ${timeout} ms: ${counts.join(", ")}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const next = await mailCounts(addresses);
+    if (next.some((count, i) => count !== counts[i])) {
+      counts = next;
+      stillSince = Date.now();
+    }
+  }
+  return counts;
 }

@@ -3,7 +3,18 @@
 // Liquid (D9). Dropped cases, with reasons, are in the M4.3 pull request: the visual format, dates
 // set through psql, and the API-only bulk deletion cases the contract suite covers.
 import { expect } from "@playwright/test";
-import { api, confirm, mailFor, openMenu, selectList, test, unique, signIn } from "../helpers.js";
+import {
+  audience,
+  confirm,
+  makeList,
+  mailFor,
+  ok,
+  openMenu,
+  selectList,
+  test,
+  unique,
+  signIn,
+} from "../helpers.js";
 
 const CAMPAIGNS = "/admin/campaigns";
 const expression = "Hello {{ subscriber.name }} from {{ subscriber.attribs.city }}";
@@ -18,15 +29,6 @@ const tab = (page, name) => page.getByRole("tab", { name, exact: true });
 const button = (scope, name) => scope.getByRole("button", { name, exact: true });
 const listField = (page) =>
   page.locator("fieldset").filter({ has: page.locator("#campaign-lists") });
-
-async function ok(page, path, method, body) {
-  const response = await api(page, path, method, body);
-  expect(response.status, JSON.stringify(response.body)).toBe(200);
-  return response.body.data;
-}
-
-const makeList = (page, name = unique("Audience"), optin = "single") =>
-  ok(page, "/api/lists", "POST", { name, type: "private", optin });
 
 async function create(page, overrides = {}) {
   const lists = overrides.lists ?? [(await makeList(page)).id];
@@ -87,35 +89,6 @@ async function fillBody(page, format, text) {
       .locator(".editor-body .cm-content")
       .fill(format === "html" ? `<strong>${text}</strong>` : `**${text}**`);
   }
-}
-
-// One subscriber on a new list, for mail the sink can be asked about.
-async function audience(page, count = 1) {
-  const list = await makeList(page);
-  const emails = Array.from({ length: count }, () => `${unique("reader")}@example.com`);
-  // One round trip for all of them, in order; the first refusal is reported with its answer.
-  const refused = await page.evaluate(
-    async ([listID, addresses]) => {
-      const csrf =
-        document.cookie
-          .split("; ")
-          .find((c) => c.startsWith("csrf="))
-          ?.slice(5) ?? "";
-      for (const [i, email] of addresses.entries()) {
-        const response = await fetch("/api/subscribers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-          body: JSON.stringify({ email, name: `Reader ${i}`, status: "enabled", lists: [listID] }),
-        });
-        if (response.status !== 200)
-          return { status: response.status, body: await response.text() };
-      }
-      return null;
-    },
-    [list.id, emails],
-  );
-  expect(refused, "seeding the audience").toBeNull();
-  return { list, emails };
 }
 
 async function preview(page, text) {
