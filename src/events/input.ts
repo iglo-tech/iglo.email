@@ -106,6 +106,8 @@ function known(value: Record<string, unknown>, fields: readonly string[], prefix
   for (const key of Object.keys(value))
     if (!fields.includes(key)) throw new EventInputError(`${prefix}${key}`);
 }
+// Control characters are refused on purpose: the range is the check.
+// oxlint-disable-next-line no-control-regex
 const controls = /[\u0000-\u001f\u007f-\u009f]/;
 
 /** RFC 3339 with a zone offset; a fraction past milliseconds is truncated. */

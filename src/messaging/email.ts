@@ -85,6 +85,8 @@ export function validServer(s: SMTPServer): boolean {
   return (
     typeof s.host === "string" &&
     !!s.host.trim() &&
+    // A host with whitespace or control characters is refused on purpose.
+    // oxlint-disable-next-line no-control-regex
     !/[\s\x00-\x1f\x7f]/.test(s.host) &&
     Number.isInteger(s.port) &&
     s.port >= 1 &&
@@ -376,7 +378,7 @@ export function createEmailer(options: {
     for (const resume of pool.socketState.waiting.splice(0)) resume();
     pool.transport.close();
     for (const socket of pool.sockets) socket.destroy();
-    for (const operation of [...pool.operations]) operation.cancel();
+    for (const operation of Array.from(pool.operations)) operation.cancel();
     retired.delete(pool);
     pool.resolve();
   }

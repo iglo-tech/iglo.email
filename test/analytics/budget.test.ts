@@ -94,7 +94,7 @@ test("continuous overlap forces a gap after the window, by the injected clock", 
 
 test("a small body is sent whole and is not counted", async () => {
   const reader = createAnalyticsReader({ path: "x", command: bytes(1000), egressBytes: 1 });
-  const response = await read(reader);
+  await read(reader);
   expect(reader.heldBytes()).toBe(0);
 });
 

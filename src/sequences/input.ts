@@ -68,6 +68,8 @@ export interface DefinitionContext {
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+// Control characters are refused on purpose: the range is the check.
+// oxlint-disable-next-line no-control-regex
 const controls = /[\u0000-\u001f\u007f-\u009f]/;
 const fail = (field: string, detail: string): never => {
   throw new DefinitionError(field, detail);

@@ -318,7 +318,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
     /** Refuse new and queued reads, kill running children and wait for them to exit. */
     async close() {
       closed = true;
-      for (const settle of [...waiting]) settle(closing());
+      for (const settle of Array.from(waiting)) settle(closing());
       for (const stop of children.values()) stop(closing());
       await Promise.all([...children.keys()].map((child) => child.exited));
     },

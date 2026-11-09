@@ -25,6 +25,8 @@ const fieldsOf: Record<(typeof kinds)[number], readonly string[]> = {
 const ops = ["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"];
 const subscriberStatuses = ["enabled", "disabled", "blocklisted"];
 const listStatuses = ["unconfirmed", "confirmed", "unsubscribed"];
+// Control characters are refused on purpose: the range is the check.
+// oxlint-disable-next-line no-control-regex
 const controls = /[\u0000-\u001f\u007f-\u009f]/;
 const safeKey = /^[A-Za-z0-9_.-]{1,64}$/;
 

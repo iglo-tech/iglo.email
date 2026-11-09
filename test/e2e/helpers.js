@@ -126,7 +126,7 @@ export function api(page, path, method = "GET", body = undefined) {
       const response = await fetch(uri, {
         method: verb,
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-        body: data === undefined ? undefined : JSON.stringify(data),
+        ...(data === undefined ? {} : { body: JSON.stringify(data) }),
       });
       return { status: response.status, body: await response.json() };
     },

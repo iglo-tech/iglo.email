@@ -352,7 +352,6 @@ function SearchForm(props: { base: string; params: URLSearchParams; t: Translati
 
 export const subscribersView: AdminView = ({ context, can, listScope }) => {
   const t = context.app.i18n;
-  const term = (name: string) => t.T(`globals.terms.${name}`);
   const params = context.url.searchParams;
   const listID = context.params.id === undefined ? null : BigInt(getID(context));
   if (listID !== null) {

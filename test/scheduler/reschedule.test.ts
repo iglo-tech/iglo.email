@@ -1,7 +1,7 @@
 // B5: a reschedule that shortens a wait makes the step due now, never late
 // (docs/design/05-sequences.md#reschedule), through the real scheduler on the injected clock.
 import { afterEach, expect, test } from "bun:test";
-import { day, hour, schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { day, schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
 
 const fixtures: SchedulerFixture[] = [];
 afterEach(async () => {

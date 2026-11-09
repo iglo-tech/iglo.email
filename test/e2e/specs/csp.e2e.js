@@ -306,6 +306,8 @@ test.describe("script that reached the page", () => {
       // After a task: Playwright's own evaluation is exempt from the page's eval rule.
       let evaluated = "refused";
       try {
+        // A deliberate CSP probe: the page's own eval must be refused.
+        // oxlint-disable-next-line no-eval
         evaluated = (0, eval)("1 + 1");
       } catch {
         // CSP throws EvalError.

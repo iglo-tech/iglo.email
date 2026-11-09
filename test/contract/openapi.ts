@@ -1457,7 +1457,7 @@ export async function runOpenApiContract(target: {
     ).body.data;
     const denied = `Basic ${btoa(`none:${caller.password}`)}`;
     const refusal = (reply: Reply) =>
-      reply.status === 403 && /^permission denied/.test(reply.body?.message ?? "");
+      reply.status === 403 && String(reply.body?.message ?? "").startsWith("permission denied");
     /** The query an operation cannot be reached without. */
     const needed = (operation: any) => {
       const query = (

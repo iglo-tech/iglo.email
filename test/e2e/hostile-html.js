@@ -129,6 +129,8 @@ export function audit(root) {
       if (/^(on|x-|@|:)/.test(name)) bad.push(`${el.localName} ${name}`);
       if (name === "name" && el.localName !== "a") bad.push(`${el.localName} name`);
       if (name === "srcset" || name === "srcdoc" || name === "formaction") bad.push(name);
+      // Browsers drop control characters and spaces before reading a URL's scheme; mirror that.
+      // oxlint-disable-next-line no-control-regex
       const url = value.replace(/[\u0000- ]/g, "");
       if (/^(href|src|background|cite)$/.test(name) && /^(javascript|vbscript):/i.test(url))
         bad.push(`${name} ${value}`);

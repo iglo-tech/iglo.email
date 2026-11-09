@@ -157,7 +157,7 @@ test.describe("Subscribers: create, edit & delete", () => {
     await selectList(form, "Default list");
     await Promise.all([
       page.waitForResponse(
-        (r) => /\/api\/subscribers$/.test(r.url()) && r.request().method() === "POST",
+        (r) => r.url().endsWith("/api/subscribers") && r.request().method() === "POST",
       ),
       form.getByTestId("btn-save").click(),
     ]);
@@ -184,7 +184,7 @@ test.describe("Subscribers: create, edit & delete", () => {
     await form.getByTestId("preconfirm").check();
     await Promise.all([
       page.waitForResponse(
-        (r) => /\/api\/subscribers$/.test(r.url()) && r.request().method() === "POST",
+        (r) => r.url().endsWith("/api/subscribers") && r.request().method() === "POST",
       ),
       form.getByTestId("btn-save").click(),
     ]);
@@ -391,7 +391,7 @@ test.describe("Subscribers: bulk actions", () => {
     await bulkConfirm(page, {
       testid: "btn-manage-blocklist",
       match: (r) =>
-        /\/api\/subscribers\/blocklist$/.test(r.url()) && r.request().method() === "PUT",
+        r.url().endsWith("/api/subscribers/blocklist") && r.request().method() === "PUT",
     });
 
     await page.goto(`${SUBSCRIBERS}?status=blocklisted`);
@@ -404,7 +404,7 @@ test.describe("Subscribers: bulk actions", () => {
       testid: "btn-manage-blocklist",
       selectAll: true,
       match: (r) =>
-        /\/api\/subscribers\/query\/blocklist$/.test(r.url()) && r.request().method() === "PUT",
+        r.url().endsWith("/api/subscribers/query/blocklist") && r.request().method() === "PUT",
     });
 
     await page.goto(`${SUBSCRIBERS}?status=blocklisted`);
@@ -437,7 +437,7 @@ test.describe("Subscribers: bulk actions", () => {
       testid: "btn-delete-subscribers",
       selectAll: true,
       match: (r) =>
-        /\/api\/subscribers\/query\/delete$/.test(r.url()) && r.request().method() === "POST",
+        r.url().endsWith("/api/subscribers/query/delete") && r.request().method() === "POST",
     });
 
     await expect(page.locator(".empty-state")).toBeVisible();
