@@ -878,12 +878,14 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
   only.
 - The systemd unit as a running service, the nginx example, TLS, a mounted upload directory, and a
   restore from real off-site storage.
-- Running the server as a service on Linux arm64. The release workflow verifies the arm64
-  executable on a native arm64 runner, but no arm64 host has run it as a service yet.
+- Running on Linux arm64: the server as a service, and the `linux/arm64` image at all. The release
+  workflow verifies the arm64 executable on a native arm64 runner; the published image was run only
+  on amd64.
 - Translations other than English have not been reviewed.
 - PDF viewers other than desktop Chromium and Firefox. Those two were checked on 2026-11-09 with a
   hostile PDF: its JavaScript ran only inside the viewer and sent no request to `/api/*`
-  (see the media serving row in [07-api-and-ui.md](design/07-api-and-ui.md)).
+  (see the media serving row in [07-api-and-ui.md](design/07-api-and-ui.md)). The owner decided
+  on 2026-11-09 that iOS and Android viewers need no check.
 
 Known limits rather than unknowns: a [hold](#restore)
 is in what `backup` and the migration runner write, so a disk image or a hand copy does not add
