@@ -4,9 +4,9 @@ Updated 2026-11-08. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-st
 
 ## Active
 
-All 44 plan tasks are merged and M6.3 is proven on draft prerelease `v0.1.0-rc.1`. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
-State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B58 (#85–#109) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
-Owner-only, blocking nothing else: publishing a release, PDF viewers on real devices, and making the GHCR package public after its first push. SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
+All 44 plan tasks are merged. `v0.1.0` (B59 #110, tag on 1ac9f03) built, verified and pushed to GHCR by release run 42641174775 (2026-11-09); its draft release awaits the owner's Publish. Owner rule 2026-11-01: work continues until nothing remains that agents can do; see the [runbook](chief-of-staff.md#when-work-ends).
+State-machine audit (B17–B22) and follow-ups B23–B32 (#75–#84, D86–D88) are merged; B33–B60 (#85–#111) merged: D89 scope (MCP, SES only, audit, send-rate cap, notifications, settings cleanup, deliverability docs) and the review hardening backlog. Owner widened the queue 2026-11-07 (D89). Recovery: ~/.local/state/iglo-email-cos/lock.json.
+Owner-only, blocking nothing else: publishing the v0.1.0 draft release, making the GHCR package (now pushed) public, and opening a PDF on iOS/Android (desktop Chromium/Firefox checked by B60 #111). SES is the only provider (D89, B35 #87); the owner lists their SNS topic in `bounce.ses_topic_arns` (see operations.md).
 
 ## Work queue
 
@@ -140,7 +140,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
-- Media: supported PDF viewers unverified (needs real devices).
+- Media: PDF viewers on iOS/Android untested (owner, real devices); desktop Chromium/Firefox checked (B60 #111).
 - Test: when `runner.test.ts` next fails, the `drive` error names the stuck state ([B42](perf/B42-runner-flake.md)); open a task from it.
 - New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
 
