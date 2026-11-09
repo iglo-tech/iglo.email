@@ -66,6 +66,8 @@ export function cronError(input: string): string | null {
   const trimmed = trimSpace(spec);
   const fields = trimmed
     ? trimmed.split(
+        // The control characters TAB to CR are cron field separators on purpose.
+        // oxlint-disable-next-line no-control-regex
         /[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/u,
       )
     : [];

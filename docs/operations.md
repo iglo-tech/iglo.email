@@ -85,9 +85,10 @@ A backup, and the helpers the server starts itself, are read-only and do not cou
 
 An official multi-architecture image (`linux/amd64`, `linux/arm64`) is published to GitHub's
 container registry on every release: `ghcr.io/iglo-tech/iglo.email:<version>`, and `:latest` for
-a version without `-`. GitHub creates the `ghcr.io/iglo-tech/iglo.email` package as private on its
-first push, and the owner must once set its visibility to public (package settings) before the
-documented anonymous `docker pull` works. It only wraps the release executable of the same version;
+a version without `-`. GitHub creates such a package as private on its first push, and its owner
+must once set the visibility to public (package settings) before the documented anonymous
+`docker pull` works. The `ghcr.io/iglo-tech/iglo.email` package was made public for `0.1.0` on
+2026-11-09. It only wraps the release executable of the same version;
 nothing is built inside it. It runs as the non-root user 65532, keeps its data in the volume
 `/data`, listens on port 9000 and has no shell. Prerelease versions are not for production.
 
@@ -877,17 +878,14 @@ From [Open questions](design/10-open-questions.md), until the owner decides othe
   only.
 - The systemd unit as a running service, the nginx example, TLS, a mounted upload directory, and a
   restore from real off-site storage.
-- Running on Linux arm64. The arm64 executable is built and verified by the release workflow on a
-  native arm64 runner; it was only cross-compiled and inspected with `file` where it was written.
-- The published image from GHCR. The image was built and run locally for amd64 only; the multi-arch
-  build runs in the release workflow.
-- A download from a published release. The checksum and install commands ran on files packaged
-  locally by `bun run release:package`, and the release workflow has not run yet.
+- Running on Linux arm64: the server as a service, and the `linux/arm64` image at all. The release
+  workflow verifies the arm64 executable on a native arm64 runner; the published image was run only
+  on amd64.
 - Translations other than English have not been reviewed.
-- PDF viewers for attachments on iOS and Android, which are untested. On desktop, Chromium
-  156.0.8078.4 and Firefox 153.6.0 ESR were checked on 2026-11-09 with a hostile PDF: its
-  JavaScript ran only inside the viewer and sent no request to `/api/*`
-  (see the media serving row in [07-api-and-ui.md](design/07-api-and-ui.md)).
+- PDF viewers other than desktop Chromium and Firefox. Those two were checked on 2026-11-09 with a
+  hostile PDF: its JavaScript ran only inside the viewer and sent no request to `/api/*`
+  (see the media serving row in [07-api-and-ui.md](design/07-api-and-ui.md)). The owner decided
+  on 2026-11-09 that iOS and Android viewers need no check.
 
 Known limits rather than unknowns: a [hold](#restore)
 is in what `backup` and the migration runner write, so a disk image or a hand copy does not add

@@ -284,8 +284,8 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
             data = false;
             socket.write("250 queued\r\n");
           }
-        } else if (/^EHLO/.test(line)) socket.write("250 fixture\r\n");
-        else if (/^DATA/.test(line)) {
+        } else if (line.startsWith("EHLO")) socket.write("250 fixture\r\n");
+        else if (line.startsWith("DATA")) {
           data = true;
           socket.write("354 send\r\n");
         } else socket.write("250 ok\r\n");

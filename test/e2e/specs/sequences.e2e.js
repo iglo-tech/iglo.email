@@ -603,7 +603,7 @@ async function activityTab(page) {
   await page.getByTestId("btn-views-actions").click();
   await page.getByTestId("btn-clear-campaign_views").click();
   const cleared = page.waitForResponse(
-    (r) => /\/activity\/campaign_views$/.test(r.url()) && r.request().method() === "DELETE",
+    (r) => r.url().endsWith("/activity/campaign_views") && r.request().method() === "DELETE",
   );
   await confirm(page);
   expect((await cleared).status()).toBe(200);

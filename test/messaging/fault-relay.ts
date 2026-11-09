@@ -174,7 +174,7 @@ export async function faultRelay(
         fromServer = fromServer.slice(end + 2);
         // Disable SMTP pipelining so synthetic replies preserve command order.
         if (/^250[- ]PIPELINING/i.test(line)) continue;
-        if (finalPending && /^250 /.test(line)) {
+        if (finalPending && line.startsWith("250 ")) {
           finalPending = false;
           if (fault === "hold-final") {
             finalReady();

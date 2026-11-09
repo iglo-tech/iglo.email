@@ -2,7 +2,7 @@
 // Copyright The Go Authors; the BSD notice is embedded from assets/licenses/go-1.27.2-BSD.txt.
 import { isIP } from "node:net";
 
-const hostChars = /^[A-Za-z0-9!$&'()*+,;=:\[\]<>"_.~\-]$/;
+const hostChars = /^[A-Za-z0-9!$&'()*+,;=:[\]<>"_.~-]$/;
 const escaped = (s: string) => !/%(?![0-9a-fA-F]{2})/.test(s);
 function hostPartValid(s: string, zone = false): boolean {
   for (let i = 0; i < s.length; i++) {
@@ -28,6 +28,8 @@ function hostPartValid(s: string, zone = false): boolean {
 export function validTrustedURL(input: string): boolean {
   const [withoutFragment, ...fragmentParts] = input.split("#");
   const fragment = fragmentParts.join("#");
+  // Control characters are refused on purpose in a trusted URL.
+  // oxlint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(withoutFragment!) || !escaped(fragment)) return false;
   const match = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?]*)([^?]*)(?:\?.*)?$/s.exec(withoutFragment!);
   if (!match || !["http", "https"].includes(match[1]!.toLowerCase())) return false;

@@ -280,7 +280,7 @@ export function registerMediaRoutes(
     const tag = `"${file.size.toString(16)}-${Math.floor(file.modified).toString(16)}"`;
     const modified = new Date(file.modified).toUTCString();
     const headers: Record<string, string> = {
-      "Content-Type": /^text\//.test(type) ? `${type}; charset=utf-8` : type,
+      "Content-Type": type.startsWith("text/") ? `${type}; charset=utf-8` : type,
       "Cache-Control": CACHE_CONTROL,
       ETag: tag,
       "Last-Modified": modified,
