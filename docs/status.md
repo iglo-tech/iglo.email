@@ -12,7 +12,7 @@ Owner question open: [open question 5](design/10-open-questions.md) (PDFs on pho
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-Empty: every agent-doable item is merged (2026-11-09, B61 #112). No owner items remain. New review findings or a recurrence of the runner flake reopen the queue.
+- B62 [run the operations examples](briefs/B62.md): systemd, nginx/TLS, upload dir, arm64 image smoke on native runners.
 
 ## Owner decisions
 
