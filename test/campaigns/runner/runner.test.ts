@@ -598,12 +598,19 @@ test("tracked links personalized per subscriber do not accumulate across batches
   };
   let first = 0;
   // Settle everything but the last message, measuring after the first few batches.
-  await f.drive(() => {
-    if (f.pushes.length >= 60 && !first) first = heap();
-    if (f.pushes.length === count) return true;
-    for (const push of f.pushes) push.settle();
-    return false;
-  }, 10);
+  // Wall bound 6 s: this whole test took at most 1.39 s over 20 local runs (B72), and it renders
+  // ~13 MB and forces a GC, so it needs a wider bound than the 3 s default. It is progress-bound.
+  await f.drive(
+    () => {
+      if (f.pushes.length >= 60 && !first) first = heap();
+      if (f.pushes.length === count) return true;
+      for (const push of f.pushes) push.settle();
+      return false;
+    },
+    10,
+    undefined,
+    6_000,
+  );
   const last = heap();
   // About 13 MB of distinct tracked URLs were rendered since the first measurement.
   expect(last - first).toBeLessThan(6 * 1024 * 1024);
