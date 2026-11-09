@@ -12,6 +12,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
+- B63 [e2e coverage audit](briefs/B63.md) (owner 2026-11-09: Playwright e2e to make 1.0.0 ready; PDF item dropped by owner), then the e2e tasks it plans.
 - B62 [run the operations examples](briefs/B62.md): systemd, nginx/TLS, upload dir, arm64 image smoke on native runners.
 
 ## Owner decisions
