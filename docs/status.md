@@ -12,7 +12,16 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-- B63 [e2e coverage audit](briefs/B63.md) (owner 2026-11-09: Playwright e2e to make 1.0.0 ready; PDF item dropped by owner), then the e2e tasks it plans.
+Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
+- B64 = E1 sending lifecycle to the sink.
+- B65 = E2 consent and unsubscribe from the mail (sink headers).
+- B66 = E3 operations and data safety (notifications, restore hold, GDPR).
+- B67 = E4 webhooks and bounce ingress.
+- B68 = E5 public archive and tracking pages.
+- B69 = E6 analytics with real data.
+- B70 = E7 sequence depth.
+- B71 release gate: `e2e` job before `publish` in release.yml, after three green full runs. Lead decision (D96 when B71 lands): no retries, flakes are fixed; a tag gate is not a merge gate; the restore-hold instance runs every time.
+- Then tag 1.0.0 (report to owner first).
 - B62 [run the operations examples](briefs/B62.md): systemd, nginx/TLS, upload dir, arm64 image smoke on native runners.
 
 ## Owner decisions
