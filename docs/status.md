@@ -10,14 +10,13 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B68 (E5 public pages) in progress.
+**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B69 (E6 analytics) in progress.
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 - Backlog (lead, from the B64 review): `runner.wake` (`src/campaigns/runner/runner.ts:783`) is never called, so a start or resume waits for the next 5 s scan; consider waking on status change.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B68 [brief](briefs/B68.md) = E5 public archive and tracking pages.
-- B69 = E6 analytics with real data.
+- B69 [brief](briefs/B69.md) = E6 analytics with real data.
 - B70 = E7 sequence depth.
 - B71 release gate: `e2e` job before `publish` in release.yml, after three green full runs. Lead decision (D96 when B71 lands): no retries, flakes are fixed; a tag gate is not a merge gate; the restore-hold instance runs every time.
 - Then tag 1.0.0 (report to owner first).
@@ -52,6 +51,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B68 | [#121](https://github.com/iglo-tech/iglo.email/pull/121) | e4cf655 | E2E public archive, feed, web view, open pixel, tracked links and privacy settings |
 | B67 | [#120](https://github.com/iglo-tech/iglo.email/pull/120) | 1593552 | E2E webhooks (events, signature, disabled, retry, budget, private addresses) and bounce ingress |
 | B66 | [#119](https://github.com/iglo-tech/iglo.email/pull/119) | 72a29a3 | E2E operations: admin notifications, auto-pause, restore hold on a restored instance and release, GDPR export and wipe |
 | B73 | [#118](https://github.com/iglo-tech/iglo.email/pull/118) | a356b13 | Consent spec: sequence exits proven to fail (frequency cap waived), form helper ticks named lists only, unsubscribe GET is safe |
