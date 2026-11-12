@@ -39,6 +39,13 @@ screens, `bun run e2e:browser:campaigns` for the templates and campaigns screens
 Credentials are the synthetic ones in `test/worked-example/harness.ts`; each
 test makes its own users and data through the public API.
 
+`operations.e2e.js` covers the admin notification mail, the restore hold and the privacy page. Its
+restore test starts a third instance with `test/e2e/instance.js`: the production `backup` command
+writes a snapshot of the stack's data directory, which is copied into a temporary directory and
+served by the same executable. The instance is stopped and its directory removed when the test
+ends, and the release runs through `backup --release-hold --consent-reconciled` on the stopped
+instance, as the operations guide describes.
+
 A test fails on any Content-Security-Policy violation or Alpine expression error
 on its page. One that provokes them on purpose sets `violations: "expected"`, and
 one that needs a handler to run sets `bypassCSP`. `csp.e2e.js` walks every screen;
