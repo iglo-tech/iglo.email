@@ -1,9 +1,10 @@
 name: Release
 
 # A pushed v* tag builds and verifies the executable on each architecture's native runner (Linux
-# x86-64 and Linux arm64, D89), publishes a draft release with both, and pushes one multi-arch
-# image to GHCR that only wraps those two verified executables. A manual run from any ref is a dry
-# run of the same build, verification and image build, and publishes and pushes nothing.
+# x86-64 and Linux arm64, D89), runs the browser end-to-end suite (D96), publishes a draft release
+# with both only once the suite has passed, and pushes one multi-arch image to GHCR that only wraps
+# those two verified executables. A manual run from any ref is a dry run of the same build,
+# verification, suite and image build, and publishes and pushes nothing.
 # package.json must already hold the tag's version. Tag names reach shell only as environment
 # variables.
 on:
@@ -59,8 +60,47 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The browser suite (D96). It runs on x86-64 only, since it builds the executable itself through
+  # `bun run e2e`, so it does not wait for build. No retries: a failure here blocks the release.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Read the Playwright version that names the browser cache
+        id: playwright
+        run: |
+          set -eu
+          version=$(sed -n 's/^    "@playwright\/test": \["@playwright\/test@\([^"]*\)".*/\1/p' bun.lock)
+          test -n "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - name: Restore the Chromium cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium and the system libraries it needs
+        run: node_modules/.bin/playwright install --with-deps chromium
+      - run: E2E_WORKERS=2 bun run e2e
+      - name: Keep the failure's screenshots and traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-results
+          path: dist/e2e-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
   publish:
-    needs: build
+    needs: [build, e2e]
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -101,12 +141,14 @@ jobs:
 
   # One image for linux/amd64 and linux/arm64 from the two verified executables. The Dockerfile has
   # no RUN on the target platform, so no emulation is needed. The image is pushed only after
-  # image-smoke passes on both architectures. Only this job may write packages.
+  # image-smoke passes on both architectures. Only this job may write packages. It also waits for
+  # e2e on dry runs, so a dry run rehearses the release's order (D96).
   image:
-    needs: [build, publish, image-smoke]
+    needs: [build, e2e, publish, image-smoke]
     if: |
       !failure() && !cancelled() &&
       needs.build.result == 'success' &&
+      needs.e2e.result == 'success' &&
       needs.image-smoke.result == 'success' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04

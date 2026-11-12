@@ -979,3 +979,16 @@ Decided by the lead after the owner asked who can upload media; for owner review
 - **Why:** uploading needs `media:manage` (`POST /api/media`), which only the super admin has unless the owner grants it to a limited role. A hostile PDF could at most let such a limited account act as a full admin when one opens it, and B60 showed that desktop Chromium and Firefox give PDF JavaScript no page, cookie or network access. For a single-owner instance that is not worth a device test or making PDF links download.
 - **Revisit:** if a limited role that is not fully trusted gets `media:manage`, serve PDFs as `Content-Disposition: attachment` instead.
 
+## D96. The release waits for the browser suite; no retries (lead, 2026-11-12)
+
+Lead decisions on the three open points of the release gate in [13-e2e-coverage.md](13-e2e-coverage.md) section 5 (brief B71).
+
+- **Decision:** `release.yml` has an `e2e` job that runs `E2E_WORKERS=2 bun run e2e` on `ubuntu-24.04`. `publish` needs it, and so does `image`, on tags and dry runs alike. Three rules follow:
+  - **No retries.** `test/e2e/playwright.config.js` keeps `retries: 0`. A flaky test is fixed, never retried.
+  - **A tag gate, not a merge gate.** The job runs on tag pushes and manual dry runs. CI stays manual-only and is not a merge gate for PRs (AGENTS.md, [D90](#d90-gemini-38-flash-does-the-work-opus-checks-it-owner-2026-11-07)); merges are checked locally by the worker and the reviewer.
+  - **The restore-hold instance runs every time** (`operations.e2e.js`, B66), not only at release, because [D67](#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it) is release-critical and the extra instance costs seconds.
+- **Why:** a retry hides at-most-once and timing bugs, the exact failures this suite exists to catch. Releases are rare and must be proven, so a slower release is cheaper than a broken one. Merges are not gated because the suite takes about 11 minutes on two stacks and the worker and reviewer already check merges locally.
+- **Considered:** one Playwright retry in the release job, which would hide flakes; running the suite on merge, which would slow every PR for a gate that is only needed at release.
+- **Cost accepted:** a flaky spec blocks a release until its cause is fixed. The suite runs for the release tag on the x86-64 runner only, so an arm64-only failure is not seen here.
+- **Revisit:** if a spec flakes on the runner, fix its cause or make it deterministic. Do not add retries.
+
