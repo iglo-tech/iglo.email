@@ -10,14 +10,13 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B70 (E7 sequences) in progress.
+**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B71 (e2e release gate) in progress.
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 - Backlog (lead, from the B64 review): `runner.wake` (`src/campaigns/runner/runner.ts:783`) is never called, so a start or resume waits for the next 5 s scan; consider waking on status change.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B70 [brief](briefs/B70.md) = E7 sequence depth.
-- B71 release gate: `e2e` job before `publish` in release.yml, after three green full runs. Lead decision (D96 when B71 lands): no retries, flakes are fixed; a tag gate is not a merge gate; the restore-hold instance runs every time.
+- B71 [brief](briefs/B71.md) release gate: `e2e` job before `publish` in release.yml, after three green full runs. Lead decision (D96 when B71 lands): no retries, flakes are fixed; a tag gate is not a merge gate; the restore-hold instance runs every time.
 - Then tag 1.0.0 (report to owner first).
 - B62 [run the operations examples](briefs/B62.md): systemd, nginx/TLS, upload dir, arm64 image smoke on native runners.
 
@@ -50,6 +49,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B70 | [#123](https://github.com/iglo-tech/iglo.email/pull/123) | e5e56df | E2E sequence lifecycle: re-entry, triggers, where, pause, archive, on_false, reschedule, timeline (r1 CHANGES race, fixer, r2 APPROVE) |
 | B69 | [#122](https://github.com/iglo-tech/iglo.email/pull/122) | c98115e | E2E analytics from real mail events: clicks, links, bounces, unique, intervals, ranges, dashboard, individual tracking |
 | B68 | [#121](https://github.com/iglo-tech/iglo.email/pull/121) | e4cf655 | E2E public archive, feed, web view, open pixel, tracked links and privacy settings |
 | B67 | [#120](https://github.com/iglo-tech/iglo.email/pull/120) | 1593552 | E2E webhooks (events, signature, disabled, retry, budget, private addresses) and bounce ingress |
