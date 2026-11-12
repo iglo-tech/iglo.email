@@ -10,6 +10,12 @@ import { api, ok, settledMail, signIn, test, unique } from "../helpers.js";
 
 const SUB_FORM = "/subscription/form";
 const FINISH = { timeout: 30_000 };
+// The scheduler's tick (src/scheduler/scheduler.ts, SCHEDULER_INTERVAL_MS).
+const SCHEDULER_TICK_MS = 15_000;
+// A sequence's second step is due this long after its first step runs. Long enough that an
+// unsubscribe or blocklist made after the first mail lands before the step is due on a loaded host;
+// short enough that the exit check, which waits past the due time, stays well under the timeout.
+const SECOND_STEP = "PT30S";
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const OPTIN = new RegExp(`/subscription/optin/${UUID}$`, "i");
 const UNSUBSCRIBE = new RegExp(`/(subscription/${UUID}|m/${UUID}/unsubscribe)/${UUID}$`, "i");
@@ -102,6 +108,42 @@ async function enrolled(page, target, person, steps) {
   });
 }
 
+// The frequency cap lets a subscriber have one marketing mail per `marketing.min_interval` (P7D by
+// default), and a sequence's second step is marketing too: at P7D the cap would hold it for a week
+// whatever the unsubscribe did, and no later mail could ever be seen. The exit tests shorten the
+// interval to one second, so the step falls due and only its exit can stop it. The returned
+// function puts the setting back; the caller runs it in a `finally`.
+async function shortenMarketingCap(page) {
+  const settings = await ok(page, "/api/settings");
+  const original = settings["marketing.min_interval"];
+  await ok(page, "/api/settings", "PUT", { ...settings, "marketing.min_interval": "PT1S" });
+  return () =>
+    ok(page, "/api/settings", "PUT", { ...settings, "marketing.min_interval": original });
+}
+
+// The enrollment once its first step has run: the step moves on when that step is sent, so the
+// enrollment's step changing is the sign that it now waits on the second step's due time.
+async function waitingOnSecondStep(page, started) {
+  expect(started.step_id, "the enrollment starts on its first step").not.toBeNull();
+  let waiting;
+  await expect
+    .poll(async () => {
+      waiting = await ok(page, `/api/enrollments/${started.id}`);
+      return waiting.step_id;
+    }, FINISH)
+    .not.toBe(started.step_id);
+  expect(waiting).toMatchObject({ status: "active" });
+  expect(waiting.due_at, "the second step has a due time").toBeTruthy();
+  return waiting;
+}
+
+// Waits past a step's due time and two scheduler ticks after it, so the scheduler has run on
+// both. The wait is bounded by the step's own wait, which is `SECOND_STEP`.
+async function pastDueAndTwoTicks(waiting) {
+  const until = Date.parse(waiting.due_at) + 2 * SCHEDULER_TICK_MS;
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - Date.now())));
+}
+
 // Mail the sink received for one address, waited for up to `timeout`. A sequence step waits for
 // the scheduler's next 15 s tick, so its wait is longer than `mailFor`'s.
 async function mailsFor(email, count = 1, timeout = 60_000) {
@@ -157,21 +199,42 @@ const outside = (url, body) =>
 // Open the page a mail linked to and submit its unsubscribe form, as a reader does.
 async function unsubscribeInBrowser(page, url, { blocklist = false } = {}) {
   await page.goto(url);
+  await expect(page.locator("#btn-unsub")).toBeVisible();
   if (blocklist) await page.locator("#privacy-blocklist").check();
   await page.locator("#btn-unsub").click();
   await expect(page.locator("body")).toContainText(/unsubscribed/i);
 }
 
-// The subscription form, filled in and submitted by someone who is not signed in.
+// The subscription form, filled in and submitted by someone who is not signed in. The form ticks
+// every public list, so the lists not named are unticked: the person joins exactly `lists`.
 async function subscribeThroughForm(page, { email, name, lists }) {
   await page.goto(SUB_FORM);
   await page.locator("input[name=email]").fill(email);
   await page.locator("input[name=name]").fill(name);
-  for (const target of lists) {
-    await page.locator("ul.lists li").filter({ hasText: target.name }).locator("input").check();
+  const wanted = new Set(lists.map((target) => target.name));
+  const offered = [];
+  for (const item of await page.locator("ul.lists li").all()) {
+    const label = (await item.locator("label").innerText()).trim();
+    offered.push(label);
+    const box = item.locator("input[type=checkbox]");
+    if (wanted.has(label)) await box.check();
+    else await box.uncheck();
   }
-  await Promise.all([page.waitForLoadState(), page.locator("button[type=submit]").click()]);
-  await expect(page.locator("body")).toContainText(/has been sent|successfully|retry/i);
+  expect(offered, "every named list is on the form").toEqual(expect.arrayContaining([...wanted]));
+  // The handler answers with the pending text when a named list is double opt-in, else the other.
+  const text = lists.some((target) => target.optin === "double")
+    ? "An e-mail has been sent to you to confirm your subscription(s)."
+    : "Subscribed successfully.";
+  // The form posts to its own URL, so the page's URL does not change: wait for the POST's answer.
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (answer) =>
+        answer.request().method() === "POST" && new URL(answer.url()).pathname === SUB_FORM,
+    ),
+    page.locator("button[type=submit]").click(),
+  ]);
+  expect(response.status()).toBe(200);
+  await expect(page.locator("body")).toContainText(text);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -304,9 +367,32 @@ test("the message page a marketing mail links to shows the unsubscribe form, and
   expect(mail.listUnsubscribePost).toBe("List-Unsubscribe=One-Click");
   expect(listUnsubscribeURL(mail)).toBe(unsubscribeLink(mail));
 
-  await page.goto(unsubscribeLink(mail));
-  await expect(page.locator("#btn-unsub")).toBeVisible();
   await unsubscribeInBrowser(page, unsubscribeLink(mail));
+  expect(await membership(page, person, target)).toBe("unsubscribed");
+});
+
+test("a plain GET of the unsubscribe link, as a link scanner makes it, changes no membership", async ({
+  page,
+}) => {
+  const target = await list(page);
+  const person = await reader(page, [target]);
+  await sendCampaign(page, await campaign(page, [target]));
+  const [mail] = await mailsFor(person.email);
+  const url = unsubscribeLink(mail);
+  const before = await membership(page, person, target);
+
+  // No cookies, no token, no script: the request a scanner sends when it follows the link.
+  const scanned = await fetch(url, {
+    redirect: "manual",
+    headers: { "X-Forwarded-For": peer() },
+  });
+  expect(scanned.status).toBe(200);
+  expect(await scanned.text()).toContain("btn-unsub");
+  expect(await membership(page, person, target)).toBe(before);
+  expect(before).not.toBe("unsubscribed");
+
+  // The same link still works when the reader submits the form, so the GET above was not a 404.
+  await unsubscribeInBrowser(page, url);
   expect(await membership(page, person, target)).toBe("unsubscribed");
 });
 
@@ -371,30 +457,45 @@ test("a sequence enrollment waiting on its next step exits when its person unsub
   page,
 }) => {
   test.setTimeout(120_000);
-  const target = await list(page);
-  const person = await reader(page, [target]);
-  // The second step is a day out, so no later mail can arrive within the test: the proof is the
-  // enrollment's exit, which ends the step before it can be sent.
-  const started = await enrolled(page, target, person, ["PT0S", "P1D"]);
-  const [mail] = await mailsFor(person.email, 1);
+  const restore = await shortenMarketingCap(page);
+  try {
+    const target = await list(page);
+    const person = await reader(page, [target]);
+    // The second step falls due SECOND_STEP after the first runs. The unsubscribe lands before that,
+    // so the exit must end the step before the scheduler can send it: a later mail is the failure.
+    const started = await enrolled(page, target, person, ["PT0S", SECOND_STEP]);
+    const [mail] = await mailsFor(person.email, 1);
+    const waiting = await waitingOnSecondStep(page, started);
 
-  await unsubscribeInBrowser(page, unsubscribeLink(mail));
-  const ended = await ok(page, `/api/enrollments/${started.id}`);
-  expect(ended).toMatchObject({ status: "exited", exit_reason: "unsubscribed" });
-  expect(await settledMail([person.email])).toEqual([1]);
+    await unsubscribeInBrowser(page, unsubscribeLink(mail));
+    const ended = await ok(page, `/api/enrollments/${started.id}`);
+    expect(ended).toMatchObject({ status: "exited", exit_reason: "unsubscribed" });
+    // The second step fell due after the exit; the scheduler ran twice since, and sent nothing.
+    await pastDueAndTwoTicks(waiting);
+    expect(await settledMail([person.email])).toEqual([1]);
+  } finally {
+    await restore();
+  }
 });
 
 test("a sequence enrollment waiting on its next step exits when its person is blocklisted from the mail", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const target = await list(page);
-  const person = await reader(page, [target]);
-  const started = await enrolled(page, target, person, ["PT0S", "P1D"]);
-  const [mail] = await mailsFor(person.email, 1);
+  const restore = await shortenMarketingCap(page);
+  try {
+    const target = await list(page);
+    const person = await reader(page, [target]);
+    const started = await enrolled(page, target, person, ["PT0S", SECOND_STEP]);
+    const [mail] = await mailsFor(person.email, 1);
+    const waiting = await waitingOnSecondStep(page, started);
 
-  await unsubscribeInBrowser(page, unsubscribeLink(mail), { blocklist: true });
-  const ended = await ok(page, `/api/enrollments/${started.id}`);
-  expect(ended).toMatchObject({ status: "exited", exit_reason: "blocklisted" });
-  expect(await settledMail([person.email])).toEqual([1]);
+    await unsubscribeInBrowser(page, unsubscribeLink(mail), { blocklist: true });
+    const ended = await ok(page, `/api/enrollments/${started.id}`);
+    expect(ended).toMatchObject({ status: "exited", exit_reason: "blocklisted" });
+    await pastDueAndTwoTicks(waiting);
+    expect(await settledMail([person.email])).toEqual([1]);
+  } finally {
+    await restore();
+  }
 });
