@@ -322,10 +322,24 @@ test("the test-send button delivers to the given address only", async ({ page })
   const { list, emails } = await audience(page, 2);
   const c = await campaign(page, { lists: [list.id], body: "Test body" });
   await page.goto(`${CAMPAIGNS}/${c.id}`);
+  const popover = page.locator("#campaign-test");
+  const address = popover.locator('input[type="email"]');
   await button(page.locator(".page-header"), "Send test message").click();
-  await page.locator('#campaign-test input[type="email"]').fill(emails[0]);
-  await page.locator('#campaign-test input[type="email"]').press("Enter");
-  await button(page.locator("#campaign-test"), "Send").click();
+  // Sending from a closed popover cannot reach the page: assert it is open before typing into it.
+  await expect(popover).toBeVisible();
+  await address.fill(emails[0]);
+  await address.press("Enter");
+  await expect(popover.locator("ot-taginput .badge").filter({ hasText: emails[0] })).toBeVisible();
+  // The test send is one POST. Wait for its answer, so a refusal shows its status and body here,
+  // rather than as a missing mail after the 15 s mail wait.
+  const posted = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      new URL(r.url()).pathname === `/api/campaigns/${c.id}/test`,
+  );
+  await button(popover, "Send").click();
+  const response = await posted;
+  expect(response.status(), await response.text()).toBe(200);
   const [mail] = await mailFor(emails[0]);
   expect(mail.body).toContain("Test body");
   expect(await settledMail(emails)).toEqual([1, 0]);
