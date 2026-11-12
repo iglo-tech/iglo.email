@@ -5,6 +5,18 @@ import { PASSWORD, api, login, logout, unique, test, signIn } from "../helpers.j
 
 const hostile = `<img src=x onerror="window.pwned=1"> ${unique("Launch")}`;
 
+// The dashboard shows counts with thousands separators ("2,738"), and a server is shared by the
+// spec files that run on it, so a count can pass 1000. The shown digits are compared with the
+// API total, not the text: no locale-dependent formatting is used here.
+async function expectShownCount(locator, total) {
+  await expect
+    .poll(async () => {
+      const digits = ((await locator.textContent()) ?? "").replace(/\D/g, "");
+      return digits === "" ? null : Number(digits);
+    })
+    .toBe(Number(total));
+}
+
 async function makeCampaign(page, name, listId) {
   const created = await api(page, "/api/campaigns", "POST", {
     name,
@@ -35,14 +47,10 @@ test.describe("Dashboard", () => {
 
     const counts = (await api(page, "/api/dashboard/counts")).body.data;
     await page.goto("/admin");
-    await expect(page.getByTestId("stat-lists")).toHaveText(String(counts.lists.total ?? 0));
-    await expect(page.getByTestId("stat-subscribers")).toHaveText(
-      String(counts.subscribers.total ?? 0),
-    );
-    await expect(page.getByTestId("stat-campaigns")).toHaveText(
-      String(counts.campaigns.total ?? 0),
-    );
-    await expect(page.getByTestId("stat-messages")).toHaveText(String(counts.messages ?? 0));
+    await expectShownCount(page.getByTestId("stat-lists"), counts.lists.total ?? 0);
+    await expectShownCount(page.getByTestId("stat-subscribers"), counts.subscribers.total ?? 0);
+    await expectShownCount(page.getByTestId("stat-campaigns"), counts.campaigns.total ?? 0);
+    await expectShownCount(page.getByTestId("stat-messages"), counts.messages ?? 0);
 
     const row = page.getByTestId("campaign-row").filter({ hasText: hostile });
     await expect(row).toBeVisible();
