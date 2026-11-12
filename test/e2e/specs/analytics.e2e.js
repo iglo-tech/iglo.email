@@ -41,10 +41,18 @@ test.afterEach(async ({ request }) => {
   changed = {};
   if (Object.keys(pending).length === 0) return;
   const call = await requestAdmin(request);
+  // Every setting is attempted, so one that fails does not leave the others changed for the file's
+  // later tests; the failures are reported together at the end.
+  const failures = [];
   for (const [key, value] of Object.entries(pending)) {
-    const response = await call(`/api/settings/${key}`, "PUT", value);
-    expect(response.status, `restoring ${key}`).toBe(200);
+    try {
+      const response = await call(`/api/settings/${key}`, "PUT", value);
+      if (response.status !== 200) failures.push(`${key} answered ${response.status}`);
+    } catch (error) {
+      failures.push(`${key}: ${error.message}`);
+    }
   }
+  expect(failures, "restoring settings").toEqual([]);
 });
 
 // Bounces count only while a subscriber is under its action's count, and an action runs past it.
@@ -176,30 +184,39 @@ test("the bounces chart counts a bounce the webhook takes for that campaign, and
   expect(errors).toEqual([]);
 });
 
-test("the unique toggle with individual tracking on: two opens by one reader count 2 in total and 1 unique", async ({
+test("the unique toggle with individual tracking on: two readers, one opening twice, count 3 in total and 2 unique", async ({
   page,
 }) => {
   const errors = watch(page);
   await change(page, "privacy.individual_tracking", true);
   const { list, person } = await audience(page);
+  const other = await ok(page, "/api/subscribers", "POST", {
+    email: `${unique("reader")}@example.com`,
+    name: "Reader Ben",
+    status: "enabled",
+    lists: [list.id],
+  });
   const made = await make(page, list);
   await send(page, made);
-  const pixel = linkTo(await mailAbout(person.email, made.subject), TRACKED.pixel, "the pixel");
-  for (let open = 0; open < 2; open++) expect((await page.request.get(pixel)).status()).toBe(200);
+  // Each reader's own pixel: Ann opens twice, Ben once. A unique count grouped per campaign, rather
+  // than per reader, would read 1 here instead of 2.
+  const ann = linkTo(await mailAbout(person.email, made.subject), TRACKED.pixel, "the pixel");
+  const ben = linkTo(await mailAbout(other.email, made.subject), TRACKED.pixel, "the pixel");
+  for (const pixel of [ann, ann, ben]) expect((await page.request.get(pixel)).status()).toBe(200);
 
-  expect(total(await read(page, "campaigns", "views", [made.id], DAILY))).toBe(2);
-  expect(total(await read(page, "campaigns", "views", [made.id], `${DAILY}&unique=true`))).toBe(1);
+  expect(total(await read(page, "campaigns", "views", [made.id], DAILY))).toBe(3);
+  expect(total(await read(page, "campaigns", "views", [made.id], `${DAILY}&unique=true`))).toBe(2);
   // The page's own toggle: it is offered only with individual tracking on.
   await page.goto(`/admin/campaigns/analytics?id=${made.id}&${RANGE}`);
-  await expect(page.getByTestId("chart-views").locator(".title")).toContainText("(2)");
+  await expect(page.getByTestId("chart-views").locator(".title")).toContainText("(3)");
   await expect(page.getByTestId("chart-unique_views")).toHaveCount(0);
   await page.getByLabel("Show unique counts?").check();
   await Promise.all([
     page.waitForURL(/unique=true/),
     page.getByRole("button", { name: "Search" }).click(),
   ]);
-  await expect(page.getByTestId("chart-views").locator(".title")).toContainText("(2)");
-  await expect(page.getByTestId("chart-unique_views").locator(".title")).toContainText("(1)");
+  await expect(page.getByTestId("chart-views").locator(".title")).toContainText("(3)");
+  await expect(page.getByTestId("chart-unique_views").locator(".title")).toContainText("(2)");
   expect(errors).toEqual([]);
 });
 
