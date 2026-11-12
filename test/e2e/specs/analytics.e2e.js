@@ -24,6 +24,18 @@ const FINISH = { timeout: 30_000 };
 const RANGE = "from=2020-01-01&to=2099-01-01";
 const DAILY = `${RANGE}&interval=day`;
 
+// The dashboard shows counts with thousands separators ("2,738"), and a server is shared by the
+// spec files that run on it, so a count can pass 1000. The shown digits are compared with the
+// API total, not the text: no locale-dependent formatting is used here.
+async function expectShownCount(locator, total) {
+  await expect
+    .poll(async () => {
+      const digits = ((await locator.textContent()) ?? "").replace(/\D/g, "");
+      return digits === "" ? null : Number(digits);
+    })
+    .toBe(Number(total));
+}
+
 // Settings this file changed. `afterEach` puts them back through the request fixture, since a test
 // that timed out has closed its page by then.
 let changed = {};
@@ -361,8 +373,8 @@ test("the dashboard's counts and charts move after a real view and click", async
   expect(sum(after.charts.link_clicks) - sum(before.charts.link_clicks)).toBe(1);
 
   await page.goto("/admin");
-  await expect(page.getByTestId("stat-campaigns")).toHaveText(String(after.counts.campaigns.total));
-  await expect(page.getByTestId("stat-messages")).toHaveText(String(after.counts.messages));
+  await expectShownCount(page.getByTestId("stat-campaigns"), after.counts.campaigns.total);
+  await expectShownCount(page.getByTestId("stat-messages"), after.counts.messages ?? 0);
   await expect(page.locator(".chart-box").nth(0).locator("canvas")).toBeVisible();
   expect(errors).toEqual([]);
 });
