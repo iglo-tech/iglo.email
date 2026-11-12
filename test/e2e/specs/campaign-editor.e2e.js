@@ -2,7 +2,6 @@
 // path, a posted preview fetches nothing whatever its first character is, a save keeps what it did
 // not change, and starting a campaign takes only the right to send. listmonk has no such spec at
 // 6fcd95f; docs/design/09-decisions.md#d66 lists what the sanitizer keeps.
-import { createServer } from "node:http";
 import { expect } from "@playwright/test";
 import {
   api,
@@ -11,6 +10,7 @@ import {
   login,
   ORIGIN,
   PASSWORD,
+  receiver,
   test,
   unique,
   signIn,
@@ -279,22 +279,6 @@ test("an ordinary newsletter comes through the rich-text editor unchanged", asyn
   expect(saved.replace("<li>Ones</li>", "<li>One</li>")).toContain('href="{{ unsubscribe_url }}"');
   await expect(notice(page)).toBeHidden();
 });
-
-// The address gets the request or it does not; the browser's own events can miss a blocked one.
-// Only the paths count: anything on this host may probe a new port.
-async function receiver() {
-  const hits = [];
-  const server = createServer((request, response) => {
-    hits.push(request.url);
-    response.writeHead(204, { "Access-Control-Allow-Origin": "*" }).end();
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return {
-    hits,
-    url: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((resolve) => server.close(resolve)),
-  };
-}
 
 // The image in the frame has settled, and a request the page makes afterwards arrives.
 async function nothingFetched(page, place) {
