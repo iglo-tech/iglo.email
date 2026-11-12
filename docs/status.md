@@ -10,14 +10,13 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B73 (consent spec hardening) in progress, then B66.
+**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B66 (E3 operations) in progress.
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 - Backlog (lead, from the B64 review): `runner.wake` (`src/campaigns/runner/runner.ts:783`) is never called, so a start or resume waits for the next 5 s scan; consider waking on status change.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B73 [consent spec hardening](briefs/B73.md): B65 review backlog (sequence exits that can fail, form helper leaks lists, unsubscribe GET).
-- B66 = E3 operations and data safety (notifications, restore hold, GDPR).
+- B66 [brief](briefs/B66.md) = E3 operations and data safety (notifications, restore hold, GDPR).
 - B67 = E4 webhooks and bounce ingress.
 - B68 = E5 public archive and tracking pages.
 - B69 = E6 analytics with real data.
@@ -55,6 +54,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B73 | [#118](https://github.com/iglo-tech/iglo.email/pull/118) | a356b13 | Consent spec: sequence exits proven to fail (frequency cap waived), form helper ticks named lists only, unsubscribe GET is safe |
 | B65 | [#117](https://github.com/iglo-tech/iglo.email/pull/117) | 5712986 | E2E consent from the mail: opt-in link, unsubscribe link, one-click POST, blocklist, re-subscribe, sequence exits (12 tests) |
 | B64 | [#115](https://github.com/iglo-tech/iglo.email/pull/115) | 192aee6 | E2E sending lifecycle to the sink: 9 tests (send, dedupe, pause/resume, cancel, schedule, tx, test send) |
 | B72 | [#116](https://github.com/iglo-tech/iglo.email/pull/116) | e988cf7 | Runner tracked-link test: 15 s drive bound, 30 s test timeout (arm64 slack) |
