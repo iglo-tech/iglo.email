@@ -10,6 +10,9 @@ import { api, ok, requestAdmin, signIn, test, unique } from "../helpers.js";
 // The scheduler's tick (src/scheduler/scheduler.ts, SCHEDULER_INTERVAL_MS).
 const TICK_MS = 15_000;
 const FINISH = { timeout: 60_000 };
+// The 409 messages a refused enrollment carries (src/sequences/routes.ts).
+const REENTRY_REFUSED = "The sequence's reentry rule does not allow this enrollment.";
+const NOT_ACTIVE = "The sequence is not active.";
 
 // Settings and the SMTP server this file changed. `afterEach` puts them back through the request
 // fixture, since a test that timed out has closed its page by then.
@@ -151,6 +154,7 @@ test("re-entry: never stays out after a run, after_exit waits for the exit, alwa
       subscriber_id: who.id,
     });
     expect(answer.status).toBe(409);
+    expect(answer.body.message).toBe(REENTRY_REFUSED);
   }
 
   // Leaving by an exit event ends the `never` and `after_exit` runs, and no others.
@@ -166,9 +170,10 @@ test("re-entry: never stays out after a run, after_exit waits for the exit, alwa
     subscriber_id: who.id,
   });
   expect(again.status).toBe(409);
+  expect(again.body.message).toBe(REENTRY_REFUSED);
 });
 
-test("an event trigger with a PT0S first step mails the reader within one scheduler tick", async ({
+test("a PT0S first step wakes the scheduler at once: the event's reader is mailed within one tick", async ({
   page,
 }) => {
   const subject = unique("Instant subject");
@@ -217,9 +222,10 @@ test("a paused sequence sends nothing when a step falls due, and sends once it i
   const subject = unique("Paused subject");
   const tx = await template(page, subject);
   const evt = unique("evt");
+  // A wait long enough that the pause, a few API calls away, lands well before the step is due.
   const seq = await sequence(page, {
     trigger: { event: evt },
-    steps: [{ wait: "PT5S", kind: "transactional", template_id: tx.id }],
+    steps: [{ wait: "PT20S", kind: "transactional", template_id: tx.id }],
   });
   const who = await subscriber(page);
   const [started] = (await fire(page, who.email, evt)).started;
@@ -227,6 +233,10 @@ test("a paused sequence sends nothing when a step falls due, and sends once it i
   expect(due).toBeTruthy();
 
   await ok(page, `/api/sequences/${seq.id}/status`, "PUT", { status: "paused" });
+  // Had the pause come after the due time, the scheduler could have sent first; say so plainly.
+  expect(Date.parse(due) - Date.now(), "the pause landed before the step was due").toBeGreaterThan(
+    0,
+  );
   await pastDueAndTwoTicks(due);
   expect(await subjectsTo(who.email)).toEqual([]);
   expect((await enrollment(page, started.id)).status).toBe("active");
@@ -262,6 +272,7 @@ test("archiving a sequence exits its running enrollments and refuses new ones; n
     subscriber_id: who.id,
   });
   expect(manual.status).toBe(409);
+  expect(manual.body.message).toBe(NOT_ACTIVE);
 
   await pastDueAndTwoTicks(due);
   expect(await subjectsTo(who.email)).toEqual([]);
@@ -295,6 +306,9 @@ test("a step whose condition is false is skipped when on_false is skip, and the 
   await expect
     .poll(async () => (await enrollment(page, started.id)).status, FINISH)
     .toBe("completed");
+  // `completed` is committed before the last mail is handed to the outbox, so wait for both mails.
+  await arrived(who.email, first.subject);
+  await arrived(who.email, last.subject);
   expect((await subjectsTo(who.email)).sort()).toEqual([first.subject, last.subject].sort());
 });
 
@@ -325,7 +339,9 @@ test("a step whose condition is false exits the enrollment when on_false is exit
 
   await expect.poll(async () => (await enrollment(page, started.id)).status, FINISH).toBe("exited");
   expect(await enrollment(page, started.id)).toMatchObject({ exit_reason: "condition" });
-  // Exited before the last step was ever due: its mail never comes, now or later.
+  // Exited before the last step was ever due: its mail never comes, now or later. The first mail
+  // was handed over a tick earlier, so wait for its arrival before the exact check.
+  await arrived(who.email, first.subject);
   expect(await subjectsTo(who.email)).toEqual([first.subject]);
 });
 
@@ -348,12 +364,14 @@ test("a changed wait applied through the reschedule endpoint moves a waiting enr
   const enrolled = made.body.data;
 
   const step = (await ok(page, `/api/sequences/${seq.id}`)).steps[0];
+  // The new wait is long enough that the setup above cannot overtake it: a time already past would
+  // be stored as "due now" and the due time would not show the wait.
   const saved = await api(page, `/api/sequences/${seq.id}`, "PUT", {
     name: unique("Rescheduled sequence"),
     status: "active",
     trigger: { event: seq.trigger.event },
     reentry: "always",
-    steps: [{ ...step, wait: "PT5S" }],
+    steps: [{ ...step, wait: "PT20S" }],
   });
   expect(saved.status, JSON.stringify(saved.body)).toBe(200);
   // Saving changes nothing a waiting enrollment has; the reschedule endpoint moves it.
@@ -362,9 +380,10 @@ test("a changed wait applied through the reschedule endpoint moves a waiting enr
   const moved = await api(page, `/api/sequences/${seq.id}/steps/${step.id}/reschedule`, "POST");
   expect(moved.body.data).toEqual({ changed: 1 });
   const after = await enrollment(page, enrolled.id);
-  // Counted from the enrollment's start, as the new wait says: five seconds, not a day.
-  expect(Date.parse(after.due_at) - Date.parse(enrolled.created_at)).toBe(5_000);
-  await arrived(who.email, subject);
+  // A manual enrollment's step counts from its creation (rescheduleBatch). Both times come from the
+  // API, so the due time must sit exactly one new wait after the anchor.
+  expect(Date.parse(after.due_at) - Date.parse(after.created_at)).toBe(20_000);
+  await arrived(who.email, subject, 60_000);
 });
 
 test("the timeline shows a sent step, a skipped step and a failed step", async ({ page }) => {
