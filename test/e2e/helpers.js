@@ -309,3 +309,36 @@ export async function receiver({ statuses = [204] } = {}) {
     },
   };
 }
+
+// The paths a campaign mail's links take (src/campaigns/render.ts, src/campaigns/runner/runner.ts):
+// the open pixel, a tracked link, and the unsubscribe page a mail's `unsubscribe_url` names.
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+export const TRACKED = {
+  pixel: new RegExp(`^/campaign/${UUID}/${UUID}/px\\.png$`, "i"),
+  click: new RegExp(`^/link/${UUID}/${UUID}/${UUID}$`, "i"),
+  unsubscribe: new RegExp(`^/subscription/${UUID}/${UUID}$`, "i"),
+};
+
+// Every absolute link in a mail body, with HTML's `&amp;` read as `&`, as a reader's click would.
+export const linksIn = (mail) =>
+  [...mail.body.matchAll(/https?:\/\/[^\s"'<>]+/g)].map((match) =>
+    match[0].replaceAll("&amp;", "&"),
+  );
+
+// The one link in a mail whose path matches `pattern`; the test fails if the mail has none.
+export function linkTo(mail, pattern, what) {
+  const found = linksIn(mail).find((url) => pattern.test(new URL(url).pathname));
+  expect(found, `the mail links to ${what}`).toBeTruthy();
+  return found;
+}
+
+// The mail a campaign sent to one address, by its subject. Waited for: the reader may already have
+// the mail of an earlier campaign, which is not the one asked for.
+export async function mailAbout(address, subject) {
+  let found;
+  await expect(async () => {
+    found = (await mailFor(address)).find((mail) => mail.subject === subject);
+    expect(found, `a mail with the subject "${subject}"`).toBeTruthy();
+  }).toPass({ timeout: 15000 });
+  return found;
+}
