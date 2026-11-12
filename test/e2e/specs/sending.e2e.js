@@ -257,6 +257,7 @@ test("the mail carries the campaign's subject, body and layout, with subscriber 
   });
   await startFromListing(page, c);
   const [mail] = await mailFor(reader);
+  expect(mail.from).toBe(c.from_email);
   expect(mail.subject).toBe(`${subject} for Ada Layout`);
   expect(mail.body).toContain('class="e2e-layout"');
   expect(mail.body).toContain("Layout head");

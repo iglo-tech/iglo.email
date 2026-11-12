@@ -22,6 +22,8 @@ const workers = Number(requested);
 const weights: Record<string, number> = {
   "campaigns.e2e.js": 130,
   "csp.e2e.js": 109,
+  "consent.e2e.js": 63,
+  "sending.e2e.js": 69,
   "sequences.e2e.js": 107,
   "editor-containment.e2e.js": 96,
   "bounces.e2e.js": 88,
@@ -61,7 +63,15 @@ function serveMail(mailbox: Stack["mailbox"]) {
     fetch(request) {
       const to = new URL(request.url).searchParams.get("to");
       const found = mailbox.mails.filter((item) => item.to === to);
-      return Response.json(found.map(({ subject, body }) => ({ subject, body })));
+      return Response.json(
+        found.map((item) => ({
+          subject: item.subject,
+          body: item.body,
+          from: item.header("From"),
+          listUnsubscribe: item.header("List-Unsubscribe"),
+          listUnsubscribePost: item.header("List-Unsubscribe-Post"),
+        })),
+      );
     },
   });
 }
