@@ -87,8 +87,12 @@ async function hook(page, url, events, extra = {}) {
 
 const deliveries = async (page, id) => (await ok(page, `/api/webhooks/${id}/deliveries`)).results;
 
+// The deliveries a receiver has been sent. Only the webhook path counts: a request to any other path
+// (a health probe from another stack that took the same loopback port) is not a delivery.
+const posts = (target) => target.requests.filter((request) => request.path === "/hook");
+
 // The bodies a receiver has been sent, parsed in arrival order.
-const bodies = (target) => target.requests.map((request) => JSON.parse(request.body));
+const bodies = (target) => posts(target).map((request) => JSON.parse(request.body));
 
 // The body of one event about one address, once the receiver has it.
 async function eventFor(target, event, email) {
@@ -202,9 +206,9 @@ test("each delivery is signed with its webhook's secret over the timestamp and t
   await hook(page, `${target.url}/hook`, ["subscriber.deleted"], { secret });
   const person = await reader(page, []);
   await deleteReader(page, person);
-  await expect.poll(() => target.requests.length, WAIT).toBeGreaterThan(0);
+  await expect.poll(() => posts(target).length, WAIT).toBeGreaterThan(0);
 
-  const [request] = target.requests;
+  const [request] = posts(target);
   expect(request.method).toBe("POST");
   expect(request.headers["content-type"]).toBe("application/json");
   const [, unix, digest] =
@@ -283,9 +287,9 @@ test("a disabled webhook receives nothing for an event that would otherwise fire
 
   // The enabled webhook gets the event, so the same delete has reached the delivery loop; a settle
   // window after it then covers the disabled webhook's delivery, had one been made.
-  await expect.poll(() => live.requests.length, WAIT).toBe(1);
+  await expect.poll(() => posts(live).length, WAIT).toBe(1);
   await new Promise((resolve) => setTimeout(resolve, 2000));
-  expect(off.requests).toEqual([]);
+  expect(posts(off)).toEqual([]);
   expect(await deliveries(page, disabled.id)).toEqual([]);
 });
 
@@ -310,8 +314,8 @@ test("a receiver that answers 500 is recorded as failed, then gets the same deli
   await expect
     .poll(async () => (await deliveries(page, made.id))[0]?.status, FIRST_RETRY)
     .toBe("delivered");
-  expect(target.requests).toHaveLength(2);
-  expect(target.requests[1].body).toBe(target.requests[0].body);
+  expect(posts(target)).toHaveLength(2);
+  expect(posts(target)[1].body).toBe(posts(target)[0].body);
   expect(bodies(target)[1].id).toBe(bodies(target)[0].id);
   const [done] = await deliveries(page, made.id);
   expect(done).toMatchObject({ status: "delivered", attempts: 2, last_error: null });
@@ -398,5 +402,5 @@ test("with private addresses blocked, a loopback receiver gets nothing and the d
     .toBe("blocked_address");
   const [refused] = await deliveries(page, made.id);
   expect(refused).toMatchObject({ status: "queued", attempts: 1 });
-  expect(target.requests).toEqual([]);
+  expect(posts(target)).toEqual([]);
 });

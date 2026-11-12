@@ -11,6 +11,7 @@ import {
   ORIGIN,
   openMenu,
   receiver,
+  requestAdmin,
   settledMail,
   signIn,
   test,
@@ -75,8 +76,35 @@ test.beforeEach(async ({ page }) => {
   await signIn(page);
   await enableBounces(page);
 });
+// Webhooks and receivers this file registered and has not removed. A timed-out test never reaches
+// its own cleanup, so `afterEach` takes them from here; the 20-webhook cap would otherwise fail a
+// later budget test on the same stack.
+let hooks = [];
+let receivers = [];
+async function removeLeftovers(request) {
+  const failures = [];
+  for (const target of receivers.splice(0))
+    await target.close().catch((error) => failures.push(`closing a receiver: ${error.message}`));
+  if (hooks.length) {
+    const call = await requestAdmin(request);
+    for (const id of hooks.splice(0)) {
+      const response = await call(`/api/webhooks/${id}`, "DELETE").catch((error) => ({
+        status: error.message,
+      }));
+      if (response.status !== 200 && response.status !== 404)
+        failures.push(`deleting webhook ${id}: ${response.status}`);
+    }
+  }
+  if (failures.length) throw new Error(failures.join("\n"));
+}
+
 // The run shares one database: a later spec expects bounces as this one found them.
-test.afterEach(async ({ page, context }) => {
+test.afterEach(async ({ page, context, request }) => {
+  // A failure here must not skip the settings below, so it is raised after them.
+  const leftover = await removeLeftovers(request).then(
+    () => null,
+    (error) => error,
+  );
   // A test may end as a user who cannot write settings.
   await context.clearCookies();
   await signIn(page);
@@ -88,6 +116,7 @@ test.afterEach(async ({ page, context }) => {
     "bounce.webhooks_enabled": webhooks,
     "bounce.actions": before["bounce.actions"],
   });
+  if (leftover) throw leftover;
 });
 
 test("applies bounce actions by type and lists what was recorded", async ({ page }) => {
@@ -439,16 +468,19 @@ async function bounceAs(user, data) {
 
 test("a hard bounce from an API user with webhooks:post_bounce blocklists its subscriber, and reaches a receiver", async ({
   page,
+  request,
 }) => {
   const list = await makeList(page);
   const bouncing = await makeSub(page, list.id);
   const steady = await makeSub(page, list.id);
   const source = unique("api");
   const target = await receiver();
+  receivers.push(target);
   const registered = await ok(page, "/api/webhooks", "POST", {
     url: `${target.url}/bounces`,
     events: ["bounce.recorded"],
   });
+  hooks.push(registered.id);
   try {
     const caller = await apiUserWith(page, ["webhooks:post_bounce"]);
     // The settings make two hard bounces a blocklist.
@@ -480,8 +512,7 @@ test("a hard bounce from an API user with webhooks:post_bounce blocklists its su
       expect(body.data.bounce).toMatchObject({ type: "hard", source });
     }
   } finally {
-    await api(page, `/api/webhooks/${registered.id}`, "DELETE");
-    await target.close();
+    await removeLeftovers(request);
   }
 });
 
