@@ -26,6 +26,7 @@ const weights: Record<string, number> = {
   "operations.e2e.js": 40,
   "sending.e2e.js": 69,
   "sequences.e2e.js": 107,
+  "sequences-lifecycle.e2e.js": 130,
   "editor-containment.e2e.js": 96,
   "bounces.e2e.js": 62,
   "public.e2e.js": 64,
