@@ -10,7 +10,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Paused by the owner on 2026-11-09 (out of tokens); the schedule is disabled until the owner resumes.** Open: #115 B64 (test-send flake, round 4 not run) and #116 B72 (head b86792b, review not run).
+**Resumed by the owner on 2026-11-12; the schedule is enabled again.** Open: #115 B64 (test-send flake, round 4 investigating) and #116 B72 (head b86792b, review round 1).
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
