@@ -65,3 +65,23 @@ The send-rate test (`test/messaging/send-rate.test.ts`) has its own copy of this
 ## Backlog
 
 - When this test next fails, the error now names the stuck state; open a task from it.
+
+## B72: wall bound for the heavy tracked-link wait
+
+The arm64 release run (42707478326, attempt 1) reached 290 of 300 pushes when the 3 s `drive` bound
+expired. That was progress, not a stall. Local measurements, idle host, `--timeout=30000`:
+
+- The whole tracked-link test over 20 runs: 1.15–1.39 s (max 1.39 s).
+- The `drive` at `runner.test.ts:601` over 5 runs of each file: 0.54–0.59 s against its 3 s bound.
+- Every other `drive`/`until` call in `runner.test.ts` and `media.test.ts` stayed under 0.2 s, except
+  the two that fail by design: the 200 ms bound test (line 651) and the iteration-limited wait (line 628).
+
+Change: only the `drive` at `runner.test.ts:601` takes a 15 s bound, and the tracked-link test gets a
+30 s per-test timeout (`}, 30_000);`). The CI run took over 3 s for a `drive` that takes about 0.6 s
+here, at least 5× slower, so 6 s left too little margin. The default `WAIT_WALL_MS` and the other
+calls are unchanged. With the 30 s test timeout, a plain serial `bun test` (Bun's 5 s default) no
+longer fires first: the 15 s wall bound fires, and the stuck-state message is kept.
+
+The earlier 20-run loop of the tracked-link test (1.19–1.41 s, 20 of 20) was measured with the 6 s
+bound. The 15 s bound and 30 s timeout were checked with the 5-run `-t "do not accumulate"` loop
+recorded in the B72 PR.
