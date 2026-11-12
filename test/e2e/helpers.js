@@ -1,6 +1,7 @@
 // Adapted from listmonk tests/helpers.js at 6fcd95f. The harness owns the servers, so there is
 // no resetDB; each spec makes its own uniquely named data through the public API.
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 import { test as base, expect } from "@playwright/test";
 
 export { totp } from "./totp.ts";
@@ -264,4 +265,47 @@ export async function settledMail(addresses, { settle = 1500, timeout = 30000 } 
     }
   }
   return counts;
+}
+
+// A loopback HTTP receiver: a webhook target, or a link a page fetches. Every request is recorded in
+// `requests` (method, path, headers and the raw body), and `hits` keeps the request URLs. It answers
+// with `statuses` in order, and the last one for every later request. Its port is the kernel's own;
+// `close` drops the connections still open, so a test that times out cannot leave it listening.
+export async function receiver({ statuses = [204] } = {}) {
+  const hits = [];
+  const requests = [];
+  const answers = [...statuses];
+  const sockets = new Set();
+  const server = createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      hits.push(request.url);
+      requests.push({
+        method: request.method,
+        path: request.url,
+        headers: request.headers,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      const status = answers.length > 1 ? answers.shift() : answers[0];
+      response.writeHead(status, { "Access-Control-Allow-Origin": "*" }).end();
+    });
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  return {
+    hits,
+    requests,
+    url: `http://127.0.0.1:${server.address().port}`,
+    close: async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
 }

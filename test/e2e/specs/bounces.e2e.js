@@ -3,7 +3,19 @@
 // settings are read live here, so a test turns them on through the API. resetDB's complaint action
 // is set the same way. Differences beside the cases below, with their rows in 07-api-and-ui.md.
 import { expect } from "@playwright/test";
-import { api, confirm, createUser, logout, openMenu, test, unique, signIn } from "../helpers.js";
+import {
+  api,
+  confirm,
+  createUser,
+  logout,
+  ORIGIN,
+  openMenu,
+  receiver,
+  settledMail,
+  signIn,
+  test,
+  unique,
+} from "../helpers.js";
 
 const BOUNCES = "/admin/subscribers/bounces";
 
@@ -397,3 +409,90 @@ for (const filter of [
     });
   }
 }
+
+// An API user of its own with the given permissions, the way an external caller holds one: its
+// token is the password of a Basic credential, which `bounceAs` sends with no session or CSRF token.
+async function apiUserWith(page, permissions) {
+  const role = await ok(page, "/api/roles/users", "POST", {
+    name: unique("bounce-role"),
+    permissions,
+  });
+  const user = await ok(page, "/api/users", "POST", {
+    username: unique("bounce-api"),
+    type: "api",
+    status: "enabled",
+    user_role_id: role.id,
+  });
+  return { username: user.username, token: user.password };
+}
+
+// A bounce posted to the external route as `user`; answers its status.
+async function bounceAs(user, data) {
+  const credential = Buffer.from(`${user.username}:${user.token}`).toString("base64");
+  const response = await fetch(`${ORIGIN}/webhooks/bounce`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Basic ${credential}` },
+    body: JSON.stringify(data),
+  });
+  return response.status;
+}
+
+test("a hard bounce from an API user with webhooks:post_bounce blocklists its subscriber, and reaches a receiver", async ({
+  page,
+}) => {
+  const list = await makeList(page);
+  const bouncing = await makeSub(page, list.id);
+  const steady = await makeSub(page, list.id);
+  const source = unique("api");
+  const target = await receiver();
+  const registered = await ok(page, "/api/webhooks", "POST", {
+    url: `${target.url}/bounces`,
+    events: ["bounce.recorded"],
+  });
+  try {
+    const caller = await apiUserWith(page, ["webhooks:post_bounce"]);
+    // The settings make two hard bounces a blocklist.
+    expect(await bounceAs(caller, { source, type: "hard", email: bouncing.email })).toBe(200);
+    expect(await bounceAs(caller, { source, type: "hard", email: bouncing.email })).toBe(200);
+    await expect.poll(() => subStatus(page, bouncing.id)).toBe("blocklisted");
+
+    // The next campaign to the list reaches the steady reader and not the blocklisted one.
+    const sent = await ok(page, "/api/campaigns", "POST", {
+      name: unique("Bounce campaign"),
+      subject: unique("Bounce campaign subject"),
+      type: "regular",
+      content_type: "html",
+      body: "<p>After the bounces</p>",
+      lists: [list.id],
+    });
+    await ok(page, `/api/campaigns/${sent.id}/status`, "PUT", { status: "running" });
+    await expect
+      .poll(async () => (await ok(page, `/api/campaigns/${sent.id}`)).status, { timeout: 30_000 })
+      .toBe("finished");
+    expect(await settledMail([bouncing.email, steady.email])).toEqual([0, 1]);
+
+    // Each accepted bounce is one delivery to the registered receiver, with what it recorded.
+    await expect.poll(() => target.requests.length, { timeout: 30_000 }).toBe(2);
+    for (const request of target.requests) {
+      const body = JSON.parse(request.body);
+      expect(body.event).toBe("bounce.recorded");
+      expect(body.data.subscriber.email).toBe(bouncing.email);
+      expect(body.data.bounce).toMatchObject({ type: "hard", source });
+    }
+  } finally {
+    await api(page, `/api/webhooks/${registered.id}`, "DELETE");
+    await target.close();
+  }
+});
+
+test("a bounce from an API user without webhooks:post_bounce is refused and records nothing", async ({
+  page,
+}) => {
+  const list = await makeList(page);
+  const sub = await makeSub(page, list.id);
+  const source = unique("api");
+  const caller = await apiUserWith(page, ["bounces:get", "bounces:manage"]);
+  expect(await bounceAs(caller, { source, type: "soft", email: sub.email })).toBe(403);
+  expect((await ok(page, `/api/bounces?source=${source}`)).total).toBe(0);
+  expect(await subStatus(page, sub.id)).toBe("enabled");
+});

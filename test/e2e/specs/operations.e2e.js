@@ -22,7 +22,7 @@ import {
   test,
   unique,
 } from "../helpers.js";
-import { releaseHold, restoredInstance } from "../instance.js";
+import { releaseHold, restoredInstance, stopOwnedInstances } from "../instance.js";
 
 // The compiled executable the run built (`bun run e2e` builds it first).
 const EXECUTABLE = fileURLToPath(new URL("../../../dist/iglo.email", import.meta.url));
@@ -40,6 +40,10 @@ const peer = () => `203.0.113.${1 + Math.floor(Math.random() * 254)}`;
 // `afterEach` closes the started ones and puts the settings back, even after a timeout.
 let changed = {};
 let started = [];
+// What a sending path answers while the restore hold stands: the hold's own reason, as `hold.ts`
+// words it, so another 503 with a different message cannot pass for it.
+const HOLD_MESSAGE =
+  /^Sending is held\. Restored from a backup taken at .+\. Sending stays stopped until an operator reconciles them and releases it\.$/;
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
@@ -56,6 +60,8 @@ test.afterEach(async ({ request }) => {
   };
   // Instances and sinks first: an instance holds its data directory while it runs.
   for (const item of started.splice(0)) await step("closing", () => item.close());
+  // An instance whose test timed out never reached its `close` above; this sweep reaches it.
+  await step("closing the instances this file started", stopOwnedInstances);
   const pending = changed;
   changed = {};
   await step("restoring settings", async () => {
@@ -387,6 +393,7 @@ test("a restored snapshot sends nothing until an operator releases it", async ({
     const refused = async (what, path, method, body) => {
       const response = await api(held, path, method, body);
       expect(response.status, what).toBe(503);
+      expect(response.body.message, what).toMatch(HOLD_MESSAGE);
     };
     await refused("starting a campaign", `/api/campaigns/${pending.id}/status`, "PUT", {
       status: "running",

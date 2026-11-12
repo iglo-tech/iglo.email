@@ -13,6 +13,15 @@ import { promisify } from "node:util";
 const execute = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Every child this process spawned and has not seen exit, registered before it listens, and every
+// instance started and not yet closed. A test that times out never reaches its own `close`, so
+// `stopOwnedInstances` and the exit hook reach these instead.
+const children = new Set();
+const owned = new Set();
+process.once("exit", () => {
+  for (const child of children) child.kill("SIGKILL");
+});
+
 /** One `backup` (or `backup --release-hold`) run; the result carries the exit code and both streams. */
 export async function backupCommand(executable, args) {
   try {
@@ -54,6 +63,9 @@ export async function startInstance(executable, dataDir, directory) {
       ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
       { env: { PATH: "" }, stdio: ["ignore", "ignore", "pipe"] },
     );
+    // Registered before the process can listen, so no path from here to `ready` loses it.
+    children.add(current);
+    current.once("exit", () => children.delete(current));
     current.stderr.on("data", (chunk) => {
       errors = (errors + chunk.toString()).slice(-4000);
     });
@@ -85,16 +97,20 @@ export async function startInstance(executable, dataDir, directory) {
   /** Starts on `port`, or on a new port the first time; a port taken by another process is retried. */
   const start = async (port) => {
     for (let attempt = 1; ; attempt++) {
+      if (closing) throw new Error("the instance is closing, so it does not start again");
       const chosen = port ?? (await freePort());
       const current = spawnOn(chosen);
       try {
         await ready(current, `http://127.0.0.1:${chosen}`);
+        // A close that began while this process was starting has already stopped `child`, which
+        // is this one: it must not stay up as the instance's answer.
+        if (closing) throw new Error("the instance closed while it was starting");
         listenPort = chosen;
         origin = `http://127.0.0.1:${chosen}`;
         return;
       } catch (error) {
         if (current.exitCode === null) await stopped(current);
-        if (attempt >= 5 || !/in use/i.test(errors)) throw error;
+        if (closing || attempt >= 5 || !/in use/i.test(errors)) throw error;
         await sleep(50 * attempt);
       }
     }
@@ -120,18 +136,23 @@ export async function startInstance(executable, dataDir, directory) {
     return code;
   };
 
-  let closed = false;
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    try {
-      await stop();
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
+  // The first call does the work; a later one waits for the same cleanup to finish.
+  let closing = false;
+  let closed;
+  const close = () => {
+    closing = true;
+    owned.delete(handle);
+    closed ??= stop().finally(() => rm(directory, { recursive: true, force: true }));
+    return closed;
   };
-
-  await start();
+  const handle = { close };
+  owned.add(handle);
+  try {
+    await start();
+  } catch (error) {
+    await close();
+    throw error;
+  }
   return {
     get origin() {
       return origin;
@@ -142,6 +163,16 @@ export async function startInstance(executable, dataDir, directory) {
     stop,
     close,
   };
+}
+
+/**
+ * Closes every instance this process started and has not closed, whatever state it is in. Each one
+ * is closed on its own, so an error in one leaves the rest to close. Throws with all the errors.
+ */
+export async function stopOwnedInstances() {
+  const results = await Promise.allSettled([...owned].map((handle) => handle.close()));
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length) throw new Error(failed.map((result) => result.reason.message).join("\n"));
 }
 
 /**
