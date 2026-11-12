@@ -187,12 +187,12 @@ Seven tasks, each about 8–15 tests, release-critical first. Each can run as it
 
 **Time added.** The new specs add about 1–2 minutes each on two stacks. E1 and E7 contribute most of the real-time waits (the scheduler's 15 s polls, and 60 s sends).
 
-## 5. Release gate
+## 5. Release gate (done in B71, [D96](09-decisions.md#d96-the-release-waits-for-the-browser-suite-no-retries-lead-2026-11-12))
 
 - **Current runtime.** `docs/perf/e2e-speed.md`: 17.0 min serially for 334 tests (2026-11-05, loaded host); 9.8–10.1 min at the default two stacks under load of 9–16; 5.6 min at three stacks on a lighter host. The default is two stacks because each stack takes about 1.1 GiB and one to one and a half cores.
-- **Where it would run.** `release.yml` runs on tag pushes and `workflow_dispatch`. Its `build` job runs on matrix runners, and `publish` depends only on `build` (`release.yml:62–65`). `publish` and `image` run on `ubuntu-24.04` (`release.yml:65,110`). I believe GitHub's standard public Linux runner has 4 vCPU and 16 GB RAM; that should be checked before the timing is relied on.
-- **Recommendation: yes, but after a stability pass.** Add an `e2e` job on `ubuntu-24.04` that installs Chromium with Playwright (cache `~/.cache/ms-playwright`), runs `bun run e2e` with `E2E_WORKERS=2`, and make `publish` depend on it: `needs: [build, e2e]`. The job only needs to run on the x86-64 build, since `bun run e2e` builds the executable itself. Make it required only after the full suite passes three times in a row on the release-candidate commit. The suite has real-time waits and no retries, so one flaky run would block a release.
-- **Owner decisions needed.** (1) Whether one Playwright retry is acceptable in the release job. (2) `AGENTS.md` says CI is not a merge gate. A release-tag gate is a different thing, but the owner should confirm that is the intent. (3) Whether the restore-hold test (E3) is worth a third instance on every run.
+- **Where it runs.** The `e2e` job in `release.yml` runs `E2E_WORKERS=2 bun run e2e` on `ubuntu-24.04`. It is x86-64 only, since `bun run e2e` builds the executable itself, and it does not wait for `build`. `publish` needs `build` and `e2e`; `image` needs `e2e` too, on tags and dry runs alike. Browser binaries are cached under `~/.cache/ms-playwright`, keyed on the Playwright version in `bun.lock`. A failure uploads `dist/e2e-results/` for seven days.
+- **Decided (lead, D96, not owner items).** No retries: `retries: 0` stays. A tag gate, not a merge gate: CI stays manual-only and merges are still checked locally. The restore-hold instance (E3) runs every time.
+- **Not yet measured.** The job's wall time on the hosted runner is unknown. `timeout-minutes: 35` is about three times the local run. The first real run is the lead's manual dry run on the merged `main`.
 
 ## 6. Not covered by design
 

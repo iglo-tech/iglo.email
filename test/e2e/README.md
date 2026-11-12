@@ -8,7 +8,7 @@ file from a queue, longest first, and runs it serially with one Playwright proce
 a file keep their order and their shared setup. Specs change settings every user of a server shares
 (SMTP, captcha, tracking, trusted URLs, and `reset` in the subscribers files empties every list), so
 two files never share a server. Everything stops when the run ends. It needs no Docker and is not
-part of `bun run check`. If Playwright cannot find its browser, `node_modules/.bin/playwright
+part of `bun run check`. The release workflow runs it on two stacks before it publishes or pushes an image (`release.yml`, D96). If Playwright cannot find its browser, `node_modules/.bin/playwright
 install chromium` fetches the revision it pins. Failures leave a screenshot and trace in
 `dist/e2e-results/<spec file>`; the trace has DOM snapshots, network and console but no screencast
 frames, which cost a quarter of the CPU of a run. The run ends with the slowest spec files, and
