@@ -10,13 +10,12 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B71 merged; release dry run 43319396254 on b2998b9 running; B74 gate follow-ups in progress. Then the owner's 1.0.0 go/no-go report.
+**Resumed by the owner on 2026-11-12.** E2E plan done (B64–B71, B73, B74); release dry run 43319396254 green incl. hosted e2e (12.7 min). Waiting on the owner's 1.0.0 go/no-go (asked 2026-11-12): release now, or one real SES check first.
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 - Backlog (lead, from the B64 review): `runner.wake` (`src/campaigns/runner/runner.ts:783`) is never called, so a start or resume waits for the next 5 s scan; consider waking on status change.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B74 [release gate follow-ups](briefs/B74.md): analytics counts as digits; e2e traces on timeout (B71 review).
 - Then tag 1.0.0 (report to owner first).
 
 ## Owner decisions
@@ -48,6 +47,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B74 | [#125](https://github.com/iglo-tech/iglo.email/pull/125) | 712c2f0 | Analytics dashboard counts as digits; e2e traces kept on timeout |
 | B71 | [#124](https://github.com/iglo-tech/iglo.email/pull/124) | b2998b9 | Release gate: e2e job before publish and image (D96, no retries); dashboard counts compared as digits; 3 full runs green |
 | B70 | [#123](https://github.com/iglo-tech/iglo.email/pull/123) | e5e56df | E2E sequence lifecycle: re-entry, triggers, where, pause, archive, on_false, reschedule, timeline (r1 CHANGES race, fixer, r2 APPROVE) |
 | B69 | [#122](https://github.com/iglo-tech/iglo.email/pull/122) | c98115e | E2E analytics from real mail events: clicks, links, bounces, unique, intervals, ranges, dashboard, individual tracking |
