@@ -99,6 +99,10 @@ export async function startInstance(executable, dataDir, directory) {
     for (let attempt = 1; ; attempt++) {
       if (closing) throw new Error("the instance is closing, so it does not start again");
       const chosen = port ?? (await freePort());
+      // A close that began while the port was being chosen found no process to stop, and it has
+      // removed the directory already: nothing may be spawned on it now, or the server would
+      // recreate the directory after its removal.
+      if (closing) throw new Error("the instance closed before it started");
       const current = spawnOn(chosen);
       try {
         await ready(current, `http://127.0.0.1:${chosen}`);
