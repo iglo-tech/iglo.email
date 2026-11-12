@@ -18,7 +18,6 @@ Run in order, one at a time, through the normal stages. Write each brief from th
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
 - B74 [release gate follow-ups](briefs/B74.md): analytics counts as digits; e2e traces on timeout (B71 review).
 - Then tag 1.0.0 (report to owner first).
-- B62 [run the operations examples](briefs/B62.md): systemd, nginx/TLS, upload dir, arm64 image smoke on native runners.
 
 ## Owner decisions
 
