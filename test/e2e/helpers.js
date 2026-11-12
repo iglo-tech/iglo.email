@@ -79,6 +79,33 @@ export async function signIn(page, username = ADMIN.user, password = ADMIN.passw
   await page.goto("/api/health");
 }
 
+// An administrator session on the `request` fixture, for a hook that changes settings back. A test
+// that times out has closed its page before its `afterEach` runs, so the hook cannot use `page`.
+// Returns `call(path, method, body)`, which answers `{ status, body }` as `api` does.
+export async function requestAdmin(request) {
+  const headers = { "X-Forwarded-For": `203.0.113.${1 + (randomBytes(1)[0] % 254)}` };
+  const form = await request.get("/admin/login?next=%2Fadmin", { headers });
+  const nonce = /name="nonce" value="([^"]+)"/.exec(await form.text())?.[1];
+  expect(nonce, "the login page carries a nonce").toBeTruthy();
+  const posted = await request.post("/admin/login", {
+    headers,
+    form: { username: ADMIN.user, password: ADMIN.password, next: "/admin", nonce },
+    maxRedirects: 0,
+  });
+  expect(posted.status(), "the login form redirects to the admin").toBe(302);
+  const state = await request.storageState();
+  const csrf = state.cookies.find((cookie) => cookie.name === "csrf")?.value ?? "";
+  return async (path, method = "GET", body = undefined) => {
+    // JSON for every body, strings included, as `api` sends them: a bare string would go as text.
+    const response = await request.fetch(path, {
+      method,
+      headers: { ...headers, "X-CSRF-Token": csrf, "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { data: JSON.stringify(body) }),
+    });
+    return { status: response.status(), body: await response.json() };
+  };
+}
+
 // Log out through the user menu. After `signIn` the page holds no admin screen yet, so open one.
 export async function logout(page) {
   if (!new URL(page.url()).pathname.startsWith("/admin")) await page.goto("/admin");

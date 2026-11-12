@@ -22,7 +22,8 @@ const workers = Number(requested);
 const weights: Record<string, number> = {
   "campaigns.e2e.js": 130,
   "csp.e2e.js": 109,
-  "consent.e2e.js": 63,
+  "consent.e2e.js": 120,
+  "operations.e2e.js": 40,
   "sending.e2e.js": 69,
   "sequences.e2e.js": 107,
   "editor-containment.e2e.js": 96,
