@@ -164,7 +164,7 @@ Seven tasks, each about 8–15 tests, release-critical first. Each can run as it
 
 ### E5. Public archive and tracking pages (about 10 tests)
 
-- **Journeys:** the archive index lists archived campaigns only; the detail page renders the body with the archive template; `/archive/latest` and `archive.xml` show the campaign; an archive that is off returns not-found; hostile names render as text; the web view for a real subscriber records a view; the open pixel is a PNG and records nothing when individual tracking is off; the message page `/m/…` shows its text.
+- **Journeys:** the archive index lists archived campaigns only; the detail page renders the body with the archive template; `/archive/latest` and `archive.xml` show the campaign; an archive that is off returns not-found; hostile names render as text; the web view for a real subscriber renders without a view pixel or tracked links and records no view (deliberate difference, `07-api-and-ui.md`, public view and archive pages); the open pixel is a PNG and records nothing when tracking is disabled; the `/m/…/unsubscribe/…` page works (there is no `GET /m/:sendUUID` message page). Done in B68 (#121).
 - **Spec:** new `test/e2e/specs/public.e2e.js`.
 - **Fixtures:** a finished, archived campaign (exists in `csp.e2e.js:147–160`); the privacy setting.
 - **Harness gap:** none.
