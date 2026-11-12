@@ -10,14 +10,13 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Resumed by the owner on 2026-11-12; the schedule is enabled again.** Open: #115 B64 (test-send flake, round 4 investigating).
+**Resumed by the owner on 2026-11-12; the schedule is enabled again.** B65 (E2 consent) in progress.
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 - Backlog (lead, from the B64 review): `runner.wake` (`src/campaigns/runner/runner.ts:783`) is never called, so a start or resume waits for the next 5 s scan; consider waking on status change.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B64 = E1 sending lifecycle to the sink.
-- B65 = E2 consent and unsubscribe from the mail (sink headers).
+- B65 [brief](briefs/B65.md) = E2 consent and unsubscribe from the mail (sink headers).
 - B66 = E3 operations and data safety (notifications, restore hold, GDPR).
 - B67 = E4 webhooks and bounce ingress.
 - B68 = E5 public archive and tracking pages.
@@ -56,6 +55,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B64 | [#115](https://github.com/iglo-tech/iglo.email/pull/115) | 192aee6 | E2E sending lifecycle to the sink: 9 tests (send, dedupe, pause/resume, cancel, schedule, tx, test send) |
 | B72 | [#116](https://github.com/iglo-tech/iglo.email/pull/116) | e988cf7 | Runner tracked-link test: 15 s drive bound, 30 s test timeout (arm64 slack) |
 | B61 | [#112](https://github.com/iglo-tech/iglo.email/pull/112) | 52fd05a | Post-release Unverified docs; 27 oxlint warnings to 0 |
 | B60 | [#111](https://github.com/iglo-tech/iglo.email/pull/111) | fbe9c5e | Hostile PDF in desktop Chromium/Firefox: no origin access |
