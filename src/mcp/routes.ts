@@ -4,6 +4,7 @@ import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
 import { cookie, type Authentication } from "@/users/auth";
 import { TOOLS, executeTool } from "@/mcp/tools";
+import { version } from "@/../package.json";
 
 const MCP_BODY_LIMIT = 2 * 1024 * 1024; // 2 MiB
 
@@ -189,7 +190,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
             },
             serverInfo: {
               name: "iglo.email",
-              version: "0.1.0",
+              version,
             },
           },
         }),
