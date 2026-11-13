@@ -91,8 +91,9 @@ describe("B34 MCP endpoint tests", () => {
     expect(serverVersion?.version).toBe(version);
 
     const toolsResult = await client.listTools();
-    const toolNames = toolsResult.tools.map((t) => t.name).sort();
+    const toolNames = toolsResult.tools.map((t) => t.name);
 
+    // The hand-written tools are all listed; the generated ones and their exact set are in test/mcp/generated.test.ts (D98).
     const expectedTools = [
       "list_templates",
       "get_template",
@@ -114,9 +115,9 @@ describe("B34 MCP endpoint tests", () => {
       "list_sequences",
       "get_sequence",
       "update_sequence_step",
-    ].sort();
+    ];
 
-    expect(toolNames).toEqual(expectedTools);
+    for (const name of expectedTools) expect(toolNames).toContain(name);
 
     for (const tool of toolsResult.tools) {
       expect(typeof tool.name).toBe("string");

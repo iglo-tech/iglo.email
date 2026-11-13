@@ -2,6 +2,8 @@
 import type { App } from "@/app";
 import type { Router } from "@/server/router";
 import { TEMPLATE_REFERENCE } from "@/mcp/reference";
+import { DESTRUCTIVE, OPEN_WORLD, READ_ONLY, WRITE, type ToolAnnotations } from "@/mcp/annotations";
+import { GENERATED, GENERATED_BY_NAME, operationRequest } from "@/mcp/generated";
 
 export interface ToolDefinition {
   name: string;
@@ -12,6 +14,7 @@ export interface ToolDefinition {
     required?: string[];
     additionalProperties?: boolean;
   };
+  annotations: ToolAnnotations;
 }
 
 export interface ToolResult {
@@ -21,9 +24,10 @@ export interface ToolResult {
   resultType?: string;
 }
 
-export const TOOLS: ToolDefinition[] = [
+const HANDWRITTEN: ToolDefinition[] = [
   {
     name: "list_templates",
+    annotations: READ_ONLY,
     description: "List email templates with optional query search and pagination.",
     inputSchema: {
       type: "object",
@@ -36,6 +40,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "get_template",
+    annotations: READ_ONLY,
     description: "Get a single email template by its ID.",
     inputSchema: {
       type: "object",
@@ -49,6 +54,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "create_template",
+    annotations: WRITE,
     description:
       "Create a new email template (type 'campaign' for layouts with {{ content | raw }}, or 'tx' for complete messages).",
     inputSchema: {
@@ -70,6 +76,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "update_template",
+    annotations: WRITE,
     description: "Update an existing email template.",
     inputSchema: {
       type: "object",
@@ -91,6 +98,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "delete_template",
+    annotations: DESTRUCTIVE,
     description: "Delete an email template by ID.",
     inputSchema: {
       type: "object",
@@ -103,6 +111,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "preview_template",
+    annotations: READ_ONLY,
     description:
       "Render an HTML preview of a template (either an unsaved body or a stored template by ID).",
     inputSchema: {
@@ -121,6 +130,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "set_default_template",
+    annotations: WRITE,
     description: "Set a template as the default template.",
     inputSchema: {
       type: "object",
@@ -133,6 +143,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "list_campaigns",
+    annotations: READ_ONLY,
     description: "List email campaigns with optional search, status filtering, and pagination.",
     inputSchema: {
       type: "object",
@@ -153,6 +164,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "get_campaign",
+    annotations: READ_ONLY,
     description: "Get a single campaign by its ID.",
     inputSchema: {
       type: "object",
@@ -165,6 +177,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "update_campaign",
+    annotations: WRITE,
     description: "Update editable content and settings of a draft campaign.",
     inputSchema: {
       type: "object",
@@ -206,6 +219,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "preview_campaign",
+    annotations: READ_ONLY,
     description: "Render an HTML preview of a campaign with sample subscriber data.",
     inputSchema: {
       type: "object",
@@ -225,6 +239,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "campaign_text",
+    annotations: READ_ONLY,
     description: "Render plain-text preview of a campaign.",
     inputSchema: {
       type: "object",
@@ -240,6 +255,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "send_campaign_test",
+    annotations: OPEN_WORLD,
     description: "Send a test campaign email to specified subscriber email addresses.",
     inputSchema: {
       type: "object",
@@ -267,6 +283,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "create_campaign",
+    annotations: WRITE,
     description:
       "Create a draft email campaign. Get list IDs from list_lists and media IDs from list_media. Returns the created campaign.",
     inputSchema: {
@@ -319,6 +336,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "list_lists",
+    annotations: READ_ONLY,
     description:
       "List mailing lists with their ID, name, type, opt-in and subscriber counts. Use the IDs with create_campaign and update_campaign.",
     inputSchema: {
@@ -333,6 +351,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "list_media",
+    annotations: READ_ONLY,
     description:
       "List uploaded media files with their ID, filename and URL. Use the IDs to attach media to a campaign or reference the URL in a body.",
     inputSchema: {
@@ -347,6 +366,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "list_sequences",
+    annotations: READ_ONLY,
     description: "List sequences with optional status filtering and pagination.",
     inputSchema: {
       type: "object",
@@ -364,6 +384,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "get_sequence",
+    annotations: READ_ONLY,
     description: "Get a single sequence by its ID, with all of its steps.",
     inputSchema: {
       type: "object",
@@ -376,6 +397,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "update_sequence_step",
+    annotations: WRITE,
     description:
       "Change the subject or the transactional template of one step of a sequence. The sequence settings and every other step are kept as stored. Get step IDs from get_sequence. Saving rewrites every step, so the caller must be allowed to save all of them: if another step has a raw-SQL condition, the caller also needs subscribers:sql_query, or the save is refused.",
     inputSchema: {
@@ -398,6 +420,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "template_reference",
+    annotations: READ_ONLY,
     description:
       "Returns documentation of supported Liquid variables, tags, and filters for template and campaign editing, with examples.",
     inputSchema: {
@@ -406,6 +429,9 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
 ];
+
+/** Every tool: the hand-written ones, then one per operation the document has and no hand-written tool covers (D98). */
+export const TOOLS: ToolDefinition[] = [...HANDWRITTEN, ...GENERATED.map((entry) => entry.tool)];
 
 function extractPositiveIds(items: unknown): number[] {
   if (!Array.isArray(items)) return [];
@@ -467,6 +493,9 @@ async function callEndpoint(
         typeof body === "string"
           ? body
           : new URLSearchParams(body as Record<string, string>).toString();
+    } else if (contentType === "multipart/form-data") {
+      // The boundary belongs to the Request that builds the FormData, so no content-type is set here.
+      requestBody = body as FormData;
     }
   }
 
@@ -925,11 +954,18 @@ export async function executeTool(
         resultType: "complete",
       };
     }
-    default:
+    default: {
+      const generated = GENERATED_BY_NAME.get(name);
+      if (generated) {
+        const request = operationRequest(generated.operation, args);
+        if ("error" in request) return toolError(request.error);
+        return invoke(request.method, request.path, request.body, request.contentType);
+      }
       return {
         content: [{ type: "text", text: `Unknown tool: ${name}` }],
         isError: true,
         resultType: "complete",
       };
+    }
   }
 }
