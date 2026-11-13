@@ -142,6 +142,42 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     );
   });
 
+  test("GET /api/roles/lists", async () => {
+    for (const name of ["B80 List Role Zeta", "B80 List Role Alpha"]) {
+      const created = await api("POST", "/api/roles/lists", { name, lists: [] });
+      expect(created.status).toBe(200);
+    }
+    await expectOrder(
+      "/api/roles/lists?query=B80%20List%20Role&order_by=name",
+      (json) => json.data,
+      ["B80 List Role Alpha", "B80 List Role Zeta"],
+    );
+  });
+
+  test("GET /api/bounces", async () => {
+    for (const key of ["bounce.enabled", "bounce.webhooks_enabled"])
+      expect((await api("PUT", `/api/settings/${key}`, true)).status).toBe(200);
+    for (const [name, email] of [
+      ["Zeta", "zeta-b80bnc@example.test"],
+      ["Alpha", "alpha-b80bnc@example.test"],
+    ]) {
+      expect(
+        (await api("POST", "/api/subscribers", { email, name, status: "enabled" })).status,
+      ).toBe(200);
+      const recorded = await api("POST", "/webhooks/bounce", {
+        email,
+        type: "soft",
+        source: "b80-order",
+      });
+      expect(recorded.status).toBe(200);
+    }
+    await expectOrder(
+      "/api/bounces?source=b80-order&order_by=email",
+      (json) => json.data.results.map((row: { email: string }) => ({ name: row.email })),
+      ["alpha-b80bnc@example.test", "zeta-b80bnc@example.test"],
+    );
+  });
+
   test("GET /api/roles/users", async () => {
     for (const name of ["B80 Role Zeta", "B80 Role Alpha"]) {
       const created = await api("POST", "/api/roles/users", {

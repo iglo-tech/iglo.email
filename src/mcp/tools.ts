@@ -798,7 +798,8 @@ async function runTool(
   /**
    * The endpoints have no is_default field, so is_default: true is applied after a successful save by
    * making the template the default. When that call fails, the tool answers with an error that says the
-   * template was saved, so a retry does not save it twice.
+   * template was saved, so a retry does not save it twice. When it succeeds, the answer is the template
+   * as read back, so is_default is stated once and is true.
    */
   const makeDefault = async (
     saved: EndpointReply,
@@ -811,8 +812,15 @@ async function runTool(
       return toolError(
         `Template ${String(id)} was saved, but it was not made the default: ${set.result.content[0]?.text ?? "the default could not be set"}`,
       );
-    const data = (saved.result.structuredContent as { data?: unknown } | undefined)?.data;
-    const structured = { data, default: { id, is_default: true } };
+    const savedData = (
+      saved.result.structuredContent as { data?: Record<string, unknown> } | undefined
+    )?.data;
+    const readBack = await call("GET", `/api/templates/${encodeURIComponent(String(id))}`);
+    const stored = (readBack.result.structuredContent as { data?: unknown } | undefined)?.data;
+    // The default is already set, so when the read-back fails the saved template is reported as default.
+    const data =
+      readBack.result.isError || stored === undefined ? { ...savedData, is_default: true } : stored;
+    const structured = { data };
     return {
       content: [{ type: "text", text: JSON.stringify(structured) }],
       structuredContent: structured,

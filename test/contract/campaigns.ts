@@ -344,7 +344,7 @@ export async function runCampaignsContract(target: {
     check(
       ownedNames(searchedUpper.results) ===
         (reference ? "optin,minimal,gone,full,ct" : "ct,full,gone,minimal,optin"),
-      "query-diff-campaign-order-upper",
+      "B80-order-upper-campaigns",
     );
     const paged = await collection(`query=${marker}&per_page=2&page=2&order_by=name&order=asc`);
     check(

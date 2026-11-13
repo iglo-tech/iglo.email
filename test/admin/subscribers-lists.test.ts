@@ -43,6 +43,19 @@ test("sort links toggle their order and drop the page; the sidebar follows the s
   expect(html).toContain('href="/admin/lists?status=archived" aria-current="page"');
 });
 
+test("the sort direction is read in any case: ASC shows the ascending indicator and the link flips", async () => {
+  for (const order of ["ASC", "Asc"]) {
+    const html = await (await get(f, `/admin/lists?order_by=name&order=${order}`, cookie)).text();
+    expect(html).toContain(
+      'href="/admin/lists?order_by=name&amp;order=desc" data-sort-field="name" data-sorted="asc"',
+    );
+  }
+  const html = await (await get(f, "/admin/lists?order_by=name&order=DESC", cookie)).text();
+  expect(html).toContain(
+    'href="/admin/lists?order_by=name&amp;order=asc" data-sort-field="name" data-sorted="desc"',
+  );
+});
+
 test("the query string is escaped in hidden fields, values, badges and links", async () => {
   const value = `"><script>window.pwned=1</script>{{7*7}}`;
   const q = encodeURIComponent(value);

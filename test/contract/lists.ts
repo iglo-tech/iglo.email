@@ -1186,7 +1186,7 @@ export async function runListsContract(target: {
             ? [sortedLast.id, sortedFirst.id]
             : [sortedFirst.id, sortedLast.id],
         ),
-      "query-diff-list-sort-upper",
+      "B80-order-upper-lists",
     );
     const repeatedSort = await request(
       `/api/lists?query=sort-${suffix}&order_by=&order_by=name&order=desc&per_page=&per_page=1&page=&page=2`,

@@ -345,7 +345,7 @@ export async function runBouncesContract(target: {
     const upperAscending = await query(`${ours}&order_by=email&order=ASC`);
     check(
       upperAscending.results[0].email === (reference ? cyd.email : ada.email),
-      "query-diff-bounces-order-upper",
+      "B80-order-upper-bounces",
     );
     const fallback = await query(`${ours}&order_by=nope&order=nope`);
     check(fallback.results[0].created_at >= fallback.results[1].created_at, "order-fallback");
