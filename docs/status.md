@@ -15,7 +15,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- Backlog (docs, non-blocking from #127 review): SES note should also say Open/Click event destinations make SES rewrite links; tracking options also set the HTTPS policy; add the VDM link to References.
+- **B77** ([brief](briefs/B77.md)) SES engagement-tracking note nits from the #127 review (Open/Click event destinations, `--https-policy`, References). Docs only.
 
 ## Owner decisions
 
