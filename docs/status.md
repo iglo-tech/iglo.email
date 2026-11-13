@@ -14,7 +14,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-- Backlog (lead, from the B64 review): `runner.wake` (`src/campaigns/runner/runner.ts:783`) is never called, so a start or resume waits for the next 5 s scan; consider waking on status change.
+- **B75** ([brief](briefs/B75.md)): wake the campaign runner on start, resume and due schedule (`runner.wake` was never called; up to 5 s delay); D97.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
 - Then tag 1.0.0 (report to owner first).
 
