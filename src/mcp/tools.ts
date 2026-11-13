@@ -3,7 +3,9 @@ import type { App } from "@/app";
 import type { Router } from "@/server/router";
 import { TEMPLATE_REFERENCE } from "@/mcp/reference";
 import { DESTRUCTIVE, OPEN_WORLD, READ_ONLY, WRITE, type ToolAnnotations } from "@/mcp/annotations";
-import { GENERATED, GENERATED_BY_NAME, operationRequest } from "@/mcp/generated";
+import { HANDWRITTEN_COVERAGE } from "@/mcp/coverage";
+import { GENERATED, GENERATED_BY_NAME, operationRequest, toolFor } from "@/mcp/generated";
+import { operations, type Operation } from "@/openapi/operations";
 
 /** The largest non-JSON answer a tool returns (CSV, HTML); a larger one is refused with the REST endpoint to use (D98). */
 const MCP_MAX_ANSWER_BYTES = 1024 * 1024;
@@ -27,7 +29,72 @@ export interface ToolResult {
   resultType?: string;
 }
 
-const HANDWRITTEN: ToolDefinition[] = [
+const OPERATION = new Map(operations.map((op) => [op.id, op]));
+const operation = (id: string): Operation => {
+  const op = OPERATION.get(id);
+  if (!op) throw new Error(`no operation ${id} for a hand-written MCP tool`);
+  return op;
+};
+
+/**
+ * Where a hand-written tool takes an API field under its own argument name, the field is not added
+ * again: `dir` is the `order` of getCampaigns (D98).
+ */
+const ARGUMENT_FOR_FIELD: Record<string, Record<string, string>> = {
+  list_campaigns: { order: "dir" },
+};
+const argumentFor = (tool: string, field: string): string =>
+  ARGUMENT_FOR_FIELD[tool]?.[field] ?? field;
+
+/**
+ * Each query parameter and body field of an operation, with the schema the generated tool builds for
+ * it (generated.ts, D98). A path parameter is the tool's own `id`, so it is left out.
+ */
+function operationFields(op: Operation): Record<string, unknown> {
+  const properties = (toolFor(op.id, op).inputSchema.properties ?? {}) as Record<string, unknown>;
+  const query = new Set((op.query ?? []).map((param) => param.name));
+  const fields: Record<string, unknown> = {};
+  for (const [name, schema] of Object.entries(properties)) {
+    if (op.route.includes(`{${name}}`)) continue;
+    if (name === "body" && op.body && !query.has(name))
+      Object.assign(fields, (schema as { properties?: Record<string, unknown> }).properties);
+    else fields[name] = schema;
+  }
+  return fields;
+}
+
+/**
+ * A hand-written tool takes every field of the operations it covers (coverage.ts, D98). Its own
+ * arguments keep their names and schemas; a field no argument takes is added.
+ */
+function withOperationFields(tool: ToolDefinition): ToolDefinition {
+  const properties: Record<string, unknown> = { ...tool.inputSchema.properties };
+  for (const [id, covered] of Object.entries(HANDWRITTEN_COVERAGE)) {
+    if (covered !== tool.name) continue;
+    for (const [field, schema] of Object.entries(operationFields(operation(id)))) {
+      if (argumentFor(tool.name, field) in properties) continue;
+      properties[field] = schema;
+    }
+  }
+  return { ...tool, inputSchema: { ...tool.inputSchema, properties } };
+}
+
+/**
+ * The query string the operation's query parameters take from a tool's arguments. An absent, null or
+ * empty argument is left out; an array is sent as one parameter per item.
+ */
+function queryFor(tool: string, opId: string, args: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  for (const { name } of operation(opId).query ?? []) {
+    const value = args[argumentFor(tool, name)];
+    if (value === undefined || value === null || value === "") continue;
+    for (const item of Array.isArray(value) ? value : [value]) search.append(name, String(item));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
   {
     name: "list_templates",
     annotations: READ_ONLY,
@@ -433,6 +500,8 @@ const HANDWRITTEN: ToolDefinition[] = [
   },
 ];
 
+const HANDWRITTEN = HANDWRITTEN_DEFINITIONS.map(withOperationFields);
+
 /** Every tool: the hand-written ones, then one per operation the document has and no hand-written tool covers (D98). */
 export const TOOLS: ToolDefinition[] = [...HANDWRITTEN, ...GENERATED.map((entry) => entry.tool)];
 
@@ -443,16 +512,6 @@ function extractPositiveIds(items: unknown): number[] {
       typeof item === "object" && item !== null ? (item as { id?: unknown }).id : item,
     )
     .filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0);
-}
-
-/** Query string from caller-supplied values, passed as given; absent and null values are left out. */
-function queryString(params: Record<string, unknown>): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null) search.set(key, String(value));
-  }
-  const qs = search.toString();
-  return qs ? `?${qs}` : "";
 }
 
 function toolError(text: string): ToolResult {
@@ -677,17 +736,11 @@ export async function executeTool(
   const storedCampaign = (id: string | number) => getStoredCampaign(call, id, name);
 
   switch (name) {
-    case "list_templates": {
-      const params = new URLSearchParams();
-      if (typeof args.query === "string" && args.query) params.set("query", args.query);
-      if (args.no_body === true) params.set("no_body", "true");
-      const qs = params.toString() ? `?${params.toString()}` : "";
-      return invoke("GET", `/api/templates${qs}`);
-    }
+    case "list_templates":
+      return invoke("GET", `/api/templates${queryFor(name, "getTemplates", args)}`);
     case "get_template": {
       const id = encodeURIComponent(String(args.id));
-      const qs = args.no_body === true ? "?no_body=true" : "";
-      return invoke("GET", `/api/templates/${id}${qs}`);
+      return invoke("GET", `/api/templates/${id}${queryFor(name, "getTemplateById", args)}`);
     }
     case "create_template": {
       const body: Record<string, unknown> = {
@@ -696,6 +749,7 @@ export async function executeTool(
       };
       if (args.subject !== undefined) body.subject = args.subject;
       if (args.body !== undefined) body.body = args.body;
+      if (args.body_source !== undefined) body.body_source = args.body_source;
       if (args.is_default !== undefined) body.is_default = args.is_default;
       return invoke("POST", "/api/templates", body);
     }
@@ -706,6 +760,7 @@ export async function executeTool(
       if (args.type !== undefined) body.type = args.type;
       if (args.subject !== undefined) body.subject = args.subject;
       if (args.body !== undefined) body.body = args.body;
+      if (args.body_source !== undefined) body.body_source = args.body_source;
       if (args.is_default !== undefined) body.is_default = args.is_default;
       return invoke("PUT", `/api/templates/${id}`, body);
     }
@@ -736,19 +791,13 @@ export async function executeTool(
       return invoke("PUT", `/api/templates/${id}/default`);
     }
     case "list_campaigns": {
-      const params = new URLSearchParams();
-      if (typeof args.query === "string" && args.query) params.set("query", args.query);
-      if (typeof args.status === "string" && args.status) params.set("status", args.status);
-      if (typeof args.page === "number") params.set("page", String(args.page));
-      if (typeof args.per_page === "number") params.set("per_page", String(args.per_page));
-      if (typeof args.order_by === "string") params.set("order_by", args.order_by);
-      if (typeof args.dir === "string") params.set("dir", args.dir);
-      const qs = params.toString() ? `?${params.toString()}` : "";
-      return invoke("GET", `/api/campaigns${qs}`);
+      // The endpoint reads the direction as lower case only (asc or desc), so dir is sent that way.
+      const dir = typeof args.dir === "string" ? args.dir.toLowerCase() : args.dir;
+      return invoke("GET", `/api/campaigns${queryFor(name, "getCampaigns", { ...args, dir })}`);
     }
     case "get_campaign": {
       const id = encodeURIComponent(String(args.id));
-      return invoke("GET", `/api/campaigns/${id}`);
+      return invoke("GET", `/api/campaigns/${id}${queryFor(name, "getCampaignById", args)}`);
     }
     case "update_campaign": {
       const id = encodeURIComponent(String(args.id));
@@ -771,7 +820,10 @@ export async function executeTool(
         tags: args.tags !== undefined ? args.tags : data.tags,
         headers: args.headers !== undefined ? args.headers : data.headers,
         attribs: args.attribs !== undefined ? args.attribs : data.attribs,
-        messenger: data.messenger ?? "email",
+        messenger: args.messenger !== undefined ? args.messenger : (data.messenger ?? "email"),
+        // Passed through unchanged; the endpoint keeps the stored type of a campaign, so a change here is not applied.
+        type: args.type !== undefined ? args.type : data.type,
+        body_source: args.body_source !== undefined ? args.body_source : data.body_source,
       };
       if (args.altbody !== undefined) {
         body.altbody = args.altbody;
@@ -783,17 +835,15 @@ export async function executeTool(
       } else if (data.send_at !== undefined && data.send_at !== null) {
         body.send_at = data.send_at;
       }
-      if (data.archive !== undefined) {
-        body.archive = data.archive;
-      }
-      if (data.archive_slug !== undefined) {
-        body.archive_slug = data.archive_slug;
-      }
-      if (data.archive_template_id !== undefined) {
-        body.archive_template_id = data.archive_template_id;
-      }
-      if (data.archive_meta !== undefined) {
-        body.archive_meta = data.archive_meta;
+      // Each archive field a caller gives wins; one left out keeps its stored value.
+      for (const field of [
+        "archive",
+        "archive_slug",
+        "archive_template_id",
+        "archive_meta",
+      ] as const) {
+        const value = args[field] !== undefined ? args[field] : data[field];
+        if (value !== undefined) body[field] = value;
       }
 
       return invoke("PUT", `/api/campaigns/${id}`, body);
@@ -881,11 +931,11 @@ export async function executeTool(
         from_email: args.from_email ?? data.from_email,
         body: args.body ?? data.body,
         content_type: args.content_type ?? data.content_type,
-        lists: storedLists,
-        media: storedMedia,
+        lists: args.lists ?? storedLists,
+        media: args.media ?? storedMedia,
         subscribers: args.subscribers,
-        messenger: data.messenger ?? "email",
-        headers: data.headers ?? [],
+        messenger: args.messenger ?? data.messenger ?? "email",
+        headers: args.headers ?? data.headers ?? [],
         attribs: data.attribs ?? {},
         tags: data.tags ?? [],
       };
@@ -894,50 +944,32 @@ export async function executeTool(
       } else if (data.template_id !== undefined) {
         body.template_id = data.template_id;
       }
-      if (data.altbody !== undefined && data.altbody !== null) {
+      if (args.altbody !== undefined) {
+        body.altbody = args.altbody;
+      } else if (data.altbody !== undefined && data.altbody !== null) {
         body.altbody = data.altbody;
       }
 
-      return invoke("POST", `/api/campaigns/${id}/test`, body);
+      // The test renders the template the query names (template_id), so an override goes there too.
+      return invoke(
+        "POST",
+        `/api/campaigns/${id}/test${queryFor(name, "testCampaignById", args)}`,
+        body,
+      );
     }
     case "create_campaign": {
-      const fields = [
-        "name",
-        "subject",
-        "from_email",
-        "lists",
-        "body",
-        "altbody",
-        "content_type",
-        "template_id",
-        "media",
-        "headers",
-        "attribs",
-        "tags",
-        "send_at",
-        "messenger",
-      ];
       const body: Record<string, unknown> = {};
-      for (const field of fields) {
+      for (const field of Object.keys(operationFields(operation("createCampaign")))) {
         if (args[field] !== undefined) body[field] = args[field];
       }
       return invoke("POST", "/api/campaigns", body);
     }
     case "list_lists":
-      return invoke(
-        "GET",
-        `/api/lists${queryString({ query: args.query, page: args.page, per_page: args.per_page })}`,
-      );
+      return invoke("GET", `/api/lists${queryFor(name, "getLists", args)}`);
     case "list_media":
-      return invoke(
-        "GET",
-        `/api/media${queryString({ query: args.query, page: args.page, per_page: args.per_page })}`,
-      );
+      return invoke("GET", `/api/media${queryFor(name, "getMedia", args)}`);
     case "list_sequences":
-      return invoke(
-        "GET",
-        `/api/sequences${queryString({ status: args.status, page: args.page, per_page: args.per_page })}`,
-      );
+      return invoke("GET", `/api/sequences${queryFor(name, "getSequences", args)}`);
     case "get_sequence": {
       const id = encodeURIComponent(String(args.id));
       return invoke("GET", `/api/sequences/${id}`);

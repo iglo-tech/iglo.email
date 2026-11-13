@@ -323,9 +323,10 @@ describe("B78 MCP covers every operation (D98)", () => {
   test("a JSON answer over the MCP limit is refused with paging advice, and a small page still works", async () => {
     const big = (await callTool("create_list", { body: { name: "B78 big page", type: "private" } }))
       .structuredContent.data;
-    // Twenty subscribers with 60 kB of attributes each: their JSON page with per_page=all is more than 1 MiB.
-    const blob = "x".repeat(60_000);
-    for (let i = 0; i < 20; i++) {
+    // 210 subscribers with 6 kB of attributes each: more than one 200-row batch, and their JSON page
+    // with per_page=all is more than 1 MiB, so the stream is cut off partway through its second batch.
+    const blob = "x".repeat(6_000);
+    for (let i = 0; i < 210; i++) {
       const created = await callTool("create_subscriber", {
         body: {
           email: `b78-page-${i}@example.com`,
@@ -348,11 +349,17 @@ describe("B78 MCP covers every operation (D98)", () => {
       expect(refused.structuredContent).toBeUndefined();
     }
 
-    // Paging the same list works, and a small list is returned whole with per_page=all.
+    // Paging the same list works. The REST answer is not capped, so with a leaked slot it would be a 429.
     const paged = await callTool("get_subscribers", { list_id: [big.id], per_page: 5, page: 1 });
     expect(paged.isError).toBeFalsy();
     expect(paged.structuredContent.data.results).toHaveLength(5);
-    expect(paged.structuredContent.data.total).toBe(20);
+    expect(paged.structuredContent.data.total).toBe(210);
+    const rest = await fetch(
+      `${production.origin}/api/subscribers?list_id=${big.id}&per_page=all`,
+      { headers: adminHeaders },
+    );
+    expect(rest.status).toBe(200);
+    expect((await rest.json()).data.results).toHaveLength(210);
 
     const small = (
       await callTool("create_list", { body: { name: "B78 small page", type: "private" } })

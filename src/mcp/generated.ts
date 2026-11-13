@@ -169,7 +169,7 @@ function annotationsFor(op: Operation): ToolAnnotations {
   };
 }
 
-function toolFor(name: string, op: Operation): ToolDefinition {
+export function toolFor(name: string, op: Operation): ToolDefinition {
   const route = op.route.split(" ")[1]!;
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
