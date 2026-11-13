@@ -322,12 +322,14 @@ pages each step follows are listed under [References](#references); they were ch
 
    This leaves the account-wide VDM setting and other senders in the account unchanged, and
    iglo.email's own open and click tracking stays on. The VDM switch does not reach event
-   destinations: a configuration set whose event destination publishes Open or Click events still
-   gets SES open and click tracking. So make sure none of the configuration set's event
-   destinations publish those events.
+   destinations. SES also rewrites links and adds its open pixel when the configuration set has an
+   event destination that publishes Open or Click events, and the VDM switch does not change that.
+   So the configuration set iglo.email uses should publish only the events it needs, Bounce and
+   Complaint (see [Amazon SES bounces](#amazon-ses-bounces)): leave Opens and Clicks unticked in its
+   event destination.
 
-   The configuration set's tracking options (`put-configuration-set-tracking-options`) set only a
-   custom redirect domain and the HTTPS policy (`--https-policy`). They do not turn tracking off.
+   `put-configuration-set-tracking-options` sets the configuration set's custom redirect domain and
+   its HTTPS policy (`--https-policy`). It has no switch that turns tracking off.
    Confirm with a test send that the links are no longer rewritten. See
    [Virtual Deliverability Manager settings](https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html)
    and the [SES metrics FAQ](https://docs.aws.amazon.com/ses/latest/DeveloperGuide/faqs-metrics.html).
@@ -391,7 +393,7 @@ leaves it in `ps`, so use a file or netrc in a real environment.
 
 ### References
 
-AWS documentation, checked 2026-11-08 (the last two entries checked 2026-11-13):
+AWS documentation, checked 2026-11-08 (the last four entries checked 2026-11-13):
 
 - Easy DKIM: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-easy.html>
 - Verifying identities and the three CNAME records: <https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html>
@@ -407,6 +409,8 @@ AWS documentation, checked 2026-11-08 (the last two entries checked 2026-11-13):
 - SNS topics for bounce and complaint feedback: <https://docs.aws.amazon.com/ses/latest/dg/configure-sns-notifications.html>
 - Virtual Deliverability Manager settings (engagement tracking): <https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html>
 - SES metrics FAQ (open and click tracking through event destinations): <https://docs.aws.amazon.com/ses/latest/DeveloperGuide/faqs-metrics.html>
+- Getting started with Virtual Deliverability Manager (engagement tracking alters links): <https://docs.aws.amazon.com/ses/latest/dg/vdm-get-started.html>
+- Creating event destinations (the Opens and Clicks event types): <https://docs.aws.amazon.com/ses/latest/dg/event-destinations-manage.html>
 
 ## Amazon SES bounces
 
