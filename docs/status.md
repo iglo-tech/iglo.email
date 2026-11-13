@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-11-08. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-13. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
@@ -14,7 +14,6 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
-- **B75** ([brief](briefs/B75.md)): wake the campaign runner on start, resume and due schedule (`runner.wake` was never called; up to 5 s delay); D97.
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
 - Then tag 1.0.0 (report to owner first).
 
@@ -47,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B75 | [#126](https://github.com/iglo-tech/iglo.email/pull/126) | cf329e4 | Runner wakes on start, resume and due schedule (D97); start 4.9 s to 0 on the test clock |
 | B74 | [#125](https://github.com/iglo-tech/iglo.email/pull/125) | 712c2f0 | Analytics dashboard counts as digits; e2e traces kept on timeout |
 | B71 | [#124](https://github.com/iglo-tech/iglo.email/pull/124) | b2998b9 | Release gate: e2e job before publish and image (D96, no retries); dashboard counts compared as digits; 3 full runs green |
 | B70 | [#123](https://github.com/iglo-tech/iglo.email/pull/123) | e5e56df | E2E sequence lifecycle: re-entry, triggers, where, pause, archive, on_false, reschedule, timeline (r1 CHANGES race, fixer, r2 APPROVE) |
