@@ -15,7 +15,6 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B78 (owner 2026-11-13): MCP exposes every edit and setting except dangerous ones (D98). [Brief](briefs/B78.md).
 - B79: hand-written MCP tools take every field of their operations (B78 review nit). [Brief](briefs/B79.md).
 
 ## Owner decisions
@@ -47,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B78 | [#130](https://github.com/iglo-tech/iglo.email/pull/130) | 3dc9ca1 | MCP: 105 tools generated from the API document, 37 dangerous ops excluded with a coverage test, annotations, path-value checks, 1 MiB answer cap (D98; r1, r2 CHANGES, fixers, r3 APPROVE) |
 | B77 | [#128](https://github.com/iglo-tech/iglo.email/pull/128) | df57a7d | SES note: Open/Click event destinations, `--https-policy`, VDM/FAQ refs |
 | B76 | [#127](https://github.com/iglo-tech/iglo.email/pull/127) | 795e383 | Version 1.0.0; MCP serverInfo from package.json; SES engagement-tracking note; tag v1.0.0 |
 | B75 | [#126](https://github.com/iglo-tech/iglo.email/pull/126) | cf329e4 | Runner wakes on start, resume and due schedule (D97); start 4.9 s to 0 on the test clock |
