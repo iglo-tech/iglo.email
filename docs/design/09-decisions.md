@@ -992,3 +992,7 @@ Lead decisions on the three open points of the release gate in [13-e2e-coverage.
 - **Cost accepted:** a flaky spec blocks a release until its cause is fixed. The suite runs for the release tag on the x86-64 runner only, so an arm64-only failure is not seen here.
 - **Revisit:** if a spec flakes on the runner, fix its cause or make it deterministic. Do not add retries.
 
+## D97. The campaign runner wakes on start (lead, 2026-11-13)
+
+A status change that makes a campaign runnable wakes the campaign runner at once instead of at its next 5 s scan: a start or resume (`running`), or a `scheduled` campaign whose `send_at` has already passed. The wake runs after the status write commits, and a failed wake is logged without changing the response. The result is the same as listmonk's (the HTTP response and what is sent do not change, and listmonk also waits for its scan, see [D57](#d57-compatible-client-results-and-safe-input-hardening)); only sending starts sooner. Pause and cancel are unchanged: they still take effect at the next batch or lease check.
+

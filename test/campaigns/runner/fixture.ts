@@ -95,6 +95,7 @@ export async function runnerFixture(
       leaseMs,
     });
     runners.push(runner);
+    f.runnerWake.current = () => runner.wake();
     return runner;
   };
   /** Campaigns this fixture created, so a stuck wait can report their state. */

@@ -216,8 +216,9 @@ test("pause takes effect mid-batch and resume sends only the unsent rest", async
   await f.drive(async () => (await f.read(c.id)).sent === 2);
   await f.drive(() => false, 1000, 10).catch(() => {});
   expect(f.pushes.length).toBe(2);
-  expect((await f.status(c.id, "running")).status).toBe(200);
+  // The resume wakes the runner (B75), so the rest is pushed at once: sends must settle by then.
   f.control.hold = false;
+  expect((await f.status(c.id, "running")).status).toBe(200);
   await f.until(c.id, "finished");
   expect(recipientsOf().length).toBe(12);
   expect(new Set(recipientsOf()).size).toBe(12);
@@ -685,6 +686,87 @@ test("a due scheduled campaign sends its first batch on the first scan that find
   await f.drive(() => f.pushes.length > 0, 100, 200);
   // One scan interval (5 s) later would mean the first pickup sent nothing.
   expect(f.pushes[0]!.at - Date.parse(sendAt)).toBeLessThan(5000);
+});
+
+/** Starts an idle runner and lets 100 ms of injected time pass, so the next scan is 4.9 s away. */
+async function idleRunner(): Promise<number> {
+  f.start();
+  const started = f.clock.now().getTime();
+  await f.drive(() => f.clock.now().getTime() >= started + 100, 50);
+  return f.clock.now().getTime();
+}
+
+test("a start wakes the runner: the first message goes out without waiting for the next scan", async () => {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const c = await f.campaign({ name: "w", subject: "s", lists: [list] });
+  await idleRunner();
+  const requested = f.clock.now().getTime();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.drive(() => f.pushes.length > 0, 50, 200);
+  // The scan interval is 5 s; without the wake the first push waits for it.
+  expect(f.pushes[0]!.at - requested).toBeLessThan(1000);
+});
+
+test("a resume from paused wakes the runner", async () => {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const c = await f.campaign({ name: "r", subject: "s", lists: [list] });
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  expect((await f.status(c.id, "paused")).status).toBe(200);
+  await idleRunner();
+  expect(f.pushes.length).toBe(0);
+  const requested = f.clock.now().getTime();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.drive(() => f.pushes.length > 0, 50, 200);
+  expect(f.pushes[0]!.at - requested).toBeLessThan(1000);
+});
+
+test("a draft whose send_at has passed wakes the runner when it is scheduled", async () => {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const sendAt = new Date(f.clock.now().getTime() + 60_000).toISOString();
+  const c = await f.campaign({ name: "due", subject: "s", lists: [list], send_at: sendAt });
+  await idleRunner();
+  await f.drive(() => f.clock.now().getTime() > Date.parse(sendAt), 1000);
+  expect(f.pushes.length).toBe(0);
+  const requested = f.clock.now().getTime();
+  expect((await f.status(c.id, "scheduled")).status).toBe(200);
+  await f.drive(() => f.pushes.length > 0, 50, 200);
+  expect(f.pushes[0]!.at - requested).toBeLessThan(1000);
+});
+
+test("a schedule with a future send_at does not send before it is due, even after the wake", async () => {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const sendAt = new Date(f.clock.now().getTime() + 60_000).toISOString();
+  const c = await f.campaign({ name: "later", subject: "s", lists: [list], send_at: sendAt });
+  await idleRunner();
+  expect((await f.status(c.id, "scheduled")).status).toBe(200);
+  await f.drive(() => f.clock.now().getTime() >= Date.parse(sendAt) - 1000, 1000);
+  expect(f.pushes.length).toBe(0);
+  await f.drive(() => f.pushes.length > 0, 100, 200);
+  expect(f.pushes[0]!.at).toBeGreaterThanOrEqual(Date.parse(sendAt));
+});
+
+test("a failing wake is logged and does not change the status response", async () => {
+  f = await runnerFixture();
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const c = await f.campaign({ name: "wf", subject: "s", lists: [list] });
+  f.runnerWake.current = () => {
+    throw new Error("wake failed in test");
+  };
+  const response = await f.status(c.id, "running");
+  expect(response.status).toBe(200);
+  expect(response.body.data.status).toBe("running");
+  expect(f.errors.some((e) => e instanceof Error && e.message === "wake failed in test")).toBe(
+    true,
+  );
 });
 
 async function staleSetup() {
