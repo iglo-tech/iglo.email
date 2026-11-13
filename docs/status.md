@@ -15,7 +15,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B83: version 1.1.0 (MCP widening B78–B82, D98); lead tags `v1.1.0` after merge, verifies and publishes. [Brief](briefs/B83.md).
+- Empty. v1.1.0 published 2026-11-13 (MCP widening, D98); no owner items.
 
 ## Owner decisions
 
@@ -46,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B83 | [#135](https://github.com/iglo-tech/iglo.email/pull/135) | bad0ed8 | Version 1.1.0; tag v1.1.0, release run 43516269561 green; lead verified x64 checksum, `--version` 1.1.0, anonymous pull of `:1.1.0`/`:latest` (same digest, amd64+arm64); published as latest |
 | B82 | [#134](https://github.com/iglo-tech/iglo.email/pull/134) | 60ebeb2 | Test: MCP default fallback when the read-back is refused (r1 APPROVE) |
 | B81 | [#133](https://github.com/iglo-tech/iglo.email/pull/133) | ee33474 | B80 nits: admin sort indicator in any case, MCP template result read back, order tests for list roles and bounces, contract labels (r1 APPROVE) |
 | B80 | [#132](https://github.com/iglo-tech/iglo.email/pull/132) | e9526b9 | `order` in any case on 8 endpoints (deliberate difference, contract-marked); MCP `is_default` sets the default; B79 nits (r1 APPROVE) |
