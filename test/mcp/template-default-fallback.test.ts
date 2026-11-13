@@ -67,6 +67,9 @@ describe("MCP template default fallback for a user without templates:get (B82)",
         params: { name, arguments: args },
       }),
     });
+    if (response.status !== 200) {
+      throw new Error(`${name}: /api/mcp answered HTTP ${response.status}, expected 200`);
+    }
     return (await response.json()) as { result?: ToolResult; error?: { message: string } };
   }
 
@@ -164,6 +167,11 @@ describe("MCP template default fallback for a user without templates:get (B82)",
     expect(renamed).toHaveLength(1);
     expect(renamed[0]!.id).toBe(id);
     expect(await defaultIds()).toEqual([id]);
+
+    // The tool's answer is the template the admin reads back, field for field.
+    const readBack = await api(adminAuth, "GET", `/api/templates/${id}`);
+    expect(readBack.status).toBe(200);
+    expect(updated.structuredContent.data).toEqual(readBack.json.data);
     expect((await listedTemplates()).some((t) => t.name === "B82 Update Target")).toBe(false);
   });
 });

@@ -114,7 +114,7 @@ docker run -d --name iglo-email --restart unless-stopped \
   -e IGLO_EMAIL_ROOT_URL=https://news.example.com \
   -e IGLO_EMAIL_ADMIN_USER=admin \
   -e IGLO_EMAIL_ADMIN_PASSWORD='choose-a-long-password' \
-  ghcr.io/iglo-tech/iglo.email:1.0.0
+  ghcr.io/iglo-tech/iglo.email:1.1.0
 ```
 
 The admin variables are read only while no users exist: after the first start, recreate the
