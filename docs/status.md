@@ -10,7 +10,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Resumed by the owner on 2026-11-12.** E2E plan done (B64–B71, B73, B74); release dry run 43319396254 green incl. hosted e2e (12.7 min). Waiting on the owner's 1.0.0 go/no-go (asked 2026-11-12): release now, or one real SES check first.
+**Resumed by the owner on 2026-11-12.** E2E plan done (B64–B71, B73–B75); release dry run 43319396254 green incl. hosted e2e (12.7 min). Owner chose a real SES check before 1.0.0; the lead ran it on 2026-11-13 with main 3074bb1 behind a temporary tunnel, SES us-east-1, test@igielski.dev: campaign sent over SES SMTP (Gmail: SPF, DKIM, DMARC pass; one-click List-Unsubscribe present), SNS subscription auto-confirmed, simulator hard bounce arrived signed via SNS and was recorded against the campaign and blocklisted the address, opens counted, no server errors. Account VDM engagement tracking rewrites links via awstrack.me (doc note in B76). All test AWS resources (IAM user and key, SNS topic, configuration set) deleted. Next: B76 version 1.0.0, then tag v1.0.0.
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
