@@ -323,8 +323,8 @@ describe("B78 MCP covers every operation (D98)", () => {
   test("a JSON answer over the MCP limit is refused with paging advice, and a small page still works", async () => {
     const big = (await callTool("create_list", { body: { name: "B78 big page", type: "private" } }))
       .structuredContent.data;
-    // 210 subscribers with 6 kB of attributes each: more than one 200-row batch, and their JSON page
-    // with per_page=all is more than 1 MiB, so the stream is cut off partway through its second batch.
+    // 210 subscribers with 6 kB of attributes each: their JSON page with per_page=all is more than
+    // 1 MiB within the first 200-row batch, so the stream is cut off partway through that first batch.
     const blob = "x".repeat(6_000);
     for (let i = 0; i < 210; i++) {
       const created = await callTool("create_subscriber", {

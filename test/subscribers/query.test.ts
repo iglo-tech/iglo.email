@@ -101,8 +101,9 @@ describe("GET /api/subscribers", () => {
   test("orders by allow-listed columns only", async () => {
     const asc = await f.json("/api/subscribers?search=qx&order_by=name&order=asc");
     expect(emails(asc.body)).toEqual(["alice", "bob", "carol"]);
+    // B80: order takes any case; upstream's documented ASC sorts descending (a deliberate difference).
     const upper = await f.json("/api/subscribers?search=qx&order_by=email&order=ASC");
-    expect(emails(upper.body)).toEqual(["carol", "bob", "alice"]);
+    expect(emails(upper.body)).toEqual(["alice", "bob", "carol"]);
     const injected = await f.json(
       `/api/subscribers?search=qx&order_by=${q("name; DROP TABLE subscribers")}&order=asc`,
     );

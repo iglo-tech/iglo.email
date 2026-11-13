@@ -126,6 +126,18 @@ export async function runTemplatesContract(target: {
       ordered.every((row, index) => index === 0 || ordered[index - 1]!.name <= row.name),
       "order",
     );
+    // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
+    const upperOrdered = await list("?order_by=name&order=ASC");
+    check(
+      upperOrdered.every(
+        (row, index) =>
+          index === 0 ||
+          (reference
+            ? upperOrdered[index - 1]!.name >= row.name
+            : upperOrdered[index - 1]!.name <= row.name),
+      ),
+      "query-diff-template-order-upper",
+    );
     const preview = await request(`/api/templates/${item.id}/preview`);
     check(
       preview.status === 200 &&

@@ -117,7 +117,8 @@ export function createListStore(
         )
           ? orderBy
           : "created_at";
-        const direction = !order || order === "asc" ? 1 : -1;
+        // B80: order takes any case (a deliberate difference from upstream's ASC).
+        const direction = !order || order.toLowerCase() === "asc" ? 1 : -1;
         const value = (row: Row) =>
           field === "subscriber_count"
             ? Object.values(aggregates.get(row.id) ?? {}).reduce((a, b) => a + b, 0)

@@ -179,7 +179,8 @@ export function createTemplateStore(
     const field =
       (["name", "type", "created_at", "updated_at"] as const).find((f) => f === orderBy) ??
       "created_at";
-    const direction = !order || order === "asc" ? 1 : -1;
+    // B80: order takes any case (a deliberate difference from upstream's ASC).
+    const direction = !order || order.toLowerCase() === "asc" ? 1 : -1;
     return all()
       .filter((row) => row.name.toLowerCase().includes(search))
       .sort((a, b) => {

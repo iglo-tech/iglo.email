@@ -100,7 +100,8 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       const sort = ["username", "email", "created_at", "loggedin_at"].includes(orderBy)
         ? orderBy
         : "created_at";
-      const direction = order === "" || order === "asc" ? "asc" : "desc";
+      // B80: order takes any case (a deliberate difference from upstream's ASC).
+      const direction = order === "" || order.toLowerCase() === "asc" ? "asc" : "desc";
       return queries.get("get-users").all(sort, direction) as UserRow[];
     },
     create(fields: UserFields): UserRow {

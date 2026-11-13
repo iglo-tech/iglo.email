@@ -102,8 +102,12 @@ export async function runSubscriberQuery(target: {
     // Ordering.
     r = await json(`/api/subscribers?search=${tag}&order_by=name&order=asc`);
     check(same(names(r.body), ["alice", "bob", "carol"]), "subscriber-query-order-name");
+    // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
     r = await json(`/api/subscribers?search=${tag}&order_by=email&order=ASC`);
-    check(same(names(r.body), ["carol", "bob", "alice"]), "subscriber-query-order-case");
+    check(
+      same(names(r.body), normal ? ["alice", "bob", "carol"] : ["carol", "bob", "alice"]),
+      "query-diff-order-case",
+    );
     r = await json(`/api/subscribers?search=${tag}&order_by=${q("name; select 1")}&order=asc`);
     check(same(names(r.body), ["alice", "bob", "carol"]), "subscriber-query-order-allowlist");
 

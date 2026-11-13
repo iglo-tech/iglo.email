@@ -691,6 +691,21 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Sort direction (`order`)",
+    summary:
+      "`order` takes `asc`, `ASC` or `Asc` (any case) on every endpoint that documents it. Upstream's documented `ASC` sorts descending, so a client that reads the enum gets the wrong order there.",
+    applies: [
+      "GET /api/lists",
+      "GET /api/templates",
+      "GET /api/campaigns",
+      "GET /api/subscribers",
+      "GET /api/users",
+      "GET /api/roles/users",
+      "GET /api/roles/lists",
+      "GET /api/bounces",
+    ],
+  },
+  {
     area: "Dropped features",
     summary:
       "Their endpoints return 404: `/api/admin/reload`, OIDC routes, update checks, and anything listed as dropped in Scope.",
