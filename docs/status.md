@@ -10,12 +10,12 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 
 ## Work queue
 
-**Resumed by the owner on 2026-11-12.** E2E plan done (B64–B71, B73–B75); release dry run 43319396254 green incl. hosted e2e (12.7 min). Owner chose a real SES check before 1.0.0; the lead ran it on 2026-11-13 with main 3074bb1 behind a temporary tunnel, SES us-east-1, test@igielski.dev: campaign sent over SES SMTP (Gmail: SPF, DKIM, DMARC pass; one-click List-Unsubscribe present), SNS subscription auto-confirmed, simulator hard bounce arrived signed via SNS and was recorded against the campaign and blocklisted the address, opens counted, no server errors. Account VDM engagement tracking rewrites links via awstrack.me (doc note in B76). All test AWS resources (IAM user and key, SNS topic, configuration set) deleted. Next: B76 version 1.0.0, then tag v1.0.0.
+**Resumed by the owner on 2026-11-12.** E2E plan done (B64–B71, B73–B75); release dry run 43319396254 green incl. hosted e2e (12.7 min). Owner chose a real SES check before 1.0.0; the lead ran it on 2026-11-13 with main 3074bb1 behind a temporary tunnel, SES us-east-1, test@igielski.dev: campaign sent over SES SMTP (Gmail: SPF, DKIM, DMARC pass; one-click List-Unsubscribe present), SNS subscription auto-confirmed, simulator hard bounce arrived signed via SNS and was recorded against the campaign and blocklisted the address, opens counted, no server errors. Account VDM engagement tracking rewrites links via awstrack.me (doc note in B76). All test AWS resources (IAM user and key, SNS topic, configuration set) deleted. B76 #127 merged 795e383 (r1 APPROVE); tag `v1.0.0` pushed, release run 43444099233.
 
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- Then tag 1.0.0 (report to owner first).
+- Backlog (docs, non-blocking from #127 review): SES note should also say Open/Click event destinations make SES rewrite links; tracking options also set the HTTPS policy; add the VDM link to References.
 
 ## Owner decisions
 
@@ -46,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B76 | [#127](https://github.com/iglo-tech/iglo.email/pull/127) | 795e383 | Version 1.0.0; MCP serverInfo from package.json; SES engagement-tracking note; tag v1.0.0 |
 | B75 | [#126](https://github.com/iglo-tech/iglo.email/pull/126) | cf329e4 | Runner wakes on start, resume and due schedule (D97); start 4.9 s to 0 on the test clock |
 | B74 | [#125](https://github.com/iglo-tech/iglo.email/pull/125) | 712c2f0 | Analytics dashboard counts as digits; e2e traces kept on timeout |
 | B71 | [#124](https://github.com/iglo-tech/iglo.email/pull/124) | b2998b9 | Release gate: e2e job before publish and image (D96, no retries); dashboard counts compared as digits; 3 full runs green |
