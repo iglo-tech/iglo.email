@@ -136,7 +136,7 @@ export async function runTemplatesContract(target: {
             ? upperOrdered[index - 1]!.name >= row.name
             : upperOrdered[index - 1]!.name <= row.name),
       ),
-      "query-diff-template-order-upper",
+      "B80-order-upper-templates",
     );
     const preview = await request(`/api/templates/${item.id}/preview`);
     check(

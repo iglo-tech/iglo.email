@@ -18,6 +18,11 @@ export function filterURL(base: string, params: URLSearchParams, ...exclude: str
   const query = encode(params, "page", ...exclude);
   return query ? `${base}?${query}` : base;
 }
+/** The direction in `order`, lower case: the API takes `asc`, `ASC` and `Asc` alike (D57, B80). */
+export function sortOrder(params: URLSearchParams): "asc" | "desc" | undefined {
+  const order = params.get("order")?.toLowerCase();
+  return order === "asc" || order === "desc" ? order : undefined;
+}
 /** PageProps.SortLink. */
 export function SortLink(props: {
   base: string;
@@ -27,16 +32,16 @@ export function SortLink(props: {
 }) {
   const { base, params, field, label } = props;
   const current = params.get("order_by"),
-    order = params.get("order");
+    order = sortOrder(params);
   const next = new URLSearchParams(encode(params, "page"));
   next.set("order_by", field);
   next.set("order", current === field && order === "asc" ? "desc" : "asc");
-  const sorted = current === field && (order === "asc" || order === "desc");
+  const sorted = current === field ? order : undefined;
   return (
     <a
       href={`${base}?${next}`}
       data-sort-field={field}
-      {...(sorted ? { "data-sorted": order } : {})}
+      {...(sorted ? { "data-sorted": sorted } : {})}
     >
       {label}
     </a>

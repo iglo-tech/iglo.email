@@ -12,6 +12,7 @@ import {
   HiddenFields,
   PreviewDialog,
   SortLink,
+  sortOrder,
   StatusBadge,
 } from "@/admin/views/parts";
 import type { Translation } from "@/i18n/i18n";
@@ -424,7 +425,7 @@ function TimestampHeading(props: {
 }) {
   const { t, base, params, field, label } = props;
   const orderBy = params.get("order_by"),
-    order = params.get("order");
+    order = sortOrder(params);
   const sortURL = (name: string) => {
     const next = new URLSearchParams(params);
     for (const key of ["order_by", "order", "page"]) next.delete(key);

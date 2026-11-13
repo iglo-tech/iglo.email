@@ -28,13 +28,18 @@ type Schema = {
   $ref?: string;
   properties?: Record<string, unknown>;
   allOf?: Schema[];
+  oneOf?: Schema[];
+  anyOf?: Schema[];
 };
 type Document = {
   paths: Record<string, Record<string, any>>;
   components: { schemas: Record<string, Schema> };
 };
 
-/** The property names of a schema, following a $ref and every allOf part, so none is missed. */
+/**
+ * The property names of a schema, following a $ref and every allOf, oneOf and anyOf part, so none is
+ * missed: a branch of a composed body names fields the tool must take as well.
+ */
 function propertiesOf(document: Document, schema: Schema | undefined): string[] {
   if (!schema) return [];
   if (schema.$ref)
@@ -42,14 +47,16 @@ function propertiesOf(document: Document, schema: Schema | undefined): string[] 
   return [
     ...Object.keys(schema.properties ?? {}),
     ...(schema.allOf ?? []).flatMap((part) => propertiesOf(document, part)),
+    ...(schema.oneOf ?? []).flatMap((part) => propertiesOf(document, part)),
+    ...(schema.anyOf ?? []).flatMap((part) => propertiesOf(document, part)),
   ];
 }
 
 /**
  * The query parameter names and body property names of an operation, as the API document states them.
  * `declared` is true when the operation has query parameters or a structured request body (a $ref,
- * allOf or properties), so a test can require that some field was found for it. A free-form body
- * names no field and is not declared.
+ * allOf, oneOf, anyOf or properties), so a test can require that some field was found for it. A
+ * free-form body names no field and is not declared.
  */
 function fieldsOf(
   document: Document,
@@ -64,7 +71,12 @@ function fieldsOf(
       const schema: Schema | undefined = Object.values<any>(operation.requestBody?.content ?? {})[0]
         ?.schema;
       const structured =
-        schema !== undefined && ("$ref" in schema || "allOf" in schema || "properties" in schema);
+        schema !== undefined &&
+        ("$ref" in schema ||
+          "allOf" in schema ||
+          "oneOf" in schema ||
+          "anyOf" in schema ||
+          "properties" in schema);
       return {
         query,
         body: propertiesOf(document, schema),

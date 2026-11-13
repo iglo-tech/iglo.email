@@ -106,7 +106,7 @@ export async function runSubscriberQuery(target: {
     r = await json(`/api/subscribers?search=${tag}&order_by=email&order=ASC`);
     check(
       same(names(r.body), normal ? ["alice", "bob", "carol"] : ["carol", "bob", "alice"]),
-      "query-diff-order-case",
+      "B80-order-upper-subscribers",
     );
     r = await json(`/api/subscribers?search=${tag}&order_by=${q("name; select 1")}&order=asc`);
     check(same(names(r.body), ["alice", "bob", "carol"]), "subscriber-query-order-allowlist");

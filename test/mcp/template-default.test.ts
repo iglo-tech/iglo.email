@@ -1,5 +1,5 @@
 // B80: create_template and update_template take is_default. true makes the saved template the
-// default once the save succeeded; the endpoints have no is_default field of their own.
+// default once the save succeeded, and the answer is the template read back (one is_default).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, admin, type Production } from "@/test/worked-example/harness";
@@ -63,7 +63,7 @@ describe("create_template and update_template take is_default (B80)", () => {
     return listed.filter((template) => template.is_default).map((template) => template.id);
   }
 
-  test("create_template with is_default: true makes the new campaign template the default and reports both results", async () => {
+  test("create_template with is_default: true makes the new campaign template the default and returns it as read back", async () => {
     const created = await callTool("create_template", {
       name: "B80 Default Layout",
       type: "campaign",
@@ -72,7 +72,8 @@ describe("create_template and update_template take is_default (B80)", () => {
     });
     expect(created.isError).toBeFalsy();
     const id = created.structuredContent.data.id;
-    expect(created.structuredContent.default).toEqual({ id, is_default: true });
+    expect(created.structuredContent.data).toMatchObject({ id, is_default: true });
+    expect(created.structuredContent.default).toBeUndefined();
     expect(await defaultId()).toEqual([id]);
 
     const fetched = await callTool("get_template", { id });
@@ -92,7 +93,8 @@ describe("create_template and update_template take is_default (B80)", () => {
 
     const moved = await callTool("update_template", { id, is_default: true });
     expect(moved.isError).toBeFalsy();
-    expect(moved.structuredContent.default).toEqual({ id, is_default: true });
+    expect(moved.structuredContent.data).toMatchObject({ id, is_default: true });
+    expect(moved.structuredContent.default).toBeUndefined();
     expect(await defaultId()).toEqual([id]);
     expect((await callTool("get_template", { id })).structuredContent.data.is_default).toBe(true);
 

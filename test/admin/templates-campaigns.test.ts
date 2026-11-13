@@ -159,3 +159,13 @@ test("a logged-out page asks for the session first", async () => {
   expect(response.status).toBe(307);
   expect(response.headers.get("location")).toContain("/admin/login?next=");
 });
+
+test("the campaign timestamp sort reads its direction in any case", async () => {
+  for (const order of ["ASC", "asc"]) {
+    const html = await (
+      await get(f, `/admin/campaigns?order_by=created_at&order=${order}`, cookie)
+    ).text();
+    expect(html).toContain('data-sort-field="created_at" data-sorted="asc"');
+    expect(html).toContain("order=desc");
+  }
+});

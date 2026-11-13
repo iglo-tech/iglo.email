@@ -382,7 +382,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
           JSON.stringify(
             target.mode === "reference" ? [...ascendingNames].reverse() : ascendingNames,
           ),
-      "query-diff-users-order-upper",
+      "B80-order-upper-users",
     );
     for (const direction of ["asc", "desc"] as const) {
       const orderedResponse = await request(
