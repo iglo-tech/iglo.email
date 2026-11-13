@@ -321,10 +321,16 @@ pages each step follows are listed under [References](#references); they were ch
    ```
 
    This leaves the account-wide VDM setting and other senders in the account unchanged, and
-   iglo.email's own open and click tracking stays on. The configuration set's tracking options
-   (`put-configuration-set-tracking-options`) only set a custom redirect domain; they do not turn
-   tracking off. Confirm with a test send that the links are no longer rewritten. See
-   [Virtual Deliverability Manager settings](https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html).
+   iglo.email's own open and click tracking stays on. The VDM switch does not reach event
+   destinations: a configuration set whose event destination publishes Open or Click events still
+   gets SES open and click tracking. So make sure none of the configuration set's event
+   destinations publish those events.
+
+   The configuration set's tracking options (`put-configuration-set-tracking-options`) set only a
+   custom redirect domain and the HTTPS policy (`--https-policy`). They do not turn tracking off.
+   Confirm with a test send that the links are no longer rewritten. See
+   [Virtual Deliverability Manager settings](https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html)
+   and the [SES metrics FAQ](https://docs.aws.amazon.com/ses/latest/DeveloperGuide/faqs-metrics.html).
 6. **Set the send rate.** `messaging.max_send_rate` (Settings > Performance, or
    `PUT /api/settings/messaging.max_send_rate`) is the account-wide cap in messages per second across
    all connections. Set it to the maximum sending rate your SES account has. The code default is `14`
@@ -385,7 +391,7 @@ leaves it in `ps`, so use a file or netrc in a real environment.
 
 ### References
 
-AWS documentation, checked 2026-11-08:
+AWS documentation, checked 2026-11-08 (the last two entries checked 2026-11-13):
 
 - Easy DKIM: <https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-easy.html>
 - Verifying identities and the three CNAME records: <https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html>
@@ -399,6 +405,8 @@ AWS documentation, checked 2026-11-08:
 - Sending quotas: <https://docs.aws.amazon.com/ses/latest/dg/manage-sending-quotas.html>
 - Moving out of the sandbox: <https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html>
 - SNS topics for bounce and complaint feedback: <https://docs.aws.amazon.com/ses/latest/dg/configure-sns-notifications.html>
+- Virtual Deliverability Manager settings (engagement tracking): <https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html>
+- SES metrics FAQ (open and click tracking through event destinations): <https://docs.aws.amazon.com/ses/latest/DeveloperGuide/faqs-metrics.html>
 
 ## Amazon SES bounces
 
