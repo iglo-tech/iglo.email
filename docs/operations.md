@@ -114,7 +114,7 @@ docker run -d --name iglo-email --restart unless-stopped \
   -e IGLO_EMAIL_ROOT_URL=https://news.example.com \
   -e IGLO_EMAIL_ADMIN_USER=admin \
   -e IGLO_EMAIL_ADMIN_PASSWORD='choose-a-long-password' \
-  ghcr.io/iglo-tech/iglo.email:0.1.0
+  ghcr.io/iglo-tech/iglo.email:1.0.0
 ```
 
 The admin variables are read only while no users exist: after the first start, recreate the
@@ -308,6 +308,23 @@ pages each step follows are listed under [References](#references); they were ch
    `X-SES-CONFIGURATION-SET: <name>` to the SMTP server's custom headers in Settings > SMTP, or via
    the API as `[{"X-SES-CONFIGURATION-SET": "<name>"}]` under `smtp[].email_headers`. The header goes
    with every message sent through that server.
+
+   **Engagement tracking adds a third party's tracking.** When Virtual Deliverability Manager
+   engagement tracking is on for the account or the configuration set, SES rewrites every link in
+   the body, including the unsubscribe link, through `awstrack.me` and adds its own open pixel. The
+   message is then tracked twice. To switch SES engagement tracking off for one configuration set,
+   set its VDM override:
+
+   ```sh
+   aws sesv2 put-configuration-set-vdm-options --configuration-set-name <name> \
+     --vdm-options 'DashboardOptions={EngagementMetrics=DISABLED}'
+   ```
+
+   This leaves the account-wide VDM setting and other senders in the account unchanged, and
+   iglo.email's own open and click tracking stays on. The configuration set's tracking options
+   (`put-configuration-set-tracking-options`) only set a custom redirect domain; they do not turn
+   tracking off. Confirm with a test send that the links are no longer rewritten. See
+   [Virtual Deliverability Manager settings](https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html).
 6. **Set the send rate.** `messaging.max_send_rate` (Settings > Performance, or
    `PUT /api/settings/messaging.max_send_rate`) is the account-wide cap in messages per second across
    all connections. Set it to the maximum sending rate your SES account has. The code default is `14`

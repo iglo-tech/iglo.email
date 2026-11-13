@@ -12,6 +12,7 @@ import {
   type Mailbox,
 } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { version } from "@/../package.json";
 
 describe("B34 MCP endpoint tests", () => {
   let production: Production;
@@ -87,6 +88,7 @@ describe("B34 MCP endpoint tests", () => {
     const serverVersion = client.getServerVersion();
     expect(serverVersion).toBeDefined();
     expect(serverVersion?.name).toBe("iglo.email");
+    expect(serverVersion?.version).toBe(version);
 
     const toolsResult = await client.listTools();
     const toolNames = toolsResult.tools.map((t) => t.name).sort();
