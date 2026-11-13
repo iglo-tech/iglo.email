@@ -15,7 +15,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- B81: B80 review nits (difference row, admin sort indicator in any case, MCP is_default result, schema test oneOf/anyOf, order tests for roles/lists and bounces, contract label prefix). [Brief](briefs/B81.md).
+- B82: test the MCP default fallback (B81 review nit). [Brief](briefs/B82.md).
 
 ## Owner decisions
 
@@ -46,6 +46,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B81 | [#133](https://github.com/iglo-tech/iglo.email/pull/133) | ee33474 | B80 nits: admin sort indicator in any case, MCP template result read back, order tests for list roles and bounces, contract labels (r1 APPROVE) |
 | B80 | [#132](https://github.com/iglo-tech/iglo.email/pull/132) | e9526b9 | `order` in any case on 8 endpoints (deliberate difference, contract-marked); MCP `is_default` sets the default; B79 nits (r1 APPROVE) |
 | B79 | [#131](https://github.com/iglo-tech/iglo.email/pull/131) | 44d56e5 | Hand-written MCP tools take every field; `list_campaigns` sort and `send_campaign_test` template fixed; cap test catches a leaked slot (r1 APPROVE) |
 | B78 | [#130](https://github.com/iglo-tech/iglo.email/pull/130) | 3dc9ca1 | MCP: 105 tools generated from the API document, 37 dangerous ops excluded with a coverage test, annotations, path-value checks, 1 MiB answer cap (D98; r1, r2 CHANGES, fixers, r3 APPROVE) |
