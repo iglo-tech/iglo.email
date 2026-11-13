@@ -16,6 +16,7 @@ Run in order, one at a time, through the normal stages. Write each brief from th
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
 - B78 (owner 2026-11-13): MCP exposes every edit and setting except dangerous ones (D98). [Brief](briefs/B78.md).
+- B79: hand-written MCP tools take every field of their operations (B78 review nit). [Brief](briefs/B79.md).
 
 ## Owner decisions
 
