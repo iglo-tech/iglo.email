@@ -189,7 +189,8 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       limit: number,
     ): { rows: CampaignRow[]; total: number } {
       const field = sortFields.includes(orderBy) ? orderBy : "created_at";
-      const direction = order === "asc" ? "ASC" : order === "desc" ? "DESC" : "DESC";
+      // B80: order takes any case; anything but asc sorts descending, as before.
+      const direction = order.toLowerCase() === "asc" ? "ASC" : "DESC";
       const found = q
         .get("query-campaign-ids")
         .all(

@@ -1174,6 +1174,20 @@ export async function runListsContract(target: {
       ).data.results.map((item) => item.id);
       check(JSON.stringify(ids) === JSON.stringify(expected), `list-sort-name-${order}`);
     }
+    // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
+    const upperSort = await request(`/api/lists?query=sort-${suffix}&order_by=name&order=ASC`);
+    const upperIds = (
+      (await upperSort.json()) as { data: { results: { id: number }[] } }
+    ).data.results.map((item) => item.id);
+    check(
+      JSON.stringify(upperIds) ===
+        JSON.stringify(
+          target.mode === "reference"
+            ? [sortedLast.id, sortedFirst.id]
+            : [sortedFirst.id, sortedLast.id],
+        ),
+      "query-diff-list-sort-upper",
+    );
     const repeatedSort = await request(
       `/api/lists?query=sort-${suffix}&order_by=&order_by=name&order=desc&per_page=&per_page=1&page=&page=2`,
     );

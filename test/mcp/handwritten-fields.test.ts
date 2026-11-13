@@ -16,24 +16,60 @@ const ARGUMENT_FOR: Record<string, Record<string, string>> = {
   list_campaigns: { order: "dir" },
 };
 
-type Schema = { $ref?: string; properties?: Record<string, unknown> };
+/**
+ * Fields of a covered operation that its tool deliberately does not take, with the reason. The tool
+ * keeps the stored value, and no argument for the field exists.
+ */
+const NOT_TAKEN: Record<string, Record<string, string>> = {
+  update_campaign: { type: "the endpoint keeps the stored type of a campaign" },
+};
+
+type Schema = {
+  $ref?: string;
+  properties?: Record<string, unknown>;
+  allOf?: Schema[];
+};
 type Document = {
   paths: Record<string, Record<string, any>>;
   components: { schemas: Record<string, Schema> };
 };
 
-/** The query parameter names and body property names of an operation, as the API document states them. */
-function fieldsOf(document: Document, operationId: string): { query: string[]; body: string[] } {
+/** The property names of a schema, following a $ref and every allOf part, so none is missed. */
+function propertiesOf(document: Document, schema: Schema | undefined): string[] {
+  if (!schema) return [];
+  if (schema.$ref)
+    return propertiesOf(document, document.components.schemas[schema.$ref.split("/").pop()!]);
+  return [
+    ...Object.keys(schema.properties ?? {}),
+    ...(schema.allOf ?? []).flatMap((part) => propertiesOf(document, part)),
+  ];
+}
+
+/**
+ * The query parameter names and body property names of an operation, as the API document states them.
+ * `declared` is true when the operation has query parameters or a structured request body (a $ref,
+ * allOf or properties), so a test can require that some field was found for it. A free-form body
+ * names no field and is not declared.
+ */
+function fieldsOf(
+  document: Document,
+  operationId: string,
+): { query: string[]; body: string[]; declared: boolean } {
   for (const item of Object.values(document.paths)) {
     for (const operation of Object.values<any>(item)) {
       if (operation.operationId !== operationId) continue;
       const query = (operation.parameters ?? [])
         .filter((parameter: any) => parameter.in === "query")
         .map((parameter: any) => parameter.name as string);
-      let schema: Schema | undefined = Object.values<any>(operation.requestBody?.content ?? {})[0]
+      const schema: Schema | undefined = Object.values<any>(operation.requestBody?.content ?? {})[0]
         ?.schema;
-      if (schema?.$ref) schema = document.components.schemas[schema.$ref.split("/").pop()!];
-      return { query, body: Object.keys(schema?.properties ?? {}) };
+      const structured =
+        schema !== undefined && ("$ref" in schema || "allOf" in schema || "properties" in schema);
+      return {
+        query,
+        body: propertiesOf(document, schema),
+        declared: query.length > 0 || structured,
+      };
     }
   }
   throw new Error(`no operation ${operationId} in the API document`);
@@ -136,20 +172,42 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
     );
 
     const missing: string[] = [];
+    // A schema that yields no fields would pass this test empty, so each operation that declares
+    // fields must yield some, and the count must cover every covered operation.
+    let checked = 0;
     for (const [operationId, toolName] of Object.entries(HANDWRITTEN_COVERAGE)) {
       const names = argumentNames.get(toolName);
       if (!names) {
         missing.push(`${toolName} is not a tool`);
         continue;
       }
-      const { query, body } = fieldsOf(document, operationId);
-      for (const field of [...query, ...body]) {
+      const { query, body, declared } = fieldsOf(document, operationId);
+      const fields = [...query, ...body];
+      if (declared) expect(fields.length, `${operationId} declares fields`).toBeGreaterThan(0);
+      checked += fields.length;
+      for (const field of fields) {
+        if (NOT_TAKEN[toolName]?.[field]) {
+          expect(names).not.toContain(field);
+          continue;
+        }
         const argument = ARGUMENT_FOR[toolName]?.[field] ?? field;
         if (!names.includes(argument))
           missing.push(`${toolName} lacks ${argument} (${operationId})`);
       }
     }
     expect(missing).toEqual([]);
+    expect(checked).toBeGreaterThan(Object.keys(HANDWRITTEN_COVERAGE).length);
+  });
+
+  test("an object given for a query parameter is a tool error, not a search for [object Object]", async () => {
+    const refused = await callTool("list_templates", { query: { name: "B79" } });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("query");
+    expect(refused.structuredContent).toBeUndefined();
+
+    const refusedInArray = await callTool("list_campaigns", { tag: [{ tag: "b80" }] });
+    expect(refusedInArray.isError).toBe(true);
+    expect(refusedInArray.content[0]!.text).toContain("tag");
   });
 
   test("create_campaign takes type and the archive fields: an opt-in campaign and its archive settings are stored as sent", async () => {

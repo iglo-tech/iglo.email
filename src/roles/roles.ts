@@ -149,7 +149,8 @@ export function createRoles(db: Database, lists: ListReferences) {
       const field = ["name", "created_at", "updated_at"].includes(orderBy)
         ? (orderBy as "name" | "created_at" | "updated_at")
         : "created_at";
-      const direction = order === "" || order === "asc" ? 1 : -1;
+      // B80: order takes any case (a deliberate difference from upstream's ASC).
+      const direction = order === "" || order.toLowerCase() === "asc" ? 1 : -1;
       return rows
         .filter((r) => (r.name ?? "").toLowerCase().includes(needle))
         .sort(

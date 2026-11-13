@@ -203,7 +203,8 @@ export function pageSQL(
   limit: number,
 ) {
   const column = sortFields.includes(orderBy) ? `subscribers.${orderBy}` : "subscribers.id";
-  const direction = order === "asc" ? "ASC" : "DESC";
+  // B80: order takes any case; upstream's documented ASC sorts descending (a deliberate difference).
+  const direction = order.toLowerCase() === "asc" ? "ASC" : "DESC";
   const { from, args } = filterSQL(filter);
   return {
     sql: `SELECT DISTINCT subscribers.id ${from} ORDER BY ${column} ${direction}, subscribers.id ${direction} LIMIT ? OFFSET ?`,

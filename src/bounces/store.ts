@@ -119,7 +119,8 @@ export function createBounceStore(
   const q = prepareNamedQueries(db, [{ name: "bounces/store", sql }]);
   const json = (ids: (bigint | number)[]) => JSON.stringify(ids.map(String));
   const rows = (filter: BounceFilter) => {
-    const direction = filter.order === "asc" ? "ASC" : "DESC";
+    // B80: order takes any case; anything but asc sorts descending, as before.
+    const direction = filter.order?.toLowerCase() === "asc" ? "ASC" : "DESC";
     const column = sortColumns[filter.orderBy ?? ""] ?? "b.created_at";
     // Postgres sorts nulls as the largest value; the ID settles ties in stored rows.
     const order = `${column} ${direction} NULLS ${direction === "ASC" ? "LAST" : "FIRST"}, b.id DESC`;

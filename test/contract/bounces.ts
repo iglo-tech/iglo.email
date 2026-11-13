@@ -341,6 +341,12 @@ export async function runBouncesContract(target: {
     check(ascending.results[0].email === ada.email, "order-asc");
     const descending = await query(`${ours}&order_by=email&order=desc`);
     check(descending.results[0].email === cyd.email, "order-desc");
+    // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
+    const upperAscending = await query(`${ours}&order_by=email&order=ASC`);
+    check(
+      upperAscending.results[0].email === (reference ? cyd.email : ada.email),
+      "query-diff-bounces-order-upper",
+    );
     const fallback = await query(`${ours}&order_by=nope&order=nope`);
     check(fallback.results[0].created_at >= fallback.results[1].created_at, "order-fallback");
     const all = await query("per_page=all");

@@ -47,6 +47,14 @@ const argumentFor = (tool: string, field: string): string =>
   ARGUMENT_FOR_FIELD[tool]?.[field] ?? field;
 
 /**
+ * Fields of a covered operation that its hand-written tool deliberately does not take, with the
+ * reason. update_campaign: the endpoint keeps a campaign's stored type, so a type given here is not applied.
+ */
+const UNTAKEN_FIELDS: Record<string, Record<string, string>> = {
+  update_campaign: { type: "the endpoint keeps the stored type of a campaign" },
+};
+
+/**
  * Each query parameter and body field of an operation, with the schema the generated tool builds for
  * it (generated.ts, D98). A path parameter is the tool's own `id`, so it is left out.
  */
@@ -72,6 +80,7 @@ function withOperationFields(tool: ToolDefinition): ToolDefinition {
   for (const [id, covered] of Object.entries(HANDWRITTEN_COVERAGE)) {
     if (covered !== tool.name) continue;
     for (const [field, schema] of Object.entries(operationFields(operation(id)))) {
+      if (UNTAKEN_FIELDS[tool.name]?.[field]) continue;
       if (argumentFor(tool.name, field) in properties) continue;
       properties[field] = schema;
     }
@@ -79,16 +88,27 @@ function withOperationFields(tool: ToolDefinition): ToolDefinition {
   return { ...tool, inputSchema: { ...tool.inputSchema, properties } };
 }
 
+/** An argument that cannot be sent as a query parameter. executeTool answers it with a tool error. */
+class ToolArgumentError extends Error {}
+
 /**
  * The query string the operation's query parameters take from a tool's arguments. An absent, null or
- * empty argument is left out; an array is sent as one parameter per item.
+ * empty argument is left out; an array is sent as one parameter per item. An object, or a list
+ * holding one, is refused: it has no query-string form.
  */
 function queryFor(tool: string, opId: string, args: Record<string, unknown>): string {
   const search = new URLSearchParams();
   for (const { name } of operation(opId).query ?? []) {
-    const value = args[argumentFor(tool, name)];
+    const argument = argumentFor(tool, name);
+    const value = args[argument];
     if (value === undefined || value === null || value === "") continue;
-    for (const item of Array.isArray(value) ? value : [value]) search.append(name, String(item));
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (!["string", "number", "boolean"].includes(typeof item))
+        throw new ToolArgumentError(
+          `${argument} must be a string, a number, a boolean or a list of those; an object is not a query value.`,
+        );
+      search.append(name, String(item));
+    }
   }
   const qs = search.toString();
   return qs ? `?${qs}` : "";
@@ -138,7 +158,11 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
         },
         subject: { type: "string", description: "Template subject (required for tx templates)" },
         body: { type: "string", description: "Template HTML or plain-text body in Liquid format" },
-        is_default: { type: "boolean", description: "Whether to make this the default template" },
+        is_default: {
+          type: "boolean",
+          description:
+            "Set to true to make the saved template the default. Only a campaign template can be the default.",
+        },
       },
       required: ["name", "type"],
       additionalProperties: false,
@@ -160,7 +184,11 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
         },
         subject: { type: "string", description: "Template subject" },
         body: { type: "string", description: "Template HTML or plain-text body in Liquid format" },
-        is_default: { type: "boolean", description: "Whether to make this the default template" },
+        is_default: {
+          type: "boolean",
+          description:
+            "Set to true to make the saved template the default. Only a campaign template can be the default.",
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -502,6 +530,9 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
 
 const HANDWRITTEN = HANDWRITTEN_DEFINITIONS.map(withOperationFields);
 
+/** The fields create_campaign sends, built once from the operation rather than on every call. */
+const CREATE_CAMPAIGN_FIELDS = Object.keys(operationFields(operation("createCampaign")));
+
 /** Every tool: the hand-written ones, then one per operation the document has and no hand-written tool covers (D98). */
 export const TOOLS: ToolDefinition[] = [...HANDWRITTEN, ...GENERATED.map((entry) => entry.tool)];
 
@@ -702,7 +733,37 @@ async function getStoredCampaign(
   return { data: structured.data };
 }
 
+/** Runs one tool. An argument that has no query-string form is a tool error, and no request is made. */
 export async function executeTool(
+  name: string,
+  app: App,
+  router: Router,
+  authHeader: string,
+  peerAddress: string,
+  args: Record<string, unknown>,
+  cookieHeader?: string,
+  csrfHeader?: string,
+  originHeader?: string,
+): Promise<ToolResult> {
+  try {
+    return await runTool(
+      name,
+      app,
+      router,
+      authHeader,
+      peerAddress,
+      args,
+      cookieHeader,
+      csrfHeader,
+      originHeader,
+    );
+  } catch (error) {
+    if (error instanceof ToolArgumentError) return toolError(error.message);
+    throw error;
+  }
+}
+
+async function runTool(
   name: string,
   app: App,
   router: Router,
@@ -734,6 +795,31 @@ export async function executeTool(
     contentType = "application/json",
   ): Promise<ToolResult> => (await call(method, path, body, contentType)).result;
   const storedCampaign = (id: string | number) => getStoredCampaign(call, id, name);
+  /**
+   * The endpoints have no is_default field, so is_default: true is applied after a successful save by
+   * making the template the default. When that call fails, the tool answers with an error that says the
+   * template was saved, so a retry does not save it twice.
+   */
+  const makeDefault = async (
+    saved: EndpointReply,
+    id: unknown,
+    wanted: boolean,
+  ): Promise<ToolResult> => {
+    if (!wanted || saved.result.isError) return saved.result;
+    const set = await call("PUT", `/api/templates/${encodeURIComponent(String(id))}/default`);
+    if (set.result.isError)
+      return toolError(
+        `Template ${String(id)} was saved, but it was not made the default: ${set.result.content[0]?.text ?? "the default could not be set"}`,
+      );
+    const data = (saved.result.structuredContent as { data?: unknown } | undefined)?.data;
+    const structured = { data, default: { id, is_default: true } };
+    return {
+      content: [{ type: "text", text: JSON.stringify(structured) }],
+      structuredContent: structured,
+      isError: false,
+      resultType: "complete",
+    };
+  };
 
   switch (name) {
     case "list_templates":
@@ -750,19 +836,24 @@ export async function executeTool(
       if (args.subject !== undefined) body.subject = args.subject;
       if (args.body !== undefined) body.body = args.body;
       if (args.body_source !== undefined) body.body_source = args.body_source;
-      if (args.is_default !== undefined) body.is_default = args.is_default;
-      return invoke("POST", "/api/templates", body);
+      const saved = await call("POST", "/api/templates", body);
+      const id = (saved.result.structuredContent as { data?: { id?: unknown } } | undefined)?.data
+        ?.id;
+      return makeDefault(saved, id, args.is_default === true);
     }
     case "update_template": {
-      const id = encodeURIComponent(String(args.id));
       const body: Record<string, unknown> = {};
       if (args.name !== undefined) body.name = args.name;
       if (args.type !== undefined) body.type = args.type;
       if (args.subject !== undefined) body.subject = args.subject;
       if (args.body !== undefined) body.body = args.body;
       if (args.body_source !== undefined) body.body_source = args.body_source;
-      if (args.is_default !== undefined) body.is_default = args.is_default;
-      return invoke("PUT", `/api/templates/${id}`, body);
+      const saved = await call(
+        "PUT",
+        `/api/templates/${encodeURIComponent(String(args.id))}`,
+        body,
+      );
+      return makeDefault(saved, args.id, args.is_default === true);
     }
     case "delete_template": {
       const id = encodeURIComponent(String(args.id));
@@ -790,11 +881,8 @@ export async function executeTool(
       const id = encodeURIComponent(String(args.id));
       return invoke("PUT", `/api/templates/${id}/default`);
     }
-    case "list_campaigns": {
-      // The endpoint reads the direction as lower case only (asc or desc), so dir is sent that way.
-      const dir = typeof args.dir === "string" ? args.dir.toLowerCase() : args.dir;
-      return invoke("GET", `/api/campaigns${queryFor(name, "getCampaigns", { ...args, dir })}`);
-    }
+    case "list_campaigns":
+      return invoke("GET", `/api/campaigns${queryFor(name, "getCampaigns", args)}`);
     case "get_campaign": {
       const id = encodeURIComponent(String(args.id));
       return invoke("GET", `/api/campaigns/${id}${queryFor(name, "getCampaignById", args)}`);
@@ -821,8 +909,6 @@ export async function executeTool(
         headers: args.headers !== undefined ? args.headers : data.headers,
         attribs: args.attribs !== undefined ? args.attribs : data.attribs,
         messenger: args.messenger !== undefined ? args.messenger : (data.messenger ?? "email"),
-        // Passed through unchanged; the endpoint keeps the stored type of a campaign, so a change here is not applied.
-        type: args.type !== undefined ? args.type : data.type,
         body_source: args.body_source !== undefined ? args.body_source : data.body_source,
       };
       if (args.altbody !== undefined) {
@@ -959,7 +1045,7 @@ export async function executeTool(
     }
     case "create_campaign": {
       const body: Record<string, unknown> = {};
-      for (const field of Object.keys(operationFields(operation("createCampaign")))) {
+      for (const field of CREATE_CAMPAIGN_FIELDS) {
         if (args[field] !== undefined) body[field] = args[field];
       }
       return invoke("POST", "/api/campaigns", body);

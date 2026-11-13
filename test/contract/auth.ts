@@ -368,6 +368,22 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         list.data.some((entry) => entry.id === human.id && !entry.password),
       "users-list",
     );
+    // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
+    const ascendingNames = list.data.map((entry) => entry.username);
+    const upperResponse = await request(target, "/api/users?order_by=username&order=ASC", {
+      auth: basic,
+    });
+    const upperNames = ((await upperResponse.json()) as { data: UserRecord[] }).data.map(
+      (entry) => entry.username,
+    );
+    check(
+      upperResponse.status === 200 &&
+        JSON.stringify(upperNames) ===
+          JSON.stringify(
+            target.mode === "reference" ? [...ascendingNames].reverse() : ascendingNames,
+          ),
+      "query-diff-users-order-upper",
+    );
     for (const direction of ["asc", "desc"] as const) {
       const orderedResponse = await request(
         target,

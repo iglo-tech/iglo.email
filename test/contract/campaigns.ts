@@ -339,6 +339,13 @@ export async function runCampaignsContract(target: {
         searched.query === marker,
       "collection-search-order",
     );
+    // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
+    const searchedUpper = await collection(`query=${marker}&order_by=name&order=ASC&per_page=all`);
+    check(
+      ownedNames(searchedUpper.results) ===
+        (reference ? "optin,minimal,gone,full,ct" : "ct,full,gone,minimal,optin"),
+      "query-diff-campaign-order-upper",
+    );
     const paged = await collection(`query=${marker}&per_page=2&page=2&order_by=name&order=asc`);
     check(
       ownedNames(paged.results) === "gone,minimal" &&
