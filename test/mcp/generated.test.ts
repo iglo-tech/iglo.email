@@ -320,6 +320,55 @@ describe("B78 MCP covers every operation (D98)", () => {
     expect(exported.structuredContent).toBeUndefined();
   }, 120_000);
 
+  test("a JSON answer over the MCP limit is refused with paging advice, and a small page still works", async () => {
+    const big = (await callTool("create_list", { body: { name: "B78 big page", type: "private" } }))
+      .structuredContent.data;
+    // Twenty subscribers with 60 kB of attributes each: their JSON page with per_page=all is more than 1 MiB.
+    const blob = "x".repeat(60_000);
+    for (let i = 0; i < 20; i++) {
+      const created = await callTool("create_subscriber", {
+        body: {
+          email: `b78-page-${i}@example.com`,
+          name: `B78 Page ${i}`,
+          lists: [big.id],
+          attribs: { blob },
+        },
+      });
+      expect(created.isError).toBeFalsy();
+    }
+
+    // Three refusals in a row. Each cancelled stream must release its large-selection slot (two run at
+    // once), so a leaked slot would turn a later call into a 429 and fail the exact message below.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const refused = await callTool("get_subscribers", { list_id: [big.id], per_page: "all" });
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0]!.text).toBe(
+        "The answer is larger than the 1048576-byte MCP limit, so it was not returned. Narrow it with page and per_page, or fetch it from the REST API instead: GET /api/subscribers",
+      );
+      expect(refused.structuredContent).toBeUndefined();
+    }
+
+    // Paging the same list works, and a small list is returned whole with per_page=all.
+    const paged = await callTool("get_subscribers", { list_id: [big.id], per_page: 5, page: 1 });
+    expect(paged.isError).toBeFalsy();
+    expect(paged.structuredContent.data.results).toHaveLength(5);
+    expect(paged.structuredContent.data.total).toBe(20);
+
+    const small = (
+      await callTool("create_list", { body: { name: "B78 small page", type: "private" } })
+    ).structuredContent.data;
+    for (const email of ["b78-small-a@example.com", "b78-small-b@example.com"]) {
+      const created = await callTool("create_subscriber", {
+        body: { email, name: email, lists: [small.id] },
+      });
+      expect(created.isError).toBeFalsy();
+    }
+    const whole = await callTool("get_subscribers", { list_id: [small.id], per_page: "all" });
+    expect(whole.isError).toBeFalsy();
+    expect(whole.structuredContent.data.results).toHaveLength(2);
+    expect(JSON.parse(whole.content[0]!.text)).toEqual(whole.structuredContent);
+  }, 120_000);
+
   // Round trip with an admin credential: the things an agent does day to day, through generated tools.
   test("round trip: list, subscriber, sequence, enrolment, setting, webhook, media and import all work through MCP", async () => {
     // A list and a subscriber on it, updated.

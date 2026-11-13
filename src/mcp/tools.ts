@@ -514,25 +514,21 @@ async function callEndpoint(
   const response = await router.handle(app, request, peerAddress);
   const isJson = response.headers.get("content-type")?.includes("application/json") ?? false;
 
-  if (!isJson && response.ok) {
-    // A CSV or HTML answer is read under the cap, so a large export is refused, not held in memory (D98).
-    const answer = await readCapped(response, MCP_MAX_ANSWER_BYTES);
-    if (answer === undefined) {
-      const route = path.split("?", 1)[0];
-      return {
-        status: response.status,
-        result: toolError(
-          `The answer is larger than the ${MCP_MAX_ANSWER_BYTES}-byte MCP limit, so it was not returned. Fetch it from the REST API instead: ${method} ${route}`,
-        ),
-      };
-    }
+  // Every answer, JSON or not, is read under the cap before it is parsed or returned, and the stream
+  // is cancelled past it, so a large page or export is refused rather than held in memory (D98).
+  const text = await readCapped(response, MCP_MAX_ANSWER_BYTES);
+  if (text === undefined) {
+    const route = path.split("?", 1)[0];
+    const next = isJson
+      ? "Narrow it with page and per_page, or fetch it from the REST API instead"
+      : "Fetch it from the REST API instead";
     return {
       status: response.status,
-      result: { content: [{ type: "text", text: answer }], isError: false, resultType: "complete" },
+      result: toolError(
+        `The answer is larger than the ${MCP_MAX_ANSWER_BYTES}-byte MCP limit, so it was not returned. ${next}: ${method} ${route}`,
+      ),
     };
   }
-
-  const text = await response.text();
 
   if (!response.ok) {
     let errorMessage = text;
@@ -552,12 +548,21 @@ async function callEndpoint(
     };
   }
 
+  if (!isJson) {
+    return {
+      status: response.status,
+      result: { content: [{ type: "text", text }], isError: false, resultType: "complete" },
+    };
+  }
+
+  // A JSON answer under the cap is returned twice, as its parsed value (structuredContent, which the
+  // hand-written tools read) and as compact text. Both copies are at most the cap; no pretty copy (D98).
   try {
     const parsed = JSON.parse(text) as unknown;
     return {
       status: response.status,
       result: {
-        content: [{ type: "text", text: JSON.stringify(parsed, null, 2) }],
+        content: [{ type: "text", text: JSON.stringify(parsed) }],
         structuredContent: parsed,
         isError: false,
         resultType: "complete",
