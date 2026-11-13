@@ -5,6 +5,9 @@ import { TEMPLATE_REFERENCE } from "@/mcp/reference";
 import { DESTRUCTIVE, OPEN_WORLD, READ_ONLY, WRITE, type ToolAnnotations } from "@/mcp/annotations";
 import { GENERATED, GENERATED_BY_NAME, operationRequest } from "@/mcp/generated";
 
+/** The largest non-JSON answer a tool returns (CSV, HTML); a larger one is refused with the REST endpoint to use (D98). */
+const MCP_MAX_ANSWER_BYTES = 1024 * 1024;
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -509,8 +512,27 @@ async function callEndpoint(
   const request = new Request(url, init);
 
   const response = await router.handle(app, request, peerAddress);
-  const text = await response.text();
   const isJson = response.headers.get("content-type")?.includes("application/json") ?? false;
+
+  if (!isJson && response.ok) {
+    // A CSV or HTML answer is read under the cap, so a large export is refused, not held in memory (D98).
+    const answer = await readCapped(response, MCP_MAX_ANSWER_BYTES);
+    if (answer === undefined) {
+      const route = path.split("?", 1)[0];
+      return {
+        status: response.status,
+        result: toolError(
+          `The answer is larger than the ${MCP_MAX_ANSWER_BYTES}-byte MCP limit, so it was not returned. Fetch it from the REST API instead: ${method} ${route}`,
+        ),
+      };
+    }
+    return {
+      status: response.status,
+      result: { content: [{ type: "text", text: answer }], isError: false, resultType: "complete" },
+    };
+  }
+
+  const text = await response.text();
 
   if (!response.ok) {
     let errorMessage = text;
@@ -530,30 +552,43 @@ async function callEndpoint(
     };
   }
 
-  if (isJson) {
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      return {
-        status: response.status,
-        result: {
-          content: [{ type: "text", text: JSON.stringify(parsed, null, 2) }],
-          structuredContent: parsed,
-          isError: false,
-          resultType: "complete",
-        },
-      };
-    } catch {}
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return {
+      status: response.status,
+      result: {
+        content: [{ type: "text", text: JSON.stringify(parsed, null, 2) }],
+        structuredContent: parsed,
+        isError: false,
+        resultType: "complete",
+      },
+    };
+  } catch {
+    return {
+      status: response.status,
+      result: { content: [{ type: "text", text }], isError: false, resultType: "complete" },
+    };
   }
+}
 
-  return {
-    status: response.status,
-    result: {
-      content: [{ type: "text", text }],
-      structuredContent: { text },
-      isError: false,
-      resultType: "complete",
-    },
-  };
+/** The body as text, or undefined once it is over `limit` bytes. Reading stops and the stream is cancelled at the cap. */
+async function readCapped(response: Response, limit: number): Promise<string | undefined> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      return undefined;
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
 }
 
 /**

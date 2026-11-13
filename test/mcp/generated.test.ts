@@ -36,31 +36,18 @@ const HANDWRITTEN_TOOLS = [
   "update_sequence_step",
 ];
 
-/** Excluded operations, by the name a tool would have had. None of them may be callable. */
-const EXCLUDED_TOOL_NAMES = [
-  "create_user",
-  "delete_users",
-  "update_user",
-  "delete_user",
-  "create_user_role",
-  "update_user_role",
-  "create_list_role",
-  "update_list_role",
-  "delete_role",
-  "update_profile",
-  "logout",
-  "enable_totp",
-  "delete_subscribers",
-  "delete_subscribers_by_query",
-  "blocklist_subscribers_by_query",
-  "delete_campaigns",
-  "delete_lists",
-  "delete_bounces",
-  "delete_analytics",
-  "update_settings",
-  "post_bounce",
-  "get_health_check",
-];
+/**
+ * The names an excluded operation would have had as a tool, derived from the exclusion list: each
+ * operation id in snake_case, with and without its `_by_id` suffix. Every excluded id must be an
+ * operation of the API document, so a stale exclusion fails here.
+ */
+function excludedToolNames(operationIds: string[]): string[] {
+  return Object.keys(EXCLUDED_OPERATIONS).flatMap((id) => {
+    expect(operationIds).toContain(id);
+    const full = id.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+    return [full, full.replace(/_by_id$/, "")];
+  });
+}
 
 describe("B78 MCP covers every operation (D98)", () => {
   let production: Production;
@@ -139,12 +126,17 @@ describe("B78 MCP covers every operation (D98)", () => {
     return (await fetch(`${production.origin}${path}`, { headers: adminHeaders })).json();
   }
 
-  // Coverage: every documented operation is exactly one of covered, excluded or generated.
-  test("every operation in the API document is a hand-written tool, a generated tool, or excluded with a reason", async () => {
+  /** The operation ids of the API document, as the public document lists them. */
+  async function documentOperationIds(): Promise<string[]> {
     const document = await apiGet("/api/openapi.json");
-    const operationIds: string[] = Object.values<any>(document.paths).flatMap((item) =>
+    return Object.values<any>(document.paths).flatMap((item) =>
       Object.values<any>(item).map((operation) => operation.operationId),
     );
+  }
+
+  // Coverage: every documented operation is exactly one of covered, excluded or generated.
+  test("every operation in the API document is a hand-written tool, a generated tool, or excluded with a reason", async () => {
+    const operationIds = await documentOperationIds();
     expect(operationIds.length).toBeGreaterThan(100);
 
     for (const id of operationIds) {
@@ -166,7 +158,7 @@ describe("B78 MCP covers every operation (D98)", () => {
 
   test("an excluded operation is not a tool, and calling it is an unknown-tool error even for an admin", async () => {
     const names = (await listTools()).map((tool) => tool.name);
-    for (const name of EXCLUDED_TOOL_NAMES) {
+    for (const name of excludedToolNames(await documentOperationIds())) {
       expect(names).not.toContain(name);
       const reply = await rpc("tools/call", { name, arguments: {} });
       expect(reply.error?.code).toBe(-32602);
@@ -207,6 +199,9 @@ describe("B78 MCP covers every operation (D98)", () => {
     expect(hint("transact_with_subscriber")).toMatchObject({ openWorldHint: true });
     expect(hint("test_smtp_settings")).toMatchObject({ openWorldHint: true });
     expect(hint("create_enrollment")).toMatchObject({ openWorldHint: true });
+    // An external-ID update can send the opt-in mail, as the by-ID update does.
+    expect(hint("update_subscriber_by_external_query")).toMatchObject({ openWorldHint: true });
+    expect(hint("update_subscriber_by_external_id")).toMatchObject({ openWorldHint: true });
     // Ordinary writes.
     expect(hint("create_list")).toEqual({
       readOnlyHint: false,
@@ -250,6 +245,80 @@ describe("B78 MCP covers every operation (D98)", () => {
     expect(media.some((item) => item.filename.startsWith("too-big"))).toBe(false);
     expect(media.some((item) => item.filename.startsWith("bad"))).toBe(false);
   });
+
+  test("a path argument that is not a value of its parameter is refused, and no other route is reached", async () => {
+    // `..` as an ID used to collapse in the URL: delete_subscriber_bounces reached the bulk DELETE /api/bounces.
+    const positiveID = "id must be a positive integer.";
+    for (const [tool, args] of [
+      ["delete_subscriber_bounces", { id: ".." }],
+      ["get_subscriber_sends", { id: ".." }],
+      ["get_subscriber_sends", { id: "%2e%2e" }],
+      ["delete_subscriber_bounces", { id: "%2E%2E" }],
+      ["get_subscriber_sends", { id: "." }],
+      ["get_subscriber_sends", { id: "" }],
+    ] as const) {
+      const reply = await callTool(tool, args);
+      expect(reply.isError).toBe(true);
+      expect(reply.content[0]!.text).toBe(
+        args.id === "" ? "Missing required argument: id" : positiveID,
+      );
+      expect(reply.structuredContent).toBeUndefined();
+    }
+
+    // A string parameter, external_id, may not be a dot segment either, encoded or not.
+    for (const external of ["..", ".", "%2e%2e", "%2E", ".%2e"]) {
+      const reply = await callTool("get_subscriber_by_external_id", { external_id: external });
+      expect(reply.isError).toBe(true);
+      expect(reply.content[0]!.text).toBe('external_id must not be "." or "..".');
+      expect(reply.structuredContent).toBeUndefined();
+    }
+
+    // The enumerated `type` of an analytics export is one of its values.
+    const activity = await callTool("delete_subscriber_activity", { id: 1, type: ".." });
+    expect(activity.isError).toBe(true);
+    expect(activity.content[0]!.text).toBe("type must be one of: campaign_views, link_clicks.");
+
+    // An export's `type` has no enumeration in the document, so a dot segment is what is refused.
+    const analytics = await callTool("export_analytics", { type: ".." });
+    expect(analytics.isError).toBe(true);
+    expect(analytics.content[0]!.text).toBe('type must not be "." or "..".');
+
+    // A real ID still works, so the refusals above are about the value, not the route.
+    const subscriber = (
+      await callTool("create_subscriber", {
+        body: { email: "b78-path@example.com", name: "B78 Path" },
+      })
+    ).structuredContent.data;
+    const sends = await callTool("get_subscriber_sends", { id: subscriber.id });
+    expect(sends.isError).toBeFalsy();
+    expect(sends.structuredContent.data.results).toEqual([]);
+  });
+
+  test("a non-JSON answer over the MCP limit is refused with the REST endpoint, not returned", async () => {
+    const list = (
+      await callTool("create_list", { body: { name: "B78 big export", type: "private" } })
+    ).structuredContent.data;
+    // Twenty subscribers with 60 kB of attributes each: their CSV export is more than 1 MiB.
+    const blob = "x".repeat(60_000);
+    for (let i = 0; i < 20; i++) {
+      const created = await callTool("create_subscriber", {
+        body: {
+          email: `b78-big-${i}@example.com`,
+          name: `B78 Big ${i}`,
+          lists: [list.id],
+          attribs: { blob },
+        },
+      });
+      expect(created.isError).toBeFalsy();
+    }
+
+    const exported = await callTool("export_subscribers", { list_id: [list.id] });
+    expect(exported.isError).toBe(true);
+    expect(exported.content[0]!.text).toBe(
+      "The answer is larger than the 1048576-byte MCP limit, so it was not returned. Fetch it from the REST API instead: GET /api/subscribers/export",
+    );
+    expect(exported.structuredContent).toBeUndefined();
+  }, 120_000);
 
   // Round trip with an admin credential: the things an agent does day to day, through generated tools.
   test("round trip: list, subscriber, sequence, enrolment, setting, webhook, media and import all work through MCP", async () => {

@@ -19,6 +19,7 @@ const OPEN_WORLD_IDS = new Set([
   "updateSubscriberById",
   "patchSubscriberById",
   "updateSubscriberByExternalId",
+  "updateSubscriberByExternalQuery",
   "subscriberSendOptin",
   "updateCampaignStatusById",
   "testCampaignById",
@@ -88,6 +89,54 @@ const pathNames = (route: string): string[] => [...route.matchAll(/\{(\w+)\}/g)]
 /** The same defaults the document gives a path parameter (document.ts). */
 const pathSchema = (op: Operation, name: string): Schema =>
   op.path?.[name] ?? (name === "id" ? { type: "integer", minimum: 1 } : { type: "string" });
+
+/** A `.` or `..` segment, as written or as one percent-decoding away: the URL parser removes it (D98). */
+function dotSegment(value: string): boolean {
+  let decoded = value;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    // Not decodable: judged as written.
+  }
+  return [value, decoded].some((item) => item === "." || item === "..");
+}
+
+/**
+ * Why a path argument is not a value of its parameter's schema, or undefined when it is. A numeric
+ * ID is a positive integer; a string is never `.` or `..`, and an enumerated one is one of its values.
+ */
+function pathArgumentError(name: string, schema: Schema, value: unknown): string | undefined {
+  const raw = text(value);
+  if (schema.type === "integer") {
+    const minimum = typeof schema.minimum === "number" ? schema.minimum : 1;
+    const number =
+      typeof value === "number" ? value : /^[0-9]+$/.test(raw) ? Number(raw) : Number.NaN;
+    if (!Number.isSafeInteger(number) || number < minimum)
+      return `${name} must be a positive integer.`;
+  } else if (Array.isArray(schema.enum) && !schema.enum.map(String).includes(raw)) {
+    return `${name} must be one of: ${schema.enum.join(", ")}.`;
+  }
+  if (dotSegment(raw)) return `${name} must not be "." or "..".`;
+  return undefined;
+}
+
+/**
+ * Whether a built request path is the operation's route, with each parameter as one non-empty
+ * segment. The URL parser rewrites dot segments, so a path it changes is not the route it was built for.
+ */
+function pathMatchesRoute(route: string, url: string): boolean {
+  const template = route.split(" ")[1]!;
+  const pathname = url.split("?", 1)[0]!;
+  if (new URL(pathname, "http://127.0.0.1").pathname !== pathname) return false;
+  const want = template.split("/");
+  const got = pathname.split("/");
+  return (
+    want.length === got.length &&
+    want.every((segment, i) =>
+      segment.startsWith("{") ? got[i] !== "" && !dotSegment(got[i]!) : segment === got[i],
+    )
+  );
+}
 
 const isMultipart = (op: Operation): boolean => op.bodyType?.startsWith("multipart/") ?? false;
 
@@ -220,6 +269,8 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
   for (const param of pathNames(route)) {
     const value = args[param];
     if (value === undefined || value === null || value === "") return missing(param);
+    const problem = pathArgumentError(param, pathSchema(op, param), value);
+    if (problem) return { error: problem };
     path = path.replace(`{${param}}`, encodeURIComponent(text(value)));
   }
 
@@ -235,6 +286,8 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
   }
   const query = search.toString();
   const url = query ? `${path}?${query}` : path;
+  if (!pathMatchesRoute(op.route, url))
+    return { error: "The request path does not match the operation's route, so nothing was sent." };
 
   if (!op.body) return { method, path: url };
 
