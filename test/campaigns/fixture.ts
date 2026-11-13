@@ -148,6 +148,8 @@ export async function campaignsFixture(
     listName: (id) => lists.name(id),
     mediaFilename: (id) => media.filename(id),
   });
+  // src/main.ts creates the runner after the campaign routes, so the routes read it lazily.
+  const runnerWake: { current?: () => void } = {};
   const router = createRouter();
   registerSettingsRoutes(router, stored, auth, undefined, uploadPathCheck(directory, media));
   registerMediaRoutes(router, { store: media, files, auth, settings: mediaSettings });
@@ -168,6 +170,7 @@ export async function campaignsFixture(
     settings: () => settings,
     attachments,
     embedImages,
+    wakeRunner: () => runnerWake.current?.(),
   });
   registerCampaignPublicRoutes(router, {
     db,
@@ -236,6 +239,8 @@ export async function campaignsFixture(
     settings,
     directory,
     unsubscribed,
+    /** The wake the routes call; a campaign runner sets it when it starts. */
+    runnerWake,
     sessionHeaders,
     request,
     json,

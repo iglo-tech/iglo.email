@@ -495,6 +495,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       attachments,
       embedImages,
       notify: notifier,
+      // The runner is created after these routes (below), so the route reads it when called.
+      wakeRunner: () => runner?.wake(),
     });
     registerCampaignPublicRoutes(router, {
       db,

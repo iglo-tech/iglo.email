@@ -80,6 +80,8 @@ export interface CampaignDeps {
   attachments(ids: bigint[], inline: InlineImage[]): Promise<NonNullable<Message["attachments"]>>;
   embedImages: EmbedImages;
   notify?: AdminNotifier;
+  /** Wakes the campaign runner (B75): a start, resume or due schedule need not wait for its scan. */
+  wakeRunner?: () => void;
 }
 
 const idValue = (id: bigint | null) =>
@@ -565,6 +567,19 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
             sent: Number(updated.sent),
             to_send: Number(updated.to_send),
           });
+        } catch (error) {
+          context.app.logger.error(error);
+        }
+      }
+      // The response reports the requested status, but a running campaign with a send_at is
+      // stored as scheduled, so it is due only once that send_at has passed (B75).
+      if (
+        (input.status === "running" || input.status === "scheduled") &&
+        (updated.send_at === null ||
+          Date.parse(updated.send_at) <= context.app.clock.now().getTime())
+      ) {
+        try {
+          deps.wakeRunner?.();
         } catch (error) {
           context.app.logger.error(error);
         }
