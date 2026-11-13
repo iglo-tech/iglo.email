@@ -15,7 +15,7 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- Empty. v1.0.0 published 2026-11-13; no owner items.
+- B78 (owner 2026-11-13): MCP exposes every edit and setting except dangerous ones (D98). [Brief](briefs/B78.md).
 
 ## Owner decisions
 
