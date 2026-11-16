@@ -13,7 +13,7 @@ import {
   SINGLE_BODY_BYTES,
   type EventInput,
 } from "@/events/input";
-import type { EventStore, EventResult } from "@/events/store";
+import type { EventStore, EventResult, ExistingSubscriber } from "@/events/store";
 import type { Roles } from "@/roles/roles";
 import type { Authentication } from "@/users/auth";
 
@@ -33,16 +33,25 @@ export function registerEventRoutes(
     new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", field));
   /**
    * The grants of an event (D99) need `subscribers:manage` and manage scope on every granted
-   * list, the rule of PUT /api/subscribers/lists. Checked where the event's own permission is
-   * revalidated, inside the write transaction.
+   * list, the rule of PUT /api/subscribers/lists. An existing subscriber also needs a managed
+   * list it is already on, as PUT's `allowed` check does for its ids; a subscriber the event
+   * creates needs no more than the target lists. Checked where the event's own permission is
+   * revalidated, inside the write transaction, against the memberships as they are now.
    */
-  const grantAccess = (c: RequestContext, lists: bigint[]) => {
+  const grantAccess = (c: RequestContext, lists: bigint[], existing: ExistingSubscriber | null) => {
     if (!lists.length) return;
     auth.revalidate(c, "subscribers:manage");
     if (!c.identity) throw new Error("Identity required");
     const { role, user } = c.identity;
     if (!roles.canList(role, user.list_role_id, "list:manage", lists))
       throw new HttpError(403, c.app.i18n.Ts("globals.messages.permissionDenied", "name", "lists"));
+    if (existing === null) return;
+    const scope = roles.listScope(role, user.list_role_id, "list:manage");
+    if (!scope.all && !existing.lists.some((list) => scope.ids.includes(list)))
+      throw new HttpError(
+        403,
+        c.app.i18n.Ts("globals.messages.permissionDenied", "name", "subscriber"),
+      );
   };
   const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
     try {
@@ -71,9 +80,9 @@ export function registerEventRoutes(
         const input = item(c, parseJson(c.request, body));
         if (input instanceof HttpError) throw input;
         return respond(
-          await store.submit(input, receivedAt, () => {
+          await store.submit(input, receivedAt, (existing) => {
             auth.revalidate(c, PERMISSION);
-            grantAccess(c, input.grantLists);
+            grantAccess(c, input.grantLists, existing);
           }),
         );
       } finally {
@@ -108,7 +117,7 @@ export function registerEventRoutes(
         items,
         receivedAt,
         () => auth.revalidate(c, PERMISSION),
-        (input) => grantAccess(c, input.grantLists),
+        (input, existing) => grantAccess(c, input.grantLists, existing),
       );
       return ok({ results });
     },

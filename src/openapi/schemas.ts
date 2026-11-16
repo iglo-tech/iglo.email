@@ -619,7 +619,7 @@ export const schemas: Record<string, Schema> = {
           maxItems: 20,
           uniqueItems: true,
           description:
-            "Single opt-in lists the event grants consent on (D99). Each gets a confirmed membership unless it has one; a blocklisted subscriber gets none. Needs subscribers:manage and manage scope on every list. Absent or null grants nothing.",
+            "Single opt-in lists the event grants consent on (D99). Each gets a confirmed membership unless it has one; a blocklisted subscriber gets none. Needs subscribers:manage and manage scope on every list; for an existing subscriber, also on a list it already has a membership on. Absent or null grants nothing.",
         },
       }),
       name: string,

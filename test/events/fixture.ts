@@ -32,6 +32,8 @@ export async function eventsFixture(
   options: {
     exitThenTrigger?: ExitThenTrigger;
     domains?: { allow?: string[]; block?: string[] };
+    /** The app's language code, as the settings choose it. */
+    language?: string;
   } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "iglo-events-"));
@@ -50,7 +52,7 @@ export async function eventsFixture(
       },
       db,
       clock,
-      i18n: createTranslation(),
+      i18n: createTranslation(options.language),
       logger: { error: (error) => errors.push(error) },
     });
     const lists = createListReferences(db),
@@ -72,6 +74,7 @@ export async function eventsFixture(
       emailAllowed: (email) =>
         allowedDomain(email, options.domains?.allow ?? [], options.domains?.block ?? []),
       ...(options.exitThenTrigger ? { exitThenTrigger: options.exitThenTrigger } : {}),
+      i18n: app.i18n,
     });
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);

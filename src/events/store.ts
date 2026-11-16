@@ -5,6 +5,7 @@ import type { Database } from "bun:sqlite";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import type { EventInput } from "@/events/input";
+import type { Translation } from "@/i18n/i18n";
 import { HttpError } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
 import sql from "@/events/store.sql" with { type: "text" };
@@ -31,6 +32,20 @@ export interface Enrollments {
   started: unknown[];
   ended: unknown[];
 }
+/**
+ * The subscriber an event names, as the grant check (D99) sees it before the event writes: the
+ * lists it has a membership on, of any status. `null` where there is nothing to check: the event
+ * creates the subscriber, or it grants nothing.
+ */
+export interface ExistingSubscriber {
+  lists: bigint[];
+}
+/**
+ * The authorization of one event: called once the subscriber it names is known, inside the
+ * event's write transaction, before anything is written. A refusal (HttpError) fails the event
+ * alone and writes nothing.
+ */
+export type Authorize = (existing: ExistingSubscriber | null) => void;
 /** What a grant did to one list (D99): `added` is a new confirmed membership. */
 export type GrantResult = "added" | "member" | "unsubscribed" | "blocklisted";
 export interface Grant {
@@ -103,6 +118,7 @@ export function createEventStore(
   options: {
     emailAllowed: (email: string) => boolean;
     exitThenTrigger?: ExitThenTrigger;
+    i18n: Translation;
   },
 ) {
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
@@ -135,9 +151,13 @@ export function createEventStore(
       result: previous.status === "unsubscribed" ? "unsubscribed" : "member",
     };
   }
+  /** The grant check's view of the event's subscriber (see `ExistingSubscriber`). */
+  const existing = (found: Subscriber | null, input: EventInput): ExistingSubscriber | null =>
+    found && input.grantLists.length
+      ? { lists: subscribers.memberships(found.id).map((m) => m.list_id) }
+      : null;
   /** Steps 1-3 of the design's processing order. The caller holds the write transaction. */
-  function record(input: EventInput, receivedAt: string): EventResult {
-    const found = subscribers.resolveForEvent(input.subscriber);
+  function record(input: EventInput, receivedAt: string, found: Subscriber | null): EventResult {
     if (found && input.idempotencyKey !== undefined) {
       const previous = q.get("event-by-key").get(found.id, input.idempotencyKey) as
         | (Pick<EventRow, "id" | "subscriber_id"> & {
@@ -151,7 +171,10 @@ export function createEventStore(
     // Refused before any write: the grant is checked against the lists as they are now.
     for (const list of input.grantLists)
       if (!subscribers.grantable(list))
-        throw new HttpError(400, "Invalid fields: subscriber.grant_lists");
+        throw new HttpError(
+          400,
+          options.i18n.Ts("globals.messages.invalidFields", "name", "subscriber.grant_lists"),
+        );
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
     const grants = input.grantLists.map((list) => grant(subscriber, list));
     const occurredAt = input.occurredAt ?? receivedAt;
@@ -183,11 +206,12 @@ export function createEventStore(
     return result(inserted.id, subscriber.id, { enrollments, grants });
   }
   /** One item in its own savepoint: a rejection rolls back only this item's writes. */
-  function item(input: EventInput, at: string, authorize?: () => void): EventResult {
+  function item(input: EventInput, at: string, authorize?: Authorize): EventResult {
     db.run("SAVEPOINT event_item");
     try {
-      authorize?.();
-      const recorded = record(input, at);
+      const found = subscribers.resolveForEvent(input.subscriber);
+      authorize?.(existing(found, input));
+      const recorded = record(input, at, found);
       db.run("RELEASE event_item");
       return recorded;
     } catch (error) {
@@ -206,7 +230,7 @@ export function createEventStore(
   interface Pending {
     input: EventInput;
     at: string;
-    authorize: () => void;
+    authorize: Authorize;
     resolve: (result: EventResult) => void;
     reject: (error: unknown) => void;
   }
@@ -255,7 +279,7 @@ export function createEventStore(
      * commit), each in its own savepoint with its own authorization, so one fsync covers
      * them without coupling their results.
      */
-    submit(input: EventInput, receivedAt: Date, authorize: () => void): Promise<EventResult> {
+    submit(input: EventInput, receivedAt: Date, authorize: Authorize): Promise<EventResult> {
       return new Promise((resolve, reject) => {
         queue.push({
           input,
@@ -271,15 +295,15 @@ export function createEventStore(
      * A batch in one write transaction with per-item results. Each item runs in its own
      * savepoint, so a rejected item leaves no partial write and does not drop the others.
      * Pre-rejected items (invalid input) are passed through unchanged. `authorize` runs once
-     * for the batch and `authorizeItem` for each item's grants; a refusal of either is a
-     * per-item result, except the batch's own permission, which refuses the whole batch.
+     * for the batch and `authorizeItem` for each item's grants (see `Authorize`); a refusal of
+     * either is a per-item result, except the batch's own permission, which refuses the whole batch.
      * An unexpected error rolls back the whole batch.
      */
     recordBatch(
       items: ReadonlyArray<EventInput | HttpError>,
       receivedAt: Date,
       authorize: () => void,
-      authorizeItem: (input: EventInput) => void,
+      authorizeItem: (input: EventInput, existing: ExistingSubscriber | null) => void,
     ): EventResult[] {
       const at = receivedAt.toISOString();
       return writeTransaction(db, () => {
@@ -287,7 +311,7 @@ export function createEventStore(
         return items.map((value) =>
           value instanceof HttpError
             ? { status: value.status, message: value.message }
-            : item(value, at, () => authorizeItem(value)),
+            : item(value, at, (existing) => authorizeItem(value, existing)),
         );
       });
     },

@@ -16,6 +16,7 @@ import { startLoop } from "@/loops/loop";
 import { startPurge } from "@/loops/purge";
 import { createSends } from "@/messaging/sends";
 import { createSubscriberStore } from "@/subscribers/store";
+import { createTranslation } from "@/i18n/i18n";
 
 const repository = resolve(import.meta.dir, "../..");
 const events = Number(process.argv[2] ?? 400_000);
@@ -51,7 +52,10 @@ async function run(variant: "idle" | "before" | "after") {
   runMigrations(db, directory, real, productionMigrations);
   const lists = createListReferences(db);
   const subscribers = createSubscriberStore(db, real, lists);
-  const store = createEventStore(db, subscribers, { emailAllowed: () => true });
+  const store = createEventStore(db, subscribers, {
+    emailAllowed: () => true,
+    i18n: createTranslation(),
+  });
   const sends = createSends({
     db,
     clock: real,

@@ -599,6 +599,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         );
       },
       exitThenTrigger: enrollments.exitThenTrigger,
+      i18n: app.i18n,
     });
     registerEventRoutes(router, events, auth, roles);
     mail = createSubscriberMail({

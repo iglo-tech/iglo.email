@@ -47,7 +47,7 @@ A sequence is a list of steps that starts when a subscriber does something (an e
   | Membership `unsubscribed` | unchanged | `unsubscribed` |
 
   - A list that does not exist, a double opt-in list, or a malformed field (`[]`, duplicates, non-integers, more than 20) is `400 Invalid fields: subscriber.grant_lists` and writes nothing. In a batch only that item fails.
-  - The grant needs `subscribers:manage` and manage scope on every listed list, the rule of `PUT /api/subscribers/lists`. Otherwise `403` and nothing is written (a batch item fails alone).
+  - The grant needs `subscribers:manage` and manage scope on every listed list, the rule of `PUT /api/subscribers/lists`; for an existing subscriber it also needs manage scope on at least one list the subscriber already has a membership on, of any status (PUT's check), while a subscriber the event creates needs only the listed lists. Otherwise `403` and nothing is written (a batch item fails alone).
   - `null` or absent grants nothing and `grants` is `[]`.
 - Response: the event ID, the subscriber ID, the enrollments it started (`{id, sequence_id}`) or ended (`{id, sequence_id, exit_reason}`), and `grants`. A repeated key replays the first request's enrollments and grants and changes nothing.
 

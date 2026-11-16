@@ -1,14 +1,15 @@
 // Consent-safe list grants on subscriber events (docs/design/05-sequences.md#events-api, D99),
 // observed through POST /api/subscriber-events(/batch), the subscriber and list APIs.
 import { afterEach, expect, test } from "bun:test";
+import { createTranslation } from "@/i18n/i18n";
 import { eventsFixture, type EventsFixture } from "@/test/events/fixture";
 
 const fixtures: EventsFixture[] = [];
 afterEach(() => {
   for (const f of fixtures.splice(0)) f.close();
 });
-async function open() {
-  const f = await eventsFixture();
+async function open(language = "en") {
+  const f = await eventsFixture({ language });
   fixtures.push(f);
   return f;
 }
@@ -305,4 +306,134 @@ test("a replay keeps the grants of its first request across a restart", async ()
     order({ email: "again@example.test", grant_lists: [news] }, { idempotency_key: "k-2" }),
   );
   expect(replay.body.data).toEqual(first.body.data);
+});
+
+test("a limited token needs a managed list the existing subscriber is already on, as PUT does", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const secret = await f.list("secret");
+  const created = await f.json("/api/subscribers", "POST", {
+    email: "vip@example.test",
+    name: "Vip",
+    lists: [secret],
+    preconfirm_subscriptions: true,
+  });
+  const id = created.body.data.id as number;
+  // Manages news only; vip is on secret only.
+  const news_only = await f.apiUser(
+    "news-events",
+    ["subscriber_events:create", "subscribers:manage"],
+    [{ id: news, permissions: ["list:manage"] }],
+  );
+  const put = await f.json(
+    "/api/subscribers/lists",
+    "PUT",
+    { ids: [id], action: "add", status: "confirmed", target_list_ids: [news] },
+    news_only,
+  );
+  expect(put.status).toBe(403);
+  const before = [f.count("events"), f.count("subscribers")];
+  const r = await f.post(order({ email: "vip@example.test", grant_lists: [news] }), news_only);
+  expect(r.status).toBe(403);
+  expect(await membership(f, id, news)).toBeNull();
+  expect(await membership(f, id, secret)).toBe("confirmed");
+  expect([f.count("events"), f.count("subscribers")]).toEqual(before);
+});
+
+test("a limited token may grant on an existing subscriber already on a list it manages", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const sport = await f.list("sport");
+  const created = await f.json("/api/subscribers", "POST", {
+    email: "fan@example.test",
+    name: "Fan",
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = created.body.data.id as number;
+  const sport_events = await f.apiUser(
+    "sport-events",
+    ["subscriber_events:create", "subscribers:manage"],
+    [
+      { id: news, permissions: ["list:manage"] },
+      { id: sport, permissions: ["list:manage"] },
+    ],
+  );
+  const r = await f.post(order({ email: "fan@example.test", grant_lists: [sport] }), sport_events);
+  expect(r.status).toBe(200);
+  expect(r.body.data.grants).toEqual([{ list_id: sport, result: "added" }]);
+  expect(await membership(f, id, sport)).toBe("confirmed");
+});
+
+test("a limited token may grant on a subscriber the event creates, and manage-all tokens are unaffected", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const other = await f.list("other");
+  const news_events = await f.apiUser(
+    "news-created",
+    ["subscriber_events:create", "subscribers:manage"],
+    [{ id: news, permissions: ["list:manage"] }],
+  );
+  const created = await f.post(
+    order({ email: "new@example.test", grant_lists: [news] }),
+    news_events,
+  );
+  expect(created.status).toBe(200);
+  expect(created.body.data.grants).toEqual([{ list_id: news, result: "added" }]);
+  expect(await membership(f, created.body.data.subscriber_id, news)).toBe("confirmed");
+  // An existing subscriber with no membership at all: a limited token cannot grant it (as PUT),
+  // while a token that manages every list still can.
+  await f.json("/api/subscribers", "POST", { email: "bare@example.test", name: "Bare" });
+  const refused = await f.post(
+    order({ email: "bare@example.test", grant_lists: [news] }),
+    news_events,
+  );
+  expect(refused.status).toBe(403);
+  const all = await f.post(order({ email: "bare@example.test", grant_lists: [other] }));
+  expect(all.status).toBe(200);
+  expect(all.body.data.grants).toEqual([{ list_id: other, result: "added" }]);
+});
+
+test("in a batch, an existing subscriber outside the token's lists refuses only its own item", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const secret = await f.list("secret");
+  await f.json("/api/subscribers", "POST", {
+    email: "outside@example.test",
+    name: "Outside",
+    lists: [secret],
+    preconfirm_subscriptions: true,
+  });
+  const news_only = await f.apiUser(
+    "news-batch",
+    ["subscriber_events:create", "subscribers:manage"],
+    [{ id: news, permissions: ["list:manage"] }],
+  );
+  const r = await f.batch(
+    {
+      events: [
+        order({ email: "outside@example.test", grant_lists: [news] }),
+        order({ email: "inside@example.test", grant_lists: [news] }),
+      ],
+    },
+    news_only,
+  );
+  expect(r.status).toBe(200);
+  const [outside, inside] = r.body.data.results;
+  expect(outside).toEqual({ status: 403, message: expect.any(String) });
+  expect(inside).toMatchObject({ status: 200, grants: [{ list_id: news, result: "added" }] });
+  expect(f.count("events")).toBe(1);
+  expect(f.count("subscribers")).toBe(2);
+});
+
+test("the refused grant list names its field in the app's language, as other event field errors do", async () => {
+  const f = await open("fr");
+  const news = await f.list("news");
+  const r = await f.post(order({ email: "fr@example.test", grant_lists: [news, 999_999] }));
+  expect(r.status).toBe(400);
+  expect(r.body.message).toBe(
+    createTranslation("fr").Ts("globals.messages.invalidFields", "name", "subscriber.grant_lists"),
+  );
+  expect(r.body.message).not.toBe(invalid);
+  expect(f.count("events")).toBe(0);
 });

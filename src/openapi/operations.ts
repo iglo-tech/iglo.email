@@ -811,7 +811,7 @@ const sending: Operation[] = [
     tag: "Events",
     summary: "Record an event, upsert its subscriber, grant list consent, start and end sequences.",
     description:
-      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe.",
+      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list, and for an existing subscriber on a list it already has a membership on (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe.",
     native: true,
     permissions: ["subscriber_events:create"],
     body: ref("EventInput"),
