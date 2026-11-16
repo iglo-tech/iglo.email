@@ -1033,3 +1033,24 @@ Brief B84, from the first production adopter's integration report: an app grants
 - **Storage:** no migration. The replay record in `events.enrollments` is `{started, ended, grants}`; rows written before this decision have no `grants` and replay as none ([03-data-model.md](03-data-model.md#events)).
 - **Cost accepted:** the event transaction writes one membership per new grant, and the events token needs `subscribers:manage` as well as manage scope for grants. Measured in [B84-event-grant](../perf/B84-event-grant.md).
 - **Revisit:** if an app needs to grant a double opt-in list, or to grant on a list it can only read, that is a new decision, not a flag on this one.
+
+## D100. Sequence steps read event aggregates (lead, 2026-11-16)
+
+Brief B85, from the first production adopter's integration report: a "your month" email sent 30 days after a subscription starts needs a sum, a distinct count and an event count over the app's own events, and a line shown only when a subscriber ever had an event took two steps with opposite conditions and two near-identical templates. The sequence engine had said it does not aggregate, so the app ran a scheduler of its own.
+
+- **Decision:** a sequence step accepts `aggregates`, 1 to 10 named aggregates. Each is an event predicate of the condition language (`event`, `where`, `since`) with `fn`: `count` (the default), `sum` or `distinct` of a `data.*` `field`. The scheduler computes them when the step sends, after the condition and the frequency cap admit it and before rendering, and the template reads them as `aggregates`. The rules and the table are in [05-sequences.md](05-sequences.md#aggregates).
+- **Why:** one step then states the totals an app would otherwise compute, and a conditional line becomes one template with `{% if aggregates.x > 0 %}`. The validator and the `since` bounds are the condition language's own, so an aggregate matches exactly the events a condition with the same predicate would count. One dialect, not two (D89).
+- **Considered:**
+  - `sql` in an aggregate: it would run an arbitrary statement on the scheduler's path; refused.
+  - Aggregates on campaigns or outside sequences: no decision reads them.
+  - Truncating a large window at a count limit: a partial total presented as complete. Refused; a bound would end the decision instead.
+  - Aggregates over another subscriber's events: a different decision, since it crosses the subscriber boundary.
+- **Decided details:**
+  - `sum` is exact within ±(2^53 − 1). A sum beyond that range is not returned rounded: the step is held as a condition error, logged without personal data and retried with backoff, and never sends.
+  - `distinct` compares values as `eq` does (`5` and `5.0` one value, `"5"` text, `true` not `1`) and does not count missing values, JSON `null`, objects or arrays, since no `eq` predicate matches the last two. With no value it is `0`.
+  - The reads use the read path of the scheduler's other event lookups, one query per aggregate on the subscriber's events, bound to the subscriber, outside any transaction.
+  - `aggregates` is one of the fields whose change discards a waiting decision.
+- **Bound proposed, not implemented:** on the measuring host, one decision with ten aggregates over 100,000 matching events takes 0.7 to 0.8 s, above the brief's 250 ms, and the reads run on the scheduler's thread. A limit on matching events per aggregate, ending in a condition-style error with the step held and never truncated, would bound the cost. It would also hold such a subscriber's step until events leave retention. The lead chooses between that bound and a shorter event retention for the events aggregates read. Measurements: [B85-aggregates](../perf/B85-aggregates.md).
+- **Storage:** migration 20 adds `sequence_steps.aggregates`, a nullable JSON object, with `ALTER TABLE`. Steps without aggregates store `NULL`.
+- **Cost accepted:** a decision on a step with aggregates reads each aggregate's matching events. A step without them pays one null check and one more template field. Throughput without aggregates shows no regression ([B85-aggregates](../perf/B85-aggregates.md)).
+- **Revisit:** when the lead picks a bound, or if aggregates must read beyond one subscriber.

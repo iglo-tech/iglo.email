@@ -34,6 +34,8 @@ const keys = [
   "globals.messages.deleted",
   "globals.messages.updated",
   "sequences.archiveConfirm",
+  "sequences.aggregates",
+  "sequences.aggregatesHelp",
   "sequences.condition",
   "sequences.editLive",
   "sequences.editLiveConfirm",
@@ -181,6 +183,17 @@ function StepCard({
         <small data-hint="">
           {t.T("sequences.conditionHelp")} {canSql ? null : t.T("sequences.conditionSql")}
         </small>
+      </div>
+      <div data-field="">
+        <label>{t.T("sequences.aggregates")}</label>
+        <code-editor
+          lang="json"
+          data-testid="step-aggregates"
+          x-init="setValue($el, s.aggregates)"
+          x-on:input="s.aggregates = $event.target.value"
+          {...(canManage ? {} : { disabled: true })}
+        ></code-editor>
+        <small data-hint="">{t.T("sequences.aggregatesHelp")}</small>
       </div>
       <div class="row">
         <div class="col-6">

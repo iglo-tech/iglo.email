@@ -54,6 +54,7 @@ const DECIDED_ON = [
   "template_id",
   "subject",
   "condition",
+  "aggregates",
   "on_false",
   "cap_policy",
   "max_late",
@@ -86,7 +87,7 @@ export interface SchedulerOptions {
   sends: Sends;
   subscribers: Pick<SubscriberStore, "get">;
   templates: Pick<TemplateStore, "get">;
-  events: Pick<EventStore, "get">;
+  events: Pick<EventStore, "get" | "aggregate">;
   renderer: TemplateRenderer;
   tracking: Tracking;
   conditions: Pick<ConditionEvaluator, "evaluate">;
@@ -168,6 +169,13 @@ export function createScheduler(options: SchedulerOptions) {
           enrollments.defer(claim, sends.capFreeAt(row.subscriber_id, floor));
         });
 
+  /** Condition and aggregate failures wait the time already spent late, within these bounds. */
+  const lateBackoff = (row: SchedulerContext) =>
+    Math.min(
+      BACKOFF_MAX_MS,
+      Math.max(BACKOFF_MIN_MS, clock.now().getTime() - Date.parse(row.due_at)),
+    );
+
   async function decide(item: { id: bigint; lease: string }) {
     const row = enrollments.schedulerContext(item.id);
     if (!row || row.status !== "active" || row.claimed_until !== item.lease) return;
@@ -195,23 +203,22 @@ export function createScheduler(options: SchedulerOptions) {
     }
 
     const trigger = row.trigger_event_id === null ? null : options.events.get(row.trigger_event_id);
+    const context = {
+      subscriberId: row.subscriber_id,
+      // A manual enrollment (or one whose trigger event expired) counts from its start.
+      triggerAt: trigger?.occurred_at ?? row.created_at,
+      enrolledAt: row.created_at,
+      lastStepAt: row.updated_at > row.created_at ? row.updated_at : null,
+      now,
+    };
     if (row.condition !== null) {
-      const result = await options.conditions.evaluate(JSON.parse(row.condition), {
-        subscriberId: row.subscriber_id,
-        // A manual enrollment (or one whose trigger event expired) counts from its start.
-        triggerAt: trigger?.occurred_at ?? row.created_at,
-        enrolledAt: row.created_at,
-        lastStepAt: row.updated_at > row.created_at ? row.updated_at : null,
-        now,
-      });
+      const result = await options.conditions.evaluate(JSON.parse(row.condition), context);
       if (!result.ok) {
-        const lateMs = clock.now().getTime() - Date.parse(row.due_at);
-        const backoff = Math.min(BACKOFF_MAX_MS, Math.max(BACKOFF_MIN_MS, lateMs));
         attention(
           "Sequence condition failed: retrying later",
           `Sequence condition failed for enrollment ${row.id} at step ${row.step_id} (${result.error.kind}); retrying later`,
         );
-        return retry(claim, backoff);
+        return retry(claim, lateBackoff(row));
       }
       if (!result.value)
         return row.on_false === "skip" ? advance(claim) : end(claim, "exited", "condition");
@@ -233,6 +240,21 @@ export function createScheduler(options: SchedulerOptions) {
       const reason = sends.marketingReason(row.subscriber_id, row.list_id);
       if (reason === "frequency_cap") return capped(claim, subscriber.email);
       if (reason) return end(claim, "exited", "unsubscribed");
+    }
+
+    // Aggregates are read once the condition and the cap admit the step, before rendering (D100).
+    // A failure waits like a condition error and never sends.
+    let aggregates: Record<string, number> = {};
+    if (row.aggregates !== null) {
+      const result = options.events.aggregate(JSON.parse(row.aggregates), context);
+      if (!result.ok) {
+        attention(
+          "Sequence aggregates failed: retrying later",
+          `Sequence aggregates failed for enrollment ${row.id} at step ${row.step_id} (${result.error.kind}); retrying later`,
+        );
+        return retry(claim, lateBackoff(row));
+      }
+      aggregates = result.values;
     }
 
     // Render with the send UUID fixed first, so its unsubscribe and tracking URLs carry it.
@@ -259,6 +281,7 @@ export function createScheduler(options: SchedulerOptions) {
       },` +
       `"sequence":{"id":${id(row.sequence_id)},"name":${JSON.stringify(row.sequence_name)}},` +
       `"step":{"id":${id(row.step_id)},"uuid":${JSON.stringify(row.step_uuid)},"position":${Number(row.position)},"kind":${JSON.stringify(row.kind)}},` +
+      `"aggregates":${JSON.stringify(aggregates)},` +
       `"unsubscribe_url":${JSON.stringify(unsubscribe)},` +
       `"manage_url":${JSON.stringify(unsubscribe ? `${unsubscribe}?manage=true` : "")}}`;
     const subject = row.subject || template.subject;

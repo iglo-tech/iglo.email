@@ -59,7 +59,7 @@ UPDATE enrollments SET claimed_until = ?1
 SELECT e.id, e.sequence_id, e.subscriber_id, e.trigger_event_id, e.step_id, e.due_at, e.status,
     e.claimed_until, e.created_at, e.updated_at, e.test,
     s.name AS sequence_name, s.status AS sequence_status, s.list_id,
-    st.uuid AS step_uuid, st.position, st.kind, st.template_id, st.subject, st.condition,
+    st.uuid AS step_uuid, st.position, st.kind, st.template_id, st.subject, st.condition, st.aggregates,
     st.on_false, st.cap_policy, st.max_late, st.status AS step_status, st.updated_at AS step_updated_at
   FROM enrollments e
   JOIN sequences s ON s.id = e.sequence_id

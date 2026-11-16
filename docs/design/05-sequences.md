@@ -94,6 +94,7 @@ Steps 2 and 3 run in that order, so an event that both exits and triggers the sa
 | `steps[].condition` | Checked when the step is due. Missing means always true |
 | `steps[].on_false` | `skip` (move to the next step) or `exit` (end the enrollment). Default `exit` |
 | `steps[].cap_policy` | `defer` (default) or `skip`, when the frequency cap blocks a marketing step |
+| `steps[].aggregates` | Optional named event totals the template reads as `aggregates`, 1 to 10 per step ([Aggregates](#aggregates)). Null or absent for none |
 | `steps[].max_late` | If the step runs later than `due_at + max_late` (server down, sequence paused), skip it instead of sending something stale. Default: no limit for transactional, `P2D` for marketing |
 
 Sequences are managed in the admin UI and through `GET/POST/PUT/DELETE /api/sequences` and `PUT /api/sequences/:id/status`. Steps keep their IDs across edits (send the step `id`); omitted steps become `deleted`. A step's template must be a transactional template (steps have no body of their own yet). Archiving exits active enrollments (`sequence_archived`); a sequence with enrollments cannot be deleted. Blocklisted subscribers are never enrolled. `POST /api/enrollments` enrolls manually (`force: true` ignores reentry; a forced or `always` enroll replaces a running enrollment as `canceled`/`manual`); `DELETE /api/enrollments/:id` cancels (`canceled`, `manual`). Definitions are versioned only by `updated_at`; the admin UI shows a warning with the number of active enrollments before saving changes.
@@ -131,6 +132,40 @@ Rules (implemented in `src/conditions`):
 - **Durations.** ISO 8601 weeks, days, hours, minutes and seconds only (`P30D`, `PT12H`, `P1DT6H`); no years, months or fractions; at most 36,600 days, measured back from the injected clock's now.
 - **`sql`.** A condition containing `sql` runs whole, as one statement in one read snapshot, in the read-only child; each fragment must pass M1.7's checks on its own and binds no parameters. Conditions without `sql` run on the normal read path with no child.
 
+## Aggregates
+
+A step can total a subscriber's events when it sends, so a "your month" email needs no scheduler of its own. The template reads the totals as `aggregates` ([D100](09-decisions.md#d100-sequence-steps-read-event-aggregates-lead-2026-11-16)).
+
+```json
+"aggregates": {
+  "items":   { "event": "download_finished", "since": "P30D", "fn": "sum", "field": "data.items" },
+  "sources": { "event": "download_finished", "since": "P30D", "fn": "distinct", "field": "data.source_id" },
+  "actions": { "event": "assistant_action", "since": "P30D" },
+  "had_x":   { "event": "x", "where": { "data.kind": "y" } }
+}
+```
+
+`{{ aggregates.items }}` and `{% if aggregates.had_x > 0 %}…{% endif %}` are the uses.
+
+| Field | Meaning |
+|---|---|
+| name (the key) | 1 to 10 per step. Letters, digits and `_`, starting with a letter or `_`, up to 64 characters |
+| `event`, `where`, `since` | The condition language's event predicate, with its validation and its matching: `data.*` equality with the same types and safe-number rule; `since` is `trigger`, `enrollment`, `last_step` or an ISO 8601 duration back from the clock's now, strictly after the bound, with no upper bound; absent means no lower bound |
+| `fn` | `count` (default): the matching events. `sum`: the sum of `field` over matching events whose value is a JSON number. `distinct`: the number of distinct `field` values among matching events |
+| `field` | A `data.*` path with the conditions' path rules. Required for `sum` and `distinct`; refused for `count` |
+
+Rules:
+
+- **`sum`** ignores values that are not JSON numbers, so a string `"7"` adds nothing. With no number it is `0`. It is exact for integers within ±(2^53 − 1). A sum beyond that range is not returned rounded: the step is held as a condition error ([Scheduler](#scheduler)).
+- **`distinct`** compares values as the condition language's `eq` does: `5` and `5.0` are one value, `"5"` is text and another, and `true` is not `1`. Missing values, JSON `null`, and objects and arrays are not counted, because no `eq` predicate matches them. With no value it is `0`.
+- **`count`** is the complete number of matching events. Nothing is truncated.
+- `sql` is not available in an aggregate.
+- Names and fields are checked on save like conditions. A refused save names the field (`steps.0.aggregates.items.field`) and writes nothing. The step editor has an aggregates JSON editor beside the condition; its check is the save.
+
+When: the scheduler reads the aggregates after the condition holds and the frequency cap admits the step, before rendering. It reads one query per aggregate on the subscriber's events, using the `(subscriber_id, name, occurred_at)` index. A change to a step's `aggregates` while its decision waits discards the decision, as any other change to the step does.
+
+Measured in [B85-aggregates](../perf/B85-aggregates.md): ten aggregates over 100,000 matching events take about 0.7 s per decision on the measuring host, above the 250 ms the brief sets. A bound is proposed in D100 and not yet in force. Event retention bounds how many events exist.
+
 ## Template data
 
 A step's template receives:
@@ -138,9 +173,10 @@ A step's template receives:
 - `subscriber`: `name`, `email`, `uuid`, `external_id`, `attribs`;
 - `trigger`: the triggering event's `name`, `data` and `occurred_at`;
 - `sequence` and `step`: names and IDs;
+- `aggregates`: the step's named totals as numbers ([Aggregates](#aggregates)); `{}` for a step without them, for transactional and marketing steps alike;
 - the usual functions: `unsubscribe_url` and `manage_url` (marketing steps; empty for transactional steps), `track_link`, `track_view` ([Templates](06-templates.md)).
 
-Anything else, such as monthly totals, is computed by the app and sent as event data. The sequence engine does not aggregate.
+Anything an aggregate cannot express is still computed by the app and sent as event data.
 
 ## Scheduler
 
@@ -176,10 +212,10 @@ M5.4 implements this in `src/scheduler/scheduler.ts`, with enrollment SQL in `sr
 - A decision that throws is logged and released for a retry in 1 minute; it never stops the loop. A failing claim (a broken database) still ends the loop and surfaces.
 - A send already recorded for the current step is checked first and only advanced past. The send insert and the advance commit in one transaction, re-checking identity, blocklist, consent and the cap (queued rows count) inside it.
 - A step whose template is missing or not `tx` (deleted templates set `template_id` to null) records a `skipped` send with the step's current (null) `template_id` with `skip_reason = 'template_unavailable'`, logs one attention message and advances. A rendering failure records `skipped` with `render_failed`, logs, and advances. A full renderer (capacity shared with the HTTP producers) retries in 15 seconds.
-- A condition error (timeout, memory limit, execution) releases the claim with `retry_at` set after a backoff equal to how late the step already is, between 1 minute and 1 hour, logs an attention message without personal data, and never sends. Claims order by `coalesce(retry_at, due_at)`, so retried enrollments queue behind due work instead of filling every batch; `due_at` is kept, and `max_late` still measures from it.
+- A condition error (timeout, memory limit, execution) releases the claim with `retry_at` set after a backoff equal to how late the step already is, between 1 minute and 1 hour, logs an attention message without personal data, and never sends. Aggregates are read after the condition and the cap admit the step, before rendering, and a failed read (a sum beyond the safe range included) takes the same path ([Aggregates](#aggregates)). Claims order by `coalesce(retry_at, due_at)`, so retried enrollments queue behind due work instead of filling every batch; `due_at` is kept, and `max_late` still measures from it.
 - `defer` sets `due_at` to the first instant whose cap window starts at or after the subscriber's latest counted marketing send (queued and sending rows count from their creation or attempt), at least 1 minute ahead.
 - A deleted current step advances to the first active step at or after its position, keeping its due time. A deleted step's position is a cursor kept by every save while an active enrollment waits on it: one past the current position of its nearest kept predecessor (0 without one). Steps deleted before migration 5 were converted once from their old position minus the steps removed before them in the same save.
-- Template data adds `subscriber.id`, `step.uuid`, `step.position` and `step.kind`; steps have no name. `trigger` is null for manual enrollments or once retention purged the event. `manage_url` is the marketing unsubscribe URL with `?manage=true` (listmonk's form; the M2.5 preferences page serves it) and empty for transactional steps.
+- Template data adds `subscriber.id`, `step.uuid`, `step.position`, `step.kind` and `aggregates`; steps have no name. `trigger` is null for manual enrollments or once retention purged the event. `manage_url` is the marketing unsubscribe URL with `?manage=true` (listmonk's form; the M2.5 preferences page serves it) and empty for transactional steps.
 - Conditions get `triggerAt` from the trigger event (the enrollment start when there is none), `enrolledAt` from the enrollment, and `lastStepAt` from the enrollment's `updated_at`, which the scheduler changes only when a step ran (not for claims, deferrals or deleted steps).
 - One status per reason on every path (D83): the system-caused endings `sequence_archived`, `blocklisted`, `unsubscribed`, `condition` and `event:<name>` are `exited`; `canceled` is only `manual` and `subscriber_deleted`. Every statement that ends an enrollment clears `claimed_until` and `retry_at`.
 - A subscriber who no longer exists cancels the enrollment with `subscriber_deleted` (normally the cascade already removed it).
@@ -187,7 +223,7 @@ M5.4 implements this in `src/scheduler/scheduler.ts`, with enrollment SQL in `sr
 ## Admin UI
 
 - Sequence list with counts: active, completed, exited enrollments; sent, skipped, opened, clicked per step.
-- Sequence editor: trigger, exit events, reentry, list, steps as cards (wait, kind, template, condition in a CodeMirror JSON editor with validation and examples).
+- Sequence editor: trigger, exit events, reentry, list, steps as cards (wait, kind, template, condition in a CodeMirror JSON editor with validation and examples, and aggregates in a second JSON editor beside it, checked on save).
 - Enrollment explorer: filter by sequence, subscriber, status, exit reason; see each enrollment's timeline (trigger event, step decisions, sends).
 - Subscriber page: events, enrollments and sends for that person.
 - Test mode: "enroll a test subscriber with every wait shortened to 1 minute".
@@ -223,7 +259,7 @@ A SaaS app with prepaid packs and a subscription. The app sends `order_paid`, `s
 | Second pack: try the subscription | `order_paid` where `data.order_number = 2`, `reentry: never` | `PT0S`, marketing |
 | Welcome | `subscription_created` | step 1, `PT0S`, transactional |
 | Did the setup work? | same sequence | step 2, `P3D`, marketing, `not event connected since trigger` |
-| Your month | `subscription_monthly_summary` (the app sends it with the totals in `data`) | `PT0S`, marketing, `event download_finished since P30D` |
+| Your month | `subscription_created` | step 1, `P30D`, marketing, with `aggregates`: `items` (sum of `data.items` over `download_finished` since `P30D`), `sources` (distinct `data.source_id`), `actions` (count of `assistant_action` since `P30D`) |
 | Payment failed | `subscription_past_due`, `exit_on: [payment_succeeded]` | step 1 `PT0S` transactional; step 2 `P5D` transactional |
 | One question | `subscription_canceled`, `exit_on: [subscription_created]` | step 1, `PT0S`, transactional |
 | Win-back | same sequence | step 2, `P45D`, marketing, `not event feedback_given where data.reason = "price"` |

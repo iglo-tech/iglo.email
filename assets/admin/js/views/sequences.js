@@ -78,6 +78,7 @@ const makeStep = (stored = {}) => {
     kind: stored.kind ?? 'transactional',
     template_id: stored.template_id ?? null,
     condition: stored.condition ? JSON.stringify(stored.condition, null, 2) : '',
+    aggregates: stored.aggregates ? JSON.stringify(stored.aggregates, null, 2) : '',
     on_false: stored.on_false ?? 'exit',
   };
 };
@@ -286,6 +287,7 @@ function sequenceForm() {
           kind: s.kind,
           template_id: s.template_id,
           condition: parsed(s.condition, `${this.stepTitle(i)}: ${i18n.t('sequences.condition')}`),
+          aggregates: parsed(s.aggregates, `${this.stepTitle(i)}: ${i18n.t('sequences.aggregates')}`),
           on_false: s.on_false,
         })),
       };
