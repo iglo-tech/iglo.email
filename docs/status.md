@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-11-13. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
+Updated 2026-11-16. [Work plan](design/11-work-plan.md) · [Runbook](chief-of-staff.md)
 
 ## Active
 
@@ -15,7 +15,9 @@ No owner items remain: phone PDF viewers need no check ([D95](design/09-decision
 Run in order, one at a time, through the normal stages. Write each brief from the lines below and remove a line when it merges. Decisions are never owner items (runbook): agents decide, log and continue. Owner direction 2026-11-07: [D89](design/09-decisions.md#d89-narrow-complete-product-scope-owner-2026-11-07), feature complete but not wide.
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
-- Empty. v1.1.0 published 2026-11-13 (MCP widening, D98); no owner items.
+- v1.1.0 published 2026-11-13 (MCP widening, D98).
+- Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
+- Active: B84 worker.
 
 ## Owner decisions
 
