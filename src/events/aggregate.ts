@@ -12,6 +12,11 @@ import type { ConditionContext, ConditionError, Scalar } from "@/conditions/type
 /** Prepared statements kept per reader; the least recently used is finalized beyond it. */
 const CACHE = 64;
 const SAFE = Number.MAX_SAFE_INTEGER;
+/**
+ * Most matching events one aggregate may read (D100). A decision whose aggregate matches more is
+ * not sent, and no total is returned: the bound makes each read cost at most this many rows.
+ */
+export const AGGREGATE_LIMIT = 10_000;
 
 export type AggregateFn = "count" | "sum" | "distinct";
 
@@ -27,11 +32,16 @@ export interface Aggregate {
 
 export type AggregateResult =
   | { ok: true; values: Record<string, number> }
-  | { ok: false; error: ConditionError };
+  | { ok: false; error: ConditionError }
+  /** An aggregate matched more than `AGGREGATE_LIMIT` events; no total is returned. */
+  | { ok: false; limit: true };
 
 /**
  * The SQL of one aggregate and the arguments it binds for one subscriber and lower bound
  * (`after`, "" for none). Only the statement's shape is cached; values are bound each time.
+ * The statement reads the matching events through a subquery limited to `AGGREGATE_LIMIT + 1`
+ * rows, newest first, so `matched` tells whether the limit was exceeded and the total is exact
+ * whenever it is not.
  */
 interface Compiled {
   sql: string;
@@ -50,9 +60,8 @@ function compile(aggregate: Aggregate): Compiled {
     filters.push(part.sql);
     filterArgs.push(...(part.args as Param[]));
   }
-  const from = `FROM events WHERE ${filters.join(" AND ")}`;
   const path = field === undefined ? "" : jsonPath(field.slice("data.".length));
-  const numeric = "json_type(events.data, ?) IN ('integer', 'real')";
+  const numeric = "json_type(data, ?) IN ('integer', 'real')";
   let select: string;
   // Parameters of the select list come before the filters in the statement text.
   let selectArgs: Param[];
@@ -60,21 +69,22 @@ function compile(aggregate: Aggregate): Compiled {
     select = "count(*)";
     selectArgs = [];
   } else if (fn === "sum") {
-    select = `coalesce(sum(CASE WHEN ${numeric} THEN json_extract(events.data, ?) END), 0)`;
+    select = `coalesce(sum(CASE WHEN ${numeric} THEN json_extract(data, ?) END), 0)`;
     selectArgs = [path, path];
   } else {
     // Numbers (5 and 5.0 are one value), text (its characters) and booleans (a type of their own)
     // never equal one another, as the condition language's eq does. Missing values, JSON null and
     // objects or arrays, which no eq can match, are not counted.
     select = [
-      `count(DISTINCT CASE WHEN ${numeric} THEN json_extract(events.data, ?) END)`,
-      "count(DISTINCT CASE WHEN json_type(events.data, ?) = 'text' THEN json_extract(events.data, ?) END)",
-      "count(DISTINCT CASE WHEN json_type(events.data, ?) IN ('true', 'false') THEN json_type(events.data, ?) END)",
+      `count(DISTINCT CASE WHEN ${numeric} THEN json_extract(data, ?) END)`,
+      "count(DISTINCT CASE WHEN json_type(data, ?) = 'text' THEN json_extract(data, ?) END)",
+      "count(DISTINCT CASE WHEN json_type(data, ?) IN ('true', 'false') THEN json_type(data, ?) END)",
     ].join(" + ");
     selectArgs = [path, path, path, path, path, path];
   }
+  const limited = `SELECT events.data AS data FROM events WHERE ${filters.join(" AND ")} ORDER BY events.occurred_at DESC LIMIT ${AGGREGATE_LIMIT + 1}`;
   return {
-    sql: `SELECT ${select} AS n ${from}`,
+    sql: `SELECT count(*) AS matched, ${select} AS n FROM (${limited})`,
     args: (id, after) => {
       const head: Param[] = [...selectArgs, id, event];
       if (bound) head.push(after ?? "");
@@ -129,8 +139,10 @@ export function createEventAggregates(db: Database) {
         let value: number;
         try {
           const row = prepared(compiled.sql).get(...compiled.args(id, after)) as {
+            matched: bigint | number;
             n: bigint | number | null;
           };
+          if (Number(row.matched) > AGGREGATE_LIMIT) return { ok: false, limit: true };
           value = Number(row.n ?? 0);
         } catch {
           return { ok: false, error: { kind: "execution", message: "aggregate query failed" } };

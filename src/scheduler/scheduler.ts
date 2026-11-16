@@ -8,6 +8,7 @@ import type { Clock } from "@/clock";
 import type { ConditionEvaluator } from "@/conditions/evaluate";
 import { parseDuration } from "@/conditions/duration";
 import { writeTransaction } from "@/db/transaction";
+import { AGGREGATE_LIMIT } from "@/events/aggregate";
 import type { EventStore } from "@/events/store";
 import { createLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
@@ -243,10 +244,19 @@ export function createScheduler(options: SchedulerOptions) {
     }
 
     // Aggregates are read once the condition and the cap admit the step, before rendering (D100).
-    // A failure waits like a condition error and never sends.
+    // A failure waits like a condition error and never sends. An aggregate over the event limit
+    // is not a failure to retry: the step is skipped, with no total and no retry loop.
     let aggregates: Record<string, number> = {};
     if (row.aggregates !== null) {
       const result = options.events.aggregate(JSON.parse(row.aggregates), context);
+      if (!result.ok && "limit" in result) {
+        if (skipped(claim, subscriber.email, "aggregate_limit"))
+          attention(
+            "Sequence step has an aggregate over the event limit: skipped",
+            `Sequence step ${row.step_id} has an aggregate over ${AGGREGATE_LIMIT} events for enrollment ${row.id}; skipped`,
+          );
+        return;
+      }
       if (!result.ok) {
         attention(
           "Sequence aggregates failed: retrying later",

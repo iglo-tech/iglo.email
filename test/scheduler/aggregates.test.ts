@@ -307,3 +307,163 @@ test("a window counts only the subscriber's own events inside it", async () => {
   expect(f.sink.messages).toHaveLength(1);
   expect(decoded(f.sink.messages[0]!.data).body).toContain("<p>total 9</p>");
 });
+
+/** Inserts `count` events of one subscriber in one transaction; `at` and `data` build row `i`. */
+function bulkEvents(
+  f: SchedulerFixture,
+  subscriberId: number,
+  name: string,
+  count: number,
+  at: (i: number) => string,
+  data: (i: number) => string,
+) {
+  const insert = f.db.prepare(
+    "INSERT INTO events (subscriber_id, name, data, occurred_at, created_at) VALUES (?, ?, ?, ?, ?)",
+  );
+  f.db.transaction(() => {
+    for (let i = 0; i < count; i++) insert.run(subscriberId, name, data(i), at(i), iso(f));
+  })();
+  insert.finalize();
+}
+
+test("exactly 10,000 matching events are read in full: the step sends the complete totals", async () => {
+  const f = await open();
+  const template = await f.template(
+    "<p>count {{ aggregates.n }}|sum {{ aggregates.total }}|sources {{ aggregates.sources }}</p>",
+  );
+  await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [
+      tx(template, {
+        wait: "PT1H",
+        aggregates: {
+          n: { event: "download_finished", since: "P1D" },
+          total: { event: "download_finished", since: "P1D", fn: "sum", field: "data.items" },
+          sources: {
+            event: "download_finished",
+            since: "P1D",
+            fn: "distinct",
+            field: "data.source_id",
+          },
+        },
+      }),
+    ],
+  });
+  const email = "edge@example.test";
+  const subscriber = (await f.event(email, "subscription_created")).subscriber_id;
+  bulkEvents(
+    f,
+    subscriber,
+    "download_finished",
+    10_000,
+    () => iso(f),
+    (i) => JSON.stringify({ items: 2, source_id: `s${i % 25}` }),
+  );
+  await f.pass(hour);
+  await delivered(f, 1);
+  expect(decoded(f.sink.messages[0]!.data).body).toContain(
+    "<p>count 10000|sum 20000|sources 25</p>",
+  );
+  expect(f.errors).toHaveLength(0);
+});
+
+test("10,001 matching events hold the step: skipped with aggregate_limit, advanced, no mail, one log", async () => {
+  const f = await open();
+  const template = await f.template("<p>count {{ aggregates.n }}</p>");
+  const seq = await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [
+      tx(template, {
+        wait: "PT1H",
+        aggregates: {
+          n: { event: "download_finished", since: "P1D" },
+          lacks: { event: "never_sent" },
+        },
+      }),
+    ],
+  });
+  const email = "over@example.test";
+  const created = await f.event(email, "subscription_created");
+  const id = created.enrollments.started[0]!.id;
+  bulkEvents(
+    f,
+    created.subscriber_id,
+    "download_finished",
+    10_001,
+    () => iso(f),
+    (i) => JSON.stringify({ items: 1, source_id: `s${i}` }),
+  );
+  await f.pass(hour);
+  const sends = (await f.sendLog()).filter((s) => s.enrollment_id === id);
+  expect(sends).toMatchObject([
+    {
+      step_id: seq.steps[0]!.id,
+      status: "skipped",
+      skip_reason: "aggregate_limit",
+      template_id: template,
+    },
+  ]);
+  expect(f.sink.messages).toHaveLength(0);
+  expect(f.errors).toHaveLength(1);
+  const logged = f.errors.map((e) => (e as Error).message).join("\n");
+  expect(logged).toContain("aggregate");
+  expect(logged).not.toContain(email);
+  // The step advanced past the last step: no retry, no second log, no partial total.
+  await f.pass(hour);
+  expect(f.errors).toHaveLength(1);
+  expect(f.sink.messages).toHaveLength(0);
+  expect((await f.enrollment(id)).status).toBe("completed");
+});
+
+test("only events inside the window and matching where count toward the limit", async () => {
+  const f = await open();
+  const template = await f.template("<p>bulk {{ aggregates.bulk }}</p>");
+  await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [
+      tx(template, {
+        wait: "PT1H",
+        aggregates: {
+          bulk: {
+            event: "download_finished",
+            since: "P1D",
+            where: { "data.kind": "bulk" },
+          },
+        },
+      }),
+    ],
+  });
+  const created = await f.event("window@example.test", "subscription_created");
+  const subscriber = created.subscriber_id;
+  // 10,000 bulk events now (counted), 10,000 single events now (not matching `where`) and 10,000
+  // bulk events two days old (outside `since`). Only the first set may count: were any other
+  // row counted, the limit would hold the step.
+  bulkEvents(
+    f,
+    subscriber,
+    "download_finished",
+    10_000,
+    () => iso(f),
+    () => '{"kind":"bulk"}',
+  );
+  bulkEvents(
+    f,
+    subscriber,
+    "download_finished",
+    10_000,
+    () => iso(f),
+    () => '{"kind":"single"}',
+  );
+  bulkEvents(
+    f,
+    subscriber,
+    "download_finished",
+    10_000,
+    () => iso(f, -2 * day),
+    () => '{"kind":"bulk"}',
+  );
+  await f.pass(hour);
+  await delivered(f, 1);
+  expect(decoded(f.sink.messages[0]!.data).body).toContain("<p>bulk 10000</p>");
+  expect(f.errors).toHaveLength(0);
+});

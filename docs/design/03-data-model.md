@@ -135,7 +135,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `list_id` | INTEGER NULL → lists | Unsubscribe scope for marketing sends |
 | `idempotency_key` | TEXT NULL UNIQUE | For tx API calls |
 | `status` | TEXT CHECK IN (`queued`, `sending`, `sent`, `failed`, `skipped`, `unknown`) | `unknown`: the process died while sending; never retried automatically |
-| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed` |
+| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed`; B85 sequence steps also use `aggregate_limit` |
 | `smtp_message_id` | TEXT NULL | Stable `Message-ID` assigned before enqueue commit |
 | `error` | TEXT NULL | |
 | `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes. NULL once retention or a deletion has dropped it |

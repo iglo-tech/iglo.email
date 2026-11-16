@@ -45,7 +45,7 @@ M0.8 measured the selected library and found the precise library-limit semantics
 | `{{ .Campaign.Name }}`, `.Subject`, `.UUID` | `{{ campaign.name }}`, `campaign.subject`, `campaign.uuid` |
 | — | `{{ campaign.attribs.key }}` |
 | `{{ .Tx.Data.order_id }}` | `{{ data.order_id }}` |
-| — | `{{ trigger.data.price }}`, `{{ sequence.name }}`, `{{ step.position }}`, `{{ aggregates.name }}` (sequence sends; the last is the step's event totals, [D100](09-decisions.md#d100-sequence-steps-read-event-aggregates-lead-2026-11-16)) |
+| — | `{{ trigger.data.price }}`, `{{ sequence.name }}`, `{{ step.position }}`, `{{ aggregates.name }}` (sequence sends; the last is the step's event totals, each over at most 10,000 matching events, [D100](09-decisions.md#d100-sequence-steps-read-event-aggregates-lead-2026-11-16)) |
 | `{{ template "content" . }}` (in campaign layouts) | `{{ content \| raw }}` (already rendered HTML body) |
 | `{{ UnsubscribeURL }}` | `{{ unsubscribe_url }}`, campaigns and marketing sends |
 | `{{ UnsubscribeURL }}?manage=true` | `{{ manage_url }}` |

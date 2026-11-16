@@ -33,6 +33,7 @@ const SAFE_MESSAGES = [
   "Password reset mail not sent",
   "Sequence condition failed: retrying later",
   "Sequence aggregates failed: retrying later",
+  "Sequence step has an aggregate over the event limit: skipped",
   "Sequence decision failed: retrying later",
   "Sequence scheduler failed",
   "Sequence step could not be rendered: skipped",

@@ -1,18 +1,21 @@
 // Event aggregates in one sequence decision (docs/perf/B85-aggregates.md, D100): one subscriber
 // with 1,000, 10,000 and 100,000 events in the step's window, each function alone and ten
-// aggregates together, read by the same reader the scheduler calls. Equal noise for another
-// subscriber sits beside them, so the subscriber-and-name index is what bounds each read. Generated
-// data in a temporary directory. Run with `bun test/scheduler/measure-aggregates.ts [repetitions]`.
+// aggregates together, read by the same reader the scheduler calls. At 100,000 events every read
+// is over the per-aggregate limit, so the decision is measured as the skip it becomes, and a
+// worst case is measured too: nine aggregates that each read exactly the limit, then one over it.
+// Equal noise for another subscriber sits beside them, so the subscriber-and-name index is what
+// bounds each read. Generated data in a temporary directory. Run with
+// `bun test/scheduler/measure-aggregates.ts [repetitions]`.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
-import { createEventAggregates, type Aggregate } from "@/events/aggregate";
+import { AGGREGATE_LIMIT, createEventAggregates, type Aggregate } from "@/events/aggregate";
 
 const repetitions = Number(process.argv[2] ?? 5);
-const sizes = [1_000, 10_000, 100_000];
+const sizes = [1_000, AGGREGATE_LIMIT, 100_000];
 const clock = createRealClock();
 const now = Date.parse("2026-11-16T00:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -85,6 +88,18 @@ const ten: Record<string, Aggregate> = {
   count_actions: { event: "assistant_action", since: "P30D", fn: "count" },
 };
 
+/**
+ * Nine aggregates that each match exactly the limit (the newest 10,000 events, inside a window of
+ * 10,001 seconds), then one over it: the decision reads all nine and stops at the tenth.
+ */
+const worst: Record<string, Aggregate> = Object.fromEntries([
+  ...Array.from({ length: 9 }, (_, i) => [
+    `within_${i}`,
+    { event: "download_finished", since: "PT10001S", fn: "sum", field: "data.items" } as Aggregate,
+  ]),
+  ["over", { event: "download_finished", since: "P30D", fn: "count" } as Aggregate],
+]);
+
 const results: Record<string, unknown>[] = [];
 for (const size of sizes) {
   const dir = mkdtempSync(join(tmpdir(), "iglo-aggregates-measure-"));
@@ -142,29 +157,47 @@ for (const size of sizes) {
       lastStepAt: null,
       now: new Date(now),
     };
-    const check = (specs: Record<string, Aggregate>) => {
-      const out = reader.evaluate(specs, context);
-      if (!out.ok) throw new Error(`aggregate failed: ${out.error.message}`);
-      return out.values;
-    };
-    // Totals must match the data generated above, or the timings measure a wrong answer.
-    const values = check({ ...single, ...ten });
-    if (values.count !== size || values.sum !== expectedSum || values.distinct !== sources.size)
-      throw new Error(`unexpected totals at ${size}: ${JSON.stringify(values)}`);
-    if (values.where !== size / 2 || values.sum_bulk !== expectedBulkSum)
-      throw new Error(`unexpected filtered totals at ${size}`);
+    const check = (specs: Record<string, Aggregate>) => reader.evaluate(specs, context);
+    const values: Record<string, number> = {};
+    if (size <= AGGREGATE_LIMIT) {
+      // Totals must match the data generated above, or the timings measure a wrong answer.
+      const out = check({ ...single, ...ten });
+      if (!out.ok) throw new Error(`aggregate failed at ${size}`);
+      Object.assign(values, out.values);
+      if (values.count !== size || values.sum !== expectedSum || values.distinct !== sources.size)
+        throw new Error(`unexpected totals at ${size}: ${JSON.stringify(values)}`);
+      if (values.where !== size / 2 || values.sum_bulk !== expectedBulkSum)
+        throw new Error(`unexpected filtered totals at ${size}`);
+    } else {
+      // Every download_finished aggregate matches all 100,000 events and is refused with no total,
+      // whatever its function. count_actions matches one in ten, exactly the limit: it is complete.
+      for (const [name, spec] of Object.entries({ ...single, ...ten })) {
+        const out = check({ [name]: spec });
+        if (spec.event === "download_finished") {
+          if (out.ok || !("limit" in out))
+            throw new Error(`expected the limit at ${size}: ${name}`);
+        } else if (!out.ok || out.values[name] !== size / 10)
+          throw new Error(`unexpected ${name} at ${size}`);
+      }
+    }
 
     const perFunction: Record<string, number> = {};
     for (const [name, spec] of Object.entries(single))
       perFunction[name] = median(() => check({ [name]: spec }));
     const tenMs = median(() => check(ten));
-    results.push({
+    const result: Record<string, unknown> = {
       events: size,
       noiseEvents: size,
       perFunctionMs: perFunction,
       tenAggregatesMs: tenMs,
       values,
-    });
+    };
+    if (size > AGGREGATE_LIMIT) {
+      const out = check(worst);
+      if (out.ok || !("limit" in out)) throw new Error(`expected the worst case to hit the limit`);
+      result.worstCaseMs = median(() => check(worst));
+    }
+    results.push(result);
     db.close(true);
   } finally {
     rmSync(dir, { recursive: true, force: true });

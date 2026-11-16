@@ -696,7 +696,7 @@ export const schemas: Record<string, Schema> = {
     type: "object",
     additionalProperties: ref("Aggregate"),
     description:
-      "1 to 10 named aggregates, each named by an identifier of letters, digits and underscores. See docs/design/05-sequences.md#aggregates.",
+      "1 to 10 named aggregates, each named by an identifier of letters, digits and underscores. Each reads at most 10,000 matching events; a step whose aggregate matches more is recorded as skipped with skip_reason `aggregate_limit`. See docs/design/05-sequences.md#aggregates.",
   },
   SequenceStep: object({
     id: integer,

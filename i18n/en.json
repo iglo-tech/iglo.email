@@ -474,7 +474,7 @@
     "sequences.conditionHelp": "JSON, checked when the step is due. Empty means always true. The server validates it on save and names the field it refuses.",
     "sequences.conditionSql": "Raw sql conditions need the subscribers:sql_query permission to save.",
     "sequences.aggregates": "Aggregates",
-    "sequences.aggregatesHelp": "JSON object of named event totals that the template reads as aggregates.NAME. Each has event, optional since and where, fn (count, sum or distinct) and field for sum and distinct. Up to 10. The server validates it on save and names the field it refuses.",
+    "sequences.aggregatesHelp": "JSON object of named event totals that the template reads as aggregates.NAME. Each has event, optional since and where, fn (count, sum or distinct) and field for sum and distinct. Up to 10. Each reads at most 10,000 matching events; a step over that is skipped (aggregate_limit). The server validates it on save and names the field it refuses.",
     "sequences.countsLeaveOutTests": "Counts leave test enrollments out. Their sends appear in the send log and the sends analytics.",
     "sequences.decision.failed": "failed",
     "sequences.decision.queued": "queued",

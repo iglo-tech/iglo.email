@@ -28,42 +28,54 @@ What the branch adds to a decision without aggregates: one `NULL` check, one mor
 template data (`"aggregates":{}`), one more compared field in the decided-on check, and one more
 column in the scheduler's context read.
 
-## 2. One decision: aggregates over one subscriber's events
+## 2. One decision: aggregates over one subscriber's events, bounded
 
 Harness: `test/scheduler/measure-aggregates.ts` (`bun test/scheduler/measure-aggregates.ts 5`).
 One subscriber has 1,000, 10,000 or 100,000 `download_finished` events inside the 30 days before
 the decision, and another subscriber has the same number of events with the same name, so each
 read is bounded by the subscriber and name index and not by the table. Each figure is the median
 of five runs after one warm-up, through `createEventAggregates`, the reader the event store exposes
-to the scheduler. The harness first checks the totals against values computed from the data
-(`count`, `sum`, `distinct`, `where`, and the ten-aggregate set), so the timings measure correct
-answers.
+to the scheduler. At 1,000 and 10,000 events the harness first checks the totals against values
+computed from the data, so the timings measure correct answers. At 100,000 it checks that every
+`download_finished` aggregate is refused with no total, and that `count_actions` (exactly 10,000
+events) is complete.
+
+The bound (D100): each aggregate reads at most 10,000 matching events (`AGGREGATE_LIMIT`), through a
+subquery with `LIMIT 10001` on the index, newest first. Over the limit the step is skipped, so the
+read stops at the limit. Two runs on this host, `run 1 / run 2`:
 
 | Events in window | `count` | `sum` of `data.items` | `distinct` of `data.source_id` | `count` with `where` | Ten aggregates together |
 |---:|---:|---:|---:|---:|---:|
-| 1,000 | 0.04 ms | 0.5 ms | 0.8 ms | 0.5 ms | 5.6 ms |
-| 10,000 | 0.3 ms | 5.6 ms | 8.6 ms | 5.7 ms | 60 ms |
+| 1,000 | 0.07 / 0.07 ms | 0.56 / 0.57 ms | 0.93 / 0.92 ms | 0.56 / 0.57 ms | 6.1 / 6.3 ms |
+| 10,000 (at the limit) | 0.53 / 0.52 ms | 6.2 / 6.0 ms | 9.4 / 9.9 ms | 6.0 / 6.2 ms | 65 / 67 ms |
+| 100,000 (over the limit) | 0.56 / 0.50 ms | 6.3 / 6.7 ms | 9.4 / 13.7 ms | 11.8 / 12.3 ms | 6.2 / 6.4 ms * |
+
+\* Over the limit the first aggregate of the set is refused and the read stops: the decision costs
+one bounded read, not ten.
+
+Worst case, nine aggregates that each read exactly the limit and then one that is over it (the
+decision reads all nine before it stops): **54 / 59 ms** at 100,000 events. This is the most a
+decision can cost with ten aggregates, about the cost of the ten-at-the-limit row above. The brief's
+threshold is 250 ms per decision.
+
+Before the bound (the branch as first published, no limit, reads of every matching event):
+
+| Events in window | `count` | `sum` | `distinct` | `count` with `where` | Ten aggregates together |
+|---:|---:|---:|---:|---:|---:|
 | 100,000 | 2.4 ms | 64 ms | 95 ms | 65 ms | 709 ms (first run), 769 ms (second run) |
 
-The ten aggregates were four sums (two with `where`), three distinct counts, and three counts, one
-of them over `assistant_action`. Each aggregate costs time linear in the events it matches, because
-SQLite parses each matching row's JSON `data`: `count` does not read the data, the others do.
-
-### Against the brief's threshold
-
-The brief says: if ten aggregates over 100,000 events each take more than 250 ms per decision,
-propose a bound and do not truncate. They take about 0.7 to 0.8 s, so a bound is **proposed** in
-D100 and not implemented here. The reads run synchronously on the scheduler's thread, so one such
-decision blocks the other loops for that long. Event retention bounds how many events exist; the
-proposal is for the lead to decide between a limit per aggregate (ending in a condition-style
-error and never a partial total) and a shorter retention for the events aggregates read.
+Each aggregate costs time linear in the events it reads, because SQLite parses each row's JSON
+`data`: `count` does not read the data, the others do. The `where` read also visits the
+subscriber's non-matching events in the window, which the limit does not count.
 
 ## Reproduce
 
 ```sh
 bun test/scheduler/measure.ts 10000 3          # throughput, run on the branch and on the control
-bun test/scheduler/measure-aggregates.ts 5     # one decision, by fn and size
+bun test/scheduler/measure-aggregates.ts 5     # one decision, by fn and size, the over-limit case and the worst case
 ```
 
 The control is `origin/main` archived to `node_modules/.cache/b85-control` (`git archive origin/main
 | tar -x -C …`, with `node_modules` linked to the checkout's), so its tests are never discovered.
+Section 1 was measured before the limit and not re-run for this change: the limit touches only the
+aggregate read, and a step without aggregates never reaches it.
