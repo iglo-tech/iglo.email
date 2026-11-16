@@ -12,7 +12,7 @@ UPDATE enrollments SET status = 'exited', exit_reason = ?, step_id = NULL, due_a
 -- name: sequences-triggered-by
 SELECT id, trigger, reentry FROM sequences WHERE status = 'active' AND json_extract(trigger, '$.event') = ? ORDER BY id;
 -- name: sequence-for-enroll
-SELECT id, status, reentry FROM sequences WHERE id = ?;
+SELECT id, status, reentry, json_extract(trigger, '$.event') AS event FROM sequences WHERE id = ?;
 -- name: first-step
 SELECT id, wait FROM sequence_steps WHERE sequence_id = ? AND status = 'active' ORDER BY position LIMIT 1;
 -- name: active-enrollment
@@ -23,8 +23,8 @@ SELECT id FROM enrollments WHERE subscriber_id = ? AND sequence_id = ? AND statu
 -- Reentry counts real enrollments: a test leaves no history a later real trigger has to pass.
 SELECT 1 FROM enrollments WHERE subscriber_id = ? AND sequence_id = ? AND test = 0 LIMIT 1;
 -- name: enrollment-insert
-INSERT INTO enrollments (sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, created_at, updated_at, test)
-  VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?) RETURNING id;
+INSERT INTO enrollments (sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, created_at, updated_at, test, wait_from_event)
+  VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?) RETURNING id;
 -- name: test-list
 -- Consent is checked for this list when any current step is marketing.
 SELECT list_id FROM sequences WHERE id = ?1
@@ -90,7 +90,7 @@ UPDATE enrollments SET claimed_until = NULL, retry_at = ? WHERE id = ? AND statu
 -- name: reschedule-batch
 -- B5: waiting enrollments of one step after a cursor, with the time that step's wait counts from.
 -- Claimed (leased) rows are left to the scheduler.
-SELECT e.id, e.due_at, e.retry_at, e.created_at, e.updated_at, e.test, ev.occurred_at AS event_at
+SELECT e.id, e.due_at, e.retry_at, e.created_at, e.updated_at, e.test, e.wait_from_event, ev.occurred_at AS event_at
   FROM enrollments e LEFT JOIN events ev ON ev.id = e.trigger_event_id
   WHERE e.step_id = ?2 AND e.status = 'active' AND e.id > ?3 AND e.sequence_id = ?1
     AND (e.claimed_until IS NULL OR e.claimed_until < ?4)

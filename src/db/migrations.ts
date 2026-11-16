@@ -26,6 +26,7 @@ import legacyEnrollmentEndings from "@/migrations/0017_legacy_enrollment_endings
 import legacyBounceTotp from "@/migrations/0018_legacy_bounce_totp.sql" with { type: "text" };
 import dropBounceMailgun from "@/migrations/0019_drop_bounce_mailgun.sql" with { type: "text" };
 import stepAggregates from "@/migrations/0020_step_aggregates.sql" with { type: "text" };
+import enrollmentWaitOrigin from "@/migrations/0021_enrollment_wait_origin.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -54,6 +55,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 18, sql: legacyBounceTotp },
   { version: 19, sql: dropBounceMailgun },
   { version: 20, sql: stepAggregates },
+  { version: 21, sql: enrollmentWaitOrigin },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

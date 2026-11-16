@@ -602,6 +602,7 @@ const subscribers: Operation[] = [
         native: true,
         permissions: readSubscribers,
         query,
+        errors: [400, 404],
         data: ref("Subscriber"),
       },
       {
@@ -612,6 +613,7 @@ const subscribers: Operation[] = [
         native: true,
         permissions: ["subscribers:manage"],
         query,
+        errors: [400, 404, 409],
         body: ref("SubscriberInput"),
         data: ref("Subscriber"),
       },
@@ -623,6 +625,7 @@ const subscribers: Operation[] = [
         native: true,
         permissions: ["subscribers:manage"],
         query,
+        errors: [400, 404],
         data: yes,
       },
     ];

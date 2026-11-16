@@ -119,10 +119,19 @@ export interface Claim {
   >;
 }
 
+/**
+ * An existing event a manual or test enrollment starts from (D101): the subscriber's own event
+ * under the sequence's trigger name. The route reads it; `enroll` and `enrollTest` check it.
+ */
+export interface TriggerEvent {
+  id: bigint;
+  subscriber_id: bigint;
+  name: string;
+}
 export type EnrollOutcome =
   | { enrollment: EnrollmentRow }
   | {
-      error: "sequence_missing" | "sequence_inactive" | "no_steps" | "reentry";
+      error: "sequence_missing" | "sequence_inactive" | "no_steps" | "reentry" | "trigger_event";
     };
 export type TestOutcome =
   | EnrollOutcome
@@ -196,6 +205,14 @@ export function createEnrollments(db: Database, clock: Clock) {
     return value === 1n || value === 1;
   }
 
+  /** A manual or test trigger is the subscriber's own event under the sequence's trigger name. */
+  const triggerFits = (trigger: TriggerEvent | null, subscriberId: bigint, event: string) =>
+    trigger === null || (trigger.subscriber_id === subscriberId && trigger.name === event);
+
+  /**
+   * Insert an enrollment at its first step. `from` is when the first wait counts from: the
+   * trigger event's time for an event-started enrollment (`eventStarted`), else now (D101).
+   */
   function start(
     sequenceId: bigint,
     subscriberId: bigint,
@@ -203,13 +220,24 @@ export function createEnrollments(db: Database, clock: Clock) {
     first: { id: bigint; wait: string },
     from: string,
     now: string,
-    test = false,
+    test: boolean,
+    eventStarted: boolean,
   ): bigint {
     const dueAt = dueAfter(from, first.wait, test);
     const id = (
       q
         .get("enrollment-insert")
-        .get(sequenceId, subscriberId, triggerEventId, first.id, dueAt, now, now, test ? 1 : 0) as {
+        .get(
+          sequenceId,
+          subscriberId,
+          triggerEventId,
+          first.id,
+          dueAt,
+          now,
+          now,
+          test ? 1 : 0,
+          eventStarted ? 1 : 0,
+        ) as {
         id: bigint;
       }
     ).id;
@@ -269,7 +297,16 @@ export function createEnrollments(db: Database, clock: Clock) {
           exit_reason: reason,
         });
       }
-      const id = start(sequence.id, event.subscriberId, event.id, first, event.occurredAt, now);
+      const id = start(
+        sequence.id,
+        event.subscriberId,
+        event.id,
+        first,
+        event.occurredAt,
+        now,
+        false,
+        true,
+      );
       started.push({ id: numberID(id), sequence_id: numberID(sequence.id) });
     }
     return { started, ended };
@@ -348,13 +385,20 @@ export function createEnrollments(db: Database, clock: Clock) {
     /**
      * Manual enroll of an existing, non-blocklisted subscriber. Reentry applies unless
      * `force`; a forced or `always` enroll replaces a running enrollment (canceled, manual).
-     * The caller holds the write transaction.
+     * A `trigger` (D101) must be the subscriber's own event under the sequence's trigger name and
+     * becomes the enrollment's trigger. The caller holds the write transaction.
      */
-    enroll(sequenceId: bigint, subscriberId: bigint, force: boolean): EnrollOutcome {
+    enroll(
+      sequenceId: bigint,
+      subscriberId: bigint,
+      force: boolean,
+      trigger: TriggerEvent | null = null,
+    ): EnrollOutcome {
       const sequence = q.get("sequence-for-enroll").get(sequenceId) as {
         id: bigint;
         status: string;
         reentry: string;
+        event: string;
       } | null;
       if (!sequence) return { error: "sequence_missing" };
       if (sequence.status !== "active") return { error: "sequence_inactive" };
@@ -363,6 +407,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         wait: string;
       } | null;
       if (!first) return { error: "no_steps" };
+      if (!triggerFits(trigger, subscriberId, sequence.event)) return { error: "trigger_event" };
       const now = at();
       if (
         !force &&
@@ -377,7 +422,16 @@ export function createEnrollments(db: Database, clock: Clock) {
         if (!force && sequence.reentry !== "always") return { error: "reentry" };
         end(active.id, "canceled", "manual", now);
       }
-      const id = start(sequenceId, subscriberId, null, first, now, now);
+      const id = start(
+        sequenceId,
+        subscriberId,
+        trigger?.id ?? null,
+        first,
+        now,
+        now,
+        false,
+        false,
+      );
       return { enrollment: byId(id)! };
     },
     /**
@@ -385,18 +439,24 @@ export function createEnrollments(db: Database, clock: Clock) {
      * shortened by `after`. It needs what a normal enrollment needs and, when a step is marketing,
      * current consent on the sequence's list, as `consent` reports it (null or `frequency_cap`,
      * which delays a step and is not consent). It writes nothing else: reentry neither stops it
-     * nor counts it. The caller holds the write transaction.
+     * nor counts it. A `trigger` is checked and recorded as in `enroll` (D101). The caller holds
+     * the write transaction.
      */
     enrollTest(
       sequenceId: bigint,
       subscriberId: bigint,
       consent: (listId: bigint | null) => string | null,
+      trigger: TriggerEvent | null = null,
     ): TestOutcome {
-      const sequence = q.get("sequence-for-enroll").get(sequenceId) as { status: string } | null;
+      const sequence = q.get("sequence-for-enroll").get(sequenceId) as {
+        status: string;
+        event: string;
+      } | null;
       if (!sequence) return { error: "sequence_missing" };
       if (sequence.status !== "active") return { error: "sequence_inactive" };
       const first = q.get("first-step").get(sequenceId) as { id: bigint; wait: string } | null;
       if (!first) return { error: "no_steps" };
+      if (!triggerFits(trigger, subscriberId, sequence.event)) return { error: "trigger_event" };
       if (q.get("active-test").get(subscriberId, sequenceId)) return { error: "test_running" };
       const marketing = q.get("test-list").get(sequenceId) as { list_id: bigint | null } | null;
       if (marketing) {
@@ -405,7 +465,9 @@ export function createEnrollments(db: Database, clock: Clock) {
       }
       const now = at();
       return {
-        enrollment: byId(start(sequenceId, subscriberId, null, first, now, now, true))!,
+        enrollment: byId(
+          start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now, true, false),
+        )!,
       };
     },
     /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */
@@ -495,9 +557,11 @@ export function createEnrollments(db: Database, clock: Clock) {
     /**
      * B5: recompute `due_at` of one batch of enrollments waiting on a step from the step's current
      * wait. A step's wait counts from when the enrollment reached it: the last step's time
-     * (`updated_at`), else the trigger event's time, else enrollment. Leased rows, `retry_at` and
-     * a test's 1-minute cap keep their rules; nothing is sent or advanced. The caller holds the
-     * write. `next` is the cursor for the following batch, null when the set is done.
+     * (`updated_at`), else for an event-started enrollment the trigger event's time, else the
+     * enrollment's creation (D101, also for a manual enrollment that names an earlier event).
+     * Leased rows, `retry_at` and a test's 1-minute cap keep their rules; nothing is sent or
+     * advanced. The caller holds the write. `next` is the cursor for the following batch, null
+     * when the set is done.
      */
     rescheduleBatch(
       sequenceId: bigint,
@@ -515,13 +579,15 @@ export function createEnrollments(db: Database, clock: Clock) {
         created_at: string;
         updated_at: string;
         test: bigint | number;
+        wait_from_event: bigint | number;
         event_at: string | null;
       }[];
       let changed = 0,
         dueNow = false;
       for (const row of rows) {
-        const from =
-          row.updated_at > row.created_at ? row.updated_at : (row.event_at ?? row.created_at);
+        const started =
+          Boolean(row.wait_from_event) && row.event_at !== null ? row.event_at : row.created_at;
+        const from = row.updated_at > row.created_at ? row.updated_at : started;
         const computed = dueAfter(from, step.wait, Boolean(row.test));
         // A past time means "due now", never a past due time: the scheduler measures `max_late`
         // from `due_at`, so a stored past time would skip the step as late. A time already due

@@ -22,6 +22,7 @@ import {
   type EnrollmentFilter,
   type EnrollmentRow,
   type Enrollments,
+  type TriggerEvent,
 } from "@/sequences/enrollments";
 import { validate } from "@/conditions/validate";
 import { compile } from "@/conditions/compile";
@@ -357,9 +358,11 @@ export function registerSequenceRoutes(
     async (c) => {
       const value = await body(c, SMALL_BODY_BYTES);
       let sequenceId: bigint | undefined, subscriberId: bigint | undefined;
+      let triggerEventId: bigint | undefined;
       try {
         sequenceId = idValue(value.sequence_id, "sequence_id");
         subscriberId = idValue(value.subscriber_id, "subscriber_id");
+        triggerEventId = idValue(value.trigger_event_id, "trigger_event_id");
       } catch (error) {
         if (error instanceof DefinitionError) throw invalid(c, error.field);
         throw error;
@@ -379,14 +382,25 @@ export function registerSequenceRoutes(
         if (!subscriber) throw new HttpError(404, "Subscriber not found");
         if (subscriber.status === "blocklisted")
           throw new HttpError(409, "The subscriber is blocklisted.");
+        // An existing event the enrollment starts from (D101); an unknown one is refused here.
+        let trigger: TriggerEvent | null = null;
+        if (triggerEventId !== undefined) {
+          const event = events.get(triggerEventId);
+          if (!event) throw invalid(c, "trigger_event_id");
+          trigger = { id: event.id, subscriber_id: event.subscriber_id, name: event.name };
+        }
         return test
-          ? enrollments.enrollTest(sequenceId, subscriberId, (list) =>
-              sends.marketingReason(subscriberId, list),
+          ? enrollments.enrollTest(
+              sequenceId,
+              subscriberId,
+              (list) => sends.marketingReason(subscriberId, list),
+              trigger,
             )
-          : enrollments.enroll(sequenceId, subscriberId, force);
+          : enrollments.enroll(sequenceId, subscriberId, force, trigger);
       });
       if ("enrollment" in outcome) return ok(project(outcome.enrollment));
       if (outcome.error === "sequence_missing") throw new HttpError(404, "Sequence not found");
+      if (outcome.error === "trigger_event") throw invalid(c, "trigger_event_id");
       if (outcome.error === "sequence_inactive")
         throw new HttpError(409, "The sequence is not active.");
       if (outcome.error === "no_steps") throw new HttpError(409, "The sequence has no steps.");
