@@ -35,8 +35,21 @@ async function record(
     ...extra,
   });
   if (r.status !== 200) throw new Error(JSON.stringify(r.body));
-  return { id: r.body.data.event_id as number, subscriber: r.body.data.subscriber_id as number };
+  return {
+    id: r.body.data.event_id as number,
+    subscriber: r.body.data.subscriber_id as number,
+    started: r.body.data.enrollments.started[0]?.id as number | undefined,
+  };
 }
+/** Set the first step's wait as the editor saves it; enrollments keep their due times. */
+async function retime(f: SchedulerFixture, id: number, wait: string) {
+  const full = (await f.json(`/api/sequences/${id}`)).body.data;
+  full.steps[0].wait = wait;
+  delete full.status;
+  expect((await f.json(`/api/sequences/${id}`, "PUT", full)).status).toBe(200);
+}
+const reschedule = (f: SchedulerFixture, seq: { id: number; steps: { id: number }[] }) =>
+  f.json(`/api/sequences/${seq.id}/steps/${seq.steps[0]!.id}/reschedule`, "POST");
 /** Sequence with one step that is due after `wait` and runs only if nothing was downloaded. */
 async function sequence(f: SchedulerFixture) {
   const template = await f.template(
@@ -124,4 +137,88 @@ test("D101: without trigger_event_id the same download is before the trigger and
   await f.until(() => f.sink.messages.length === 1, "one message");
   // No trigger event: the template's trigger data is empty.
   expect(decoded(f.sink.messages[0]!.data)).toContain("<p>  pack</p>");
+});
+
+test("D101: a reschedule counts a manual enrollment's first wait from its creation, not the earlier event", async () => {
+  const f = await open();
+  const template = await f.template("<p>{{ trigger.name }}</p>", "Manual");
+  const paid = await record(f, "manual-due@example.test", "order_paid", {
+    occurred_at: ago(f, 10 * day),
+  });
+  const seq = await f.sequence({
+    steps: [{ wait: "P7D", kind: "transactional", template_id: template }],
+  });
+  const started = await f.json("/api/enrollments", "POST", {
+    sequence_id: seq.id,
+    subscriber_id: paid.subscriber,
+    trigger_event_id: paid.id,
+  });
+  expect(started.status).toBe(200);
+  const id = started.body.data.id as number;
+  const created = f.clock.now().getTime();
+  expect(Date.parse(started.body.data.due_at) - created).toBe(7 * day);
+
+  // The wait is unchanged, so the step stays 7 days from creation: the event's 10 days ago do
+  // not make it due now.
+  expect((await reschedule(f, seq)).body.data).toEqual({ changed: 0 });
+  expect(Date.parse((await f.enrollment(id)).due_at) - created).toBe(7 * day);
+
+  // A longer wait is counted from creation as well: 14 days, not 4 (14 minus the event's 10).
+  await retime(f, seq.id, "P14D");
+  expect((await reschedule(f, seq)).body.data).toEqual({ changed: 1 });
+  expect(Date.parse((await f.enrollment(id)).due_at) - created).toBe(14 * day);
+  await f.pass(7 * day);
+  expect(f.sink.messages).toHaveLength(0);
+  expect((await f.enrollment(id)).status).toBe("active");
+});
+
+test("D101: an event-triggered enrollment's reschedule still counts its wait from the event", async () => {
+  const f = await open();
+  const template = await f.template("<p>{{ trigger.name }}</p>", "Triggered");
+  const seq = await f.sequence({
+    steps: [{ wait: "P7D", kind: "transactional", template_id: template }],
+  });
+  const occurred = ago(f, 2 * day);
+  const paid = await record(f, "event-due@example.test", "order_paid", { occurred_at: occurred });
+  const id = paid.started!;
+  expect(Date.parse((await f.enrollment(id)).due_at)).toBe(Date.parse(occurred) + 7 * day);
+
+  await retime(f, seq.id, "P3D");
+  expect((await reschedule(f, seq)).body.data).toEqual({ changed: 1 });
+  expect(Date.parse((await f.enrollment(id)).due_at)).toBe(Date.parse(occurred) + 3 * day);
+});
+
+test("D101: since-trigger aggregates on a test enrollment from an earlier event measure from that event", async () => {
+  const f = await open();
+  const template = await f.template("<p>downloads {{ aggregates.downloads }}</p>", "Downloads");
+  const seq = await f.sequence({
+    steps: [
+      {
+        wait: "P3D",
+        kind: "transactional",
+        template_id: template,
+        aggregates: { downloads: { event: "download_finished", since: "trigger" } },
+      },
+    ],
+  });
+  const paid = await record(f, "aggregate-trigger@example.test", "order_paid", {
+    occurred_at: ago(f, 3 * day),
+  });
+  // Before the purchase: not counted. After it: counted.
+  await record(f, "aggregate-trigger@example.test", "download_finished", {
+    occurred_at: ago(f, 5 * day),
+  });
+  await record(f, "aggregate-trigger@example.test", "download_finished", {
+    occurred_at: ago(f, day),
+  });
+  const started = await f.json("/api/enrollments", "POST", {
+    sequence_id: seq.id,
+    subscriber_id: paid.subscriber,
+    test: true,
+    trigger_event_id: paid.id,
+  });
+  expect(started.status).toBe(200);
+  await f.pass(minute);
+  await f.until(() => f.sink.messages.length === 1, "one message");
+  expect(decoded(f.sink.messages[0]!.data)).toContain("<p>downloads 1</p>");
 });

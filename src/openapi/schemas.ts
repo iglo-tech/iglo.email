@@ -798,7 +798,7 @@ export const schemas: Record<string, Schema> = {
       trigger_event_id: {
         ...integer,
         description:
-          "An event of this subscriber named as the sequence's `trigger.event`, to start from (D101): its time is the trigger for conditions and aggregates, and its data the template's `trigger`. Else 400.",
+          "An event of this subscriber named as the sequence's `trigger.event`, to start from (D101): its time is the trigger for conditions and aggregates, and its data the template's `trigger`. The first wait still counts from the enrollment, not from the event. Else 400.",
       },
     },
     ["sequence_id", "subscriber_id"],

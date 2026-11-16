@@ -11,8 +11,8 @@ It is an independently maintained rewrite derived from [listmonk](https://github
 - **Subscribers and lists:** single and double opt-in, consent per list, import and export, query-selected bulk actions. A subscriber can also be addressed by your own external ID.
 - **Campaigns:** scheduled, rate-limited sends to lists, with open and click tracking, a public archive and test sends. Templates are written in Liquid, with the `number` filter for formatted numbers.
 - **Transactional email:** `POST /api/tx` sends a template to a subscriber. A marketing send through it needs consent, as campaigns do.
-- **Events and sequences:** `POST /api/subscriber-events` records what a subscriber did. An event starts or exits sequences: steps with waits, conditions over events and attributes, and step aggregates (counts, sums and distinct values of the subscriber's own events). Test mode runs a sequence for one subscriber with every wait shortened to a minute.
-- **Consent and the frequency cap:** marketing mail needs consent on the sequence's or campaign's list, and a per-subscriber frequency cap limits how often marketing mail reaches one person.
+- **Events and sequences:** `POST /api/subscriber-events` records what a subscriber did. An event starts or exits sequences: steps with waits, conditions over events and attributes, and step aggregates (counts, sums and distinct values of the subscriber's own events). Test mode runs a sequence for one subscriber with every wait shortened to at most a minute.
+- **Consent and the frequency cap:** marketing mail needs consent on the sequence's or campaign's list, and a per-subscriber frequency cap limits how often marketing mail reaches one person. An event can grant consent on single opt-in lists with `subscriber.grant_lists`; the grant adds a confirmed membership where none exists and never undoes an unsubscribe.
 - **Unsubscribe:** one-click unsubscribe headers and public preference pages.
 - **Webhooks:** outbound events signed with `X-Iglo-Email-Signature`.
 - **Bounces and sending:** Amazon SES is the only sending and bounce provider. Its bounce notifications arrive through SNS.
@@ -32,7 +32,7 @@ iglo.email ships for Linux only:
 
 For production, follow the [operations guide](docs/operations.md). It covers installation, the Docker example, the reverse proxy and TLS, Amazon SES setup, backups and restores, and upgrades.
 
-To run a local build:
+To run a local build, install Bun 1.4 or newer, then:
 
 ```sh
 bun install --frozen-lockfile
@@ -56,6 +56,8 @@ The port must be an integer from 1 to 65535; the host must be a hostname or IP a
 `IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD` create the first admin, and only while no users exist. Without them, public health still answers but login is denied. The listmonk flags `--install`, `--upgrade`, `--config` and `--new-config` are not supported: see the [scope](docs/design/01-scope.md).
 
 ## Develop
+
+For development, install Bun 1.4 or newer, then run the local checks:
 
 ```sh
 bun install --frozen-lockfile
