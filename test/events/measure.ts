@@ -3,7 +3,7 @@
 // synthetic async transactional and marketing POST /api/tx load delivered by the outbox to a
 // loopback SMTP sink. Campaigns do not exist until M3, so no campaign runner is exercised.
 import { Database } from "bun:sqlite";
-import { mkdirSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
@@ -17,6 +17,7 @@ const SEND_RATE = Number(process.env.EVENTS_MEASURE_SEND_RATE ?? 50);
 const TX_MS = 1000 / ((SEND_RATE * 4) / 5);
 const MARKETING_MS = 1000 / (SEND_RATE / 5);
 const MAX_IN_FLIGHT = 500;
+const GRANT = process.env.EVENTS_MEASURE_GRANT === "1";
 const scenario = process.argv[2] ?? "all";
 
 // Durable storage for the data directory: never tmpfs/ramfs.
@@ -25,7 +26,14 @@ mkdirSync(base, { recursive: true });
 const fsType = Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.toString().trim();
 if (/tmpfs|ramfs/.test(fsType)) throw new Error(`Refusing ${fsType} measurement directory`);
 process.env.TMPDIR = base;
-const free = () => Bun.spawnSync(["free", "-m"]).stdout.toString().trim();
+// `free` is Linux-only; on other hosts the memory snapshot is recorded as unavailable.
+const free = () => {
+  try {
+    return Bun.spawnSync(["free", "-m"]).stdout.toString().trim();
+  } catch {
+    return "unavailable on this host";
+  }
+};
 
 function stats(values: number[]) {
   if (!values.length) return null;
@@ -94,6 +102,16 @@ async function sink() {
 
 /** Resident memory of the compiled process, found by its executable path. */
 function serverRss(executable: string): number | null {
+  if (!existsSync("/proc/self")) {
+    // Other hosts (macOS): ps reports RSS in KiB for every process.
+    const listing = Bun.spawnSync(["ps", "-axo", "rss=,command="]).stdout.toString();
+    for (const line of listing.split("\n")) {
+      const found = /^\s*(\d+)\s+(.*)$/.exec(line);
+      if (found && (found[2] === executable || found[2]!.startsWith(`${executable} `)))
+        return Math.round(Number(found[1]) / 1024);
+    }
+    return null;
+  }
   for (const pid of readdirSync("/proc")) {
     if (!/^\d+$/.test(pid)) continue;
     try {
@@ -156,6 +174,16 @@ async function run(name: string, events: boolean, sends: boolean) {
             body: "<p>Order {{ data.s }} for {{ subscriber.name }}</p>",
           })
         ).body.data.id as number;
+        // EVENTS_MEASURE_GRANT=1: every event also grants one single opt-in list (D99).
+        const grantList = GRANT
+          ? ((
+              await api("/api/lists", "POST", {
+                name: "measure grant",
+                type: "public",
+                optin: "single",
+              })
+            ).body.data.id as number)
+          : null;
         const marketingCount = Math.ceil(WINDOW_MS / MARKETING_MS);
         let list = 0;
         const recipients: number[] = [];
@@ -270,6 +298,7 @@ async function run(name: string, events: boolean, sends: boolean) {
                     external_id: `u${item.i % 2000}`,
                     email: `ev${item.i % 2000}@example.test`,
                     attribs: { n: item.i, plan: item.i % 3 ? "trial" : "paid" },
+                    ...(grantList === null ? {} : { grant_lists: [grantList] }),
                   },
                   name: "order_paid",
                   data: { order: item.i, amount: 79, currency: "USD" },
@@ -384,6 +413,7 @@ const results: Record<string, unknown> = {
   // The code measured: set PERF_VARIANT to name it (for example "before" or "after").
   ...variantIdentity(repository, join(repository, "dist/iglo.email")),
   sendRate: SEND_RATE,
+  grantLists: GRANT,
   dataFs: fsType,
   freeBefore: free(),
 };

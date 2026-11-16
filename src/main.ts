@@ -600,7 +600,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
       exitThenTrigger: enrollments.exitThenTrigger,
     });
-    registerEventRoutes(router, events, auth);
+    registerEventRoutes(router, events, auth, roles);
     mail = createSubscriberMail({
       subscribers: subscriberStore,
       sends,

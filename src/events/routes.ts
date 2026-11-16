@@ -14,6 +14,7 @@ import {
   type EventInput,
 } from "@/events/input";
 import type { EventStore, EventResult } from "@/events/store";
+import type { Roles } from "@/roles/roles";
 import type { Authentication } from "@/users/auth";
 
 const PERMISSION = "subscriber_events:create";
@@ -22,9 +23,27 @@ const MAX_BATCHES_IN_FLIGHT = 4;
 /** Single-event requests admitted until their commit settles; excess requests get 429. */
 export const MAX_SINGLES_IN_FLIGHT = 1000;
 
-export function registerEventRoutes(router: Router, store: EventStore, auth: Authentication) {
+export function registerEventRoutes(
+  router: Router,
+  store: EventStore,
+  auth: Authentication,
+  roles: Roles,
+) {
   const invalid = (c: RequestContext, field: string) =>
     new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", field));
+  /**
+   * The grants of an event (D99) need `subscribers:manage` and manage scope on every granted
+   * list, the rule of PUT /api/subscribers/lists. Checked where the event's own permission is
+   * revalidated, inside the write transaction.
+   */
+  const grantAccess = (c: RequestContext, lists: bigint[]) => {
+    if (!lists.length) return;
+    auth.revalidate(c, "subscribers:manage");
+    if (!c.identity) throw new Error("Identity required");
+    const { role, user } = c.identity;
+    if (!roles.canList(role, user.list_role_id, "list:manage", lists))
+      throw new HttpError(403, c.app.i18n.Ts("globals.messages.permissionDenied", "name", "lists"));
+  };
   const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
     try {
       return eventInput(value);
@@ -51,7 +70,12 @@ export function registerEventRoutes(router: Router, store: EventStore, auth: Aut
         const body = await readBounded(c.request, SINGLE_BODY_BYTES);
         const input = item(c, parseJson(c.request, body));
         if (input instanceof HttpError) throw input;
-        return respond(await store.submit(input, receivedAt, () => auth.revalidate(c, PERMISSION)));
+        return respond(
+          await store.submit(input, receivedAt, () => {
+            auth.revalidate(c, PERMISSION);
+            grantAccess(c, input.grantLists);
+          }),
+        );
       } finally {
         singles--;
       }
@@ -80,7 +104,12 @@ export function registerEventRoutes(router: Router, store: EventStore, auth: Aut
       } finally {
         batches--;
       }
-      const results = store.recordBatch(items, receivedAt, () => auth.revalidate(c, PERMISSION));
+      const results = store.recordBatch(
+        items,
+        receivedAt,
+        () => auth.revalidate(c, PERMISSION),
+        (input) => grantAccess(c, input.grantLists),
+      );
       return ok({ results });
     },
     auth.middleware(PERMISSION),

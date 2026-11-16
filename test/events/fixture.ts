@@ -6,7 +6,11 @@ import { createApp } from "@/app";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
+import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createListReferences } from "@/lists/references";
+import { registerListRoutes } from "@/lists/routes";
+import { createListStore } from "@/lists/store";
+import { createListCounts } from "@/subscribers/list-counts";
 import { createRoles } from "@/roles/roles";
 import { createRouter } from "@/server/server";
 import { allowedDomain } from "@/subscribers/email";
@@ -50,6 +54,9 @@ export async function eventsFixture(
       logger: { error: (error) => errors.push(error) },
     });
     const lists = createListReferences(db),
+      counts = createListCounts(db),
+      campaigns = createCampaignListReferences(db),
+      listStore = createListStore(db, clock, counts, campaigns),
       roles = createRoles(db, lists),
       users = createUserStore(db, clock, roles),
       subscribers = createSubscriberStore(db, clock, lists);
@@ -69,8 +76,22 @@ export async function eventsFixture(
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
     registerSubscriberRoutes(router, subscribers, roles, auth);
-    registerEventRoutes(router, events, auth);
-    return { db, app, users, roles, lists, subscribers, auth, events, router };
+    registerListRoutes(router, listStore, roles, auth);
+    registerEventRoutes(router, events, auth, roles);
+    return {
+      db,
+      app,
+      users,
+      roles,
+      lists,
+      counts,
+      campaigns,
+      listStore,
+      subscribers,
+      auth,
+      events,
+      router,
+    };
   };
   let current = await open();
   const session = await current.auth.login(admin.user, admin.password);
@@ -97,20 +118,28 @@ export async function eventsFixture(
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
-  /** An API user whose role grants exactly `permissions`. */
-  const apiUser = async (name: string, permissions: string[]) => {
+  /** An API user whose role grants exactly `permissions`, and list grants like `{ id, permissions }`. */
+  const apiUser = async (name: string, permissions: string[], lists?: object[]) => {
     const role = await json("/api/roles/users", "POST", { name, permissions });
     if (role.status !== 200) throw new Error(`role ${role.status}`);
+    const listRole = lists && (await json("/api/roles/lists", "POST", { name, lists }));
+    if (listRole && listRole.status !== 200) throw new Error(`list role ${listRole.status}`);
     const user = await json("/api/users", "POST", {
       username: name,
       type: "api",
       status: "enabled",
       user_role_id: role.body.data.id,
+      ...(listRole ? { list_role_id: listRole.body.data.id } : {}),
     });
     if (user.status !== 200) throw new Error(`user ${user.status}`);
     return { authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}` };
   };
-  const api = await apiUser("events-api", ["subscriber_events:create"]);
+  // Events that grant lists need subscribers:manage and list management too (D99).
+  const api = await apiUser("events-api", [
+    "subscriber_events:create",
+    "subscribers:manage",
+    "lists:manage_all",
+  ]);
   const post = (body: unknown, headers: Record<string, string> = api) =>
     json("/api/subscriber-events", "POST", body, headers);
   /** A single-event POST whose body arrives through a caller-controlled stream. */
@@ -127,6 +156,12 @@ export async function eventsFixture(
   const batch = (body: unknown, headers: Record<string, string> = api) =>
     json("/api/subscriber-events/batch", "POST", body, headers);
   const subscriber = async (id: number) => (await json(`/api/subscribers/${id}`)).body?.data;
+  /** A list of the given opt-in kind, created through the admin API. */
+  const list = async (name: string, optin = "single") => {
+    const created = await json("/api/lists", "POST", { name, type: "public", optin });
+    if (created.status !== 200) throw new Error(`list ${created.status}`);
+    return created.body.data.id as number;
+  };
   const count = (table: "events" | "subscribers") =>
     Number((current.db.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: bigint }).n);
   const close = () => {
@@ -134,6 +169,9 @@ export async function eventsFixture(
     current.subscribers.close();
     current.users.close();
     current.roles.close();
+    current.listStore.close();
+    current.counts.close();
+    current.campaigns.close();
     current.lists.close();
     current.db.close(true);
   };
@@ -155,6 +193,7 @@ export async function eventsFixture(
     postStream,
     batch,
     subscriber,
+    list,
     count,
     /** Reopen every owner over the same data directory, as after a process restart. */
     async restart() {

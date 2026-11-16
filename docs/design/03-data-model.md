@@ -87,7 +87,7 @@ Migration 7 also adds `campaigns.runner_lease` and `runner_lease_until`: the run
 | `occurred_at` | TEXT NOT NULL | Sent by the app, defaults to receive time |
 | `created_at` | TEXT NOT NULL | |
 | `idempotency_key` | TEXT NULL | Unique per subscriber when set |
-| `enrollments` | TEXT NULL | JSON `{started, ended}` the first request with a key changed, replayed for a repeated key (M5.3) |
+| `enrollments` | TEXT NULL | JSON `{started, ended, grants}` the first request with a key changed (M5.3; `grants` from D99, absent in older rows), replayed for a repeated key |
 
 Indexes: `(subscriber_id, name, occurred_at)`, unique `(subscriber_id, idempotency_key)`. Retention: configurable, default 400 days, purged by maintenance.
 

@@ -13,9 +13,13 @@ const MAX_NAME_BYTES = 200;
 const MAX_KEY_BYTES = 255;
 const MAX_DATA_BYTES = 32 * 1024;
 const MAX_DEPTH = 32;
+/** Most lists one event may grant (D99). */
+export const MAX_GRANT_LISTS = 20;
 
 export interface EventInput {
   subscriber: EventSubscriber;
+  /** Lists the event grants consent on (D99): distinct list IDs, empty for none. */
+  grantLists: bigint[];
   name: string;
   /** Serialized JSON object. */
   data: string;
@@ -143,13 +147,24 @@ export function parseOccurredAt(value: string): string | undefined {
   return new Date(time).toISOString();
 }
 
+/** `subscriber.grant_lists`: 1 to MAX_GRANT_LISTS distinct positive integers; absent is none. */
+function grantedLists(value: unknown): bigint[] {
+  if (optional(value)) return [];
+  const field = () => new EventInputError("subscriber.grant_lists");
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_GRANT_LISTS) throw field();
+  if (!value.every((id) => typeof id === "number" && Number.isSafeInteger(id) && id > 0))
+    throw field();
+  if (new Set(value).size !== value.length) throw field();
+  return value.map((id) => BigInt(id as number));
+}
+
 /** Validate one event object without touching storage. */
 export function eventInput(value: unknown): EventInput {
   if (!isObject(value)) throw new EventInputError("event");
   known(value, ["subscriber", "name", "data", "occurred_at", "idempotency_key"]);
   const s = value.subscriber;
   if (!isObject(s)) throw new EventInputError("subscriber");
-  known(s, ["external_id", "email", "name", "attribs"], "subscriber.");
+  known(s, ["external_id", "email", "name", "attribs", "grant_lists"], "subscriber.");
   const subscriber: EventSubscriber = {};
   if (!optional(s.external_id)) {
     if (typeof s.external_id !== "string" || !validExternal(s.external_id))
@@ -174,6 +189,8 @@ export function eventInput(value: unknown): EventInput {
   }
   if (!optional(s.attribs)) subscriber.attribs = object(s.attribs, "subscriber.attribs");
 
+  const grantLists = grantedLists(s.grant_lists);
+
   const name = value.name;
   if (
     typeof name !== "string" ||
@@ -185,7 +202,7 @@ export function eventInput(value: unknown): EventInput {
     throw new EventInputError("name");
   const data = optional(value.data) ? "{}" : JSON.stringify(object(value.data, "data"));
   if (Buffer.byteLength(data) > MAX_DATA_BYTES) throw new EventInputError("data");
-  const event: EventInput = { subscriber, name, data };
+  const event: EventInput = { subscriber, grantLists, name, data };
   if (!optional(value.occurred_at)) {
     const at = typeof value.occurred_at === "string" && parseOccurredAt(value.occurred_at);
     if (!at) throw new EventInputError("occurred_at");

@@ -809,7 +809,9 @@ const sending: Operation[] = [
     route: "POST /api/subscriber-events",
     id: "createSubscriberEvent",
     tag: "Events",
-    summary: "Record an event, upsert its subscriber, start and end sequences.",
+    summary: "Record an event, upsert its subscriber, grant list consent, start and end sequences.",
+    description:
+      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe.",
     native: true,
     permissions: ["subscriber_events:create"],
     body: ref("EventInput"),
@@ -820,6 +822,8 @@ const sending: Operation[] = [
     id: "createSubscriberEventBatch",
     tag: "Events",
     summary: "Record at most 500 events; each has its own result.",
+    description:
+      "Each item has its own `subscriber.grant_lists` check (D99): a refused grant fails that item only.",
     native: true,
     permissions: ["subscriber_events:create"],
     body: object({ events: array(ref("EventInput")) }),

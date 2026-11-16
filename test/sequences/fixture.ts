@@ -203,7 +203,7 @@ export async function sequencesFixture(
     settings: () => marketing,
     effects: enrollments.unsubscribeEffects,
   });
-  registerEventRoutes(router, events, auth);
+  registerEventRoutes(router, events, auth, roles);
   registerSequenceRoutes(router, {
     sequences,
     enrollments,

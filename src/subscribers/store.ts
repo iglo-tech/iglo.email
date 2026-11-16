@@ -563,6 +563,23 @@ export function createSubscriberStore(
     membership: (id: bigint, list: bigint) =>
       q.get("membership-get").get(id, list) as Membership | null,
     /**
+     * Whether an event may grant consent on `list` (D99): the list exists and is single opt-in.
+     * A double opt-in list asks the subscriber to confirm by mail, which a grant cannot replace.
+     */
+    grantable(list: bigint): boolean {
+      const meta = lists.subscriberMetadata(list);
+      return meta !== null && meta.optin === "single";
+    },
+    /**
+     * Insert a confirmed membership of `list` when the subscriber has none (D99). An existing
+     * membership of any status is left alone. Returns true when it inserted one. The caller
+     * holds the write, and an ordinary add with status `confirmed` has no other side effect.
+     */
+    insertConfirmedIfAbsent(id: bigint, list: bigint): boolean {
+      const now = clock.now().toISOString();
+      return q.get("membership-insert").run(id, list, "confirmed", now, now).changes === 1;
+    },
+    /**
      * Public unsubscribe, adapted from listmonk's unsubscribe-by-campaign query: mark the
      * list (or with `blocklist`, every list) unsubscribed and optionally blocklist the
      * subscriber. Returns the list IDs whose status changed. The caller holds the write.

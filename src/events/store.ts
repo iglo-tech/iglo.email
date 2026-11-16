@@ -31,6 +31,12 @@ export interface Enrollments {
   started: unknown[];
   ended: unknown[];
 }
+/** What a grant did to one list (D99): `added` is a new confirmed membership. */
+export type GrantResult = "added" | "member" | "unsubscribed" | "blocklisted";
+export interface Grant {
+  list_id: number;
+  result: GrantResult;
+}
 /**
  * The sequence step of event processing, run inside the event's write transaction:
  * end the subscriber's enrollments whose `exit_on` names the event, then start the
@@ -58,6 +64,7 @@ export type EventResult =
       event_id: number | object;
       subscriber_id: number | object;
       enrollments: Enrollments;
+      grants: Grant[];
     }
   | { status: number; message: string };
 
@@ -65,14 +72,22 @@ const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJS
 const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(id) : rawJSON(id.toString());
 
-/** Stored enrollment changes, keeping integers beyond 2^53 exact. */
-function storedEnrollments(text: string | null): Enrollments {
-  if (text === null) return { started: [], ended: [] };
-  return JSON.parse(text, (_key, value, context?: { source?: string }) =>
+/**
+ * What the first request under an idempotency key did, as stored in `events.enrollments`:
+ * `{started, ended, grants}`. A row written before grants existed has no `grants`.
+ */
+function storedOutcome(text: string | null): { enrollments: Enrollments; grants: Grant[] } {
+  if (text === null) return { enrollments: { started: [], ended: [] }, grants: [] };
+  // Integers beyond 2^53 in enrollments stay exact.
+  const stored = JSON.parse(text, (_key, value, context?: { source?: string }) =>
     typeof value === "number" && !Number.isSafeInteger(value) && context?.source
       ? rawJSON(context.source)
       : value,
-  ) as Enrollments;
+  ) as Partial<Enrollments> & { grants?: Grant[] };
+  return {
+    enrollments: { started: stored.started ?? [], ended: stored.ended ?? [] },
+    grants: stored.grants ?? [],
+  };
 }
 
 /** Savepoint cleanup failed: no member of the group may be reported individually. */
@@ -92,12 +107,34 @@ export function createEventStore(
 ) {
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
   const exitThenTrigger = options.exitThenTrigger ?? noSequences;
-  const result = (id: bigint, subscriberId: bigint, enrollments: Enrollments): EventResult => ({
+  const result = (
+    id: bigint,
+    subscriberId: bigint,
+    outcome: { enrollments: Enrollments; grants: Grant[] },
+  ): EventResult => ({
     status: 200,
     event_id: numberID(id),
     subscriber_id: numberID(subscriberId),
-    enrollments,
+    enrollments: outcome.enrollments,
+    grants: outcome.grants,
   });
+  /**
+   * One grant (D99) after the subscriber upsert. A blocklisted subscriber gets nothing; a
+   * missing membership is inserted confirmed, and any existing one is left as it is.
+   */
+  function grant(subscriber: Subscriber, list: bigint): Grant {
+    const listId = Number(list);
+    if (subscriber.status === "blocklisted") return { list_id: listId, result: "blocklisted" };
+    const previous = subscribers.membership(subscriber.id, list);
+    if (!previous) {
+      subscribers.insertConfirmedIfAbsent(subscriber.id, list);
+      return { list_id: listId, result: "added" };
+    }
+    return {
+      list_id: listId,
+      result: previous.status === "unsubscribed" ? "unsubscribed" : "member",
+    };
+  }
   /** Steps 1-3 of the design's processing order. The caller holds the write transaction. */
   function record(input: EventInput, receivedAt: string): EventResult {
     const found = subscribers.resolveForEvent(input.subscriber);
@@ -107,11 +144,16 @@ export function createEventStore(
             enrollments: string | null;
           })
         | null;
-      // Replay what the first request started and ended; never recompute it.
+      // Replay what the first request started, ended and granted; never recompute it.
       if (previous)
-        return result(previous.id, previous.subscriber_id, storedEnrollments(previous.enrollments));
+        return result(previous.id, previous.subscriber_id, storedOutcome(previous.enrollments));
     }
+    // Refused before any write: the grant is checked against the lists as they are now.
+    for (const list of input.grantLists)
+      if (!subscribers.grantable(list))
+        throw new HttpError(400, "Invalid fields: subscriber.grant_lists");
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
+    const grants = input.grantLists.map((list) => grant(subscriber, list));
     const occurredAt = input.occurredAt ?? receivedAt;
     const inserted = q
       .get("event-insert")
@@ -135,10 +177,10 @@ export function createEventStore(
     });
     if (
       input.idempotencyKey !== undefined &&
-      (enrollments.started.length || enrollments.ended.length)
+      (enrollments.started.length || enrollments.ended.length || grants.length)
     )
-      q.get("event-enrollments").run(JSON.stringify(enrollments), inserted.id);
-    return result(inserted.id, subscriber.id, enrollments);
+      q.get("event-enrollments").run(JSON.stringify({ ...enrollments, grants }), inserted.id);
+    return result(inserted.id, subscriber.id, { enrollments, grants });
   }
   /** One item in its own savepoint: a rejection rolls back only this item's writes. */
   function item(input: EventInput, at: string, authorize?: () => void): EventResult {
@@ -228,13 +270,16 @@ export function createEventStore(
     /**
      * A batch in one write transaction with per-item results. Each item runs in its own
      * savepoint, so a rejected item leaves no partial write and does not drop the others.
-     * Pre-rejected items (invalid input) are passed through unchanged. An unexpected error
-     * rolls back the whole batch.
+     * Pre-rejected items (invalid input) are passed through unchanged. `authorize` runs once
+     * for the batch and `authorizeItem` for each item's grants; a refusal of either is a
+     * per-item result, except the batch's own permission, which refuses the whole batch.
+     * An unexpected error rolls back the whole batch.
      */
     recordBatch(
       items: ReadonlyArray<EventInput | HttpError>,
       receivedAt: Date,
       authorize: () => void,
+      authorizeItem: (input: EventInput) => void,
     ): EventResult[] {
       const at = receivedAt.toISOString();
       return writeTransaction(db, () => {
@@ -242,7 +287,7 @@ export function createEventStore(
         return items.map((value) =>
           value instanceof HttpError
             ? { status: value.status, message: value.message }
-            : item(value, at),
+            : item(value, at, () => authorizeItem(value)),
         );
       });
     },
@@ -288,3 +333,4 @@ export function createEventStore(
   };
 }
 export type EventStore = ReturnType<typeof createEventStore>;
+type Subscriber = ReturnType<SubscriberStore["upsertForEvent"]>;

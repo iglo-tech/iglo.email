@@ -613,6 +613,14 @@ export const schemas: Record<string, Schema> = {
         email: string,
         name: string,
         attribs: free,
+        grant_lists: {
+          ...nullable(array({ type: "integer", minimum: 1 })),
+          minItems: 1,
+          maxItems: 20,
+          uniqueItems: true,
+          description:
+            "Single opt-in lists the event grants consent on (D99). Each gets a confirmed membership unless it has one; a blocklisted subscriber gets none. Needs subscribers:manage and manage scope on every list. Absent or null grants nothing.",
+        },
       }),
       name: string,
       data: free,
@@ -625,11 +633,27 @@ export const schemas: Record<string, Schema> = {
     event_id: integer,
     subscriber_id: integer,
     enrollments: ref("EventEnrollments"),
+    grants: ref("EventGrants"),
   }),
   EventEnrollments: object({
     started: array(object({ id: integer, sequence_id: integer })),
     ended: array(object({ id: integer, sequence_id: integer, exit_reason: string })),
   }),
+  EventGrants: {
+    ...array(
+      object({
+        list_id: integer,
+        result: {
+          type: "string",
+          enum: ["added", "member", "unsubscribed", "blocklisted"],
+          description:
+            "added: a new confirmed membership. member: already unconfirmed or confirmed, unchanged. unsubscribed: unsubscribed, unchanged. blocklisted: the subscriber is blocklisted, nothing changed.",
+        },
+      }),
+    ),
+    description:
+      "One entry per granted list in request order; empty when no grant was asked. A repeated idempotency_key replays the first request's grants.",
+  },
   BatchEventResult: {
     oneOf: [
       object({
@@ -637,6 +661,7 @@ export const schemas: Record<string, Schema> = {
         event_id: integer,
         subscriber_id: integer,
         enrollments: ref("EventEnrollments"),
+        grants: ref("EventGrants"),
       }),
       object({ status: integer, message: string }),
     ],
