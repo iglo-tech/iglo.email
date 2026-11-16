@@ -145,7 +145,7 @@ A step can total a subscriber's events when it sends, so a "your month" email ne
 }
 ```
 
-`{{ aggregates.items }}` and `{% if aggregates.had_x > 0 %}…{% endif %}` are the uses.
+`{{ aggregates.items | number }}` (`1,234,567`, see [number](06-templates.md#supported-tags-and-filters)) and `{% if aggregates.had_x > 0 %}…{% endif %}` are the uses.
 
 | Field | Meaning |
 |---|---|
