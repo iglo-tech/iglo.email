@@ -17,8 +17,8 @@ Run in order, one at a time, through the normal stages. Write each brief from th
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
 - v1.1.0 published 2026-11-13 (MCP widening, D98).
 - Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B88 `number` Liquid filter (D102, [brief](briefs/B88.md), adopter follow-up) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
-- Active: B85 fix r1.
-- Backlog (B84 reviews): archived lists grantable (as PUT); grant mid-request revocation test; replay of a limited token after the grant was removed answers 403; 403 wording "subscriber" vs PUT's "subscriber: <id>". CI steps sends:production, messaging:fixture and templates:compiled (arm64) fail on main too (run 43960943873). The test harness reads Linux /proc, so the full suite cannot pass on macOS.
+- Active: B88 worker.
+- Backlog (B84 reviews): archived lists grantable (as PUT); grant mid-request revocation test; replay of a limited token after the grant was removed answers 403; 403 wording "subscriber" vs PUT's "subscriber: <id>". CI steps sends:production, messaging:fixture and templates:compiled (arm64) fail on main too (run 43960943873). The test harness reads Linux /proc, so the full suite cannot pass on macOS. B85 backlog: `fn: null` accepted as count; re-measure the aggregate worst case on an idle host (single runs to 253 ms on a loaded one); Playwright spec for the step editor's aggregates; `test/media/media.test.ts:286` flaky (process-wide memory under parallel run).
 
 ## Owner decisions
 
@@ -49,6 +49,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B85 | [#137](https://github.com/iglo-tech/iglo.email/pull/137) | b919ae8 | Step `aggregates` (count/sum/distinct over the subscriber's events) in step templates; reads at most 10,000 events per aggregate, else `aggregate_limit` skip (D100; bound by lead, r1 CHANGES, fixer, r2 APPROVE) |
 | B84 | [#136](https://github.com/iglo-tech/iglo.email/pull/136) | 0f9a7a9 | `subscriber.grant_lists` on events: consent-safe grant before exit/trigger, `grants` in the response (D99; r1 CHANGES scope, fixer, r2 APPROVE) |
 | B83 | [#135](https://github.com/iglo-tech/iglo.email/pull/135) | bad0ed8 | Version 1.1.0; tag v1.1.0, release run 43516269561 green; lead verified x64 checksum, `--version` 1.1.0, anonymous pull of `:1.1.0`/`:latest` (same digest, amd64+arm64); published as latest |
 | B82 | [#134](https://github.com/iglo-tech/iglo.email/pull/134) | 60ebeb2 | Test: MCP default fallback when the read-back is refused (r1 APPROVE) |
