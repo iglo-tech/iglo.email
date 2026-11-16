@@ -31,7 +31,7 @@ M0.8 measured the selected library and found the precise library-limit semantics
 | Capability | Current behavior |
 |---|---|
 | Tags | `if`, `unless`, `for`, `assign`, `capture`, `comment`, `raw`, `break`, `continue`; other tags, including user `include`, `render` and `layout`, are rejected |
-| Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`; other filters are rejected. These filters accept scalar inputs; `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution |
+| Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`, `number`; other filters are rejected. These filters act on scalar inputs; `number` passes any value that is not a finite number through unchanged, and `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution. `number` formats a finite number with English grouping and at most three fraction digits ([D102](09-decisions.md#d102-the-number-liquid-filter-lead-2026-11-16)) |
 | Dates | `now` and `today` use the injected clock; supported format directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%` in UTC. Other date strings must be a date or UTC ISO timestamp |
 
 #### Data and functions
@@ -153,10 +153,17 @@ and work before the library creates the string, so truthiness or indirect
 conversion cannot bypass the shared intermediate budget.
 
 Filter arity is checked before argument evaluation or argv allocation, and
-every evaluated argument consumes work. `raw`, `upcase`, `strip` and
+every evaluated argument consumes work. `raw`, `upcase`, `strip`, `number` and
 `track_link` accept no extra arguments; `default` and `date` accept at most
 one. `t` accepts zero to eight arguments in name/value pairs. This applies to
 literal arguments too; ignored extra arguments do not provide free work.
+
+`number` formats a finite number in one step and charges its output like
+the other filters. Its output is bounded by the number's digits: at most
+412 characters, for the largest finite number ([D102](09-decisions.md#d102-the-number-liquid-filter-lead-2026-11-16)).
+Put `number` before `default` for a value that may be missing:
+`{{ n | number | default: 0 }}` renders `0` for a missing `n` and `1,234,567`
+for `1234567`. `number` passes nil through, so `default` supplies the fallback.
 
 The `for` tag admits only `offset`, `limit` and `reversed`. Unknown names,
 including magic property names, reject while parsing rather than entering the

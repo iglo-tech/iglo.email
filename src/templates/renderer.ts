@@ -31,6 +31,7 @@ const filterArguments: Readonly<Record<string, number>> = {
   t: 8,
   date: 1,
   track_link: 0,
+  number: 0,
 };
 const byteLength = (value: string) => Buffer.byteLength(value, "utf8");
 
@@ -132,6 +133,8 @@ const attribute = (value: string) => value.replace(/[&<>"']/g, (c) => `&#${c.cha
 
 /** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 export function createRenderer(clock: Clock, translation: Translation) {
+  // en-US only (D102). Negative zero and values that round to zero render as 0, not -0.
+  const numberFormat = new Intl.NumberFormat("en-US", { signDisplay: "negative" });
   const budgets = new WeakMap<Context, Budget>();
   const trackers = new WeakMap<Context, RenderTracking>();
   const budget = (ctx: Context) => {
@@ -328,6 +331,21 @@ export function createRenderer(clock: Clock, translation: Translation) {
         S: pad(date.getUTCSeconds()),
       };
       const out = fmt.replace(/%(.)/g, (_, key: string) => values[key]!);
+      b.charge(byteLength(out));
+      return out;
+    });
+    liquid.registerFilter("number", function (value) {
+      const b = budget(this.context);
+      b.step();
+      // Only finite numbers are formatted. Anything else returns unchanged, so it renders as it would
+      // without the filter: text is kept, nil is empty, and objects, arrays and non-finite numbers
+      // are refused by the output step exactly as they are without it.
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        if (typeof value === "string") b.charge(byteLength(value));
+        return value;
+      }
+      // The largest finite number has 309 integer digits; with grouping and sign, at most 412 bytes.
+      const out = numberFormat.format(value);
       b.charge(byteLength(out));
       return out;
     });

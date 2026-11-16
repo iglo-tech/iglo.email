@@ -1054,3 +1054,21 @@ Brief B85, from the first production adopter's integration report: a "your month
 - **Storage:** migration 20 adds `sequence_steps.aggregates`, a nullable JSON object, with `ALTER TABLE`. Steps without aggregates store `NULL`.
 - **Cost accepted:** a decision on a step with aggregates reads each aggregate's window, up to 10,001 events of its name. A step without them pays one null check and one more template field. Throughput without aggregates shows no regression ([B85-aggregates](../perf/B85-aggregates.md)).
 - **Revisit:** if aggregates must read beyond one subscriber, or if real use shows 10,000 is too low; a new limit needs its own measurements.
+
+## D102. The `number` Liquid filter (lead, 2026-11-16)
+
+Brief B88, from the first production adopter's integration report: a summary email built from `aggregates` (D100) reads "you pulled 1234567 items", and the allowed filters could not format a number. Apps used to pre-format numbers into event data; they cannot for numbers iglo.email computes.
+
+- **Decision:** one filter, `number`, beside the other reviewed filters in `src/templates/renderer.ts`. `{{ 1234567 | number }}` renders `1,234,567`; `{{ 1234.5678 | number }}` renders `1,234.568`; `-1234` renders `-1,234`; `0` renders `0`. It is the `Intl.NumberFormat("en-US")` default (at most three fraction digits, rounded half away from zero), with negative zero and values that round to zero shown as `0`.
+- **Input:** a finite JavaScript number is formatted. Every other value is returned unchanged, so it renders as it would without the filter: a string (a numeric string too) keeps its text, a boolean renders `true` or `false`, nil renders empty, and an object, an array or a non-finite number is refused by the output step exactly as it is without the filter.
+- **No arguments.** Any argument is a render error like the other filters' bad arguments. There is no locale argument: the app ships English only (D89 defers translations). When translations exist, the filter may follow the app language; that is a later decision, not this one.
+- **Output bound:** the output is charged to the message budget like the other filters. The bound is the number's own digit count: a typical total (up to 15 digits) is under 25 characters, and the largest finite number, 309 integer digits, renders at most 412 characters (digits, 102 separators, a sign).
+- **Applies everywhere the shared renderer runs:** campaign, transactional, sequence step, opt-in and other templates.
+- **Order with `default`.** `number` passes nil through, so the fallback goes after it: `{{ n | number | default: 0 }}` renders `0` for a missing `n` and `1,234,567` for `1234567`. `default` is unchanged and returns text, so `{{ n | default: 0 | number }}` leaves a present number ungrouped (`1234567`); write `number` first.
+- **Considered:**
+  - A locale argument now: no caller needs one, and it would be a second way to format a number in a product that ships English only (D89).
+  - Formatting numeric strings: a string is data the app chose to send as text; formatting it would silently change what it meant.
+  - Refusing non-numbers with an error: a template whose value is sometimes text would then fail on the text. Pass-through renders it as the template did before the filter was added.
+  - Capping the output at the aggregate range: the bound would refuse a finite number the app supplied; the size bound is stated instead.
+  - Making `default` keep a number so that `default: 0 | number` formats: `assign`ed defaults would then compare and print differently (`== "0"`, `contains`, `.size`), which saved v1.1.0 templates rely on. A minor release does not change that; the order above works without it.
+- **Revisit:** if a locale or currency is needed, a new decision with its own argument and tests.

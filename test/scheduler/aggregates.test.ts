@@ -509,3 +509,43 @@ test("a sum past the safe integer range or the 64-bit range holds the step as ag
   await f.pass(hour);
   expect(f.errors).toHaveLength(2);
 });
+
+test("a step formats its aggregate totals with the number filter", async () => {
+  const f = await open();
+  const template = await f.template(
+    "<p>items {{ aggregates.items | number }}|count {{ aggregates.count | number }}</p>",
+  );
+  await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [
+      tx(template, {
+        wait: "P30D",
+        aggregates: {
+          items: { event: "download_finished", since: "P30D", fn: "sum", field: "data.items" },
+          count: { event: "download_finished", since: "P30D" },
+        },
+      }),
+    ],
+  });
+  const email = "grouped@example.test";
+  await f.event(email, "subscription_created");
+  await f.pass(10 * day);
+  await f.event(email, "download_finished", { data: { items: 1000000 } });
+  await f.event(email, "download_finished", { data: { items: 234567 } });
+  await f.pass(20 * day);
+  await delivered(f, 1);
+  expect(decoded(f.sink.messages[0]!.data).body).toContain("items 1,234,567|count 2");
+});
+
+test("a step without aggregates renders a missing total as the fallback after number", async () => {
+  const f = await open();
+  const template = await f.template("<p>items {{ aggregates.items | number | default: 0 }}</p>");
+  await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [tx(template, { wait: "PT1H" })],
+  });
+  await f.event("no-aggregates@example.test", "subscription_created");
+  await f.pass(hour);
+  await delivered(f, 1);
+  expect(decoded(f.sink.messages[0]!.data).body).toContain("items 0");
+});

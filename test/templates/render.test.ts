@@ -702,3 +702,14 @@ test("nested rendering respects the depth limit", async () => {
   const nested = "{% if true %}".repeat(33) + "x" + "{% endif %}".repeat(33);
   expect((await call(nested, {}, "plain")).status).toBe(400);
 });
+
+test("number formats in plain and Markdown templates, as in HTML", async () => {
+  const call = caller();
+  const data = { n: 1234567 };
+  expect(await (await call("[{{ data.n | number }}]", { data }, "plain")).text()).toBe(
+    "[1,234,567]",
+  );
+  expect(await (await call("**{{ data.n | number }}**", { data }, "markdown")).text()).toContain(
+    "<strong>1,234,567</strong>",
+  );
+});
