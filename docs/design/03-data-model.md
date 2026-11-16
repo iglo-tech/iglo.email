@@ -95,7 +95,7 @@ Indexes: `(subscriber_id, name, occurred_at)`, unique `(subscriber_id, idempoten
 
 `sequences`: `id`, `uuid`, `name`, `status` (`draft`, `active`, `paused`, `archived`), `trigger` (JSON), `exit_on` (JSON array of event names), `reentry` (`never`, `after_exit`, `always`), `list_id` (the list that grants marketing permission for this sequence's marketing steps, nullable), timestamps.
 
-`sequence_steps`: `id`, `uuid`, `sequence_id`, `position`, `wait` (ISO 8601 duration, `P3D`), `kind` (`marketing`, `transactional`), `template_id`, `subject` (optional override), `condition` (JSON, nullable), `on_false` (`skip`, `exit`), `cap_policy` (`defer`, `skip`), `max_late` (ISO 8601 duration, nullable), `status` (`active`, `deleted`), timestamps.
+`sequence_steps`: `id`, `uuid`, `sequence_id`, `position`, `wait` (ISO 8601 duration, `P3D`), `kind` (`marketing`, `transactional`), `template_id`, `subject` (optional override), `condition` (JSON, nullable), `aggregates` (JSON object, nullable; migration 20, D100), `on_false` (`skip`, `exit`), `cap_policy` (`defer`, `skip`), `max_late` (ISO 8601 duration, nullable), `status` (`active`, `deleted`), timestamps.
 
 Steps are never hard-deleted while enrollments point at them; deleting sets `status = 'deleted'` and the scheduler moves past it. See [Sequences](05-sequences.md).
 
@@ -135,7 +135,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `list_id` | INTEGER NULL → lists | Unsubscribe scope for marketing sends |
 | `idempotency_key` | TEXT NULL UNIQUE | For tx API calls |
 | `status` | TEXT CHECK IN (`queued`, `sending`, `sent`, `failed`, `skipped`, `unknown`) | `unknown`: the process died while sending; never retried automatically |
-| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed` |
+| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed`; B85 sequence steps also use `aggregate_limit` |
 | `smtp_message_id` | TEXT NULL | Stable `Message-ID` assigned before enqueue commit |
 | `error` | TEXT NULL | |
 | `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes. NULL once retention or a deletion has dropped it |

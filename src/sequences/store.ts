@@ -32,6 +32,7 @@ interface StepRow {
   template_id: bigint | null;
   subject: string | null;
   condition: string | null;
+  aggregates: string | null;
   on_false: string;
   cap_policy: string;
   max_late: string | null;
@@ -72,6 +73,7 @@ const step = (row: StepRow) => ({
   template_id: row.template_id === null ? null : numberID(row.template_id),
   subject: row.subject,
   condition: row.condition === null ? null : (JSON.parse(row.condition) as unknown),
+  aggregates: row.aggregates === null ? null : (JSON.parse(row.aggregates) as unknown),
   on_false: row.on_false,
   cap_policy: row.cap_policy,
   max_late: row.max_late,
@@ -152,6 +154,7 @@ export function createSequenceStore(
         s.onFalse,
         s.capPolicy,
         s.maxLate,
+        s.aggregates,
       ] as const;
       if (s.id !== null) q.get("step-update").run(position, ...values, now, s.id);
       else q.get("step-insert").run(crypto.randomUUID(), id, position, ...values, now, now);

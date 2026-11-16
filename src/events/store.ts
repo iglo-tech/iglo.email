@@ -4,6 +4,7 @@
 import type { Database } from "bun:sqlite";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
+import { createEventAggregates } from "@/events/aggregate";
 import type { EventInput } from "@/events/input";
 import type { Translation } from "@/i18n/i18n";
 import { HttpError } from "@/server/response";
@@ -122,6 +123,7 @@ export function createEventStore(
   },
 ) {
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
+  const aggregates = createEventAggregates(db);
   const exitThenTrigger = options.exitThenTrigger ?? noSequences;
   const result = (
     id: bigint,
@@ -315,6 +317,11 @@ export function createEventStore(
         );
       });
     },
+    /**
+     * The aggregates of one sequence step for one subscriber (`aggregates` in template data,
+     * D100). Reads the committed events on the write connection, outside any transaction.
+     */
+    aggregate: aggregates.evaluate,
     /** One event, for sequence template data (the enrollment's trigger). */
     get(id: bigint): EventRow | null {
       return q.get("event-by-id").get(id) as EventRow | null;
@@ -353,7 +360,10 @@ export function createEventStore(
         }[]
       ).map((row) => row.id);
     },
-    close: () => q.close(),
+    close: () => {
+      aggregates.close();
+      q.close();
+    },
   };
 }
 export type EventStore = ReturnType<typeof createEventStore>;

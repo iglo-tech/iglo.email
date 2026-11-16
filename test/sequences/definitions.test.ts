@@ -66,6 +66,7 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
       template_id: tx,
       subject: null,
       condition: null,
+      aggregates: null,
       on_false: "exit",
       cap_policy: "defer",
       max_late: null,
@@ -81,6 +82,7 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
       template_id: tx,
       subject: null,
       condition: { not: { event: "download_finished", since: "trigger" } },
+      aggregates: null,
       on_false: "exit",
       cap_policy: "defer",
       max_late: "P2D",
@@ -421,4 +423,141 @@ test("status changes, activation checks, archive and delete rules", async () => 
   const paged = await f.json("/api/sequences?per_page=1&page=2");
   expect(paged.body.data).toMatchObject({ total: 2, page: 2, per_page: 1 });
   expect(paged.body.data.results.map((s: { id: number }) => s.id)).toEqual([seq.id]);
+});
+
+test("aggregates are validated on save like conditions, and a rejection writes nothing (D100)", async () => {
+  const f = await open();
+  const { definition } = await base(f);
+  const step = definition.steps[0]!;
+  const withAggregates = (aggregates: unknown) => ({
+    ...definition,
+    steps: [{ ...step, aggregates }],
+  });
+  const one = (spec: object) => ({ n: { event: "e", ...spec } });
+  // Each refused shape names the field that is wrong, the way conditions do.
+  const cases: Array<[string, unknown, string]> = [
+    ["not an object", "sum", "steps.0.aggregates"],
+    ["array", [], "steps.0.aggregates"],
+    ["empty", {}, "steps.0.aggregates"],
+    [
+      "eleven",
+      Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`a${i}`, { event: "e" }])),
+      "steps.0.aggregates",
+    ],
+    ["name digit first", { "1n": { event: "e" } }, "steps.0.aggregates"],
+    ["name dash", { "n-m": { event: "e" } }, "steps.0.aggregates"],
+    ["name long", { ["x".repeat(65)]: { event: "e" } }, "steps.0.aggregates"],
+    ["spec not object", { n: "count" }, "steps.0.aggregates.n"],
+    ["unknown key", one({ extra: 1 }), "steps.0.aggregates.n.extra"],
+    ["no event", { n: {} }, "steps.0.aggregates.n.event"],
+    ["event control", one({ event: "a\nb" }), "steps.0.aggregates.n.event"],
+    ["since months", one({ since: "P1M" }), "steps.0.aggregates.n.since"],
+    ["since number", one({ since: 5 }), "steps.0.aggregates.n.since"],
+    ["where attr", one({ where: { attr: "x" } }), "steps.0.aggregates.n.where"],
+    ["where unsafe", one({ where: { "data.x": 2 ** 53 } }), "steps.0.aggregates.n.where"],
+    ["where sql", one({ where: { sql: "1=1" } }), "steps.0.aggregates.n.where"],
+    // A null is a value, refused as a condition refuses it, not read as absent.
+    ["since null", one({ since: null }), "steps.0.aggregates.n.since"],
+    ["where null", one({ where: null }), "steps.0.aggregates.n.where"],
+    ["sum with null field", one({ fn: "sum", field: null }), "steps.0.aggregates.n.field"],
+    ["count with null field", one({ field: null }), "steps.0.aggregates.n.field"],
+    ["fn unknown", one({ fn: "avg", field: "data.x" }), "steps.0.aggregates.n.fn"],
+    ["sum without field", one({ fn: "sum" }), "steps.0.aggregates.n.field"],
+    ["distinct without field", one({ fn: "distinct" }), "steps.0.aggregates.n.field"],
+    ["count with field", one({ field: "data.x" }), "steps.0.aggregates.n.field"],
+    ["field not data", one({ fn: "sum", field: "items" }), "steps.0.aggregates.n.field"],
+    ["field empty path", one({ fn: "sum", field: "data." }), "steps.0.aggregates.n.field"],
+    ["field not text", one({ fn: "sum", field: 5 }), "steps.0.aggregates.n.field"],
+    [
+      "field deep",
+      one({ fn: "sum", field: `data.${"a.".repeat(9)}b` }),
+      "steps.0.aggregates.n.field",
+    ],
+  ];
+  for (const [label, aggregates, field] of cases) {
+    const r = await f.json(`/api/sequences`, "POST", withAggregates(aggregates));
+    if (r.status !== 400) throw new Error(`${label}: ${r.status} ${JSON.stringify(r.body)}`);
+    expect(r.body.message).toContain(field);
+  }
+  expect(f.count("sequences")).toBe(0);
+
+  // Saved, read back as stored, and a rejected update leaves the stored aggregates as they were.
+  const valid = {
+    items: { event: "download_finished", since: "P30D", fn: "sum", field: "data.items" },
+    sources: { event: "download_finished", since: "P30D", fn: "distinct", field: "data.source_id" },
+    actions: { event: "assistant_action", where: { "data.kind": "x" } },
+    // A computed key makes an own property; a bare __proto__ key would set the prototype.
+    ["__proto__"]: { event: "proto" },
+  };
+  const created = await f.json("/api/sequences", "POST", withAggregates(valid));
+  expect(created.status).toBe(200);
+  const stored = created.body.data.steps[0].aggregates;
+  expect(stored).toEqual({
+    items: { event: "download_finished", since: "P30D", fn: "sum", field: "data.items" },
+    sources: { event: "download_finished", since: "P30D", fn: "distinct", field: "data.source_id" },
+    actions: { event: "assistant_action", where: { "data.kind": "x" }, fn: "count" },
+    ["__proto__"]: { event: "proto", fn: "count" },
+  });
+  const refused = await f.json(`/api/sequences/${created.body.data.id}`, "PUT", {
+    ...withAggregates({ items: { event: "e", fn: "sum" } }),
+  });
+  expect(refused.status).toBe(400);
+  const read = await f.json(`/api/sequences/${created.body.data.id}`);
+  expect(read.body.data.steps[0].aggregates).toEqual(stored);
+  // A step without aggregates reads as null, and null clears them.
+  const cleared = await f.json(`/api/sequences/${created.body.data.id}`, "PUT", {
+    ...withAggregates(null),
+  });
+  expect(cleared.status).toBe(200);
+  expect(cleared.body.data.steps[0].aggregates).toBeNull();
+});
+
+test("the step editor's save body is stored and loads back with its aggregates (D100)", async () => {
+  const f = await open();
+  const tx = await f.template();
+  // The editor saves its stored step fields with the shown ones: `list_id` and `condition` are null
+  // when unset, `exit_on` is a list, and `aggregates` is the parsed JSON of its text.
+  const aggregates = {
+    items: { event: "download_finished", since: "P30D", fn: "sum", field: "data.items" },
+    actions: { event: "assistant_action", since: "P30D" },
+  };
+  const body = {
+    name: "B85 your month",
+    trigger: { event: "subscription_created" },
+    exit_on: [],
+    reentry: "never",
+    list_id: null,
+    steps: [
+      {
+        wait: "P30D",
+        kind: "transactional",
+        template_id: tx,
+        condition: null,
+        aggregates,
+        on_false: "exit",
+      },
+    ],
+  };
+  const created = await f.json("/api/sequences", "POST", body);
+  expect(created.status).toBe(200);
+  const id = created.body.data.id;
+  // The editor loads what it saved: the default `fn` is filled in, as the editor then shows it.
+  const loaded = (await f.json(`/api/sequences/${id}`)).body.data;
+  expect(loaded.steps[0].aggregates).toEqual({
+    items: aggregates.items,
+    actions: { ...aggregates.actions, fn: "count" },
+  });
+  // A save whose sum has no field is refused, naming the field the editor shows, and the stored
+  // aggregates are kept.
+  const refused = await f.json(`/api/sequences/${id}`, "PUT", {
+    ...body,
+    steps: [
+      { ...body.steps[0]!, aggregates: { items: { event: "download_finished", fn: "sum" } } },
+    ],
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain("steps.0.aggregates.items.field");
+  expect((await f.json(`/api/sequences/${id}`)).body.data.steps[0].aggregates).toEqual(
+    loaded.steps[0].aggregates,
+  );
 });

@@ -2,8 +2,10 @@
 // source. Every field is checked against the definition table before anything is written, and
 // every walk is bounded before it iterates, so a hostile body costs no more than the limits.
 import { parseDuration } from "@/conditions/duration";
-import type { Condition } from "@/conditions/types";
+import { validPath } from "@/conditions/json";
+import type { Condition, Scalar } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
+import type { Aggregate } from "@/events/aggregate";
 import { trimSpace } from "@/lists/store";
 
 export const sequenceStatuses = ["draft", "active", "paused", "archived"] as const;
@@ -19,6 +21,8 @@ export const limits = {
   steps: 50,
   /** Event names in `exit_on`. */
   exitOn: 20,
+  /** Named aggregates in one step (docs/design/05-sequences.md#aggregates). */
+  aggregates: 10,
   /** UTF-8 bytes in a step subject override. */
   subjectBytes: 2048,
   /** Request body bytes of a definition. */
@@ -33,6 +37,8 @@ export interface StepInput {
   subject: string | null;
   /** Validated condition as JSON text. */
   condition: string | null;
+  /** Validated named aggregates as JSON text, or null for none (D100). */
+  aggregates: string | null;
   onFalse: "skip" | "exit";
   capPolicy: "defer" | "skip";
   maxLate: string | null;
@@ -132,6 +138,74 @@ function triggerWhere(where: unknown, event: string): Record<string, unknown> | 
   return condition;
 }
 
+// Aggregate names become template variables, so they are plain identifiers.
+const aggregateName = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const aggregateFields = ["event", "since", "where", "fn", "field"];
+
+/**
+ * A step's `aggregates` (D100): 1 to 10 named aggregates, each an event predicate of the condition
+ * language (`event`, `since`, `where`, checked by the same validator) with `fn` and `field`.
+ * Returns the normalized JSON text, or null for an absent or null value.
+ */
+function aggregatesInput(value: unknown, field: string): string | null {
+  if (value === undefined || value === null) return null;
+  const range = `must have 1 to ${limits.aggregates} aggregates`;
+  if (!isObject(value)) return fail(field, range);
+  const names: string[] = [];
+  for (const name in value) {
+    if (!Object.hasOwn(value, name)) continue;
+    if (names.length === limits.aggregates) return fail(field, range);
+    if (!aggregateName.test(name))
+      return fail(
+        field,
+        "names must be letters, digits or underscores, starting with a letter or underscore, up to 64",
+      );
+    names.push(name);
+  }
+  if (!names.length) return fail(field, range);
+  const entries: [string, Aggregate][] = [];
+  for (const name of names) {
+    const at = `${field}.${name}`;
+    const spec = value[name];
+    if (!isObject(spec)) return fail(at, "must be an aggregate object");
+    for (const key in spec)
+      if (Object.hasOwn(spec, key) && !aggregateFields.includes(key))
+        return fail(`${at}.${key}`, "unknown field");
+    // An absent key is absent; a present one is checked as given, so null is refused as a condition
+    // refuses it. Only `fn` defaults, as the other step fields do.
+    const path = spec.field;
+    const predicate = checked(
+      validate(
+        {
+          event: spec.event,
+          ...(spec.since === undefined ? {} : { since: spec.since }),
+          ...(spec.where === undefined ? {} : { where: spec.where }),
+        },
+        { canUseSql: false, field: at },
+      ),
+      at,
+    ) as { event: string; since?: string; where?: Record<string, Scalar> };
+    const fn = choice(spec.fn, ["count", "sum", "distinct"] as const, `${at}.fn`, "count");
+    if (fn === "count") {
+      if (path !== undefined) fail(`${at}.field`, "is only for sum and distinct");
+    } else if (path === undefined) {
+      fail(`${at}.field`, "is required for sum and distinct");
+    } else if (typeof path !== "string" || !path.startsWith("data.") || !validPath(path.slice(5))) {
+      fail(`${at}.field`, "must be a data.* path");
+    }
+    entries.push([
+      name,
+      {
+        ...predicate,
+        fn,
+        ...(fn === "count" ? {} : { field: path as string }),
+      },
+    ]);
+  }
+  // Object.fromEntries defines each name as an own property, so `__proto__` stays a name.
+  return JSON.stringify(Object.fromEntries(entries));
+}
+
 function choice<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -192,6 +266,7 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
     `${field}.cap_policy`,
     "defer",
   );
+  const aggregates = aggregatesInput(value.aggregates, `${field}.aggregates`);
   // Missing means the default; an explicit null means no limit.
   const maxLate =
     value.max_late === undefined
@@ -208,6 +283,7 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
     templateId,
     subject,
     condition,
+    aggregates,
     onFalse,
     capPolicy,
     maxLate,

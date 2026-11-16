@@ -101,6 +101,8 @@ export interface SchedulerContext {
   template_id: bigint | null;
   subject: string | null;
   condition: string | null;
+  /** The step's named event aggregates as JSON text, or null (D100). */
+  aggregates: string | null;
   on_false: "skip" | "exit";
   cap_policy: "defer" | "skip";
   max_late: string | null;

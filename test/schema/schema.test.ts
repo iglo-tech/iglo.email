@@ -28,7 +28,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     const installed = await call(fixture.origin, "migrate");
     expect(installed.status).toBe(200);
     expect(installed.result).toMatchObject({
-      version: "19",
+      version: "20",
       integrity: "ok",
       foreignKeyErrors: [],
       journal: "wal",
@@ -196,6 +196,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
         "status",
         "created_at",
         "updated_at",
+        "aggregates",
       ],
       enrollments: [
         "id",
@@ -300,7 +301,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     await fixture.close();
     fixture = startSchemaFixture(directory);
     expect((await call(fixture.origin, "migrate")).result).toMatchObject({
-      version: "19",
+      version: "20",
       integrity: "ok",
       foreignKeyErrors: [],
       backups: [],
@@ -330,7 +331,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "19",
+      version: "20",
     });
   } finally {
     await fixture.close();
@@ -362,7 +363,7 @@ test("deleted identities never resolve to replacement accounts or entities after
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "19",
+      version: "20",
       backups: [],
     });
   } finally {

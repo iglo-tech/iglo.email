@@ -84,6 +84,10 @@ const step = {
   kind: stepKind,
   subject: nullable(string),
   condition: nullable(ref("Condition")),
+  aggregates: {
+    ...nullable(ref("Aggregates")),
+    description: "Named event aggregates the template reads as `aggregates`. Null for none.",
+  },
   on_false: choice("skip", "exit"),
   cap_policy: choice("defer", "skip"),
   max_late: nullable(string),
@@ -677,6 +681,25 @@ export const schemas: Record<string, Schema> = {
     ...free,
     description:
       "Exactly one of `all`, `any`, `not`, `event`, `attr`, `list` or `sql`. See docs/design/05-sequences.md.",
+  },
+  Aggregate: object(
+    {
+      event: string,
+      since: { ...string, description: "trigger, enrollment, last_step or an ISO 8601 duration." },
+      where: free,
+      fn: { ...choice("count", "sum", "distinct"), description: "Defaults to count." },
+      field: { ...string, description: "A data.* path, for sum and distinct." },
+    },
+    ["since", "where", "fn", "field"],
+  ),
+  Aggregates: {
+    type: "object",
+    additionalProperties: ref("Aggregate"),
+    minProperties: 1,
+    maxProperties: 10,
+    propertyNames: { pattern: "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+    description:
+      "1 to 10 named aggregates, each named by an identifier of letters, digits and underscores. Each reads at most 10,000 events of its name in its window, whatever `where` keeps; a step whose aggregate has more, or a sum outside the exact integer range, is recorded as skipped with skip_reason `aggregate_limit`. See docs/design/05-sequences.md#aggregates.",
   },
   SequenceStep: object({
     id: integer,

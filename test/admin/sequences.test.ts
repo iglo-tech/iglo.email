@@ -95,3 +95,17 @@ test("a filter in the URL arrives escaped", async () => {
   expect(html).not.toContain("<img src=x");
   expect((await get(f, "/admin/sequences/enrollments/x", cookie)).status).toBe(400);
 });
+
+test("the step editor offers aggregates beside the condition, for those who may save", async () => {
+  const manager = await userWith(f, cookie, "b85-manager", ["sequences:get", "sequences:manage"]);
+  for (const user of [cookie, manager]) {
+    const html = await (await get(f, "/admin/sequences/new", user)).text();
+    expect(html).toContain('data-testid="step-aggregates"');
+    expect(html).toContain("Aggregates");
+    expect(html).toContain("the template reads as aggregates.NAME");
+  }
+  // A reader sees the editor disabled, like the condition.
+  const reader = await userWith(f, cookie, "b85-reader", ["sequences:get"]);
+  const html = await (await get(f, "/admin/sequences/7", reader)).text();
+  expect(html).toContain('data-testid="step-aggregates"');
+});
