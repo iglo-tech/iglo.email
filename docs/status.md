@@ -16,8 +16,8 @@ Run in order, one at a time, through the normal stages. Write each brief from th
 
 Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-coverage.md](design/13-e2e-coverage.md) (B63 #114), one task per gap in order:
 - v1.1.0 published 2026-11-13 (MCP widening, D98).
-- Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
-- Active: B85 worker.
+- Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B88 `number` Liquid filter (D102, [brief](briefs/B88.md), adopter follow-up) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
+- Active: B85 fix r1.
 - Backlog (B84 reviews): archived lists grantable (as PUT); grant mid-request revocation test; replay of a limited token after the grant was removed answers 403; 403 wording "subscriber" vs PUT's "subscriber: <id>". CI steps sends:production, messaging:fixture and templates:compiled (arm64) fail on main too (run 43960943873). The test harness reads Linux /proc, so the full suite cannot pass on macOS.
 
 ## Owner decisions
