@@ -245,13 +245,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("default", function (value, fallback) {
       const b = budget(this.context);
       b.step();
-      const chosen = value == null || value === false || value === "" ? fallback : value;
-      // A finite number stays a number, so `number` can format it after `default`; output is the same text.
-      if (typeof chosen === "number" && Number.isFinite(chosen)) {
-        b.charge(byteLength(String(chosen)));
-        return chosen;
-      }
-      const out = scalar(chosen);
+      const out =
+        value == null || value === false || value === "" ? scalar(fallback) : scalar(value);
       b.charge(byteLength(out));
       return out;
     });

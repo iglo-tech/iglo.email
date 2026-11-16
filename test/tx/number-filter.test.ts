@@ -126,16 +126,43 @@ test("preview renders the filter", async () => {
   expect(await preview.text()).toContain("[1,234,567]");
 });
 
-test("combined with default: a fallback of 0 formats, and a present number formats too", async () => {
+test("number before default: a missing value is 0, and a present number formats", async () => {
   const f = await open();
   const sent = await render(
     f,
-    "[{{ data.missing | default: 0 | number }}] [{{ data.n | default: 0 | number }}] " +
-      "[{{ data.missing | default: 1234567 | number }}] [{{ data.text | default: 0 | number }}]",
+    "[{{ data.missing | number | default: 0 }}] [{{ data.n | number | default: 0 }}] " +
+      "[{{ data.text | number | default: 0 }}]",
     { n: 1234567, text: "none" },
   );
   expect(sent.status).toBe("sent");
-  expect(sent.message).toContain("[0] [1,234,567] [1,234,567] [none]");
+  expect(sent.message).toContain("[0] [1,234,567] [none]");
+});
+
+test("an assigned default: 0 compares and prints as it did before the number filter", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    '{% assign missing = data.missing | default: 0 %}[{% if missing == "0" %}text-zero{% endif %}]' +
+      "[{% if missing == 0 %}number-zero{% endif %}][{{ missing }}] " +
+      '{% assign n = data.n | default: 0 %}[{% if n contains "1" %}has-one{% endif %}]' +
+      '[{% if n == "0" %}zero{% endif %}][{{ n.size }}]',
+    { n: 123 },
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[text-zero][][0] [has-one][][3]");
+});
+
+test("number in a subject formats the value the subject renders", async () => {
+  const f = await open();
+  const template = await f.template("<p>body</p>", "Total {{ data.n | number }} items");
+  const email = `subject-${crypto.randomUUID().slice(0, 12)}@example.test`;
+  const response = await f.tx({
+    subscriber_emails: [email],
+    template_id: template,
+    data: { n: 1234567 },
+  });
+  expect(response.body?.data?.sends?.[0]?.status).toBe("sent");
+  expect(f.mailTo(email)[0]?.data).toContain("Subject: Total 1,234,567 items");
 });
 
 test("default output is unchanged for numbers without the filter", async () => {

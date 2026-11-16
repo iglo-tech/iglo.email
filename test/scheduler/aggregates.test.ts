@@ -536,3 +536,16 @@ test("a step formats its aggregate totals with the number filter", async () => {
   await delivered(f, 1);
   expect(decoded(f.sink.messages[0]!.data).body).toContain("items 1,234,567|count 2");
 });
+
+test("a step without aggregates renders a missing total as the fallback after number", async () => {
+  const f = await open();
+  const template = await f.template("<p>items {{ aggregates.items | number | default: 0 }}</p>");
+  await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [tx(template, { wait: "PT1H" })],
+  });
+  await f.event("no-aggregates@example.test", "subscription_created");
+  await f.pass(hour);
+  await delivered(f, 1);
+  expect(decoded(f.sink.messages[0]!.data).body).toContain("items 0");
+});
