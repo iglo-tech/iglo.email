@@ -12,7 +12,7 @@ UPDATE enrollments SET status = 'exited', exit_reason = ?, step_id = NULL, due_a
 -- name: sequences-triggered-by
 SELECT id, trigger, reentry FROM sequences WHERE status = 'active' AND json_extract(trigger, '$.event') = ? ORDER BY id;
 -- name: sequence-for-enroll
-SELECT id, status, reentry FROM sequences WHERE id = ?;
+SELECT id, status, reentry, json_extract(trigger, '$.event') AS event FROM sequences WHERE id = ?;
 -- name: first-step
 SELECT id, wait FROM sequence_steps WHERE sequence_id = ? AND status = 'active' ORDER BY position LIMIT 1;
 -- name: active-enrollment

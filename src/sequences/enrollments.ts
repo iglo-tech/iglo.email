@@ -119,10 +119,19 @@ export interface Claim {
   >;
 }
 
+/**
+ * An existing event a manual or test enrollment starts from (D101): the subscriber's own event
+ * under the sequence's trigger name. The route reads it; `enroll` and `enrollTest` check it.
+ */
+export interface TriggerEvent {
+  id: bigint;
+  subscriber_id: bigint;
+  name: string;
+}
 export type EnrollOutcome =
   | { enrollment: EnrollmentRow }
   | {
-      error: "sequence_missing" | "sequence_inactive" | "no_steps" | "reentry";
+      error: "sequence_missing" | "sequence_inactive" | "no_steps" | "reentry" | "trigger_event";
     };
 export type TestOutcome =
   | EnrollOutcome
@@ -195,6 +204,10 @@ export function createEnrollments(db: Database, clock: Clock) {
     const value = (filter.statement.values(...args) as unknown[][])[0]?.[0];
     return value === 1n || value === 1;
   }
+
+  /** A manual or test trigger is the subscriber's own event under the sequence's trigger name. */
+  const triggerFits = (trigger: TriggerEvent | null, subscriberId: bigint, event: string) =>
+    trigger === null || (trigger.subscriber_id === subscriberId && trigger.name === event);
 
   function start(
     sequenceId: bigint,
@@ -348,13 +361,20 @@ export function createEnrollments(db: Database, clock: Clock) {
     /**
      * Manual enroll of an existing, non-blocklisted subscriber. Reentry applies unless
      * `force`; a forced or `always` enroll replaces a running enrollment (canceled, manual).
-     * The caller holds the write transaction.
+     * A `trigger` (D101) must be the subscriber's own event under the sequence's trigger name and
+     * becomes the enrollment's trigger. The caller holds the write transaction.
      */
-    enroll(sequenceId: bigint, subscriberId: bigint, force: boolean): EnrollOutcome {
+    enroll(
+      sequenceId: bigint,
+      subscriberId: bigint,
+      force: boolean,
+      trigger: TriggerEvent | null = null,
+    ): EnrollOutcome {
       const sequence = q.get("sequence-for-enroll").get(sequenceId) as {
         id: bigint;
         status: string;
         reentry: string;
+        event: string;
       } | null;
       if (!sequence) return { error: "sequence_missing" };
       if (sequence.status !== "active") return { error: "sequence_inactive" };
@@ -363,6 +383,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         wait: string;
       } | null;
       if (!first) return { error: "no_steps" };
+      if (!triggerFits(trigger, subscriberId, sequence.event)) return { error: "trigger_event" };
       const now = at();
       if (
         !force &&
@@ -377,7 +398,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         if (!force && sequence.reentry !== "always") return { error: "reentry" };
         end(active.id, "canceled", "manual", now);
       }
-      const id = start(sequenceId, subscriberId, null, first, now, now);
+      const id = start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now);
       return { enrollment: byId(id)! };
     },
     /**
@@ -385,18 +406,24 @@ export function createEnrollments(db: Database, clock: Clock) {
      * shortened by `after`. It needs what a normal enrollment needs and, when a step is marketing,
      * current consent on the sequence's list, as `consent` reports it (null or `frequency_cap`,
      * which delays a step and is not consent). It writes nothing else: reentry neither stops it
-     * nor counts it. The caller holds the write transaction.
+     * nor counts it. A `trigger` is checked and recorded as in `enroll` (D101). The caller holds
+     * the write transaction.
      */
     enrollTest(
       sequenceId: bigint,
       subscriberId: bigint,
       consent: (listId: bigint | null) => string | null,
+      trigger: TriggerEvent | null = null,
     ): TestOutcome {
-      const sequence = q.get("sequence-for-enroll").get(sequenceId) as { status: string } | null;
+      const sequence = q.get("sequence-for-enroll").get(sequenceId) as {
+        status: string;
+        event: string;
+      } | null;
       if (!sequence) return { error: "sequence_missing" };
       if (sequence.status !== "active") return { error: "sequence_inactive" };
       const first = q.get("first-step").get(sequenceId) as { id: bigint; wait: string } | null;
       if (!first) return { error: "no_steps" };
+      if (!triggerFits(trigger, subscriberId, sequence.event)) return { error: "trigger_event" };
       if (q.get("active-test").get(subscriberId, sequenceId)) return { error: "test_running" };
       const marketing = q.get("test-list").get(sequenceId) as { list_id: bigint | null } | null;
       if (marketing) {
@@ -405,7 +432,9 @@ export function createEnrollments(db: Database, clock: Clock) {
       }
       const now = at();
       return {
-        enrollment: byId(start(sequenceId, subscriberId, null, first, now, now, true))!,
+        enrollment: byId(
+          start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now, true),
+        )!,
       };
     },
     /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */

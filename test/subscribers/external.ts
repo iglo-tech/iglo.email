@@ -333,8 +333,8 @@ export async function runExternalContract(target: {
       "D38-external-rekey",
     );
     check(
-      (await request(`/api/subscribers/external/${encodeURIComponent(external)}`)).status === 400,
-      "D38-external-old-missing",
+      (await request(`/api/subscribers/external/${encodeURIComponent(external)}`)).status === 404,
+      "D101-external-old-missing",
     );
     response = await request(`/api/subscribers/${id}`, "PATCH", { external_id: null });
     check(
@@ -342,8 +342,8 @@ export async function runExternalContract(target: {
       "D38-external-clear",
     );
     check(
-      (await request(`/api/subscribers/external/${encodeURIComponent(rekey)}`)).status === 400,
-      "D38-external-cleared-missing",
+      (await request(`/api/subscribers/external/${encodeURIComponent(rekey)}`)).status === 404,
+      "D101-external-cleared-missing",
     );
   } finally {
     for (const id of owned.reverse()) {

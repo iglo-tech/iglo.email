@@ -103,10 +103,14 @@ export function registerSubscriberRoutes(
           c.app.i18n.Ts("globals.messages.permissionDenied", "name", `subscriber: ${id}`),
         );
   };
+  // A well-formed external ID that matches no subscriber is a 404 (D101). The numeric route keeps
+  // listmonk's 400 for the same case.
+  const missingExternal = () => new HttpError(404, "Subscriber not found.");
   const required = (c: RequestContext, id: bigint, external = false) =>
     store.get(id) ??
     (() => {
-      const name = external ? "{globals.terms.subscriber}" : `{globals.terms.subscriber} (${id}: )`;
+      if (external) throw missingExternal();
+      const name = `{globals.terms.subscriber} (${id}: )`;
       throw new HttpError(400, c.app.i18n.Ts("globals.messages.notFound", "name", name));
     })();
   const listPermission = (c: RequestContext, ids: bigint[] | null | undefined) => {
@@ -182,7 +186,7 @@ export function registerSubscriberRoutes(
     (external: boolean): Handler =>
     (c) => {
       const id = resolve(c, external);
-      if (id === undefined) throw new HttpError(400, "Subscriber not found");
+      if (id === undefined) throw missingExternal();
       allowed(c, [id], "get");
       return ok(store.project(required(c, id, external), maskScope(c)));
     };
@@ -208,7 +212,7 @@ export function registerSubscriberRoutes(
     async (c) => {
       const externalKey = external ? selector(c) : undefined;
       const id = externalKey === undefined ? BigInt(getID(c)) : store.external(externalKey)?.id;
-      if (id === undefined) throw new HttpError(400, "Subscriber not found");
+      if (id === undefined) throw missingExternal();
       if (patch || external) {
         allowed(c, [id], "manage");
         required(c, id, external);
@@ -219,7 +223,7 @@ export function registerSubscriberRoutes(
       let updated: SubscriberRow;
       const response = store.transaction(() => {
         if (externalKey !== undefined && store.external(externalKey)?.id !== id)
-          throw new HttpError(400, "Subscriber not found");
+          throw missingExternal();
         allowed(c, [id], "manage");
         listPermission(c, input.lists);
         updated = store.update(required(c, id, external), input, patch, scope(c, "manage"));
@@ -233,7 +237,7 @@ export function registerSubscriberRoutes(
     (external: boolean): Handler =>
     (c) => {
       const id = resolve(c, external);
-      if (id === undefined) throw new HttpError(400, "Subscriber not found");
+      if (id === undefined) throw missingExternal();
       return store.transaction(() => {
         allowed(c, [id], "manage");
         if (external) required(c, id, true);
