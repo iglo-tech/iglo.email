@@ -104,6 +104,7 @@ export function startRuntime(options: {
   const events = createEventStore(db, subscribers, {
     emailAllowed: () => true,
     exitThenTrigger: enrollments.exitThenTrigger,
+    i18n: createTranslation(),
   });
   const conditions = createConditionEvaluator({ readonly, runner });
   const scheduler: Scheduler | undefined =

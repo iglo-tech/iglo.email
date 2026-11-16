@@ -37,15 +37,27 @@ A sequence is a list of steps that starts when a subscriber does something (an e
 - A repeated `idempotency_key` for the same subscriber returns the first result and changes nothing.
 - `occurred_at` defaults to the receive time. Events older than 7 days are stored but do not start sequences (prevents a backfill from sending old onboarding mail).
 - `POST /api/subscriber-events/batch` accepts up to 500 events.
-- Response: the event ID, the subscriber ID, and the enrollments it started (`{id, sequence_id}`) or ended (`{id, sequence_id, exit_reason}`). A repeated key replays the first request's lists.
+- `subscriber.grant_lists` (optional, [D99](09-decisions.md#d99-events-grant-consent-on-single-opt-in-lists-lead-2026-11-16)): 1 to 20 distinct list IDs of single opt-in lists the event grants consent on. Each listed list gets a confirmed membership unless the subscriber already has one. Results come back in `grants`, in request order:
+
+  | Situation | Effect | `result` |
+  |---|---|---|
+  | Subscriber is blocklisted | nothing, for every list | `blocklisted` |
+  | No membership on that list | insert membership `confirmed` | `added` |
+  | Membership `unconfirmed` or `confirmed` | unchanged | `member` |
+  | Membership `unsubscribed` | unchanged | `unsubscribed` |
+
+  - A list that does not exist, a double opt-in list, or a malformed field (`[]`, duplicates, non-integers, more than 20) is `400 Invalid fields: subscriber.grant_lists` and writes nothing. In a batch only that item fails.
+  - The grant needs `subscribers:manage` and manage scope on every listed list, the rule of `PUT /api/subscribers/lists`; for an existing subscriber it also needs manage scope on at least one list the subscriber already has a membership on, of any status (PUT's check), while a subscriber the event creates needs only the listed lists. Otherwise `403` and nothing is written (a batch item fails alone).
+  - `null` or absent grants nothing and `grants` is `[]`.
+- Response: the event ID, the subscriber ID, the enrollments it started (`{id, sequence_id}`) or ended (`{id, sequence_id, exit_reason}`), and `grants`. A repeated key replays the first request's enrollments and grants and changes nothing.
 
 Processing, in one transaction:
 
-1. Upsert the subscriber, insert the event.
+1. Upsert the subscriber, grant the listed consent (the table above, before any exit or trigger), insert the event.
 2. For each sequence, whatever its status, with `exit_on` containing this event name (a paused or draft sequence keeps its parked enrollments, but an exit event still ends them), end the subscriber's active enrollment (`exited`, `exit_reason = 'event:<name>'`).
 3. For each `active` sequence whose trigger matches, create an enrollment if `reentry` allows it, with `step_id` = first step and `due_at = occurred_at + wait`.
 
-Steps 2 and 3 run in that order, so an event that both exits and triggers the same sequence restarts it.
+Steps 2 and 3 run in that order, so an event that both exits and triggers the same sequence restarts it. Step 1's grant comes before both, so a sequence whose first step is a `PT0S` marketing step is checked against the granted membership, not the one before the event. Granting afterwards would end that enrollment `unsubscribed`.
 
 ## Sequence definition
 

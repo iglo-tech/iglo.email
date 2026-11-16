@@ -33,7 +33,12 @@ test("an unknown email creates an enabled subscriber without lists and records t
   );
   expect(r.status).toBe(200);
   expect(r.body).toEqual({
-    data: { event_id: expect.any(Number), subscriber_id: expect.any(Number), enrollments: ok },
+    data: {
+      event_id: expect.any(Number),
+      subscriber_id: expect.any(Number),
+      enrollments: ok,
+      grants: [],
+    },
   });
   const s = await f.subscriber(r.body.data.subscriber_id);
   expect(s).toMatchObject({

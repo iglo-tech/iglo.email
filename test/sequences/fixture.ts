@@ -165,6 +165,7 @@ export async function sequencesFixture(
   const events = createEventStore(db, subscribers, {
     emailAllowed: (email) => allowedDomain(email, [], []),
     exitThenTrigger: enrollments.exitThenTrigger,
+    i18n: app.i18n,
   });
   const sequences = createSequenceStore(db, clock, {
     templates,
@@ -203,7 +204,7 @@ export async function sequencesFixture(
     settings: () => marketing,
     effects: enrollments.unsubscribeEffects,
   });
-  registerEventRoutes(router, events, auth);
+  registerEventRoutes(router, events, auth, roles);
   registerSequenceRoutes(router, {
     sequences,
     enrollments,

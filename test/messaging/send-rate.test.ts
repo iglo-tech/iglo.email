@@ -288,6 +288,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const events = createEventStore(db, subscribers, {
     emailAllowed: (email) => allowedDomain(email, [], []),
     exitThenTrigger: enrollments.exitThenTrigger,
+    i18n: app.i18n,
   });
 
   const sequences = createSequenceStore(db, clock, {
