@@ -198,36 +198,6 @@ test("distinct counts numbers, text and booleans as the condition language's eq 
   expect(decoded(f.sink.messages[0]!.data).body).toContain("distinct 6");
 });
 
-test("a sum beyond the safe integer range holds the step, retries with a log, and never sends", async () => {
-  const f = await open();
-  const template = await f.template("<p>total {{ aggregates.total }}</p>");
-  await f.sequence({
-    trigger: { event: "subscription_created" },
-    steps: [
-      tx(template, {
-        wait: "PT1H",
-        aggregates: { total: { event: "bulk", fn: "sum", field: "data.items" } },
-      }),
-    ],
-  });
-  const email = "total@example.test";
-  const subscriber = (await f.event(email, "subscription_created")).subscriber_id;
-  // Two values that are each a safe integer but whose sum is not: nothing is sent, the decision
-  // is retried with backoff, and the attention log names no subscriber.
-  rawEvent(f, subscriber, "bulk", '{"items": 9007199254740991}');
-  rawEvent(f, subscriber, "bulk", '{"items": 9007199254740991}');
-  await f.pass(hour);
-  await f.until(() => f.errors.length > 0, "logged aggregate error");
-  expect(f.errors.map((e) => (e as Error).message).join("\n")).toContain(
-    "Sequence aggregates failed",
-  );
-  expect(f.errors.map((e) => (e as Error).message).join("\n")).not.toContain(email);
-  expect(f.sink.messages).toHaveLength(0);
-  const [enrollment] = (await f.json(`/api/enrollments?subscriber_id=${subscriber}`)).body.data
-    .results as { status: string }[];
-  expect(enrollment?.status).toBe("active");
-});
-
 test("an edit while the aggregates are read discards the stale decision and reads the current ones", async () => {
   const f = await open();
   const template = await f.template("<p>pings {{ aggregates.n }}</p>");
@@ -326,7 +296,7 @@ function bulkEvents(
   insert.finalize();
 }
 
-test("exactly 10,000 matching events are read in full: the step sends the complete totals", async () => {
+test("exactly 10,000 events of the name in the window are read in full: the step sends the complete totals", async () => {
   const f = await open();
   const template = await f.template(
     "<p>count {{ aggregates.n }}|sum {{ aggregates.total }}|sources {{ aggregates.sources }}</p>",
@@ -367,7 +337,7 @@ test("exactly 10,000 matching events are read in full: the step sends the comple
   expect(f.errors).toHaveLength(0);
 });
 
-test("10,001 matching events hold the step: skipped with aggregate_limit, advanced, no mail, one log", async () => {
+test("10,001 events of the name in the window hold the step: skipped with aggregate_limit, advanced, no mail, one log", async () => {
   const f = await open();
   const template = await f.template("<p>count {{ aggregates.n }}</p>");
   const seq = await f.sequence({
@@ -415,7 +385,43 @@ test("10,001 matching events hold the step: skipped with aggregate_limit, advanc
   expect((await f.enrollment(id)).status).toBe("completed");
 });
 
-test("only events inside the window and matching where count toward the limit", async () => {
+test("the limit counts the events of the name in the window, whatever where matches", async () => {
+  const f = await open();
+  const template = await f.template("<p>bulk {{ aggregates.bulk }}</p>");
+  const seq = await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [
+      tx(template, {
+        wait: "PT1H",
+        aggregates: {
+          bulk: { event: "download_finished", since: "P1D", where: { "data.kind": "bulk" } },
+        },
+      }),
+    ],
+  });
+  // 10,001 events in the window, none of them bulk: the aggregate reads more than 10,000 rows,
+  // so the step is held, whatever its `where` keeps.
+  const created = await f.event("over-where@example.test", "subscription_created");
+  bulkEvents(
+    f,
+    created.subscriber_id,
+    "download_finished",
+    10_001,
+    () => iso(f),
+    () => '{"kind":"single"}',
+  );
+  await f.pass(hour);
+  const sends = (await f.sendLog()).filter(
+    (s) => s.enrollment_id === created.enrollments.started[0]!.id,
+  );
+  expect(sends).toMatchObject([
+    { step_id: seq.steps[0]!.id, status: "skipped", skip_reason: "aggregate_limit" },
+  ]);
+  expect(f.sink.messages).toHaveLength(0);
+  expect(f.errors).toHaveLength(1);
+});
+
+test("10,000 events of the name in the window are read in full, and only they count", async () => {
   const f = await open();
   const template = await f.template("<p>bulk {{ aggregates.bulk }}</p>");
   await f.sequence({
@@ -424,28 +430,16 @@ test("only events inside the window and matching where count toward the limit", 
       tx(template, {
         wait: "PT1H",
         aggregates: {
-          bulk: {
-            event: "download_finished",
-            since: "P1D",
-            where: { "data.kind": "bulk" },
-          },
+          bulk: { event: "download_finished", since: "P1D", where: { "data.kind": "bulk" } },
         },
       }),
     ],
   });
   const created = await f.event("window@example.test", "subscription_created");
   const subscriber = created.subscriber_id;
-  // 10,000 bulk events now (counted), 10,000 single events now (not matching `where`) and 10,000
-  // bulk events two days old (outside `since`). Only the first set may count: were any other
-  // row counted, the limit would hold the step.
-  bulkEvents(
-    f,
-    subscriber,
-    "download_finished",
-    10_000,
-    () => iso(f),
-    () => '{"kind":"bulk"}',
-  );
+  // 10,000 single events now (read, none bulk), 10,000 bulk events two days old (outside `since`)
+  // and 10,000 events of another name now (not read). Were any of them read, the limit would hold
+  // the step; were the old bulk events counted, the total would be wrong.
   bulkEvents(
     f,
     subscriber,
@@ -462,8 +456,56 @@ test("only events inside the window and matching where count toward the limit", 
     () => iso(f, -2 * day),
     () => '{"kind":"bulk"}',
   );
+  bulkEvents(
+    f,
+    subscriber,
+    "another_event",
+    10_000,
+    () => iso(f),
+    () => '{"kind":"bulk"}',
+  );
   await f.pass(hour);
   await delivered(f, 1);
-  expect(decoded(f.sink.messages[0]!.data).body).toContain("<p>bulk 10000</p>");
+  expect(decoded(f.sink.messages[0]!.data).body).toContain("<p>bulk 0</p>");
   expect(f.errors).toHaveLength(0);
+});
+
+test("a sum past the safe integer range or the 64-bit range holds the step as aggregate_limit", async () => {
+  const f = await open();
+  const template = await f.template("<p>total {{ aggregates.total }}</p>");
+  const seq = await f.sequence({
+    trigger: { event: "subscription_created" },
+    steps: [
+      tx(template, {
+        wait: "PT1H",
+        aggregates: {
+          total: { event: "download_finished", fn: "sum", field: "data.items" },
+        },
+      }),
+    ],
+  });
+  // Two events whose exact sum is 2^53: beyond ±(2^53 − 1), so it would be a rounded total.
+  const past = await f.event("past-safe@example.test", "subscription_created");
+  await f.event("past-safe@example.test", "download_finished", {
+    data: { items: Number.MAX_SAFE_INTEGER },
+  });
+  await f.event("past-safe@example.test", "download_finished", { data: { items: 1 } });
+  // Two values whose sum overflows SQLite's 64-bit integer sum.
+  const overflow = await f.event("overflow@example.test", "subscription_created");
+  rawEvent(f, overflow.subscriber_id, "download_finished", '{"items":9223372036854775807}');
+  rawEvent(f, overflow.subscriber_id, "download_finished", '{"items":9223372036854775807}');
+  await f.pass(hour);
+  const sends = await f.sendLog();
+  for (const created of [past, overflow]) {
+    expect(
+      sends.filter((s) => s.enrollment_id === created.enrollments.started[0]!.id),
+    ).toMatchObject([
+      { step_id: seq.steps[0]!.id, status: "skipped", skip_reason: "aggregate_limit" },
+    ]);
+  }
+  expect(f.sink.messages).toHaveLength(0);
+  // Skipped, not retried: one log per decision and no retry scheduled.
+  expect(f.errors).toHaveLength(2);
+  await f.pass(hour);
+  expect(f.errors).toHaveLength(2);
 });

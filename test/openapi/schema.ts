@@ -36,6 +36,9 @@ const keywords = new Set([
   "maxLength",
   "minItems",
   "maxItems",
+  "minProperties",
+  "maxProperties",
+  "propertyNames",
   "contentMediaType",
 ]);
 const formats: Record<string, (value: string) => boolean> = {
@@ -140,6 +143,14 @@ export function validate(
   if (typeOf(value) === "object") {
     const object = value as Record<string, unknown>;
     const properties = (schema.properties ?? {}) as Record<string, Schema>;
+    const size = Object.keys(object).length;
+    if (schema.minProperties !== undefined && size < (schema.minProperties as number))
+      problems.push(`${path}: too few properties`);
+    if (schema.maxProperties !== undefined && size > (schema.maxProperties as number))
+      problems.push(`${path}: too many properties`);
+    if (schema.propertyNames !== undefined)
+      for (const name of Object.keys(object))
+        problems.push(...next(schema.propertyNames as Schema, name, `${path}.${name} (name)`));
     for (const name of (schema.required ?? []) as string[])
       if (!Object.hasOwn(object, name)) problems.push(`${path}.${name}: required`);
     for (const [name, item] of Object.entries(object)) {

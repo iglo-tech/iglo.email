@@ -1,20 +1,21 @@
 // Event aggregates for sequence step templates (docs/design/05-sequences.md#aggregates, D100);
 // no upstream source. The events module owns `events`, so the one read that counts, sums or
 // distinct-counts a `data` field lives here. Each aggregate is one statement bound to the
-// subscriber, on the `(subscriber_id, name, occurred_at)` index. `where` and `since` compile with
-// the condition language's own pieces, so an aggregate matches exactly the events a condition
-// with the same predicate would count.
+// subscriber, on the `(subscriber_id, name, occurred_at)` index. Its window (`event`, `since`) and
+// its `where` come from the condition language's own SQL pieces, so an aggregate matches exactly
+// the events a condition with the same predicate would count.
 import type { Database, Statement } from "bun:sqlite";
-import { compareSQL, jsonPath, type Param } from "@/conditions/json";
+import { jsonPath, type Param } from "@/conditions/json";
 import { ContextError, instant, sinceBound, subscriberID } from "@/conditions/since";
 import type { ConditionContext, ConditionError, Scalar } from "@/conditions/types";
+import { whereSQL, windowSQL } from "@/events/condition-sql";
 
 /** Prepared statements kept per reader; the least recently used is finalized beyond it. */
 const CACHE = 64;
 const SAFE = Number.MAX_SAFE_INTEGER;
 /**
- * Most matching events one aggregate may read (D100). A decision whose aggregate matches more is
- * not sent, and no total is returned: the bound makes each read cost at most this many rows.
+ * Most events of its name in its window one aggregate may read (D100). `where` does not lower
+ * it: an aggregate whose window holds more events is not computed, whatever `where` keeps.
  */
 export const AGGREGATE_LIMIT = 10_000;
 
@@ -33,63 +34,59 @@ export interface Aggregate {
 export type AggregateResult =
   | { ok: true; values: Record<string, number> }
   | { ok: false; error: ConditionError }
-  /** An aggregate matched more than `AGGREGATE_LIMIT` events; no total is returned. */
+  /**
+   * An aggregate cannot be computed within its bounds: its window holds more than
+   * `AGGREGATE_LIMIT` events, or a sum is outside the exact integer range. No total is returned.
+   */
   | { ok: false; limit: true };
 
-/**
- * The SQL of one aggregate and the arguments it binds for one subscriber and lower bound
- * (`after`, "" for none). Only the statement's shape is cached; values are bound each time.
- * The statement reads the matching events through a subquery limited to `AGGREGATE_LIMIT + 1`
- * rows, newest first, so `matched` tells whether the limit was exceeded and the total is exact
- * whenever it is not.
- */
+/** The statement of one aggregate and the arguments it binds for one subscriber and lower bound. */
 interface Compiled {
   sql: string;
-  args: (id: bigint, after: string | undefined) => Param[];
+  args: Param[];
 }
 
-function compile(aggregate: Aggregate): Compiled {
+/**
+ * One statement. The inner query reads the newest `AGGREGATE_LIMIT + 1` events of the window and
+ * marks each one `hit` when `where` holds. The outer query reads all of them, so `scanned` is the
+ * window's size (up to the limit) whatever `where` keeps, and the aggregate counts the hits only.
+ * `scanned` above the limit means the aggregate is not computed.
+ */
+function compile(aggregate: Aggregate, subscriber: bigint, after: string | undefined): Compiled {
   const { event, where, fn, field } = aggregate;
-  const filters: string[] = ["events.subscriber_id = ?", "events.name = ?"];
-  const filterArgs: Param[] = [];
-  // Filters bind in text order: subscriber, name, the lower bound, then each `where` field.
-  const bound = aggregate.since !== undefined;
-  if (bound) filters.push("events.occurred_at > ?");
-  for (const [key, value] of Object.entries(where ?? {})) {
-    const part = compareSQL("events.data", key.slice("data.".length), "eq", value);
-    filters.push(part.sql);
-    filterArgs.push(...(part.args as Param[]));
-  }
+  const window = windowSQL<Param>({
+    subscriber,
+    name: event,
+    ...(aggregate.since === undefined ? {} : { after: after ?? "" }),
+  });
+  const hit = whereSQL(where);
   const path = field === undefined ? "" : jsonPath(field.slice("data.".length));
   const numeric = "json_type(data, ?) IN ('integer', 'real')";
   let select: string;
-  // Parameters of the select list come before the filters in the statement text.
+  // Parameters of the select list come before the statement's own.
   let selectArgs: Param[];
   if (fn === "count") {
-    select = "count(*)";
+    select = "coalesce(sum(hit), 0)";
     selectArgs = [];
   } else if (fn === "sum") {
-    select = `coalesce(sum(CASE WHEN ${numeric} THEN json_extract(data, ?) END), 0)`;
+    select = `coalesce(sum(CASE WHEN hit AND ${numeric} THEN json_extract(data, ?) END), 0)`;
     selectArgs = [path, path];
   } else {
     // Numbers (5 and 5.0 are one value), text (its characters) and booleans (a type of their own)
     // never equal one another, as the condition language's eq does. Missing values, JSON null and
     // objects or arrays, which no eq can match, are not counted.
     select = [
-      `count(DISTINCT CASE WHEN ${numeric} THEN json_extract(data, ?) END)`,
-      "count(DISTINCT CASE WHEN json_type(data, ?) = 'text' THEN json_extract(data, ?) END)",
-      "count(DISTINCT CASE WHEN json_type(data, ?) IN ('true', 'false') THEN json_type(data, ?) END)",
+      `count(DISTINCT CASE WHEN hit AND ${numeric} THEN json_extract(data, ?) END)`,
+      "count(DISTINCT CASE WHEN hit AND json_type(data, ?) = 'text' THEN json_extract(data, ?) END)",
+      "count(DISTINCT CASE WHEN hit AND json_type(data, ?) IN ('true', 'false') THEN json_type(data, ?) END)",
     ].join(" + ");
     selectArgs = [path, path, path, path, path, path];
   }
-  const limited = `SELECT events.data AS data FROM events WHERE ${filters.join(" AND ")} ORDER BY events.occurred_at DESC LIMIT ${AGGREGATE_LIMIT + 1}`;
+  const newest = `SELECT events.data AS data, (${hit.sql}) AS hit FROM events WHERE ${window.sql} ORDER BY events.occurred_at DESC LIMIT ${AGGREGATE_LIMIT + 1}`;
+  // Parameters bind in text order: the select list, then `where` in the inner list, then the window.
   return {
-    sql: `SELECT count(*) AS matched, ${select} AS n FROM (${limited})`,
-    args: (id, after) => {
-      const head: Param[] = [...selectArgs, id, event];
-      if (bound) head.push(after ?? "");
-      return [...head, ...filterArgs];
-    },
+    sql: `SELECT count(*) AS scanned, ${select} AS n FROM (${newest})`,
+    args: [...selectArgs, ...hit.args, ...window.args],
   };
 }
 
@@ -111,8 +108,8 @@ export function createEventAggregates(db: Database) {
   return {
     /**
      * Every aggregate of one step for one subscriber, computed against the context's `now`.
-     * Values are JSON numbers. A sum beyond the safe integer range is an error rather than a
-     * rounded total, and no aggregate is ever truncated: the count is always complete.
+     * Values are JSON numbers and are never truncated: an aggregate that cannot be computed
+     * exactly within its bounds returns `{ ok: false, limit: true }` and no total at all.
      */
     evaluate(aggregates: Record<string, Aggregate>, context: ConditionContext): AggregateResult {
       let id: bigint, now: number;
@@ -135,23 +132,23 @@ export function createEventAggregates(db: Database) {
             return { ok: false, error: { kind: "context", message: error.message } };
           throw error;
         }
-        const compiled = compile(aggregate);
+        const compiled = compile(aggregate, id, after);
         let value: number;
         try {
-          const row = prepared(compiled.sql).get(...compiled.args(id, after)) as {
-            matched: bigint | number;
+          const row = prepared(compiled.sql).get(...compiled.args) as {
+            scanned: bigint | number;
             n: bigint | number | null;
           };
-          if (Number(row.matched) > AGGREGATE_LIMIT) return { ok: false, limit: true };
+          if (Number(row.scanned) > AGGREGATE_LIMIT) return { ok: false, limit: true };
           value = Number(row.n ?? 0);
-        } catch {
+        } catch (error) {
+          // SQLite's 64-bit integer sum overflowed: the total is not exact, so none is returned.
+          if (error instanceof Error && error.message === "integer overflow")
+            return { ok: false, limit: true };
           return { ok: false, error: { kind: "execution", message: "aggregate query failed" } };
         }
-        if (aggregate.fn === "sum" && !(Math.abs(value) <= SAFE))
-          return {
-            ok: false,
-            error: { kind: "execution", message: "aggregate is outside the safe integer range" },
-          };
+        // A sum past the safe integer range would be a rounded total, so none is returned.
+        if (aggregate.fn === "sum" && !(Math.abs(value) <= SAFE)) return { ok: false, limit: true };
         values.push([name, value]);
       }
       // `Object.fromEntries` defines each name as an own property, so a name such as `__proto__`

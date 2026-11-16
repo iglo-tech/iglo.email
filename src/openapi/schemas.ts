@@ -687,16 +687,19 @@ export const schemas: Record<string, Schema> = {
       event: string,
       since: { ...string, description: "trigger, enrollment, last_step or an ISO 8601 duration." },
       where: free,
-      fn: choice("count", "sum", "distinct"),
+      fn: { ...choice("count", "sum", "distinct"), description: "Defaults to count." },
       field: { ...string, description: "A data.* path, for sum and distinct." },
     },
-    ["since", "where", "field"],
+    ["since", "where", "fn", "field"],
   ),
   Aggregates: {
     type: "object",
     additionalProperties: ref("Aggregate"),
+    minProperties: 1,
+    maxProperties: 10,
+    propertyNames: { pattern: "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
     description:
-      "1 to 10 named aggregates, each named by an identifier of letters, digits and underscores. Each reads at most 10,000 matching events; a step whose aggregate matches more is recorded as skipped with skip_reason `aggregate_limit`. See docs/design/05-sequences.md#aggregates.",
+      "1 to 10 named aggregates, each named by an identifier of letters, digits and underscores. Each reads at most 10,000 events of its name in its window, whatever `where` keeps; a step whose aggregate has more, or a sum outside the exact integer range, is recorded as skipped with skip_reason `aggregate_limit`. See docs/design/05-sequences.md#aggregates.",
   },
   SequenceStep: object({
     id: integer,

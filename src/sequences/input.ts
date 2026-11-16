@@ -171,16 +171,15 @@ function aggregatesInput(value: unknown, field: string): string | null {
     for (const key in spec)
       if (Object.hasOwn(spec, key) && !aggregateFields.includes(key))
         return fail(`${at}.${key}`, "unknown field");
-    // Optional keys read null as absent, as a condition does.
-    const since = spec.since ?? undefined,
-      where = spec.where ?? undefined,
-      path = spec.field ?? undefined;
+    // An absent key is absent; a present one is checked as given, so null is refused as a condition
+    // refuses it. Only `fn` defaults, as the other step fields do.
+    const path = spec.field;
     const predicate = checked(
       validate(
         {
           event: spec.event,
-          ...(since === undefined ? {} : { since }),
-          ...(where === undefined ? {} : { where }),
+          ...(spec.since === undefined ? {} : { since: spec.since }),
+          ...(spec.where === undefined ? {} : { where: spec.where }),
         },
         { canUseSql: false, field: at },
       ),

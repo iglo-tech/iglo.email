@@ -27,55 +27,78 @@ marketing before 2,765 / 2,436 / 2,530, after 2,581 / 2,643 / 2,608. Run-to-run 
 What the branch adds to a decision without aggregates: one `NULL` check, one more field in the
 template data (`"aggregates":{}`), one more compared field in the decided-on check, and one more
 column in the scheduler's context read.
-
 ## 2. One decision: aggregates over one subscriber's events, bounded
 
 Harness: `test/scheduler/measure-aggregates.ts` (`bun test/scheduler/measure-aggregates.ts 5`).
 One subscriber has 1,000, 10,000 or 100,000 `download_finished` events inside the 30 days before
-the decision, and another subscriber has the same number of events with the same name, so each
-read is bounded by the subscriber and name index and not by the table. Each figure is the median
-of five runs after one warm-up, through `createEventAggregates`, the reader the event store exposes
-to the scheduler. At 1,000 and 10,000 events the harness first checks the totals against values
-computed from the data, so the timings measure correct answers. At 100,000 it checks that every
-`download_finished` aggregate is refused with no total, and that `count_actions` (exactly 10,000
-events) is complete.
+the decision, and another subscriber has as many events with the same name, so each read is
+bounded by the subscriber and name index and not by the table. Figures are medians of runs after
+one warm-up, through `createEventAggregates`, the reader the event store exposes to the scheduler.
+At 1,000 and 10,000 events the harness first checks the totals against values computed from the
+data. At 100,000 it checks that every `download_finished` aggregate and each of the ten `where`
+misses is refused with no total, and that `count_actions` (exactly 10,000 events) is complete.
 
-The bound (D100): each aggregate reads at most 10,000 matching events (`AGGREGATE_LIMIT`), through a
-subquery with `LIMIT 10001` on the index, newest first. Over the limit the step is skipped, so the
-read stops at the limit. Two runs on this host, `run 1 / run 2`:
+The bound (D100): each aggregate reads at most 10,000 events of its name in its window, newest
+first, and `where` is applied to those rows only. The limit counts the window, not the matching
+rows, so a `where` that matches little does not lower the cost, and a window with more than
+10,000 events is refused with no total.
 
-| Events in window | `count` | `sum` of `data.items` | `distinct` of `data.source_id` | `count` with `where` | Ten aggregates together |
-|---:|---:|---:|---:|---:|---:|
-| 1,000 | 0.07 / 0.07 ms | 0.56 / 0.57 ms | 0.93 / 0.92 ms | 0.56 / 0.57 ms | 6.1 / 6.3 ms |
-| 10,000 (at the limit) | 0.53 / 0.52 ms | 6.2 / 6.0 ms | 9.4 / 9.9 ms | 6.0 / 6.2 ms | 65 / 67 ms |
-| 100,000 (over the limit) | 0.56 / 0.50 ms | 6.3 / 6.7 ms | 9.4 / 13.7 ms | 11.8 / 12.3 ms | 6.2 / 6.4 ms * |
+Host: the macOS workstation was shared with other busy processes during these runs (load average
+9 to 36), so single timings moved by up to 2×. "Before" is `0351d17` (the bound on matching rows,
+so reads of `where` were not bounded) and "after" is this branch. Each build ran six times,
+interleaved, with five repetitions per run. Medians of the six runs, with the range in brackets:
 
-\* Over the limit the first aggregate of the set is refused and the read stops: the decision costs
-one bounded read, not ten.
+| Events in window | Build | `count` | `sum` | `distinct` | `count` with `where` | Ten aggregates | Ten `where` misses |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1,000 | before | 0.07 | 0.65 | 1.0 | 0.6 | 13.8 (7.6–27.4) | not measured |
+| 1,000 | after | 0.21 | 1.6 | 2.2 | 0.9 | 9.3 (7.2–14.5) | 8.7 (6.0–13.4) |
+| 10,000 (at the limit) | before | 0.64 | 9.4 | 15.5 | 8.9 | 168 (117–238) | not measured |
+| 10,000 (at the limit) | after | 0.72 | 11.5 | 16.6 | 8.7 | 91 (75–305) | 125 (83–213) |
+| 100,000 (over the limit) | before | 0.54 | 10.1 | 16.2 | 26.2 | 10.6 (6.8–17.7) | not measured |
+| 100,000 (over the limit) | after | 0.71 | 9.2 | 16.4 | 9.0 | 11.0 (7.1–25.7) | 9.5 (7.5–20.8) |
 
-Worst case, nine aggregates that each read exactly the limit and then one that is over it (the
-decision reads all nine before it stops): **54 / 59 ms** at 100,000 events. This is the most a
-decision can cost with ten aggregates, about the cost of the ten-at-the-limit row above. The brief's
-threshold is 250 ms per decision.
+Over the limit, the first aggregate read is refused and the decision stops there, so ten
+aggregates cost one bounded read. At the limit, ten aggregates cost ten reads of 10,000 rows, the
+same work before and after: the medians above differ only through host load. Alternating runs of
+ten `where` misses at 10,000 events measured 42 to 48 ms on the earlier build and 42 to 44 ms on
+this one (one outlier at 58 ms), so the limit change adds no cost at the limit.
 
-Before the bound (the branch as first published, no limit, reads of every matching event):
+The worst case, nine aggregates that each read exactly the limit and then one that is over it (the
+decision reads all nine before it stops), at 100,000 events: **124 ms** median, range 58 to 253 ms,
+after; 170 ms (67 to 187) before. The earlier single figure of 54 to 59 ms was not reproduced on
+this host under this load. Either way the decision stays well under the brief's 250 ms threshold
+at its median, but the range reaches it, and the worst case is the one to watch.
+
+The case the reviewer raised: ten aggregates over the same window of 100,000 events, each with a
+`where` that matches nothing.
+
+| Build | Ten `where` misses, 100,000 events in the window | Ten `where` misses, 10,000 events |
+|---|---:|---:|
+| before (`0351d17`, bound on matching rows) | 595 ms per decision (the reviewer measured 729 ms on the lead's host) | 42 to 48 ms |
+| after (this branch) | 6.6 ms per decision, refused at the first read | 42 to 44 ms |
+
+These two `before` columns came from a throwaway script that calls the same `createEventAggregates`
+reader on an archive of `0351d17` under `node_modules/.cache/`; it is not committed. The branch's
+figures are the harness's `tenWhereMissesMs`.
+
+Before the limit (the branch as first published, no bound, reads of every matching event):
 
 | Events in window | `count` | `sum` | `distinct` | `count` with `where` | Ten aggregates together |
 |---:|---:|---:|---:|---:|---:|
 | 100,000 | 2.4 ms | 64 ms | 95 ms | 65 ms | 709 ms (first run), 769 ms (second run) |
 
 Each aggregate costs time linear in the events it reads, because SQLite parses each row's JSON
-`data`: `count` does not read the data, the others do. The `where` read also visits the
-subscriber's non-matching events in the window, which the limit does not count.
+`data`: `count` does not read the data, the others do. Retention bounds what exists: an event
+older than the retention window is gone before any aggregate can read it.
 
 ## Reproduce
 
 ```sh
 bun test/scheduler/measure.ts 10000 3          # throughput, run on the branch and on the control
-bun test/scheduler/measure-aggregates.ts 5     # one decision, by fn and size, the over-limit case and the worst case
+bun test/scheduler/measure-aggregates.ts 5     # one decision, by fn and size, the over-limit cases and the worst case
 ```
 
-The control is `origin/main` archived to `node_modules/.cache/b85-control` (`git archive origin/main
-| tar -x -C …`, with `node_modules` linked to the checkout's), so its tests are never discovered.
-Section 1 was measured before the limit and not re-run for this change: the limit touches only the
-aggregate read, and a step without aggregates never reaches it.
+The control is `origin/main` (section 1) or `0351d17` (section 2), archived with `git archive` to
+`node_modules/.cache/b85-prev` with `node_modules` linked to the checkout's, so its tests are never
+discovered. Section 1 was measured before the limit and not re-run for this change: the limit
+touches only the aggregate read, and a step without aggregates never reaches it.

@@ -100,6 +100,23 @@ const worst: Record<string, Aggregate> = Object.fromEntries([
   ["over", { event: "download_finished", since: "P30D", fn: "count" } as Aggregate],
 ]);
 
+/**
+ * Ten counts over the same window, each with a `where` that matches nothing. The limit counts the
+ * window's events, not the matching ones, so at 100,000 events the first read is refused and the
+ * decision stops there; at the limit all ten read 10,000 events and total zero.
+ */
+const whereMiss: Record<string, Aggregate> = Object.fromEntries(
+  Array.from({ length: 10 }, (_, i) => [
+    `miss_${i}`,
+    {
+      event: "download_finished",
+      since: "P30D",
+      fn: "count",
+      where: { "data.kind": `none${i}` },
+    } as Aggregate,
+  ]),
+);
+
 const results: Record<string, unknown>[] = [];
 for (const size of sizes) {
   const dir = mkdtempSync(join(tmpdir(), "iglo-aggregates-measure-"));
@@ -168,7 +185,13 @@ for (const size of sizes) {
         throw new Error(`unexpected totals at ${size}: ${JSON.stringify(values)}`);
       if (values.where !== size / 2 || values.sum_bulk !== expectedBulkSum)
         throw new Error(`unexpected filtered totals at ${size}`);
+      const missed = check(whereMiss);
+      if (!missed.ok || Object.values(missed.values).some((n) => n !== 0))
+        throw new Error(`unexpected where misses at ${size}`);
     } else {
+      const refused = check(whereMiss);
+      if (refused.ok || !("limit" in refused))
+        throw new Error(`expected the where misses to hit the limit at ${size}`);
       // Every download_finished aggregate matches all 100,000 events and is refused with no total,
       // whatever its function. count_actions matches one in ten, exactly the limit: it is complete.
       for (const [name, spec] of Object.entries({ ...single, ...ten })) {
@@ -185,11 +208,13 @@ for (const size of sizes) {
     for (const [name, spec] of Object.entries(single))
       perFunction[name] = median(() => check({ [name]: spec }));
     const tenMs = median(() => check(ten));
+    const whereMissMs = median(() => check(whereMiss));
     const result: Record<string, unknown> = {
       events: size,
       noiseEvents: size,
       perFunctionMs: perFunction,
       tenAggregatesMs: tenMs,
+      tenWhereMissesMs: whereMissMs,
       values,
     };
     if (size > AGGREGATE_LIMIT) {
