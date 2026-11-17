@@ -69,6 +69,34 @@ after; 170 ms (67 to 187) before. The earlier single figure of 54 to 59 ms was n
 this host under this load. Either way the decision stays well under the brief's 250 ms threshold
 at its median, but the range reaches it, and the worst case is the one to watch.
 
+### Linux x64, 2026-11-17 (B93)
+
+Re-run of the worst case above on the Linux VPS, with the same script and command
+(`bun test/scheduler/measure-aggregates.ts 5`), five separate processes, each with five
+repetitions and one warm-up (the script's median). The macOS figures above are left as they were.
+
+Host and provenance: Linux 6.12.116 (Debian 13) virtual machine, 6 vCPUs, dynamic memory
+(16 GiB maximum). Bun 1.4.4. Source commit `ac2d74e` (`origin/main`; the branch that adds this
+section changes no product code). Script `test/scheduler/measure-aggregates.ts` sha256
+`4d16127ab5831e105a67fd08940c2da74ede4bb0823468f9c602d90f89e88741`. The measurement imports the sources, not the
+compiled executable; the executable built by `bun run check` (`dist/iglo.email`, sha256
+`f09176f84a049896d21d23a1ee46eb8832b2c13186a26ba20c158ea6801d9069`) is recorded for reference only. Runs were made under the measurement lock.
+
+Disturbance: the one-minute load average was 3.9 to 4.5 before each run and 3.8 to 4.3 after,
+against 6 CPUs, so no run was marked disturbed. `MemAvailable` was 6.7 to 7.0 GiB before and after
+each run.
+
+| Measurement (100,000 or 10,000 events) | Median of five runs | Range of five runs |
+|---|---:|---:|
+| Ten aggregates, each at the limit (10,000 events) | 136.3 ms | 132.0 to 142.9 ms |
+| Ten `where` misses at the limit (10,000 events) | 115.1 ms | 111.3 to 125.2 ms |
+| Worst case: nine at the limit, then one over it (100,000 events) | **113.5 ms** | 112.9 to 120.5 ms |
+| Ten aggregates over the limit (100,000 events), refused at the first read | 12.9 ms | 12.5 to 18.7 ms |
+| Ten `where` misses over the limit (100,000 events), refused at the first read | 12.0 ms | 11.3 to 12.8 ms |
+
+Each run's values are the script's medians of five repetitions. The worst-case median of
+113.5 ms is below the 250 ms threshold, and so is the slowest run (120.5 ms). The lead decides the bound.
+
 The case the reviewer raised: ten aggregates over the same window of 100,000 events, each with a
 `where` that matches nothing.
 

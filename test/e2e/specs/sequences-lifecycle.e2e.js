@@ -5,7 +5,7 @@
 // and asserts on the sink, the API or the explorer. `sequences.e2e.js` covers the screens.
 import { expect } from "@playwright/test";
 import { startSink } from "../../tx/sink.ts";
-import { api, ok, requestAdmin, signIn, test, unique } from "../helpers.js";
+import { api, mailFor, ok, requestAdmin, signIn, test, unique } from "../helpers.js";
 
 // The scheduler's tick (src/scheduler/scheduler.ts, SCHEDULER_INTERVAL_MS).
 const TICK_MS = 15_000;
@@ -189,6 +189,51 @@ test("a PT0S first step wakes the scheduler at once: the event's reader is maile
   expect(rows.started).toHaveLength(1);
   await arrived(email, subject, TICK_MS);
   expect(Date.now() - started).toBeLessThan(TICK_MS + 5_000);
+});
+
+test("a step's aggregates reach the mail: the sink gets the totals the subscriber's events add up to", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const subject = unique("Aggregate subject");
+  const tx = await ok(page, "/api/templates", "POST", {
+    name: unique("lifecycle-aggregates"),
+    type: "tx",
+    subject,
+    body: "<p>Items {{ aggregates.items }} total {{ aggregates.total }} kinds {{ aggregates.kinds }}</p>",
+  });
+  const evt = unique("evt");
+  const item = unique("item");
+  await sequence(page, {
+    trigger: { event: evt },
+    steps: [
+      {
+        wait: "PT0S",
+        kind: "transactional",
+        template_id: tx.id,
+        aggregates: {
+          items: { event: item, fn: "count" },
+          total: { event: item, fn: "sum", field: "data.units" },
+          kinds: { event: item, fn: "distinct", field: "data.kind" },
+        },
+      },
+    ],
+  });
+  const email = `${unique("totals")}@example.com`;
+  // Four item events; a string is not a number, so `sum` adds nothing for it, and `c` is a third kind.
+  // They start no enrollment: their name is not the trigger.
+  await fire(page, email, item, { units: 2, kind: "a" });
+  await fire(page, email, item, { units: 5, kind: "b" });
+  await fire(page, email, item, { units: 1, kind: "a" });
+  await fire(page, email, item, { units: "7", kind: "c" });
+  const started = await fire(page, email, evt);
+  expect(started.started).toHaveLength(1);
+
+  await arrived(email, subject, TICK_MS);
+  const [mail] = await mailFor(email);
+  const body = mail.body.replace(/=\r?\n/g, "");
+  // Counted: 4 events; summed: 2 + 5 + 1 (the string adds nothing); distinct kinds: a, b, c.
+  expect(body).toContain("Items 4 total 8 kinds 3");
 });
 
 test("a trigger with a where clause enrolls only the events whose data matches", async ({

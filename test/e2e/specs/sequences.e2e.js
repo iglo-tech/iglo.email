@@ -454,6 +454,59 @@ test("a step condition is checked as it is typed", async ({ page }) => {
   await expect(page.getByTestId("condition-error")).toBeHidden();
 });
 
+test("step aggregates are checked on save, kept as parsed JSON and refused with the API's words", async ({
+  page,
+}) => {
+  await signIn(page);
+  const tx = await template(page);
+  const seq = await sequence(page, {
+    steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }],
+  });
+  const editor = () => page.getByTestId("step-aggregates").locator(".cm-content");
+  // Typed the way a person types: a fill with several lines reaches the editor by another path.
+  const typed = async (text) => {
+    await editor().click();
+    await page.keyboard.press("ControlOrMeta+A");
+    await page.keyboard.type(text);
+  };
+  const storedAggregates = async () =>
+    (await api(page, `/api/sequences/${seq.id}`)).body.data.steps[0].aggregates;
+  // The editor's own text, parsed: the shown value is compared as JSON, not as typed.
+  const shown = async () => JSON.parse(await editor().textContent());
+
+  const valid = {
+    items: { event: unique("item"), fn: "count" },
+    total: { event: unique("item"), fn: "sum", field: "data.units", since: "P30D" },
+  };
+  await page.goto(`/admin/sequences/${seq.id}`);
+  await typed(JSON.stringify(valid));
+  await page.getByTestId("btn-save").click();
+  await page.waitForLoadState("networkidle");
+  expect(await storedAggregates()).toEqual(valid);
+  await page.reload();
+  await expect(async () => expect(await shown()).toEqual(valid)).toPass({ timeout: 15_000 });
+
+  // Malformed JSON is refused in the page, before anything is sent.
+  await typed('{"items": {"event": ');
+  await page.getByTestId("btn-save").click();
+  await expect(page.getByTestId("error")).toContainText("is not valid JSON");
+  await page.reload();
+  expect(await storedAggregates()).toEqual(valid);
+
+  // The API's own refusal: an unknown function, then a count that names a field.
+  await typed(JSON.stringify({ items: { event: "item", fn: "max" } }));
+  await page.getByTestId("btn-save").click();
+  await expect(page.getByTestId("error")).toContainText("steps.0.aggregates.items.fn");
+  await page.reload();
+  expect(await storedAggregates()).toEqual(valid);
+
+  await typed(JSON.stringify({ items: { event: "item", fn: "count", field: "data.units" } }));
+  await page.getByTestId("btn-save").click();
+  await expect(page.getByTestId("error")).toContainText("steps.0.aggregates.items.field");
+  await page.reload();
+  expect(await storedAggregates()).toEqual(valid);
+});
+
 test("the activity tab shows views and clicks from a real campaign and clears them", async ({
   page,
 }) => {
