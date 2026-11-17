@@ -84,7 +84,11 @@ export async function txFixture(
     snsFetch?: SnsFetch;
     /** The emailer's last gate before a pool, as in production (the restore hold). */
     refuse?: () => void;
-    /** Holds each synchronous dispatch, as a stalled SMTP server does. */
+    /**
+     * Holds each synchronous dispatch, as a stalled SMTP server does. It runs after the journal
+     * commit and before the dispatch claims its rows, so the outbox loop may claim and send them
+     * first; production calls the dispatch with no gap. Tests must not assume the dispatch sent it.
+     */
     beforeDispatch?: () => Promise<void>;
     /** The sink keeps no message text (memory measurements). */
     discardData?: boolean;
