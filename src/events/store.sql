@@ -11,6 +11,9 @@ SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key F
 SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? ORDER BY id LIMIT ?;
 -- name: events-page
 SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? ORDER BY id DESC LIMIT ? OFFSET ?;
+-- name: event-latest-named
+-- The newest event of one name for a subscriber: the step preview's trigger (D105).
+SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? AND name = ? ORDER BY occurred_at DESC, id DESC LIMIT 1;
 -- name: events-count
 SELECT count(*) AS n FROM events WHERE subscriber_id = ?;
 -- name: events-purge

@@ -211,7 +211,7 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
     name: "preview_template",
     annotations: READ_ONLY,
     description:
-      "Render an HTML preview of a template (either an unsaved body or a stored template by ID).",
+      "Render an HTML preview of a template (either an unsaved body or a stored template by ID). A sequence step's template reads subscriber, trigger and aggregates: preview the step itself with preview_sequence_step, and read template_reference first.",
     inputSchema: {
       type: "object",
       properties: {
@@ -222,6 +222,11 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
           description: "Template type for unsaved body preview (default: 'campaign')",
         },
         body: { type: "string", description: "Template body to preview when id is not provided" },
+        sample: {
+          type: "object",
+          description:
+            "Sample data that replaces the named parts of the dummy context: subscriber (name, email, external_id, attribs), trigger (name, data, occurred_at), aggregates (named numbers) and data (the template's own data). Anything not named keeps its dummy value.",
+        },
       },
       additionalProperties: false,
     },
@@ -868,16 +873,26 @@ async function runTool(
       return invoke("DELETE", `/api/templates/${id}`);
     }
     case "preview_template": {
-      if (args.id !== undefined && args.id !== null) {
+      if (args.id !== undefined && args.id !== null && args.sample === undefined) {
         const id = encodeURIComponent(String(args.id));
         return invoke("GET", `/api/templates/${id}/preview`);
       }
       const form = new URLSearchParams();
-      form.set(
-        "template_type",
-        typeof args.template_type === "string" ? args.template_type : "campaign",
-      );
-      form.set("body", typeof args.body === "string" ? args.body : "");
+      let type = typeof args.template_type === "string" ? args.template_type : "campaign";
+      let body = typeof args.body === "string" ? args.body : "";
+      if (args.id !== undefined && args.id !== null) {
+        // A stored template with a sample is previewed from its body, as the sample applies to a body.
+        const reply = await call("GET", `/api/templates/${encodeURIComponent(String(args.id))}`);
+        if (reply.result.isError) return reply.result;
+        const stored = (
+          reply.result.structuredContent as { data?: { type?: string; body?: string } }
+        )?.data;
+        type = stored?.type ?? type;
+        body = stored?.body ?? "";
+      }
+      form.set("template_type", type);
+      form.set("body", body);
+      if (args.sample !== undefined) form.set("sample", JSON.stringify(args.sample));
       return invoke(
         "POST",
         "/api/templates/preview",

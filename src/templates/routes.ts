@@ -16,6 +16,7 @@ import {
   TemplateSourceError,
   type TemplateRenderer,
 } from "@/templates/renderer";
+import { parseSample, previewContext, SampleError, type Sample } from "@/templates/sample";
 
 const idValue = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER)
@@ -81,7 +82,8 @@ function guarded(handler: Handler): Handler {
     }
   };
 }
-const data = JSON.stringify({
+/** The context a template preview renders with. `aggregates` is empty: a template has no step. */
+const dummy = {
   subscriber: {
     name: "John Doe",
     first_name: "John",
@@ -98,6 +100,7 @@ const data = JSON.stringify({
   },
   data: { order_id: "12345", shipping_date: "2026-01-02" },
   trigger: { data: {} },
+  aggregates: {},
   sequence: { name: "Example" },
   step: { position: 1 },
   unsubscribe_url: "",
@@ -105,7 +108,8 @@ const data = JSON.stringify({
   optin_url: "",
   message_url: "",
   archive_url: "",
-});
+};
+const data = JSON.stringify(dummy);
 const sampleBody = "<p>Hi there</p><p>Lorem ipsum dolor sit amet.</p>";
 function html(body: string) {
   return new Response(body, {
@@ -139,14 +143,21 @@ export function registerTemplateRoutes(
     if (!row) throw new TemplateError("missing");
     return row;
   };
-  const preview = async (context: RequestContext, type: TemplateType, body: string) => {
+  const preview = async (
+    context: RequestContext,
+    type: TemplateType,
+    body: string,
+    sample?: Sample,
+  ) => {
     if (type === "campaign_visual") throw new TemplateError("type");
+    // Without a sample the context is the dummy one, byte for byte as it has always been.
+    const rendered = sample === undefined ? data : JSON.stringify(previewContext(dummy, sample));
     try {
       if (type === "campaign") renderer.validate(body, "", true);
       const result = await renderer.render(
         type === "campaign"
-          ? { body: sampleBody, layout: body, mode: "html", data }
-          : { body, mode: "html", data, transactional: true },
+          ? { body: sampleBody, layout: body, mode: "html", data: rendered }
+          : { body, mode: "html", data: rendered, transactional: true },
       );
       auth.revalidate(context, "templates:get");
       return html(result.body);
@@ -221,9 +232,23 @@ export function registerTemplateRoutes(
       const rawBody = formValue("body");
       const type = typeof rawType === "string" && rawType ? rawType : "campaign";
       const body = typeof rawBody === "string" ? rawBody : "";
+      const rawSample = formValue("sample");
+      let sample: Sample | undefined;
+      if (typeof rawSample === "string" && rawSample !== "") {
+        try {
+          sample = parseSample(rawSample, { data: true });
+        } catch (error) {
+          if (error instanceof SampleError)
+            throw new HttpError(
+              400,
+              context.app.i18n.Ts("globals.messages.invalidFields", "name", error.field),
+            );
+          throw error;
+        }
+      }
       if (type !== "campaign" && type !== "tx") throw new TemplateError("type");
       auth.revalidate(context, "templates:get");
-      return preview(context, type, body);
+      return preview(context, type, body, sample);
     }),
     auth.middleware("templates:get"),
   );

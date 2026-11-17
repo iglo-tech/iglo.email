@@ -326,6 +326,10 @@ export function createEventStore(
     get(id: bigint): EventRow | null {
       return q.get("event-by-id").get(id) as EventRow | null;
     },
+    /** The newest of a subscriber's events under one name, or null (the step preview's trigger, D105). */
+    latest(subscriberId: bigint, name: string): EventRow | null {
+      return q.get("event-latest-named").get(subscriberId, name) as EventRow | null;
+    },
     /** A subscriber's events in ID order, at most `limit`. */
     list(subscriberId: bigint, limit = 1000): EventRow[] {
       return q.get("events-by-subscriber").all(subscriberId, limit) as EventRow[];

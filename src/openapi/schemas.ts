@@ -785,6 +785,53 @@ export const schemas: Record<string, Schema> = {
     },
     ["subscriber_email"],
   ),
+  StepSample: object(
+    {
+      subscriber: object(
+        {
+          name: string,
+          email: string,
+          external_id: string,
+          attribs: { ...free, description: "Replaces the subscriber's attribs as a whole." },
+        },
+        ["name", "email", "external_id", "attribs"],
+      ),
+      trigger: object(
+        {
+          name: string,
+          data: { ...free, description: "Replaces the trigger's data as a whole." },
+          occurred_at: string,
+        },
+        ["name", "data", "occurred_at"],
+      ),
+      aggregates: {
+        ...map(number),
+        description: "Values for named aggregates of the step; a name the step lacks is refused.",
+      },
+    },
+    ["subscriber", "trigger", "aggregates"],
+  ),
+  StepPreviewInput: input({
+    subscriber_id: {
+      ...integer,
+      description: "A subscriber the caller can read; absent means the dummy subscriber.",
+    },
+    trigger_event_id: {
+      ...integer,
+      description: "One of that subscriber's events under the sequence's trigger name.",
+    },
+    sample: ref("StepSample"),
+  }),
+  StepTestInput: input(
+    {
+      subscriber_id: integer,
+      trigger_event_id: integer,
+      sample: ref("StepSample"),
+      emails: { ...array(string), minItems: 1, maxItems: 5 },
+    },
+    ["emails"],
+  ),
+  StepPreview: object({ subject: string, body: string, context: free }),
   EnrollmentInput: input(
     {
       sequence_id: integer,

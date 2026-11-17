@@ -15,12 +15,8 @@ import { sendingHeld } from "@/settings/hold";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Message } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
-import {
-  numberID,
-  type Claim,
-  type Enrollments,
-  type SchedulerContext,
-} from "@/sequences/enrollments";
+import { type Claim, type Enrollments, type SchedulerContext } from "@/sequences/enrollments";
+import { renderStep, stepCompileInput, stepDataText, TEST_SUBJECT } from "@/sequences/step-data";
 import type { SubscriberStore } from "@/subscribers/store";
 import { RenderCapacityError, type TemplateRenderer } from "@/templates/renderer";
 import type { TemplateStore } from "@/templates/store";
@@ -40,8 +36,6 @@ const BACKOFF_MAX_MS = 3_600_000;
 const DEFER_MIN_MS = 60_000;
 /** Renderer capacity is shared with the HTTP producers; a full renderer retries soon. */
 const BUSY_MS = SCHEDULER_INTERVAL_MS;
-/** A test enrollment's mail says so to whoever receives it. */
-const TEST_SUBJECT = "[Test] ";
 /** Compiled step templates kept by the scheduler; the least recently used is dropped. */
 const COMPILED = 64;
 /**
@@ -280,31 +274,39 @@ export function createScheduler(options: SchedulerOptions) {
       subscriberUuid: subscriber.uuid,
     });
     const unsubscribe = links.unsubscribeUrl ?? "";
-    const id = (value: bigint) => JSON.stringify(numberID(value));
-    const data =
-      `{"subscriber":{"id":${id(subscriber.id)},"uuid":${JSON.stringify(subscriber.uuid)},` +
-      `"email":${JSON.stringify(subscriber.email)},"name":${JSON.stringify(subscriber.name)},` +
-      `"external_id":${JSON.stringify(subscriber.external_id ?? "")},"attribs":${subscriber.attribs}},` +
-      `"trigger":${
-        trigger
-          ? `{"name":${JSON.stringify(trigger.name)},"data":${trigger.data},"occurred_at":${JSON.stringify(trigger.occurred_at)}}`
-          : "null"
-      },` +
-      `"sequence":{"id":${id(row.sequence_id)},"name":${JSON.stringify(row.sequence_name)}},` +
-      `"step":{"id":${id(row.step_id)},"uuid":${JSON.stringify(row.step_uuid)},"position":${Number(row.position)},"kind":${JSON.stringify(row.kind)}},` +
-      `"aggregates":${JSON.stringify(aggregates)},` +
-      `"unsubscribe_url":${JSON.stringify(unsubscribe)},` +
-      `"manage_url":${JSON.stringify(unsubscribe ? `${unsubscribe}?manage=true` : "")}}`;
+    const data = stepDataText({
+      subscriber: {
+        id: subscriber.id,
+        uuid: subscriber.uuid,
+        email: subscriber.email,
+        name: subscriber.name,
+        external_id: subscriber.external_id ?? "",
+        attribs: subscriber.attribs,
+      },
+      trigger: trigger
+        ? { name: trigger.name, data: trigger.data, occurred_at: trigger.occurred_at }
+        : null,
+      sequence: { id: row.sequence_id, name: row.sequence_name },
+      step: {
+        id: row.step_id,
+        uuid: row.step_uuid,
+        position: Number(row.position),
+        kind: row.kind,
+      },
+      aggregates,
+      unsubscribe_url: unsubscribe,
+    });
     const subject = row.subject || template.subject;
     let prepared: ReturnType<Sends["prepareSequence"]>;
     try {
-      const rendered = compile(`${template.id}\n${template.updated_at}\n${marketing}\n${subject}`, {
-        mode: "html",
-        transactional: !marketing,
-        body: template.body,
-        subject,
-      }).renderSync(data, links.tracking);
-      if (/[\r\n\0]/.test(rendered.subject)) throw new Error("Invalid subject");
+      const rendered = renderStep(
+        compile(
+          `${template.id}\n${template.updated_at}\n${marketing}\n${subject}`,
+          stepCompileInput(template.body, subject, marketing),
+        ),
+        data,
+        links.tracking,
+      );
       const message: Message = {
         from: settings.fromEmail,
         to: [subscriber.email],
