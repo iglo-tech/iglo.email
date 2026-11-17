@@ -38,6 +38,7 @@ const SAFE_MESSAGES = [
   "Sequence scheduler failed",
   "Sequence step could not be rendered: skipped",
   "Sequence step has no transactional template: skipped",
+  "Test send not delivered: the server error output names the recipient and stage",
   "unknown messenger on campaign: campaign cancelled",
   "Webhook deliveries are failing",
   "Webhook delivery failed",

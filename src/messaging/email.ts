@@ -344,6 +344,9 @@ export function createEmailer(options: {
   refuse?: () => void;
 }) {
   const pools = new Map<string, Pool>();
+  // Test sends (B101) use their own pools, keyed like real ones but apart from them, so a stalled
+  // test cannot cut a real send that shares its server.
+  const testPools = new Map<string, Pool>();
   const retired = new Set<Pool>();
   const selection = options.select ?? ((n: number) => Math.floor(Math.random() * n));
   const id = options.id ?? (() => crypto.randomUUID());
@@ -372,6 +375,7 @@ export function createEmailer(options: {
   function cancelPool(pool: Pool) {
     if (!pool.retired) retire(pool);
     if (pools.get(pool.key) === pool) pools.delete(pool.key);
+    if (testPools.get(pool.key) === pool) testPools.delete(pool.key);
     // Stop the library queue before destroying sockets; no work is resubmitted.
     pool.stopped = true;
     pool.socketState.stopped = true;
@@ -414,11 +418,12 @@ export function createEmailer(options: {
   }
   function reconcile(servers: SMTPServer[]) {
     const keys = new Set(servers.map((s) => JSON.stringify(s)));
-    for (const [key, pool] of pools)
-      if (!keys.has(key)) {
-        pools.delete(key);
-        retire(pool);
-      }
+    for (const table of [pools, testPools])
+      for (const [key, pool] of table)
+        if (!keys.has(key)) {
+          table.delete(key);
+          retire(pool);
+        }
   }
   function dispatch(
     server: SMTPServer | undefined,
@@ -429,6 +434,7 @@ export function createEmailer(options: {
     copies = true,
     priority: SendPriority = "outbox",
     waitBound?: number,
+    testPool = false,
   ): Dispatch {
     const serverId = suppliedId(server, message);
     let domain = "localhost";
@@ -543,8 +549,9 @@ export function createEmailer(options: {
       if (temporary) pool = createPool("", server, true);
       else {
         const key = JSON.stringify(server);
-        pool = pools.get(key) ?? createPool(key, server);
-        pools.set(key, pool);
+        const table = testPool ? testPools : pools;
+        pool = table.get(key) ?? createPool(key, server);
+        table.set(key, pool);
       }
       if (temporary) {
         pool.retired = true;
@@ -673,7 +680,7 @@ export function createEmailer(options: {
    */
   function push(
     message: Message,
-    delivery: { copies?: boolean; priority?: SendPriority } = {},
+    delivery: { copies?: boolean; priority?: SendPriority; testPool?: boolean } = {},
   ): Dispatch {
     options.refuse?.();
     const startedAt = options.clock.now().getTime();
@@ -701,7 +708,17 @@ export function createEmailer(options: {
       bucket = exact.length ? exact : domains.length ? domains : bucket;
     }
     const index = bucket.length ? selection(bucket.length) : -1;
-    return dispatch(bucket[index], message, current.rootUrl, false, startedAt, copies, priority);
+    return dispatch(
+      bucket[index],
+      message,
+      current.rootUrl,
+      false,
+      startedAt,
+      copies,
+      priority,
+      undefined,
+      delivery.testPool ?? false,
+    );
   }
   return {
     push,
@@ -727,8 +744,9 @@ export function createEmailer(options: {
       if (closing) return closing;
       closed = true;
       options.limiter?.stop();
-      for (const pool of pools.values()) retire(pool);
+      for (const pool of [...pools.values(), ...testPools.values()]) retire(pool);
       pools.clear();
+      testPools.clear();
       const draining = [...retired];
       const timer = new AbortController();
       closing = (async () => {

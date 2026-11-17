@@ -498,11 +498,20 @@ export function registerSequenceRoutes(
         // The sender may have changed its mind while these rendered: the permission is checked again.
         auth.revalidate(c, "tx:send");
         auth.revalidate(c, MANAGE);
-        // Queued to the emailer like a campaign test: nothing is journaled, counted or tracked.
+        // Queued to the emailer like a campaign test: nothing is journaled, counted or tracked. Its
+        // own pool (B101), and an undelivered outcome is logged (B101): `result` never rejects.
         const results = messages.map((message) =>
           deps.emailer
-            .push(message, { copies: false, priority: "outbox" })
-            .result.catch((error) => c.app.logger.error(error)),
+            .push(message, { copies: false, priority: "outbox", testPool: true })
+            .result.then((outcome) => {
+              if (outcome.status === "accepted" && !outcome.rejected.length) return;
+              c.app.logger.error(
+                new Error(
+                  `Test send to ${message.to[0]} for sequence ${sequence.id} step ${step.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
+                ),
+                "Test send not delivered: the server error output names the recipient and stage",
+              );
+            }),
         );
         queued = true;
         void Promise.all(results).finally(() => testing--);

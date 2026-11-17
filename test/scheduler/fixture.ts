@@ -53,8 +53,8 @@ export const minute = 60_000;
 export const hour = 3_600_000;
 export const day = 86_400_000;
 
-export async function schedulerFixture() {
-  const sink = await startSink({});
+export async function schedulerFixture(options: { sinkReject?: (to: string) => boolean } = {}) {
+  const sink = await startSink(options.sinkReject ? { reject: options.sinkReject } : {});
   const directory = mkdtempSync(join(tmpdir(), "iglo-scheduler-"));
   const clock = new TestClock();
   const db = openDatabase(directory);

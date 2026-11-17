@@ -49,12 +49,17 @@ export async function campaignsFixture(
     attachmentCacheBytes?: number;
     smtpPort?: number;
     sinkPauseMs?: number;
+    /** Recipients the sink refuses with a 550 at RCPT (B101: an undelivered test send). */
+    sinkReject?: (to: string) => boolean;
     dkim?: { domain_name: string; key_selector: string; private_key: string };
     /** The app's logger, for a test of what it keeps. */
     logger?: (clock: Clock) => ErrorLogger;
   } = {},
 ) {
-  const sink = await startSink(options.sinkPauseMs ? { pauseMs: options.sinkPauseMs } : {});
+  const sink = await startSink({
+    ...(options.sinkPauseMs ? { pauseMs: options.sinkPauseMs } : {}),
+    ...(options.sinkReject ? { reject: options.sinkReject } : {}),
+  });
   const directory = mkdtempSync(join(tmpdir(), "iglo-campaigns-"));
   const clock = new TestClock();
   const db = openDatabase(directory);

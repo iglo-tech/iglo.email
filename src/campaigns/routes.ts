@@ -4,7 +4,7 @@
 import { refuseWhileHeld } from "@/settings/hold";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
-import type { Message } from "@/messaging/email";
+import type { Message, Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import { publicMessage } from "@/public/message";
@@ -72,8 +72,8 @@ export interface CampaignDeps {
   emailer: {
     push(
       message: Message,
-      delivery?: { copies?: boolean; priority?: SendPriority },
-    ): { result: Promise<unknown> };
+      delivery?: { copies?: boolean; priority?: SendPriority; testPool?: boolean },
+    ): { result: Promise<Outcome> };
   };
   settings: () => CampaignSettings;
   /** Reads files, so a caller holds no transaction. */
@@ -832,10 +832,20 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       auth.revalidate(context);
       // As listmonk, test messages are queued to the messenger; delivery is not awaited. Their
       // bytes stay in the emailer's queue, so the slot does too, until every message settles.
+      // A test send has its own pool (B101). An undelivered one is logged (B101): `result` resolves
+      // with the outcome and never rejects, so without this its failure would leave no trace.
       const results = messages.map((message) =>
         deps.emailer
-          .push(message, { copies: false, priority: "outbox" })
-          .result.catch((error) => context.app.logger.error(error)),
+          .push(message, { copies: false, priority: "outbox", testPool: true })
+          .result.then((outcome) => {
+            if (outcome.status === "accepted" && !outcome.rejected.length) return;
+            context.app.logger.error(
+              new Error(
+                `Test send to ${message.to[0]} for campaign ${stored.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
+              ),
+              "Test send not delivered: the server error output names the recipient and stage",
+            );
+          }),
       );
       queued = true;
       void Promise.all(results).finally(() => testing--);
