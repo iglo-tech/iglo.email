@@ -14,7 +14,15 @@ docker run --rm -u bun -e HOME=/tmp -v "$D":/work -w /work oven/bun:1.4.4 bash -
 # then each acceptance command the same way, e.g. bash -lc 'bun run contract:normal'
 ```
 
-The first `bun install` in a fresh export needs to be run once as root if the `bun` user cannot write the directory: `docker run --rm -v "$D":/work -w /work oven/bun:1.4.4 bash -lc 'bun install --frozen-lockfile && chown -R 1000:1000 /work'`. Remove the export afterwards. No other Docker use (no reference harness, no `bun run e2e` unless the brief says so, no prune). On macOS itself, quick focused `bun test <dir>` runs are fine while iterating. These are native features with no upstream counterpart; read upstream source only if your brief names it (fetch the pinned file from GitHub at commit 6fcd95f, never from memory).
+The first `bun install` in a fresh export needs to be run once as root if the `bun` user cannot write the directory: `docker run --rm -v "$D":/work -w /work oven/bun:1.4.4 bash -lc 'bun install --frozen-lockfile && chown -R 1000:1000 /work'`. Remove the export afterwards.
+
+**Reference-harness commands** (`reference:*`, `contract:*:reference`, `sends:production`, `messaging:fixture`, anything through `reference:run`) need Docker for Postgres. They run in the same container as root with host networking and the Docker socket (lead probe 2026-11-17: `reference:prepare` and `reference:smoke` pass this way, upstream linux/arm64):
+
+```sh
+docker run --rm --network host -v /var/run/docker.sock:/var/run/docker.sock -v "$D":/work -w /work oven/bun:1.4.4 bash -lc 'apt-get -qq update >/dev/null && apt-get -qq install -y docker.io git >/dev/null 2>&1 && bun install --frozen-lockfile >/dev/null && bun run reference:prepare && bun run sends:production'
+```
+
+The harness labels and removes its own containers and volumes; touch no other Docker object. No other Docker use (no `bun run e2e` unless the brief says so, no prune). On macOS itself, quick focused `bun test <dir>` runs are fine while iterating. These are native features with no upstream counterpart; read upstream source only if your brief names it (fetch the pinned file from GitHub at commit 6fcd95f, never from memory).
 
 ## Rules
 
