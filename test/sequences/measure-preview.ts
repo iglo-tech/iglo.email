@@ -24,23 +24,44 @@ async function arrived(count: number) {
     await new Promise((resolve) => setImmediate(resolve));
   }
 }
+/** Every send row, all pages (the list is newest first, 100 to a page). */
+async function allSends() {
+  const rows: { status: string }[] = [];
+  for (let page = 1; ; page++) {
+    const body = (await f.json(`/api/sends?per_page=100&page=${page}`)).body.data;
+    rows.push(...(body.results as { status: string }[]));
+    if (page * 100 >= body.total || body.results.length === 0) return { total: body.total, rows };
+  }
+}
+/** Sends still queued or sending, from the list's own totals (one small request each). */
+async function openSends() {
+  let open = 0;
+  for (const status of ["queued", "sending"])
+    open += (await f.json(`/api/sends?per_page=1&status=${status}`)).body.data.total as number;
+  return open;
+}
 /**
- * Waits until the send log holds `count` sends and each is `sent`. Delivery waits on the rate
- * limiter's sleeps, which only the injected clock releases, so the clock moves while it waits.
+ * Waits until the send log holds `count` sends and none is still queued or sending: each has
+ * settled as sent, failed, skipped or unknown, which the caller reports. Delivery waits on the
+ * rate limiter's sleeps, which only the injected clock releases, so the clock moves while it waits.
  */
 async function delivered(count: number, label: string) {
   const deadline = Date.now() + 60_000;
   for (;;) {
     f.clock.advance(1_000);
     await new Promise((resolve) => setImmediate(resolve));
-    const page = (await f.json("/api/sends?per_page=100")).body.data;
-    const rows = page.results as { status: string }[];
-    if (page.total >= count && rows.every((row) => row.status === "sent")) return;
+    const total = (await f.json("/api/sends?per_page=1")).body.data.total as number;
+    const open = await openSends();
+    if (total >= count && open === 0) return;
     if (Date.now() > deadline)
-      throw new Error(
-        `timed out waiting for ${label}: total=${page.total} statuses=${JSON.stringify([...new Set(rows.map((r) => r.status))])}`,
-      );
+      throw new Error(`timed out waiting for ${label}: total=${total} open=${open}`);
   }
+}
+/** The settled statuses of every send row, counted. */
+async function statusCounts() {
+  const counts: Record<string, number> = {};
+  for (const row of (await allSends()).rows) counts[row.status] = (counts[row.status] ?? 0) + 1;
+  return counts;
 }
 try {
   const template = await f.template(
@@ -97,6 +118,7 @@ try {
       sink_messages_after_last_round: f.sink.messages.length,
       median_ms_per_send: median(rounds).toFixed(3),
       previews_measured: previews,
+      statuses_after_rounds: await statusCounts(),
     }),
   );
 
@@ -129,6 +151,9 @@ try {
     }
     console.log(
       JSON.stringify({ measure: "test send", n: 20, median_ms: median(testSamples).toFixed(2) }),
+    );
+    console.log(
+      JSON.stringify({ measure: "send log after test sends", statuses: await statusCounts() }),
     );
   }
 } finally {

@@ -88,3 +88,13 @@ test("a malformed or unknown sample is 400 naming the field", async () => {
     ]);
   }
 });
+
+test("a sample nested past the template data depth is 400, and the preview still answers", async () => {
+  const f = await open();
+  // Form-encoded, 80,000 levels is about 480 KB: under the body limit, far past the data depth.
+  const deep = `{"subscriber":{"attribs":{"x":${"[".repeat(80_000)}${"]".repeat(80_000)}}}}`;
+  const refused = await preview(f, TEMPLATE, "tx", deep);
+  expect(refused.status).toBe(400);
+  expect(refused.text).toContain("sample");
+  expect((await preview(f, TEMPLATE)).status).toBe(200);
+});

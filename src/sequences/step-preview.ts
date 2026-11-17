@@ -103,8 +103,8 @@ export function stepPreview(
 
   // The aggregates: read for a real subscriber, measured from the trigger, except where the
   // sample names one; zero for the dummy subscriber. An aggregate over its limit is no total.
-  const totals = new Map<string, number>();
   const computed = Object.keys(defined).filter((name) => !has(sample?.aggregates, name));
+  let measured: Record<string, number> = {};
   if (subscriber && computed.length) {
     const result = events.aggregate(
       Object.fromEntries(computed.map((name) => [name, defined[name]!])),
@@ -122,10 +122,17 @@ export function stepPreview(
           ? "An aggregate of this step is past its limit for this subscriber, so the step would be skipped."
           : "The step's aggregates could not be computed for this subscriber.",
       );
-    for (const [name, value] of Object.entries(result.values)) totals.set(name, value);
+    measured = result.values;
   }
-  for (const name of computed) if (!totals.has(name)) totals.set(name, 0);
-  for (const [name, value] of Object.entries(sample?.aggregates ?? {})) totals.set(name, value);
+  // In the step's own order, as the scheduler's totals are (events.evaluate iterates the same
+  // definition): a sampled value keeps its place, and a name with nothing measured is zero.
+  const sampled = sample?.aggregates ?? {};
+  const totals = Object.fromEntries(
+    Object.keys(defined).map((name) => [
+      name,
+      has(sampled, name) ? sampled[name]! : has(measured, name) ? measured[name]! : 0,
+    ]),
+  );
 
   // The subscriber: the real one, or the dummy one, with the sample's named fields replacing it.
   const base = subscriber ?? {
@@ -153,7 +160,7 @@ export function stepPreview(
       trigger,
       sequence: { id: sequence.id, name: sequence.name },
       step: { id: step.id, uuid: step.uuid, position: step.position, kind: step.kind },
-      aggregates: Object.fromEntries(totals),
+      aggregates: totals,
       unsubscribe_url: links.unsubscribeUrl ?? "",
     },
     links,

@@ -18,7 +18,7 @@ import {
   type TemplateRenderer,
 } from "@/templates/renderer";
 import type { TemplateStore } from "@/templates/store";
-import { parseSample, SampleError, type Sample } from "@/templates/sample";
+import { parseSampleValue, SampleError, type Sample } from "@/templates/sample";
 import { messageLinks } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
@@ -329,7 +329,7 @@ export function registerSequenceRoutes(
     let sample: Sample | undefined;
     if (value.sample !== undefined) {
       try {
-        sample = parseSample(JSON.stringify(value.sample), { data: false });
+        sample = parseSampleValue(value.sample, { data: false });
       } catch (error) {
         if (error instanceof SampleError) throw invalid(c, error.field);
         throw error;
@@ -435,6 +435,9 @@ export function registerSequenceRoutes(
     "/api/sequences/:id/steps/:step/preview",
     async (c) => {
       const value = await previewBody(c);
+      // The body was read after the caller was authorized: its permissions are checked again
+      // before its subscriber is resolved, so a revocation during the upload counts (D103).
+      auth.revalidate(c, GET);
       const { sequence, step } = stepOf(c);
       const template = stepTemplate(step);
       const prepared = previewFor(c, value, step, sequence);
@@ -461,6 +464,10 @@ export function registerSequenceRoutes(
     async (c) => {
       refuseWhileHeld(c.app.db);
       const value = await previewBody(c, ["emails"]);
+      // As for the preview: the permissions are checked again once the body is read, before the
+      // subscriber is resolved and before anything renders (and again right before sending).
+      auth.revalidate(c, "tx:send");
+      auth.revalidate(c, MANAGE);
       const addresses = testAddresses(c, value.emails);
       const { sequence, step } = stepOf(c);
       const template = stepTemplate(step);

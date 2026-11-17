@@ -104,6 +104,40 @@ function nameChunk(name: string, last: boolean) {
 }
 
 /**
+ * The depth and node limits of template data (data.ts parseTemplateData): the same numbers, so a
+ * sample is refused here exactly when parseTemplateData would refuse it.
+ */
+const MAX_DEPTH = 16;
+const MAX_NODES = 10_000;
+
+/**
+ * Whether a parsed value is within the template data depth and node limits. It walks the value
+ * with an explicit stack, so a value nested without limit (JSON.parse admits any depth) costs
+ * nothing beyond the limits: the walk stops at the first excess.
+ */
+function withinLimits(value: unknown): boolean {
+  const pending: [unknown, number][] = [[value, 0]];
+  let nodes = 0;
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const [item, depth] = next;
+    if (++nodes > MAX_NODES || depth > MAX_DEPTH) return false;
+    if (typeof item === "object" && item !== null)
+      for (const child of Object.values(item)) pending.push([child, depth + 1]);
+  }
+  return true;
+}
+
+/**
+ * Parses a sample that a request body already parsed (its `sample` member). Such a value has no
+ * depth limit yet, so it is checked against the template data limits before anything recurses
+ * over it, and only then serialized for parseSample.
+ */
+export function parseSampleValue(value: unknown, options: { data: boolean }): Sample {
+  if (!withinLimits(value)) throw new SampleError("sample");
+  return parseSample(JSON.stringify(value), options);
+}
+
+/**
  * The template preview's context: the dummy one with the sample's parts replacing it. A sample
  * name also sets the first and last name, as a transactional subscriber's context does.
  */
