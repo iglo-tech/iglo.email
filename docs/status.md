@@ -18,7 +18,7 @@ Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-cove
 - v1.1.0 published 2026-11-13 (MCP widening, D98).
 - Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B88 `number` Liquid filter (D102, [brief](briefs/B88.md), adopter follow-up) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
 - v1.2.0 published 2026-11-17 (B84–B90): tag on a469e40, release run 43993275535 green (e2e, builds, image smoke, publish, image); lead verified both checksums and `--version` 1.2.0, anonymous pull and run of `:1.2.0` (amd64+arm64), `:latest` same digest. Queue: backlog below, split by the lead 2026-11-17.
-- B91 enrollment subscriber scope (defect: `POST /api/enrollments` ignored list scope), B84 grant tests, `fn: null` refused, B86 reschedule tests (D103, [brief](briefs/B91.md)) → B92 CI steps failing on main (sends:production, messaging:fixture, templates:compiled arm64) and the media.test.ts:286 flake → B93 Playwright spec for step aggregates; aggregate worst case re-measured when the host is idle.
+- B92 CI steps failing on main (sends:production, messaging:fixture, templates:compiled arm64) and the media.test.ts:286 flake → B93 Playwright spec for step aggregates; aggregate worst case re-measured when the host is idle.
 - Lead decided 2026-11-17 (not open work): archived lists stay grantable on events (as PUT); the event 403 names no internal ID (would leak it); native 404 punctuation kept; the test harness needs Linux /proc (D89).
 
 ## Owner decisions
@@ -50,6 +50,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B91 | [#143](https://github.com/iglo-tech/iglo.email/pull/143) | 5906201 | `POST /api/enrollments` honours the caller's subscriber scope (unreadable = 404, no write); `fn: null` refused; B84/B86 tests (D103; r1 APPROVE) |
 | B90 | [#142](https://github.com/iglo-tech/iglo.email/pull/142) | a469e40 | E2E: scheduled-campaign send_at never on a whole minute (Chrome drops `:00`; release gate flake) |
 | B89 | [#141](https://github.com/iglo-tech/iglo.email/pull/141) | 7b19225 | E2E: settings accordion test waits for the stored state before reload (release gate flake) |
 | B87 | [#140](https://github.com/iglo-tech/iglo.email/pull/140) | 7b21eef | Version 1.2.0; B86 regressions found by CI contract:subscribers fixed (numeric export stays 400; external rebind mid-request 404, D101) |
@@ -184,6 +185,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 - GET-then-PUT lost update in MCP read-modify-write tools and the admin UI (#86, #91): two concurrent edits of one campaign or sequence can overwrite each other. Endpoints have no version check; the agent or admin re-reads before a change it depends on (D91). A version column is not worth it for a single-owner instance (lead, 2026-11-08).
 
 - A hand-typed host change on a saved SMTP server keeps its stored password (lead, B51 #102): editing a host is deliberate, only `settings:manage` admins can, and upstream does the same. A provider template, which swaps the host as a side effect, clears it instead.
+
+- Enrollment listing and delete show numeric subscriber IDs outside the caller's lists (lead, B91 #143): IDs only, no address; a sequence manager needs the whole progress of its sequence. D103 revisit.
 
 Decided by agents and logged; not open work. Reopen only on a new failure or a new realistic client.
 
