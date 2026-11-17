@@ -10,6 +10,19 @@ const SETTINGS = "/admin/settings";
 const smtpServers = (page) => page.locator(".mail-servers details");
 const tab = (page, name) => page.getByRole("tab", { name, exact: true });
 
+// The page saves an accordion's open state from its async `toggle` event, which can run after a
+// click resolves. A reload that lands first discards the change, so wait for the saved value.
+async function expectStoredOpen(page, index, open) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (n) => JSON.parse(localStorage.getItem("settings.openBoxes") || "{}").smtp?.[n],
+        index,
+      ),
+    )
+    .toBe(open);
+}
+
 async function settings(page) {
   const res = await api(page, "/api/settings");
   expect(res.status).toBe(200);
@@ -186,6 +199,8 @@ test("SMTP presets reset credentials and preserve unrelated fields and accordion
   await tab(page, "SMTP").click();
   const server = smtpServers(page);
   await server.locator("summary").click();
+  await expect(server.getByPlaceholder("email-primary")).toBeVisible();
+  await expectStoredOpen(page, 0, true);
   await server.getByPlaceholder("email-primary").fill("email-primary");
   const auth = server.getByRole("group", { name: "Auth protocol", exact: true });
   await auth.getByRole("combobox").selectOption("login");
@@ -214,6 +229,8 @@ test("SMTP presets reset credentials and preserve unrelated fields and accordion
   await tab(page, "SMTP").click();
   await expect(server.getByPlaceholder("smtp.yourmailserver.net")).toBeVisible();
   await server.locator("summary").click();
+  await expect(server.getByPlaceholder("smtp.yourmailserver.net")).toBeHidden();
+  await expectStoredOpen(page, 0, false);
   await page.reload();
   await tab(page, "SMTP").click();
   await expect(server.getByPlaceholder("smtp.yourmailserver.net")).toBeHidden();
