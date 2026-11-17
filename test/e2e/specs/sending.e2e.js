@@ -202,7 +202,10 @@ test("a scheduled campaign fires within one scan of its send_at", async ({ page 
   const c = await campaign(page, { lists: [list.id] });
   // Whole seconds, a few seconds out. The runner scans for due campaigns every five seconds
   // (src/campaigns/runner/runner.ts, scanInterval), so the first mail must follow within that.
-  const at = new Date(Math.ceil((Date.now() + 8000) / 1000) * 1000);
+  let at = new Date(Math.ceil((Date.now() + 8000) / 1000) * 1000);
+  // Chrome drops a zero seconds field from a datetime-local value, so Playwright's check after fill
+  // fails on a whole minute. Move such a time one second later; every assertion below derives from it.
+  if (at.getSeconds() === 0) at = new Date(at.getTime() + 1000);
   await page.goto(`${CAMPAIGNS}/${c.id}`);
   // The form is hidden until campaign.js has loaded the campaign (x-show="ready"), and the status
   // badge shows Draft only then. Wait for that, not for the switch, which is enabled before load
