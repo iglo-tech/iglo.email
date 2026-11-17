@@ -145,7 +145,7 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 
 ## Configuration
 
-- **Bootstrap settings come from flags and environment variables:** `--port`, `--host`, `--data-dir`, `--root-url`, and an initial admin user (`IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD`, used only when no users exist).
+- **Bootstrap settings come from flags and environment variables:** `--port`, `--host`, `--data-dir`, `--root-url`, an initial admin user (`IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD`), and an initial API user with the Super Admin role (`IGLO_EMAIL_API_USER` and `IGLO_EMAIL_API_TOKEN`, D106). Both pairs are used only when no users exist, and each is both or neither.
 - **Everything else lives in the `settings` table** and is edited in the admin UI, as in listmonk: SMTP servers, rate limits, privacy options, bounce settings, appearance.
 - **No `config.toml`.** Secrets in settings (SMTP passwords, webhook secrets) are stored as given. The data directory must be protected by the host.
 

@@ -106,9 +106,14 @@ async function shutDown(child: ReturnType<typeof start>, signal: "SIGTERM" | "SI
   return code;
 }
 
-async function login(port: number, username: string, password: string) {
+async function login(
+  port: number,
+  username: string,
+  password: string,
+  headers: Record<string, string> = {},
+) {
   const base = `http://127.0.0.1:${port}`;
-  const page = await fetch(`${base}/admin/login?next=%2Fapi%2Fprofile`);
+  const page = await fetch(`${base}/admin/login?next=%2Fapi%2Fprofile`, { headers });
   const html = await page.text();
   const nonce = /name="nonce"\s+value="([^"]+)"/.exec(html)?.[1];
   const cookie = page.headers
@@ -119,8 +124,22 @@ async function login(port: number, username: string, password: string) {
   return fetch(`${base}/admin/login`, {
     method: "POST",
     redirect: "manual",
-    headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+    headers: { ...headers, "content-type": "application/x-www-form-urlencoded", cookie },
     body: new URLSearchParams({ username, password, nonce, next: "/api/profile" }),
+  });
+}
+
+const tokenAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+/** A synthetic API token in the format generated tokens have: 48 letters and digits. */
+const apiTokenValue = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(48)), (byte) => tokenAlphabet[byte % 62]).join(
+    "",
+  );
+
+/** Reads a guarded endpoint with an API credential, as an app integration does. */
+function apiGet(port: number, user: string, token: string) {
+  return fetch(`http://127.0.0.1:${port}/api/settings`, {
+    headers: { authorization: `token ${user}:${token}` },
   });
 }
 
@@ -474,5 +493,289 @@ describe("compiled executable", () => {
     expect(result.code).not.toBe(0);
     expect(result.stdout + result.stderr).not.toContain(adminUser);
     expect(result.stdout + result.stderr).not.toContain(adminPassword);
+  });
+
+  test("a fresh start creates an API user from the environment, and only the first start reads it", async () => {
+    const dataDir = join(temporaryDirectory, "api-bootstrap");
+    const apiUser = "bootstrap-api";
+    const token = apiTokenValue();
+    const args = (listenPort: number) => ["--port", String(listenPort), "--data-dir", dataDir];
+    const { child: first, port } = await startOnPort((listenPort) => ({
+      args: args(listenPort),
+      env: { IGLO_EMAIL_API_USER: apiUser, IGLO_EMAIL_API_TOKEN: token },
+    }));
+    try {
+      expect((await healthWhenReady(first, port)).status).toBe(200);
+      expect((await apiGet(port, apiUser, token)).status).toBe(200);
+      expect((await apiGet(port, apiUser, apiTokenValue())).status).toBe(403);
+    } finally {
+      expect(await shutDown(first, "SIGTERM")).toBe(0);
+    }
+    // Nothing is printed: the operator chose the token and already knows it.
+    expect(await new Response(first.stdout).text()).not.toContain(token);
+    expect(await new Response(first.stderr).text()).not.toContain(token);
+
+    // A later start with other values changes nothing: the first token still works.
+    const replacement = apiTokenValue();
+    const second = await restartOnPort(port, (listenPort) =>
+      launch(listenPort, () => ({
+        args: args(listenPort),
+        env: { IGLO_EMAIL_API_USER: "replacement-api", IGLO_EMAIL_API_TOKEN: replacement },
+      })),
+    );
+    try {
+      expect((await healthWhenReady(second, port)).status).toBe(200);
+      expect((await apiGet(port, apiUser, token)).status).toBe(200);
+      expect((await apiGet(port, "replacement-api", replacement)).status).toBe(403);
+    } finally {
+      expect(await shutDown(second, "SIGTERM")).toBe(0);
+    }
+  });
+
+  test("the admin and API pairs are independent, and both are created on the first start", async () => {
+    const dataDir = join(temporaryDirectory, "both-bootstrap");
+    const apiUser = "both-api";
+    const token = apiTokenValue();
+    const { child, port } = await startOnPort((listenPort) => ({
+      args: ["--port", String(listenPort), "--data-dir", dataDir],
+      env: {
+        IGLO_EMAIL_ADMIN_USER: adminUser,
+        IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+        IGLO_EMAIL_API_USER: apiUser,
+        IGLO_EMAIL_API_TOKEN: token,
+      },
+    }));
+    try {
+      expect((await healthWhenReady(child, port)).status).toBe(200);
+      expect((await login(port, adminUser, adminPassword)).status).toBe(302);
+      expect((await apiGet(port, apiUser, token)).status).toBe(200);
+    } finally {
+      expect(await shutDown(child, "SIGTERM")).toBe(0);
+    }
+  });
+
+  test("a half-set API pair, a malformed token or a clashing user name fails startup without echoing the token", async () => {
+    const token = apiTokenValue();
+    for (const [env, names] of [
+      [{ IGLO_EMAIL_API_USER: "api-only-user" }, ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"]],
+      [{ IGLO_EMAIL_API_TOKEN: token }, ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"]],
+      [{ IGLO_EMAIL_API_USER: "api-empty", IGLO_EMAIL_API_TOKEN: "" }, ["IGLO_EMAIL_API_TOKEN"]],
+      [{ IGLO_EMAIL_API_USER: "api-short", IGLO_EMAIL_API_TOKEN: "too-short-value" }, ["48"]],
+      [
+        { IGLO_EMAIL_API_USER: "api-dashes", IGLO_EMAIL_API_TOKEN: `${token.slice(0, 47)}-` },
+        ["48"],
+      ],
+      [{ IGLO_EMAIL_API_USER: "ab", IGLO_EMAIL_API_TOKEN: token }, ["IGLO_EMAIL_API_USER"]],
+      [
+        {
+          IGLO_EMAIL_API_USER: adminUser,
+          IGLO_EMAIL_API_TOKEN: token,
+          IGLO_EMAIL_ADMIN_USER: adminUser,
+          IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+        },
+        ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_ADMIN_USER"],
+      ],
+    ] as Array<[Record<string, string>, string[]]>) {
+      const result = await runCli(
+        ["--data-dir", join(temporaryDirectory, `api-partial-${crypto.randomUUID()}`)],
+        env,
+      );
+      expect(result.code).not.toBe(0);
+      for (const name of names) expect(result.stderr).toContain(name);
+      expect(result.stderr).not.toContain(token);
+      expect(result.stderr).not.toContain(adminPassword);
+    }
+  });
+
+  test("an untrusted X-Forwarded-For report reaches the logs page as its own line, without the address", async () => {
+    const dataDir = join(temporaryDirectory, "forwarded-report");
+    const token = apiTokenValue();
+    const { child, port } = await startOnPort((listenPort) => ({
+      args: ["--port", String(listenPort), "--data-dir", dataDir],
+      env: {
+        IGLO_EMAIL_ADMIN_USER: adminUser,
+        IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+        IGLO_EMAIL_API_USER: "logs-api",
+        IGLO_EMAIL_API_TOKEN: token,
+      },
+    }));
+    try {
+      expect((await healthWhenReady(child, port)).status).toBe(200);
+      // A login from the test host, which is not in security.trusted_proxies, with a forwarded header.
+      await login(port, adminUser, "not-the-password", { "x-forwarded-for": "203.0.113.9" });
+      await login(port, adminUser, "not-the-password", { "x-forwarded-for": "203.0.113.10" });
+      const response = await fetch(`http://127.0.0.1:${port}/api/logs`, {
+        headers: { authorization: `token logs-api:${token}` },
+      });
+      expect(response.status).toBe(200);
+      const lines = (await response.json()).data as string[];
+      // One line per process, in the fixed wording of the log buffer, not "unexpected error".
+      expect(lines.filter((line) => line.includes("X-Forwarded-For"))).toEqual([
+        expect.stringMatching(
+          / \*: X-Forwarded-For from an untrusted peer ignored: see security\.trusted_proxies \(Error\)$/,
+        ),
+      ]);
+      expect(lines.join("\n")).not.toContain("203.0.113");
+    } finally {
+      expect(await shutDown(child, "SIGTERM")).toBe(0);
+    }
+  });
+
+  test("root URL errors name the value and the fix, and never echo credentials", async () => {
+    for (const [value, expected] of [
+      [
+        "email-dev.example.com",
+        [
+          'Invalid root-url "email-dev.example.com": expected an absolute http:// or https:// URL, such as https://email-dev.example.com',
+        ],
+      ],
+      ["ftp://files.example.test", ["Invalid root-url", "must be http:// or https://"]],
+      ["https://user:hunter2@example.test", ["Invalid root-url", "user name and password"]],
+      ["https://example.test/?token=abc", ["Invalid root-url", "query string and fragment"]],
+      [
+        "https://user:hunter2@example.test ",
+        ["Invalid root-url (value not shown)", "whitespace or a backslash"],
+      ],
+    ] as const) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      for (const text of expected) expect(result.stderr).toContain(text);
+      expect(result.stderr).not.toContain("hunter2");
+      expect(result.stderr).not.toContain("token=abc");
+    }
+    const bare = await runCli([], { IGLO_EMAIL_ROOT_URL: "email-dev.example.com" });
+    expect(bare.stderr).toContain("such as https://email-dev.example.com");
+  });
+
+  test("a root URL with a scheme never gets an https:// suggestion, and names the wrong part", async () => {
+    // Each value is refused, and its message names the part to change without a suggestion. A
+    // suggestion built from such a value would be `https://https://...`, which the validator
+    // accepts with host `https`.
+    for (const [value, reason] of [
+      ["https://news.example.com ", "contains whitespace or a backslash"],
+      ["https://news.example.com\r", "contains whitespace or a backslash"],
+      ["https://news.example.com\n", "contains whitespace or a backslash"],
+      ["https:/news.example.com", "the scheme must be followed by //"],
+      ["http:news.example.com", "the scheme must be followed by //"],
+      ["https:443", "the scheme must be followed by //"],
+      ["https://", "with a valid host name"],
+    ] as const) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("Invalid root-url");
+      expect(result.stderr).toContain(reason);
+      expect(result.stderr).not.toContain("such as");
+      expect(result.stderr).not.toContain("https://https");
+      // A control character is shown escaped, never as the raw character.
+      expect(result.stderr).not.toContain("\r");
+    }
+  });
+
+  test("a value with a missing colon, a bare scheme word or a single label gets no suggestion", async () => {
+    // Each value names its wrong part and gets no suggestion. A suggestion from one of them would be
+    // `https://https//...`, which the validator accepts with host `https` (D107).
+    for (const [value, reason] of [
+      ["https//news.example.com", "the scheme must be followed by ://"],
+      ["http//news.example.com", "the scheme must be followed by ://"],
+      ["HTTPS//news.example.com", "the scheme must be followed by ://"],
+      ["https//news.example.com:8443", "the scheme must be followed by ://"],
+      ["http//localhost:9000", "the scheme must be followed by ://"],
+      ["https/news.example.com", "the scheme must be followed by ://"],
+      ["https///x", "the scheme must be followed by ://"],
+      ["https", "with a host name; the scheme is not guessed"],
+      ["http", "with a host name; the scheme is not guessed"],
+      ["localhost", "with a host name; the scheme is not guessed"],
+      ["x.com:0", "the port must be from 1 to 65535"],
+      ["https://x.com:0", "the port must be from 1 to 65535"],
+      ["https://x.com:65536", "the port must be from 1 to 65535"],
+    ] as const) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(`Invalid root-url "${value}": `);
+      expect(result.stderr).toContain(reason);
+      expect(result.stderr).not.toContain("such as");
+      expect(result.stderr).not.toContain("https://https");
+      expect(result.stderr).not.toContain("https://http");
+    }
+  });
+
+  test("for hostile root URL values, a suggestion is only ever for the host the value names", async () => {
+    // [value, the host it names, or null when it names none]. A suggestion exists exactly for the
+    // values that name a host by the allow-list, and its hostname is that host.
+    const hostile: ReadonlyArray<readonly [string, string | null]> = [
+      ["news.example.com@evil.example.net", null],
+      ["news.example.com/@evil.example.net", null],
+      ["news.example.com\\evil.example.net", null],
+      ["news.example.com?next=https://evil.example.net", null],
+      ["news.example.com#https://evil.example.net", null],
+      ["news.example.com/%2f%2fevil.example.net", "news.example.com"],
+      ["news.example.com/../../evil.example.net", "news.example.com"],
+      ["news.example.com:0", null],
+      ["news.example.com:00443", null],
+      ["news.example.com:65536", null],
+      ["news.example.com:99999", null],
+      ["news.example.com:8443:9000", null],
+      ["news.example.com:", null],
+      ["news.example.com:+443", null],
+      ["news.example.com:443/", "news.example.com"],
+      ["news..example.com", null],
+      ["-news.example.com", null],
+      ["news-.example.com", null],
+      ["news.example.com.", null],
+      [".news.example.com", null],
+      ["news_example.com", null],
+      ["ñews.example.com", null],
+      ["news.example.com\t", null],
+      [`${"a".repeat(64)}.example.com`, null],
+      ["[2001:db8::1]", null],
+      ["[2001:db8::1]:8443", null],
+      ["localhost", null],
+      ["//news.example.com", null],
+      ["https//news.example.com", null],
+      ["mailto:ops@example.com", null],
+      ["NEWS.Example.COM", "news.example.com"],
+      ["xn--nxasmq6b.example.com", "xn--nxasmq6b.example.com"],
+      ["192.0.2.10:8443", "192.0.2.10"],
+    ];
+    for (const [value, intended] of hostile) {
+      // The `=` form, because a value that starts with `-` is not read as a value after a flag.
+      const result = await runCli([`--root-url=${value}`]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("Invalid root-url");
+      const suggestion = /such as (\S+)/.exec(result.stderr)?.[1];
+      const host = suggestion === undefined ? null : new URL(suggestion).hostname;
+      expect({ value, host }).toEqual({ value, host: intended });
+    }
+  }, 25_000);
+
+  test("the root URL suggestion for a bare host or a host with a port is accepted and is the host meant", async () => {
+    const token = apiTokenValue();
+    for (const [value, intended] of [
+      ["news.example.com", "news.example.com"],
+      ["news.example.com:8443", "news.example.com"],
+      ["news.example.com/base", "news.example.com"],
+    ] as const) {
+      const refused = await runCli(["--root-url", value]);
+      expect(refused.code).not.toBe(0);
+      const suggestion = /such as (\S+)/.exec(refused.stderr)?.[1];
+      expect(suggestion).toBe(`https://${value}`);
+      if (!suggestion) throw new Error("No suggestion");
+      expect(new URL(suggestion).hostname).toBe(intended);
+
+      // The suggestion starts the server, and the server's root URL is the one meant.
+      const dataDir = join(temporaryDirectory, `suggest-${crypto.randomUUID()}`);
+      const { child, port } = await startOnPort((listenPort) => ({
+        args: ["--port", String(listenPort), "--data-dir", dataDir, "--root-url", suggestion],
+        env: { IGLO_EMAIL_API_USER: "suggested-api", IGLO_EMAIL_API_TOKEN: token },
+      }));
+      try {
+        expect((await healthWhenReady(child, port)).status).toBe(200);
+        const settings = await apiGet(port, "suggested-api", token);
+        expect(settings.status).toBe(200);
+        expect((await settings.json()).data["app.root_url"]).toBe(suggestion);
+      } finally {
+        expect(await shutDown(child, "SIGTERM")).toBe(0);
+      }
+    }
   });
 });

@@ -102,6 +102,34 @@ test("the client is the nearest valid hop when a chain is unusable", () => {
   expect(at("unknown", "203.0.113.1")).toBe("unknown");
 });
 
+test("an untrusted forwarded header is reported once, and again after the trusted list changes", async () => {
+  const f = await open();
+  // The attention lines this test reads are the ones naming X-Forwarded-For; others may come too.
+  const reports = () =>
+    f.errors
+      .filter((error): error is Error => error instanceof Error)
+      .filter((error) => error.message.includes("X-Forwarded-For"));
+  f.overrides.trustedProxies = [];
+  expect((await forwarded(f, "192.0.2.60", "203.0.113.1")).status).toBe(400);
+  expect(reports()).toHaveLength(1);
+  expect(reports()[0]!.message).toContain("192.0.2.60");
+  expect(reports()[0]!.message).toContain("security.trusted_proxies");
+  expect(reports()[0]!.message).toContain("docs/operations.md");
+  // The header's value is never part of the line, and a second request says nothing more.
+  expect(reports()[0]!.message).not.toContain("203.0.113.1");
+  expect((await forwarded(f, "192.0.2.60", "203.0.113.2")).status).toBe(400);
+  expect((await forwarded(f, "192.0.2.61", "203.0.113.2")).status).toBe(400);
+  expect(reports()).toHaveLength(1);
+  // A trusted peer's forwarded header is never reported, and the change re-arms the report.
+  f.overrides.trustedProxies = ["10.0.0.0/8"];
+  expect((await forwarded(f, "10.0.0.1", "203.0.113.3")).status).toBe(400);
+  expect(reports()).toHaveLength(1);
+  expect((await forwarded(f, "192.0.2.60", "203.0.113.4")).status).toBe(400);
+  expect(reports()).toHaveLength(2);
+  expect((await forwarded(f, "192.0.2.60", "203.0.113.4")).status).toBe(400);
+  expect(reports()).toHaveLength(2);
+});
+
 test("trusted origins can read and post to the public API, as upstream", async () => {
   const f = await open();
   const origin = { origin: "https://website.example.test" };

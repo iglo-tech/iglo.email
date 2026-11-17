@@ -235,7 +235,12 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       campaigns,
     );
     users = createUserStore(db, clock, roles);
-    const clientAddress = createClientAddress(() => settings!.read()["security.trusted_proxies"]);
+    const logs = createLogBuffer(clock);
+    const logger = createErrorLogger(logs);
+    const clientAddress = createClientAddress(
+      () => settings!.read()["security.trusted_proxies"],
+      logger,
+    );
     const auth = await createAuthentication(users, roles, clock, bootstrap.config.rootUrl, {
       ...defaultAuthPolicy,
       clientAddress,
@@ -246,13 +251,12 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         );
       },
     });
-    await bootstrapAdmin(users, auth, bootstrap.config.initialAdmin);
-    const logs = createLogBuffer(clock);
+    await bootstrapAdmin(users, auth, bootstrap.config.initialAdmin, bootstrap.config.initialApi);
     const app = createApp({
       bootstrap: bootstrap.config,
       clock,
       db,
-      logger: createErrorLogger(logs),
+      logger,
       i18n: createTranslation(),
     });
     const renderer = createRenderer(clock, app.i18n);

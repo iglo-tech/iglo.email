@@ -8,6 +8,8 @@ export interface BootstrapConfig {
   dataDir: string;
   rootUrl: string;
   initialAdmin: { user: string | undefined; password: string | undefined };
+  /** The first API user (D106). Absent in fixtures that create no user from the environment. */
+  initialApi?: { user: string | undefined; token: string | undefined };
 }
 
 type Environment = Record<string, string | undefined>;
@@ -36,6 +38,8 @@ Start the HTTP server. Bootstrap options override their environment equivalents:
 
 IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD initialize the first admin
 only when no users exist. Without them public health is available but login is denied.
+IGLO_EMAIL_API_USER and IGLO_EMAIL_API_TOKEN create an API user with the Super Admin role on the
+same first start, with that token; set both or neither. Nothing is printed. Remove them afterwards.
 `;
 
 export function parseBootstrap(args: string[], env: Environment): BootstrapResult {
@@ -111,6 +115,7 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
       dataDir,
       rootUrl,
       initialAdmin: { user: env.IGLO_EMAIL_ADMIN_USER, password: env.IGLO_EMAIL_ADMIN_PASSWORD },
+      initialApi: { user: env.IGLO_EMAIL_API_USER, token: env.IGLO_EMAIL_API_TOKEN },
     },
   };
 }
@@ -136,21 +141,107 @@ function parseHost(value: string): string {
   return host;
 }
 
-function validateRootUrl(value: string): void {
+const schemeStart = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+// `host:port`, read as a host unless the name is a scheme that is followed by no `//`.
+const hostAndPort = /^[A-Za-z0-9.-]+:[0-9]+(?:[/?#]|$)/;
+const schemeNames = /^(?:https?|ftp):/i;
+const schemeSlash = /^(?:https?|ftp)\//i;
+const expectedUrl = "expected an absolute http:// or https:// URL";
+
+// A DNS host name: at least two labels of letters, digits and hyphens, each 1 to 63 characters and
+// not starting or ending with a hyphen. Then an optional port without a leading zero, and an
+// optional path with no whitespace, backslash, `?`, `#` or `@`. Only a value that matches all of it
+// gets a suggestion (D107): every other value names what is wrong and gets none.
+const label = String.raw`[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?`;
+const bareRootUrl = new RegExp(
+  String.raw`^((?:${label}\.)+${label})(?::([1-9][0-9]{0,4}))?(\/[^\s\\?#@]*)?$`,
+);
+
+/** Whether the value starts with a scheme; `news.example.com:8443` is a host and a port. */
+function hasScheme(value: string): boolean {
+  if (!schemeStart.test(value)) return false;
+  return !hostAndPort.test(value) || schemeNames.test(value);
+}
+
+function portInRange(digits: string): boolean {
+  const port = Number(digits);
+  return port >= 1 && port <= 65535;
+}
+
+/**
+ * `https://<value>` for a bare host, when the value matches the host allow-list and the URL built
+ * from it has the same host and port and passes the validator. Otherwise nothing.
+ */
+function suggestionFor(value: string): string | undefined {
+  const match = bareRootUrl.exec(value);
+  if (!match) return undefined;
+  const host = match[1] ?? "";
+  const port = match[2];
+  if (host.length > 253) return undefined;
+
+  const candidate = `https://${value}`;
   let url: URL;
   try {
-    if (/\s|\\/.test(value)) throw new Error();
+    url = new URL(candidate);
+  } catch {
+    return undefined;
+  }
+  // URL drops the default port of https (443), so a port of 443 is read back as "".
+  const expectedPort = port === undefined || port === "443" ? "" : port;
+  if (url.hostname !== host.toLowerCase() || url.port !== expectedPort) return undefined;
+  try {
+    validateRootUrl(candidate);
+  } catch {
+    return undefined;
+  }
+  return candidate;
+}
+
+/** What is wrong with a value that gets no suggestion. The scheme is never guessed. */
+function missingSchemeReason(value: string): string {
+  // `https//host` and `https/host` have the scheme but not its colon.
+  if (schemeSlash.test(value)) return "the scheme must be followed by ://";
+  const port = /^[A-Za-z0-9.-]+:([0-9]+)(?:\/|$)/.exec(value)?.[1];
+  if (port !== undefined && !portInRange(port)) return "the port must be from 1 to 65535";
+  return `${expectedUrl} with a host name; the scheme is not guessed`;
+}
+
+function validateRootUrl(value: string): void {
+  // A value with credentials, a query or a fragment may hold a secret, so the message leaves it out.
+  const withheld = /[@?#]/.test(value);
+  const shown = withheld ? "(value not shown)" : JSON.stringify(value);
+  const fail = (reason: string): never => {
+    throw new Error(`Invalid root-url ${shown}: ${reason}`);
+  };
+
+  if (/\s|\\/.test(value)) fail("the value contains whitespace or a backslash; remove it");
+  // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,
+  // because `https://` in front of it would be wrong too (`https://https://host` is host `https`).
+  if (!hasScheme(value)) {
+    const suggestion = suggestionFor(value);
+    if (suggestion) fail(`${expectedUrl}, such as ${suggestion}`);
+    fail(missingSchemeReason(value));
+  }
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) fail("the scheme must be followed by //");
+
+  let url: URL | undefined;
+  try {
     url = new URL(value);
   } catch {
-    throw new Error("Invalid root-url: expected an absolute HTTP or HTTPS URL");
+    url = undefined;
   }
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.search !== "" ||
-    url.hash !== ""
-  ) {
-    throw new Error("Invalid root-url: use HTTP or HTTPS without credentials, query, or fragment");
+  if (url && !["http:", "https:"].includes(url.protocol))
+    fail("the scheme must be http:// or https://");
+  if (url && (url.username !== "" || url.password !== ""))
+    fail("remove the user name and password from the URL; the root URL is a public address");
+  if (url && (url.search !== "" || url.hash !== ""))
+    fail(
+      "remove the query string and fragment; the root URL is a scheme, a host and an optional path",
+    );
+  // URL refuses a port above 65535 and keeps 0, so the port is read from the text.
+  const portText = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*:([0-9]+)(?:[/?#]|$)/.exec(value)?.[1];
+  if (portText !== undefined && !portInRange(portText)) {
+    fail("the port must be from 1 to 65535");
   }
+  if (!url || url.host === "") fail(`${expectedUrl} with a valid host name`);
 }
