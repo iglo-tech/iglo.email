@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRealClock } from "@/clock";
 import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { mailpitBinaryPath } from "@/test/reference/prepare";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 
 const reference = referenceMailpit(process.env);
@@ -38,7 +39,7 @@ try {
     const smtpPort = await port(),
       httpPort = await port(),
       runId = randomUUID();
-    const binary = resolve("upstream/reference/mailpit-linux-amd64.tar.gz-mailpit");
+    const binary = mailpitBinaryPath();
     const child = spawn(
       binary,
       [
@@ -60,12 +61,26 @@ try {
       ],
       { cwd: directory, env: { PATH: "", HOME: directory, TMPDIR: directory }, stdio: "ignore" },
     );
-    const exited = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
+    // A binary that cannot be spawned emits "error" and never "exit", so either event ends the wait.
+    const spawnFailure: { error?: Error } = {};
+    child.once("error", (error) => {
+      spawnFailure.error = error;
+    });
+    const exited = new Promise<void>((resolveExit) => {
+      child.once("exit", () => resolveExit());
+      child.once("error", () => resolveExit());
+    });
     const sink = { api: `http://127.0.0.1:${httpPort}`, host: "127.0.0.1", port: smtpPort, runId };
     try {
       let ready = false;
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline && !ready) {
+        if (spawnFailure.error)
+          throw new Error(
+            `Mailpit cannot start from ${binary}: ${spawnFailure.error.message}. Run bun run reference:prepare for this host.`,
+          );
+        if (child.exitCode !== null || child.signalCode !== null)
+          throw new Error(`Mailpit (${mode}) exited before it was ready`);
         try {
           await assertOwnedMailpit(sink);
           ready = true;
@@ -73,7 +88,7 @@ try {
           await Bun.sleep(25);
         }
       }
-      assert.equal(ready, true);
+      if (!ready) throw new Error(`Mailpit (${mode}) was not ready within 5 s`);
       const server: SMTPServer = {
         name: "",
         enabled: true,
@@ -154,16 +169,18 @@ try {
         await emailer.close();
       }
     } finally {
-      child.kill("SIGTERM");
+      if (!spawnFailure.error) child.kill("SIGTERM");
+      let forceTimer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         exited,
-        new Promise<void>((resolveExit) =>
-          setTimeout(() => {
+        new Promise<void>((resolveExit) => {
+          forceTimer = setTimeout(() => {
             child.kill("SIGKILL");
             resolveExit();
-          }, 3000),
-        ),
+          }, 3000);
+        }),
       ]);
+      clearTimeout(forceTimer);
       await exited;
     }
   }

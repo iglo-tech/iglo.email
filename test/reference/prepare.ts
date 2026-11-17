@@ -34,6 +34,28 @@ const platforms = {
   ],
 } as const;
 
+// The single platform table: prepare() and mailpitBinaryPath() both read it.
+function platformFor(key: string) {
+  const platform = platforms[key as keyof typeof platforms];
+  if (!platform) throw new Error(`Unsupported platform ${key}; supported: Linux x64/arm64`);
+  return platform;
+}
+
+function mailpitArchive(os: string, arch: string): string {
+  return `mailpit-${os}-${arch}.tar.gz`;
+}
+
+function executablePath(archiveName: string, name: string): string {
+  return join(cache, `${archiveName}-${name}`);
+}
+
+// The Mailpit executable prepare() caches for a platform key such as "linux-arm64".
+// Scripts that start Mailpit use this so no architecture is named by hand.
+export function mailpitBinaryPath(key = `${process.platform}-${process.arch}`): string {
+  const [os, arch] = platformFor(key);
+  return executablePath(mailpitArchive(os, arch), "mailpit");
+}
+
 function hash(data: Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
 }
@@ -164,7 +186,7 @@ async function prepareBinary(
   const entries = [...files.entries()].filter(([path]) => path === name || path === `./${name}`);
   if (entries.length !== 1) throw new Error(`Expected one ${name} executable in ${archiveName}`);
   const executable = new Uint8Array(await entries[0]![1].arrayBuffer());
-  const binaryPath = join(cache, `${archiveName}-${name}`);
+  const binaryPath = executablePath(archiveName, name);
   try {
     await writeFile(binaryPath, executable, { flag: "wx", mode: 0o755 });
   } catch (error) {
@@ -177,17 +199,11 @@ async function prepareBinary(
 }
 
 export async function prepare(signal?: AbortSignal) {
-  const key = `${process.platform}-${process.arch}` as keyof typeof platforms;
-  const platform = platforms[key];
-  if (!platform)
-    throw new Error(
-      `Unsupported platform ${process.platform}/${process.arch}; supported: Linux x64/arm64`,
-    );
-  const [os, arch, listHash, mailHash] = platform;
+  const [os, arch, listHash, mailHash] = platformFor(`${process.platform}-${process.arch}`);
   await mkdir(cache, { recursive: true });
   await prepareSource(signal);
   const listArchive = `listmonk_7.0.0-beta.1_${os}_${arch}.tar.gz`;
-  const mailArchive = `mailpit-${os}-${arch}.tar.gz`;
+  const mailArchive = mailpitArchive(os, arch);
   const listmonk = await prepareBinary(
     "listmonk",
     listArchive,
