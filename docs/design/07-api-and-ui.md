@@ -183,7 +183,7 @@ sending remains staged until M2.4's full policy.
   - `subscriber_events:create`, `subscriber_events:get`;
   - `sends:get`, `sends:manage`;
   - `webhooks:manage`.
-- **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe, export, wipe) are rate-limited per client address in memory, on the injected clock. The client address is the transport peer unless `security.trusted_proxies` says otherwise (D60). M1.3 login uses the explicit injected policy under D26. Public budgets are listed in the differences above.
+- **Rate limits:** login and public endpoints (subscribe, opt-in, unsubscribe, export, wipe) are rate-limited per client address in memory, on the injected clock. The client address is the transport peer unless `security.trusted_proxies` says otherwise (D60). A forwarded header from a peer outside that list is ignored and reported once to the error log, until the list changes (D107). M1.3 login uses the explicit injected policy under D26. Public budgets are listed in the differences above.
 
 M1.3's `GET /admin/login` supplies a pre-login nonce in the form and a host-only
 HttpOnly cookie; `POST /admin/login` requires both. A successful login issues a

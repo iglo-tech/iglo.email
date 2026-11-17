@@ -124,6 +124,20 @@ async function login(port: number, username: string, password: string) {
   });
 }
 
+const tokenAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+/** A synthetic API token in the format generated tokens have: 48 letters and digits. */
+const apiTokenValue = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(48)), (byte) => tokenAlphabet[byte % 62]).join(
+    "",
+  );
+
+/** Reads a guarded endpoint with an API credential, as an app integration does. */
+function apiGet(port: number, user: string, token: string) {
+  return fetch(`http://127.0.0.1:${port}/api/settings`, {
+    headers: { authorization: `token ${user}:${token}` },
+  });
+}
+
 describe("compiled executable", () => {
   test("unprovisioned startup denies login and partial bootstrap pairs fail", async () => {
     const dataDir = join(temporaryDirectory, "unprovisioned-auth");
@@ -474,5 +488,119 @@ describe("compiled executable", () => {
     expect(result.code).not.toBe(0);
     expect(result.stdout + result.stderr).not.toContain(adminUser);
     expect(result.stdout + result.stderr).not.toContain(adminPassword);
+  });
+
+  test("a fresh start creates an API user from the environment, and only the first start reads it", async () => {
+    const dataDir = join(temporaryDirectory, "api-bootstrap");
+    const apiUser = "bootstrap-api";
+    const token = apiTokenValue();
+    const args = (listenPort: number) => ["--port", String(listenPort), "--data-dir", dataDir];
+    const { child: first, port } = await startOnPort((listenPort) => ({
+      args: args(listenPort),
+      env: { IGLO_EMAIL_API_USER: apiUser, IGLO_EMAIL_API_TOKEN: token },
+    }));
+    try {
+      expect((await healthWhenReady(first, port)).status).toBe(200);
+      expect((await apiGet(port, apiUser, token)).status).toBe(200);
+      expect((await apiGet(port, apiUser, apiTokenValue())).status).toBe(403);
+    } finally {
+      expect(await shutDown(first, "SIGTERM")).toBe(0);
+    }
+    // Nothing is printed: the operator chose the token and already knows it.
+    expect(await new Response(first.stdout).text()).not.toContain(token);
+    expect(await new Response(first.stderr).text()).not.toContain(token);
+
+    // A later start with other values changes nothing: the first token still works.
+    const replacement = apiTokenValue();
+    const second = await restartOnPort(port, (listenPort) =>
+      launch(listenPort, () => ({
+        args: args(listenPort),
+        env: { IGLO_EMAIL_API_USER: "replacement-api", IGLO_EMAIL_API_TOKEN: replacement },
+      })),
+    );
+    try {
+      expect((await healthWhenReady(second, port)).status).toBe(200);
+      expect((await apiGet(port, apiUser, token)).status).toBe(200);
+      expect((await apiGet(port, "replacement-api", replacement)).status).toBe(403);
+    } finally {
+      expect(await shutDown(second, "SIGTERM")).toBe(0);
+    }
+  });
+
+  test("the admin and API pairs are independent, and both are created on the first start", async () => {
+    const dataDir = join(temporaryDirectory, "both-bootstrap");
+    const apiUser = "both-api";
+    const token = apiTokenValue();
+    const { child, port } = await startOnPort((listenPort) => ({
+      args: ["--port", String(listenPort), "--data-dir", dataDir],
+      env: {
+        IGLO_EMAIL_ADMIN_USER: adminUser,
+        IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+        IGLO_EMAIL_API_USER: apiUser,
+        IGLO_EMAIL_API_TOKEN: token,
+      },
+    }));
+    try {
+      expect((await healthWhenReady(child, port)).status).toBe(200);
+      expect((await login(port, adminUser, adminPassword)).status).toBe(302);
+      expect((await apiGet(port, apiUser, token)).status).toBe(200);
+    } finally {
+      expect(await shutDown(child, "SIGTERM")).toBe(0);
+    }
+  });
+
+  test("a half-set API pair, a malformed token or a clashing user name fails startup without echoing the token", async () => {
+    const token = apiTokenValue();
+    for (const [env, names] of [
+      [{ IGLO_EMAIL_API_USER: "api-only-user" }, ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"]],
+      [{ IGLO_EMAIL_API_TOKEN: token }, ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"]],
+      [{ IGLO_EMAIL_API_USER: "api-empty", IGLO_EMAIL_API_TOKEN: "" }, ["IGLO_EMAIL_API_TOKEN"]],
+      [{ IGLO_EMAIL_API_USER: "api-short", IGLO_EMAIL_API_TOKEN: "too-short-value" }, ["48"]],
+      [
+        { IGLO_EMAIL_API_USER: "api-dashes", IGLO_EMAIL_API_TOKEN: `${token.slice(0, 47)}-` },
+        ["48"],
+      ],
+      [{ IGLO_EMAIL_API_USER: "ab", IGLO_EMAIL_API_TOKEN: token }, ["IGLO_EMAIL_API_USER"]],
+      [
+        {
+          IGLO_EMAIL_API_USER: adminUser,
+          IGLO_EMAIL_API_TOKEN: token,
+          IGLO_EMAIL_ADMIN_USER: adminUser,
+          IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+        },
+        ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_ADMIN_USER"],
+      ],
+    ] as Array<[Record<string, string>, string[]]>) {
+      const result = await runCli(
+        ["--data-dir", join(temporaryDirectory, `api-partial-${crypto.randomUUID()}`)],
+        env,
+      );
+      expect(result.code).not.toBe(0);
+      for (const name of names) expect(result.stderr).toContain(name);
+      expect(result.stderr).not.toContain(token);
+      expect(result.stderr).not.toContain(adminPassword);
+    }
+  });
+
+  test("root URL errors name the value and the fix, and never echo credentials", async () => {
+    for (const [value, expected] of [
+      [
+        "email-dev.example.com",
+        [
+          'Invalid root-url "email-dev.example.com": expected an absolute http:// or https:// URL, such as https://email-dev.example.com',
+        ],
+      ],
+      ["ftp://files.example.test", ["Invalid root-url", "must be http:// or https://"]],
+      ["https://user:hunter2@example.test", ["Invalid root-url", "user name and password"]],
+      ["https://example.test/?token=abc", ["Invalid root-url", "query string and fragment"]],
+    ] as const) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      for (const text of expected) expect(result.stderr).toContain(text);
+      expect(result.stderr).not.toContain("hunter2");
+      expect(result.stderr).not.toContain("token=abc");
+    }
+    const bare = await runCli([], { IGLO_EMAIL_ROOT_URL: "email-dev.example.com" });
+    expect(bare.stderr).toContain("such as https://email-dev.example.com");
   });
 });

@@ -8,6 +8,8 @@ export interface BootstrapConfig {
   dataDir: string;
   rootUrl: string;
   initialAdmin: { user: string | undefined; password: string | undefined };
+  /** The first API user (D106). Absent in fixtures that create no user from the environment. */
+  initialApi?: { user: string | undefined; token: string | undefined };
 }
 
 type Environment = Record<string, string | undefined>;
@@ -36,6 +38,8 @@ Start the HTTP server. Bootstrap options override their environment equivalents:
 
 IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD initialize the first admin
 only when no users exist. Without them public health is available but login is denied.
+IGLO_EMAIL_API_USER and IGLO_EMAIL_API_TOKEN create an API user with the Super Admin role on the
+same first start, with that token; set both or neither. Nothing is printed. Remove them afterwards.
 `;
 
 export function parseBootstrap(args: string[], env: Environment): BootstrapResult {
@@ -111,6 +115,7 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
       dataDir,
       rootUrl,
       initialAdmin: { user: env.IGLO_EMAIL_ADMIN_USER, password: env.IGLO_EMAIL_ADMIN_PASSWORD },
+      initialApi: { user: env.IGLO_EMAIL_API_USER, token: env.IGLO_EMAIL_API_TOKEN },
     },
   };
 }
@@ -137,20 +142,32 @@ function parseHost(value: string): string {
 }
 
 function validateRootUrl(value: string): void {
-  let url: URL;
+  // A value with credentials, a query or a fragment may hold a secret, so the message leaves it out.
+  const withheld = /[@?#]/.test(value);
+  const shown = withheld ? "(value not shown)" : JSON.stringify(value);
+  const example = withheld || value === "" ? "https://email.example.com" : `https://${value}`;
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value))
+    throw new Error(
+      `Invalid root-url ${shown}: expected an absolute http:// or https:// URL, such as ${example}`,
+    );
+  let url: URL | undefined;
   try {
-    if (/\s|\\/.test(value)) throw new Error();
-    url = new URL(value);
+    if (!/\s|\\/.test(value)) url = new URL(value);
   } catch {
-    throw new Error("Invalid root-url: expected an absolute HTTP or HTTPS URL");
+    url = undefined;
   }
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.search !== "" ||
-    url.hash !== ""
-  ) {
-    throw new Error("Invalid root-url: use HTTP or HTTPS without credentials, query, or fragment");
-  }
+  if (url && !["http:", "https:"].includes(url.protocol))
+    throw new Error(`Invalid root-url ${shown}: the scheme must be http:// or https://`);
+  if (url && (url.username !== "" || url.password !== ""))
+    throw new Error(
+      `Invalid root-url ${shown}: remove the user name and password from the URL; the root URL is a public address`,
+    );
+  if (url && (url.search !== "" || url.hash !== ""))
+    throw new Error(
+      `Invalid root-url ${shown}: remove the query string and fragment; the root URL is a scheme, a host and an optional path`,
+    );
+  if (!url || url.host === "")
+    throw new Error(
+      `Invalid root-url ${shown}: expected an absolute http:// or https:// URL with a host name, such as ${example}`,
+    );
 }

@@ -70,7 +70,7 @@ export async function publicFixture() {
     logger: f.app.logger,
     mail,
   });
-  const clientAddress = createClientAddress(() => settings().trustedProxies);
+  const clientAddress = createClientAddress(() => settings().trustedProxies, f.app.logger);
   const limit = (limit: number) =>
     rateLimited(
       f.clock,

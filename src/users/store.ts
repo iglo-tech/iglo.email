@@ -20,6 +20,9 @@ export interface UserFields {
   twofaType?: "none" | "totp";
 }
 
+/** A first user; the store adds the Super Admin role, which the bootstrap always uses. */
+export type BootstrapUser = Omit<UserFields, "userRoleId" | "listRoleId" | "twofaType">;
+
 interface SessionRow {
   id: string;
   data: string;
@@ -79,21 +82,12 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     byId,
     byName,
     byEmail,
-    bootstrap(username: string, hash: string): void {
+    /** The first users, with the built-in Super Admin role, in one transaction and only while none exist. */
+    bootstrap(users: BootstrapUser[]): void {
       writeTransaction(db, () => {
         if (count() !== 0n) return;
         const userRoleId = roles.primordial(now());
-        insert({
-          username,
-          passwordLogin: true,
-          password: hash,
-          email: "initial-admin@localhost.invalid",
-          name: username,
-          type: "user",
-          userRoleId,
-          listRoleId: null,
-          status: "enabled",
-        });
+        for (const user of users) insert({ ...user, userRoleId, listRoleId: null });
       });
     },
     list(orderBy: string, order: string): UserRow[] {

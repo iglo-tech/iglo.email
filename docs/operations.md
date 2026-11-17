@@ -51,6 +51,11 @@ The first start creates the first administrator from `IGLO_EMAIL_ADMIN_USER` and
 `IGLO_EMAIL_ADMIN_PASSWORD`. They are read only while no users exist, and there is no public
 first-account form. Without them `/health` works and login is denied.
 
+The same first start can also create an API user for a script or an app, with
+`IGLO_EMAIL_API_USER` and `IGLO_EMAIL_API_TOKEN`: it has the Super Admin role, and its token is the
+value you give. Set both or neither. Nothing is printed, so keep the token where you keep your
+secrets. See [Environment variables](#environment-variables).
+
 A systemd unit, saved as `/etc/systemd/system/iglo.email.service`. On 2026-11-09 it ran as a service in a Debian 13 container with systemd as PID 1
 (not on a host): it started, answered `/health`, restarted after `kill -9` and stopped cleanly.
 
@@ -74,7 +79,7 @@ UMask=0077
 WantedBy=multi-user.target
 ```
 
-Put the two admin variables in `/etc/iglo.email/env`, owned by root, mode 0640, group `iglo-email`,
+Put the admin and API variables in `/etc/iglo.email/env`, owned by root, mode 0640, group `iglo-email`,
 and remove them after the first start. systemd reads this file as root; a shell run as the account
 needs the group. Start the service with the variables in place, then remove them and restart it.
 `enable` makes the unit start at boot; without it the service stays down after a reboot:
@@ -84,10 +89,11 @@ systemctl enable --now iglo.email
 curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:9000/health
 ```
 
-When it prints `{"data":true}`, the administrator exists; then remove the variables and restart:
+When it prints `{"data":true}`, the first start has created the administrator and any API user; then
+remove the variables and restart:
 
 ```sh
-sed -i '/^IGLO_EMAIL_ADMIN_/d' /etc/iglo.email/env
+sed -i '/^IGLO_EMAIL_\(ADMIN\|API\)_/d' /etc/iglo.email/env
 systemctl restart iglo.email
 ```
 
@@ -114,11 +120,14 @@ docker run -d --name iglo-email --restart unless-stopped \
   -e IGLO_EMAIL_ROOT_URL=https://news.example.com \
   -e IGLO_EMAIL_ADMIN_USER=admin \
   -e IGLO_EMAIL_ADMIN_PASSWORD='choose-a-long-password' \
+  -e IGLO_EMAIL_API_USER=provisioning \
+  -e IGLO_EMAIL_API_TOKEN='a-48-character-token-of-letters-and-digits-only' \
   ghcr.io/iglo-tech/iglo.email:1.2.1
 ```
 
-The admin variables are read only while no users exist: after the first start, recreate the
-container without them. Put the [reverse proxy](#reverse-proxy-and-tls) in front of the published
+Put the variables in an env file (`--env-file`) rather than on the command line, so that they stay
+out of your shell history. The admin and API variables are read only while no users exist: after the
+first start, recreate the container without them. Put the [reverse proxy](#reverse-proxy-and-tls) in front of the published
 port. The image sets `IGLO_EMAIL_HOST=0.0.0.0` so that the published port reaches the server, so
 publish it only where it should be reachable. The image has no `HEALTHCHECK`, since it has no HTTP
 client: have the orchestrator or the proxy probe `GET /health` (`200` and `{"data":true}`).
@@ -169,10 +178,18 @@ tag.
 | `--root-url` | `IGLO_EMAIL_ROOT_URL` | `http://<host>:<port>` |
 | | `IGLO_EMAIL_ADMIN_USER` | none |
 | | `IGLO_EMAIL_ADMIN_PASSWORD` | none |
+| | `IGLO_EMAIL_API_USER` | none |
+| | `IGLO_EMAIL_API_TOKEN` | none |
 
 Flags win over variables. The root URL goes into every link in every email: set it to the public
-URL. It is the one setting that needs a restart. Everything else is in the admin UI under
-Settings, or `PUT /api/settings`, and applies at once.
+URL, with its scheme (`https://news.example.com`). It is the one setting that needs a restart.
+Everything else is in the admin UI under Settings, or `PUT /api/settings`, and applies at once.
+
+The admin and API pairs are read only on the first start, while no users exist, and each pair is
+both or neither. The API token must be 48 letters and digits (`A-Z`, `a-z`, `0-9`), the format of a
+generated token. Like one, it is stored only as a SHA-256 digest, and the server never prints it.
+The API user's name follows the admin's username rule and must differ from the admin's. A value that
+breaks a rule stops the server at startup, and the message names the variable without the value.
 
 ## Data directory
 
@@ -262,6 +279,64 @@ curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
 
 `API` is `username:token` of an API user, created under Users. Public rate limits, login limits
 and `privacy.record_optin_ip` all use the address found this way.
+
+## Deploying behind a reverse proxy or PaaS
+
+A checklist for a platform that puts its own proxy in front of the container, such as a PaaS with a
+built-in router. The steps below are generic; the [reverse proxy](#reverse-proxy-and-tls) section
+above has the same settings for nginx.
+
+1. **Root URL with its scheme.** `IGLO_EMAIL_ROOT_URL` is a full URL, such as
+   `https://news.example.com`. A bare host stops the server at startup, with a message that names
+   the value and the fix, for example `Invalid root-url "news.example.com": expected an absolute
+   http:// or https:// URL, such as https://news.example.com`. The server does not guess the scheme,
+   because a wrong one breaks every link and cookie. On Coolify, use `SERVICE_URL_<NAME>`, which
+   includes the scheme, not `SERVICE_FQDN_<NAME>`, which is a bare host.
+2. **Trusted proxy.** Without it, every visitor appears to come from the proxy, so one visitor's rate
+   limit blocks all of them. List the proxy's address in `security.trusted_proxies`, as
+   [above](#reverse-proxy-and-tls). In a container network, the proxy's address is on that network:
+   list it, or the network's subnet as a CIDR, for example `172.18.0.0/16`. `docker network inspect
+   <network>` shows both. Until the address is listed, the server logs one line that names the
+   address the request came from; it logs again only after the list changes.
+3. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
+4. **One container per volume.** Each data directory has one server ([one process per data
+   directory](#one-process-per-data-directory)). A rolling deploy that starts the new container
+   before the old one stops fails on the lock; stop the old one first.
+5. **Scheduled backups run without a shell.** The image has no shell, so a scheduler must start the
+   executable with its arguments, not a shell line. The invocation is
+   `iglo.email backup --output /data/backups/latest --force`, then
+   `iglo.email backup --verify /data/backups/latest`, as in [Docker](#docker). On Coolify, a scheduled
+   task must have its shell option off.
+6. **Bootstrap variables.** Remove `IGLO_EMAIL_ADMIN_*` and `IGLO_EMAIL_API_*` after the first start,
+   and restart. The server ignores them from then on. To change the API token, create a new API user
+   under Users, which shows its token once, switch the integration to it, and delete the old one.
+
+## API user for an app integration
+
+An app that posts events, sends transactional mail or provisions the install should have an API user
+of its own, with only the permissions its job needs. Then a leaked token exposes that job and nothing
+else. Create the user under Users, or with the bootstrap variables for the first one, and give it a
+user role under Roles. Each operation in `/api/openapi.json` lists its permissions in
+`x-required-permissions` (any one of them is enough) and, where it needs more, in
+`x-also-required-permissions` (one from each group as well). The sets below are the operations of
+each job.
+
+- **Events and grants** (`POST /api/subscriber-events`, `POST /api/subscriber-events/batch`):
+  `subscriber_events:create`. An event that grants consent on a single opt-in list
+  ([D99](design/09-decisions.md#d99-events-grant-consent-on-single-opt-in-lists-lead-2026-11-16))
+  also needs `subscribers:manage`, and a list role with `list:manage` on each granted list.
+- **Transactional mail** (`POST /api/tx`): `tx:send`. That is the only permission the operation names.
+- **Provisioning** (templates, sequences, lists, settings, webhooks and media):
+  - templates: `templates:manage`, and `templates:get` for listing, fetching and previewing;
+  - sequences: `sequences:manage`, and `sequences:get` for reading and previewing a step; a step's
+    test send also needs `tx:send`;
+  - lists: `lists:manage_all`, and `lists:get_all` for reading lists;
+  - settings: `settings:manage`, and `settings:get` to read them first;
+  - webhooks: `webhooks:manage`, which covers reads too;
+  - media: `media:manage`, and `media:get` for listing and downloading.
+
+  The `get` permissions are the reads the same job makes; leave one out and the job's first read
+  is refused with `403`. The sample role under [MCP](#mcp-model-context-protocol) includes all of them.
 
 ## Sending with Amazon SES
 
@@ -903,7 +978,7 @@ claude mcp add --transport http iglo https://<root>/api/mcp --header "Authorizat
   - For sequence step content: `sequences:get` to read and `sequences:manage` to change a step. Changing a step of a live sequence changes the messages of everyone who has not reached that step yet. Saving a step rewrites the whole sequence, so it also needs `subscribers:sql_query` when another step of the sequence has a raw-SQL condition.
   - `list_lists` shows only the lists the caller's role can read (`lists:get_all`, or a list role that covers the list).
   - Read-merge tools (`update_campaign`, `send_campaign_test`, `preview_campaign`, `campaign_text`, `update_sequence_step`) read the stored object before they save or render it. `preview_campaign` and `campaign_text` read only when their input omits fields; `send_campaign_test` always reads. A role with the write permission but not the read permission gets a tool error that names the read permission, and nothing is written; give the role both. For campaigns the read permission is `campaigns:get_all`, or `campaigns:get` with a list role that includes one of the campaign's lists.
-- Sample agent role, for an agent that should do nearly everything (D98): `bounces:get`, `bounces:manage`, `campaigns:get`, `campaigns:get_all`, `campaigns:get_analytics`, `campaigns:manage`, `campaigns:manage_all`, `campaigns:send`, `lists:get_all`, `lists:manage_all`, `media:get`, `media:manage`, `sends:get`, `sends:manage`, `sequences:get`, `sequences:manage`, `settings:get`, `settings:manage`, `subscriber_events:create`, `subscribers:get`, `subscribers:get_all`, `subscribers:import`, `subscribers:manage`, `templates:get`, `templates:manage`, `tx:send`, `webhooks:manage`. It is every permission that a non-excluded operation uses, except `users:*`, `roles:*` and `settings:maintain`. `list:get` and `list:manage` are list-role grants, not user-role permissions, so a list role adds them to narrow the agent to some lists. `subscribers:sql_query`, which allows raw SQL in subscriber queries and sequence conditions, is not in the set; add it only if the agent needs it. `campaigns:send` and `tx:send` let it send real email. `sends:manage` resends a message, `subscribers:manage` can send the opt-in mail, and `settings:manage` lets it change any setting, so give the role only to a credential you trust with those.
+- Sample agent role, for an agent that should do nearly everything (D98): `bounces:get`, `bounces:manage`, `campaigns:get`, `campaigns:get_all`, `campaigns:get_analytics`, `campaigns:manage`, `campaigns:manage_all`, `campaigns:send`, `lists:get_all`, `lists:manage_all`, `media:get`, `media:manage`, `sends:get`, `sends:manage`, `sequences:get`, `sequences:manage`, `settings:get`, `settings:manage`, `subscriber_events:create`, `subscribers:get`, `subscribers:get_all`, `subscribers:import`, `subscribers:manage`, `templates:get`, `templates:manage`, `tx:send`, `webhooks:manage`. It is every permission that a non-excluded operation uses, except `users:*`, `roles:*`, `settings:maintain` and `webhooks:post_bounce`, which only the mail provider's bounce callback needs. Each job set in [API user for an app integration](#api-user-for-an-app-integration) is part of it. `list:get` and `list:manage` are list-role grants, not user-role permissions, so a list role adds them to narrow the agent to some lists. `subscribers:sql_query`, which allows raw SQL in subscriber queries and sequence conditions, is not in the set; add it only if the agent needs it. `campaigns:send` and `tx:send` let it send real email. `sends:manage` resends a message, `subscribers:manage` can send the opt-in mail, and `settings:manage` lets it change any setting, so give the role only to a credential you trust with those.
 - A path argument must be a value of its parameter: a numeric ID is a positive integer, an enumerated value is one of its values, and no value may be `.` or `..` (written or percent-encoded). Any other value is refused with a tool error and nothing is sent.
 - Every answer is capped at 1 MiB, JSON, CSV and HTML alike, and the cap is read before anything is parsed. An answer over it is not returned: the tool answers with an error. For a JSON list, such as `get_subscribers` with `per_page=all` on a large base, it says to narrow the answer with `page` and `per_page`, or to fetch it from the REST API. For a CSV or HTML answer, it names the REST endpoint, such as `GET /api/subscribers/export`. A JSON answer under the cap comes back as its parsed value and as compact text, both at most 1 MiB (D98). An upload is limited to 1 MiB decoded (D98).
 - The endpoint validates incoming `Origin` headers against the configured root URL and rejects foreign origins with HTTP 403.
