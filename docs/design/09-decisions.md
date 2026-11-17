@@ -1090,3 +1090,19 @@ Brief B88, from the first production adopter's integration report: a summary ema
   - Capping the output at the aggregate range: the bound would refuse a finite number the app supplied; the size bound is stated instead.
   - Making `default` keep a number so that `default: 0 | number` formats: `assign`ed defaults would then compare and print differently (`== "0"`, `contains`, `.size`), which saved v1.1.0 templates rely on. A minor release does not change that; the order above works without it.
 - **Revisit:** if a locale or currency is needed, a new decision with its own argument and tests.
+
+## D103. Manual enrollment needs a readable subscriber; `fn: null` is refused (lead, 2026-11-17)
+
+Brief B91, from the B84–B86 review: `POST /api/enrollments` checked that the subscriber existed and nothing else about the caller's view of it, so a role with `sequences:manage` and list access to list A alone could enroll a subscriber who was only on list B. With `test: true` or a `trigger_event_id` the enrollment then sent that subscriber mail, or rendered their event data into a test step.
+
+- **Decision:** `POST /api/enrollments` answers `404 Subscriber not found` for a subscriber the caller cannot read under the rule of `GET /api/subscribers/:id`: `subscribers:get` or `subscribers:get_all`, and a list grant (read or manage) on one of the subscriber's lists, or `lists:get_all`. The check runs inside the write transaction, after the caller's permission is revalidated and before any other rule (blocklist, trigger event, reentry, test). The refusal is the answer for an absent subscriber, with the same body, and writes nothing, so it does not reveal that the subscriber exists.
+- **Unchanged:** `DELETE /api/enrollments/:id` and `POST /api/sequences/:id/steps/:step/reschedule` are sequence operations on enrollments that already exist, gated by `sequences:manage`; they name no subscriber. Their responses keep `subscriber_id`, as before.
+- **`fn: null` is refused.** An aggregate's `fn` defaults to `count` only when the key is absent (05-sequences.md#aggregates). `"fn": null`, and any value that is not `count`, `sum` or `distinct`, is `400 Invalid fields: steps.<i>.aggregates.<name>.fn` with nothing saved. The other step fields keep their defaults on `null`, as before.
+- **Why:** an enrollment is a write that starts mail and reads event data about the subscriber it names, so the subscriber must be one the caller could already open. A 403 would have told a limited caller that the subscriber exists; a 404 with the absent body does not, and matches how GET hides such subscribers. `fn: null` silently saved as `count`, so the saved definition was not the one the author sent.
+- **Considered:**
+  - A 403 for an unreadable subscriber: reveals existence, as above. Refused.
+  - Checking the list scope on the subscriber's memberships only, without `subscribers:get`: GET does not do that either; a caller without a read permission gets nothing from GET, so it gets nothing from enrollment.
+  - Applying the same rule to `DELETE` and reschedule: they act on a sequence's enrollment, which the caller can already see through the sequence, and changing them is a separate decision.
+  - Treating `fn: null` as `count` with a warning: a silent rewrite of what the author sent.
+- **Behavior change:** a `sequences:manage` caller without `subscribers:get` or `subscribers:get_all` can no longer enroll any subscriber by hand (404). A `subscribers:get_all` caller without list read scope is refused a list-B subscriber the same way, as GET refuses it with 403.
+- **Revisit:** if the list enumeration on `GET /api/enrollments` or the `subscriber_id` on DELETE responses must also follow the subscriber rule, a separate decision: the list shows enrollments of any subscriber to `sequences:get`.
