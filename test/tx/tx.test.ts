@@ -796,6 +796,11 @@ test("a multipart request that waits is served when room frees", async () => {
   release();
   expect((await first).status).toBe(200);
   expect((await second).status).toBe(200);
+  // The stall sits between the journal commit and the dispatch claim, so the outbox loop can
+  // claim and push `first` itself; its 200 may then come before its SMTP delivery completes.
+  // Wait, bounded, for both deliveries; the exact list below still rejects a duplicate.
+  const delivered = (to: string) => f.sink.messages.some((m) => m.to[0] === to);
+  await until(() => delivered("first@example.test") && delivered("second@example.test"), f);
   expect(f.sink.messages.map((m) => m.to[0]).sort()).toEqual([
     "first@example.test",
     "second@example.test",
