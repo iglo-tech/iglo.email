@@ -17,6 +17,14 @@ import {
 const hostile = (kind) =>
   `<img src=x onerror="window.pwned='${kind}'"> "'\` {{ 7*7 }} x-on:click="window.pwned=1" ${unique(kind)}`;
 
+// A confirmed save reloads the page. The load is awaited, not the network: an idle network says
+// nothing about a reload that has not started yet, and a read then can hit the old document.
+async function confirmAndReload(page) {
+  const loaded = page.waitForEvent("load");
+  await confirm(page);
+  await loaded;
+}
+
 async function template(page, subject = "Welcome") {
   const made = await api(page, "/api/templates", "POST", {
     name: unique("tx"),
@@ -200,8 +208,7 @@ test("live enrollments are named before a save, and a viewer without SQL is refu
   await page.getByTestId("step-wait").fill("P2D");
   await page.getByTestId("btn-save").click();
   await expect(page.locator("dialog[open]")).toContainText("Active enrollments: 1");
-  await confirm(page);
-  await page.waitForLoadState("networkidle");
+  await confirmAndReload(page);
   await expect(page.getByTestId("step-wait")).toHaveValue("P2D");
   const row = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
   expect(row.due_at).toBe(made.body.data.due_at);
@@ -426,8 +433,7 @@ test("a changed wait is applied to waiting enrollments on request", async ({ pag
   await page.getByTestId("step-wait").fill("P2D");
   await expect(button).toBeDisabled();
   await page.getByTestId("btn-save").click();
-  await confirm(page);
-  await page.waitForLoadState("networkidle");
+  await confirmAndReload(page);
   const kept = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
   expect(kept.due_at).toBe(made.body.data.due_at);
   await expect(button).toBeEnabled();
@@ -452,6 +458,60 @@ test("a step condition is checked as it is typed", async ({ page }) => {
   await expect(page.getByTestId("condition-error")).toContainText("op");
   await editor.fill('{"attr": "status", "op": "eq", "value": "enabled"}');
   await expect(page.getByTestId("condition-error")).toBeHidden();
+});
+
+test("step aggregates are checked on save, kept as parsed JSON and refused with the API's words", async ({
+  page,
+}) => {
+  await signIn(page);
+  const tx = await template(page);
+  const seq = await sequence(page, {
+    steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }],
+  });
+  const editor = () => page.getByTestId("step-aggregates").locator(".cm-content");
+  // Typed the way a person types: a fill with several lines reaches the editor by another path.
+  const typed = async (text) => {
+    await editor().click();
+    await page.keyboard.press("ControlOrMeta+A");
+    await page.keyboard.type(text);
+  };
+  const storedAggregates = async () =>
+    (await api(page, `/api/sequences/${seq.id}`)).body.data.steps[0].aggregates;
+  // The editor's own text, parsed: the shown value is compared as JSON, not as typed.
+  const shown = async () => JSON.parse(await editor().textContent());
+
+  const valid = {
+    items: { event: unique("item"), fn: "count" },
+    total: { event: unique("item"), fn: "sum", field: "data.units", since: "P30D" },
+  };
+  await page.goto(`/admin/sequences/${seq.id}`);
+  await typed(JSON.stringify(valid));
+  const loaded = page.waitForEvent("load");
+  await page.getByTestId("btn-save").click();
+  await loaded;
+  expect(await storedAggregates()).toEqual(valid);
+  await page.reload();
+  await expect(async () => expect(await shown()).toEqual(valid)).toPass({ timeout: 15_000 });
+
+  // Malformed JSON is refused in the page, before anything is sent.
+  await typed('{"items": {"event": ');
+  await page.getByTestId("btn-save").click();
+  await expect(page.getByTestId("error")).toContainText("is not valid JSON");
+  await page.reload();
+  expect(await storedAggregates()).toEqual(valid);
+
+  // The API's own refusal: an unknown function, then a count that names a field.
+  await typed(JSON.stringify({ items: { event: "item", fn: "max" } }));
+  await page.getByTestId("btn-save").click();
+  await expect(page.getByTestId("error")).toContainText("steps.0.aggregates.items.fn");
+  await page.reload();
+  expect(await storedAggregates()).toEqual(valid);
+
+  await typed(JSON.stringify({ items: { event: "item", fn: "count", field: "data.units" } }));
+  await page.getByTestId("btn-save").click();
+  await expect(page.getByTestId("error")).toContainText("steps.0.aggregates.items.field");
+  await page.reload();
+  expect(await storedAggregates()).toEqual(valid);
 });
 
 test("the activity tab shows views and clicks from a real campaign and clears them", async ({

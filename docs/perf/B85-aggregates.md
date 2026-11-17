@@ -91,6 +91,42 @@ Each aggregate costs time linear in the events it reads, because SQLite parses e
 `data`: `count` does not read the data, the others do. Retention bounds what exists: an event
 older than the retention window is gone before any aggregate can read it.
 
+### Linux x64, 2026-11-17 (B93)
+
+Re-run of the worst case above on the Linux VPS, with the same script and command
+(`bun test/scheduler/measure-aggregates.ts 5`), five separate processes, each with five
+repetitions and one warm-up (the script's median). The macOS figures above are left as they were.
+
+Host and provenance: Linux 6.12.116 (Debian 13) virtual machine, 6 vCPUs, dynamic memory
+(16 GiB maximum). Bun 1.4.4. Source commit `ac2d74e` (`origin/main`; the branch that adds this
+section changes no product code). Script `test/scheduler/measure-aggregates.ts` sha256
+`4d16127ab5831e105a67fd08940c2da74ede4bb0823468f9c602d90f89e88741`. The measurement imports the sources, not the
+compiled executable; the executable built by `bun run check` (`dist/iglo.email`, sha256
+`f09176f84a049896d21d23a1ee46eb8832b2c13186a26ba20c158ea6801d9069`) is recorded for reference only. Runs were made under the measurement lock.
+
+Disturbance: no run was marked disturbed, since the one-minute load average stayed below the
+6 CPUs throughout. The load average and `MemAvailable` before and after each of the five runs are
+from the run logs, which were kept outside the repository and are not committed:
+
+| Run | Load before | Load after | MemAvailable before | MemAvailable after | Worst case (ms, median of 5) |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 4.47 | 4.27 | 6.76 GiB | 6.81 GiB | 120.5 |
+| 2 | 4.09 | 3.92 | 6.81 GiB | 6.97 GiB | 112.9 |
+| 3 | 3.92 | 4.17 | 6.97 GiB | 6.66 GiB | 113.1 |
+| 4 | 4.17 | 3.99 | 6.66 GiB | 6.74 GiB | 113.5 |
+| 5 | 3.99 | 3.83 | 6.74 GiB | 6.80 GiB | 117.6 |
+
+| Measurement (100,000 or 10,000 events) | Median of five runs | Range of five runs |
+|---|---:|---:|
+| Ten aggregates, each at the limit (10,000 events) | 136.3 ms | 132.0 to 142.9 ms |
+| Ten `where` misses at the limit (10,000 events) | 115.1 ms | 111.3 to 125.2 ms |
+| Worst case: nine at the limit, then one over it (100,000 events) | **113.5 ms** | 112.9 to 120.5 ms |
+| Ten aggregates over the limit (100,000 events), refused at the first read | 12.9 ms | 12.5 to 18.7 ms |
+| Ten `where` misses over the limit (100,000 events), refused at the first read | 12.0 ms | 11.3 to 12.8 ms |
+
+Each run's values are the script's medians of five repetitions. The worst-case median of
+113.5 ms is below the 250 ms threshold, and so is the slowest run (120.5 ms). The lead decides the bound.
+
 ## Reproduce
 
 ```sh
