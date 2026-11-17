@@ -70,5 +70,9 @@ only the cache's copy of the last file can remain. The assertion is unchanged (`
 
 ## Evidence bar
 
-- `bun run test` 20 consecutive passes at plain load on the final commit: see the PR body.
-- Stress numbers above, with the failure counts before and after.
+- Plain load, after: `bun run test` in the container, 20 consecutive runs on commit 0d55007 (the
+  code this note was written against): 20 of 20 exit 0, 0 failures, and both the tracked-links
+  test and the media eviction test passed in every run.
+- Plain load, before: the links test and the media test passed in the baseline runs; the media
+  test failed once in six runs (the before-change media check, see section 3).
+- Stress, before and after: section 2 (links test), with the same burner command on both sides.
