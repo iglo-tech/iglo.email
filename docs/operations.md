@@ -964,13 +964,27 @@ lists private if that API is not meant to be public.
 
 ## MCP (Model Context Protocol)
 
-iglo.email provides an MCP Streamable HTTP endpoint at `POST /api/mcp` for AI agents (Claude Code, Cursor, Cline, etc.) to list, read, edit, and preview templates and campaign content, create draft campaigns, find lists and media, and edit the content of sequence steps. An agent can do everything its credential's role allows, except the operations excluded as borderline dangerous or not agent actions: users and roles, the caller's own login, two-factor setup, bulk and irreversible deletes, and replacing all settings at once. The hand-written tools of [D91](design/09-decisions.md#d91-mcp-endpoint-for-template-and-campaign-editing-lead-2026-11-07) are joined by one tool per remaining API operation; [D98](design/09-decisions.md#d98-mcp-covers-every-operation-except-a-short-exclusion-list-lead-2026-11-13) lists the exclusions and the rules.
+The MCP endpoint at `POST /api/mcp` is the path for an agent working on an instance for a person (Claude Code, Cursor, Cline, etc.). Applications use the REST API with an API user of their own, as [above](#api-user-for-an-app-integration) describes ([D108](design/09-decisions.md#d108-mcp-is-the-agent-path-for-content-the-server-says-so-and-the-readme-links-to-it-lead-2026-11-17)). The agent can author and test content (templates, sequence steps, campaigns), upload media, inspect subscribers, events, sends and bounces, and change settings. It can do everything its credential's role allows, with the same permissions as the REST API, except the operations excluded as borderline dangerous or not agent actions: users and roles, the caller's own login, two-factor setup, bulk and irreversible deletes, and replacing all settings at once. The hand-written tools of [D91](design/09-decisions.md#d91-mcp-endpoint-for-template-and-campaign-editing-lead-2026-11-07) are joined by one tool per remaining API operation; [D98](design/09-decisions.md#d98-mcp-covers-every-operation-except-a-short-exclusion-list-lead-2026-11-13) lists the exclusions and the rules. The server sends its own instructions with the connection, so an agent reads the authoring loop before its first call.
 
 To connect an MCP client, use the Streamable HTTP transport with an API user authorization header:
 
 ```sh
 claude mcp add --transport http iglo https://<root>/api/mcp --header "Authorization: token <user>:<key>"
 ```
+
+The same connection as a project `.mcp.json` is in the [README](../README.md#if-you-are-an-ai-agent). Do not commit a file that holds a real token.
+
+### Authoring loop
+
+For a sequence step, the loop is the one the server instructions give, with the tools as they are named in `tools/list`:
+
+1. `get_sequence` lists the steps and their IDs.
+2. Change the step with `update_sequence_step` (its subject or its transactional template), or edit the template with `update_template`. Read `template_reference` before writing any Liquid.
+3. `preview_sequence_step` renders the step with a real `subscriber_id` or a `sample`, and writes nothing.
+4. `test_sequence_step` sends it to up to five addresses as a labelled test. The test is real mail, and nothing is journaled or enrolled.
+5. `get_sends` and `get_bounces` show what was sent and what came back.
+
+A campaign follows the same loop with `update_campaign`, `preview_campaign`, `campaign_text` and `send_campaign_test`. A tool error carries the API's message; the agent corrects the arguments it names. It does not repeat a send to see whether it worked; it reads `get_sends`.
 
 ### Security and role recommendations
 

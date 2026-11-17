@@ -21,6 +21,37 @@ It is an independently maintained rewrite derived from [listmonk](https://github
 - **API:** listmonk's HTTP API contract for the endpoints it ports, native endpoints for what listmonk lacks, the OpenAPI document at `/api/openapi.json`, and an MCP endpoint at `/api/mcp`. The differences from listmonk are listed in [docs/design/07-api-and-ui.md](docs/design/07-api-and-ui.md).
 - **Backups:** `iglo.email backup` writes a consistent copy of a running server, and `backup --verify` checks one.
 
+## If you are an AI agent
+
+- **Applications** (code in the app or its deploy: events, transactional sends, subscriber sync, a provisioning script in the app's repository) use the HTTP API with an API user, as the [operations guide](docs/operations.md#api-user-for-an-app-integration) describes. The API is versioned and documented at `/api/openapi.json` on the instance.
+- **An agent working on an instance for a person** uses the MCP endpoint at `/api/mcp`: content (templates, sequence steps, campaigns), media, subscribers, events, sends, bounces and settings.
+- Both run the same operations with the same permissions, and neither has a capability the other lacks. Use MCP when it is connected and REST otherwise.
+- The MCP server sends its own instructions on connect: the authoring loop, and `template_reference` for Liquid. The [MCP section of the operations guide](docs/operations.md#mcp-model-context-protocol) has the scope, the roles and the loop.
+
+Connect Claude Code with a project `.mcp.json` (an HTTP server, with the token in a header):
+
+```json
+{
+  "mcpServers": {
+    "iglo-email": {
+      "type": "http",
+      "url": "https://<root>/api/mcp",
+      "headers": {
+        "Authorization": "token <api-user>:<token>"
+      }
+    }
+  }
+}
+```
+
+Or add it with the command line:
+
+```sh
+claude mcp add --transport http iglo-email https://<root>/api/mcp --header "Authorization: token <api-user>:<token>"
+```
+
+Do not commit a `.mcp.json` that holds a real token: Claude Code expands `${VAR}` references in `headers`, so the token can come from the environment. Create the API user for the agent with only the permissions it needs, as [operations](docs/operations.md#mcp-model-context-protocol) recommends; the bootstrap variables for the first API user are in [operations](docs/operations.md#environment-variables).
+
 ## Supported platforms
 
 iglo.email ships for Linux only:

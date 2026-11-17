@@ -146,7 +146,7 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
     name: "create_template",
     annotations: WRITE,
     description:
-      "Create a new email template (type 'campaign' for layouts with {{ content | raw }}, or 'tx' for complete messages).",
+      "Create a new email template (type 'campaign' for layouts with {{ content | raw }}, or 'tx' for complete messages). Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
@@ -171,7 +171,8 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
   {
     name: "update_template",
     annotations: WRITE,
-    description: "Update an existing email template.",
+    description:
+      "Update an existing email template. Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
@@ -281,7 +282,8 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
   {
     name: "update_campaign",
     annotations: WRITE,
-    description: "Update editable content and settings of a draft campaign.",
+    description:
+      "Update editable content and settings of a draft campaign. Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
@@ -323,7 +325,8 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
   {
     name: "preview_campaign",
     annotations: READ_ONLY,
-    description: "Render an HTML preview of a campaign with sample subscriber data.",
+    description:
+      "Render an HTML preview of a campaign with sample subscriber data. Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
@@ -343,7 +346,8 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
   {
     name: "campaign_text",
     annotations: READ_ONLY,
-    description: "Render plain-text preview of a campaign.",
+    description:
+      "Render plain-text preview of a campaign. Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
@@ -359,7 +363,8 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
   {
     name: "send_campaign_test",
     annotations: OPEN_WORLD,
-    description: "Send a test campaign email to specified subscriber email addresses.",
+    description:
+      "Send a test campaign email to specified subscriber email addresses. Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
@@ -388,7 +393,7 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
     name: "create_campaign",
     annotations: WRITE,
     description:
-      "Create a draft email campaign. Get list IDs from list_lists and media IDs from list_media. Returns the created campaign.",
+      "Create a draft email campaign. Get list IDs from list_lists and media IDs from list_media. Returns the created campaign. Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
@@ -502,7 +507,7 @@ const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
     name: "update_sequence_step",
     annotations: WRITE,
     description:
-      "Change the subject or the transactional template of one step of a sequence. The sequence settings and every other step are kept as stored. Get step IDs from get_sequence. Saving rewrites every step, so the caller must be allowed to save all of them: if another step has a raw-SQL condition, the caller also needs subscribers:sql_query, or the save is refused.",
+      "Change the subject or the transactional template of one step of a sequence. The sequence settings and every other step are kept as stored. Get step IDs from get_sequence. Saving rewrites every step, so the caller must be allowed to save all of them: if another step has a raw-SQL condition, the caller also needs subscribers:sql_query, or the save is refused. Read `template_reference` before writing Liquid.",
     inputSchema: {
       type: "object",
       properties: {
