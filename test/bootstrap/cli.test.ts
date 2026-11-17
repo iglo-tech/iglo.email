@@ -671,12 +671,89 @@ describe("compiled executable", () => {
     }
   });
 
+  test("a value with a missing colon, a bare scheme word or a single label gets no suggestion", async () => {
+    // Each value names its wrong part and gets no suggestion. A suggestion from one of them would be
+    // `https://https//...`, which the validator accepts with host `https` (D107).
+    for (const [value, reason] of [
+      ["https//news.example.com", "the scheme must be followed by ://"],
+      ["http//news.example.com", "the scheme must be followed by ://"],
+      ["HTTPS//news.example.com", "the scheme must be followed by ://"],
+      ["https//news.example.com:8443", "the scheme must be followed by ://"],
+      ["http//localhost:9000", "the scheme must be followed by ://"],
+      ["https/news.example.com", "the scheme must be followed by ://"],
+      ["https///x", "the scheme must be followed by ://"],
+      ["https", "with a host name; the scheme is not guessed"],
+      ["http", "with a host name; the scheme is not guessed"],
+      ["localhost", "with a host name; the scheme is not guessed"],
+      ["x.com:0", "the port must be from 1 to 65535"],
+      ["https://x.com:0", "the port must be from 1 to 65535"],
+      ["https://x.com:65536", "the port must be from 1 to 65535"],
+    ] as const) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(`Invalid root-url "${value}": `);
+      expect(result.stderr).toContain(reason);
+      expect(result.stderr).not.toContain("such as");
+      expect(result.stderr).not.toContain("https://https");
+      expect(result.stderr).not.toContain("https://http");
+    }
+  });
+
+  test("for hostile root URL values, a suggestion is only ever for the host the value names", async () => {
+    // [value, the host it names, or null when it names none]. A suggestion exists exactly for the
+    // values that name a host by the allow-list, and its hostname is that host.
+    const hostile: ReadonlyArray<readonly [string, string | null]> = [
+      ["news.example.com@evil.example.net", null],
+      ["news.example.com/@evil.example.net", null],
+      ["news.example.com\\evil.example.net", null],
+      ["news.example.com?next=https://evil.example.net", null],
+      ["news.example.com#https://evil.example.net", null],
+      ["news.example.com/%2f%2fevil.example.net", "news.example.com"],
+      ["news.example.com/../../evil.example.net", "news.example.com"],
+      ["news.example.com:0", null],
+      ["news.example.com:00443", null],
+      ["news.example.com:65536", null],
+      ["news.example.com:99999", null],
+      ["news.example.com:8443:9000", null],
+      ["news.example.com:", null],
+      ["news.example.com:+443", null],
+      ["news.example.com:443/", "news.example.com"],
+      ["news..example.com", null],
+      ["-news.example.com", null],
+      ["news-.example.com", null],
+      ["news.example.com.", null],
+      [".news.example.com", null],
+      ["news_example.com", null],
+      ["ñews.example.com", null],
+      ["news.example.com\t", null],
+      [`${"a".repeat(64)}.example.com`, null],
+      ["[2001:db8::1]", null],
+      ["[2001:db8::1]:8443", null],
+      ["localhost", null],
+      ["//news.example.com", null],
+      ["https//news.example.com", null],
+      ["mailto:ops@example.com", null],
+      ["NEWS.Example.COM", "news.example.com"],
+      ["xn--nxasmq6b.example.com", "xn--nxasmq6b.example.com"],
+      ["192.0.2.10:8443", "192.0.2.10"],
+    ];
+    for (const [value, intended] of hostile) {
+      // The `=` form, because a value that starts with `-` is not read as a value after a flag.
+      const result = await runCli([`--root-url=${value}`]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("Invalid root-url");
+      const suggestion = /such as (\S+)/.exec(result.stderr)?.[1];
+      const host = suggestion === undefined ? null : new URL(suggestion).hostname;
+      expect({ value, host }).toEqual({ value, host: intended });
+    }
+  }, 25_000);
+
   test("the root URL suggestion for a bare host or a host with a port is accepted and is the host meant", async () => {
     const token = apiTokenValue();
     for (const [value, intended] of [
       ["news.example.com", "news.example.com"],
       ["news.example.com:8443", "news.example.com"],
-      ["news.example.com/newsletter", "news.example.com"],
+      ["news.example.com/base", "news.example.com"],
     ] as const) {
       const refused = await runCli(["--root-url", value]);
       expect(refused.code).not.toBe(0);

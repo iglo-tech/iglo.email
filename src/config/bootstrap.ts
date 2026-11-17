@@ -145,8 +145,17 @@ const schemeStart = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 // `host:port`, read as a host unless the name is a scheme that is followed by no `//`.
 const hostAndPort = /^[A-Za-z0-9.-]+:[0-9]+(?:[/?#]|$)/;
 const schemeNames = /^(?:https?|ftp):/i;
-// A bare host with an optional port and path, which `https://` in front of it makes a root URL.
-const bareHost = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*(?::[0-9]{1,5})?(?:\/[^?#@]*)?$/;
+const schemeSlash = /^(?:https?|ftp)\//i;
+const expectedUrl = "expected an absolute http:// or https:// URL";
+
+// A DNS host name: at least two labels of letters, digits and hyphens, each 1 to 63 characters and
+// not starting or ending with a hyphen. Then an optional port without a leading zero, and an
+// optional path with no whitespace, backslash, `?`, `#` or `@`. Only a value that matches all of it
+// gets a suggestion (D107): every other value names what is wrong and gets none.
+const label = String.raw`[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?`;
+const bareRootUrl = new RegExp(
+  String.raw`^((?:${label}\.)+${label})(?::([1-9][0-9]{0,4}))?(\/[^\s\\?#@]*)?$`,
+);
 
 /** Whether the value starts with a scheme; `news.example.com:8443` is a host and a port. */
 function hasScheme(value: string): boolean {
@@ -154,16 +163,47 @@ function hasScheme(value: string): boolean {
   return !hostAndPort.test(value) || schemeNames.test(value);
 }
 
-/** `https://<value>` for a bare host, when the validator accepts it; otherwise nothing. */
+function portInRange(digits: string): boolean {
+  const port = Number(digits);
+  return port >= 1 && port <= 65535;
+}
+
+/**
+ * `https://<value>` for a bare host, when the value matches the host allow-list and the URL built
+ * from it has the same host and port and passes the validator. Otherwise nothing.
+ */
 function suggestionFor(value: string): string | undefined {
-  if (!bareHost.test(value)) return undefined;
+  const match = bareRootUrl.exec(value);
+  if (!match) return undefined;
+  const host = match[1] ?? "";
+  const port = match[2];
+  if (host.length > 253) return undefined;
+
   const candidate = `https://${value}`;
+  let url: URL;
   try {
-    validateRootUrl(candidate);
-    return candidate;
+    url = new URL(candidate);
   } catch {
     return undefined;
   }
+  // URL drops the default port of https (443), so a port of 443 is read back as "".
+  const expectedPort = port === undefined || port === "443" ? "" : port;
+  if (url.hostname !== host.toLowerCase() || url.port !== expectedPort) return undefined;
+  try {
+    validateRootUrl(candidate);
+  } catch {
+    return undefined;
+  }
+  return candidate;
+}
+
+/** What is wrong with a value that gets no suggestion. The scheme is never guessed. */
+function missingSchemeReason(value: string): string {
+  // `https//host` and `https/host` have the scheme but not its colon.
+  if (schemeSlash.test(value)) return "the scheme must be followed by ://";
+  const port = /^[A-Za-z0-9.-]+:([0-9]+)(?:\/|$)/.exec(value)?.[1];
+  if (port !== undefined && !portInRange(port)) return "the port must be from 1 to 65535";
+  return `${expectedUrl} with a host name; the scheme is not guessed`;
 }
 
 function validateRootUrl(value: string): void {
@@ -173,15 +213,14 @@ function validateRootUrl(value: string): void {
   const fail = (reason: string): never => {
     throw new Error(`Invalid root-url ${shown}: ${reason}`);
   };
-  const expected = "expected an absolute http:// or https:// URL";
 
   if (/\s|\\/.test(value)) fail("the value contains whitespace or a backslash; remove it");
   // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,
   // because `https://` in front of it would be wrong too (`https://https://host` is host `https`).
   if (!hasScheme(value)) {
     const suggestion = suggestionFor(value);
-    if (suggestion) fail(`${expected}, such as ${suggestion}`);
-    fail(`${expected} with a host name`);
+    if (suggestion) fail(`${expectedUrl}, such as ${suggestion}`);
+    fail(missingSchemeReason(value));
   }
   if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) fail("the scheme must be followed by //");
 
@@ -199,5 +238,10 @@ function validateRootUrl(value: string): void {
     fail(
       "remove the query string and fragment; the root URL is a scheme, a host and an optional path",
     );
-  if (!url || url.host === "") fail(`${expected} with a valid host name`);
+  // URL refuses a port above 65535 and keeps 0, so the port is read from the text.
+  const portText = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*:([0-9]+)(?:[/?#]|$)/.exec(value)?.[1];
+  if (portText !== undefined && !portInRange(portText)) {
+    fail("the port must be from 1 to 65535");
+  }
+  if (!url || url.host === "") fail(`${expectedUrl} with a valid host name`);
 }
