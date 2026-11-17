@@ -68,8 +68,12 @@ function report(logger: ErrorLogger, peer: string): void {
     `X-Forwarded-For from ${peer} was ignored: that address is not in security.trusted_proxies. ` +
     `If it is your reverse proxy, add it there (docs/operations.md, "Deploying behind a reverse proxy or PaaS").`;
   try {
-    // No `safe` text: the log buffer accepts only its fixed list, and stderr keeps this line.
-    logger.error(new Error(message));
+    // The buffer's fixed line names no address: `settings:get` readers are not all administrators.
+    // stderr keeps the whole line, with the peer.
+    logger.error(
+      new Error(message),
+      "X-Forwarded-For from an untrusted peer ignored: see security.trusted_proxies",
+    );
   } catch {
     /* Logging never changes an address. */
   }

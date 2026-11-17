@@ -141,33 +141,63 @@ function parseHost(value: string): string {
   return host;
 }
 
+const schemeStart = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+// `host:port`, read as a host unless the name is a scheme that is followed by no `//`.
+const hostAndPort = /^[A-Za-z0-9.-]+:[0-9]+(?:[/?#]|$)/;
+const schemeNames = /^(?:https?|ftp):/i;
+// A bare host with an optional port and path, which `https://` in front of it makes a root URL.
+const bareHost = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*(?::[0-9]{1,5})?(?:\/[^?#@]*)?$/;
+
+/** Whether the value starts with a scheme; `news.example.com:8443` is a host and a port. */
+function hasScheme(value: string): boolean {
+  if (!schemeStart.test(value)) return false;
+  return !hostAndPort.test(value) || schemeNames.test(value);
+}
+
+/** `https://<value>` for a bare host, when the validator accepts it; otherwise nothing. */
+function suggestionFor(value: string): string | undefined {
+  if (!bareHost.test(value)) return undefined;
+  const candidate = `https://${value}`;
+  try {
+    validateRootUrl(candidate);
+    return candidate;
+  } catch {
+    return undefined;
+  }
+}
+
 function validateRootUrl(value: string): void {
   // A value with credentials, a query or a fragment may hold a secret, so the message leaves it out.
   const withheld = /[@?#]/.test(value);
   const shown = withheld ? "(value not shown)" : JSON.stringify(value);
-  const example = withheld || value === "" ? "https://email.example.com" : `https://${value}`;
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value))
-    throw new Error(
-      `Invalid root-url ${shown}: expected an absolute http:// or https:// URL, such as ${example}`,
-    );
+  const fail = (reason: string): never => {
+    throw new Error(`Invalid root-url ${shown}: ${reason}`);
+  };
+  const expected = "expected an absolute http:// or https:// URL";
+
+  if (/\s|\\/.test(value)) fail("the value contains whitespace or a backslash; remove it");
+  // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,
+  // because `https://` in front of it would be wrong too (`https://https://host` is host `https`).
+  if (!hasScheme(value)) {
+    const suggestion = suggestionFor(value);
+    if (suggestion) fail(`${expected}, such as ${suggestion}`);
+    fail(`${expected} with a host name`);
+  }
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) fail("the scheme must be followed by //");
+
   let url: URL | undefined;
   try {
-    if (!/\s|\\/.test(value)) url = new URL(value);
+    url = new URL(value);
   } catch {
     url = undefined;
   }
   if (url && !["http:", "https:"].includes(url.protocol))
-    throw new Error(`Invalid root-url ${shown}: the scheme must be http:// or https://`);
+    fail("the scheme must be http:// or https://");
   if (url && (url.username !== "" || url.password !== ""))
-    throw new Error(
-      `Invalid root-url ${shown}: remove the user name and password from the URL; the root URL is a public address`,
-    );
+    fail("remove the user name and password from the URL; the root URL is a public address");
   if (url && (url.search !== "" || url.hash !== ""))
-    throw new Error(
-      `Invalid root-url ${shown}: remove the query string and fragment; the root URL is a scheme, a host and an optional path`,
+    fail(
+      "remove the query string and fragment; the root URL is a scheme, a host and an optional path",
     );
-  if (!url || url.host === "")
-    throw new Error(
-      `Invalid root-url ${shown}: expected an absolute http:// or https:// URL with a host name, such as ${example}`,
-    );
+  if (!url || url.host === "") fail(`${expected} with a valid host name`);
 }

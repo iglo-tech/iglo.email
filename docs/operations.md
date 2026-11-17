@@ -324,7 +324,9 @@ each job.
 - **Events and grants** (`POST /api/subscriber-events`, `POST /api/subscriber-events/batch`):
   `subscriber_events:create`. An event that grants consent on a single opt-in list
   ([D99](design/09-decisions.md#d99-events-grant-consent-on-single-opt-in-lists-lead-2026-11-16))
-  also needs `subscribers:manage`, and a list role with `list:manage` on each granted list.
+  also needs `subscribers:manage`, and the list manage scope on each granted list: a list role with
+  `list:manage` on that list, or the user role `lists:manage_all`, which gives that scope on every
+  list.
 - **Transactional mail** (`POST /api/tx`): `tx:send`. That is the only permission the operation names.
 - **Provisioning** (templates, sequences, lists, settings, webhooks and media):
   - templates: `templates:manage`, and `templates:get` for listing, fetching and previewing;

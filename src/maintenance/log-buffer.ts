@@ -41,6 +41,7 @@ const SAFE_MESSAGES = [
   "unknown messenger on campaign: campaign cancelled",
   "Webhook deliveries are failing",
   "Webhook delivery failed",
+  "X-Forwarded-For from an untrusted peer ignored: see security.trusted_proxies",
 ] as const;
 export type SafeMessage = (typeof SAFE_MESSAGES)[number];
 const safeMessages = new Set<string>(SAFE_MESSAGES);
