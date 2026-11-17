@@ -380,6 +380,10 @@ export function registerSequenceRoutes(
         auth.revalidate(c, MANAGE);
         const subscriber = subscribers.get(subscriberId);
         if (!subscriber) throw new HttpError(404, "Subscriber not found");
+        // D103: a subscriber the caller cannot read under GET's rule is absent to it, so the
+        // answer and the write it refuses match an absent subscriber's.
+        if (!readableSubscribers(roles, subscribers, identity(c), [subscriberId]).has(subscriberId))
+          throw new HttpError(404, "Subscriber not found");
         if (subscriber.status === "blocklisted")
           throw new HttpError(409, "The subscriber is blocklisted.");
         // An existing event the enrollment starts from (D101); an unknown one is refused here.
