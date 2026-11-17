@@ -18,7 +18,7 @@ Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-cove
 - v1.1.0 published 2026-11-13 (MCP widening, D98).
 - Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B88 `number` Liquid filter (D102, [brief](briefs/B88.md), adopter follow-up) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
 - v1.2.0 published 2026-11-17 (B84–B90): tag on a469e40, release run 43993275535 green (e2e, builds, image smoke, publish, image); lead verified both checksums and `--version` 1.2.0, anonymous pull and run of `:1.2.0` (amd64+arm64), `:latest` same digest. Queue: backlog below, split by the lead 2026-11-17.
-- B92 CI steps failing on main (sends:production, messaging:fixture, templates:compiled arm64) and the media.test.ts:286 flake → B93 Playwright spec for step aggregates; aggregate worst case re-measured when the host is idle.
+- B92 CI steps failing on main (sends:production, messaging:fixture, templates:compiled arm64) and the media.test.ts:286 flake ([brief](briefs/B92.md), PR #144 in review) → B93 Playwright spec for step aggregates; aggregate worst case re-measured on Linux ([brief](briefs/B93.md), worker).
 - Lead decided 2026-11-17 (not open work): archived lists stay grantable on events (as PUT); the event 403 names no internal ID (would leak it); native 404 punctuation kept; the test harness needs Linux /proc (D89).
 
 ## Owner decisions
