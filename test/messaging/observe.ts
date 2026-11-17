@@ -86,9 +86,11 @@ try {
   const dispatch = emailer.push(m);
   assert.match(dispatch.messageId, /^<[^@]+@example\.test>$/);
   body.fill(0);
-  m.attachments![0]!.content.fill(0);
   m.headers!["X-Fixture"] = "changed";
   const result = await dispatch.result;
+  // Attachment bytes are shared with the emailer, not copied: a campaign's messages hold one
+  // buffer (media.test pins that). The caller may reuse them only once the send has settled.
+  m.attachments![0]!.content.fill(0);
   assert.equal(result.status, "accepted");
   assert.deepEqual(result.accepted.sort(), [
     "copy@example.test",

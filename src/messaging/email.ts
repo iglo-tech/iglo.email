@@ -554,10 +554,14 @@ export function createEmailer(options: {
       operation = {
         started: false,
         cancel() {
+          // A queued operation that never started has not touched SMTP. Once close() has begun,
+          // it is handed back as not-started, so its row stays queued instead of failing (B92).
           complete(
             operation!.started
               ? { messageId, status: "ambiguous", stage: "unknown", accepted: [], rejected: [] }
-              : localOutcome(),
+              : closed
+                ? notStartedOutcome()
+                : localOutcome(),
           );
         },
         start() {

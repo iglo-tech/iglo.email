@@ -1,4 +1,5 @@
 // Compile and execute the real renderer from a disposable, isolated directory.
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -33,9 +34,8 @@ try {
       "--ro-bind",
       "/lib",
       "/lib",
-      "--ro-bind",
-      "/lib64",
-      "/lib64",
+      // Ubuntu arm64 has no /lib64; bwrap fails on a missing source, so bind it only when present.
+      ...(existsSync("/lib64") ? ["--ro-bind", "/lib64", "/lib64"] : []),
       "--bind",
       directory,
       "/work",

@@ -223,11 +223,29 @@ test("attachments over the bound pause the campaign instead of holding them in m
 });
 
 const mebibytes = (count: number, fill = 0) => new Uint8Array(count * 1024 * 1024).fill(fill);
-/** Bytes held by buffers now; the fixture's record of a push must not be what holds them. */
-const heldBytes = () => {
-  Bun.gc(true);
-  return process.memoryUsage().arrayBuffers;
-};
+/**
+ * Attachment buffers this test's messages carried, one WeakRef per distinct buffer. The test does
+ * not use process-wide `arrayBuffers`: a worker process runs several test files in turn, so that
+ * figure also counts whatever else the process holds. These WeakRefs keep nothing alive.
+ */
+function carriedBuffers() {
+  const ids = new WeakMap<object, number>();
+  const refs: WeakRef<object>[] = [];
+  return {
+    note(buffer: object) {
+      if (ids.has(buffer)) return;
+      ids.set(buffer, refs.length);
+      refs.push(new WeakRef(buffer));
+    },
+    /** Distinct buffers carried so far. */
+    carried: () => refs.length,
+    /** Distinct buffers still reachable after a full collection. */
+    async reachable() {
+      Bun.gc(true);
+      return refs.filter((ref) => ref.deref() !== undefined).length;
+    },
+  };
+}
 const campaignInput = (lists: number[], extra: object) => ({
   subject: "S",
   lists,
@@ -238,11 +256,16 @@ const campaignInput = (lists: number[], extra: object) => ({
   ...extra,
 });
 /** Lets `count` messages go out, each held and then forgotten by the test, and the next held. */
-async function sendHeld(f: RunnerFixture, count: number) {
+async function sendHeld(
+  f: RunnerFixture,
+  count: number,
+  carried: ReturnType<typeof carriedBuffers>,
+) {
   const seen: string[] = [];
   for (let sent = 0; sent < count; sent++) {
     await f.drive(() => f.pushes.length > sent);
     const push = f.pushes[sent]!;
+    carried.note(push.message.attachments![0]!.content.buffer);
     seen.push(Buffer.from(push.message.attachments![0]!.content.subarray(0, 1)).toString("hex"));
     delete push.message.attachments;
     push.settle();
@@ -260,13 +283,14 @@ test("two campaigns sharing attachments hold them once, with concurrency 1", asy
     const c = await f.campaign(campaignInput([list], { name, media: [media.id] }));
     await f.status(c.id, "running");
   }
-  const before = heldBytes();
+  const carried = carriedBuffers();
   f.start();
-  await sendHeld(f, 4);
+  await sendHeld(f, 4, carried);
   await f.drive(() => f.pushes.length === 5);
-  const held = heldBytes() - before;
-  expect(held).toBeGreaterThan(7 * 1024 * 1024);
-  expect(held).toBeLessThan(12 * 1024 * 1024);
+  carried.note(f.pushes[4]!.message.attachments![0]!.content.buffer);
+  // Both campaigns carried one file, read once, and the cache keeps it: held once.
+  expect(carried.carried()).toBe(1);
+  expect(await carried.reachable()).toBe(1);
 });
 
 test("attachments over the cache budget are evicted and read again for the next batch", async () => {
@@ -279,11 +303,13 @@ test("attachments over the cache budget are evicted and read again for the next 
     const c = await f.campaign(campaignInput([list], { name: `C${fill}`, media: [media.id] }));
     await f.status(c.id, "running");
   }
-  const before = heldBytes();
+  const carried = carriedBuffers();
   f.start();
-  const seen = await sendHeld(f, 5);
+  const seen = await sendHeld(f, 5, carried);
   await f.drive(() => f.pushes.length === 6);
-  expect(heldBytes() - before).toBeLessThan(12 * 1024 * 1024);
+  carried.note(f.pushes[5]!.message.attachments![0]!.content.buffer);
+  // The 9 MiB budget keeps one 8 MiB file: only the latest file's buffer is still reachable.
+  expect(await carried.reachable()).toBe(1);
   expect(new Set(seen)).toEqual(new Set(["01", "02"]));
 });
 

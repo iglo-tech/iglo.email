@@ -1106,3 +1106,11 @@ Brief B91, from the B84–B86 review: `POST /api/enrollments` checked that the s
   - Treating `fn: null` as `count` with a warning: a silent rewrite of what the author sent.
 - **Behavior change:** a `sequences:manage` caller without `subscribers:get` or `subscribers:get_all` can no longer enroll any subscriber by hand (404). A `subscribers:get_all` caller without list read scope is refused a list-B subscriber the same way, as GET refuses it with 403.
 - **Revisit:** if the list enumeration on `GET /api/enrollments` or the `subscriber_id` on DELETE responses must also follow the subscriber rule, a separate decision: the list shows enrollments of any subscriber to `sequences:get`.
+
+## D104. A queued send that shutdown cancels stays queued (lead, 2026-11-17)
+
+Brief B92. `emailer.close()` cancels the operations still waiting for a pool connection. Before this decision, a cancelled operation that had not started reported `stage: "local"`, so the outbox journaled its row `failed` (`sends:production`, the remainder behind a held send with one connection). It now reports `stage: "not-started"`, and the outbox returns the row to `queued` without counting an attempt, as it already does for a restore hold. A send that had started still settles `unknown`. Nothing is re-sent: a not-started send made no SMTP attempt, so it goes out once after the next start.
+
+- **Unchanged:** the 60 s queue expiry (`local`, journaled `failed`), and every other not-started path.
+- **Evidence:** [B92 note](../perf/B92-ci-steps.md); the remainder was `failed` before and `queued` after, and `sends:production` passes.
+- **Considered:** failing every cancelled queued send at shutdown, which is the old behaviour; it would mark an unattempted marketing send as failed, and a send the process never tried must stay queued.
