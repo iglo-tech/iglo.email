@@ -722,6 +722,9 @@ test("synchronous multipart sends with attachments wait for room, then get a 429
   expect((await first).status).toBe(200);
   // The room is back: the same request now goes through.
   expect((await postForm(f, attachmentForm(template, "second@example.test"))).status).toBe(200);
+  // The stall sits between the journal commit and the dispatch claim, so the outbox loop can
+  // claim and push `second` itself; its 200 may come before its SMTP delivery completes.
+  await until(() => f.sink.messages.some((m) => m.to[0] === "second@example.test"), f);
   expect(f.sink.messages.map((m) => m.to[0])).toContain("second@example.test");
 }, 30_000);
 
@@ -894,6 +897,19 @@ test("a steady stream of small embedded-image sends cannot keep a waiting upload
   release();
   const done = await Promise.all([first, upload, ...smalls]);
   expect(done.filter((r) => r.status === 200)).toHaveLength(10);
+  // The stall sits between the journal commit and the dispatch claim, so the outbox loop can
+  // claim and push the accepted sends itself; their 200s may come before their SMTP deliveries
+  // complete. Wait, bounded, for each accepted recipient; the exact count below still rejects a
+  // duplicate or a missing message.
+  const accepted = [
+    "first@example.test",
+    "upload@example.test",
+    ...Array.from({ length: 12 }, (_, i) => `small-${i}@example.test`).filter(
+      (_, i) => done[i + 2]!.status === 200,
+    ),
+  ];
+  const delivered = (to: string) => f.sink.messages.some((m) => m.to[0] === to);
+  await until(() => accepted.every(delivered), f);
   expect(f.sink.messages).toHaveLength(10);
 }, 30_000);
 
