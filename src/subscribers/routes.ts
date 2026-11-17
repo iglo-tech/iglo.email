@@ -106,12 +106,13 @@ export function registerSubscriberRoutes(
   // A well-formed external ID that matches no subscriber is a 404 (D101). The numeric route keeps
   // listmonk's 400 for the same case.
   const missingExternal = () => new HttpError(404, "Subscriber not found.");
+  const notFound = (c: RequestContext, name: string) =>
+    new HttpError(400, c.app.i18n.Ts("globals.messages.notFound", "name", name));
   const required = (c: RequestContext, id: bigint, external = false) =>
     store.get(id) ??
     (() => {
       if (external) throw missingExternal();
-      const name = `{globals.terms.subscriber} (${id}: )`;
-      throw new HttpError(400, c.app.i18n.Ts("globals.messages.notFound", "name", name));
+      throw notFound(c, `{globals.terms.subscriber} (${id}: )`);
     })();
   const listPermission = (c: RequestContext, ids: bigint[] | null | undefined) => {
     if (ids?.length) {
@@ -374,6 +375,13 @@ export function registerSubscriberRoutes(
       allowed(c, [id], "get");
       return id;
     };
+    // A numeric ID that matches no subscriber is listmonk's 400, named without its ID. D101's 404
+    // covers external IDs only, so the export does not use required's external form.
+    const exportable = (c: RequestContext) => {
+      const row = store.get(scoped(c));
+      if (!row) throw notFound(c, "{globals.terms.subscriber}");
+      return row;
+    };
     router.route(
       "GET",
       "/api/subscribers/:id/activity",
@@ -386,16 +394,13 @@ export function registerSubscriberRoutes(
       "GET",
       "/api/subscribers/:id/export",
       (c) =>
-        new Response(
-          JSON.stringify(records.exportSections(required(c, scoped(c), true)), null, 2),
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "Cache-Control": "no-cache",
-              "Content-Disposition": 'attachment; filename="data.json"',
-            },
+        new Response(JSON.stringify(records.exportSections(exportable(c)), null, 2), {
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+            "Content-Disposition": 'attachment; filename="data.json"',
           },
-        ),
+        }),
       auth.middleware(),
       hasID,
     );
