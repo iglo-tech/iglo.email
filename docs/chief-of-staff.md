@@ -57,11 +57,15 @@ Do not repeat unchanged control builds or timing series without a concrete conce
 
 Use PR watches only while an external check/review is genuinely pending. Never watch for unfinished implementation or wait on manual CI. Reuse existing links/watches; unwatch after collection/merge or handback. No sleep, polling loops, gh --watch or replacement recovery timer.
 
+## Local first (owner, 2026-11-17)
+
+Nothing is pushed until it passes locally. Before any push, the role that pushes runs `bun run check` and the task's acceptance on this host and they pass; a push that would need CI to find out is not made. Agents never trigger the CI workflow and never push a release tag unless the same steps CI or the release runs (its `run:` lines in `.github/workflows/ci.yml` / `release.yml`, including `templates:compiled`, the contract and `messaging:*`/`sends:*` scripts, and `E2E_WORKERS=2 bun run e2e` before a tag) have passed locally on the exact commit. A step that cannot run here (arm64, memory) is named in the PR, not delegated to CI to discover.
+
 ## Worker brief suffix
 
 You are a worker on iglo.email. Do this task yourself. Read relevant AGENTS/task/design sections and pinned listmonk v7.0.0-beta.1 sources at `/home/t3-code/upstream/listmonk` (6fcd95f), never port from memory. Match observable results for real SDK, browser/dashboard and ordinary HTTP clients; use Bun/Web APIs where those results match. Malformed/custom input must remain safe, atomic, permission-correct and memory-bounded; exact error parity is backlog, not a merge gate (D57). Never relax stored/wire formats, authentication, authorization or actual security.
 
-Change only authorized modules/seams. Work in the supplied checkout/branch and open or update the task's existing PR; no extra checkout. No helper unless explicitly authorized; Complete `bun run check` and acceptance commands on this host serially, foreground, before ending. Retain first failures and explain reruns. No CI wait, PR watch or merge. Last line: PR <URL>, head <SHA>, local checks <state>.
+Change only authorized modules/seams. Work in the supplied checkout/branch and open or update the task's existing PR; no extra checkout. No helper unless explicitly authorized; Complete `bun run check` and acceptance commands on this host serially, foreground, before pushing; push only passing code, never trigger CI (owner, 2026-11-17). Retain first failures and explain reruns. No CI wait, PR watch or merge. Last line: PR <URL>, head <SHA>, local checks <state>.
 
 ## Reviewer brief suffix
 
