@@ -271,7 +271,7 @@ search/SQL/query-selected bulk/export remain M1.7. M2.5 wires automatic and expl
 D38 defines the normal-only external_id field and GET/PUT/DELETE lookup routes,
 exact nullable identity, safe conflict/no-write and current-scope behavior.
 
-D39 adds a query-selector external route for every D38 opaque ID. D101 answers an absent external subscriber 404 instead of 400, on both forms. Bun-normalized
+D39 adds a query-selector external route for every D38 opaque ID. D101 answers an absent external subscriber 404 instead of 400, on both forms; a selector whose subscriber loses or changes that external ID during the request also answers 404, with no write. Bun-normalized
 dot path segments cannot encode those identities; . and .. remain valid and
 use the query form. Selector values are decoded exactly once, never recursively.
 The path convenience form and query form share permissions and atomic behavior.

@@ -261,7 +261,7 @@ export async function runExternalContract(target: {
         "D38-inflight-rebind",
       );
       socket.end(payload.slice(cut));
-      check((await result).includes(" 400 "), `D39-inflight-rebind-rejected-${label}`);
+      check((await result).includes(" 404 "), `D39-inflight-rebind-rejected-${label}`);
       const untouched = (await (await request(`/api/subscribers/${contenderData.id}`)).json()).data;
       check(
         untouched.name === contenderData.name && untouched.email === contenderData.email,
