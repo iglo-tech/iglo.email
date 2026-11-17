@@ -950,6 +950,8 @@ const sending: Operation[] = [
     id: "createEnrollment",
     tag: "Sequences",
     summary: "Enroll a subscriber by hand.",
+    description:
+      "A subscriber the caller cannot read under `GET /api/subscribers/{id}`'s rule answers `404 Subscriber not found`, exactly as an absent one does, and nothing is written (D103).",
     native: true,
     permissions: ["sequences:manage"],
     body: ref("EnrollmentInput"),

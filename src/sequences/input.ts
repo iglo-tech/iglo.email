@@ -185,7 +185,7 @@ function aggregatesInput(value: unknown, field: string): string | null {
       ),
       at,
     ) as { event: string; since?: string; where?: Record<string, Scalar> };
-    const fn = choice(spec.fn, ["count", "sum", "distinct"] as const, `${at}.fn`, "count");
+    const fn = aggregateFn(spec.fn, `${at}.fn`);
     if (fn === "count") {
       if (path !== undefined) fail(`${at}.field`, "is only for sum and distinct");
     } else if (path === undefined) {
@@ -204,6 +204,18 @@ function aggregatesInput(value: unknown, field: string): string | null {
   }
   // Object.fromEntries defines each name as an own property, so `__proto__` stays a name.
   return JSON.stringify(Object.fromEntries(entries));
+}
+
+const aggregateFns = ["count", "sum", "distinct"] as const;
+/**
+ * An aggregate's `fn` (D103): only an absent key defaults to `count`. A `null` is a value, refused
+ * as `since` and `where` refuse one, so `{"fn": null}` cannot save as a count.
+ */
+function aggregateFn(value: unknown, field: string): (typeof aggregateFns)[number] {
+  if (value === undefined) return "count";
+  if (typeof value !== "string" || !(aggregateFns as readonly string[]).includes(value))
+    return fail(field, `must be one of ${aggregateFns.join(", ")}`);
+  return value as (typeof aggregateFns)[number];
 }
 
 function choice<T extends string>(
