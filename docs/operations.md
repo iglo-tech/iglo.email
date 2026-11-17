@@ -122,7 +122,7 @@ docker run -d --name iglo-email --restart unless-stopped \
   -e IGLO_EMAIL_ADMIN_PASSWORD='choose-a-long-password' \
   -e IGLO_EMAIL_API_USER=provisioning \
   -e IGLO_EMAIL_API_TOKEN='a-48-character-token-of-letters-and-digits-only' \
-  ghcr.io/iglo-tech/iglo.email:1.2.1
+  ghcr.io/iglo-tech/iglo.email:1.3.0
 ```
 
 Put the variables in an env file (`--env-file`) rather than on the command line, so that they stay
