@@ -1,8 +1,11 @@
 // Multi-line text entered into a code editor or the rich-text body is what the screen stores. The
-// editors' `x-on:input` bindings read `$event.target.value`; a native `input` from CodeMirror's or
-// Squire's contenteditable bubbles through `<code-editor>` with a target that has no `value`, so the
-// bound field became undefined and save threw. listmonk has no such spec at 6fcd95f. Each case
-// enters the text by typing it in one go (`fill`) and by pasting it (Ctrl+V, a real paste).
+// editors' `x-on:input` bindings read `$el.value`, the host element's own value. Before that, they
+// read `$event.target.value`: a native `input` from CodeMirror's or Squire's contenteditable bubbled
+// through `<code-editor>` / `<richtext-editor>` with a target that has no `value`, so a typed (`fill`)
+// edit left the bound field undefined and save threw. Input from inside an editor's host (its text, or
+// CodeMirror's search field) must not overwrite what is stored; the last case pins that. listmonk has
+// no such spec at 6fcd95f. Each case enters the text by typing it in one go (`fill`) and by pasting it
+// (Ctrl+V, a real paste).
 import { expect } from "@playwright/test";
 import { api, ORIGIN, signIn, test, unique } from "../helpers.js";
 
@@ -55,13 +58,20 @@ async function enter(page, editor, text, how) {
 
 // Clicks save and resolves with the PUT the page sent, or null when it sent none (a save that threw
 // before the request, the failure this spec is about). Errors are checked by the caller first.
-function save(page, button, path) {
+// Sequence and template saves reload the screen once the PUT succeeds (`reloads`). The reload is armed
+// before the click and awaited here, so the stored value is never read while the page is navigating.
+// Campaign saves only show a toast and do not reload.
+async function save(page, button, path, { reloads = false } = {}) {
   const sent = page
     .waitForResponse((r) => r.request().method() === "PUT" && r.url().includes(path), {
       timeout: 10_000,
     })
     .catch(() => null);
-  return button.click().then(() => sent);
+  const loaded = reloads ? page.waitForEvent("load", { timeout: 10_000 }).catch(() => null) : null;
+  await button.click();
+  const put = await sent;
+  if (loaded && put?.ok()) await loaded;
+  return put;
 }
 
 function collectPageErrors(page) {
@@ -121,7 +131,9 @@ test.describe("text typed or pasted into an editor is stored as entered", () => 
       const editor = page.getByTestId("step-aggregates").locator(".cm-content");
       await expect(editor).toBeVisible();
       await enter(page, editor, MULTI_JSON, how);
-      const put = await save(page, page.getByTestId("btn-save"), "/api/sequences/");
+      const put = await save(page, page.getByTestId("btn-save"), "/api/sequences/", {
+        reloads: true,
+      });
       expect(errors, "page errors").toEqual([]);
       expect(put?.status(), "save request").toBe(200);
       const stored = await ok(page, `/api/sequences/${seq.id}`);
@@ -142,7 +154,9 @@ test.describe("text typed or pasted into an editor is stored as entered", () => 
       const editor = page.locator(".step-card .cm-content").first();
       await expect(editor).toBeVisible();
       await enter(page, editor, CONDITION_JSON, how);
-      const put = await save(page, page.getByTestId("btn-save"), "/api/sequences/");
+      const put = await save(page, page.getByTestId("btn-save"), "/api/sequences/", {
+        reloads: true,
+      });
       expect(errors, "page errors").toEqual([]);
       expect(put?.status(), "save request").toBe(200);
       const stored = await ok(page, `/api/sequences/${seq.id}`);
@@ -163,7 +177,9 @@ test.describe("text typed or pasted into an editor is stored as entered", () => 
       const editor = page.getByTestId("trigger-where").locator(".cm-content");
       await expect(editor).toBeVisible();
       await enter(page, editor, WHERE_JSON, how);
-      const put = await save(page, page.getByTestId("btn-save"), "/api/sequences/");
+      const put = await save(page, page.getByTestId("btn-save"), "/api/sequences/", {
+        reloads: true,
+      });
       expect(errors, "page errors").toEqual([]);
       expect(put?.status(), "save request").toBe(200);
       const stored = await ok(page, `/api/sequences/${seq.id}`);
@@ -181,7 +197,9 @@ test.describe("text typed or pasted into an editor is stored as entered", () => 
       const editor = page.locator("code-editor .cm-content");
       await expect(editor).toBeVisible();
       await enter(page, editor, TEMPLATE_HTML, how);
-      const put = await save(page, page.getByTestId("btn-save"), "/api/templates/");
+      const put = await save(page, page.getByTestId("btn-save"), "/api/templates/", {
+        reloads: true,
+      });
       expect(errors, "page errors").toEqual([]);
       expect(put?.status(), "save request").toBe(200);
       expect((await put?.request().postDataJSON())?.body, "body sent").toBe(TEMPLATE_HTML);
@@ -235,4 +253,33 @@ test.describe("text typed or pasted into an editor is stored as entered", () => 
       expect(stored.body).toContain("Second rich line");
     });
   }
+
+  // CodeMirror's search panel is rendered inside `<code-editor>`, so its `input` events bubble through
+  // the same binding. Text typed there is search text, not body: the stored body stays as entered.
+  test("typing into a code editor's search box does not change the stored body", async ({
+    page,
+  }) => {
+    const errors = collectPageErrors(page);
+    await signIn(page);
+    const c = await campaign(page, "html", "<p>Body</p>");
+    await page.goto(`${CAMPAIGNS}/${c.id}#tab=content`);
+    const editor = page.locator(".editor-body .cm-content");
+    await expect(editor).toBeVisible();
+    await enter(page, editor, CAMPAIGN_HTML, "fill");
+    await page.keyboard.press("ControlOrMeta+f");
+    const search = page.locator(".cm-search input[name=search]");
+    await expect(search).toBeVisible();
+    await search.pressSequentially("needle-not-body");
+    await expect(search).toHaveValue("needle-not-body");
+    const put = await save(
+      page,
+      page.getByRole("button", { name: "Save changes", exact: true }).first(),
+      "/api/campaigns/",
+    );
+    expect(errors, "page errors").toEqual([]);
+    expect(put?.status(), "save request").toBe(200);
+    expect((await put?.request().postDataJSON())?.body, "body sent").toBe(CAMPAIGN_HTML);
+    const stored = await ok(page, `/api/campaigns/${c.id}`);
+    expect(stored.body).toBe(CAMPAIGN_HTML);
+  });
 });
