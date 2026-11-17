@@ -17,10 +17,12 @@ const LATEST_PROTOCOL_VERSION = SUPPORTED_VERSIONS[0];
  * tool named here exists in tools/list for an admin credential (test/mcp/agent-guidance.test.ts).
  */
 const INSTRUCTIONS = [
-  "iglo.email is an email server: subscribers, lists, campaigns, templates, event-triggered sequences, transactional mail, sends, bounces and settings. This endpoint is for an agent working on an instance for a person. Applications use the REST API with an API user, documented at /api/openapi.json; both run the same operations with the same permissions.",
-  "Before you write any Liquid (a template body, a campaign body, a subject, a sender address), call `template_reference`: it lists the supported variables, tags and filters.",
-  "To author a sequence step: `get_sequence` for its steps; change the subject or the template with `update_sequence_step`, or edit a template with `update_template`; render it with `preview_sequence_step`, giving a real `subscriber_id` or a `sample`; send a labelled test to the person's address with `test_sequence_step`; then check delivery with `get_sends` and `get_bounces`. A campaign follows the same loop with `update_campaign`, `preview_campaign` and `send_campaign_test`.",
-  "A failed call returns the API's own message as a tool error: correct the arguments it names. Sends are real mail, so confirm the addresses with the person first, and do not repeat a send to see whether it worked: read `get_sends`. Bulk deletes, bulk changes selected by a query, and changes to users, roles and two-factor sign-in are not tools; a person makes them in the admin UI.",
+  "iglo.email is an email server. This endpoint is for an agent working on an instance for a person; applications use the REST API with an API user, documented at /api/openapi.json. Both apply the same permissions; this endpoint leaves out what the last paragraph names.",
+  "Before writing Liquid, call `template_reference` for its variables, tags and filters.",
+  "To author a sequence step: `get_sequence` for its steps; change the subject or template with `update_sequence_step`, or edit a template with `update_template`; render it with `preview_sequence_step`, giving a real `subscriber_id` or a `sample`; send a labelled test with `test_sequence_step`. A campaign follows the same loop with `update_campaign`, `preview_campaign` and `send_campaign_test`.",
+  "A test send's `true` means it was queued, not delivered: ask the person to check their inbox. A test writes no send row, so the sends list never shows it, and a failed delivery is not reported. Never repeat a test send to check it.",
+  "To check a real sequence or transactional send, read `get_sends`; `get_bounces` lists the bounces that came back.",
+  "A failed call returns the API's message as a tool error: correct the arguments it names. Sends are real mail, so confirm addresses with the person first. Users, roles, two-factor sign-in, bulk and irreversible deletes, bulk changes selected by a query, and replacing all settings are not tools; a person does those in the admin UI. Uploads and answers are capped at 1 MiB; use REST for larger ones.",
 ].join("\n\n");
 
 export interface McpDeps {

@@ -25,7 +25,7 @@ It is an independently maintained rewrite derived from [listmonk](https://github
 
 - **Applications** (code in the app or its deploy: events, transactional sends, subscriber sync, a provisioning script in the app's repository) use the HTTP API with an API user, as the [operations guide](docs/operations.md#api-user-for-an-app-integration) describes. The API is versioned and documented at `/api/openapi.json` on the instance.
 - **An agent working on an instance for a person** uses the MCP endpoint at `/api/mcp`: content (templates, sequence steps, campaigns), media, subscribers, events, sends, bounces and settings.
-- Both run the same operations with the same permissions, and neither has a capability the other lacks. Use MCP when it is connected and REST otherwise.
+- Both apply the same permissions. The MCP endpoint leaves out the operations that [D98](docs/design/09-decisions.md#d98-mcp-covers-every-operation-except-a-short-exclusion-list-lead-2026-11-13) excludes (users and roles, login, two-factor, bulk and irreversible deletes, replacing all settings at once) and caps uploads at 1 MiB, where REST media takes 25 MiB. Use MCP when it is connected and REST otherwise.
 - The MCP server sends its own instructions on connect: the authoring loop, and `template_reference` for Liquid. The [MCP section of the operations guide](docs/operations.md#mcp-model-context-protocol) has the scope, the roles and the loop.
 
 Connect Claude Code with a project `.mcp.json` (an HTTP server, with the token in a header):

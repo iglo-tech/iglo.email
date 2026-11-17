@@ -27,21 +27,73 @@ const LIQUID_TOOLS = [
 /** Input fields that hold Liquid: a subject, a body, an alternative body or a sender address. */
 const LIQUID_FIELDS = new Set(["subject", "altbody", "from_email"]);
 
-/** Whether a tool's input schema has a field that holds Liquid, at any depth (`body` as a string or as an object's field). */
+/** Backticked words in the instructions that are values, not tool or argument names. */
+const PROSE_WORDS = new Set(["true", "false", "null"]);
+
+/** The schemas a schema is built from: union members (`anyOf`, `oneOf`, `allOf`), at its own level. */
+function unionMembers(node: Record<string, any>): unknown[] {
+  return [...(node.anyOf ?? []), ...(node.oneOf ?? []), ...(node.allOf ?? [])];
+}
+
+/** Whether a schema accepts a string, directly or through a union. */
+function acceptsString(schema: unknown): boolean {
+  if (typeof schema !== "object" || schema === null) return false;
+  const node = schema as Record<string, any>;
+  return node.type === "string" || unionMembers(node).some(acceptsString);
+}
+
+/**
+ * Whether a tool's input schema has a field that holds Liquid, at any depth: a `body` that takes a
+ * string, or a field named in LIQUID_FIELDS. Unions are followed, so a field under `anyOf` counts.
+ */
 function takesLiquid(schema: unknown): boolean {
   if (typeof schema !== "object" || schema === null) return false;
-  const node = schema as { properties?: Record<string, any>; items?: unknown };
-  for (const [name, property] of Object.entries(node.properties ?? {})) {
+  const node = schema as Record<string, any>;
+  for (const [name, property] of Object.entries<any>(node.properties ?? {})) {
     if (LIQUID_FIELDS.has(name)) return true;
-    if (name === "body" && property?.type === "string") return true;
+    if (name === "body" && acceptsString(property)) return true;
     if (takesLiquid(property)) return true;
   }
-  return takesLiquid(node.items);
+  if (takesLiquid(node.items)) return true;
+  return unionMembers(node).some(takesLiquid);
+}
+
+/** Every property name of a schema at any depth, through `items` and union members. */
+function propertyNames(schema: unknown, into = new Set<string>()): Set<string> {
+  if (typeof schema !== "object" || schema === null) return into;
+  const node = schema as Record<string, any>;
+  for (const [name, property] of Object.entries<any>(node.properties ?? {})) {
+    into.add(name);
+    propertyNames(property, into);
+  }
+  propertyNames(node.items, into);
+  for (const member of unionMembers(node)) propertyNames(member, into);
+  return into;
+}
+
+/** The instructions split at each full stop and paragraph break: a sentence. */
+function sentences(text: string): string[] {
+  return text
+    .split(/\.\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+/** The instructions split at each sentence end, semicolon and paragraph break: a step. */
+function steps(text: string): string[] {
+  return text
+    .split(/[.;]\s+|\n+/)
+    .map((step) => step.trim())
+    .filter(Boolean);
+}
+
+/** The backticked words of a sentence or step, in order. */
+function backticked(text: string): string[] {
+  return [...text.matchAll(/`([a-z][a-z0-9_]*)`/g)].map((match) => match[1]!);
 }
 
 describe("D108 MCP agent guidance", () => {
   let production: Production;
-  let adminAuth: string;
   let client: Client;
   let transport: StreamableHTTPClientTransport;
   let tools: { name: string; description?: string | undefined; inputSchema: any }[];
@@ -50,7 +102,7 @@ describe("D108 MCP agent guidance", () => {
     await ensureProductionBuild();
     production = await startProduction();
     const creds = await provisionApiUser(production.origin, admin);
-    adminAuth = `token ${creds.user}:${creds.token}`;
+    const adminAuth = `token ${creds.user}:${creds.token}`;
     client = new Client({ name: "agent-guidance-test", version: "1.0.0" }, { capabilities: {} });
     transport = new StreamableHTTPClientTransport(new URL(`${production.origin}/api/mcp`), {
       requestInit: { headers: { Authorization: adminAuth } },
@@ -74,18 +126,27 @@ describe("D108 MCP agent guidance", () => {
     expect(instructions).toContain("template_reference");
   });
 
-  test("every tool named in the instructions exists in tools/list for an admin credential", () => {
+  test("every tool named in the instructions exists, and every argument is one of the tool named with it", () => {
     const instructions = client.getInstructions() ?? "";
-    const names = new Set(tools.map((tool) => tool.name));
-    // Argument names are backticked too (`subscriber_id`); a tool name must be one of the tools.
-    const fields = new Set(
-      tools.flatMap((tool) => Object.keys(tool.inputSchema?.properties ?? {})),
+    const toolNames = new Set(tools.map((tool) => tool.name));
+    const argumentsByTool = new Map(
+      tools.map((tool) => [tool.name, propertyNames(tool.inputSchema)]),
     );
-    const named = [...instructions.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/g)].map(
-      (match) => match[1]!,
-    );
+    const named = steps(instructions).flatMap(backticked);
     expect(named.length).toBeGreaterThan(0);
-    for (const name of named) expect(names.has(name) || fields.has(name)).toBe(true);
+    const failures: string[] = [];
+    for (const step of steps(instructions)) {
+      const words = backticked(step);
+      const toolsHere = words.filter((word) => toolNames.has(word));
+      const allowed = new Set(toolsHere.flatMap((name) => [...argumentsByTool.get(name)!]));
+      for (const word of words) {
+        // Any other backticked word is an argument, and must belong to a tool named in this step.
+        if (toolNames.has(word) || PROSE_WORDS.has(word)) continue;
+        if (!toolsHere.length || !allowed.has(word))
+          failures.push(`\`${word}\` in: ${step.slice(0, 80)}`);
+      }
+    }
+    expect(failures).toEqual([]);
     // The authoring loop names the tools an agent calls in it.
     for (const name of [
       "template_reference",
@@ -97,6 +158,15 @@ describe("D108 MCP agent guidance", () => {
       "get_bounces",
     ])
       expect(named).toContain(name);
+  });
+
+  test("no sentence that tells a test send names a send or bounce list: a test writes no send row", () => {
+    const testSentences = sentences(client.getInstructions() ?? "").filter((sentence) =>
+      /test_sequence_step|send_campaign_test|\btest sends?\b/i.test(sentence),
+    );
+    expect(testSentences.length).toBeGreaterThan(0);
+    for (const sentence of testSentences)
+      expect(sentence, sentence).not.toMatch(/get_sends|get_bounces/);
   });
 
   test("every tool that takes Liquid says to read template_reference first", () => {
