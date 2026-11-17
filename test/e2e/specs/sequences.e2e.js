@@ -17,6 +17,14 @@ import {
 const hostile = (kind) =>
   `<img src=x onerror="window.pwned='${kind}'"> "'\` {{ 7*7 }} x-on:click="window.pwned=1" ${unique(kind)}`;
 
+// A confirmed save reloads the page. The load is awaited, not the network: an idle network says
+// nothing about a reload that has not started yet, and a read then can hit the old document.
+async function confirmAndReload(page) {
+  const loaded = page.waitForEvent("load");
+  await confirm(page);
+  await loaded;
+}
+
 async function template(page, subject = "Welcome") {
   const made = await api(page, "/api/templates", "POST", {
     name: unique("tx"),
@@ -200,8 +208,7 @@ test("live enrollments are named before a save, and a viewer without SQL is refu
   await page.getByTestId("step-wait").fill("P2D");
   await page.getByTestId("btn-save").click();
   await expect(page.locator("dialog[open]")).toContainText("Active enrollments: 1");
-  await confirm(page);
-  await page.waitForLoadState("networkidle");
+  await confirmAndReload(page);
   await expect(page.getByTestId("step-wait")).toHaveValue("P2D");
   const row = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
   expect(row.due_at).toBe(made.body.data.due_at);
@@ -426,8 +433,7 @@ test("a changed wait is applied to waiting enrollments on request", async ({ pag
   await page.getByTestId("step-wait").fill("P2D");
   await expect(button).toBeDisabled();
   await page.getByTestId("btn-save").click();
-  await confirm(page);
-  await page.waitForLoadState("networkidle");
+  await confirmAndReload(page);
   const kept = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
   expect(kept.due_at).toBe(made.body.data.due_at);
   await expect(button).toBeEnabled();
@@ -480,8 +486,9 @@ test("step aggregates are checked on save, kept as parsed JSON and refused with 
   };
   await page.goto(`/admin/sequences/${seq.id}`);
   await typed(JSON.stringify(valid));
+  const loaded = page.waitForEvent("load");
   await page.getByTestId("btn-save").click();
-  await page.waitForLoadState("networkidle");
+  await loaded;
   expect(await storedAggregates()).toEqual(valid);
   await page.reload();
   await expect(async () => expect(await shown()).toEqual(valid)).toPass({ timeout: 15_000 });
