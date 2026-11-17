@@ -6,7 +6,15 @@ Repository https://github.com/iglo-tech/iglo.email. One worker per task, one PR,
 
 ## This host
 
-The work runs on the owner's macOS workstation (Apple silicon), not the Linux VPS the runbook names: `/home/t3-code`, its upstream checkout and `flock` do not exist here. The lead runs one role at a time, so run checks directly, serially and in the foreground, one command per step, stopping on the first failure (Bash timeout 600000 ms; never end your turn while tests run). Do not run Docker, the reference harness or `bun run e2e` unless your brief says so. These are native features with no upstream counterpart; read upstream source only if your brief names it (fetch the pinned file from GitHub at commit 6fcd95f, never from memory). If a check fails only because this host is macOS (a test that reads Linux `/proc`, for example), record the exact test and error in the PR and say so; do not change the test to hide it.
+The work runs on the owner's macOS workstation (Apple silicon). Its test harness needs Linux (`/proc`; D89), so **every full check and acceptance command runs in a disposable Linux arm64 container** (OrbStack Docker, the platform of CI's arm64 job), as the non-root `bun` user (root defeats the permission-based failure tests). Lead decision 2026-11-17: on macOS, 122 of 1193 tests fail on host limits; in this container `bun run check` was 1259 pass / 0 fail on B97's head. Edit and commit in your checkout as usual; to verify, export the exact commit and run inside the container (one role at a time, foreground, Bash timeout 600000 ms):
+
+```sh
+D=$(mktemp -d); git archive HEAD | tar -x -C "$D"
+docker run --rm -u bun -e HOME=/tmp -v "$D":/work -w /work oven/bun:1.4.4 bash -lc 'bun install --frozen-lockfile >/dev/null && bun run check 2>&1 | tail -30'
+# then each acceptance command the same way, e.g. bash -lc 'bun run contract:normal'
+```
+
+The first `bun install` in a fresh export needs to be run once as root if the `bun` user cannot write the directory: `docker run --rm -v "$D":/work -w /work oven/bun:1.4.4 bash -lc 'bun install --frozen-lockfile && chown -R 1000:1000 /work'`. Remove the export afterwards. No other Docker use (no reference harness, no `bun run e2e` unless the brief says so, no prune). On macOS itself, quick focused `bun test <dir>` runs are fine while iterating. These are native features with no upstream counterpart; read upstream source only if your brief names it (fetch the pinned file from GitHub at commit 6fcd95f, never from memory).
 
 ## Rules
 
