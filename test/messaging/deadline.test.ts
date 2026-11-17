@@ -169,7 +169,12 @@ describe("messaging absolute deadlines", () => {
     clock.advance(1);
     await close;
     expect((await first.result).status).toBe("ambiguous");
-    expect((await queued.result).status).toBe("proven-not-accepted");
+    // Queued behind the held send and never started: handed back, so the row is not failed (B92).
+    expect(await queued.result).toMatchObject({
+      messageId: queued.messageId,
+      status: "proven-not-accepted",
+      stage: "not-started",
+    });
     await sink.closed;
     expect(sink.connections()).toBe(1);
   });

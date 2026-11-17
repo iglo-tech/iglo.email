@@ -34,9 +34,21 @@ async function stop(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signal
   active.delete(child);
   return result;
 }
-async function fixture(dataDir: string, smtpPort: number) {
+/**
+ * The fixture clock starts at 2026-01-02 (test/server/fixture.ts). A row it seeds that is older
+ * than send-body retention is compacted by production at startup, and a compacted row cannot be
+ * resent. `clockOffset` (ms) moves the seeded rows to the present.
+ */
+const FIXTURE_CLOCK_EPOCH = Date.parse("2026-01-02T03:04:05Z");
+const clockOffsetToNow = () => Date.now() - FIXTURE_CLOCK_EPOCH;
+async function fixture(dataDir: string, smtpPort: number, clockOffset = 0) {
   const child = spawn(resolve("dist/sends-producer"), [], {
-    env: { ...process.env, SENDS_FIXTURE_DIR: dataDir, SENDS_FIXTURE_SMTP_PORT: String(smtpPort) },
+    env: {
+      ...process.env,
+      SENDS_FIXTURE_DIR: dataDir,
+      SENDS_FIXTURE_SMTP_PORT: String(smtpPort),
+      SENDS_FIXTURE_CLOCK_OFFSET: String(clockOffset),
+    },
     stdio: ["pipe", "pipe", "pipe"],
   });
   active.add(child);
@@ -382,7 +394,7 @@ try {
       kind: "transactional",
     });
     await stop(aSeed.child, "SIGKILL");
-    const bSeed = await fixture(bDir, secondSink.port);
+    const bSeed = await fixture(bDir, secondSink.port, clockOffsetToNow());
     await bSeed.call("/fixture/settings", "POST", "");
     const bRow = await bSeed.call("/fixture/enqueue", "POST", {
       subject: `${marker} isolation-b`,
@@ -408,7 +420,7 @@ try {
       },
       body: "{}",
     });
-    assert.equal(wakeResponse.status, 200);
+    assert.equal(wakeResponse.status, 200, await wakeResponse.clone().text());
     const wakeChild = (
       (await wakeResponse.json()) as { data: { id: number; smtp_message_id: string } }
     ).data;
