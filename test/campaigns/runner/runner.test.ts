@@ -599,8 +599,11 @@ test("tracked links personalized per subscriber do not accumulate across batches
   };
   let first = 0;
   // Settle everything but the last message, measuring after the first few batches.
-  // Wall bound 15 s: about 0.6 s here, over 3 s on the arm64 CI runner (release run 42707478326).
-  // It renders ~13 MB and forces a GC, so it needs a wider bound than the 3 s default. It is progress-bound.
+  // Wall bound 60 s, and a 90 s test timeout (below). The drive is CPU-bound: every batch renders
+  // 20 messages, each with 8 tracked links of 7 KB and one link row per distinct URL. On this host
+  // the 300 messages take about 2.7 s (B101 profile, ~9 ms per message). With four busy workers
+  // on the arm64 runner the same drive ran 15-19 s and hit the old 15 s bound at 260-295 of 300
+  // (B101 stress runs). 60 s is more than 3x that. A stalled campaign still fails, with its state.
   await f.drive(
     () => {
       if (f.pushes.length >= 60 && !first) first = heap();
@@ -610,7 +613,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
     },
     10,
     undefined,
-    15_000,
+    60_000,
   );
   const last = heap();
   // About 13 MB of distinct tracked URLs were rendered since the first measurement.
@@ -622,7 +625,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
   const body = Buffer.from(f.pushes.at(-1)!.message.body).toString();
   const link = /http:\/\/fixture\.test(\/link\/[^"]+)/.exec(body)![1]!;
   expect((await f.request(link)).status).toBe(307);
-}, 30_000);
+}, 90_000);
 
 test("a wait that never completes fails with the stuck state, not at the test timeout", async () => {
   f = await runnerFixture({ hold: true });

@@ -169,6 +169,30 @@ describe("D108 MCP agent guidance", () => {
       expect(sentence, sentence).not.toMatch(/get_sends|get_bounces/);
   });
 
+  test("a test send that fails to deliver is named with get_logs, which is a tool", () => {
+    const instructions = client.getInstructions() ?? "";
+    expect(tools.map((tool) => tool.name)).toContain("get_logs");
+    const failures = sentences(instructions).filter(
+      (sentence) => /\btest\b/i.test(sentence) && /fails? to deliver/i.test(sentence),
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("`get_logs`");
+  });
+
+  test("reading users and roles is a tool, and only changes to them are excluded", () => {
+    const instructions = client.getInstructions() ?? "";
+    const toolNames = new Set(tools.map((tool) => tool.name));
+    for (const name of ["get_users", "get_user_roles"]) {
+      expect(toolNames.has(name), name).toBe(true);
+      expect(instructions).toContain(`\`${name}\``);
+    }
+    expect(instructions).toContain("changes to users and roles");
+    expect(instructions).toContain("bulk deletes");
+    expect(instructions).toContain("deletes addressed by a query");
+    expect(instructions).not.toMatch(/irreversible/);
+    expect(toolNames.has("delete_subscriber")).toBe(true);
+  });
+
   test("every tool that takes Liquid says to read template_reference first", () => {
     const liquid = tools.filter((tool) => takesLiquid(tool.inputSchema)).map((tool) => tool.name);
     for (const name of LIQUID_TOOLS) expect(liquid).toContain(name);
