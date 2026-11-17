@@ -19,7 +19,7 @@ Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-cove
 - Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B88 `number` Liquid filter (D102, [brief](briefs/B88.md), adopter follow-up) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
 - v1.2.0 published 2026-11-17 (B84–B90): tag on a469e40, release run 43993275535 green (e2e, builds, image smoke, publish, image); lead verified both checksums and `--version` 1.2.0, anonymous pull and run of `:1.2.0` (amd64+arm64), `:latest` same digest. Queue: backlog below, split by the lead 2026-11-17.
 - v1.2.1 published 2026-11-17 (B91–B96): tag on ef3ed8a after the full CI/release pre-flight passed locally (e2e 457/0); release run 44047316056 green (e2e, builds, image smoke amd64+arm64, publish, image); lead verified both checksums, `--version` 1.2.1, anonymous pull and run of `:1.2.1` (amd64; arm64 in the manifest and its smoke job), `:latest` same digest. First tag on 17b945c failed a tx test race (B96), nothing published from it.
-- Adopter report 2 (2026-11-17, via the integrating agent's thread; owner: decide everything, release when coherent): B97 merged (#149) → B98 merged (#150) → B99 merged (#151) → B101 test sends off the outbox pool, runner test timing ([brief](briefs/B101.md)) → B100 version 1.3.0, tag and publish. Common rules: [_B97-common](briefs/_B97-common.md). Runs on the owner's macOS workstation (serial roles); full checks run in a disposable Linux arm64 container (macOS fails 122 harness tests on /proc), lead decision 2026-11-17. Adopter verifies on its dev instance after release.
+- Adopter report 2 (2026-11-17, via the integrating agent's thread; owner: decide everything, release when coherent): B97 merged (#149) → B98 merged (#150) → B99 merged (#151) → B101 merged (#152) → B100 version 1.3.0, tag and publish. Common rules: [_B97-common](briefs/_B97-common.md). Runs on the owner's macOS workstation (serial roles); full checks run in a disposable Linux arm64 container (macOS fails 122 harness tests on /proc), lead decision 2026-11-17. Adopter verifies on its dev instance after release.
 - No owner items. Watch: `test/backup/interrupted.test.ts` SIGKILL case timed out once at load 13-15 on 6 cores (#144 review; passes alone; reopen on a second failure).
 - Lead decided 2026-11-17 (not open work): archived lists stay grantable on events (as PUT); the event 403 names no internal ID (would leak it); native 404 punctuation kept; the test harness needs Linux /proc (D89).
 
@@ -52,6 +52,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B101 | [#152](https://github.com/iglo-tech/iglo.email/pull/152) | e5d938c | Test sends on their own SMTP pool (D109; a stalled test no longer cuts real sends); failed test sends logged and in `get_logs`; runner test bound 60 s (CPU-bound under load); media cache check after finish; agent wording (r1 APPROVE+backlog) |
 | B99 | [#151](https://github.com/iglo-tech/iglo.email/pull/151) | 07e75f5 | MCP `instructions` on initialize (authoring loop, test sends checked in the inbox), `template_reference` pointers on every Liquid tool, README agent section with `.mcp.json`, REST/MCP split (D108; r1 CHANGES, fixer, r2 APPROVE) |
 | B98 | [#150](https://github.com/iglo-tech/iglo.email/pull/150) | eb3c792 | Bootstrap API user/token from env (D106); root-url faults named, allow-listed `https://` suggestion, port 0 refused; one untrusted-XFF attention line; proxy/PaaS checklist and per-job API roles (D107; r1 CHANGES, fixer, r2 CHANGES, fixer, r3 APPROVE) |
 | B97 | [#149](https://github.com/iglo-tech/iglo.email/pull/149) | c354bee | Step preview and test send with real or sample data, `sample` on template preview; one step-data builder shared with the scheduler (D105; r1 APPROVE+backlog, fixer, r2 APPROVE) |
@@ -187,6 +188,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 | M0.1         | [#1](https://github.com/iglo-tech/iglo.email/pull/1)   | 7dffb86 | Skeleton                                                                 |
 
 ## Hardening backlog
+
+- B101 r1: a server can see up to 2× `max_conns` (real + test pool), document in D109/operations; media cache test should assert re-reads directly and restore the held-send check once the 1-in-6 failure is explained; "delivered test send logs nothing" tests do not await settlement; shutdown test name; runner ~9 ms/message product cost.
+- Watch: `release verify > passes on a tag that matches and on a dry run` failed once in 6 extra runs (B101 review; passes in check).
 
 - Root-url message prints control characters of a path raw; `host:00080` and `a.b:/c` get generic wording (B98 r3, operator's own env).
 
