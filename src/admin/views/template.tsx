@@ -58,7 +58,7 @@ function Form({ t, isNew, canManage }: { t: Translation; isNew: boolean; canMana
               <code-editor
                 lang="html"
                 x-init="setValue($el, form.body)"
-                x-on:input="form.body = $event.target.value"
+                x-on:input="form.body = $el.value"
               ></code-editor>
             </template>
           </div>

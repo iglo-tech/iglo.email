@@ -1111,6 +1111,6 @@ Brief B91, from the B84–B86 review: `POST /api/enrollments` checked that the s
 
 Brief B92. `emailer.close()` cancels the operations still waiting for a pool connection. Before this decision, a cancelled operation that had not started reported `stage: "local"`, so the outbox journaled its row `failed` (`sends:production`, the remainder behind a held send with one connection). It now reports `stage: "not-started"`, and the outbox returns the row to `queued` without counting an attempt, as it already does for a restore hold. A send that had started still settles `unknown`. Nothing is re-sent: a not-started send made no SMTP attempt, so it goes out once after the next start.
 
-- **Unchanged:** the 60 s queue expiry (`local`, journaled `failed`), and every other not-started path.
+- **Unchanged:** the 60 s queue expiry (`local`, journaled `failed`), except when it fires during the 5 s shutdown drain, where the row returns to `queued` like any other not-started send (safe: never attempted), and every other not-started path.
 - **Evidence:** [B92 note](../perf/B92-ci-steps.md); the remainder was `failed` before and `queued` after, and `sends:production` passes.
 - **Considered:** failing every cancelled queued send at shutdown, which is the old behaviour; it would mark an unattempted marketing send as failed, and a send the process never tried must stay queued.
