@@ -168,7 +168,7 @@ function StepCard({
         <code-editor
           lang="json"
           x-init="setValue($el, s.condition)"
-          x-on:input="onCondition(s, $event.target.value)"
+          x-on:input="onCondition(s, $el.value)"
           {...(canManage ? {} : { disabled: true })}
         ></code-editor>
         <small
@@ -190,7 +190,7 @@ function StepCard({
           lang="json"
           data-testid="step-aggregates"
           x-init="setValue($el, s.aggregates)"
-          x-on:input="s.aggregates = $event.target.value"
+          x-on:input="s.aggregates = $el.value"
           {...(canManage ? {} : { disabled: true })}
         ></code-editor>
         <small data-hint="">{t.T("sequences.aggregatesHelp")}</small>
@@ -427,7 +427,7 @@ function sequenceView(isNew: boolean): AdminView {
                           lang="json"
                           data-testid="trigger-where"
                           x-init="setValue($el, form.where)"
-                          x-on:input="form.where = $event.target.value"
+                          x-on:input="form.where = $el.value"
                           {...(canManage ? {} : { disabled: true })}
                         ></code-editor>
                       </template>

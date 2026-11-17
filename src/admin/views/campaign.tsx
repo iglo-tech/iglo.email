@@ -272,7 +272,7 @@ function CampaignContent({ t }: { t: Translation }) {
       <code-editor
         lang={language}
         x-init="setValue($el, form.body)"
-        x-on:input="form.body = $event.target.value"
+        x-on:input="form.body = $el.value"
       ></code-editor>
     </template>
   );

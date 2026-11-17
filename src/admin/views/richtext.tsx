@@ -406,7 +406,7 @@ function Dialogs({ t }: { t: Translation }) {
 /** The body arrives from the API, through `init`, an Alpine expression. */
 export function RichtextEditor({ t, init }: { t: Translation; init: string }) {
   return (
-    <richtext-editor x-init={init} x-on:input="form.body = $event.target.value">
+    <richtext-editor x-init={init} x-on:input="form.body = $el.value">
       <Toolbar t={t} />
       <div class="rte-content" data-rte-content=""></div>
       <div class="rte-statusbar">
