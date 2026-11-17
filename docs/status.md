@@ -18,7 +18,7 @@ Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-cove
 - v1.1.0 published 2026-11-13 (MCP widening, D98).
 - Owner request 2026-11-16 (first adopter's integration report): B84 consent-safe list grant on events (D99, [brief](briefs/B84.md)) → B85 step event aggregates (D100, [brief](briefs/B85.md)) → B88 `number` Liquid filter (D102, [brief](briefs/B88.md), adopter follow-up) → B86 README, external-ID 404, test enrollment from an event (D101, [brief](briefs/B86.md)) → B87 version 1.2.0, tag and publish (owner authorized in the request). Runs on the owner's macOS workstation (no flock; serial roles).
 - v1.2.0 published 2026-11-17 (B84–B90): tag on a469e40, release run 43993275535 green (e2e, builds, image smoke, publish, image); lead verified both checksums and `--version` 1.2.0, anonymous pull and run of `:1.2.0` (amd64+arm64), `:latest` same digest. Queue: backlog below, split by the lead 2026-11-17.
-- B94 ([brief](briefs/B94.md)) code editors bind `$event.target.value`, so native input from CodeMirror's inner editable can store `undefined` (B93 report; test first) and D104 wording: a 60 s queue expiry that fires during the 5 s shutdown drain returns the row to `queued` (safe; #144 review). Watch: `test/backup/interrupted.test.ts` SIGKILL case timed out once at load 13-15 on 6 cores (passes alone).
+- Queue and backlog empty (2026-11-17). B95 version 1.2.1 ([brief](briefs/B95.md)): B91, B92 and B94 fixes; full CI/release steps locally before the tag (owner rule, local first). Watch: `test/backup/interrupted.test.ts` SIGKILL case timed out once at load 13-15 on 6 cores (passes alone).
 - Lead decided 2026-11-17 (not open work): archived lists stay grantable on events (as PUT); the event 403 names no internal ID (would leak it); native 404 punctuation kept; the test harness needs Linux /proc (D89).
 
 ## Owner decisions
@@ -50,6 +50,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 | Task         | PR                                                     | Merge   | Result                                                                   |
 | ------------ | ------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+| B94 | [#146](https://github.com/iglo-tech/iglo.email/pull/146) | 79b6f51 | Code editors bind `$el.value`: fill/paste/search-box input no longer saves `undefined` or drops the body (6 bindings, 13 e2e cases); D104 wording (r1 CHANGES race, fixer, r2 APPROVE) |
 | B93 | [#145](https://github.com/iglo-tech/iglo.email/pull/145) | 1674399 | E2E: step aggregates in the editor and the mail; Linux worst case 113.5 ms median; save→reload waits fixed (r1 CHANGES race, fixer, r2 APPROVE) |
 | B92 | [#144](https://github.com/iglo-tech/iglo.email/pull/144) | f2b6d88 | CI steps green: a send shutdown cancels before it starts stays queued (D104); attachment fixture, production seed clock, arm64 `/lib64`, media test counts its own buffers (r1 APPROVE) |
 | B91 | [#143](https://github.com/iglo-tech/iglo.email/pull/143) | 5906201 | `POST /api/enrollments` honours the caller's subscriber scope (unreadable = 404, no write); `fn: null` refused; B84/B86 tests (D103; r1 APPROVE) |
