@@ -298,9 +298,11 @@ test("attachments over the cache budget are evicted and read again for the next 
   Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
   const list = await f.list("evicted");
   for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  const campaigns: number[] = [];
   for (const fill of [1, 2]) {
     const media = await stored(f, `file-${fill}.pdf`, mebibytes(8, fill));
     const c = await f.campaign(campaignInput([list], { name: `C${fill}`, media: [media.id] }));
+    campaigns.push(c.id);
     await f.status(c.id, "running");
   }
   const carried = carriedBuffers();
@@ -308,6 +310,12 @@ test("attachments over the cache budget are evicted and read again for the next 
   const seen = await sendHeld(f, 5, carried);
   await f.drive(() => f.pushes.length === 6);
   carried.note(f.pushes[5]!.message.attachments![0]!.content.buffer);
+  // Let the last message go, and let both campaigns finish: a finished campaign holds no batch,
+  // so nothing but the cache can keep a file. (A check while the sixth send is still held, as
+  // before, saw the first file reachable in one of six full runs (B101).)
+  f.control.hold = false;
+  for (const push of f.pushes) push.settle();
+  for (const id of campaigns) await f.until(id, "finished");
   // The 9 MiB budget keeps one 8 MiB file: only the latest file's buffer is still reachable.
   expect(await carried.reachable()).toBe(1);
   expect(new Set(seen)).toEqual(new Set(["01", "02"]));
