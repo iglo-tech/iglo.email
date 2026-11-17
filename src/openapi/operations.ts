@@ -763,7 +763,7 @@ const sending: Operation[] = [
     tag: "Transactional",
     summary: "Send transactional or marketing mail to one or more recipients.",
     description:
-      "Also takes `multipart/form-data`: a `data` part with this JSON, and `file` parts.",
+      "Also takes `multipart/form-data`: a `data` part with this JSON, and `file` parts. Before writing Liquid, read the Liquid reference: the MCP tool `template_reference`, or docs/design/06-templates.md.",
     permissions: ["tx:send"],
     body: ref("TxInput"),
     data: ref("TxResult"),
@@ -858,6 +858,8 @@ const sending: Operation[] = [
     id: "createSequence",
     tag: "Sequences",
     summary: "Create a sequence.",
+    description:
+      "Before writing Liquid, read the Liquid reference: the MCP tool `template_reference`, or docs/design/06-templates.md.",
     native: true,
     permissions: ["sequences:manage"],
     body: ref("SequenceInput"),
@@ -888,6 +890,8 @@ const sending: Operation[] = [
     id: "updateSequenceById",
     tag: "Sequences",
     summary: "Replace a sequence.",
+    description:
+      "Before writing Liquid, read the Liquid reference: the MCP tool `template_reference`, or docs/design/06-templates.md.",
     native: true,
     permissions: ["sequences:manage"],
     body: ref("SequenceInput"),
@@ -1141,6 +1145,8 @@ const campaigns: Operation[] = [
     id: "convertCampaignContent",
     tag: "Campaigns",
     summary: "Convert a body between content types.",
+    description:
+      "Before writing Liquid, read the Liquid reference: the MCP tool `template_reference`, or docs/design/06-templates.md.",
     permissions: ["campaigns:manage", "campaigns:manage_all"],
     body: ref("CampaignContentInput"),
     data: string,
