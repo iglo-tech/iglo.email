@@ -211,6 +211,16 @@ export async function sequencesFixture(
     subscribers,
     events,
     sends,
+    templates,
+    renderer,
+    emailer,
+    tracking,
+    settings: () => ({
+      fromEmail: "Fixture <noreply@fixture.test>",
+      marketing,
+      domainAllowlist: [],
+      domainBlocklist: [],
+    }),
     roles,
     auth,
   });

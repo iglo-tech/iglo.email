@@ -189,6 +189,12 @@ listmonk's default campaign, archive and transactional templates and its system 
 - subscriber data export;
 - SMTP test.
 
+### Preview data
+
+`POST /api/templates/preview` renders a posted body against a dummy context: a subscriber named `John Doe` with the address `dummy@example.invalid`, `trigger` with empty `data`, `aggregates` empty, and a `data` object. Its optional form field `sample` is a JSON object of the same shape as a step's sample ([sample](05-sequences.md#preview-and-test-send)): `subscriber` (`name`, `email`, `external_id`, `attribs`), `trigger` (`name`, `data`, `occurred_at`), `aggregates` (finite numbers) and `data`. Each part it names replaces the dummy one as a whole, and a sample name also sets `first_name` and `last_name`. A malformed sample, or one over the template data limits, is `400` naming the field, and nothing is rendered. Without `sample` the preview is unchanged ([D105](09-decisions.md#d105-a-sequence-step-previews-and-test-sends-with-sample-data-lead-2026-11-17)).
+
+A sequence step's template reads `trigger` and `aggregates`, which a stored template cannot know, so preview a step with `POST /api/sequences/:id/steps/:step/preview`: it renders with the step's real context, as its send does. `GET /api/templates/:id/preview` and the `preview_template` MCP tool (with `sample`, for a stored template as well) use the same dummy context.
+
 ## Application views: server-side TSX
 
 The admin UI and public pages are rendered on the server, as in listmonk v7. Its Go `html/template` views (26 views, 37 partials, 12 public templates) are ported to TSX components:

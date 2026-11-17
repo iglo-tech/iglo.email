@@ -6,9 +6,25 @@
 import { refuseWhileHeld } from "@/settings/hold";
 import { writeTransaction } from "@/db/transaction";
 import { parseJson, readBounded } from "@/events/input";
+import type { Aggregate } from "@/events/aggregate";
 import type { EventStore } from "@/events/store";
+import type { Message } from "@/messaging/email";
+import type { createEmailer } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
 import type { Roles } from "@/roles/roles";
+import {
+  RenderCapacityError,
+  TemplateSourceError,
+  type TemplateRenderer,
+} from "@/templates/renderer";
+import type { TemplateStore } from "@/templates/store";
+import { parseSample, SampleError, type Sample } from "@/templates/sample";
+import { messageLinks } from "@/unsubscribe/message";
+import type { MarketingSettings } from "@/unsubscribe/policy";
+import type { Tracking } from "@/unsubscribe/tracking";
+import { sanitizeEmail, allowedDomain } from "@/subscribers/email";
+import { renderStep, stepCompileInput, stepDataText, TEST_SUBJECT } from "@/sequences/step-data";
+import { FieldError, StepRefusal, stepPreview } from "@/sequences/step-preview";
 import {
   idValue,
   DefinitionError,
@@ -46,23 +62,42 @@ const MAX_EXIT_REASON = 256;
 export const RESCHEDULE_BATCH = 500;
 /** Request bodies of live condition validation; a save allows more, this is per keystroke. */
 const VALIDATE_BODY_BYTES = 64 * 1024;
+/** A preview or test body: IDs and a sample, whose data is bounded at 256 KiB (template data). */
+const PREVIEW_BODY_BYTES = 512 * 1024;
+/** Addresses one test send mails, and test sends in flight, as campaign tests bound theirs. */
+const MAX_TEST_EMAILS = 5;
+const MAX_TEST_SENDS = 4;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+/** A step or template ID as the API numbers it: a number, or a raw JSON integer beyond 2^53. */
+const idOf = (value: number | object): bigint =>
+  BigInt(typeof value === "number" ? value : (value as { rawJSON: string }).rawJSON);
 
 export function registerSequenceRoutes(
   router: Router,
   deps: {
     sequences: SequenceStore;
     enrollments: Enrollments;
-    subscribers: Pick<SubscriberStore, "get" | "readable">;
-    events: Pick<EventStore, "get">;
+    subscribers: Pick<SubscriberStore, "get" | "readable" | "byEmail">;
+    events: Pick<EventStore, "get" | "latest" | "aggregate">;
     sends: Pick<Sends, "marketingReason" | "enrollmentSends">;
+    templates: Pick<TemplateStore, "get">;
+    renderer: TemplateRenderer;
+    emailer: Pick<ReturnType<typeof createEmailer>, "push">;
+    tracking: Tracking;
+    /** Settings a preview or test send reads: the default sender, marketing links, domain rules. */
+    settings: () => {
+      fromEmail: string;
+      marketing: MarketingSettings;
+      domainAllowlist: string[];
+      domainBlocklist: string[];
+    };
     roles: Roles;
     auth: Authentication;
   },
 ) {
-  const { sequences, enrollments, subscribers, events, sends, roles, auth } = deps;
+  const { sequences, enrollments, subscribers, events, sends, templates, roles, auth } = deps;
   const invalid = (c: RequestContext, field: string, detail?: string) =>
     new HttpError(
       400,
@@ -275,6 +310,223 @@ export function registerSequenceRoutes(
     auth.middleware(MANAGE),
     hasID,
   );
+  /** The body of a preview or test: optional IDs and a sample, and `emails` for a test. */
+  const previewBody = async (c: RequestContext, extra: readonly string[] = []) => {
+    const bytes = await readBounded(c.request, PREVIEW_BODY_BYTES);
+    const value = bytes.length === 0 ? {} : parseJson(c.request, bytes);
+    if (!isObject(value)) throw invalid(c, "body");
+    for (const key of Object.keys(value))
+      if (!["subscriber_id", "trigger_event_id", "sample", ...extra].includes(key))
+        throw invalid(c, key);
+    const id = (field: "subscriber_id" | "trigger_event_id") => {
+      try {
+        return idValue(value[field], field) ?? null;
+      } catch (error) {
+        if (error instanceof DefinitionError) throw invalid(c, field);
+        throw error;
+      }
+    };
+    let sample: Sample | undefined;
+    if (value.sample !== undefined) {
+      try {
+        sample = parseSample(JSON.stringify(value.sample), { data: false });
+      } catch (error) {
+        if (error instanceof SampleError) throw invalid(c, error.field);
+        throw error;
+      }
+    }
+    return {
+      subscriberId: id("subscriber_id"),
+      triggerEventId: id("trigger_event_id"),
+      sample,
+      emails: value.emails,
+    };
+  };
+  /** The step named by the path, with its sequence; 404 when either is not there. */
+  const stepOf = (c: RequestContext) => {
+    const sequence = sequences.get(BigInt(getID(c)));
+    if (!sequence) throw new HttpError(404, "Sequence not found");
+    const raw = c.params.step ?? "";
+    if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > maxID) throw invalid(c, "step");
+    const found = sequence.steps.find((step) => idOf(step.id) === BigInt(raw));
+    if (!found) throw new HttpError(404, "Step not found");
+    return { sequence, step: found };
+  };
+  /** A subscriber the caller can read, or null for none named; anything else is absent (D103). */
+  const subscriberNamed = (c: RequestContext, id: bigint | null) => {
+    if (id === null) return null;
+    const row = subscribers.get(id);
+    if (!row || !readableSubscribers(roles, subscribers, identity(c), [id]).has(id))
+      throw new HttpError(404, "Subscriber not found");
+    return row;
+  };
+  /** The step's template, which must be transactional: a step sends one (05-sequences.md). */
+  const stepTemplate = (step: { template_id: number | object | null }) => {
+    const template = step.template_id === null ? null : templates.get(idOf(step.template_id));
+    if (!template || template.type !== "tx")
+      throw new HttpError(409, "The step does not send a transactional template.");
+    return template;
+  };
+  /** The data a send of this step would render for the request, as the scheduler builds it (D105). */
+  const previewFor = (
+    c: RequestContext,
+    value: Awaited<ReturnType<typeof previewBody>>,
+    step: NonNullable<ReturnType<typeof stepOf>["step"]>,
+    sequence: NonNullable<ReturnType<typeof sequences.get>>,
+    recipient?: string,
+  ) => {
+    const row = subscriberNamed(c, value.subscriberId);
+    const settings = deps.settings();
+    try {
+      return stepPreview(
+        {
+          sequence: {
+            id: idOf(sequence.id),
+            name: sequence.name,
+            event: (sequence.trigger as { event: string }).event,
+          },
+          step: {
+            id: idOf(step.id),
+            uuid: step.uuid,
+            position: step.position,
+            kind: step.kind,
+            aggregates: (step.aggregates ?? {}) as Record<string, Aggregate>,
+          },
+          subscriber: row,
+          triggerEventId: value.triggerEventId,
+          sample: value.sample,
+          ...(recipient === undefined ? {} : { recipient }),
+          now: c.app.clock.now(),
+        },
+        events,
+        messageLinks(settings.marketing, deps.tracking),
+      );
+    } catch (error) {
+      if (error instanceof FieldError) throw invalid(c, error.field);
+      if (error instanceof StepRefusal) throw new HttpError(409, error.message);
+      throw error;
+    }
+  };
+  /** Renders the step's template with its data, as a send does; the step's subject wins. */
+  const renderStepFor = (
+    c: RequestContext,
+    step: { subject: string | null; kind: string },
+    template: { body: string; subject: string },
+    data: string,
+  ) => {
+    const i18n = c.app.i18n;
+    try {
+      const subject = step.subject || template.subject;
+      return renderStep(
+        deps.renderer.compile(stepCompileInput(template.body, subject, step.kind === "marketing")),
+        data,
+      );
+    } catch (error) {
+      if (error instanceof RenderCapacityError)
+        throw new HttpError(429, "Too many template renders in progress.");
+      if (error instanceof TemplateSourceError)
+        throw new HttpError(400, i18n.Ts("templates.errorCompiling", "error", "invalid body"));
+      throw new HttpError(400, i18n.Ts("templates.errorRendering", "error", "invalid template"));
+    }
+  };
+
+  router.route(
+    "POST",
+    "/api/sequences/:id/steps/:step/preview",
+    async (c) => {
+      const value = await previewBody(c);
+      const { sequence, step } = stepOf(c);
+      const template = stepTemplate(step);
+      const prepared = previewFor(c, value, step, sequence);
+      const data = stepDataText(prepared.data);
+      const rendered = renderStepFor(c, step, template, data);
+      return ok({
+        subject: rendered.subject,
+        body: rendered.body,
+        // The exact context rendered, with integers beyond 2^53 kept exact.
+        context: JSON.parse(data, (_key, item, source?: { source?: string }) =>
+          typeof item === "number" && !Number.isSafeInteger(item) && source?.source
+            ? (JSON as typeof JSON & { rawJSON(text: string): object }).rawJSON(source.source)
+            : item,
+        ) as unknown,
+      });
+    },
+    auth.middleware(GET),
+    hasID,
+  );
+  let testing = 0;
+  router.route(
+    "POST",
+    "/api/sequences/:id/steps/:step/test",
+    async (c) => {
+      refuseWhileHeld(c.app.db);
+      const value = await previewBody(c, ["emails"]);
+      const addresses = testAddresses(c, value.emails);
+      const { sequence, step } = stepOf(c);
+      const template = stepTemplate(step);
+      if (testing >= MAX_TEST_SENDS)
+        throw new HttpError(429, "Too many test sends in progress.", { "Retry-After": "1" });
+      // A blocklisted address never receives mail (04-sending.md), so it is skipped.
+      const reachable = addresses.filter(
+        (email) => subscribers.byEmail(email)?.status !== "blocklisted",
+      );
+      if (!reachable.length) throw invalid(c, "emails");
+      testing++;
+      let queued = false;
+      try {
+        const settings = deps.settings();
+        const messages: Message[] = reachable.map((email) => {
+          const prepared = previewFor(c, value, step, sequence, email);
+          const data = stepDataText(prepared.data);
+          const rendered = renderStepFor(c, step, template, data);
+          return {
+            from: settings.fromEmail,
+            to: [email],
+            subject: `${TEST_SUBJECT}${rendered.subject}`,
+            contentType: "html",
+            body: Buffer.from(rendered.body),
+            headers: { ...prepared.links.headers },
+          };
+        });
+        // The sender may have changed its mind while these rendered: the permission is checked again.
+        auth.revalidate(c, "tx:send");
+        auth.revalidate(c, MANAGE);
+        // Queued to the emailer like a campaign test: nothing is journaled, counted or tracked.
+        const results = messages.map((message) =>
+          deps.emailer
+            .push(message, { copies: false, priority: "outbox" })
+            .result.catch((error) => c.app.logger.error(error)),
+        );
+        queued = true;
+        void Promise.all(results).finally(() => testing--);
+        return ok(true);
+      } finally {
+        if (!queued) testing--;
+      }
+    },
+    auth.middleware(MANAGE),
+    hasID,
+  );
+  /** The test recipients: 1 to 5 distinct addresses, validated as a subscriber's are. */
+  function testAddresses(c: RequestContext, value: unknown): string[] {
+    if (!Array.isArray(value) || value.length < 1 || value.length > MAX_TEST_EMAILS)
+      throw invalid(c, "emails");
+    const policy = deps.settings();
+    const seen = new Set<string>();
+    for (const raw of value) {
+      const email = typeof raw === "string" ? sanitizeEmail(raw) : undefined;
+      if (
+        email === undefined ||
+        /[\r\n\0]/.test(email) ||
+        !allowedDomain(email, policy.domainAllowlist, policy.domainBlocklist) ||
+        seen.has(email)
+      )
+        throw invalid(c, "emails");
+      seen.add(email);
+    }
+    return [...seen];
+  }
+
   router.route(
     "DELETE",
     "/api/sequences/:id",

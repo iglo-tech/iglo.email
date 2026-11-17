@@ -649,6 +649,19 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       subscribers: subscriberStore,
       events,
       sends,
+      templates,
+      renderer,
+      emailer,
+      tracking,
+      settings: () => {
+        const current = settings!.read();
+        return {
+          fromEmail: current["app.from_email"][0] ?? "",
+          marketing: marketing(),
+          domainAllowlist: current["privacy.domain_allowlist"],
+          domainBlocklist: current["privacy.domain_blocklist"],
+        };
+      },
       roles,
       auth,
     });

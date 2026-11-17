@@ -698,7 +698,18 @@ const templates: Operation[] = [
     summary: "Render a posted template body.",
     permissions: ["templates:get"],
     bodyType: "application/x-www-form-urlencoded",
-    body: object({ template_type: string, body: string }, ["template_type"]),
+    body: object(
+      {
+        template_type: string,
+        body: string,
+        sample: {
+          ...string,
+          description:
+            "JSON of sample data (`subscriber`, `trigger`, `aggregates`, `data`) that replaces the dummy context's named parts (D105).",
+        },
+      },
+      ["template_type", "sample"],
+    ),
     answer: html,
   },
   {
@@ -904,6 +915,36 @@ const sending: Operation[] = [
     permissions: ["sequences:manage"],
     data: object({ changed: integer }),
     errors: [400, 404],
+  },
+  {
+    route: "POST /api/sequences/{id}/steps/{step}/preview",
+    id: "previewSequenceStep",
+    tag: "Sequences",
+    summary: "Render one step's subject and body as a send would, with real or sample data.",
+    description:
+      "Context: `subscriber_id` names a readable subscriber (else the dummy one), `trigger_event_id` one of its events under the sequence's trigger name (else its latest such event), and aggregates are read for that subscriber as a send reads them. `sample` replaces the named parts. Writes nothing; the answer's `context` is the data rendered (D105).",
+    native: true,
+    permissions: ["sequences:get"],
+    path: { step: { type: "integer", minimum: 1 } },
+    body: ref("StepPreviewInput"),
+    data: ref("StepPreview"),
+    errors: [400, 404, 409, 429],
+  },
+  {
+    route: "POST /api/sequences/{id}/steps/{step}/test",
+    id: "testSequenceStep",
+    tag: "Sequences",
+    summary:
+      "Send one step to up to five addresses as a labelled test, with the same context as a preview.",
+    description:
+      "Each address gets the step rendered with the preview's context, its subject prefixed `[Test] `, and untracked links. Nothing is journaled, enrolled or counted, and a blocklisted address is skipped (D105).",
+    native: true,
+    permissions: ["sequences:manage"],
+    alsoPermissions: [["tx:send"]],
+    path: { step: { type: "integer", minimum: 1 } },
+    body: ref("StepTestInput"),
+    data: yes,
+    errors: [400, 404, 409, 429],
   },
   {
     route: "POST /api/conditions/validate",

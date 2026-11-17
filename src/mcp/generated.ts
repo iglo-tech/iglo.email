@@ -29,6 +29,8 @@ const OPEN_WORLD_IDS = new Set([
   "createEnrollment",
   "updateSequenceStatusById",
   "rescheduleSequenceStep",
+  // A test send mails the addresses it names (D105).
+  "testSequenceStep",
   "createSubscriberEvent",
   "createSubscriberEventBatch",
   // A webhook is where the server posts events.
