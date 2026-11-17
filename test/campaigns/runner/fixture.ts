@@ -149,7 +149,15 @@ export async function runnerFixture(
         `pushes ${pushes.length}, pending sends ${inFlight}, ` +
         `sink messages ${f.sink.messages.length}; ` +
         // Only the state read is replaced on failure: the clock, pushes and sink counts still show.
-        (await stuckState().catch((error: unknown) => `state unavailable (${error})`)),
+        (await stuckState().catch((error: unknown) => `state unavailable (${error})`)) +
+        // What the runner logged: a subscriber that was not pushed is named here, not only counted.
+        `; logged errors ${f.errors.length}` +
+        (f.errors.length
+          ? ` (first: ${f.errors
+              .slice(0, 3)
+              .map((error) => (error instanceof Error ? error.message : String(error)))
+              .join(" | ")})`
+          : ""),
     });
   };
   const read = async (id: number) => (await f.json(`/api/campaigns/${id}`)).body.data;
