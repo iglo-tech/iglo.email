@@ -298,7 +298,9 @@ above has the same settings for nginx.
    list the proxy's single address alone: Docker assigns a container its address from the network
    when it starts, so a recreated proxy (any redeploy does this) gets a new one, the old entry no
    longer matches, and every visitor appears to come from the proxy again. Find the subnet with
-   `docker network inspect <network> --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`; on
+   `docker network inspect <network> --format '{{range $i, $c := .IPAM.Config}}{{if $i}}{{"\n"}}{{end}}{{.Subnet}}{{end}}'`,
+   which prints one subnet per line (a dual-stack network has an IPv4 and an IPv6 line; list each
+   one that the proxy's traffic uses, normally the IPv4 one); on
    Coolify the default network is named `coolify` (confirm with `docker network ls`). Until the
    proxy is listed, the server logs one line that names the address the request came from; it logs
    again only after the list changes.

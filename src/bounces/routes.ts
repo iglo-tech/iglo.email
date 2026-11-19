@@ -308,7 +308,8 @@ export function registerBounceRoutes(
       test.kind === "campaign"
         ? `campaign ${test.campaign_id}`
         : `sequence ${test.sequence_id} step ${test.step_id}`;
-    const where = `kind ${test.kind}, ${named}, recipient ${test.recipient}`;
+    // The address is the notice's own (bouncedRecipients or complainedRecipients), not a stored one.
+    const where = `kind ${test.kind}, ${named}, recipient ${event.email}`;
     if (event.type === "complaint")
       logger.error(
         new Error(

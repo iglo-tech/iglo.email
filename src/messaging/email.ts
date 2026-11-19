@@ -323,6 +323,21 @@ function build(
     disableUrlAccess: true,
   };
 }
+/** The host a generated Message-ID is named with: the root URL's host, else `localhost`. */
+export function rootDomain(rootUrl: string): string {
+  try {
+    return new URL(rootUrl).hostname || "localhost";
+  } catch {
+    return "localhost";
+  }
+}
+/**
+ * A Message-ID chosen before a message is handed to the emailer, so a record of it can be written
+ * first (B108). The emailer sends a message with the Message-ID the caller supplies.
+ */
+export function newMessageId(rootUrl: string): string {
+  return `<${crypto.randomUUID()}@${rootDomain(rootUrl)}>`;
+}
 function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
   let result: string | undefined;
   for (const group of s?.email_headers ?? [])
@@ -437,13 +452,7 @@ export function createEmailer(options: {
     testPool = false,
   ): Dispatch {
     const serverId = suppliedId(server, message);
-    let domain = "localhost";
-    try {
-      domain = new URL(rootUrl).hostname || domain;
-    } catch {
-      /* local fallback */
-    }
-    const messageId = serverId ?? `<${id()}@${domain}>`;
+    const messageId = serverId ?? `<${id()}@${rootDomain(rootUrl)}>`;
     const localOutcome = (): Outcome => ({
       messageId,
       status: "proven-not-accepted",

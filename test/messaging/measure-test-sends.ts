@@ -31,7 +31,6 @@ try {
           campaign_id: null,
           sequence_id: 1,
           step_id: 1,
-          recipient: `record-${i}@example.test`,
         },
       ]),
     );
@@ -72,12 +71,11 @@ try {
   const small = lookups();
   writeTransaction(f.db, () => {
     const insert = f.db.query(
-      `INSERT INTO test_sends (message_id, kind, campaign_id, sequence_id, step_id, recipient, created_at)
-       VALUES (?, 'sequence_step', NULL, 1, 1, ?, ?)`,
+      `INSERT INTO test_sends (message_id, kind, campaign_id, sequence_id, step_id, created_at)
+       VALUES (?, 'sequence_step', NULL, 1, 1, ?)`,
     );
     const at = f.clock.now().toISOString();
-    for (let i = 0; i < 100_000; i++)
-      insert.run(`<${uuid()}@bulk.test>`, `bulk-${i}@example.test`, at);
+    for (let i = 0; i < 100_000; i++) insert.run(`<${uuid()}@bulk.test>`, at);
   });
   const large = lookups();
 

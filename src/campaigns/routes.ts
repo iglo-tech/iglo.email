@@ -5,7 +5,7 @@ import { refuseWhileHeld } from "@/settings/hold";
 import { writeTransaction } from "@/db/transaction";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
-import type { Message, Outcome } from "@/messaging/email";
+import { newMessageId, type Message, type Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
@@ -194,6 +194,14 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
     const value = form?.get(key);
     return typeof value === "string" ? value : query.get(key);
   };
+}
+
+/** The first Message-ID among a message's own headers (any case), or undefined when it names none. */
+function headerMessageId(headers: Record<string, string | string[]>): string | undefined {
+  for (const [name, value] of Object.entries(headers))
+    if (name.toLowerCase() === "message-id")
+      return (Array.isArray(value) ? value[0] : value) || undefined;
+  return undefined;
 }
 
 export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
@@ -840,9 +848,25 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           headers,
           ...(attachments.length ? { attachments } : {}),
           messenger: value.messenger,
+          // B108 (D114): chosen here, so its record is written before the message is queued. A
+          // Message-ID the campaign's own headers name is kept, as the emailer keeps it.
+          messageId: headerMessageId(headers) ?? newMessageId(root),
         });
       }
       auth.revalidate(context);
+      // B108 (D114): every Message-ID is recorded before any message is handed to the emailer. A
+      // failed write throws here, so nothing is sent and the request answers 500.
+      writeTransaction(context.app.db, () =>
+        testSends.record(
+          messages.map((message) => ({
+            messageId: message.messageId!,
+            kind: "campaign",
+            campaign_id: stored.id,
+            sequence_id: null,
+            step_id: null,
+          })),
+        ),
+      );
       // As listmonk, test messages are queued to the messenger; delivery is not awaited. Their
       // bytes stay in the emailer's queue, so the slot does too, until every message settles.
       // A test send has its own pool (B101). An undelivered one is logged (B101): `result` resolves
@@ -851,19 +875,6 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         message,
         dispatch: deps.emailer.push(message, { copies: false, priority: "outbox", testPool: true }),
       }));
-      // B108 (D114): each Message-ID is recorded before any network work can answer for it.
-      writeTransaction(context.app.db, () =>
-        testSends.record(
-          dispatched.map(({ message, dispatch }) => ({
-            messageId: dispatch.messageId,
-            kind: "campaign",
-            campaign_id: stored.id,
-            sequence_id: null,
-            step_id: null,
-            recipient: message.to[0]!,
-          })),
-        ),
-      );
       const results = dispatched.map(({ message, dispatch }) =>
         dispatch.result.then((outcome) => {
           if (outcome.status === "accepted" && !outcome.rejected.length) return;

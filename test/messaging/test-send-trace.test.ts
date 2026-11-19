@@ -1,6 +1,7 @@
 // B108 (D114): a test send is never a send, but a bounce or complaint of one is named once in the
 // log, and a blocklisted-only test says why it sent nothing. Through HTTP, the SMTP sink, signed SNS
-// notices and the injected clock, with no sleeps for time.
+// notices and the injected clock, with no sleeps for time. Counts of bounces are read through the
+// API; the one table read is the privacy check, since no route lists `test_sends`.
 import { afterEach, expect, test } from "bun:test";
 import type { ErrorLogger } from "@/app";
 import { createPurge } from "@/loops/purge";
@@ -21,6 +22,7 @@ afterEach(async () => {
 
 /** A fixture's router entry point: the request is answered as the server would answer it. */
 type Requests = { request(path: string, init?: RequestInit): Promise<Response> };
+type Api = { json(path: string): Promise<{ status: number; body: any }> };
 
 async function open(net: Network = network()) {
   const f = await schedulerFixture({ snsFetch: net.fetch });
@@ -76,10 +78,10 @@ const post = (f: Requests, body: string) =>
 const notice = (f: Requests & { clock: { now(): Date } }, message: string) =>
   post(f, JSON.stringify(envelope(f, { Message: message })));
 
-const rowCount = (f: { db: { query(sql: string): { get(): unknown } } }, table: string) =>
-  Number((f.db.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: bigint | number }).n);
+/** Bounces the API lists: the rows the bounce path recorded. */
+const bounceTotal = async (f: Api) => (await f.json("/api/bounces")).body.data.total as number;
 
-const logLines = async (f: { json(path: string): Promise<{ body: any }> }, text: string) =>
+const logLines = async (f: Api, text: string) =>
   ((await f.json("/api/logs")).body.data as string[]).filter((line) => line.includes(text));
 
 /** A step test to one address: the Message-ID it used, once the sink has it. */
@@ -140,7 +142,7 @@ test("a bounce of a step test is named once, in the log and on stderr, and recor
   expect(stderr[0]).toContain(`sequence ${sequence} step ${step}`);
   expect(stderr[0]).toContain(DELIVERED);
   expect(stderr[0]).toContain("Permanent");
-  expect(rowCount(f, "bounces")).toBe(0);
+  expect(await bounceTotal(f)).toBe(0);
   const status = await f.json(`/api/subscribers/${subscriber}`);
   expect(status.body.data.status).toBe("enabled");
 });
@@ -153,7 +155,7 @@ test("a complaint about a step test is named once, and the subscriber is not uns
   expect((await notice(f, complaint)).status).toBe(200);
   expect(await logLines(f, "A test send got a complaint")).toHaveLength(1);
   expect(await logLines(f, "A test send bounced")).toHaveLength(0);
-  expect(rowCount(f, "bounces")).toBe(0);
+  expect(await bounceTotal(f)).toBe(0);
   const status = await f.json(`/api/subscribers/${subscriber}`);
   expect(status.body.data.status).toBe("enabled");
 });
@@ -212,47 +214,133 @@ test("a campaign test's bounce is named once with its campaign, and records noth
   const text = (errors[0] as Error).message;
   expect(text).toContain(`campaign ${campaign.id}`);
   expect(text).toContain(DELIVERED);
-  expect(rowCount(f, "bounces")).toBe(0);
+  expect(await bounceTotal(f)).toBe(0);
   const status = await f.json(`/api/subscribers/${subscriber.id}`);
   expect(status.body.data.status).toBe("enabled");
 });
 
-test("a bounce whose Message-ID no test recorded changes nothing about the test path", async () => {
+test("a bounce whose Message-ID no test recorded is recorded as before", async () => {
   const f = await open();
   await f.subscriber(DELIVERED);
   const notice1 = bounceMessage(f, [DELIVERED], {}, header("<unknown-1@elsewhere.test>"));
   expect((await notice(f, notice1)).status).toBe(200);
   // A real bounce is recorded as before: one row, and the hard action applies.
-  expect(rowCount(f, "bounces")).toBe(1);
+  expect(await bounceTotal(f)).toBe(1);
   expect(await logLines(f, "A test send")).toHaveLength(0);
   expect(f.errors).toHaveLength(0);
 });
 
-test("a test record lasts seven days: a bounce within the window names it, and after the retention loop removes it a bounce changes nothing", async () => {
+test("a deleted subscriber's address stays in no record B108 keeps", async () => {
   const f = await open();
-  const { messageId } = await stepTest(f, "stranger@example.test");
+  const id = await f.subscriber("wipe-me@example.test");
+  const { messageId } = await stepTest(f, "wipe-me@example.test");
+  expect((await f.json(`/api/subscribers/${id}`, "DELETE")).status).toBe(200);
+
+  expect(
+    (await notice(f, bounceMessage(f, ["wipe-me@example.test"], {}, header(messageId)))).status,
+  ).toBe(200);
+  expect(await logLines(f, "A test send bounced")).toHaveLength(1);
+  expect(await bounceTotal(f)).toBe(0);
+  // The log buffer holds fixed text only, so no line it returns carries the address.
+  for (const line of await logLines(f, "")) expect(line).not.toContain("wipe-me@example.test");
+  // The one table read: no route lists `test_sends`, so its stored values are read directly.
+  const rows = f.db.query("SELECT * FROM test_sends").all() as Record<string, unknown>[];
+  expect(rows).toHaveLength(1);
+  const values = rows.flatMap((row) => Object.values(row).map(String)).join("\n");
+  expect(values).not.toContain("wipe-me@example.test");
+});
+
+test("a test record lasts seven days: a bounce within the window names it, and after the retention loop removes it, a bounce of the subscriber is recorded as before", async () => {
+  const f = await open();
+  const subscriber = await f.subscriber("expiring@example.test");
+  const { messageId } = await stepTest(f, "expiring@example.test");
 
   f.clock.advance(6 * DAY);
   expect(
-    (await notice(f, bounceMessage(f, ["stranger@example.test"], {}, header(messageId)))).status,
+    (await notice(f, bounceMessage(f, ["expiring@example.test"], {}, header(messageId)))).status,
   ).toBe(200);
   expect(await logLines(f, "A test send bounced")).toHaveLength(1);
+  // Within the window the notice is the test's: nothing is recorded, and the subscriber is kept.
+  expect(await bounceTotal(f)).toBe(0);
+  expect((await f.json(`/api/subscribers/${subscriber}`)).body.data.status).toBe("enabled");
 
   f.clock.advance(2 * DAY);
-  expect(rowCount(f, "test_sends")).toBe(1);
+  // The retention loop runs the record's purge; the returned IDs show when it has removed it.
+  const removed: unknown[] = [];
   const purge = createPurge({
     db: f.db,
     clock: f.clock,
     logger: { error: () => {} },
-    purges: [f.testSends.purge],
+    purges: [
+      (now, limit) => {
+        const taken = f.testSends.purge(now, limit);
+        removed.push(...taken);
+        return taken;
+      },
+    ],
   });
   purge.start();
-  await f.until(() => rowCount(f, "test_sends") === 0, "the retention loop removed the record");
+  await f.until(() => removed.length > 0, "the retention loop removed the record");
   await purge.stop();
 
+  // Past the window the same Message-ID is no test's: the bounce is recorded as any other.
   expect(
-    (await notice(f, bounceMessage(f, ["stranger@example.test"], {}, header(messageId)))).status,
+    (await notice(f, bounceMessage(f, ["expiring@example.test"], {}, header(messageId)))).status,
   ).toBe(200);
   expect(await logLines(f, "A test send bounced")).toHaveLength(1);
-  expect(rowCount(f, "bounces")).toBe(0);
+  expect(await bounceTotal(f)).toBe(1);
+  expect((await f.json(`/api/subscribers/${subscriber}/bounces`)).body.data).toHaveLength(1);
+  expect((await f.json(`/api/subscribers/${subscriber}`)).body.data.status).toBe("blocklisted");
+});
+
+test("a step test whose Message-ID cannot be recorded answers 500 and sends nothing", async () => {
+  const f = await open();
+  const { sequence, step } = await setup(f);
+  f.db.run(
+    "CREATE TRIGGER refuse_test_sends BEFORE INSERT ON test_sends BEGIN SELECT RAISE(ABORT, 'refused'); END",
+  );
+  const failed = await f.json(`/api/sequences/${sequence}/steps/${step}/test`, "POST", {
+    emails: [DELIVERED],
+  });
+  expect(failed.status).toBe(500);
+  await Bun.sleep(50);
+  expect(f.sink.messages).toHaveLength(0);
+
+  // Once the write can succeed, the same request is sent, so no in-flight slot was left behind.
+  f.db.run("DROP TRIGGER refuse_test_sends");
+  const sent = await f.json(`/api/sequences/${sequence}/steps/${step}/test`, "POST", {
+    emails: [DELIVERED],
+  });
+  expect(sent.status).toBe(200);
+  await f.until(() => f.sink.messages.length === 1, "the retried test message");
+});
+
+test("a campaign test whose Message-ID cannot be recorded answers 500 and sends nothing", async () => {
+  const f = await campaignsFixture();
+  cleanups.push(() => f.close());
+  const news = await f.list("news");
+  await f.subscriber(DELIVERED, [news]);
+  const campaign = await f.campaign({ name: "Weekly", subject: "Hi", lists: [news] });
+  const body = {
+    name: "Weekly",
+    subject: "Hi",
+    lists: [news],
+    messenger: "email",
+    content_type: "html",
+    body: "<p>Hello</p>",
+    subscribers: [DELIVERED],
+  };
+  f.db.run(
+    "CREATE TRIGGER refuse_test_sends BEFORE INSERT ON test_sends BEGIN SELECT RAISE(ABORT, 'refused'); END",
+  );
+  const failed = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", body);
+  expect(failed.status).toBe(500);
+  await Bun.sleep(50);
+  expect(f.sink.messages).toHaveLength(0);
+
+  f.db.run("DROP TRIGGER refuse_test_sends");
+  const sent = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", body);
+  expect(sent.status).toBe(200);
+  await f.mail(1);
+  expect(f.sink.messages).toHaveLength(1);
 });

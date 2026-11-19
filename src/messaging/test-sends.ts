@@ -9,16 +9,18 @@ export const TEST_SEND_RETENTION_MS = 7 * 86_400_000;
 
 export type Id = bigint | number;
 
-/** What a notice of a test send names: the test's kind and its IDs, and the address it was sent to. */
+/**
+ * What a notice of a test send names: the test's kind and its IDs. No address is kept (D114): the
+ * recipient a notice names is the notice's own, and the record is matched by Message-ID alone.
+ */
 export interface TestSendRecord {
   kind: "campaign" | "sequence_step";
   campaign_id: Id | null;
   sequence_id: Id | null;
   step_id: Id | null;
-  recipient: string;
 }
 export interface TestSendEntry extends TestSendRecord {
-  /** The Message-ID the emailer dispatched the message with. */
+  /** The Message-ID the message is sent with, chosen before it is handed to the emailer. */
   messageId: string;
 }
 
@@ -32,15 +34,18 @@ export function normalizeMessageId(value: string) {
 
 export function createTestSends(db: Database, clock: Clock) {
   const insert = db.query(
-    `INSERT INTO test_sends (message_id, kind, campaign_id, sequence_id, step_id, recipient, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO test_sends (message_id, kind, campaign_id, sequence_id, step_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   const lookup = db.query<TestSendRecord, [string, string]>(
-    `SELECT kind, campaign_id, sequence_id, step_id, recipient FROM test_sends
+    `SELECT kind, campaign_id, sequence_id, step_id FROM test_sends
      WHERE message_id = ? AND created_at >= ? ORDER BY id DESC LIMIT 1`,
   );
   return {
-    /** Inside the caller's write transaction, before the messages' network work can answer for them. */
+    /**
+     * Inside the caller's write transaction, and before any of the messages is handed to the
+     * emailer: a write that fails sends nothing, and a sent message always has its record.
+     */
     record(entries: TestSendEntry[]) {
       const at = clock.now().toISOString();
       for (const entry of entries)
@@ -50,7 +55,6 @@ export function createTestSends(db: Database, clock: Clock) {
           entry.campaign_id,
           entry.sequence_id,
           entry.step_id,
-          entry.recipient,
           at,
         );
     },

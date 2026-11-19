@@ -8,7 +8,7 @@ import { writeTransaction } from "@/db/transaction";
 import { parseJson, readBounded } from "@/events/input";
 import type { Aggregate } from "@/events/aggregate";
 import type { EventStore } from "@/events/store";
-import type { Message } from "@/messaging/email";
+import { newMessageId, type Message } from "@/messaging/email";
 import type { createEmailer } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
 import type { TestSends } from "@/messaging/test-sends";
@@ -499,11 +499,26 @@ export function registerSequenceRoutes(
             contentType: "html",
             body: Buffer.from(rendered.body),
             headers: { ...prepared.links.headers },
+            // B108 (D114): chosen here, so its record is written before the message is queued.
+            messageId: newMessageId(settings.marketing.rootUrl),
           };
         });
         // The sender may have changed its mind while these rendered: the permission is checked again.
         auth.revalidate(c, "tx:send");
         auth.revalidate(c, MANAGE);
+        // B108 (D114): every Message-ID is recorded before any message is handed to the emailer. A
+        // failed write throws here, so nothing is sent and the request answers 500.
+        writeTransaction(c.app.db, () =>
+          testSends.record(
+            messages.map((message) => ({
+              messageId: message.messageId!,
+              kind: "sequence_step",
+              campaign_id: null,
+              sequence_id: Number(sequence.id),
+              step_id: Number(step.id),
+            })),
+          ),
+        );
         // Queued to the emailer like a campaign test: nothing is journaled, counted or tracked. Its
         // own pool (B101), and an undelivered outcome is logged (B101): `result` never rejects.
         const dispatched = messages.map((message) => ({
@@ -514,19 +529,6 @@ export function registerSequenceRoutes(
             testPool: true,
           }),
         }));
-        // B108 (D114): each Message-ID is recorded before any network work can answer for it.
-        writeTransaction(c.app.db, () =>
-          testSends.record(
-            dispatched.map(({ message, dispatch }) => ({
-              messageId: dispatch.messageId,
-              kind: "sequence_step",
-              campaign_id: null,
-              sequence_id: Number(sequence.id),
-              step_id: Number(step.id),
-              recipient: message.to[0]!,
-            })),
-          ),
-        );
         const results = dispatched.map(({ message, dispatch }) =>
           dispatch.result.then((outcome) => {
             if (outcome.status === "accepted" && !outcome.rejected.length) return;
