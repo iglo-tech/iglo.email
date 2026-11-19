@@ -421,6 +421,17 @@ export const differences: Difference[] = [
     applies: ["/api/campaigns/{id}/preview", "POST /api/campaigns/{id}/text"],
   },
   {
+    area: "Markdown link titles (D111, B104)",
+    summary:
+      'A link title must follow whitespace, as in CommonMark and in listmonk\'s goldmark v1.8.6, so `[x](u"a b")` and `[x](u(a b))` are text, not links with a title. Deliberate difference: `[x](<u>"t")`, an angle-bracket destination glued to its title, is text here, where goldmark makes a link with a title. A glued title without whitespace inside a plain destination stays part of the URL, as before. The scan is linear per link attempt (B104); the rows affect previews, content conversion and test sends.',
+    applies: [
+      "GET /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/content",
+      "POST /api/campaigns/{id}/test",
+    ],
+  },
+  {
     area: "Campaign running stats (M4.3)",
     summary:
       "`GET /api/campaigns/running/stats` lists only running campaigns the caller may read, by the collection's list scope, where upstream lists them all to anyone with `campaigns:get`.",
