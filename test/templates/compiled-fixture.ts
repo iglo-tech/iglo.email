@@ -1,5 +1,6 @@
 // Test-only HTTP caller of the production renderer, including file and loopback traps.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createRenderer } from "@/templates/renderer";
@@ -183,22 +184,39 @@ try {
       }),
     );
   }
+  // B105 (D112): these two shapes render. render.test.ts pins them to 200 on the source renderer, and this
+  // compiled renderer must give the same bytes: SHA-256 and byte length of the HTML, measured from source.
   const wideTable = "|" + "h|".repeat(10001) + "\n|" + "- |".repeat(10001) + "\n";
-  assert.throws(() => renderer.renderSync({ body: wideTable, data: "{}", mode: "markdown" }));
-  assert.throws(() =>
-    renderer.renderSync({ body: "> x\n".repeat(10001), data: "{}", mode: "markdown" }),
-  );
-  const boundedMarkdown = renderer.compile({
-    body: "<div>{% for i in (1..15) %}{{ x | raw }}{% endfor %}{{ y | raw }}</div>",
+  const blockquote = "> x\n".repeat(10001);
+  for (const [body, sha, length] of [
+    [wideTable, "8e64d44da337ad3650cac83b9dee48a24af1915fac552918ad4c6cadbc57b274", 110056],
+    [blockquote, "d22c394328a6b768324b11408b177246bb828a325e4077ed1a94dd59c5e37888", 20036],
+  ] as const) {
+    const { body: html } = renderer.renderSync({ body, data: "{}", mode: "markdown" });
+    assert.equal(Buffer.byteLength(html), length);
+    assert.equal(createHash("sha256").update(html).digest("hex"), sha);
+  }
+  // B105 (D112): the expanded Markdown source is capped at 128 KiB and refused before marked parses it.
+  // Exactly the cap renders, byte-equal to the source renderer (length and SHA-256); one byte more is
+  // refused with the cap message.
+  const cappedData = JSON.stringify({ value: "a".repeat(64 * 1024) });
+  const cappedMarkdown = renderer.compile({
+    body: "{% for i in (1..2) %}{{ value | raw }}{% endfor %}",
     mode: "markdown",
   });
-  const payload = { x: "a".repeat(65536), y: "a".repeat(65525) };
+  const capped = cappedMarkdown.renderSync(cappedData).body;
+  assert.equal(Buffer.byteLength(capped), 131080);
   assert.equal(
-    Buffer.byteLength(boundedMarkdown.renderSync(JSON.stringify(payload)).body),
-    1024 * 1024,
+    createHash("sha256").update(capped).digest("hex"),
+    "e88ee2e08a55dfb7b45e7459d86aaf465323fe94ee637d416c133c5f224c81ae",
   );
-  payload.y += "a";
-  assert.throws(() => boundedMarkdown.renderSync(JSON.stringify(payload)));
+  const overMarkdown = renderer.compile({
+    body: "{% for i in (1..2) %}{{ value | raw }}{% endfor %}a",
+    mode: "markdown",
+  });
+  assert.throws(() => overMarkdown.renderSync(cappedData), {
+    message: "Markdown is larger than 128 KiB after template expansion",
+  });
   const plain = renderer.compile({ body: "{{ value }}", subject: "{{ value }}", mode: "plain" });
   assert.deepEqual(plain.renderSync(JSON.stringify({ value: "<a>&" })), {
     body: "<a>&",
