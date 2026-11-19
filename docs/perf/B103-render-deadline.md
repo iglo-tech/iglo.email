@@ -1,9 +1,10 @@
-# B103: render time with the deterministic budgets alone (D110)
+# B103: Liquid render time with the deterministic budgets alone (D110)
 
 Brief B103 section 3. The wall-clock `renderLimit: 1000` of `src/templates/renderer.ts` (a deadline
 on `performance.now()`) is removed. This note shows that the D54 budgets alone keep the worst
-renders far below one second, so removing the deadline changes no output a template can produce
-within the budgets.
+Liquid renders far below one second, so removing the deadline changes no output a Liquid template
+can produce within the budgets. This note covers Liquid only. The Markdown stage runs after the
+Liquid render and is outside these budgets; its super-linear lexer path is B104 (D111).
 
 ## Method
 
@@ -35,9 +36,13 @@ ranges 1,024 iterations; parse 64 KiB of source.
 
 ## Reading
 
-- The largest render measured, before or after, took 4.02 ms (the work budget). The 1 s deadline
-  was never reached by a template inside the budgets. A render that does exceed one second on a
-  quiet host has to be one the budgets do not bound, which D54 forbids.
+- The largest render in the table above took 4.02 ms (the work budget), before and after. The 1 s
+  deadline was never reached by a Liquid template in this table. A B103 review pass (PR #155
+  comment, arm64 container, 6 CPUs, 5 renders each, median / max) measured further Liquid worst
+  cases, not in the table: `contains` with a 256 KiB needle in a 1 MiB haystack 1.0 to 3.0 / 11.8 ms;
+  `==` and `<` on two 1 MiB strings 3.3 / 10.4 ms; `upcase` of 512 KiB of `ß`, applied twice,
+  64 / 94 ms; `date` by 1,000, 3 / 13 ms. The 94 ms case is the largest measured for Liquid, still
+  far below one second. Markdown is not in these numbers (B104).
 - Under CPU contention a render takes longer than it does here, by the factor of the contention.
   That factor is what turned a 4 ms render into the B103 failure (a subscriber recorded `failed`
   when its render took more than 1 s under load). Removing the deadline removes that dependence on

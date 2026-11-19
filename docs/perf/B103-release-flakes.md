@@ -3,18 +3,20 @@
 Source: release run 44159976600 (tag `v1.3.0` on de36d91). Both `build` jobs failed in `bun run
 check`; nothing was published. Two tests failed: the runner's tracked-links test on x64
 (`test/campaigns/runner/runner.test.ts`) and the media eviction test on arm64
-(`test/media/media.test.ts`). This note records what was measured, what was ruled out, and what
-was not established.
+(`test/media/media.test.ts`). This note records what was measured and what was ruled out. The
+runner failure's cause is the wall-clock render deadline (D110), found in B103 run 1's log. The
+holder of the media test's extra buffer under load is not established.
 
 ## Summary
 
 | Item | Reproduced before | Cause | Change |
 | --- | --- | --- | --- |
-| 1. Runner tracked links (x64) | Not reproduced: 0 failures in 143 runs of the file or test (host, arm64 and amd64), and in 5 full arm64 suites (see section 1) | Not established. The lead hypothesis (a clock-based bound drops one message) is ruled out for every clock-based wait in this test. The non-pushed paths all record an outcome. | The drive no longer steps the injected clock. The wall bound stays at 60 s, real time only. The failure message names the logged errors. |
-| 2. Media eviction (arm64) | 19 of 192 loaded runs failed the reachability check (`Expected: 1, Received: 2`) | The reachability observation is unstable across identical runs. The product reads each batch once, and the cache evicts as designed. | The test counts distinct attachment buffers handed to its messages (one read per batch), instead of GC reachability. Mutation check: disabling eviction fails it with `Expected: 6, Received: 2`. |
+| 1. Runner tracked links (x64) | Not reproduced: 0 failures in 143 runs of the file or test (host, arm64 and amd64), and in 5 full arm64 suites (see section 1) | The wall-clock render deadline (D110): one message's render took more than 1 s of real time under CPU contention, threw `template render limit exceeded`, and the subscriber was recorded `failed`, so the campaign finished one push short. The send path's clock-based waits were ruled out as causes (section 1). | The render deadline is removed (D110, with a test that fails before the change and passes after). The drive no longer steps the injected clock. The wall bound stays at 60 s, real time only. The failure message names the logged errors. |
+| 2. Media eviction (arm64) | 19 of 192 loaded runs failed the reachability check (`Expected: 1, Received: 2`) | The reachability observation is unstable across identical runs. The product reads each batch once, and the cache evicts as designed. The holder of the extra buffer under load is not established (section 2). | The test counts distinct attachment buffers handed to its messages (one read per batch), instead of GC reachability. Mutation check: disabling eviction fails it with `Expected: 6, Received: 2`. |
 
-No product defect was proven on the failing paths, so no product code changed and no D110 record
-is needed. One visibility gap was found (section 3) and is reported, not fixed here.
+The runner's mechanism is a product defect, the wall-clock render deadline. It is fixed by D110, which
+records the decision and the scope (Liquid only; Markdown is B104, D111). The consent-skip visibility
+gap (section 3) and the media buffer's holder are open and are not changed here.
 
 ## 1. Runner tracked links
 
@@ -67,9 +69,16 @@ subscriber without a push, in this test:
   drop a message.**
 - **Lease expiry**: needs a second holder. The test starts one runner, and a 30 s lease is renewed by
   the heartbeat and at every claim. **Cannot occur.**
+- **Render deadline** (not a clock-based wait of the send path, but a real-time deadline inside the
+  renderer): liquidjs `renderLimit: 1000`, a deadline on `performance.now()`, checked during each
+  render. A render that takes more than one real second under CPU contention throws `template
+  render limit exceeded`; the runner records that subscriber `failed` and never retries it. **This is
+  the mechanism of the release failure.** It is removed by D110.
 
-Verdict: the lead hypothesis is ruled out for this test as far as the code goes. The release
-failure's cause is not established.
+Verdict: the clock-based waits of the send path cannot drop a message in this test, so the hypothesis
+as stated is ruled out. The release failure's mechanism is the render deadline. The release run's own
+log has no error text (its drive printed no logged errors at the time). The same log line was
+reproduced under CPU contention in B103 run 1, which named the subscriber (`p0091@x.test`).
 
 ### Decisive question: does a never-pushed subscriber get a recorded, visible outcome?
 
@@ -88,9 +97,10 @@ product therefore never drops a subscriber with no record. The gap is in section
 
 ### Change
 
-- The drive steps the clock by 0 instead of 10 ms. Nothing this test asserts needs time, and the
-  clock step was the variable the brief named. This does not prove a fix for the release failure:
-  the failure is not reproduced, so the change is a hardening, not a confirmed cure.
+- The drive steps the clock by 0 instead of 10 ms. Nothing this test asserts needs time, so fake time
+  no longer moves while renders are in flight. This removes a timing variable from the test. It is not
+  the fix for the release failure: that fix is the render deadline removal (D110), which removes the
+  mechanism.
 - The 60 s wall bound stays, real time only. Measured: about 2.7 s on the B101 profile host, 14 s in
   the full suite on four CPUs, 16 s on two CPUs. The 60 s bound is more than 3x the slowest of those.
 - The drive's failure message now names the runner's logged errors (count and the first three), so
@@ -143,10 +153,12 @@ buffers was never wrong in any run.
 
 `carriedBuffers` counts distinct buffers by identity (a `WeakSet`, so it keeps nothing alive). A
 buffer handed to a message counts once. A cache hit repeats a buffer, so it adds nothing, and a second
-read within one batch adds one. The eviction test now asserts six distinct buffers (one read per batch
-of two alternating 8 MiB files under a 9 MiB budget), checked while the sixth send is held and again after
-both campaigns finish. This restores the held-state check that B101 had dropped, since the count does
-not depend on collection timing.
+read within one batch adds one. The eviction test now asserts six distinct buffers (one read per batch of
+two alternating 8 MiB files under a 9 MiB budget), checked while the sixth send is held. After the
+campaigns finish, the test asserts that each campaign sent all three of its messages. The held check is
+a read count: it shows each batch read its file, which is eviction and re-read. It does not show that
+memory was released, and a batch that read twice would still carry one buffer, so repeated reads within
+one batch are not observable with `batchSize: 1`.
 
 Mutation check: with the cache's eviction loop disabled, the test fails with `Expected: 6`,
 `Received: 2`. The shared-attachments test keeps its `carried() === 1` check and loses its

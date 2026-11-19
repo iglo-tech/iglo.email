@@ -225,9 +225,9 @@ test("attachments over the bound pause the campaign instead of holding them in m
 const mebibytes = (count: number, fill = 0) => new Uint8Array(count * 1024 * 1024).fill(fill);
 /**
  * Distinct attachment buffers this test's messages carried. Each buffer is counted once, by
- * identity, so the count is the number of reads that handed a buffer to a message: a cache hit
- * adds nothing, and a second read in one batch adds one. It does not depend on when a collection
- * runs. The count of buffers still reachable after `Bun.gc(true)`, which this test used before
+ * identity, so the count is the number of distinct buffers that reached a message: a cache hit
+ * adds nothing. With one message per batch, it counts reads of the file, not repeated reads within
+ * a batch. It does not depend on when a collection runs. The count of buffers still reachable after `Bun.gc(true)`, which this test used before
  * B103, varied between identical runs (one or two for the same campaigns; see
  * docs/perf/B103-release-flakes.md), and its cause was not established, so it is not used. The test
  * does not use process-wide `arrayBuffers`: a worker process runs several test files in turn. The
@@ -310,14 +310,16 @@ test("attachments over the cache budget are evicted and read again for the next 
   await f.drive(() => f.pushes.length === 6);
   carried.note(f.pushes[5]!.message.attachments![0]!.content.buffer);
   // Six batches alternate between two 8 MiB files under a 9 MiB budget, so the cache holds one
-  // file at a time and every batch reads its file again: six distinct buffers. A cache hit would
-  // repeat a buffer, and a second read within one batch would add one more. Checked while the
-  // sixth send is still held, then after the held send is released and both campaigns finish.
+  // file at a time and each batch carries a buffer from a read of its file: six distinct buffers.
+  // A cache hit would carry a buffer already counted, so the count would be lower. This does not
+  // see a batch that read its file twice and carried one buffer, since batchSize 1 carries one
+  // buffer per batch either way.
   expect(carried.carried()).toBe(6);
   f.control.hold = false;
   for (const push of f.pushes) push.settle();
   for (const id of campaigns) await f.until(id, "finished");
-  expect(carried.carried()).toBe(6);
+  // Every message of both campaigns went out, with its file.
+  for (const id of campaigns) expect((await f.read(id)).sent).toBe(3);
   expect(new Set(seen)).toEqual(new Set(["01", "02"]));
 });
 
