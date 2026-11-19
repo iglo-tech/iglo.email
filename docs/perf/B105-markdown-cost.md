@@ -120,6 +120,23 @@ So the newsletter pins in `markdown-compat.test.ts` are this renderer's own outp
 
 `[x](()" ")` is a link to `(` with text `&quot; &quot;)` on origin and on head, and goldmark renders it as text (`<p>[x](()&quot; ")</p>`). A link-destination rule, not a cost; not changed, listed as backlog.
 
+## Round 2: 128 KiB over HTTP (container, arm64, 6 CPUs, load 0.03 to 0.11)
+
+Commit ccec273. The served fixture (`markdown-serve.ts`) runs in a child process and is driven over a socket. Each body is a Liquid loop expanded to exactly 128 KiB of Markdown (127 pieces of 1 KiB and a literal pad), so it is inside the cap. Scratch harness, not committed.
+
+| Group | Cases | Statuses | Slowest |
+|---|---:|---|---|
+| Every family (`measure-markdown.ts`'s list) | 56 | 200 or budget 400 | `block-pipe-dashes` **1766 ms**; `block-rule-run` 184 ms |
+| Marker runs (13 markers × 4 contexts × 2 trailing) | 104 | 200 or budget 400 | `star` and `pipe` runs 56 to 59 ms |
+| Liquid shapes (`markdown-liquid.test.ts`, 37) | 37 | 200 or budget 400 | `numbered then code` 184 ms; `bullet then tilde` 181 ms |
+| Ordinary documents | 5 | 200 for schedule, address and FAQ; 400 for events and testimonials | FAQ 34 ms |
+| Shapes expanded to 1000 KiB | 37 | 400 cap | 3 ms |
+| Five concurrent 128 KiB previews, read sent after them (3 runs) | 3 | read 200, previews 200 or 400 | read 280 to 283 ms |
+
+The budget 400 is the generic `invalid template` message for a Markdown budget refusal (work or output). Events and testimonials are over the cap in bytes (133,888 and 145,152 bytes; their units hold em dashes and curly quotes), so the cap refusal is correct for them. The 1000 KiB row is a fast refusal in every case.
+
+**Not within the target.** `block-pipe-dashes` (the Liquid loop of `|\n--\n` cut into 1 KiB pieces, so the pieces leave lines such as `--|`) takes 1.8 s over HTTP at 128 KiB, 5 of 5 runs. Its Markdown stage alone takes 1.08 s on the host and 425 ms at 64 KiB: the work limit is reached after about 1 s, although 36 M units nominally cost 180 ms. A profile shows the time in the table and paragraph-stop regular expressions over the misaligned lines, at about 200 ns per character scanned, while the table scan is charged 1 unit per character and the paragraph window 20. The units are underpriced for this shape by about 6×. Ordinary tables and newsletters price at about 1 ns per unit, so the fix is a per-shape charge for the table and paragraph-stop scans, not a rescale of every unit. Not done in this round.
+
 ## Limits
 
 - Timings are single runs or medians on a shared workstation (load 1.5 to 3).

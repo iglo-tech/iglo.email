@@ -19,6 +19,13 @@ function expanded(prefix: string, unit: string, kib: number): string {
   return `${prefix}{% for i in (1..${kib}) %}${piece}{% endfor %}`;
 }
 
+/** Exactly 128 KiB of expanded Markdown: 127 loop pieces, then a literal pad that fills the last KiB. */
+function exact128(prefix: string, unit: string): string {
+  const piece = unit.repeat(Math.ceil(1024 / unit.length)).slice(0, 1024);
+  const pad = piece.slice(0, 1024 - prefix.length);
+  return `${prefix}{% for i in (1..127) %}${piece}{% endfor %}${pad}`;
+}
+
 const shapes: [string, string, string][] = [
   // [name, prefix before the loop, unit repeated by the loop]
   ["backtick", "x\n", "`"],
@@ -78,11 +85,13 @@ test.each(shapes)(
     const response = await f.request(`/api/campaigns/${campaign.id}/preview`, {
       method: "POST",
       headers: { ...headers, "content-type": "application/x-www-form-urlencoded" },
-      body: previewForm(expanded(prefix, unit, 128)),
+      body: previewForm(exact128(prefix, unit)),
     });
-    await response.text();
+    const text = await response.text();
     expect(performance.now() - started).toBeLessThan(1000);
     expect([200, 400]).toContain(response.status);
+    // Exactly 128 KiB is accepted by the cap, so a refusal can only come from a Markdown budget.
+    expect(text).not.toContain(CAP_MESSAGE);
   },
 );
 
@@ -150,7 +159,7 @@ test("five concurrent 128 KiB Liquid previews of the slowest forms leave a read 
       fetch(`${ready.origin}/api/campaigns/${ready.campaign}/preview`, {
         method: "POST",
         headers: { ...ready.headers, "content-type": "application/x-www-form-urlencoded" },
-        body: previewForm(expanded(prefix, unit, 128)),
+        body: previewForm(exact128(prefix, unit)),
       }),
     );
     const read = await fetch(`${ready.origin}/api/campaigns/${ready.campaign}`, {
