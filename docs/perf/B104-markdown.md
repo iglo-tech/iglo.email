@@ -1,6 +1,6 @@
 # B104: Markdown link scanning, before and after
 
-Decision: [D111](../design/09-decisions.md#d111-link-titles-need-whitespace-before-them-so-markdown-link-scanning-is-bounded-by-the-work-budget-lead-2026-11-19). Brief: [B104](../briefs/B104.md).
+Decision: [D111](../design/09-decisions.md#d111-link-titles-must-follow-whitespace-so-the-inline-link-title-scan-is-linear-per-link-attempt-lead-2026-11-19). Brief: [B104](../briefs/B104.md).
 
 ## Method
 
@@ -90,7 +90,12 @@ Ordinary output is pinned by `test/templates/markdown-compat.test.ts`: 33 docume
 
 Every case refuses or succeeds within the budget, and none is clock-dependent. The worst (about 2 s) is a 256 KiB body of setext headings (`a\n-`), which the conversion path accepts because it has no 64 KiB source limit. That is the existing budget, not changed here.
 
-## Remaining findings (not fixed here)
+## Scope and what is not fixed
 
-- **Block-level scanning is bounded, not linear.** Repeated `--`, `-` and `\n` shapes (setext underlines and rules) are super-linear inside marked's paragraph rule, so the paragraph lookahead rescans the remaining input per block token. Unbudgeted, `--\n` ×64 KiB takes 56 s here. The budget stops it at about 0.7 s per 64 KiB request, which is why it is not in the 1 s family test. marked 17.0.6 and 18.2.1 take 31–35 s on the same input, so an upgrade does not fix it. This is a follow-up; changing its charge would change ordinary-document refusals, which B104 forbids.
-- **Ordinary bodies above about 4 KiB are refused today.** The D54 reservation (`reserve()` in `src/templates/markdown.ts`) adds up each token's prefix sums, so a newsletter of about 4 KiB (about 35 sections) hits the 4 MiB render limit. This is origin's behaviour, documented in `docs/design/06-templates.md` as a conservative estimate, and this branch keeps it unchanged.
+B104 bounds the inline link-title scan only (D111). The numbers above show that scan linear per attempt, and the enumeration rows show it bounded for every unit tried. Three costs predate this branch and are not changed here; they are tracked in B105/D112:
+
+- **Block-level repetitions** (`--` lines, setext underlines and rules) rescan the remaining input per block token inside marked's paragraph rule. Unbudgeted, `--\n` at 64 KiB takes 56 s; the existing budget stops it at about 0.7 s per 64 KiB request. marked 17.0.6 and 18.2.1 take 31–35 s on the same input.
+- **The reflink scan** (`reflinkSearch`) runs once per inline text, outside the per-token charge.
+- **Ordinary bodies of about 4 KiB are refused** by the D54 reservation (`reserve()` in `src/templates/markdown.ts`), a documented conservative estimate that this branch does not change.
+
+Nothing here shows that Markdown is bounded overall.

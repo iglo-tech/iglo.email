@@ -1,8 +1,9 @@
-// B104: Markdown is bounded by the work budget, not by how long marked's link scanning takes.
-// Requests go through the campaigns routes; a reader holding only campaigns:get must not be able to
-// hold up the server, so a read started during a preview must answer at once too.
+// B104: the Markdown link-title scan is linear per link attempt, so a Markdown preview or conversion
+// is bounded by the work budget. A reader holding only campaigns:get must not hold up the server:
+// a GET sent while a preview renders must answer within a second of being sent.
 import { afterEach, expect, test } from "bun:test";
 import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { previewForm, readerSession, repeat } from "@/test/campaigns/markdown-support";
 
 const fixtures: CampaignsFixture[] = [];
 afterEach(async () => {
@@ -14,42 +15,7 @@ async function open() {
   return f;
 }
 
-/**
- * A password user with the given user permissions and list grants (as the contract suite builds
- * list-scoped accounts), returning session headers.
- */
-async function reader(
-  f: CampaignsFixture,
-  name: string,
-  permissions: string[],
-  lists: { id: number; permissions: string[] }[],
-) {
-  const role = await f.json("/api/roles/users", "POST", { name, permissions });
-  expect(role.status).toBe(200);
-  const listRole = await f.json("/api/roles/lists", "POST", { name: `${name}-lists`, lists });
-  expect(listRole.status).toBe(200);
-  const created = await f.json("/api/users", "POST", {
-    username: name,
-    email: `${name}@fixture.test`,
-    name,
-    type: "user",
-    status: "enabled",
-    password_login: true,
-    password: "reader-password-1",
-    password2: "reader-password-1",
-    user_role_id: role.body.data.id,
-    list_role_id: listRole.body.data.id,
-  });
-  expect(created.status).toBe(200);
-  const session = await f.owners.auth.login(name, "reader-password-1");
-  if (!session || !("id" in session)) throw new Error("reader login failed");
-  return { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
-}
-
-const repeat = (unit: string, bytes: number) =>
-  unit.repeat(Math.ceil(bytes / unit.length)).slice(0, bytes);
-
-/** Posts a Markdown preview as the form the editor sends. */
+/** A Markdown preview through the router, as the editor posts it. */
 function previewRequest(
   f: CampaignsFixture,
   id: number,
@@ -59,36 +25,46 @@ function previewRequest(
   return f.request(`/api/campaigns/${id}/preview`, {
     method: "POST",
     headers: { ...headers, "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ content_type: "markdown", body }).toString(),
+    body: previewForm(body),
   });
 }
 
-test("a reader's 8 KiB of link openers is refused at once, and a concurrent read is not held behind it", async () => {
-  const f = await open();
-  const news = await f.list("news");
-  const campaign = await f.campaign({ name: "md", subject: "s", lists: [news] });
-  const headers = await reader(
-    f,
-    "md-reader",
-    ["campaigns:get"],
-    [{ id: news, permissions: ["list:get"] }],
+test("a GET sent while an 8 KiB preview renders answers within a second of being sent", async () => {
+  const child = Bun.spawn(
+    [process.execPath, new URL("./markdown-serve.ts", import.meta.url).pathname],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
   );
-  const started = performance.now();
-  const preview = previewRequest(f, campaign.id, headers, repeat("[](", 8192)).then((response) => ({
-    status: response.status,
-    ms: performance.now() - started,
-  }));
-  await Bun.sleep(5);
-  const readStarted = performance.now();
-  const read = f
-    .json(`/api/campaigns/${campaign.id}`, "GET", undefined, headers)
-    .then((response) => ({ status: response.status, ms: performance.now() - readStarted }));
-  const [previewed, reading] = await Promise.all([preview, read]);
-  expect(previewed.status).toBe(400);
-  expect(previewed.ms).toBeLessThan(1000);
-  expect(reading.status).toBe(200);
-  expect(reading.ms).toBeLessThan(1000);
-});
+  try {
+    const ready = JSON.parse(await firstLine(child.stdout)) as {
+      origin: string;
+      campaign: number;
+      headers: Record<string, string>;
+    };
+    const previewing = fetch(`${ready.origin}/api/campaigns/${ready.campaign}/preview`, {
+      method: "POST",
+      headers: { ...ready.headers, "content-type": "application/x-www-form-urlencoded" },
+      body: previewForm(repeat("[](", 8192)),
+    });
+    // The preview is rendering (or about to) when this read is sent.
+    await Bun.sleep(5);
+    const sentAt = performance.now();
+    const read = await fetch(`${ready.origin}/api/campaigns/${ready.campaign}`, {
+      headers: ready.headers,
+    });
+    const readMs = performance.now() - sentAt;
+    await read.text();
+    const previewed = await previewing;
+    expect(previewed.status).toBe(400);
+    expect(read.status).toBe(200);
+    expect(readMs).toBeLessThan(1000);
+  } finally {
+    child.kill();
+    await child.exited;
+  }
+}, 120_000);
 
 // One pathological family per link, image, reference, title and emphasis shape that marked scans.
 const families: Record<string, string> = {
@@ -111,7 +87,7 @@ test.each(Object.entries(families))(
     const f = await open();
     const news = await f.list("news");
     const campaign = await f.campaign({ name: "md", subject: "s", lists: [news] });
-    const headers = await reader(
+    const headers = await readerSession(
       f,
       "family-reader",
       ["campaigns:get"],
@@ -129,7 +105,7 @@ test("a 64 KiB content conversion of link openers is refused within a second", a
   const f = await open();
   const news = await f.list("news");
   const campaign = await f.campaign({ name: "md", subject: "s", lists: [news] });
-  const headers = await reader(
+  const headers = await readerSession(
     f,
     "convert-manager",
     ["campaigns:get", "campaigns:manage"],
@@ -146,29 +122,74 @@ test("a 64 KiB content conversion of link openers is refused within a second", a
   expect([200, 400]).toContain(response.status);
 });
 
-test("a normal link title still applies, and a title glued to its destination is part of it", async () => {
+// D111: a link title must follow whitespace. A title glued to its destination is the destination
+// unless it sits after whitespace, so a glued title containing whitespace is no longer a title.
+test("a title glued to its destination with whitespace inside is text, not a title (D111)", async () => {
   const f = await open();
   const news = await f.list("news");
   const campaign = await f.campaign({ name: "md", subject: "s", lists: [news] });
-  const headers = await reader(
+  const headers = await readerSession(
     f,
     "title-reader",
     ["campaigns:get"],
     [{ id: news, permissions: ["list:get"] }],
   );
-  const titled = await (
-    await previewRequest(f, campaign.id, headers, '[x](https://example.com/a "Titled")')
-  ).text();
-  expect(titled).toContain('<a href="https://example.com/a" title="Titled">x</a>');
-  // A title may start on the next line, as in CommonMark.
-  const onNextLine = await (
-    await previewRequest(f, campaign.id, headers, '[x](https://example.com/a\n"Titled")')
-  ).text();
-  expect(onNextLine).toContain('<a href="https://example.com/a" title="Titled">x</a>');
-  // Whitespace is needed before a title; without it the quotes belong to the URL.
-  const glued = await (
+  for (const body of ['[x](u"a b")', '[x](<u>"t")', "[x](u(a b))"]) {
+    const html = await (await previewRequest(f, campaign.id, headers, body)).text();
+    expect(html).not.toContain(">x</a>");
+  }
+  const quoted = await (await previewRequest(f, campaign.id, headers, '[x](u"a b")')).text();
+  expect(quoted).toContain("[x](u&quot;a b&quot;)");
+  const angled = await (await previewRequest(f, campaign.id, headers, '[x](<u>"t")')).text();
+  expect(angled).toContain("[x](<u>&quot;t&quot;)");
+});
+
+test("a glued title without whitespace stays part of the URL, as before (D111)", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const campaign = await f.campaign({ name: "md", subject: "s", lists: [news] });
+  const headers = await readerSession(
+    f,
+    "glued-reader",
+    ["campaigns:get"],
+    [{ id: news, permissions: ["list:get"] }],
+  );
+  const html = await (
     await previewRequest(f, campaign.id, headers, '[x](https://example.com/a"Titled")')
   ).text();
-  expect(glued).toContain('<a href="https://example.com/a%22Titled%22">x</a>');
-  expect(glued).not.toContain("title=");
+  expect(html).toContain('<a href="https://example.com/a%22Titled%22">x</a>');
 });
+
+test("a normal link title after a space or a newline still applies", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const campaign = await f.campaign({ name: "md", subject: "s", lists: [news] });
+  const headers = await readerSession(
+    f,
+    "title-reader-2",
+    ["campaigns:get"],
+    [{ id: news, permissions: ["list:get"] }],
+  );
+  const spaced = await (
+    await previewRequest(f, campaign.id, headers, '[x](https://example.com/a "Titled")')
+  ).text();
+  expect(spaced).toContain('<a href="https://example.com/a" title="Titled">x</a>');
+  const nextLine = await (
+    await previewRequest(f, campaign.id, headers, '[x](https://example.com/a\n"Titled")')
+  ).text();
+  expect(nextLine).toContain('<a href="https://example.com/a" title="Titled">x</a>');
+});
+
+/** The first line the child writes to stdout. */
+async function firstLine(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("\n")) {
+    const { value, done } = await reader.read();
+    if (done) throw new Error("served fixture exited before it was ready");
+    text += decoder.decode(value, { stream: true });
+  }
+  reader.releaseLock();
+  return text.slice(0, text.indexOf("\n"));
+}
