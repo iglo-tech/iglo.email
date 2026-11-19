@@ -6,18 +6,19 @@ import { Lexer, Parser, type MarkedOptions } from "marked";
 const OUTPUT_LIMIT = 1024 * 1024;
 const MAX_DEPTH = 32;
 /**
- * Work units approximate time, about 5 ns each, so the limit is about 200 ms of worst-case work. The patched
+ * Work units approximate time, about 5 ns each. The limit is 36 M, so the worst refusal measured in the
+ * container (an emphasis run expanded to 1 MiB) takes about 285 ms (B105 r1, D112). The patched
  * marked charges each character it consumes 1, each token 800 (a block token, or an inline token that starts
- * with a special character) or 200 (plain text), each emphasis closer exec 600, and each scan that can run
+ * with a special character) or 200 (plain text), each emphasis closer exec 1500 (and 12 per character it examines, after an opener's first 12 per character of the remaining paragraph), and each scan that can run
  * past its own token at its regex cost: a lazy heading scan 64 per character, an emphasis opener 8, a failed
  * link, code span or strikethrough 8, 8 and 40 per character, a paragraph window 400 per line. See D112.
  */
-const WORK_LIMIT = 40_000_000;
+const WORK_LIMIT = 36_000_000;
 const TOKEN_UNITS = 800;
-/** Upper bound on the tag bytes marked writes around each token, by type (marked 15 renderer). A list item
- * may carry a task checkbox; a table cell (an object without a type) is `<th align="...">` plus its close. */
+/** Upper bound on the tag bytes marked writes around each token, by type (marked 15 renderer). A table cell
+ * (an object without a type) is `<th align="...">` plus its close. A task item's checkbox is TASK_CHECKBOX. */
 const WRAP: Readonly<Record<string, number>> = {
-  list_item: 56,
+  list_item: 16,
   paragraph: 8,
   heading: 12,
   hr: 8,
@@ -40,6 +41,8 @@ const WRAP: Readonly<Record<string, number>> = {
 };
 const WRAP_OTHER = 64;
 const WRAP_CELL = 32;
+/** `<input checked="" disabled="" type="checkbox">` (46 bytes), its separating space and a margin. */
+const TASK_CHECKBOX = 64;
 const bytes = (value: string) => Buffer.byteLength(value, "utf8");
 
 export interface MarkdownBudget {
@@ -81,6 +84,17 @@ function escaped(value: string): number {
   return total;
 }
 
+/** The raw bytes of every text string in a token subtree. */
+function leafBytes(value: unknown): number {
+  if (Array.isArray(value))
+    return value.reduce((total: number, item) => total + leafBytes(item), 0);
+  if (!value || typeof value !== "object") return 0;
+  const token = value as Record<string, unknown>;
+  let total = typeof token.text === "string" ? bytes(token.text) : 0;
+  for (const key of ["tokens", "items", "header", "rows"]) total += leafBytes(token[key]);
+  return total;
+}
+
 /**
  * Upper bound on the bytes marked emits, computed once per token (no prefix sums). Text and titles
  * are escaped (at most `&amp;`/`&quot;`-sized expansion per special character), hrefs are
@@ -103,12 +117,20 @@ function reserve(tokens: unknown[], budget: MarkdownBudget): void {
     const type = token.type;
     let upper =
       typeof type === "string" ? (Object.hasOwn(WRAP, type) ? WRAP[type]! : WRAP_OTHER) : WRAP_CELL;
+    // A task item's checkbox is written into its first child after this reserve (the renderer mutates
+    // the tokens), so each task item reserves its checkbox here.
+    if (token.task === true) upper += TASK_CHECKBOX;
     if (type === "html") {
       if (typeof token.text === "string") upper += bytes(token.text);
     } else {
       // A token with children emits them, not its own raw text; a leaf emits its text escaped.
       if (typeof token.text === "string" && !Array.isArray(token.tokens))
         upper += escaped(token.text);
+      // A block text token in a loose list item is written as a paragraph.
+      if (type === "text" && Array.isArray(token.tokens)) upper += WRAP.paragraph!;
+      // Image alternative text is the plain text of its children, written through the text renderer,
+      // whose escapes can print more than the raw text they came from. Bound it by six bytes per byte.
+      if (type === "image" && Array.isArray(token.tokens)) upper += 6 * leafBytes(token.tokens);
       if (typeof token.href === "string") upper += encoded(token.href);
       for (const key of ["title", "lang", "align"]) {
         const item = token[key];

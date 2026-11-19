@@ -5,7 +5,7 @@
 //                                                                characters over ENUM_ALPHABET; prints units over 100 ms
 //   bun test/templates/measure-markdown.ts --normal <KiB> <runs> median render time of an ordinary campaign body
 //   bun test/templates/measure-markdown.ts --news <KiB> <runs>  B105 newsletter (test/templates/markdown-newsletter.ts) as a
-//                                                                campaign body: median time, output bytes, work units
+//                                                                Markdown body: median time, output bytes, work units
 import { createRealClock } from "@/clock";
 import { createTranslation } from "@/i18n/i18n";
 import { createRenderer } from "@/templates/renderer";
@@ -151,8 +151,8 @@ if (mode === "--one") {
     `normal ${kib} KiB (${outcome}), ${runs} runs: median ${samples[Math.floor(runs / 2)]!.toFixed(2)} ms, min ${samples[0]!.toFixed(2)} ms`,
   );
 } else if (mode === "--news") {
-  // B105: the newsletter as a campaign body (compile with campaign: true), the median of <runs> renders,
-  // with the Markdown work units its render charges (measured by a counting budget with the same limit).
+  // B105: the newsletter as a Markdown body (at most 64 KiB, D54), the median of <runs> renders, with the
+  // Markdown work units its render charges (measured by a counting budget with the same limit).
   const kib = Number(Bun.argv[3]);
   const runs = Number(Bun.argv[4]);
   const { source, last } = newsletter(kib);
@@ -160,9 +160,11 @@ if (mode === "--one") {
   let bytes = 0;
   for (let i = 0; i < runs; i++) {
     const started = performance.now();
-    const { body } = createRenderer(createRealClock(), createTranslation())
-      .compile({ body: source, mode: "markdown", campaign: true })
-      .renderSync("{}");
+    const { body } = await createRenderer(createRealClock(), createTranslation()).render({
+      body: source,
+      data: "{}",
+      mode: "markdown",
+    });
     samples.push(performance.now() - started);
     bytes = Buffer.byteLength(body);
   }

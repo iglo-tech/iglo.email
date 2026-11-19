@@ -83,12 +83,11 @@ test("request and source bounds are enforced before any write", async () => {
     body: "x".repeat(3 * 1024 * 1024),
   });
   expect(big.status).toBe(413);
-  // A campaign body may be up to 256 KiB (D112); a byte more is refused before any write.
   const source = await f.json("/api/campaigns", "POST", {
     name: "source",
     subject: "s",
     lists: [news],
-    body: "x".repeat(256 * 1024 + 1),
+    body: "x".repeat(70 * 1024),
   });
   expect(source.status).toBe(400);
   expect(source.body.message).toBe("Error compiling campaign body: invalid body");
