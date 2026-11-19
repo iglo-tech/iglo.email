@@ -387,8 +387,21 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   // Waits for a sink or store condition, advancing the injected clock by `step` per unmet check. The
   // wait is bounded by real time, not by an iteration count: an iteration costs microseconds, so a
   // count ends a wait that needs real I/O early (test/wait.ts, docs/perf/B49-drive-bound.md).
+  // A timeout names the progress made: messages at the sink, the clock, and sends by status. A wait
+  // that timed out under host load shows progress here; a stall shows the same counts unchanged.
   const drive = (done: () => boolean | Promise<boolean>, step = 50) =>
-    waitWall(done, { label: "drive", advance: (ms) => clock.advance(ms), step });
+    waitWall(done, {
+      label: "drive",
+      advance: (ms) => clock.advance(ms),
+      step,
+      describe: () => {
+        const rows = db
+          .query("SELECT status, COUNT(*) AS n FROM sends GROUP BY status ORDER BY status")
+          .all() as { status: string; n: number }[];
+        const sends = rows.map((row) => `${row.status} ${row.n}`).join(", ") || "none";
+        return `sink messages ${sink.messages.length}; clock ${clock.now().toISOString()}; sends ${sends}`;
+      },
+    });
 
   return {
     app,

@@ -192,7 +192,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
       strictFilters: true,
       ownPropertyOnly: true,
       parseLimit: SOURCE_LIMIT,
-      renderLimit: 1000,
       memoryLimit: TOTAL_LIMIT,
       globals: Object.create(null),
       locale: "en-US",
@@ -362,7 +361,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
       try {
         for (const template of templates) {
           b.step();
-          ctx.renderLimit.check(performance.now());
           const value: unknown = yield template.render(ctx, out);
           if (value) out.write(value);
           if (ctx.breakCalled || ctx.continueCalled) break;
@@ -459,7 +457,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
       };
       bounded.igloBudgetStep = () => {
         b.step();
-        ctx.renderLimit.check(performance.now());
       };
       bounded.igloBudgetRange = (size) => b.step(size);
       bounded.igloBudgetFilter = (name, count) => {

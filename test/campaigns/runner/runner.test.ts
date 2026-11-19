@@ -599,11 +599,14 @@ test("tracked links personalized per subscriber do not accumulate across batches
   };
   let first = 0;
   // Settle everything but the last message, measuring after the first few batches.
-  // Wall bound 60 s, and a 90 s test timeout (below). The drive is CPU-bound: every batch renders
-  // 20 messages, each with 8 tracked links of 7 KB and one link row per distinct URL. On this host
-  // the 300 messages take about 2.7 s (B101 profile, ~9 ms per message). With four busy workers
-  // on the arm64 runner the same drive ran 15-19 s and hit the old 15 s bound at 260-295 of 300
-  // (B101 stress runs). 60 s is more than 3x that. A stalled campaign still fails, with its state.
+  // The drive does not step the injected clock. Nothing this test asserts needs time, and a step
+  // per iteration tied fake time to how many iterations a slow host needed (the failed v1.3.0
+  // release run's clock had moved 27 h when its 60 s wall bound ended the drive). The wall bound
+  // is real time only, for the CPU-bound renders: 20 messages per batch, each with 8 tracked links
+  // of 7 KB and one link row per distinct URL. The 300 messages take about 2.7 s on the B101
+  // profile host, 14 s in the full suite on four CPUs and 16 s on two (B103 runs). 60 s is more
+  // than 3x the slowest of those, and a 90 s test timeout is below. A stalled campaign still fails,
+  // with its state.
   await f.drive(
     () => {
       if (f.pushes.length >= 60 && !first) first = heap();
@@ -611,7 +614,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
       for (const push of f.pushes) push.settle();
       return false;
     },
-    10,
+    0,
     undefined,
     60_000,
   );
