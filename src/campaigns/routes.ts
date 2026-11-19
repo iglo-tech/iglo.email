@@ -17,6 +17,7 @@ import { getID, hasID } from "@/server/validation";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { TemplateRenderer } from "@/templates/renderer";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
+import { MarkdownSourceError } from "@/templates/markdown";
 import type { TemplateStore } from "@/templates/store";
 import type { Tracking } from "@/unsubscribe/tracking";
 import type { Authentication } from "@/users/auth";
@@ -294,6 +295,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     if (error instanceof HttpError) throw error;
     if (error instanceof RenderCapacityError)
       throw new HttpError(429, "Too many template renders in progress.");
+    // The Markdown size cap (D112) is a clear 400 with its own message, as on test send and send.
+    if (error instanceof MarkdownSourceError)
+      throw new HttpError(400, t(context).Ts(key, "error", error.message));
     throw new HttpError(
       400,
       t(context).Ts(
@@ -731,6 +735,11 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       const sendError = (error: unknown): never => {
         if (error instanceof RenderCapacityError)
           throw new HttpError(429, "Too many template renders in progress.");
+        if (error instanceof MarkdownSourceError)
+          throw new HttpError(
+            400,
+            t(context).Ts("campaigns.errorSendTest", "error", error.message),
+          );
         throw new HttpError(
           500,
           t(context).Ts(

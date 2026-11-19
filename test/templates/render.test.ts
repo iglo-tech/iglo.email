@@ -689,13 +689,14 @@ test("Markdown bounds repeated reference URLs and accepts ordinary tables and qu
   ).toBe(400);
 });
 
-test("Markdown stage accepts the exact UTF-8 output bound and rejects one byte past", async () => {
+test("Markdown stage accepts a source of exactly 128 KiB after expansion and rejects one byte past", async () => {
+  // D112: the expanded Markdown source is capped at 128 KiB, checked before marked sees it.
   const call = caller();
-  const body = "<div>{% for i in (1..15) %}{{ x | raw }}{% endfor %}{{ y | raw }}</div>";
+  const body = "<div>{{ x | raw }}{{ y | raw }}</div>";
   const data = { x: "a".repeat(65536), y: "a".repeat(65525) };
   const exact = await call(body, data, "markdown");
   expect(exact.status).toBe(200);
-  expect(Buffer.byteLength(await exact.text())).toBe(1024 * 1024);
+  expect(Buffer.byteLength(await exact.text())).toBe(128 * 1024);
   expect((await call(body, { ...data, y: data.y + "a" }, "markdown")).status).toBe(400);
 });
 

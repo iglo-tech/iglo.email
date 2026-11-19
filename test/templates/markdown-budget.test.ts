@@ -19,13 +19,22 @@ test.each([4, 16, 64])("a %i KiB newsletter renders as Markdown", async (kib) =>
   expect(body).toContain(`<h2>Story ${last}: a headline`);
 });
 
-test("Markdown whose output would pass the 1 MiB output limit is refused", async () => {
-  // 1 MiB of quotes from a Liquid loop (the loop's output is exactly the limit); each quote becomes
-  // `&quot;` in the Markdown output, so the reserved output is six times larger.
-  const body = "{% for i in (1..1024) %}" + '"'.repeat(1024) + "{% endfor %}";
+// B105 r2 (D112): the Markdown source after Liquid expansion is capped at 128 KiB. The check runs before
+// marked sees the source, so an expansion above the cap is refused at once, with the same message on
+// preview, test send and send.
+test("a Markdown source just over 128 KiB after expansion is refused before it is parsed", async () => {
+  const body = "x\n{% for i in (1..129) %}" + "a".repeat(1024) + "{% endfor %}";
+  const started = performance.now();
   await expect(renderer().render({ body, data: "{}", mode: "markdown" })).rejects.toThrow(
-    "Markdown output limit",
+    "Markdown is larger than 128 KiB after template expansion",
   );
+  expect(performance.now() - started).toBeLessThan(1000);
+});
+
+test("a Markdown source of exactly 128 KiB after expansion is not refused by the size bound", async () => {
+  const body = "{% for i in (1..128) %}" + "a".repeat(1024) + "{% endfor %}";
+  const { body: html } = await renderer().render({ body, data: "{}", mode: "markdown" });
+  expect(html).toContain("<p>" + "a".repeat(1024));
 });
 
 test("a 64 KiB block shape is refused by the work budget within a second", async () => {

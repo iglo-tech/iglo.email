@@ -5,6 +5,7 @@ import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 import { readTemplateBody, templateInput } from "@/templates/input";
+import { MarkdownSourceError } from "@/templates/markdown";
 import {
   TemplateError,
   type TemplateRow,
@@ -173,6 +174,11 @@ export function registerTemplateRoutes(
         );
       if (error instanceof RenderCapacityError)
         throw new HttpError(429, "Too many template renders in progress.");
+      if (error instanceof MarkdownSourceError)
+        throw new HttpError(
+          400,
+          context.app.i18n.Ts("templates.errorRendering", "error", error.message),
+        );
       throw new HttpError(
         400,
         context.app.i18n.Ts("templates.errorRendering", "error", "invalid template"),

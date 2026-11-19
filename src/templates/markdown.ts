@@ -6,15 +6,29 @@ import { Lexer, Parser, type MarkedOptions } from "marked";
 const OUTPUT_LIMIT = 1024 * 1024;
 const MAX_DEPTH = 32;
 /**
- * Work units approximate time, about 5 ns each. The limit is 36 M, so the worst refusal measured in the
- * container (an emphasis run expanded to 1 MiB) takes about 285 ms (B105 r1, D112). The patched
- * marked charges each character it consumes 1, each token 800 (a block token, or an inline token that starts
- * with a special character) or 200 (plain text), each emphasis closer exec 1500 (and 12 per character it examines, after an opener's first 12 per character of the remaining paragraph), and each scan that can run
- * past its own token at its regex cost: a lazy heading scan 64 per character, an emphasis opener 8, a failed
- * link, code span or strikethrough 8, 8 and 40 per character, a paragraph window 400 per line. See D112.
+ * The Markdown source after Liquid expansion, in UTF-8 bytes (D112, B105 r2). It is checked before marked
+ * sees the source, so an expansion above it is refused at once.
+ */
+export const MARKDOWN_SOURCE_LIMIT = 128 * 1024;
+/**
+ * Work units approximate time, about 5 ns each. The patched marked charges what each scan consumed, after
+ * the scan (a character 1, a block-level character 20, a line 400 more); a closer search 30 per character it
+ * examines; a token 800 (a block token, or an inline token that starts with a special character) or 200
+ * (plain text); each emphasis closer exec 1500; and a scan that can run past its token at its regex cost (a
+ * lazy heading scan 64 per character, an emphasis opener 8, a failed link, code span or strikethrough 8, 8
+ * and 40 per character, a blockquote window 16). Some scans are checked, not charged, before they run
+ * (`check`): an emphasis closer search (30 per remaining character) and a blockquote attempt (16 per window
+ * character), so a scan that the budget cannot cover is refused before it runs. See D112.
  */
 const WORK_LIMIT = 36_000_000;
 const TOKEN_UNITS = 800;
+
+/** A Markdown source above MARKDOWN_SOURCE_LIMIT after template expansion (D112). */
+export class MarkdownSourceError extends Error {
+  constructor() {
+    super("Markdown is larger than 128 KiB after template expansion");
+  }
+}
 /** Upper bound on the tag bytes marked writes around each token, by type (marked 15 renderer). A table cell
  * (an object without a type) is `<th align="...">` plus its close. A task item's checkbox is TASK_CHECKBOX. */
 const WRAP: Readonly<Record<string, number>> = {
@@ -50,6 +64,8 @@ export interface MarkdownBudget {
   charge(bytes: number): void;
   step(units?: number): void;
   scan(units: number): void;
+  /** Throws if `units` more work would exceed the limit; charges nothing. */
+  check(units: number): void;
   depth: number;
 }
 
@@ -64,6 +80,10 @@ export function createMarkdownBudget(charge: (bytes: number) => void): MarkdownB
     charge,
     step: (units = 1) => add(units),
     scan: add,
+    check: (units: number) => {
+      if (!Number.isSafeInteger(units) || units < 0 || work + units > WORK_LIMIT)
+        throw new Error("Work limit");
+    },
     depth: 0,
   };
 }
@@ -150,6 +170,8 @@ function reserve(tokens: unknown[], budget: MarkdownBudget): void {
 }
 
 export function renderMarkdown(source: string, budget: MarkdownBudget): string {
+  // Checked before marked sees the source: an expansion above the cap is refused at once (D112).
+  if (bytes(source) > MARKDOWN_SOURCE_LIMIT) throw new MarkdownSourceError();
   const options = {
     gfm: true,
     igloBudget: {
@@ -166,6 +188,9 @@ export function renderMarkdown(source: string, budget: MarkdownBudget): string {
       },
       scan(count: number) {
         budget.scan(count);
+      },
+      check(count: number) {
+        budget.check(count);
       },
       copy(text: string) {
         budget.charge(bytes(text));
