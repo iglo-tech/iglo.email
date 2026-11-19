@@ -26,7 +26,7 @@ The harness labels and removes its own containers and volumes; touch no other Do
 
 ## Rules
 
-- Create and modify files (probes, scripts, notes included) with the Write/Edit tools, never shell redirects, heredocs or `tee`: those can stop on a permission prompt nobody can answer (B105 r1 stalled 30 min).
+- Create and modify files (probes, scripts, notes included) with the Write/Edit tools, never shell redirects, heredocs or `tee`, and keep scratch files inside your own session scratchpad directory, not arbitrary `/tmp` or `/private/tmp` paths: both can stop on a permission prompt nobody can answer (B105 reviewer stalled 30 min, B105 worker again).
 
 - AGENTS.md applies. Read your brief, then only the design sections it names.
 - **Test first**, through public boundaries: the HTTP API, the MCP endpoint, SMTP sink mail, rendered pages, the CLI/executable, loops with an injected clock. Use the existing fixtures in the test directories your brief names.
