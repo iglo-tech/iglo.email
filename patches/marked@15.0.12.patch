@@ -147,7 +147,7 @@ index e1a467e..fb37961 100644
 +    if (!cap) {
        return;
      }
-+    this.options.igloBudget?.scan(cap[0].length);
++    this.options.igloBudget?.scan(40 * cap[0].length);
      const headers = splitCells(cap[1]);
      const aligns = cap[2].replace(this.rules.other.tableAlignChars, "").split("|");
      const rows = cap[3]?.trim() ? cap[3].replace(this.rules.other.tableRowBlankLine, "").split("\n") : [];
