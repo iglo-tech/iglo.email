@@ -1,4 +1,4 @@
-// D110: a render is bounded by the deterministic D54 budgets, never by the wall clock. The clock
+// D110: a Liquid render is bounded by the deterministic D54 budgets, never by the wall clock. The clock
 // is stubbed here so that every reading is 600 ms later than the last: a render that reads it a
 // few times must still complete, as it does on a host whose CPU is starved for a second.
 import { afterEach, expect, spyOn, test } from "bun:test";

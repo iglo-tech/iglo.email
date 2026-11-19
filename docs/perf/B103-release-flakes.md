@@ -152,8 +152,7 @@ buffers was never wrong in any run.
 ### Change
 
 `carriedBuffers` counts distinct buffers by identity (a `WeakSet`, so it keeps nothing alive). A
-buffer handed to a message counts once. A cache hit repeats a buffer, so it adds nothing, and a second
-read within one batch adds one. The eviction test now asserts six distinct buffers (one read per batch of
+buffer handed to a message counts once. A cache hit repeats a buffer, so it adds nothing. The eviction test now asserts six distinct buffers (one read per batch of
 two alternating 8 MiB files under a 9 MiB budget), checked while the sixth send is held. After the
 campaigns finish, the test asserts that each campaign sent all three of its messages. The held check is
 a read count: it shows each batch read its file, which is eviction and re-read. It does not show that
