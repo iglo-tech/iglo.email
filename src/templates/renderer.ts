@@ -13,7 +13,7 @@ import {
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData, type TemplateData } from "@/templates/data";
-import { renderMarkdown } from "@/templates/markdown";
+import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 
 const SOURCE_LIMIT = 64 * 1024;
 const OUTPUT_LIMIT = 1024 * 1024;
@@ -548,7 +548,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
     };
     let subject = run(request.subject ?? "", false, SUBJECT_LIMIT, compiled?.subject);
     let body = run(request.body, request.mode !== "plain", OUTPUT_LIMIT, compiled?.body);
-    if (request.mode === "markdown") body = renderMarkdown(body, b);
+    if (request.mode === "markdown")
+      body = renderMarkdown(
+        body,
+        createMarkdownBudget((n) => b.charge(n)),
+      );
     if (request.layout !== undefined) {
       data.content = body;
       body = run(request.layout, request.mode !== "plain", OUTPUT_LIMIT, compiled?.layout);

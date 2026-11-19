@@ -29,46 +29,58 @@ function previewRequest(
   });
 }
 
-test("a GET sent while an 8 KiB preview renders answers within a second of being sent", async () => {
+// B105 (D112): five concurrent previews of block shapes that were the slowest in the B104 review. The
+// served fixture renders them on its one thread, so a read sent after them waits for each; the read is
+// timed from before the previews are sent, and its answer must come within a second of that.
+test("five concurrent 64 KiB previews leave a read sent after them answering within a second", async () => {
   const child = Bun.spawn(
     [process.execPath, new URL("./markdown-serve.ts", import.meta.url).pathname],
-    {
-      stdout: "pipe",
-      stderr: "pipe",
-    },
+    { stdout: "pipe", stderr: "pipe" },
   );
+  const logged = new Response(child.stderr).text();
   try {
     const ready = JSON.parse(await firstLine(child.stdout)) as {
       origin: string;
       campaign: number;
       headers: Record<string, string>;
     };
-    const previewing = fetch(`${ready.origin}/api/campaigns/${ready.campaign}/preview`, {
-      method: "POST",
-      headers: { ...ready.headers, "content-type": "application/x-www-form-urlencoded" },
-      body: previewForm(repeat("[](", 8192)),
-    });
-    // The preview is rendering (or about to) when this read is sent.
-    await Bun.sleep(5);
-    const sentAt = performance.now();
+    const shapes = ["|\n-\n", "a\n***\n", "__+", "[\n-\n"];
+    const started = performance.now();
+    const previews = Array.from({ length: 5 }, (_, i) =>
+      fetch(`${ready.origin}/api/campaigns/${ready.campaign}/preview`, {
+        method: "POST",
+        headers: { ...ready.headers, "content-type": "application/x-www-form-urlencoded" },
+        body: previewForm(repeat(shapes[i % shapes.length]!, 64 * 1024)),
+      }),
+    );
     const read = await fetch(`${ready.origin}/api/campaigns/${ready.campaign}`, {
       headers: ready.headers,
     });
-    const readMs = performance.now() - sentAt;
+    const readMs = performance.now() - started;
     await read.text();
-    const previewed = await previewing;
-    expect(previewed.status).toBe(400);
+    const statuses = (await Promise.all(previews)).map((r) => r.status);
+    expect(statuses.every((code) => code === 200 || code === 400)).toBe(true);
     expect(read.status).toBe(200);
     expect(readMs).toBeLessThan(1000);
   } finally {
     child.kill();
     await child.exited;
+    const stderr = await logged;
+    expect(stderr, "served fixture stderr").toBe("");
   }
 }, 120_000);
 
 // One pathological family per link, image, reference, title and emphasis shape that marked scans.
 const families: Record<string, string> = {
   "empty link": "[](",
+  "block pipe": "|\n-\n",
+  "block angle": "<\n-\n",
+  "block dashes": "--\n",
+  "block rule run": "a\n***\n",
+  "block quote run": ">=\n",
+  "emphasis run": "__+",
+  "tilde run": "w ~",
+  "table row run": "|a|\n",
   destination: "[x](y",
   "spaced destination": "[x]( ",
   "glued quote": '[x](y"',
@@ -100,6 +112,25 @@ test.each(Object.entries(families))(
     expect([200, 400]).toContain(response.status);
   },
 );
+
+// B105: reference links are searched only when a definition exists; the search must be charged.
+test("a 64 KiB escaped-bracket run with a link definition answers within a second", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  const campaign = await f.campaign({ name: "md", subject: "s", lists: [news] });
+  const headers = await readerSession(
+    f,
+    "reflink-reader",
+    ["campaigns:get"],
+    [{ id: news, permissions: ["list:get"] }],
+  );
+  const started = performance.now();
+  const body = "[a]: /u\n\n" + repeat("\\[", 64 * 1024);
+  const response = await previewRequest(f, campaign.id, headers, body);
+  await response.text();
+  expect(performance.now() - started).toBeLessThan(1000);
+  expect([200, 400]).toContain(response.status);
+});
 
 test("a 64 KiB content conversion of link openers is refused within a second", async () => {
   const f = await open();

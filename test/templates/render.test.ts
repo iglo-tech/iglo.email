@@ -651,7 +651,9 @@ test("Markdown runs after Liquid and composes once through a layout", async () =
   ).toContain("<b><i>raw</i></b>");
 });
 
-test("Markdown charges repeated reference URLs, images, tables and nested output", async () => {
+// B105 (D112): the output bound charges each repeated reference URL, so 40 uses of a 40 KB URL (1.6 MB
+// of output) are refused. Ordinary-size tables, wide rows and quotes fit the bounds and render.
+test("Markdown bounds repeated reference URLs and accepts ordinary tables and quotes", async () => {
   const call = caller();
   const reference = `[ref]: https://example.invalid/${"x".repeat(40000)}\n\n`;
   expect((await call(reference + "[x][ref] ".repeat(40), {}, "markdown")).status).toBe(400);
@@ -663,10 +665,10 @@ test("Markdown charges repeated reference URLs, images, tables and nested output
     "--- | ".repeat(100) +
     "\n" +
     ("| " + "v | ".repeat(100) + "\n").repeat(120);
-  expect((await call(table, {}, "markdown")).status).toBe(400);
+  expect((await call(table, {}, "markdown")).status).toBe(200);
   const wide = "|" + "h|".repeat(10001) + "\n|" + "- |".repeat(10001) + "\n";
-  expect((await call(wide, {}, "markdown")).status).toBe(400);
-  expect((await call("> x\n".repeat(10001), {}, "markdown")).status).toBe(400);
+  expect((await call(wide, {}, "markdown")).status).toBe(200);
+  expect((await call("> x\n".repeat(10001), {}, "markdown")).status).toBe(200);
   expect(
     (
       await call(
@@ -687,13 +689,14 @@ test("Markdown charges repeated reference URLs, images, tables and nested output
   ).toBe(400);
 });
 
-test("Markdown stage accepts the exact UTF-8 output bound and rejects one byte past", async () => {
+test("Markdown stage accepts a source of exactly 128 KiB after expansion and rejects one byte past", async () => {
+  // D112: the expanded Markdown source is capped at 128 KiB, checked before marked sees it.
   const call = caller();
-  const body = "<div>{% for i in (1..15) %}{{ x | raw }}{% endfor %}{{ y | raw }}</div>";
+  const body = "<div>{{ x | raw }}{{ y | raw }}</div>";
   const data = { x: "a".repeat(65536), y: "a".repeat(65525) };
   const exact = await call(body, data, "markdown");
   expect(exact.status).toBe(200);
-  expect(Buffer.byteLength(await exact.text())).toBe(1024 * 1024);
+  expect(Buffer.byteLength(await exact.text())).toBe(128 * 1024);
   expect((await call(body, { ...data, y: data.y + "a" }, "markdown")).status).toBe(400);
 });
 
