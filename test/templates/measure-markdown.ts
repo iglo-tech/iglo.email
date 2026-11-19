@@ -4,9 +4,13 @@
 //   bun test/templates/measure-markdown.ts --enum <KiB> <length> every repeating unit of up to <length>
 //                                                                characters over ENUM_ALPHABET; prints units over 100 ms
 //   bun test/templates/measure-markdown.ts --normal <KiB> <runs> median render time of an ordinary campaign body
+//   bun test/templates/measure-markdown.ts --news <KiB> <runs>  B105 newsletter (test/templates/markdown-newsletter.ts) as a
+//                                                                campaign body: median time, output bytes, work units
 import { createRealClock } from "@/clock";
 import { createTranslation } from "@/i18n/i18n";
 import { createRenderer } from "@/templates/renderer";
+import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
+import { newsletter } from "@/test/templates/markdown-newsletter";
 
 /** Each family repeats its unit until the source reaches the requested size. */
 export const families: Record<string, string> = {
@@ -46,6 +50,32 @@ export const families: Record<string, string> = {
   "table-row": "|a|\n",
   blockquote: "> [",
   "list-link": "- [x](",
+  // B105: block-level shapes (each paragraph line followed by a delimiter-like line) found in B104 review
+  "block-pipe": "|\n-\n",
+  "block-pipe-space": " |\n-\n",
+  "block-pipe-dashes": "|\n--\n",
+  "block-pipes": "||\n-\n",
+  "block-pipe-colon": "|:\n-\n",
+  "block-angle": "<\n-\n",
+  "block-backtick": "`\n-\n",
+  "block-bracket": "[\n-\n",
+  "block-underscore": "_\n-\n",
+  "block-bang": "!\n-\n",
+  "block-backslash": "\\\n-\n",
+  "block-a-dashes": "a\n--\n",
+  "block-dashes": "--\n",
+  "block-newline-dashes": "\n--",
+  "block-dash-dash": "-\n-",
+  "block-rule-run": "a\n***\n",
+  // B105: reference links, with a definition in front (reflinkSearch runs only when one exists)
+  "reflink-escape": "\\[",
+  "emphasis-run": "__+",
+  "tilde-run": "w ~",
+  "table-row-run": "|a|\n",
+};
+// Families that need a prefix (B105): the prefix is written once, the unit repeats after it.
+export const prefixes: Record<string, string> = {
+  "reflink-escape": "[a]: /u\n\n",
 };
 
 export const sizesKiB = [1, 2, 4, 8, 16, 32, 64];
@@ -54,7 +84,9 @@ const TIMEOUT_MS = 8_000;
 export function source(family: string, kib: number): string {
   const unit = families[family];
   if (unit === undefined) throw new Error(`unknown family ${family}`);
-  return unit.repeat(Math.ceil((kib * 1024) / unit.length)).slice(0, kib * 1024);
+  const prefix = prefixes[family] ?? "";
+  const body = unit.repeat(Math.ceil((kib * 1024 - prefix.length) / unit.length));
+  return (prefix + body).slice(0, kib * 1024);
 }
 
 const renderer = () => createRenderer(createRealClock(), createTranslation());
@@ -117,6 +149,39 @@ if (mode === "--one") {
   samples.sort((a, b) => a - b);
   console.log(
     `normal ${kib} KiB (${outcome}), ${runs} runs: median ${samples[Math.floor(runs / 2)]!.toFixed(2)} ms, min ${samples[0]!.toFixed(2)} ms`,
+  );
+} else if (mode === "--news") {
+  // B105: the newsletter as a campaign body (compile with campaign: true), the median of <runs> renders,
+  // with the Markdown work units its render charges (measured by a counting budget with the same limit).
+  const kib = Number(Bun.argv[3]);
+  const runs = Number(Bun.argv[4]);
+  const { source, last } = newsletter(kib);
+  const samples: number[] = [];
+  let bytes = 0;
+  for (let i = 0; i < runs; i++) {
+    const started = performance.now();
+    const { body } = createRenderer(createRealClock(), createTranslation())
+      .compile({ body: source, mode: "markdown", campaign: true })
+      .renderSync("{}");
+    samples.push(performance.now() - started);
+    bytes = Buffer.byteLength(body);
+  }
+  samples.sort((a, b) => a - b);
+  let units = 0;
+  const budget = createMarkdownBudget(() => {});
+  const scan = budget.scan;
+  const step = budget.step;
+  budget.scan = (n: number) => {
+    units += n;
+    scan(n);
+  };
+  budget.step = (n = 1) => {
+    units += n;
+    step(n);
+  };
+  renderMarkdown(source, budget);
+  console.log(
+    `news ${kib}KiB src=${Buffer.byteLength(source)} stories=${last} html=${bytes}: median ${samples[Math.floor(runs / 2)]!.toFixed(1)} ms, min ${samples[0]!.toFixed(1)} ms, ${(units / 1e6).toFixed(1)} M units`,
   );
 } else if (mode === undefined || mode === "") {
   for (const family of Object.keys(families)) {

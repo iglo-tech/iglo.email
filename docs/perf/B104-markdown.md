@@ -94,7 +94,7 @@ Every case refuses or succeeds within the budget, and none is clock-dependent. T
 
 B104 bounds the inline link-title scan only (D111). The numbers above show that scan linear per attempt, and the enumeration rows show it bounded for every unit tried. Three costs predate this branch and are not changed here; they are tracked in B105/D112:
 
-- **Block-level repetitions** (`--` lines, setext underlines and rules) rescan the remaining input per block token inside marked's paragraph rule. Unbudgeted, `--\n` at 64 KiB takes 56 s; the existing budget stops it at about 0.7 s per 64 KiB request. marked 17.0.6 and 18.2.1 take 31–35 s on the same input.
+- **Block-level repetitions** (`--` lines, setext underlines and rules) rescan the remaining input per block token inside marked's paragraph rule. Unbudgeted, `--\n` at 64 KiB takes 56 s; the budget then stopped it at about 0.7 s per 64 KiB request on this host. In the Linux arm64 container the block shapes took 1.2 to 4.1 s per request on origin/main (`|\n-\n` at 16 KiB: 4.05 s, PR #156 review), so the figure above is the macOS number, not the worst case. B105 removes the quadratic cost (see [B105](B105-markdown-cost.md)). marked 17.0.6 and 18.2.1 take 31–35 s on `--\n` at 64 KiB.
 - **The reflink scan** (`reflinkSearch`) runs once per inline text, outside the per-token charge.
 - **Ordinary bodies of about 4 KiB are refused** by the D54 reservation (`reserve()` in `src/templates/markdown.ts`), a documented conservative estimate that this branch does not change.
 

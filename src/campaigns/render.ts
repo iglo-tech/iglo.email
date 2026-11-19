@@ -72,6 +72,7 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
       body: c.body,
       subject: c.subject,
       mode: mode(c.content_type),
+      campaign: true,
       ...(layout === undefined ? {} : { layout }),
     }),
   ) as ReturnType<TemplateRenderer["compile"]>;

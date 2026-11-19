@@ -6,6 +6,7 @@ import { createRealClock } from "@/clock";
 import { createTranslation } from "@/i18n/i18n";
 import { createRenderer } from "@/templates/renderer";
 import { markdownCorpus } from "@/test/templates/markdown-corpus";
+import { newsletter } from "@/test/templates/markdown-newsletter";
 
 const pinned: string[] = [
   "1931c578fa1ff4dccd293ebfc73727ae126bd5a9b0f0ffbca01525aeb1d3d0fb 171",
@@ -56,4 +57,27 @@ test("ordinary Markdown renders exactly as it did before the link-scan fix", asy
     }
   }
   expect(actual).toEqual(pinned);
+});
+
+// B105 (D112): realistic newsletters of 4, 16, 64 and 256 KiB (the campaign path, which is where the
+// 256 KiB limit applies). Each line is the SHA-256 and byte length of the HTML this renderer produces;
+// the constructs and their differences from goldmark are listed in docs/perf/B105-markdown-cost.md.
+const newsletterPinned = [
+  ["4", "179337a65308a865dac3b0fe5e60cd1c5f1448ea174aac068d3f258846909b99", 5182],
+  ["16", "6082356751e98104d324c3c0bccc224039dbd7c95a870340cf70ce608dcfd3cc", 22282],
+  ["64", "26f2052d0dcdd88e235edeb62bb6c6f711ee1d540129cc4a8f9563793bb6a19e", 92759],
+  ["256", "71ada8efd3be1362a261a922a21a5b5558af82f109f679d00d090cc790c61da0", 374608],
+] as const;
+
+test("realistic newsletters render exactly as pinned, up to 256 KiB", () => {
+  const renderer = createRenderer(createRealClock(), createTranslation());
+  for (const [kib, sha, length] of newsletterPinned) {
+    const { source } = newsletter(Number(kib));
+    const { body } = renderer
+      .compile({ body: source, mode: "markdown", campaign: true })
+      .renderSync("{}");
+    expect([kib, createHash("sha256").update(body).digest("hex"), Buffer.byteLength(body)]).toEqual(
+      [kib, sha, length],
+    );
+  }
 });

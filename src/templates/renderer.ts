@@ -13,9 +13,11 @@ import {
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData, type TemplateData } from "@/templates/data";
-import { renderMarkdown } from "@/templates/markdown";
+import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 
 const SOURCE_LIMIT = 64 * 1024;
+/** Campaign bodies (D112): a newsletter of up to 256 KiB; template bodies and layouts keep SOURCE_LIMIT. */
+const CAMPAIGN_BODY_LIMIT = 256 * 1024;
 const OUTPUT_LIMIT = 1024 * 1024;
 const SUBJECT_LIMIT = 2048;
 const TOTAL_LIMIT = 4 * 1024 * 1024;
@@ -118,6 +120,8 @@ export interface RenderRequest {
   mode: "html" | "plain" | "markdown";
   data: string;
   transactional?: boolean;
+  /** The body is a campaign body: it may be up to CAMPAIGN_BODY_LIMIT (D112). */
+  campaign?: boolean;
 }
 /**
  * Per-message tracking supplied by the send owner (M2.4 src/unsubscribe). Without it
@@ -142,7 +146,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     if (!result) throw new Error("Missing budget");
     return result;
   };
-  function engine(html: boolean) {
+  function engine(html: boolean, parseLimit = SOURCE_LIMIT) {
     const operators = { ...defaultOperators };
     const chargeComparison = (value: unknown, b: Budget): number => {
       let cost = 1;
@@ -191,7 +195,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       templates: Object.create(null),
       strictFilters: true,
       ownPropertyOnly: true,
-      parseLimit: SOURCE_LIMIT,
+      parseLimit,
       memoryLimit: TOTAL_LIMIT,
       globals: Object.create(null),
       locale: "en-US",
@@ -374,9 +378,19 @@ export function createRenderer(clock: Clock, translation: Translation) {
   }
   const htmlEngine = engine(true);
   const plainEngine = engine(false);
-  function parse(source: string, html: boolean, limit = SOURCE_LIMIT) {
+  // Campaign bodies parse with engines whose parse limit is CAMPAIGN_BODY_LIMIT; rendering is the same.
+  const campaignHtmlEngine = engine(true, CAMPAIGN_BODY_LIMIT);
+  const campaignPlainEngine = engine(false, CAMPAIGN_BODY_LIMIT);
+  function parse(source: string, html: boolean, limit = SOURCE_LIMIT, campaign = false) {
     checkSource(source, limit);
-    return (html ? htmlEngine : plainEngine).parse(source);
+    const parser = campaign
+      ? html
+        ? campaignHtmlEngine
+        : campaignPlainEngine
+      : html
+        ? htmlEngine
+        : plainEngine;
+    return parser.parse(source);
   }
   function hasContent(templates: Template[]): boolean {
     for (const tpl of templates) {
@@ -548,7 +562,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
     };
     let subject = run(request.subject ?? "", false, SUBJECT_LIMIT, compiled?.subject);
     let body = run(request.body, request.mode !== "plain", OUTPUT_LIMIT, compiled?.body);
-    if (request.mode === "markdown") body = renderMarkdown(body, b);
+    if (request.mode === "markdown")
+      body = renderMarkdown(
+        body,
+        createMarkdownBudget((n) => b.charge(n)),
+      );
     if (request.layout !== undefined) {
       data.content = body;
       body = run(request.layout, request.mode !== "plain", OUTPUT_LIMIT, compiled?.layout);
@@ -600,9 +618,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
       ...(input.subject === undefined ? {} : { subject: input.subject }),
       ...(input.layout === undefined ? {} : { layout: input.layout }),
       ...(input.transactional === undefined ? {} : { transactional: input.transactional }),
+      ...(input.campaign === undefined ? {} : { campaign: input.campaign }),
     };
     const compiled: Compiled = {
-      body: parse(snapshot.body, snapshot.mode !== "plain"),
+      body: snapshot.campaign
+        ? parse(snapshot.body, snapshot.mode !== "plain", CAMPAIGN_BODY_LIMIT, true)
+        : parse(snapshot.body, snapshot.mode !== "plain"),
       subject: parse(snapshot.subject ?? "", false, SUBJECT_LIMIT),
       ...(snapshot.layout === undefined
         ? {}
