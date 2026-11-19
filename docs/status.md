@@ -193,6 +193,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
+- Sequence and transactional sends show a generic error when Markdown exceeds the 128 KiB post-Liquid cap (B105 r2 fixer); campaigns show the cap message.
+
 - Campaign consent skip is journaled `skipped` with no reason or log line and is not visible in the product (B103 fault injection).
 - Media: under parallel load one extra campaign attachment buffer stays reachable after GC; holder unidentified (product cache keeps only the newest in isolation; B103).
 
