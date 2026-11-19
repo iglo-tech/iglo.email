@@ -2,107 +2,95 @@
 
 Decision: [D112](../design/09-decisions.md#d112-markdown-cost-is-charged-in-characters-marked-scans-and-the-output-reserve-is-a-linear-upper-bound-lead-2026-11-19). Brief: [B105](../briefs/B105.md). Earlier notes: [B104](B104-markdown.md) (the link-title scan), [B103](B103-render-deadline.md) (the Liquid deadline, removed by D110).
 
-## Method
+## What this note measures, and at which head
 
-- **Host.** The owner's macOS workstation (Apple silicon, Bun 1.4.4), used for the timing study, with the load noted per run. These are not the acceptance numbers; the Linux arm64 container runs are the acceptance evidence (see the PR). Host load stayed between 1.5 and 3 during the runs.
-- **Renderer, 60 KiB, origin and head.** Each family and reviewer shape (`measure-markdown.ts`'s families, the B104 review's block shapes and the reference shape with a definition) renders as a template body (60 KiB, under the template source limit) through `createRenderer().render` with `mode: "markdown"`, the path previews and sends use. One child process per case, 15 s cap, `origin/main` in an export of its tree and head in the working tree.
-- **Production path, 1 MiB.** `renderMarkdown` with the production budget (`createMarkdownBudget`): the 1 MiB output limit for every family and definition variant, one child process per case. A body is at most 64 KiB, so these inputs are what a Liquid loop expands to (see the review section).
-- **Sweeps.** Every repeating unit of up to three characters over the 28-character alphabet `[]()!`*_<>"'~|:\ \n&#-.@w+=` (22,764 units; `measure-markdown.ts --enum 64 3` covers this method with its own alphabet); every unit of up to four characters over the 14 literal characters `|`-\n[]()*_> #` (41,370 units, `ENUM_ALPHABET` with `--enum 64 4`); and 3,000 random units of 1 to 8 characters over the 28-character alphabet. Each renders 64 KiB through the production budget. The random and fragment runs were scratch scripts and are not committed.
-- **Newsletters.** `test/templates/markdown-newsletter.ts`, one story per 1.2 KiB and every block kind an adapter sends, rendered as Markdown bodies through the render path previews use (at most 64 KiB, D54). Medians of 7 renders, as `measure-markdown.ts --news`.
+- **Code head:** `7ee9b37` (the table charge, the reviewer's five documents and D112). This note was committed after the measurements, so the note's own commit differs from `7ee9b37` only in this file; the code is identical.
+- **Container (acceptance):** `oven/bun:1.4.4` on Linux arm64, `--cpus=6`, a `git archive` export of `7ee9b37` with `bun install --frozen-lockfile` (the patch applies there). Load at the start and end of each run is recorded below.
+- **Host (macOS arm64, Bun 1.4.5):** only where noted; it is not the acceptance evidence.
+- **Re-measured for this head:** the 128 KiB HTTP set (every family, the marker-run matrix, the Liquid shapes, the 1000 KiB cap refusals, five concurrent previews), the reviewer's five documents and the 200-table document, the newsletters at 1, 4, 16 and 64 KiB, and the table density probe.
+- **Not re-run for this head** (round 1, kept for history and labelled as such): the before-and-after table at 60 KiB against origin, the 1 MiB production path, the character sweeps and fuzz, and the e6fbe3d review measurements. The table charge (below) changes only the full table pattern, so these numbers are from before it.
 
-## Before and after: the pathological shapes at 60 KiB
+## Round 2 over HTTP, every shape at exactly 128 KiB (container)
 
-Origin is `origin/main` through its own renderer. The times are the renderer's time to answer, including the refusal. Every case refuses on both (`Render limit` or `Work limit`, or `200` for the ones that are ordinary).
+The served fixture (`markdown-serve.ts`) runs in a child process and is driven over a socket. Each body is a Liquid loop expanded to exactly 128 KiB of Markdown (127 pieces of 1 KiB and a literal pad), so it is inside the cap. The statuses are 200 when the document renders and 400 when a Markdown budget refuses it (the generic `invalid template` message).
 
-| Case (60 KiB) | origin/main | head |
-|---|---:|---:|
-| `\|\n-\n` (block pipe) | 2381 ms, `Render limit` | 21 ms, `Work limit` |
-| `\|\n-\n` with a definition in front | 2328 ms, `Render limit` | 21 ms, `Work limit` |
-| ` \|\n-\n` | 2118 ms, `Render limit` | 26 ms, `Work limit` |
-| `<\n-\n` | 1462 ms, `Render limit` | 17 ms, `Work limit` |
-| `_\n-\n` | 1066 ms, `Render limit` | 16 ms, `Work limit` |
-| `a\n-\n` (setext run) | 1040 ms, `Render limit` | 16 ms, `Work limit` |
-| `` `\n-\n `` | 1038 ms, `Render limit` | 16 ms, `Work limit` |
-| `[\n-\n` | 1038 ms, `Render limit` | 17 ms, `Work limit` |
-| `a\n--\n` | 863 ms, `Render limit` | 21 ms, `Work limit` |
-| `--\n` | 746 ms, `Render limit` | 25 ms, `Work limit` |
-| `a\n***\n` (rule run) | 982 ms, `Work limit` | 133 ms, `Work limit` |
-| `>=\n` (quote run) | 13 ms, `Work limit` | 28 ms, `Work limit` |
-| `[](` (empty link) | 67 ms, `Work limit` | 28 ms, `Work limit` |
-| `![](` | 68 ms, `Work limit` | 28 ms, `Work limit` |
-| `w ~` (strikethrough) | 79 ms, `Work limit` | 11 ms, `Work limit` |
+| Group | Cases | Statuses | Slowest |
+|---|---:|---|---|
+| Every family (`measure-markdown.ts`'s list) | 56 | 200 or budget 400 | `block-pipe-dashes` **315 ms** (was 1,766 ms before the table charge); `block-rule-run` 176 ms |
+| Marker runs (13 markers × 4 contexts × 2 trailing) | 104 | 200 or budget 400 | `star` at the end of a paragraph 61 ms |
+| Liquid shapes (`markdown-liquid.test.ts`, 37) | 37 | 200 or budget 400 | `bullet then tilde` 181 ms; `numbered then code` 179 ms |
+| Shapes expanded to 1000 KiB | 37 | 400, cap message | 3 ms |
+| Reviewer's five documents and the 200-table document, at their own sizes | 6 | 200 | 16 ms (the table document) |
+| Five concurrent 128 KiB previews, a read sent after them (3 runs) | 3 | read 200 | read 281 to 298 ms (limit 1,000) |
 
-The largest origin time is 2381 ms and the largest head time is 133 ms, over 132 cases with definitions and without. Head's slowest case is the rule run (133 ms); the next slowest is 28 ms.
+The slowest case is `block-pipe-dashes` at 315 ms, 15 ms above the 300 ms target. The next slowest is 181 ms. Load: 0.08 at the start and 0.30 at the end (1-minute average).
 
-## Production path at 1 MiB (head)
+## Documents that must render
 
-114 runs (57 families, each with and without a definition), each 1 MiB through `renderMarkdown` with the production budget:
+The reviewer's five documents (round 2 review), rebuilt at their stated line counts (`test/campaigns/markdown-ordinary.test.ts`): each is posted as a preview and sent by a campaign to two subscribers.
 
-- 106 refused by the work limit, 4 by the output bound, 4 rendered in 4 ms or less (backtick runs and HTML comments, whose inline output is one raw run);
-- slowest refusal: `~` runs 109 ms; `a\n***\n` 87 ms; `_` and `*` emphasis runs 73 and 68 ms; `[` links 37 to 39 ms;
-- origin's lexer took 38 s on `[](` at 8 KiB (B104 note), before any budget refused it;
-
-## Sweeps and fuzz (head, 64 KiB, production budget)
-
-| Sweep | Cases | Slowest | Over 100 ms | Refused |
+| Document | Lines | Size | Container preview | Host work units |
 |---|---:|---:|---:|---:|
-| Every unit up to 3 characters, 28-character alphabet | 22,764 | 47 ms | 0 | 10,975 |
-| Every unit up to 4 characters, 14 literal characters | 41,370 | 30 ms | 0 | 27,778 |
-| 3,000 random units of 1 to 8 characters, 28-character alphabet | 3,000 | 33 ms | 0 | 1,677 |
-| 200 random fragment documents (60 Markdown fragments) | 200 | 18 ms | 0 | 0 |
-| 20 random fragment documents at 1 MiB | 20 | 23 ms | 0 | 20 |
+| Schedule of hard-break lines | 300 | 18.21 KiB | 200, 3 ms | 2.25 M |
+| Address lines | 400 | 19.73 KiB | 200, 4 ms | 2.72 M |
+| Events digest | 200 | 16.71 KiB | 200, 7 ms | 3.14 M |
+| FAQ, heading then quote | 300 | 19.12 KiB | 200, 6 ms | 5.34 M |
+| Testimonials, quote then rule | 300 | 20.11 KiB | 200, 5 ms | 4.78 M |
+| 200 tables of 5 rows and 10 cells | 1,400 | 60.01 KiB | 200, 16 ms (200 `<table>`) | 20.30 M |
 
-The first sweep (3 characters, 8 KiB, unbudgeted, run before the changes on a lexer that already had the table gate, which is equivalent to origin's) found 59 units over 60 ms, the slowest `" *("` at 615 ms. 49 of them contain `*` or `_` (emphasis openers, which the changes address); the other 10 contain `~` and take 61 ms.
+The table document uses 20.3 M of the 36 M limit at 60 KiB; its tables are a real shape (a header, a delimiter and five rows of ten cells each).
 
-## Newsletters
+**Table density at 64 KiB (host, `renderMarkdown` alone).** The three densities below are the ones a table-heavy campaign could plausibly contain:
+
+| Shape | Result | Units | Origin (`origin/main`) |
+|---|---|---:|---|
+| 5×10 cells with padding, as in the document above | renders, 213 tables | 21.6 M | refused, Markdown output limit |
+| Prices, links and emphasis, bold headers | renders, 69 tables | 14.6 M | refused, Markdown output limit |
+| Unpadded one-character cells (`|h|h|…|`), about 440 tables | **refused, work limit** | 36.0 M | refused, Markdown output limit |
+
+The last shape is valid Markdown but is not what a campaign author writes. It is recorded as a known limit in D112, not priced lower. Origin refuses all three, so no input origin accepts is refused.
+
+## Newsletters (container, medians of 7 renders)
+
+From `test/templates/measure-markdown.ts --news`, one story per 1.2 KiB and every block kind an adapter sends, rendered as a Markdown body (`test/templates/markdown-newsletter.ts`):
 
 | Size | Source bytes | Stories | Output bytes | Median render | Work units |
 |---|---:|---:|---:|---:|---:|
-| 1 KiB | 911 | 1 | 1,045 | 0.4 ms | 0.1 M |
-| 4 KiB | 3,794 | 5 | 5,182 | 0.8 ms | 0.4 M |
-| 16 KiB | 15,683 | 21 | 22,282 | 2.0 ms | 1.5 M |
-| 64 KiB | 64,817 | 87 | 92,759 | 6.7 ms | 7.1 M of 36 M |
+| 1 KiB | 911 | 1 | 1,045 | 0.6 ms | 0.1 M |
+| 4 KiB | 3,794 | 5 | 5,182 | 1.2 ms | 0.5 M |
+| 16 KiB | 15,683 | 21 | 22,282 | 2.8 ms | 2.1 M |
+| 64 KiB | 64,817 | 87 | 92,759 | 9.6 ms | 8.6 M of 36 M |
 
-Origin refuses the same generator from 5 KiB of source (6 stories, 4,563 bytes, `Render limit`) through its renderer, so origin/main could not send a newsletter of that length. Head renders each size listed above through preview, test send and a campaign send to two subscribers (`test/campaigns/markdown-newsletter.test.ts`).
+Origin refuses the same generator from 5 KiB of source (round 1 measurement), so origin/main could not send a newsletter of that length. Head renders each size above through preview, test send and a campaign send to two subscribers (`test/campaigns/markdown-newsletter.test.ts`).
 
-At 64 KiB the newsletter uses 16% of the work budget. A Liquid loop can expand a body to the 1 MiB output limit; the review section below measures those expansions.
+## The table charge (round 2)
+
+**Cause.** On the `|\n--\n` family at 128 KiB, marked's full table pattern (the body group, which runs only when the delimiter passes) was called 49 times and matched 5.17 M characters in total, 1,090 ms of regex time, about 210 ns per character. The charge for a table match was `scan(cap[0].length)`, one unit per character, so the 5.17 M characters cost 5.17 M units of the 36 M limit while taking about 1 s. A profile of every pattern longer than 200 characters put the rest of the time in the paragraph patterns, which measured about 70 ns per character matched and 2 ms in total.
+
+**Change.** The table match is charged 40 units per character (`patches/marked@15.0.12.patch`, the `table` hook), roughly the measured 200 ns at the 5 ns unit. Paragraph text keeps its existing 40 units per character (20 for the block consumption and 20 for the window before the stop line), so the paragraph-stop search is covered and is not weighted separately. No other charge changed.
+
+**Effect on the misaligned shape (host, Markdown stage alone, 128 KiB source with the renderer's 1 KiB pieces):**
+
+| Size | Before (1 unit per table character) | After (40 units) |
+|---|---|---|
+| 8 KiB | ok, 10 ms | ok, 12 ms |
+| 16 KiB | ok, 14 ms | ok, 13 ms |
+| 32 KiB | ok, 99 ms | refused, 95 ms |
+| 64 KiB | refused, 425 ms | refused, 162 ms |
+| 128 KiB | refused, 1,126 ms | refused, 202 ms |
+
+The 32 KiB row changes from accepted to refused. Origin refuses 32 KiB of this shape (work limit, 2.9 s on the host), so the change refuses no input origin accepts there. Origin accepts 8 KiB of this shape (0.8 s) and head returns identical bytes from 512 bytes to 8 KiB (checked at 512, 1,024, 2,048, 4,096 and 8,192 bytes). Origin refuses 16 KiB (output limit, 6.2 s), which head renders in 13 ms.
+
+**Ordinary tables are not slowed.** The table document above uses about 1 ns per unit (13.9 ms for 20.3 M units on the host). No global rescale was made.
 
 ## Output identity
 
-- The 33 B104 documents (`test/templates/markdown-compat.test.ts`) are unchanged.
-- 4,500 seeded random documents (three seeds, 1 to 14 fragments each, 60 fragments including tables, loose and task lists, images, references and the review's shapes) through origin's production path (its markdown, its marked patch, its 4 MiB and 10,000-step budget) and through head: origin accepts all 4,500, and head's output is byte-identical on all of them.
-- Earlier, 111 cases compared with origin's production path (its reserve included): 67 accepted by both, identical; no document origin accepts is refused now. Head accepts 37 that origin refuses (for example a 12,000-cell table). Three emphasis cases that origin's raw lexer accepts at 2 KiB are refused by head, and origin's production path refuses them too.
+- The 33 B104 documents (`test/templates/markdown-compat.test.ts`) and the 4, 16 and 64 KiB newsletter pins are unchanged and pass on head.
+- Round 1 (before round 2, host): 4,500 seeded random documents built from 60 fragments through origin's production path and head: origin accepts all of them and head's bytes are identical. Not re-run for `7ee9b37`; the table charge changes refusals only, not output.
 
-## Review of e6fbe3d (PR #157, CHANGES)
+## Review history (round 1 and round 2)
 
-The review found four things. Each is measured here on this host (Apple silicon, Bun 1.4.5, load 2 to 4); the container numbers are in the PR comment.
-
-**1. The fence-like tilde run.** The `~{3,}[^\n]*\n` alternative in marked's paragraph, table and paragraph-stop lookaheads backtracked through a tilde run ending a paragraph, quadratically. It is now `~{3}[^\n]*\n`, which matches the same lines:
-
-| Input (64 KiB) | e6fbe3d | this change |
-|---|---:|---:|
-| `x\n` then a tilde run | 1,536 ms | 8 ms |
-| Liquid loop expanding a 1 KiB body to 64 KiB of tildes | (review: 1,570 ms) | 4 ms |
-| Liquid loop expanding to 1000 KiB of tildes | (review: minutes, projected) | 14 ms, refused by the work limit |
-
-The audit of marker runs (`markdown-runs.test.ts`: 13 markers, at the end of a paragraph, list item, blockquote and table row, with and without a newline, 64 KiB each) found one more quadratic shape: a quote run (`>=` lines) at 1 MiB. marked's blockquote pattern returns no match from about 640 KiB on, so the lexer falls through to a two-character paragraph and repeats the failed scan over the rest of the input, for ever (raw marked hangs past 120 s at 1 MiB). The blockquote attempt is now charged its window to the next blank line at 16 units per character, which bounds it: the same input is refused in 146 ms.
-
-The Liquid audit (`markdown-liquid.test.ts` and the measurement below) runs each marker in the four contexts and each shape from the B104 review at about 1000 KiB of Markdown, through the renderer's preview path: 138 cases, every one renders or is refused, the slowest in 169 ms on this host (`_` at the end of a paragraph, refused by the work limit). That run used the emphasis weights of the first r1 commit (600 per closer exec, 8 per character); the container measurement that followed slowed the emphasis cases to 332 ms, so the weights were raised to 1500 and 12 (D112), and the container numbers are in the PR comment. The remaining time was one closer-search exec that scans the rest of the paragraph and was charged only after it returned; an opener now charges that remaining length before the search runs.
-
-**2. `reserve()` is now an upper bound.** Three outputs were not reserved: a block text token in a loose item (written as a paragraph, 8 bytes), a task item's checkbox (written after the reserve, 47 bytes plus a space), and image alternative text (the text renderer can print escaped text twice). Each is reserved now. Measured actual against reserved, with the last charge as the reserve:
-
-| Case | Actual / reserved (e6fbe3d) | this change |
-|---|---:|---:|
-| loose items, `"- a\n\n  b\n\n"` × 1500 | 8.9× at 12,000 (review) | 0.82 |
-| checked loose items × 500 | not reserved | 0.82 |
-| tight task items × 2000 | +1 byte per item (review) | 0.66 |
-| image alt text with escapes × 500 | about 2× (review) | 0.18 |
-
-`markdown-reserve.test.ts` asserts actual ≤ reserved over the reviewer's shapes, 30 constructs (each repeated 1, 8 and 40 times) and a seeded random corpus of 600 documents. A separate seeded check on 10,000 random documents from five seeds found no violation.
-
-**3. Byte identity.** The pins (33 B104 documents, plus 4, 16 and 64 KiB newsletters) are unchanged. The random comparison above (4,500 documents against origin's production path) is identical.
-
-**4. Campaign body limit.** Reverted to 64 KiB (the lead's decision). The newsletter tests now cover 4, 16 and 64 KiB; `campaigns.test.ts` again refuses a 70 KiB body.
+The round 1 review of `e6fbe3d` found the tilde-run quadratic (`~{3,}` in the paragraph and table lookaheads, now `~{3}`), a blockquote hang at about 640 KiB (now charged a window), a `reserve()` that did not bound three outputs (now reserved), and a campaign body limit that had been raised (now 64 KiB). The round 2 review found two new pre-charges that refused ordinary documents of 19 to 20 KiB (now checked before a scan and charged after it), a long thematic-break line (charged by length), and that the 1 MiB Liquid target was not met (now a 128 KiB cap on the expanded source, D112). The reviewer's five documents and the table document are tests now. The round 1 numbers (the 60 KiB before-and-after table, the 1 MiB production path, the sweeps) are not re-run and are kept only as history.
 
 ## Known differences from goldmark (not changed)
 
@@ -120,24 +108,9 @@ So the newsletter pins in `markdown-compat.test.ts` are this renderer's own outp
 
 `[x](()" ")` is a link to `(` with text `&quot; &quot;)` on origin and on head, and goldmark renders it as text (`<p>[x](()&quot; ")</p>`). A link-destination rule, not a cost; not changed, listed as backlog.
 
-## Round 2: 128 KiB over HTTP (container, arm64, 6 CPUs, load 0.03 to 0.11)
-
-Commit ccec273. The served fixture (`markdown-serve.ts`) runs in a child process and is driven over a socket. Each body is a Liquid loop expanded to exactly 128 KiB of Markdown (127 pieces of 1 KiB and a literal pad), so it is inside the cap. Scratch harness, not committed.
-
-| Group | Cases | Statuses | Slowest |
-|---|---:|---|---|
-| Every family (`measure-markdown.ts`'s list) | 56 | 200 or budget 400 | `block-pipe-dashes` **1766 ms**; `block-rule-run` 184 ms |
-| Marker runs (13 markers × 4 contexts × 2 trailing) | 104 | 200 or budget 400 | `star` and `pipe` runs 56 to 59 ms |
-| Liquid shapes (`markdown-liquid.test.ts`, 37) | 37 | 200 or budget 400 | `numbered then code` 184 ms; `bullet then tilde` 181 ms |
-| Ordinary documents | 5 | 200 for schedule, address and FAQ; 400 for events and testimonials | FAQ 34 ms |
-| Shapes expanded to 1000 KiB | 37 | 400 cap | 3 ms |
-| Five concurrent 128 KiB previews, read sent after them (3 runs) | 3 | read 200, previews 200 or 400 | read 280 to 283 ms |
-
-The budget 400 is the generic `invalid template` message for a Markdown budget refusal (work or output). Events and testimonials are over the cap in bytes (133,888 and 145,152 bytes; their units hold em dashes and curly quotes), so the cap refusal is correct for them. The 1000 KiB row is a fast refusal in every case.
-
-**Not within the target.** `block-pipe-dashes` (the Liquid loop of `|\n--\n` cut into 1 KiB pieces, so the pieces leave lines such as `--|`) takes 1.8 s over HTTP at 128 KiB, 5 of 5 runs. Its Markdown stage alone takes 1.08 s on the host and 425 ms at 64 KiB: the work limit is reached after about 1 s, although 36 M units nominally cost 180 ms. A profile shows the time in the table and paragraph-stop regular expressions over the misaligned lines, at about 200 ns per character scanned, while the table scan is charged 1 unit per character and the paragraph window 20. The units are underpriced for this shape by about 6×. Ordinary tables and newsletters price at about 1 ns per unit, so the fix is a per-shape charge for the table and paragraph-stop scans, not a rescale of every unit. Not done in this round.
-
 ## Limits
 
-- Timings are single runs or medians on a shared workstation (load 1.5 to 3).
-- The work units approximate time: about 5 ns each (`WORK_LIMIT`, `markdown.ts`), and a few sites were weighted from measured regex costs (lazy heading scan 64, emphasis 8 and 600, the e-mail run 3). The measured worst case is 133 ms (`a\n***\n` at 60 KiB) against the 200 ms target.
+- Timings are single runs or medians on a shared machine. The container numbers are the acceptance numbers; the host numbers are context.
+- The work units approximate time: about 5 ns each (`WORK_LIMIT`, `markdown.ts`). Table matches are weighted at 40 per character from a measured 200 ns; other sites use measured regex costs or the round 1 weights. A shape whose real cost per unit is far from these weights can exceed the target, as the round 2 `block-pipe-dashes` did before the table charge.
+- The unpadded one-character table document at 64 KiB is refused by the work limit (36.0 M units). It is recorded in D112 as a known limit.
+- The round 1 measurements above are not re-run for this head (listed at the top).
