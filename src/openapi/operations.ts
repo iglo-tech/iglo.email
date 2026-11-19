@@ -941,7 +941,7 @@ const sending: Operation[] = [
     summary:
       "Send one step to up to five addresses as a labelled test, with the same context as a preview.",
     description:
-      "Each address gets the step rendered with the preview's context, its subject prefixed `[Test] `, and untracked links. Nothing is journaled, enrolled or counted, and a blocklisted address is skipped (D105).",
+      "Each address gets the step rendered with the preview's context, its subject prefixed `[Test] `, and untracked links. Nothing is journaled, enrolled or counted, and a blocklisted address is skipped (D105); when every address is blocklisted the answer is 400 `No recipients: blocklisted: …` (D114). A test that is not delivered, or whose message later bounces or gets a complaint, appears in `GET /api/logs`.",
     native: true,
     permissions: ["sequences:manage"],
     alsoPermissions: [["tx:send"]],
@@ -1465,7 +1465,9 @@ const settings: Operation[] = [
     route: "GET /api/logs",
     id: "getLogs",
     tag: "Settings",
-    summary: "Recent error lines, without their text.",
+    summary: "Recent attention and error lines, with their fixed text.",
+    description:
+      "Lists recent attention and error lines by their fixed text, never the error's own text, so an address or a provider's words stay on the host's stderr. Includes a test send that was not delivered, and a test send whose message bounced or got a complaint later (D109, D114).",
     permissions: ["settings:get"],
     data: array(string),
   },

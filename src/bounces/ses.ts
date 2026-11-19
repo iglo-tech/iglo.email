@@ -325,6 +325,8 @@ export function sesEvents(message: string, now: Date) {
       campaignUuid: campaignUuid.toLowerCase(),
       sendUuid,
       recipient: email,
+      // The header the sender set (B108): a test send's record is found by it.
+      messageId: messageId.slice(0, MAX_TEXT_LENGTH),
       type: kindOfBounce,
       source: "ses",
       meta: JSON.stringify({ ...codes, diagnostic_code: safeText(entry.diagnosticCode) }),

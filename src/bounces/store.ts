@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import type { BounceTarget } from "@/messaging/sends";
+import type { TestSendRecord } from "@/messaging/test-sends";
 import { sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { RecordedBounce } from "@/webhooks/effects";
@@ -29,6 +30,11 @@ export interface BounceEvent {
    * Message-ID names a message, and a copy of it has the same one. Empty for a caller's own claim.
    */
   recipient: string;
+  /**
+   * Native (B108): the notice's own Message-ID header, bounded; empty when the provider sent none
+   * (and for a caller's own claim). A test send's record is found by it.
+   */
+  messageId: string;
   type: BounceType;
   source: string;
   /** A JSON object. */
@@ -114,6 +120,8 @@ export function createBounceStore(
     campaignID: (uuid: string) => bigint | null;
     recorded: (bounce: RecordedBounce) => void;
     actions: () => Record<string, BounceAction>;
+    /** The test send a Message-ID names inside its retention window (B108). */
+    testSend: (messageId: string) => TestSendRecord | null;
   },
 ) {
   const q = prepareNamedQueries(db, [{ name: "bounces/store", sql }]);
@@ -234,6 +242,15 @@ export function createBounceStore(
           });
       }
       if (subscriber && num >= action.count) act(subscriber, action.action);
+    },
+    /**
+     * B108 (D114): the test send a notice is of, when no send resolves for it and its Message-ID is
+     * a test's record. Such a notice is named in the log and recorded nowhere: a test is not a bounce.
+     */
+    testOf(event: BounceEvent): TestSendRecord | null {
+      if (!event.messageId) return null;
+      if (event.sendUuid && deps.sendTarget(event.sendUuid)) return null;
+      return deps.testSend(event.messageId);
     },
     /**
      * Note a provider delivery inside the caller's write transaction, so a rollback forgets it.

@@ -43,6 +43,7 @@ import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
 import { createOutbox } from "@/messaging/outbox";
 import { createSendCompaction } from "@/messaging/retention";
+import { createTestSends } from "@/messaging/test-sends";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
 import { createTemplateStore } from "@/templates/store";
@@ -485,7 +486,9 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         individualTracking: current["privacy.individual_tracking"],
       };
     };
+    const testSends = createTestSends(db, clock);
     registerCampaignRoutes(router, {
+      testSends,
       store: campaignStore,
       templates,
       renderer,
@@ -519,11 +522,13 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       campaignID: (uuid) => campaignsByUuid.byUuid(uuid)?.id ?? null,
       recorded: webhookEffects.bounceRecorded,
       actions: () => settings!.read()["bounce.actions"],
+      testSend: (messageId) => testSends.find(messageId),
     });
     registerBounceRoutes(router, {
       db,
       clock,
       store: bounces,
+      logger: app.logger,
       subscribers: subscriberStore,
       roles,
       auth,
@@ -648,6 +653,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       enrollments,
     });
     registerSequenceRoutes(router, {
+      testSends,
       sequences,
       enrollments,
       subscribers: subscriberStore,
@@ -677,6 +683,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         users.purgeSessions,
         webhooks.purge,
         createSendCompaction(db),
+        testSends.purge,
         createEventPurge(events),
       ],
     });

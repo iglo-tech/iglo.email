@@ -13,8 +13,10 @@ import {
   topicAllowed,
 } from "@/bounces/ses";
 import type { SnsClient } from "@/bounces/ses";
+import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
+import type { TestSendRecord } from "@/messaging/test-sends";
 import { publicNotFound } from "@/public/message";
 import { parseBool } from "@/public/form";
 import type { Roles } from "@/roles/roles";
@@ -86,9 +88,10 @@ export function registerBounceRoutes(
     limit: Middleware;
     /** SNS signature checks and confirmations; tests inject the network. */
     sns?: SnsClient;
+    logger: ErrorLogger;
   },
 ) {
-  const { db, clock, store, subscribers, roles, auth, settings } = deps;
+  const { db, clock, store, subscribers, roles, auth, settings, logger } = deps;
   const sns = deps.sns ?? createSnsClient({ clock });
   const invalidID = (c: RequestContext) =>
     new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
@@ -249,6 +252,7 @@ export function registerBounceRoutes(
       sendUuid: sendUuid.toLowerCase(),
       // Without a send the UUID or email is the caller's own claim, taken as upstream takes it.
       recipient: sendUuid ? sanitized : "",
+      messageId: "",
       type: type as BounceType,
       source: text("source"),
       meta: bounceMeta(body.meta),
@@ -294,6 +298,32 @@ export function registerBounceRoutes(
       }
     return Buffer.concat(chunks).toString("utf8");
   };
+  /**
+   * B108 (D114): one attention line for a test send's bounce or complaint. The fixed text is what
+   * GET /api/logs shows; stderr also names the kind, the IDs, the recipient and the bounce or feedback type.
+   */
+  const testNotice = (event: BounceEvent, test: TestSendRecord) => {
+    const codes = JSON.parse(event.meta) as Record<string, unknown>;
+    const named =
+      test.kind === "campaign"
+        ? `campaign ${test.campaign_id}`
+        : `sequence ${test.sequence_id} step ${test.step_id}`;
+    const where = `kind ${test.kind}, ${named}, recipient ${test.recipient}`;
+    if (event.type === "complaint")
+      logger.error(
+        new Error(
+          `Test send got a complaint: ${where}, feedback ${String(codes.feedback_type ?? "unknown")}`,
+        ),
+        "A test send got a complaint",
+      );
+    else
+      logger.error(
+        new Error(
+          `Test send bounced: ${where}, bounce ${String(codes.bounce_type ?? "unknown")} ${String(codes.bounce_sub_type ?? "")}`.trimEnd(),
+        ),
+        "A test send bounced",
+      );
+  };
   /** cmd/bounce.go's `ses` branch. Every refusal is upstream's 400 and changes nothing. */
   const ses: Handler = async (c) => {
     const raw = await readSns(c.request);
@@ -320,14 +350,21 @@ export function registerBounceRoutes(
     const now = clock.now();
     const events = sesEvents(message.Message ?? "", now);
     if (!events) throw invalidData(c);
+    const tests: { event: BounceEvent; test: TestSendRecord }[] = [];
     writeTransaction(db, () => {
       store.pruneReceipts();
       // SNS delivers at least once: a repeated message is recorded once. The receipt outlasts the
       // last moment the message verifies (its Timestamp plus the age limit), even when it is dated ahead.
       const sent = Math.max(now.getTime(), Date.parse(message.Timestamp ?? ""));
       if (!store.receive(`sns:${id}`, new Date(sent + SNS_MAX_AGE_MS + 1000))) return;
-      for (const event of events) store.record(event);
+      for (const event of events) {
+        const test = store.testOf(event);
+        if (test) tests.push({ event, test });
+        else store.record(event);
+      }
     });
+    // Named after the commit, so a line is never written for a notice that did not land.
+    for (const { event, test } of tests) testNotice(event, test);
     return ok(true);
   };
   const service: Handler = (c) => {

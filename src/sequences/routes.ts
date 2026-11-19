@@ -11,6 +11,7 @@ import type { EventStore } from "@/events/store";
 import type { Message } from "@/messaging/email";
 import type { createEmailer } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
+import type { TestSends } from "@/messaging/test-sends";
 import type { Roles } from "@/roles/roles";
 import {
   RenderCapacityError,
@@ -85,6 +86,8 @@ export function registerSequenceRoutes(
     templates: Pick<TemplateStore, "get">;
     renderer: TemplateRenderer;
     emailer: Pick<ReturnType<typeof createEmailer>, "push">;
+    /** Each test message's Message-ID, so a notice of it is named in the log (B108). */
+    testSends: TestSends;
     tracking: Tracking;
     /** Settings a preview or test send reads: the default sender, marketing links, domain rules. */
     settings: () => {
@@ -97,7 +100,8 @@ export function registerSequenceRoutes(
     auth: Authentication;
   },
 ) {
-  const { sequences, enrollments, subscribers, events, sends, templates, roles, auth } = deps;
+  const { sequences, enrollments, subscribers, events, sends, templates, roles, auth, testSends } =
+    deps;
   const invalid = (c: RequestContext, field: string, detail?: string) =>
     new HttpError(
       400,
@@ -477,7 +481,9 @@ export function registerSequenceRoutes(
       const reachable = addresses.filter(
         (email) => subscribers.byEmail(email)?.status !== "blocklisted",
       );
-      if (!reachable.length) throw invalid(c, "emails");
+      // B108 (D114): every address blocklisted says so, and names the addresses the caller gave.
+      if (!reachable.length)
+        throw new HttpError(400, `No recipients: blocklisted: ${addresses.join(", ")}`);
       testing++;
       let queued = false;
       try {
@@ -500,18 +506,37 @@ export function registerSequenceRoutes(
         auth.revalidate(c, MANAGE);
         // Queued to the emailer like a campaign test: nothing is journaled, counted or tracked. Its
         // own pool (B101), and an undelivered outcome is logged (B101): `result` never rejects.
-        const results = messages.map((message) =>
-          deps.emailer
-            .push(message, { copies: false, priority: "outbox", testPool: true })
-            .result.then((outcome) => {
-              if (outcome.status === "accepted" && !outcome.rejected.length) return;
-              c.app.logger.error(
-                new Error(
-                  `Test send to ${message.to[0]} for sequence ${sequence.id} step ${step.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
-                ),
-                "Test send not delivered: the server error output names the recipient and stage",
-              );
-            }),
+        const dispatched = messages.map((message) => ({
+          message,
+          dispatch: deps.emailer.push(message, {
+            copies: false,
+            priority: "outbox",
+            testPool: true,
+          }),
+        }));
+        // B108 (D114): each Message-ID is recorded before any network work can answer for it.
+        writeTransaction(c.app.db, () =>
+          testSends.record(
+            dispatched.map(({ message, dispatch }) => ({
+              messageId: dispatch.messageId,
+              kind: "sequence_step",
+              campaign_id: null,
+              sequence_id: Number(sequence.id),
+              step_id: Number(step.id),
+              recipient: message.to[0]!,
+            })),
+          ),
+        );
+        const results = dispatched.map(({ message, dispatch }) =>
+          dispatch.result.then((outcome) => {
+            if (outcome.status === "accepted" && !outcome.rejected.length) return;
+            c.app.logger.error(
+              new Error(
+                `Test send to ${message.to[0]} for sequence ${sequence.id} step ${step.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
+              ),
+              "Test send not delivered: the server error output names the recipient and stage",
+            );
+          }),
         );
         queued = true;
         void Promise.all(results).finally(() => testing--);

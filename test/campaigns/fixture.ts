@@ -31,6 +31,7 @@ import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import { createTestSends } from "@/messaging/test-sends";
 import { createAttachments } from "@/media/attachments";
 import { createFilesystem } from "@/media/filesystem";
 import { createEmbeds } from "@/media/embed";
@@ -120,6 +121,7 @@ export async function campaignsFixture(
     }),
   });
   const tracking = createTracking(db, clock);
+  const testSends = createTestSends(db, clock);
   const settings: CampaignSettings & { allowBlocklist: boolean } = {
     fromEmail: "Fixture <noreply@fixture.test>",
     rootUrl: root,
@@ -172,6 +174,7 @@ export async function campaignsFixture(
     subscribers,
     tracking,
     emailer,
+    testSends,
     settings: () => settings,
     attachments,
     embedImages,
@@ -241,6 +244,7 @@ export async function campaignsFixture(
     clock,
     sink,
     errors,
+    testSends,
     settings,
     directory,
     unsubscribed,

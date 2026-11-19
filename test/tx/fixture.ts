@@ -55,6 +55,7 @@ import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/pol
 import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 import { registerBounceRoutes } from "@/bounces/routes";
+import { createTestSends } from "@/messaging/test-sends";
 import { createSnsClient, type SnsFetch } from "@/bounces/ses";
 
 const refuseNetwork: SnsFetch = () => Promise.reject(new Error("no network in tests"));
@@ -247,12 +248,14 @@ export async function txFixture(
             },
           }),
     }));
+    const testSends = createTestSends(db, clock);
     bounces = createBounceStore(db, clock, {
       subscribers: () => subscribers,
       sendTarget: (uuid) => sends.bounceTarget(uuid),
       campaignID: () => null,
       recorded: webhookEffects!.bounceRecorded,
       actions: () => settingsStore!.read()["bounce.actions"],
+      testSend: (messageId) => testSends.find(messageId),
     });
     registerBounceRoutes(router, {
       db,
@@ -261,6 +264,7 @@ export async function txFixture(
       subscribers,
       roles,
       auth,
+      logger: app.logger,
       settings: () => {
         const current = settingsStore!.read();
         return {

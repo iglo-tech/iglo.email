@@ -293,11 +293,15 @@ above has the same settings for nginx.
    because a wrong one breaks every link and cookie. On Coolify, use `SERVICE_URL_<NAME>`, which
    includes the scheme, not `SERVICE_FQDN_<NAME>`, which is a bare host.
 2. **Trusted proxy.** Without it, every visitor appears to come from the proxy, so one visitor's rate
-   limit blocks all of them. List the proxy's address in `security.trusted_proxies`, as
-   [above](#reverse-proxy-and-tls). In a container network, the proxy's address is on that network:
-   list it, or the network's subnet as a CIDR, for example `172.18.0.0/16`. `docker network inspect
-   <network>` shows both. Until the address is listed, the server logs one line that names the
-   address the request came from; it logs again only after the list changes.
+   limit blocks all of them. List the proxy's network in `security.trusted_proxies` as a CIDR, for
+   example `172.18.0.0/16`, as [above](#reverse-proxy-and-tls) describes for a single address. Do not
+   list the proxy's single address alone: Docker assigns a container its address from the network
+   when it starts, so a recreated proxy (any redeploy does this) gets a new one, the old entry no
+   longer matches, and every visitor appears to come from the proxy again. Find the subnet with
+   `docker network inspect <network> --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`; on
+   Coolify the default network is named `coolify` (confirm with `docker network ls`). Until the
+   proxy is listed, the server logs one line that names the address the request came from; it logs
+   again only after the list changes.
 3. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
 4. **One container per volume.** Each data directory has one server ([one process per data
    directory](#one-process-per-data-directory)). A rolling deploy that starts the new container
@@ -306,7 +310,9 @@ above has the same settings for nginx.
    executable with its arguments, not a shell line. The invocation is
    `iglo.email backup --output /data/backups/latest --force`, then
    `iglo.email backup --verify /data/backups/latest`, as in [Docker](#docker). On Coolify, a scheduled
-   task must have its shell option off.
+   task must have its shell option off. A scheduler that runs one command per task schedules the
+   verify as its own task a few minutes after the backup, with exactly that command, so a backup that
+   does not verify fails its task the same night; `--verify` exits nonzero when it does not verify.
 6. **Bootstrap variables.** Remove `IGLO_EMAIL_ADMIN_*` and `IGLO_EMAIL_API_*` after the first start,
    and restart. The server ignores them from then on. To change the API token, create a new API user
    under Users, which shows its token once, switch the integration to it, and delete the old one.
@@ -981,7 +987,7 @@ For a sequence step, the loop is the one the server instructions give, with the 
 1. `get_sequence` lists the steps and their IDs.
 2. Change the step with `update_sequence_step` (its subject or its transactional template), or edit the template with `update_template`. Read `template_reference` before writing any Liquid.
 3. `preview_sequence_step` renders the step with a real `subscriber_id` or a `sample`, and writes nothing.
-4. `test_sequence_step` sends it to up to five addresses as a labelled test. The test is real mail, and nothing is journaled or enrolled. A `true` means it was queued, not delivered: the person checks their inbox. A test writes no send row, so the sends list never shows it; a test that fails to deliver appears in `get_logs`, the server's attention log. Never repeat a send to check it, real or test.
+4. `test_sequence_step` sends it to up to five addresses as a labelled test. The test is real mail, and nothing is journaled or enrolled. A `true` means it was queued, not delivered: the person checks their inbox. A test writes no send row, so the sends list never shows it. A test that fails at SMTP time, or whose message later bounces or draws a complaint, appears in `get_logs`, the server's attention log ([D114](design/09-decisions.md#d114-test-sends-leave-a-trace-lead-2026-11-19)); a test that shows nothing there may still be delayed or filtered by the receiver. A list whose addresses are all blocklisted answers `400` naming them. Never repeat a send to check it, real or test.
 5. `get_sends` lists real sequence and transactional sends, and `get_bounces` lists the bounces that came back. Use them for real sends; a test (step 4) is not in `get_sends`.
 
 A campaign follows the same loop with `update_campaign`, `preview_campaign`, `campaign_text` and `send_campaign_test`, and its test is confirmed as step 4 is. A tool error carries the API's message; the agent corrects the arguments it names.

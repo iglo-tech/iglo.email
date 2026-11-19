@@ -17,6 +17,8 @@ const UNMARKED = "unexpected error";
  * names no request, campaign, recipient or exception: a logger passes one of these or nothing.
  */
 const SAFE_MESSAGES = [
+  "A test send bounced",
+  "A test send got a complaint",
   "campaign claims abandoned after the runner stopped: resend manually if needed",
   "campaign subscriber changed after its claim: message not sent",
   "error count limit reached: campaign paused",

@@ -35,6 +35,7 @@ import { createWebhookStore } from "@/webhooks/store";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { createRouter } from "@/server/server";
 import { registerCampaignRoutes } from "@/campaigns/routes";
+import { createTestSends } from "@/messaging/test-sends";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { registerImportRoutes } from "@/subscribers/import/routes";
 import { createImporter } from "@/subscribers/import/importer";
@@ -254,6 +255,7 @@ async function createNotifyFixture(
 
   registerCampaignRoutes(router, {
     store: campaignStore,
+    testSends: createTestSends(db, clock),
     templates,
     renderer,
     roles,

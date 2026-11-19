@@ -39,6 +39,7 @@ import { registerEventRoutes } from "@/events/routes";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
+import { createTestSends } from "@/messaging/test-sends";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
@@ -205,8 +206,10 @@ export async function sequencesFixture(
     effects: enrollments.unsubscribeEffects,
   });
   registerEventRoutes(router, events, auth, roles);
+  const testSends = createTestSends(db, clock);
   registerSequenceRoutes(router, {
     sequences,
+    testSends,
     enrollments,
     subscribers,
     events,

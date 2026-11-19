@@ -17,12 +17,12 @@ const LATEST_PROTOCOL_VERSION = SUPPORTED_VERSIONS[0];
  * tool named here exists in tools/list for an admin credential (test/mcp/agent-guidance.test.ts).
  */
 const INSTRUCTIONS = [
-  "iglo.email is an email server. This endpoint is for an agent working on an instance for a person; applications use the REST API (/api/openapi.json) with an API user. Both apply the same permissions; this endpoint leaves out what the last paragraph names.",
+  "iglo.email is an email server. This endpoint is for an agent working on an instance for a person; applications use the REST API (/api/openapi.json) with an API user. Both apply the same permissions; this endpoint omits what the last paragraph names.",
   "Before writing Liquid, read `template_reference`.",
-  "To author a sequence step: `get_sequence` for its steps; change the step with `update_sequence_step`, or a template with `update_template`; render it with `preview_sequence_step`, giving a real `subscriber_id` or a `sample`; send a labelled test with `test_sequence_step`. Campaigns follow the same loop with `update_campaign`, `preview_campaign` and `send_campaign_test`.",
-  "A test send's `true` means it was queued, not delivered: ask the person to check their inbox. A test writes no send row, so the sends list never shows it; a test that fails to deliver appears in `get_logs`. Never repeat a send to check it, real or test.",
+  "To author a sequence step: `get_sequence`; change the step with `update_sequence_step`, or a template with `update_template`; render it with `preview_sequence_step`, giving a real `subscriber_id` or a `sample`; send a labelled test with `test_sequence_step`. Campaigns follow the same loop: `update_campaign`, `preview_campaign`, `send_campaign_test`.",
+  "A test send's `true` means queued, not delivered: ask the person to check their inbox. A test writes no send row. A test that fails to deliver, at SMTP time or later by a bounce or complaint, appears in `get_logs`; silence may be delay or filtering. Never repeat a send to check it, real or test.",
   "Check real sends with `get_sends`; `get_bounces` lists the bounces that came back.",
-  "A failed call returns the API's message as a tool error: correct the arguments it names. Sends are real mail, so confirm addresses with the person first. Reading users and roles is a tool (`get_users`, `get_user_roles`); changes to users and roles, two-factor sign-in, bulk deletes, deletes addressed by a query, bulk changes selected by a query and replacing all settings are not tools; a person does those in the admin UI. Uploads and answers are capped at 1 MiB.",
+  "A failed call returns the API's message as a tool error: correct the arguments it names. Sends are real mail: confirm addresses with the person first. Reading users and roles is a tool (`get_users`, `get_user_roles`); changes to users and roles, two-factor sign-in, bulk deletes, deletes addressed by a query, bulk changes selected by a query and replacing all settings are not tools; a person does those in the admin UI. Uploads and answers are capped at 1 MiB.",
 ].join("\n\n");
 
 export interface McpDeps {
