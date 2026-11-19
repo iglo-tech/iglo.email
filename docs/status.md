@@ -191,6 +191,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
+- Campaign consent skip is journaled `skipped` with no reason or log line and is not visible in the product (B103 fault injection).
+- Media: under parallel load one extra campaign attachment buffer stays reachable after GC; holder unidentified (product cache keeps only the newest in isolation; B103).
+
 - B101 r1: a server can see up to 2× `max_conns` (real + test pool), document in D109/operations; media cache test should assert re-reads directly and restore the held-send check once the 1-in-6 failure is explained; "delivered test send logs nothing" tests do not await settlement; shutdown test name; runner ~9 ms/message product cost.
 - Watch: `release verify > passes on a tag that matches and on a dry run` failed once in 6 extra runs (B101 review; passes in check).
 
