@@ -6,24 +6,24 @@ request that writes it, and of the lookup an unmatched SES notice pays. Decision
 
 ## Setup
 
-- Host: Apple silicon macOS workstation, 8 cores, shared with other sessions. Load averages
-  were 3 to 35 during these runs; the load before and after each run is recorded below.
+- Host: Apple silicon macOS workstation, 8 cores, shared with other sessions. The load before and
+  after each run is recorded below; every gate run was below 8 on the final head.
 - Runtime: `oven/bun:1.4.4` on `linux/arm64` (OrbStack Docker), as the non-root `bun` user, with
   `--cpus=6`. Durability is SQLite's default `synchronous = FULL`, as in production.
-- Commits: before is `origin/main` (`9e5ad7a`); after is the B108 branch.
+- Commits: before is `origin/main` (`9e5ad7a`); after is the final head `b32777f`.
 
 ## Measurements
 
 Median of 100, serial, on the in-process scheduler fixture (real SQLite file, real SMTP sink).
 
-| Operation | Before (`origin/main`) | After (B108) | Notes |
+| Operation | Before (`origin/main`) | After (`b32777f`) | Notes |
 | --- | --- | --- | --- |
-| Step test request, HTTP, one address | 0.25 ms | 2.62 ms | After includes the `test_sends` write; the message is queued in both |
-| Recording one test send (one write transaction) | not present | 1.95 ms | `test/messaging/measure-test-sends.ts`; one row, `BEGIN IMMEDIATE` to `COMMIT` |
-| Unmatched notice lookup, table of 100 rows | not present | 2.1 µs | Indexed `message_id`; a notice with no test record pays this once |
-| Unmatched notice lookup, table of 100,100 rows | not present | 1.7 µs | Same lookup at the size of a busy week's test records |
+| Step test request, HTTP, one address | 0.25 ms | 2.53 ms | After includes the `test_sends` write, which now precedes the hand-off to the emailer; the message is queued in both |
+| Recording one test send (one write transaction) | not present | 2.00 ms | `test/messaging/measure-test-sends.ts`; one row, `BEGIN IMMEDIATE` to `COMMIT` |
+| Unmatched notice lookup, table of 100 rows | not present | 2.2 µs | Indexed `message_id`; a notice with no test record pays this once |
+| Unmatched notice lookup, table of 100,100 rows | not present | 1.8 µs | Same lookup at the size of a busy week's test records |
 
-The request delta (about 2.4 ms) is the durable write of one row, one fsync per commit. A test
+The request delta (about 2.3 ms) is the durable write of one row, one fsync per commit. A test
 send is started by a person or an agent, one at a time, with at most four in flight (D105, D109),
 so the cost is not on any send path. A bounce or complaint notice pays the lookup only when it
 carries a Message-ID; a native `POST /webhooks/bounce` pays nothing.
@@ -38,35 +38,32 @@ The "before" request figure is the request part of that script (the same loop, w
 record and lookup steps), run once on an export of `origin/main`. That loop was a scratch script
 and is not committed, because `origin/main` has no `test_sends` for the record step to need.
 
-## Release gate: `bun run check`
+## Release gate: `bun run check` on `b32777f`
 
-Ten consecutive valid passes on the release commit, in the arm64 container, `--cpus=6`. Two
-earlier runs were invalid under the gate's rule: each failed only on real-time wall limits (a
-30 s per-test timeout, a 60 s runner wait, and 3 s and 15 s harness waits), with the load above
-the 8 cores, and the tests' own state showed progress. Their failure text was not captured in the
-first run; the second run's are recorded in the PR.
+Ten consecutive valid passes on the final head, in the arm64 container, `--cpus=6`, each run
+1538 tests in 140 files with 0 failures, no type errors, format and lint clean.
 
 | Run | Load before | Load after | Result |
 | --- | --- | --- | --- |
-| 1 | 11.5 | 28.7 | invalid: 1 wall-bound timeout (scheduler starvation test, 29.8 s of 30 s) |
-| 2 | 28.6 | 33.3 | invalid: 3 wall-bound timeouts (runner 180 of 300 sent at its 60 s wait; scheduler 15 s wait; B37 1b 3 s wait with 70 sends in flight) |
-| 3 | 34.5 | 9.8 | pass, 1535 of 1535 |
-| 4 | 9.5 | 7.6 | pass, 1535 of 1535 |
-| 5 | 7.6 | 5.3 | pass, 1535 of 1535 |
-| 6 | 4.9 | 4.7 | pass, 1535 of 1535 |
-| 7 | 4.7 | 5.7 | pass, 1535 of 1535 |
-| 8 | 5.7 | 4.1 | pass, 1535 of 1535 |
-| 9 | 3.9 | 4.9 | pass, 1535 of 1535 |
-| 10 | 4.6 | 4.4 | pass, 1535 of 1535 |
-| 11 | 4.2 | 4.4 | pass, 1535 of 1535 |
-| 12 | 4.4 | 5.1 | pass, 1535 of 1535 |
+| 1 | 1.80 | 4.50 | pass |
+| 2 | 4.50 | 4.12 | pass |
+| 3 | 3.87 | 4.17 | pass |
+| 4 | 4.17 | 4.81 | pass |
+| 5 | 4.81 | 5.01 | pass |
+| 6 | 4.85 | 4.59 | pass |
+| 7 | 4.59 | 4.85 | pass |
+| 8 | 4.85 | 4.29 | pass |
+| 9 | 4.29 | 4.65 | pass |
+| 10 | 4.67 | 4.66 | pass |
 
-Each passing run: 140 files, 1535 tests, 0 failures, no type errors, format and lint clean.
+The earlier head `3764203` had two invalid runs under the gate's rule (real-time wall limits only,
+load above the 8 cores, the tests' own state showing progress) and then ten passing runs. Those
+are superseded by the table above.
 
 ## Other acceptance steps (container, same commit)
 
 `ui:verify`; the bubblewrap probe (as uid 1000, seccomp and AppArmor unconfined); `templates:compiled`;
-`contract:templates`, `contract:normal`, `contract:auth`, `contract:roles`, `contract:lists`,
+`contract:templates`, `contract:normal` (58 passed), `contract:auth`, `contract:roles`, `contract:lists`,
 `contract:subscribers`, `contract:settings`, `contract:sends`, `contract:fixture`,
 `contract:messaging`, `messaging:fixture`: all exit 0. `bun test test/server`: 19 pass.
 `bun test test/contract`: 48 pass. `bun run sends:production` (root, Docker socket, host
