@@ -1247,3 +1247,17 @@ Brief B108, from the first production adopter's v1.3.0 verification on its dev i
   - Memory only: lost on restart, and bounces arrive after restarts.
   - A separate attention table: the log buffer already carries fixed lines to `GET /api/logs`, and the table would add a second store for the same thing (D89).
 - **Evidence:** [B108 measurements](../perf/B108-test-send-records.md).
+
+## D115. Bun 1.4.5, and JSON arrays from SQLite are converted explicitly (lead, 2026-11-20)
+
+Brief B107, after the revert of the unreviewed Bun 1.4.5 bump in B107a (#158).
+
+- **Decision:** the runtime is Bun 1.4.5 (`packageManager`, `@types/bun`, the release pin in `scripts/release.ts`, the container image in the brief recipes). Every SQL statement that puts a JSON array built by a subquery into a JSON object wraps that subquery in `json(...)`. Webhook payloads carry `list_ids` as a JSON array on every Bun version.
+- **Why:** on `oven/bun:1.4.5` (SQLite 3.54.1) a scalar subquery's `json_group_array` lost its JSON subtype, so `json_object` stored the array as the string `"[1,2]"`. `oven/bun:1.4.4` (SQLite 3.53.4) keeps the array. A runtime's SQLite is not a contract, so the array's type must come from the SQL, not from the driver. The four webhook and bounce tests that failed on 1.4.5 are unchanged, and a test pins the array in every delivered body that carries `list_ids`.
+- **Audit:** `webhook-blocklisted` and `webhook-deleted` (`src/subscribers/store.sql`) were the only splices from a scalar subquery. `webhook-unsubscribed` (a derived table), the delivery-clear and delivery-end updates and `delivery-insert-many` already used `json(...)`. Campaign list and media columns are read as text and parsed in JavaScript, so no version can change their type.
+- **Unchanged:** the payload shape, the event set, the delivery window, at-most-once marketing sends, and the WebKit revision (Bun 1.4.5 pins the same `d6375c72…` as 1.4.4, so `notices()` changes only its Bun version).
+- **Considered:**
+  - Pinning Bun 1.4.4 and waiting for a fix: the runtime would keep an SQLite behaviour the next version may change, and the release gate would still rest on an unstated driver property.
+  - Converting in JavaScript (`JSON.parse` of each list): it moves each row through the runtime and makes the payload SQL a mix of two encoders, so the cost is not justified.
+  - Relying on Bun's `json()` subtype across subqueries in general: that is the behaviour that changed, so it is not a basis.
+- **Evidence:** the root-cause table on each runtime, and the before and after runs of `test/webhooks/webhooks.test.ts` and `test/bounces/bounces.test.ts` on `oven/bun:1.4.5` ([B107 measurements](../perf/B107-bun-1.4.5.md)): the four named tests and the new `list_ids` array test fail before the fix, and all pass after it, while on `oven/bun:1.4.4` they pass both before and after.

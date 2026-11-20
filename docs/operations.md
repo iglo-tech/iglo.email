@@ -11,7 +11,7 @@ copies.
 
 Each release on [GitHub](https://github.com/iglo-tech/iglo.email/releases) has one executable per
 architecture, `iglo.email-linux-x64` and `iglo.email-linux-arm64`, plus `SHA256SUMS`, `LICENSE` and
-`THIRD-PARTY-NOTICES.txt`. Linux on x86-64 (an SSE4.2 CPU, Nehalem or newer, as Bun 1.4.4 targets)
+`THIRD-PARTY-NOTICES.txt`. Linux on x86-64 (an SSE4.2 CPU, Nehalem or newer, as Bun 1.4.5 targets)
 and on arm64 are the only supported platforms; there are no macOS or Windows builds. The server
 needs glibc, and neither Bun nor a checkout. Download the files of the version you want into an
 empty directory, then pick your architecture (`uname -m` prints `x86_64` or `aarch64`):

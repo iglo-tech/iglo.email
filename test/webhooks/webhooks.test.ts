@@ -238,6 +238,61 @@ test("every listed event reaches the receiver correctly signed", async () => {
   ).toEqual(["unsub@example.test", "blocked@example.test"]);
 });
 
+test("list_ids is a JSON array in every delivered body that carries it, with or without lists", async () => {
+  // Bun 1.4.5 (SQLite 3.54.1) returned a scalar subquery's JSON text as a string; this pins the array.
+  const f = await open({ reject: () => true });
+  const r = receiver();
+  await hook(f, r);
+  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
+    .body.data.id as number;
+  const unsub = await f.subscriber("unsub@example.test", "unsub", { lists: [list] });
+  await f.json("/api/subscribers/lists", "PUT", {
+    ids: [unsub],
+    action: "unsubscribe",
+    target_list_ids: [list],
+  });
+  await r.waitFor(1);
+  const blocked = await f.subscriber("blocked@example.test", "blocked", { lists: [list] });
+  await blocklist(f, blocked);
+  await r.waitFor(3);
+  const deleted = await f.subscriber("deleted@example.test", "deleted", { lists: [list] });
+  await f.json(`/api/subscribers/${deleted}`, "DELETE");
+  await r.waitFor(4);
+  const bare = await f.subscriber("bare@example.test", "bare", { lists: [] });
+  await f.json(`/api/subscribers/${bare}`, "DELETE");
+  await r.waitFor(5);
+  const failing = await f.subscriber("failing@example.test", "failing", { lists: [list] });
+  const template = await f.template("<p>hello</p>");
+  await f.tx({ subscriber_id: failing, template_id: template });
+  await r.waitFor(6);
+  writeTransaction(f.db, () =>
+    f.webhooks!.queueWebhook("bounce.recorded", () => ({
+      subscriber: null,
+      list_ids: [],
+      bounce: { type: "hard" },
+    })),
+  );
+  await r.waitFor(7);
+
+  const carrying = [
+    "subscriber.unsubscribed",
+    "subscriber.blocklisted",
+    "subscriber.deleted",
+    "send.failed",
+    "bounce.recorded",
+  ];
+  for (const event of carrying) {
+    const bodies = r.received.filter((x) => x.body.event === event);
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const received of bodies) expect(Array.isArray(received.body.data.list_ids)).toBe(true);
+  }
+  const deletedBodies = r.received.filter((x) => x.body.event === "subscriber.deleted");
+  const bareBody = deletedBodies.find((x) => x.body.data.subscriber.id === bare);
+  expect(bareBody!.body.data.list_ids).toEqual([]);
+  const deletedBody = deletedBodies.find((x) => x.body.data.subscriber.id === deleted);
+  expect(deletedBody!.body.data.list_ids).toEqual([list]);
+});
+
 test("a send to an address outside the subscribers carries no address", async () => {
   const f = await open({ reject: () => true });
   const r = receiver();

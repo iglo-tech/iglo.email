@@ -139,8 +139,11 @@ async function verify(source: string): Promise<void> {
   }
 }
 
-/** The WebKit revision Bun pins; a new Bun needs a new one, which packaging checks. */
-const runtime = { bun: "1.4.4", webkit: "d6375c72affe0f70222cdcb45012b10f0bf3a9d5" };
+/**
+ * The WebKit revision Bun pins; a new Bun needs a new one, which packaging checks. Bun 1.4.5 pins
+ * the same revision as 1.4.4 (oven-sh/bun `scripts/build/deps/webkit.ts` at tag `bun-v1.4.5`).
+ */
+const runtime = { bun: "1.4.5", webkit: "d6375c72affe0f70222cdcb45012b10f0bf3a9d5" };
 
 async function notices(): Promise<string> {
   if (Bun.version !== runtime.bun)
