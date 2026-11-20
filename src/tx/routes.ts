@@ -4,7 +4,6 @@
 // links, headers and tracking come from src/unsubscribe (M2.4).
 import { refuseWhileHeld } from "@/settings/hold";
 import { createHash } from "node:crypto";
-import { dummyUUID } from "@/campaigns/render";
 import type { Message } from "@/messaging/email";
 import type { RequestedSend, Sends } from "@/messaging/sends";
 import type { startOutbox } from "@/messaging/outbox";
@@ -312,7 +311,6 @@ export function registerTxRoutes(
       const requested: RequestedSend[] = [];
       const marketingSettings = deps.marketing.settings();
       const links = messageLinks(marketingSettings, deps.marketing.tracking);
-      const root = marketingSettings.rootUrl.replace(/\/+$/, "");
       const attachments = [
         ...m.attachments.map((a) => ({
           name: a.name,
@@ -331,13 +329,13 @@ export function registerTxRoutes(
           kind,
           subscriberUuid: recipient.row?.uuid ?? null,
         });
+        // Marketing mail carries unsubscribe_url. A transactional mail carries only manage_url (D126,
+        // r1): its preference link names the send's own paired path, so it manages confirmed lists.
+        // Its unsubscribe_url would render empty, so the key is not offered.
         const unsubscribe = marketing
           ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
           : "";
-        // Preferences for a known subscriber: scoped by the send when marketing, else general.
-        const preferences =
-          prepared.unsubscribeUrl ??
-          (recipient.row ? `${root}/subscription/${dummyUUID}/${recipient.row.uuid}` : "");
+        const preferences = prepared.unsubscribeUrl ?? "";
         const manage = `,"manage_url":${JSON.stringify(preferences && `${preferences}?manage=true`)}`;
         const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}${manage}}`;
         let rendered: { body: string; subject: string };

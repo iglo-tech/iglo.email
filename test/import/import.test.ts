@@ -273,8 +273,30 @@ describe("one server", () => {
     expect(before).toContain("skipping line 7");
     expect(before).toContain("skipping invalid attributes JSON on line 5");
     expect(before).not.toMatch(leaks);
-    const { uuid } = await c.subscriber(person);
-    const wiped = await fetch(`${origin}/subscription/wipe/${uuid}`, {
+    const { id, uuid } = await c.subscriber(person);
+    // B123 (D126): the wipe pairs the subscriber through a marketing send made for them, on a list
+    // they are not on, so the send is skipped and mails nothing.
+    const other = (
+      await c.call("/api/lists", "POST", { name: "Paired", type: "public", optin: "single" })
+    ).body.data.id as number;
+    const template = (
+      await c.call("/api/templates", "POST", {
+        name: "paired",
+        type: "tx",
+        subject: "Paired",
+        body: "<p>Paired</p>",
+      })
+    ).body.data.id as number;
+    const sent = (
+      await c.call("/api/tx", "POST", {
+        subscriber_id: id,
+        template_id: template,
+        kind: "marketing",
+        list_id: other,
+      })
+    ).body.data.sends[0].id as number;
+    const sendUuid = (await c.call(`/api/sends/${sent}`)).body.data.uuid as string;
+    const wiped = await fetch(`${origin}/m/${sendUuid}/wipe/${uuid}`, {
       method: "POST",
       headers: { "sec-fetch-site": "same-origin" },
     });

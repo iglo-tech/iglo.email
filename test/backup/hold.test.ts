@@ -220,8 +220,14 @@ test("a restored install sends nothing to someone who opted out after the backup
   await Bun.sleep(QUIET_MS);
   expect(recipients("Once only")).toEqual(["alice@example.test", "bob@example.test"]);
 
-  // The hold does not stop the operator putting the lost opt-out back.
-  expect((await unsubscribe()).status).toBe(200);
+  // The hold does not stop the operator putting the lost opt-out back. The restored backup predates
+  // the campaign's delivery, so the campaign's link cannot pair (D126): the operator uses the API.
+  const putBack = await fetch(`${server!.origin}/api/subscribers/lists`, {
+    method: "PUT",
+    headers: { authorization, "content-type": "application/json" },
+    body: JSON.stringify({ ids: [alice.id], action: "unsubscribe", target_list_ids: [list.id] }),
+  });
+  expect(putBack.status).toBe(200);
   const running = await release(ACKNOWLEDGE);
   expect(running.exitCode).toBe(1);
   expect(running.stderr).toContain("stop");
@@ -380,6 +386,45 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
     ),
   );
   await until(() => subjects().includes("Before"), "the send before the backup");
+  // B123 (D126): the export pairs the reader through a marketing send made before the hold. The
+  // list is one the reader is not on, so the send is skipped and mails nothing.
+  const unpaired = await data(
+    await client("/api/lists", json({ name: "Paired", type: "public", optin: "single" })),
+  );
+  const pairing = await data(
+    await client(
+      "/api/tx",
+      json({
+        subscriber_id: reader.id,
+        template_id: template.id,
+        kind: "marketing",
+        list_id: unpaired.id,
+      }),
+    ),
+  );
+  const pairedSend = await data(await client(`/api/sends/${pairing.sends[0].id}`));
+  const exportPath = `/m/${pairedSend.uuid}/export/${reader.uuid}`;
+  // B123 (D126): the leaver's one-click pairs through a marketing send to them, made and delivered
+  // before the hold; a held campaign has delivered nothing to anyone.
+  const leaverSend = await data(
+    await client(
+      "/api/tx",
+      json({
+        subscriber_id: leaver.id,
+        template_id: template.id,
+        kind: "marketing",
+        list_id: list.id,
+      }),
+    ),
+  );
+  const leaverSendId = leaverSend.sends[0].id;
+  let leaverSendRow = await data(await client(`/api/sends/${leaverSendId}`));
+  for (let i = 0; i < 1200 && leaverSendRow.status !== "sent"; i++) {
+    await Bun.sleep(25);
+    leaverSendRow = await data(await client(`/api/sends/${leaverSendId}`));
+  }
+  expect(leaverSendRow.status).toBe("sent");
+  const leaverSendUuid = leaverSendRow.uuid as string;
   const running = await campaign(client, list.id, "Was running");
   const paused = await campaign(client, list.id, "Was paused");
   const admin = await data(await client("/api/subscribers?per_page=1"));
@@ -436,7 +481,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
     body: "email=admin%40example.test",
   });
   expect(forgot.status).toBe(503);
-  const exported = await fetch(`${server!.origin}/subscription/export/${reader.uuid}`, {
+  const exported = await fetch(`${server!.origin}${exportPath}`, {
     method: "POST",
   });
   expect(exported.status).toBe(503);
@@ -470,7 +515,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
 
   // Reading, consent and paused work go on.
   expect((await held("/api/campaigns")).status).toBe(200);
-  const leaving = await fetch(`${server!.origin}/subscription/${running.uuid}/${leaver.uuid}`, {
+  const leaving = await fetch(`${server!.origin}/m/${leaverSendUuid}/unsubscribe/${leaver.uuid}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: "List-Unsubscribe=One-Click",

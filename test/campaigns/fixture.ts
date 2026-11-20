@@ -214,6 +214,8 @@ export async function campaignsFixture(
       allowExport: false,
       allowWipe: false,
     }),
+    // The privacy answers are the public fixture's concern; here every path pairs nobody.
+    privacy: { export: () => null, wipe: () => null },
   });
   if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
   const delivery = webhooks

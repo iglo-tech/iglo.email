@@ -104,8 +104,11 @@ test("preview without input renders the dummy subscriber, no trigger and zero ag
     aggregates: { downloads: 0 },
     sequence: { id: sequence, name: "Onboarding" },
     step: { id: step, position: 0, kind: "transactional" },
+    // A transactional step carries no unsubscribe_url (D126, r2); its manage link names the placeholder
+    // send and subscriber, the test page (D126, r1).
     unsubscribe_url: "",
-    manage_url: "",
+    manage_url:
+      "http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/00000000-0000-0000-0000-000000000000?manage=true",
   });
   // Nothing is written: no enrollment, no send, no mail.
   expect(await enrollmentTotal(f)).toBe(0);
@@ -655,9 +658,11 @@ test("a marketing step's test send links to a test page, and clicking it changes
     (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)),
   );
   const url = /href="([^"]+)"/.exec(sent)?.[1];
+  // B123 (D126): the link names the placeholder subscriber, not the real one.
   expect(url).toBe(
-    `http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/${uuid}`,
+    "http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/00000000-0000-0000-0000-000000000000",
   );
+  expect(url).not.toContain(uuid);
   const page = await f.request(new URL(url!).pathname);
   expect(page.status).toBe(200);
   expect(await page.text()).toContain("This link is from a test send.");
@@ -666,4 +671,38 @@ test("a marketing step's test send links to a test page, and clicking it changes
   expect(after.lists.find((l: { id: number }) => l.id === list)?.subscription_status).toBe(
     "unconfirmed",
   );
+});
+
+test("a step test names no real subscriber UUID in its message, its headers or its body", async () => {
+  const f = await open();
+  const list = (
+    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
+  ).body.data.id as number;
+  const subscriber = await f.subscriber("ada@example.test", { lists: [list] });
+  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
+  const template = await f.template(
+    '<p><a href="{{ unsubscribe_url }}">unsubscribe</a> {{ subscriber.uuid }}</p>',
+    "Offer",
+  );
+  const sequence = await f.sequence({
+    trigger: { event: "purchase" },
+    list_id: list,
+    steps: [{ wait: "P1D", kind: "marketing", template_id: template, subject: "Offer" }],
+  });
+  const r = await testSend(f, sequence.id, sequence.steps[0]!.id, {
+    emails: ["owner@example.test"],
+    subscriber_id: subscriber,
+  });
+  expect(r.status).toBe(200);
+  await f.until(() => f.sink.messages.length === 1, "the test message");
+  // The raw message as sent, and as a reader decodes it: a quoted-printable soft break can split
+  // a UUID across lines, so both forms are checked.
+  const raw = f.sink.messages[0]!.data;
+  const decoded = raw
+    .replace(/=\r\n/g, "")
+    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+  expect(raw).not.toContain(uuid);
+  expect(decoded).not.toContain(uuid);
+  // The placeholder stands where the subscriber's UUID would be: in the links and the body.
+  expect(decoded).toContain("00000000-0000-0000-0000-000000000000");
 });

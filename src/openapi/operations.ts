@@ -565,6 +565,7 @@ const subscribers: Operation[] = [
     summary: "A subscriber's events, newest first.",
     native: true,
     permissions: readSubscribers,
+    alsoPermissions: [["subscriber_events:get"]],
     query: nativePaging,
     data: page(ref("SubscriberEvent")),
   },
@@ -1067,7 +1068,7 @@ const campaigns: Operation[] = [
     id: "deleteCampaigns",
     tag: "Campaigns",
     summary: "Delete campaigns by ID or query.",
-    permissions: ["campaigns:manage_all"],
+    permissions: ["campaigns:manage_all", "campaigns:manage"],
     query: [
       ids,
       ...q("query", "type"),

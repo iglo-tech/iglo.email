@@ -263,6 +263,8 @@ export async function schedulerFixture(
       allowExport: false,
       allowWipe: false,
     }),
+    // The privacy answers are the public fixture's concern; here every path pairs nobody.
+    privacy: { export: () => null, wipe: () => null },
   });
   registerEventRoutes(router, events, auth, roles);
   registerSequenceRoutes(router, {

@@ -3,7 +3,19 @@
 // the deletes leave other tests' subscribers alone only if those have lists, which they do here
 // by running serially. Differences beside the cases, with their rows in 07-api-and-ui.md.
 import { expect } from "@playwright/test";
-import { PASSWORD, api, confirm, createUser, logout, test, unique, signIn } from "../helpers.js";
+import {
+  PASSWORD,
+  TRACKED,
+  api,
+  confirm,
+  createUser,
+  linkTo,
+  logout,
+  mailAbout,
+  test,
+  unique,
+  signIn,
+} from "../helpers.js";
 
 async function ok(page, path, method = "GET", body = undefined) {
   const res = await api(page, path, method, body);
@@ -188,14 +200,29 @@ test("campaign analytics reads its charts, with a real view", async ({ page }) =
   page.on("pageerror", (error) => errors.push(error.message));
   const list = await makeList(page);
   const sub = await makeSub(page, [list.id]);
-  const campaign = await makeCampaign(page, list.id);
-  await page.request.get(`/campaign/${campaign.uuid}/${sub.uuid}/px.png`);
+  // The view is the pixel of a message the campaign delivered (D126, r2): it is sent first.
+  const campaign = await ok(page, "/api/campaigns", "POST", {
+    name: `<img src=x onerror=window.pwned=1> ${unique("analytics")}`,
+    subject: "Analytics",
+    lists: [list.id],
+    content_type: "html",
+    type: "regular",
+    messenger: "email",
+    body: "<p>Body</p>{{ track_view }}",
+  });
+  await ok(page, `/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" });
+  await expect
+    .poll(async () => (await ok(page, `/api/campaigns/${campaign.id}`)).status, { timeout: 60000 })
+    .toBe("finished");
+  const mail = await mailAbout(sub.email, campaign.subject);
+  await page.request.get(linkTo(mail, TRACKED.pixel, "the open pixel"));
   await page.goto(`/admin/campaigns/analytics?id=${campaign.id}&from=2020-01-01&to=2099-01-01`);
   const views = page.getByTestId("chart-views");
   await expect(views.locator(".title")).toContainText("(1)");
   await expect(views.locator("canvas").first()).toBeVisible();
   await expect(views).toContainText(campaign.name);
-  await expect(views.getByTestId("legend-count")).toHaveText("1");
+  // The legend shows the count with the campaign's share, now that a delivered campaign has views.
+  await expect(views.getByTestId("legend-count")).toHaveText(/^1\b/);
   await expect(page.locator("ot-taginput .badge")).toContainText(campaign.name);
   await expect(page.getByTestId("chart-clicks")).toContainText("Nothing here");
   await expect(page.getByTestId("chart-subscriptions")).toHaveCount(0);

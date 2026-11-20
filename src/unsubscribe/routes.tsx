@@ -10,7 +10,13 @@ import type { Translation } from "@/i18n/i18n";
 import type { Sends } from "@/messaging/sends";
 import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
-import { savePreferences, subscriptionPage, type PageOptions } from "@/public/preferences";
+import {
+  savePreferences,
+  subscriptionPage,
+  type PageMode,
+  type PageOptions,
+} from "@/public/preferences";
+import type { Privacy } from "@/public/privacy";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -73,10 +79,14 @@ export function registerUnsubscribeRoutes(
     /** The site's branding and privacy options, read for each page (B121). */
     page: () => PageOptions;
     limit?: Middleware;
+    /** The export and wipe answers of a send's subscriber (B123, D126). */
+    privacy: Privacy;
+    privacyLimit?: Middleware;
   },
 ) {
   const effects = deps.effects ?? noEffects;
   const limit = deps.limit ? [deps.limit] : [];
+  const privacyLimit = deps.privacyLimit ? [deps.privacyLimit] : [];
   const options = deps.page;
   const pixel = transparentPixel();
   // B121: every page of these routes is the branded public page, from the same site settings.
@@ -99,14 +109,25 @@ export function registerUnsubscribeRoutes(
           context.app.i18n.T("globals.messages.invalidUUID"),
         )
       : null;
-  /** The marketing send and its current subscriber, only when both UUIDs belong together. */
-  const target = (sendUuid: string, subscriberUuid: string) => {
+  /**
+   * The send and its current subscriber, when both UUIDs belong together (D126, r1): a marketing send
+   * to a list, or a transactional send, which pairs through the journal like any other send. Only the
+   * marketing variant may blocklist or reach a privacy action.
+   */
+  const pairedSend = (sendUuid: string, subscriberUuid: string) => {
     const send = deps.sends.byUuid(sendUuid.toLowerCase());
-    if (!send || send.kind !== "marketing" || send.list_id === null || send.subscriber_id === null)
-      return null;
+    if (!send || send.subscriber_id === null) return null;
     const subscriber = deps.subscribers.get(send.subscriber_id);
     if (!subscriber || subscriber.uuid !== subscriberUuid.toLowerCase()) return null;
-    return { send: { ...send, list_id: send.list_id }, subscriber };
+    if (send.kind === "marketing" && send.list_id !== null)
+      return { marketing: true as const, send, list: send.list_id, subscriber };
+    if (send.kind === "transactional") return { marketing: false as const, send, subscriber };
+    return null;
+  };
+  /** The marketing send and its subscriber: the only pairing that blocklists or reaches privacy. */
+  const target = (sendUuid: string, subscriberUuid: string) => {
+    const found = pairedSend(sendUuid, subscriberUuid);
+    return found?.marketing ? found : null;
   };
   const notFound = (i18n: Translation, headers: Record<string, string> = {}) =>
     page(i18n, 404, i18n.T("globals.terms.notFound"), i18n.T("public.errorFetchingEmail"), headers);
@@ -122,12 +143,29 @@ export function registerUnsubscribeRoutes(
     if (context.params.sendUUID === dummyUUID) return testSendPage(t);
     const bad = invalidUUID(context, "sendUUID", "subUUID");
     if (bad) return bad;
-    const found = target(context.params.sendUUID!, context.params.subUUID!);
+    const found = pairedSend(context.params.sendUUID!, context.params.subUUID!);
     if (!found) return notFound(t, noIndex);
     if (found.subscriber.status === "blocklisted")
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
     const manage = parseBool(context.url.searchParams.get("manage")) === true;
-    return subscriptionPage(t, deps.subscribers, found.subscriber, options(), manage, noIndex);
+    // B123 (D126): the page's forms post to this send's paired routes. A transactional send's page
+    // manages confirmed lists and the name only: no blocklist and no privacy form (r1).
+    const base = `/m/${context.params.sendUUID!.toLowerCase()}`;
+    const mode: PageMode = {
+      kind: "paired",
+      base,
+      blocklist: found.marketing,
+      privacy: found.marketing,
+    };
+    return subscriptionPage(
+      t,
+      deps.subscribers,
+      found.subscriber,
+      options(),
+      manage,
+      noIndex,
+      mode,
+    );
   });
 
   // RFC 8058 one-click and the page form: no login, CSRF token or CAPTCHA.
@@ -140,7 +178,9 @@ export function registerUnsubscribeRoutes(
       if (context.params.sendUUID === dummyUUID) return testSendPage(t);
       const bad = invalidUUID(context, "sendUUID", "subUUID");
       if (bad) return bad;
-      if (!target(context.params.sendUUID!, context.params.subUUID!)) return notFound(t);
+      const sendUuid = context.params.sendUUID!;
+      const subUuid = context.params.subUUID!;
+      if (!pairedSend(sendUuid, subUuid)) return notFound(t);
       let form: PreferenceForm;
       try {
         form = await readPreferences(context.request);
@@ -149,6 +189,8 @@ export function registerUnsubscribeRoutes(
         return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
       }
       const blocklist = deps.settings().allowBlocklist && form.blocklist;
+      // D126 (r1): only a marketing send may blocklist; a transactional send's page cannot.
+      if (blocklist && !target(sendUuid, subUuid)) return notFound(t);
       if (form.manage && !blocklist)
         return (
           savePreferences(
@@ -156,21 +198,29 @@ export function registerUnsubscribeRoutes(
             t,
             options(),
             form,
-            () => target(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null,
+            () => pairedSend(sendUuid, subUuid)?.subscriber ?? null,
           ) ?? notFound(t)
         );
       const done = writeTransaction(deps.db, () => {
         // Re-read inside the write so a concurrent identity change cannot be unsubscribed.
-        const found = target(context.params.sendUUID!, context.params.subUUID!);
+        const found = pairedSend(sendUuid, subUuid);
         if (!found) return false;
-        const listIds = deps.subscribers.unsubscribe(
-          found.subscriber.id,
-          found.send.list_id,
-          blocklist,
-        );
+        if (!found.marketing) {
+          // A transactional send's one-click ends pending opt-ins only, as the placeholder's does (r1).
+          const changed = deps.subscribers.unsubscribeUnconfirmed(found.subscriber.id);
+          for (const list of changed)
+            effects.unsubscribed({
+              subscriberId: found.subscriber.id,
+              listId: list,
+              listIds: [list],
+              blocklisted: false,
+            });
+          return true;
+        }
+        const listIds = deps.subscribers.unsubscribe(found.subscriber.id, found.list, blocklist);
         effects.unsubscribed({
           subscriberId: found.subscriber.id,
-          listId: found.send.list_id,
+          listId: found.list,
           listIds,
           blocklisted: blocklist,
         });
@@ -180,6 +230,30 @@ export function registerUnsubscribeRoutes(
       return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
     },
     ...limit,
+  );
+
+  // B123 (D126): the manage page's privacy forms. Only a subscriber this send paired is answered.
+  const paired = (context: RequestContext) =>
+    target(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null;
+  router.route(
+    "POST",
+    "/m/:sendUUID/export/:subUUID",
+    (context) => {
+      const bad = invalidUUID(context, "sendUUID", "subUUID");
+      if (bad) return bad;
+      return deps.privacy.export(context, () => paired(context)) ?? notFound(context.app.i18n);
+    },
+    ...privacyLimit,
+  );
+  router.route(
+    "POST",
+    "/m/:sendUUID/wipe/:subUUID",
+    (context) => {
+      const bad = invalidUUID(context, "sendUUID", "subUUID");
+      if (bad) return bad;
+      return deps.privacy.wipe(context, () => paired(context)) ?? notFound(context.app.i18n);
+    },
+    ...privacyLimit,
   );
 
   router.route("GET", "/m/:sendUUID/px.png", (context) => {

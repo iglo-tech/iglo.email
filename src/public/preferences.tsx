@@ -20,6 +20,19 @@ export interface PageOptions extends PageSite {
   allowExport: boolean;
   allowWipe: boolean;
 }
+
+/**
+ * What a subscription page offers, by how its path pairs the subscriber (D126, r1).
+ * - `paired`: a campaign, a marketing send or a transactional send paired them. `base` is the
+ *   paired path the forms post to. The manage view changes the name and the confirmed lists.
+ *   `blocklist` and `privacy` say whether those forms appear.
+ * - `pending`: a mail the server sent with no campaign or send (opt-in). The manage view changes
+ *   pending lists only: no name, no blocklist, no privacy form.
+ */
+export type PageMode =
+  | { kind: "paired"; base: string; blocklist: boolean; privacy: boolean }
+  | { kind: "pending" };
+
 const script = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
 export function subscriptionPage(
@@ -29,14 +42,23 @@ export function subscriptionPage(
   options: PageOptions,
   manage: boolean,
   headers: Record<string, string>,
+  mode: PageMode,
 ): Response {
   const showManage = options.allowPreferences && manage;
+  const pending = mode.kind === "pending";
   const subscriptions = showManage
     ? subscribers
         .visibleSubscriptions(subscriber.id)
-        .filter((list) => list.subscriptionStatus !== "unsubscribed")
+        .filter((list) =>
+          pending
+            ? list.subscriptionStatus === "unconfirmed"
+            : list.subscriptionStatus !== "unsubscribed",
+        )
     : [];
-  const privacy = options.allowExport || options.allowWipe;
+  const blocklist = mode.kind === "paired" && mode.blocklist && options.allowBlocklist;
+  const privacy =
+    mode.kind === "paired" && mode.privacy && (options.allowExport || options.allowWipe);
+  const base = mode.kind === "paired" ? mode.base : "";
   const body = render(
     <PublicShell
       title={t.T("public.unsubscribeTitle")}
@@ -52,7 +74,7 @@ export function subscriptionPage(
             <form method="post" class="unsub-form">
               <div>
                 <p>{t.T("public.unsubHelp")}</p>
-                {options.allowBlocklist ? (
+                {blocklist ? (
                   <>
                     <hr />
                     <p class="small">
@@ -77,8 +99,12 @@ export function subscriptionPage(
             <div>
               <input type="hidden" name="manage" value="true" />
               <h2>{t.T("public.managePrefs")}</h2>
-              <label>{t.T("globals.fields.name")}</label>
-              <input type="text" name="name" value={subscriber.name} maxlength="256" required />
+              {pending ? null : (
+                <>
+                  <label>{t.T("globals.fields.name")}</label>
+                  <input type="text" name="name" value={subscriber.name} maxlength="256" required />
+                </>
+              )}
               {subscriptions.length ? (
                 <>
                   <br />
@@ -100,7 +126,7 @@ export function subscriptionPage(
                   </ul>
                 </>
               ) : null}
-              {options.allowBlocklist ? (
+              {blocklist ? (
                 <p class="small">
                   <input
                     id="privacy-blocklist"
@@ -170,17 +196,21 @@ export function subscriptionPage(
         </>
       ) : null}
       {raw(`<script>
-function handleData() {
+${
+  privacy
+    ? `function handleData() {
   var a = document.querySelector('input[name="data-action"]:checked').value,
     f = document.querySelector("#data-form");
   if (a == "export") {
-    f.action = ${script(`/subscription/export/${subscriber.uuid}`)};
+    f.action = ${script(`${base}/export/${subscriber.uuid}`)};
     return true;
   } else if (confirm(${script(t.T("public.privacyConfirmWipe"))})) {
-    f.action = ${script(`/subscription/wipe/${subscriber.uuid}`)};
+    f.action = ${script(`${base}/wipe/${subscriber.uuid}`)};
     return true;
   }
   return false;
+}`
+    : ""
 }
 function unsubAll(e) {
   var off = e.target.checked;
@@ -199,8 +229,8 @@ function unsubAll(e) {
 }
 
 /**
- * The manage branch of SubscriptionPrefs. The name change and every unsubscribe, with their
- * effects, are one transaction; `current` re-reads the subscriber inside it.
+ * The manage branch of SubscriptionPrefs for a paired page. The name change and every unsubscribe,
+ * with their effects, are one transaction; `current` re-reads the subscriber inside it.
  */
 export function savePreferences(
   deps: { db: Database; subscribers: SubscriberStore; effects: UnsubscribeEffects },
@@ -227,6 +257,49 @@ export function savePreferences(
     deps.subscribers.rename(subscriber.id, name);
     for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
       if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") continue;
+      const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId, false);
+      deps.effects.unsubscribed({
+        subscriberId: subscriber.id,
+        listId: list.listId,
+        listIds,
+        blocklisted: false,
+      });
+    }
+    return true;
+  });
+  if (!saved) return null;
+  return publicMessage(t, {
+    status: 200,
+    title: t.T("globals.messages.done"),
+    message: t.T("public.prefsSaved"),
+    site: options,
+  });
+}
+
+/**
+ * The manage save of a pending-only page (D126, r1): a pending list not kept is ended. It changes no
+ * name and no confirmed list, so a link from an old mail can only decline pending opt-ins.
+ */
+export function savePendingLists(
+  deps: { db: Database; subscribers: SubscriberStore; effects: UnsubscribeEffects },
+  t: Translation,
+  options: PageOptions,
+  form: PreferenceForm,
+  current: () => { id: bigint } | null,
+): Response | null {
+  if (!options.allowPreferences)
+    return publicMessage(t, {
+      status: 400,
+      title: t.T("globals.terms.error"),
+      message: t.T("public.invalidFeature"),
+      site: options,
+    });
+  const kept = new Set(form.lists.map((uuid) => uuid.toLowerCase()));
+  const saved = writeTransaction(deps.db, () => {
+    const subscriber = current();
+    if (!subscriber) return false;
+    for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
+      if (list.subscriptionStatus !== "unconfirmed" || kept.has(list.uuid)) continue;
       const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId, false);
       deps.effects.unsubscribed({
         subscriberId: subscriber.id,

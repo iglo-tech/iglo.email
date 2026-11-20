@@ -154,7 +154,7 @@ test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces an
 
   // Also export the subscriber who owns the source='mailgun' bounce row
   expect((await f.json("/api/settings/privacy.allow_export", "PUT", true)).status).toBe(200);
-  const exportRes = await f.request(`/subscription/export/${sub.uuid}`, {
+  const exportRes = await f.request(await f.privacyPath(subId, "export"), {
     method: "POST",
   });
   expect(exportRes.status).toBe(200);
@@ -172,7 +172,7 @@ test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces an
   expect(report.bounces[0].meta).toEqual({ code: 550, reason: "bounce" });
 
   // Public wipe clears the bounce row with the subscriber
-  const wipeRes = await f.request(`/subscription/wipe/${sub.uuid}`, {
+  const wipeRes = await f.request(await f.privacyPath(subId, "wipe"), {
     method: "POST",
   });
   expect(wipeRes.status).toBe(200);

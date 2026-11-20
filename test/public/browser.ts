@@ -136,13 +136,30 @@ const passed = await withProduction(
     if ((await status(double.id)) !== "unsubscribed") fail("prefs-list");
     if ((await status(single.id)) === "unsubscribed") fail("prefs-kept");
 
-    // Export, then wipe with the confirmation dialog.
-    browser("open", prefs);
+    // Export, then wipe with the confirmation dialog. The privacy forms need a paired page (D126):
+    // the manage page of a marketing send to this subscriber, not the placeholder page above.
+    const template = (
+      await api("/api/templates", "POST", {
+        name: "Browser marketing",
+        type: "tx",
+        subject: "Browser marketing",
+        body: "<p>Hello</p>",
+      })
+    ).data.id as number;
+    const sent = await api("/api/tx", "POST", {
+      subscriber_id: (await row()).id,
+      template_id: template,
+      kind: "marketing",
+      list_id: single.id,
+    });
+    const sendUuid = (await api(`/api/sends/${sent.data.sends[0].id}`)).data.uuid as string;
+    const paired = `${origin}/m/${sendUuid}/unsubscribe/${uuid}?manage=true`;
+    browser("open", paired);
     browser("click", "#privacy-export");
     browser("click", "input[type=submit]");
     browser("wait", "--text", "Your data has been e-mailed");
     shot("export");
-    browser("open", prefs);
+    browser("open", paired);
     browser("click", "#privacy-wipe");
     // Accept the page's confirm() once it opens.
     browser("eval", "window.confirm = () => true; 1");

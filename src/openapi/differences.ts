@@ -289,6 +289,24 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Privacy and blocklist need a paired send or campaign (D126, B123)",
+    summary:
+      "`/subscription/export/:subUUID` and `/subscription/wipe/:subUUID` are 404: a subscriber UUID alone reaches no privacy action. Export, wipe and blocklist act only through a send or campaign that paired the subscriber (`/m/:sendUUID/…`, `/subscription/:campUUID/…`), and an unpaired path answers 404 and writes nothing. Upstream acts on the subscriber UUID alone.",
+    applies: [],
+  },
+  {
+    area: "Placeholder, transactional and view links (D126, r1)",
+    summary:
+      "The placeholder campaign's manage page and save change pending opt-ins only: no name, no confirmed list, no blocklist. A transactional send's manage link names its own paired send path, which manages confirmed lists and the name, and blocklist and privacy are refused there. A transactional mail carries no unsubscribe_url. View in browser answers only a subscriber the campaign was delivered to. Upstream acts on the subscriber UUID alone.",
+    applies: [],
+  },
+  {
+    area: "View pixel pairing (D126, r2)",
+    summary:
+      "The view pixel records a view only for a campaign the runner delivered: with individual tracking, to the subscriber it names; without it, the dummy-subscriber pixel of a campaign with any delivery, and a pixel naming a subscriber the campaign was delivered to, recorded with no subscriber. Every other request gets the same image and records nothing. Upstream counts every pixel.",
+    applies: [],
+  },
+  {
     area: "Subscriber writable input",
     summary:
       "Ignore read-only/unknown metadata and validate the writable DTO; resolve PATCH omissions at commit time.",

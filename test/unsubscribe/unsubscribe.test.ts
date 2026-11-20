@@ -537,7 +537,6 @@ test("forged, mismatched and non-marketing UUIDs are safe 4xx and change nothing
   const cases: Array<[string, number]> = [
     [`/m/${sent}/unsubscribe/${eveUuid}`, 404],
     [`/m/${crypto.randomUUID()}/unsubscribe/${adaUuid}`, 404],
-    [`/m/${tx}/unsubscribe/${eveUuid}`, 404],
     [`/m/not-a-uuid/unsubscribe/${adaUuid}`, 400],
     [`/m/${sent}/unsubscribe/x`, 400],
   ];
@@ -551,6 +550,14 @@ test("forged, mismatched and non-marketing UUIDs are safe 4xx and change nothing
     expect(post.status).toBe(code);
     expect(post.headers.get("content-type")).toBe("text/html; charset=UTF-8");
   }
+  // A transactional send pairs its own subscriber: the page answers, but its POST cannot blocklist (r1).
+  expect((await f.request(`/m/${tx}/unsubscribe/${eveUuid}`)).status).toBe(200);
+  const blocked = await f.request(`/m/${tx}/unsubscribe/${eveUuid}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "blocklist=true",
+  });
+  expect(blocked.status).toBe(404);
   for (const id of [ada, eve]) {
     const data = (await f.json(`/api/subscribers/${id}`)).body.data;
     expect(data.status).toBe("enabled");

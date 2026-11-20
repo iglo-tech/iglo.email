@@ -199,6 +199,8 @@ export async function runnerFixture(
     control,
     runnerStore: store,
     settings,
+    /** The public routes' settings (the campaigns fixture's), read by the view pixel and the pages. */
+    publicSettings: f.settings,
     start,
     drive,
     read,

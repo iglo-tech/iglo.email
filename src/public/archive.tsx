@@ -147,14 +147,15 @@ export function registerArchiveRoutes(
       );
     const found = deps.store.byUuid(campUUID.toLowerCase());
     const row = found && deps.store.get(found.id);
-    if (!row) return notFound(t, noIndex);
-    const sub = deps.subscribers.byUuid(subUUID.toLowerCase());
-    if (!sub)
+    const sub = row && deps.subscribers.byUuid(subUUID.toLowerCase());
+    // D126 (r1): the message is shown only to a subscriber the campaign was delivered to. Every other
+    // answer is the same invalid-link page, so the UUIDs reveal nothing (no existence oracle).
+    if (!row || !sub || !deps.store.delivered(row.id, sub.id))
       return message(
         t,
         404,
         t.T("globals.terms.notFound"),
-        t.T("public.errorFetchingEmail"),
+        t.T("globals.messages.invalidLink"),
         noIndex,
       );
     try {

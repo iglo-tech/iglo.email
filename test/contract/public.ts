@@ -168,6 +168,60 @@ export async function runPublicContract(target: {
       email,
     };
   };
+  /**
+   * B123 (D126, deliberate difference): upstream's privacy actions take a subscriber UUID alone. Here
+   * the path names a campaign the runner delivered to the subscriber, so the reference target keeps
+   * its sub-only path and production pairs the subscriber through a campaign of their own.
+   */
+  const privacyPath = async (who: { id: number; uuid: string }, action: "export" | "wipe") =>
+    reference
+      ? `/subscription/${action}/${who.uuid}`
+      : `/subscription/${await pairedCampaign(who)}/${action}/${who.uuid}`;
+  /** A campaign the runner has delivered to this subscriber: its UUID (D126, production). */
+  const pairedCampaign = async (who: { id: number }) => {
+    const list = await call("/api/lists", "POST", {
+      name: `${marker} paired ${randomBytes(4).toString("hex")}`,
+      type: "public",
+      optin: "single",
+    });
+    check(list.status === 200, "paired-list");
+    owned.lists.push(list.body.data.id as number);
+    check(
+      (
+        await call("/api/subscribers/lists", "PUT", {
+          ids: [who.id],
+          action: "add",
+          target_list_ids: [list.body.data.id],
+          status: "confirmed",
+        })
+      ).status === 200,
+      "paired-member",
+    );
+    const fromEmail = (await call("/api/settings")).body.data["app.from_email"][0] as string;
+    const created = await call("/api/campaigns", "POST", {
+      name: `${marker} paired campaign`,
+      subject: `${marker} paired subject`,
+      lists: [list.body.data.id],
+      type: "regular",
+      content_type: "html",
+      messenger: "email",
+      from_email: fromEmail,
+      body: "<p>Paired</p>",
+    });
+    check(created.status === 200, "paired-campaign");
+    owned.campaigns.push(created.body.data.id as number);
+    check(
+      (await call(`/api/campaigns/${created.body.data.id}/status`, "PUT", { status: "running" }))
+        .status === 200,
+      "paired-start",
+    );
+    for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
+      const current = (await call(`/api/campaigns/${created.body.data.id}`)).body.data.status;
+      if (current === "finished") break;
+      check(Date.now() < deadline, "paired-finish");
+    }
+    return created.body.data.uuid as string;
+  };
   const setSetting = async (key: string, value: unknown) => {
     const response = await call(`/api/settings/${key}`, "PUT", value);
     check(response.status === 200, `setting-${key}`);
@@ -680,19 +734,26 @@ export async function runPublicContract(target: {
     // Preferences.
     const kim = await createSubscriber("kim", [single.id, double.id, hidden.id], true);
     const prefs = `/subscription/${dummy}/${kim.uuid}`;
+    // B123 r1 (D126, deliberate difference): upstream's placeholder page saves names and lists. Production's
+    // placeholder page changes pending opt-ins only, so its saves below go through a campaign delivered to Kim.
+    const managed = reference ? prefs : `/subscription/${await pairedCampaign(kim)}/${kim.uuid}`;
     const unsubPage = await visit(prefs);
+    // B123 (D126, deliberate difference): the placeholder campaign's page offers no privacy form in
+    // production, since its links pair no send or campaign; upstream's page offers them.
+    const privacyForms = (text: string) =>
+      text.includes('id="data-form"') &&
+      text.includes('value="export"') &&
+      text.includes('value="wipe"');
     check(
       unsubPage.status === 200 &&
         unsubPage.headers.get("x-robots-tag") === "noindex" &&
         unsubPage.text.includes('class="unsub-form"') &&
         unsubPage.text.includes('href="?manage=true"') &&
-        unsubPage.text.includes('id="data-form"') &&
-        unsubPage.text.includes('value="export"') &&
-        unsubPage.text.includes('value="wipe"') &&
+        privacyForms(unsubPage.text) === reference &&
         !unsubPage.text.includes("manage-form"),
       "prefs-unsub-page",
     );
-    const managePage = await visit(`${prefs}?manage=true`);
+    const managePage = await visit(`${managed}?manage=true`);
     check(
       managePage.status === 200 &&
         managePage.text.includes('class="manage-form"') &&
@@ -704,17 +765,31 @@ export async function runPublicContract(target: {
         !managePage.text.includes(hidden.name),
       "prefs-manage-page",
     );
+    if (!reference) {
+      // The placeholder page's save changes no name and no confirmed list (D126, r1).
+      const nameBefore = (await call(`/api/subscribers/${kim.id}`)).body.data.name;
+      const placeholderSave = await post(
+        prefs,
+        new URLSearchParams({ manage: "true", name: "Hacked" }),
+      );
+      check(
+        placeholderSave.status === 200 &&
+          (await call(`/api/subscribers/${kim.id}`)).body.data.name === nameBefore &&
+          (await status(kim.id, single.id)) === "confirmed",
+        "prefs-placeholder-save",
+      );
+    }
     check(
-      (await post(prefs, new URLSearchParams({ manage: "true", name: "  " }))).status === 400,
+      (await post(managed, new URLSearchParams({ manage: "true", name: "  " }))).status === 400,
       "prefs-empty-name",
     );
     check(
-      (await post(prefs, new URLSearchParams({ manage: "true", name: "n".repeat(257) }))).status ===
-        400,
+      (await post(managed, new URLSearchParams({ manage: "true", name: "n".repeat(257) })))
+        .status === 400,
       "prefs-long-name",
     );
     const saved = await post(
-      prefs,
+      managed,
       new URLSearchParams({
         manage: "true",
         name: " Kim Renamed ",
@@ -734,13 +809,27 @@ export async function runPublicContract(target: {
     );
     // The manage page lists only current subscriptions.
     check(
-      !(await visit(`${prefs}?manage=true`)).text.includes(`value="${double.uuid}"`),
+      !(await visit(`${managed}?manage=true`)).text.includes(`value="${double.uuid}"`),
       "prefs-unsubscribed-hidden",
     );
-    // Blocklist through the manage form.
+    // Blocklist through the manage form. B123 (D126, deliberate difference): upstream's placeholder
+    // page blocklists a subscriber UUID alone; production refuses that and blocklists through a
+    // campaign the runner delivered to the subscriber.
     const lee = await createSubscriber("lee", [single.id, hidden.id], true);
+    if (!reference) {
+      const refused = await post(
+        `/subscription/${dummy}/${lee.uuid}`,
+        new URLSearchParams({ manage: "true", blocklist: "true", name: "Lee" }),
+      );
+      check(
+        refused.status === 404 &&
+          (await call(`/api/subscribers/${lee.id}`)).body.data.status === "enabled",
+        "prefs-blocklist-placeholder",
+      );
+    }
+    const leeCampaign = reference ? dummy : await pairedCampaign(lee);
     const blocked = await post(
-      `/subscription/${dummy}/${lee.uuid}`,
+      `/subscription/${leeCampaign}/${lee.uuid}`,
       new URLSearchParams({ manage: "true", blocklist: "true", name: "Lee" }),
     );
     check(
@@ -750,7 +839,7 @@ export async function runPublicContract(target: {
         (await status(lee.id, hidden.id)) === "unsubscribed",
       "prefs-blocklist",
     );
-    const leePage = await visit(`/subscription/${dummy}/${lee.uuid}?manage=true`);
+    const leePage = await visit(`/subscription/${leeCampaign}/${lee.uuid}?manage=true`);
     check(
       leePage.status === 200 && leePage.text.includes("Permanently unsubscribed."),
       "prefs-blocklisted-page",
@@ -782,14 +871,17 @@ export async function runPublicContract(target: {
 
     // Export: a data file by mail, nothing in the response.
     const noa = await createSubscriber("noa", [single.id, hidden.id], true);
-    const exported = await post(`/subscription/export/${noa.uuid}`);
+    const exported = await post(await privacyPath(noa, "export"));
     check(
       exported.status === 200 &&
         exported.text.includes("Your data has been e-mailed to you as an attachment.") &&
         !exported.text.includes(noa.email),
       "export",
     );
-    const [noaMail] = await received(noa.email);
+    // Production's paired campaign mailed Noa too: wait for both, and take the export by its subject.
+    const noaMail = (await received(noa.email, reference ? 1 : 2)).find(
+      (m) => m.Subject === "Your data",
+    );
     check(noaMail?.Subject === "Your data", "export-subject");
     const noaMessage = await message(noaMail!.ID);
     check(noaMessage.Attachments.length === 1, "export-attachment");
@@ -810,7 +902,8 @@ export async function runPublicContract(target: {
     check(
       data.profile[0].email === noa.email &&
         data.profile[0].uuid === noa.uuid &&
-        data.subscriptions.length === 2 &&
+        // Production's paired list (privacyPath) is one more subscription of Noa's.
+        data.subscriptions.length === (reference ? 2 : 3) &&
         data.subscriptions.some((s: any) => s.name === single.name) &&
         data.subscriptions.some((s: any) => s.name === "Private list") &&
         !JSON.stringify(data).includes(hidden.name) &&
@@ -821,11 +914,15 @@ export async function runPublicContract(target: {
       "export-data",
     );
     check((await post(`/subscription/export/${missing}`)).status === 404, "export-forged");
-    check((await post("/subscription/export/nope")).status === 400, "export-bad-uuid");
+    // B123 (D126): production retires the sub-only path, so any value there is a 404, not a 400.
+    check(
+      (await post("/subscription/export/nope")).status === (reference ? 400 : 404),
+      "export-bad-uuid",
+    );
 
     // Wipe.
     const oli = await createSubscriber("oli", [single.id], true);
-    const wiped = await post(`/subscription/wipe/${oli.uuid}`);
+    const wiped = await post(await privacyPath(oli, "wipe"));
     check(
       wiped.status === 200 && wiped.text.includes("Your subscriptions and all associated data"),
       "wipe",
@@ -844,7 +941,7 @@ export async function runPublicContract(target: {
       });
       check(created.status === 200, "wipe-template");
       const removals: [string, (who: { id: number; uuid: string }) => Promise<number>][] = [
-        ["wipe", async (who) => (await post(`/subscription/wipe/${who.uuid}`)).status],
+        ["wipe", async (who) => (await post(await privacyPath(who, "wipe"))).status],
         [
           "bulk",
           async (who) =>
@@ -909,8 +1006,12 @@ export async function runPublicContract(target: {
 
     const view = `/campaign/${campaign.uuid}/${reader.uuid}`;
     const draftView = await visit(view);
+    // B123 r1 (D126, deliberate difference): a view in browser pairs a subscriber the campaign was
+    // delivered to. Upstream shows an undelivered draft to any subscriber UUID; production answers 404.
     check(
-      draftView.status === 200 && draftView.headers.get("x-robots-tag") === "noindex",
+      reference
+        ? draftView.status === 200 && draftView.headers.get("x-robots-tag") === "noindex"
+        : draftView.status === 404,
       "view-draft",
     );
     // Upstream falls through to a 500 page; a forged UUID is a safe 404 here.
@@ -1218,12 +1319,12 @@ export async function runPublicContract(target: {
       );
     });
     await withSetting("privacy.allow_export", false, async () => {
-      check((await post(`/subscription/export/${noa.uuid}`)).status === 400, "gate-export");
+      check((await post(await privacyPath(noa, "export"))).status === 400, "gate-export");
       const withoutExport = await visit(`/subscription/${dummy}/${noa.uuid}`);
       check(!withoutExport.text.includes('value="export"'), "gate-export-page");
     });
     await withSetting("privacy.allow_wipe", false, async () => {
-      check((await post(`/subscription/wipe/${noa.uuid}`)).status === 400, "gate-wipe");
+      check((await post(await privacyPath(noa, "wipe"))).status === 400, "gate-wipe");
       check((await call(`/api/subscribers/${noa.id}`)).status === 200, "gate-wipe-kept");
     });
     await withSetting("app.send_optin_confirmation", false, async () => {

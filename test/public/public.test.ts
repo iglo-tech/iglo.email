@@ -1,6 +1,7 @@
 // M2.5 behavior through the public HTTP boundary and the SMTP sink, on the injected clock.
 // Upstream-compared results are in test/contract/public.ts.
 import { afterEach, expect, test } from "bun:test";
+import { createRunnerStore } from "@/campaigns/runner/store";
 import { createRateLimit, createThrottle } from "@/public/rate-limit";
 import { createClientAddress } from "@/server/client-address";
 import { imagePng } from "@/test/media/images";
@@ -26,6 +27,9 @@ const api = (f: PublicFixture, email: string, uuid: string, peer = "203.0.113.9"
     body: signup(email, uuid),
   });
 const form = (values: Record<string, string>) => new URLSearchParams(values).toString();
+/** A subscriber's paired privacy path: a campaign the runner delivered to them names it (D126). */
+const paired = async (f: PublicFixture, id: number, action: "export" | "wipe") =>
+  `/subscription/${f.deliveredCampaign([id])}/${action}/${(await f.json(`/api/subscribers/${id}`)).body.data.uuid}`;
 
 test("each limit is per peer, answers 429 and reopens on the clock", async () => {
   const f = await open();
@@ -215,16 +219,18 @@ test("trusted origins can read and post to the public API, as upstream", async (
 test("opt-in, unsubscribe and privacy POSTs are limited too", async () => {
   const f = await open();
   const missing = "11111111-1111-4111-8111-111111111111";
+  // B123 (D126): privacy is limited on its paired paths; the retired sub-only paths are not routes.
   for (const path of [
     `/subscription/optin/${missing}`,
     `/subscription/${dummy}/${missing}`,
-    `/subscription/export/${missing}`,
+    `/subscription/${dummy}/export/${missing}`,
   ]) {
     for (let i = 0; i < 5; i++) expect((await f.post(path)).status).toBe(404);
     expect((await f.post(path)).status).toBe(429);
   }
   // Export and wipe share their budget.
-  expect((await f.post(`/subscription/wipe/${missing}`)).status).toBe(429);
+  expect((await f.post(`/subscription/${dummy}/wipe/${missing}`)).status).toBe(429);
+  expect((await f.post(`/subscription/export/${missing}`)).status).toBe(404);
 });
 
 test("the limiter stays bounded without locking out new peers", () => {
@@ -323,7 +329,8 @@ test("the opt-in queue is bounded and a wipe beats a queued signup", async () =>
   const f = await open();
   const list = await f.list("Double", "public", "double");
   await api(f, "gone@example.test", list.uuid);
-  await f.fresh(`/subscription/wipe/${f.owners.subscribers.byEmail("gone@example.test")!.uuid}`);
+  const gone = Number(f.owners.subscribers.byEmail("gone@example.test")!.id);
+  await f.fresh(await paired(f, gone, "wipe"));
   await f.drain();
   expect(f.mailTo("gone@example.test")).toHaveLength(0);
   for (let id = 1n; id <= 6000n; id++) f.mail.acceptSignup(id);
@@ -403,7 +410,9 @@ test("preferences commit with their effects, or not at all", async () => {
     preconfirm_subscriptions: true,
   });
   const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
-  const path = `/subscription/${dummy}/${uuid}`;
+  // A campaign the subscriber was delivered to pairs the save (D126, r1): the placeholder's saves
+  // change no name and no confirmed list.
+  const path = `/subscription/${f.deliveredCampaign([id], [keep.id, drop.id, hidden.id])}/${uuid}`;
   const body = form({ manage: "true", name: "Renamed", l: keep.uuid });
   f.failEffects(true);
   expect((await f.fresh(path, body)).status).toBe(500);
@@ -453,8 +462,7 @@ test("send pages offer the same preferences, bound to their subscriber", async (
 test("export mails native sections; the response holds nothing personal", async () => {
   const f = await open();
   const id = await f.subscriber("noa@example.test", "Noa");
-  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
-  const response = await f.fresh(`/subscription/export/${uuid}`);
+  const response = await f.fresh(await paired(f, id, "export"));
   expect(response.status).toBe(200);
   expect(await response.text()).not.toContain("noa@example.test");
   await f.drain();
@@ -474,7 +482,7 @@ test("export mails native sections; the response holds nothing personal", async 
     ].sort(),
   );
   f.overrides.exportable = ["profile"];
-  await f.fresh(`/subscription/export/${uuid}`);
+  await f.fresh(await paired(f, id, "export"));
   await f.drain();
   const second = f.mailTo("noa@example.test")[1]!;
   const only = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(second.data)![1]!;
@@ -489,8 +497,7 @@ test("wipe removes the subscriber and memberships in one step", async () => {
   const id = await f.subscriber("oli@example.test", "Oli", {
     lists: [list.id],
   });
-  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
-  expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(200);
+  expect((await f.fresh(await paired(f, id, "wipe"))).status).toBe(200);
   expect((await f.json(`/api/subscribers/${id}`)).status).toBe(400);
   expect(
     f.db.query("SELECT count(*) AS n FROM subscriber_lists WHERE subscriber_id = ?").get(id),
@@ -520,7 +527,6 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
   const f = await open();
   const address = "wipe@example.test";
   const id = await f.subscriber(address, "Wipe Me");
-  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
   const other = insertSend(f, "sent", "kept@example.test", null);
   const rows = Object.fromEntries(
     ["queued", "sending", "sent", "failed", "skipped", "unknown"].map((status) => [
@@ -536,12 +542,12 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
     "CREATE TRIGGER wipe_fails BEFORE DELETE ON subscribers BEGIN SELECT RAISE(ABORT, 'no'); END",
   );
   const before = f.db.query("SELECT * FROM sends ORDER BY id").all();
-  expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(500);
+  expect((await f.fresh(await paired(f, id, "wipe"))).status).toBe(500);
   expect(f.db.query("SELECT * FROM sends ORDER BY id").all()).toEqual(before);
   f.db.run("DROP TRIGGER wipe_fails");
 
   const counts = sendCounts(f) as { status: string; n: bigint }[];
-  expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(200);
+  expect((await f.fresh(await paired(f, id, "wipe"))).status).toBe(200);
   for (const send of [...Object.values(rows), unlinked]) {
     const { data } = (await f.json(`/api/sends/${send}`)).body;
     expect(data.to_email).toBe("");
@@ -585,14 +591,13 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
 test("a send in flight during a wipe is skipped, without its payload, and never retries (D80)", async () => {
   const f = await open();
   const id = await f.subscriber("flight@example.test");
-  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
   const send = insertSend(f, "queued", "flight@example.test", id);
   const lease = new Date(f.clock.now().getTime() + minute);
   f.db.run("UPDATE sends SET status='sending', attempts=1, claimed_until=? WHERE id=?", [
     lease.toISOString(),
     send,
   ]);
-  expect((await f.fresh(`/subscription/wipe/${uuid}`)).status).toBe(200);
+  expect((await f.fresh(await paired(f, id, "wipe"))).status).toBe(200);
   const row = f.db.query("SELECT * FROM sends WHERE id = ?").get(send) as never;
   expect((await f.json(`/api/sends/${send}`)).body.data.status).toBe("sending");
   f.sends.finish(row, {
@@ -646,7 +651,11 @@ test("tx templates get manage_url for subscribers, and it opens preferences", as
   };
   expect(await send({ subscriber_id: id })).toBe(200);
   const manage = await url(email);
-  expect(manage).toBe(`http://fixture.test/subscription/${dummy}/${uuid}?manage=true`);
+  // A transactional send names its own paired path, through its journal row (D126, r1).
+  expect(manage).toMatch(
+    /^http:\/\/fixture\.test\/m\/[0-9a-f-]+\/unsubscribe\/[0-9a-f-]+\?manage=true$/,
+  );
+  expect(manage).toContain(`/unsubscribe/${uuid}?manage=true`);
   const page = await f.peer(manage.replace("http://fixture.test", ""), "192.0.2.60");
   expect(page.status).toBe(200);
   expect(await page.text()).toContain("News");
@@ -681,6 +690,8 @@ test("view in browser writes nothing and escapes subscriber data", async () => {
       `{{ subscriber.name }} {{ "https://example.test/a" | track_link }} {{ track_view }}`,
       JSON.stringify({ name: "Sample" }),
     ) as { id: bigint };
+  // The runner delivered the campaign to the subscriber, so their view in browser pairs (D126, r1).
+  createRunnerStore(f.db).claim(campaign.id, row.id, f.clock.now().toISOString());
   const counts = () =>
     f.db
       .query(
@@ -739,6 +750,11 @@ test("embedded images are public media URLs on the campaign page and the archive
       template,
     ],
   );
+  // The runner delivered it to the reader, so the view in browser pairs them (D126, r1).
+  const embedded = f.db.query("SELECT id FROM campaigns WHERE uuid = ?").get(uuid) as {
+    id: bigint;
+  };
+  createRunnerStore(f.db).claim(embedded.id, reader.id, f.clock.now().toISOString());
   const pages = [`/campaign/${uuid}/${reader.uuid}`, "/archive/embedded"];
   for (const path of pages) {
     const page = await (await f.peer(path, "192.0.2.41")).text();

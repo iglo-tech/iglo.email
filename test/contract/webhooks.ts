@@ -194,9 +194,32 @@ export async function runWebhooksContract(target: {
     // The public wipe and an admin delete: no address in anything stored afterwards. A wipe
     // carries no external ID either, which a retained `bulk` admin delete still does.
     const wiped = await subscriber("wiped", "wiped@example.test");
+    // B123 (D126): a wipe pairs the subscriber through a campaign the runner delivered to them. It
+    // is made before the blocklist below, since a blocklisted subscriber gets no delivery.
+    const paired = (
+      await call("/api/campaigns", "POST", {
+        name: "wipe pairing",
+        subject: "wipe pairing",
+        lists: [list],
+        type: "regular",
+        content_type: "html",
+        messenger: "email",
+        from_email: "Fixture <noreply@fixture.test>",
+        body: "<p>Paired</p>",
+      })
+    ).body.data as { id: number; uuid: string };
+    check(
+      (await call(`/api/campaigns/${paired.id}/status`, "PUT", { status: "running" })).status ===
+        200,
+      "wipe-pairing-start",
+    );
+    for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
+      if ((await call(`/api/campaigns/${paired.id}`)).body.data.status === "finished") break;
+      check(Date.now() < deadline, "wipe-pairing-finish");
+    }
     await call(`/api/subscribers/${wiped.id}/blocklist`, "PUT", {});
     await arrived("subscriber.blocklisted", 4);
-    const wipe = await fetch(`${target.baseUrl}/subscription/wipe/${wiped.uuid}`, {
+    const wipe = await fetch(`${target.baseUrl}/subscription/${paired.uuid}/wipe/${wiped.uuid}`, {
       method: "POST",
     });
     check(wipe.status === 200, `wipe-${wipe.status}`);

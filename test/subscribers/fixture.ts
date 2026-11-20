@@ -80,11 +80,22 @@ export async function queryFixture(
   registerListRoutes(router, listStore, roles, auth);
   // The activity and export owners stand in for the mail and tracking modules: these fixtures
   // check the routes' own answers (permissions, the missing-subscriber refusal), not the sections.
-  registerSubscriberRoutes(router, subscribers, roles, auth, undefined, undefined, undefined, {
-    activity: () => ({ events: [], enrollments: [], sends: [] }),
-    clearActivity: () => true,
-    exportSections: (row) => ({ profile: { email: row.email } }),
-  });
+  // The per-subscriber history pages (B123): empty here, served by their routes' own checks.
+  const history = () => [];
+  registerSubscriberRoutes(
+    router,
+    subscribers,
+    roles,
+    auth,
+    undefined,
+    undefined,
+    { events: history, enrollments: history, sends: history },
+    {
+      activity: () => ({ events: [], enrollments: [], sends: [] }),
+      clearActivity: () => true,
+      exportSections: (row) => ({ profile: { email: row.email } }),
+    },
+  );
   registerSubscriberQueryRoutes(router, query, subscribers, roles, auth);
   const session = await auth.login(admin.user, admin.password);
   if (!session || !("id" in session)) throw new Error("fixture login failed");

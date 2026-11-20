@@ -105,9 +105,13 @@ try {
        INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, status, smtp_message_id, payload)
        SELECT '${email}-' || i, 'tx', 'transactional', ${id}, '${email}', 'sent', '<m>', '{}' FROM n`,
     );
+    // B123 (D126): the wipe is paired through a campaign the runner delivered to the subscriber.
+    const campaign = f.deliveredCampaign([id]);
     const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
     start = Bun.nanoseconds();
-    const response = await f.peer(`/subscription/wipe/${uuid}`, address(), { method: "POST" });
+    const response = await f.peer(`/subscription/${campaign}/wipe/${uuid}`, address(), {
+      method: "POST",
+    });
     wipes.push((Bun.nanoseconds() - start) / 1e6);
     if (response.status !== 200) throw new Error(`wipe ${response.status}`);
   }

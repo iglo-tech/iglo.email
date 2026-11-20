@@ -22,14 +22,24 @@ export interface StepData {
   sequence: { id: bigint; name: string };
   step: { id: bigint; uuid: string; position: number; kind: string };
   aggregates: Record<string, number>;
+  /** Marketing steps only: a transactional mail carries no unsubscribe_url (D126, r2). */
   unsubscribe_url: string;
+  /** The subscriber's manage link, for marketing and transactional steps alike (D126). */
+  manage_url: string;
 }
 
 /** The JSON the template is rendered with, byte for byte what the scheduler has always sent. */
 export function stepDataText(data: StepData): string {
   const id = (value: bigint) => JSON.stringify(numberID(value));
   const text = (value: string) => JSON.stringify(value);
-  const { subscriber, trigger, sequence, step, unsubscribe_url: unsubscribe } = data;
+  const {
+    subscriber,
+    trigger,
+    sequence,
+    step,
+    unsubscribe_url: unsubscribe,
+    manage_url: manage,
+  } = data;
   return (
     `{"subscriber":{"id":${id(subscriber.id)},"uuid":${text(subscriber.uuid)},` +
     `"email":${text(subscriber.email)},"name":${text(subscriber.name)},` +
@@ -43,7 +53,7 @@ export function stepDataText(data: StepData): string {
     `"step":{"id":${id(step.id)},"uuid":${text(step.uuid)},"position":${step.position},"kind":${text(step.kind)}},` +
     `"aggregates":${JSON.stringify(data.aggregates)},` +
     `"unsubscribe_url":${text(unsubscribe)},` +
-    `"manage_url":${text(unsubscribe ? `${unsubscribe}?manage=true` : "")}}`
+    `"manage_url":${text(manage)}}`
   );
 }
 

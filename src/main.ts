@@ -81,6 +81,7 @@ import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import { registerArchiveRoutes } from "@/public/archive";
 import { createSubscriberMail, createSignupMail, type SubscriberMail } from "@/public/mail";
+import { createPrivacy } from "@/public/privacy";
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { createCaptcha } from "@/captcha/captcha";
@@ -438,6 +439,14 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       attachments,
       embedImages,
     });
+    // B123 (D126): the export and wipe of a paired subscriber. The mail module is made below, and
+    // a request is answered only after startup, so its getter reads it then.
+    const privacy = createPrivacy({
+      db,
+      subscribers: subscriberStore,
+      mail: () => mail!,
+      page: pages,
+    });
     registerUnsubscribeRoutes(router, {
       db,
       sends,
@@ -447,6 +456,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       effects: enrollments.unsubscribeEffects,
       page: pages,
       limit: unsubscribeLimit,
+      privacy,
+      privacyLimit: limits.privacy,
     });
     registerMediaRoutes(router, {
       store: media,
@@ -514,6 +525,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       effects: enrollments.unsubscribeEffects,
       page: pages,
       limit: unsubscribeLimit,
+      privacy,
+      privacyLimit: limits.privacy,
     });
     const campaignsByUuid = campaignStore;
     bounces = createBounceStore(db, clock, {
