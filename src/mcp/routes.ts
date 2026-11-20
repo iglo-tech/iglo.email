@@ -1,6 +1,6 @@
 // MCP Streamable HTTP endpoint at /api/mcp (B34, D89, D91).
 import type { RequestContext } from "@/server/context";
-import { HttpError } from "@/server/response";
+import { HttpError, errorResponse } from "@/server/response";
 import type { Router } from "@/server/router";
 import { cookie, type Authentication } from "@/users/auth";
 import { TOOLS, executeTool } from "@/mcp/tools";
@@ -31,16 +31,11 @@ export interface McpDeps {
 }
 
 export function registerMcpRoutes(router: Router, deps: McpDeps): void {
-  // GET /api/mcp answers 405 Method Not Allowed for Streamable HTTP servers without a stream.
-  router.route("GET", "/api/mcp", () => {
-    return new Response("Method Not Allowed\n", {
-      status: 405,
-      headers: {
-        Allow: "POST",
-        "Content-Type": "text/plain; charset=utf-8",
-      },
-    });
-  });
+  // GET /api/mcp answers 405 Method Not Allowed for Streamable HTTP servers without a stream. The
+  // body is the API's JSON error, as the OpenAPI document declares for every 405.
+  router.route("GET", "/api/mcp", () =>
+    errorResponse(new HttpError(405, "Method Not Allowed", { Allow: "POST" }), "GET"),
+  );
 
   router.route("POST", "/api/mcp", async (context: RequestContext) => {
     // 1. Origin validation: reuse auth.checkOrigin to validate Origin when present

@@ -307,6 +307,20 @@ test("a campaign without recipients finishes", async () => {
   expect(f.pushes.length).toBe(0);
 });
 
+test("a campaign without recipients is finished by a scan, not by the wake (D120)", async () => {
+  f = await runnerFixture();
+  const list = await f.list("empty");
+  const c = await f.campaign({ name: "e", subject: "s", lists: [list] });
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  // The wake claims the campaign, but it stays running for one scan interval (5 s).
+  await f.drive(() => false, 50, 20).catch(() => {});
+  expect((await f.read(c.id)).status).toBe("running");
+  await f.until(c.id, "finished");
+  expect(f.pushes.length).toBe(0);
+  expect((await f.read(c.id)).sent).toBe(0);
+});
+
 test("campaign deliveries count toward the marketing frequency cap", async () => {
   f = await runnerFixture();
   const list = await f.list("l");

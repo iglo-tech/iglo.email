@@ -658,6 +658,8 @@ export async function runOpenApiContract(target: {
           kind: "marketing",
           template_id: txTemplate.id,
           condition: { not: { event: "done", since: "trigger" } },
+          // Named aggregates are part of the step schema; a stored value makes the check see them.
+          aggregates: { done: { event: "done", since: "trigger" } },
         },
       ],
     };
@@ -717,6 +719,20 @@ export async function runOpenApiContract(target: {
     });
     await op("POST /api/sequences/{id}/steps/{step}/reschedule", {
       params: { id: sequence.id, step: stored.steps[0].id },
+    });
+    // The preview and the test take a sample of the subscriber, trigger and aggregates (StepSample).
+    const sample = {
+      subscriber: { name: "Sample", email: "sample@fixture.test", external_id: "s-1", attribs: {} },
+      trigger: { name: "signup", data: { plan: "a" }, occurred_at: "2026-01-01T00:00:00Z" },
+      aggregates: {},
+    };
+    await op("POST /api/sequences/{id}/steps/{step}/preview", {
+      params: { id: sequence.id, step: stored.steps[0].id },
+      body: { sample },
+    });
+    await op("POST /api/sequences/{id}/steps/{step}/test", {
+      params: { id: sequence.id, step: stored.steps[0].id },
+      body: { emails: ["sample@fixture.test"], sample },
     });
     const kept = (
       await op("PUT /api/sequences/{id}", {
@@ -1125,6 +1141,11 @@ export async function runOpenApiContract(target: {
         campaign_uuid: campaign.uuid,
       },
     });
+    // A second, hard bounce for the same subscriber: the bounce list below acts on two rows.
+    // (B35 removed the Mailgun bounce that used to supply the second row.)
+    await op("POST /webhooks/bounce", {
+      body: { email: other.email, type: "hard", source: "contract", meta: { b: 2 } },
+    });
     await op("GET /api/subscribers/{id}/bounces", { params: { id: other.id } });
     await op("POST /webhooks/service/{service}", {
       params: { service: "ses" },
@@ -1431,11 +1452,12 @@ export async function runOpenApiContract(target: {
     }
 
     const secured = operations.filter(({ operation }) => operation.security?.length !== 0);
-    for (const { key } of secured)
+    for (const { key, operation } of secured)
       await op(key, {
         ...placeholders(key, "999999"),
         auth: null,
-        expect: 403,
+        // An operation that documents 401 refuses a missing credential with it (MCP); others 403.
+        expect: operation.responses["401"] ? 401 : 403,
       });
 
     // And names its permission to a caller without one. An operation refused for a permission

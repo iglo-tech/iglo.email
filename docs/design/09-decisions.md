@@ -1315,3 +1315,27 @@ Brief B121, from the first adopter's v1.4.1 verification. The `/m/` unsubscribe 
   - Passing the branding into each route separately: that is the bug the brief reports; one getter stops a route from forgetting it.
   - A 404 for the empty form: every visitor reaches it, and a 404 reads as a broken link; a 200 with the message does not.
 - **Evidence:** `test/ui/public.test.ts` through the compiled server (admin and API paths keep their own answers, the public 404 stays for other paths, and the sign-in, forgot-password and reset pages show the site's logo), `test/public/branding.test.ts` (the `/m/` pages, the test-send page, the POST result page, the 404 and its HEAD, the hidden archive, the 429 page and the empty form under the Subscribe title), `test/public/test-send-links.test.ts` (the two new test-page wordings) and `form-empty-d119` in `test/contract/public.ts`. The change adds no work to a send, a schedule or storage, so it has no measurement.
+
+## D120. A campaign without recipients is finished by a scan, not by its start (lead, 2026-11-20)
+
+A running campaign whose audience is empty is not finished by the wake that started it. The runner leaves it running for one scan interval (5 s), and the first scan after that finishes it with `sent` 0 and the finished notification. Until now the wake finished it at once, so a pause or cancel sent right after the start was refused as "Only active campaigns can be paused.". That broke the shared `campaigns-status-pause` check in `contract:campaigns`, which had never run in CI (B122).
+
+- **Why this is the fix:** [D97](09-decisions.md#d97-the-campaign-runner-wakes-on-start-lead-2026-11-13) says the wake only starts sending sooner, and that the result is listmonk's. listmonk creates a campaign's pipe on its scan, so an empty campaign finishes on a scan after its start. The wake now keeps that result.
+- **Unchanged:** every HTTP response, every status transition, the finished state and notification, what is sent, and a campaign with recipients, which still starts at the wake. Pause and cancel still take effect at the next batch.
+- **Timing:** a campaign with no recipients finishes 5 s after its start here (measured median 5.01 s on the compiled executable, and exactly 5.0 s on the injected clock), and 0 to 5 s after its start in listmonk. A client that waits for `finished` sees the same final state.
+- **Bounded state:** the deferral keeps one `retryAt` entry per deferred campaign until it finishes or starts. A campaign paused or cancelled inside its 5 s window keeps its entry until restart, which is one map entry per such campaign and acceptable for the reasons in [docs/perf/B122-runner-empty-campaign.md](../perf/B122-runner-empty-campaign.md).
+- **Considered:**
+  - Keep the immediate finish and rewrite `contract:campaigns` to expect `finished`: the contract would then never see a running campaign in production, so its pause, cancel and running-stats checks would lose their upstream comparison.
+  - Drop the wake on start: that reverses D97, which keeps it.
+- **Evidence:** `a campaign without recipients is finished by a scan, not by the wake` in `test/campaigns/runner/runner.test.ts` (injected clock: still running after the wake, finished by the scan), and `contract:campaigns` in the container, where production now passes `status-pause`, the running-stats checks and the D117 test-send checks that follow them. The reference result is unchanged. The change does not touch the send path. Its before/after measurements (empty-campaign timing and the campaign throughput of the existing harness) are in [docs/perf/B122-runner-empty-campaign.md](../perf/B122-runner-empty-campaign.md).
+
+## D121. Four API answers follow the document: MCP probes and refusals, and step IDs are checked before the sequence (lead, 2026-11-20)
+
+`contract:openapi` in CI ran for the first time with B122 and found four places where the served answer and the OpenAPI document disagreed or the order of checks was wrong. The fixes are to the server, except the MCP document entries, which already described the behaviour the tests check.
+
+- **`GET /api/mcp`** answers `405` with the API's JSON error envelope, `{"message":"Method Not Allowed"}`, and `Allow: POST`, where it answered `text/plain`. The document declares every `405` as that envelope. The operation is anonymous: a method refusal reads no credential, so it needs none, and the document says so.
+- **`POST /api/mcp`** without a credential answers `401`, as before, and the document now declares it (`No valid credential.`). It is MCP's authorization convention, not the API's `403`, and `test/mcp` checks it.
+- **Step routes** (`/api/sequences/{id}/steps/{step}/preview` and `/test`) check the step ID's form before the sequence is looked up, as the reschedule route does. A malformed step is `400` whether or not the sequence exists; a well-formed step of a missing sequence stays `404`.
+- **Unchanged:** every other status code, every success body and every write.
+- **Considered:** documenting the `text/plain` `405` instead. The API's error envelope is what every other refusal uses, so a client reads one shape.
+- **Evidence:** `contract:openapi` (the document's answers and refusals are exercised, the step preview and test take a sample, and every schema is seen with a real value), `test/mcp`, and `test/sequences` (the step-preview and definitions suites).

@@ -346,12 +346,13 @@ export function registerSequenceRoutes(
       emails: value.emails,
     };
   };
-  /** The step named by the path, with its sequence; 404 when either is not there. */
+  /** The step named by the path, with its sequence; 400 for a malformed step, else 404 when
+   * either is not there. The step's form is checked first, as the reschedule route does. */
   const stepOf = (c: RequestContext) => {
-    const sequence = sequences.get(BigInt(getID(c)));
-    if (!sequence) throw new HttpError(404, "Sequence not found");
     const raw = c.params.step ?? "";
     if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > maxID) throw invalid(c, "step");
+    const sequence = sequences.get(BigInt(getID(c)));
+    if (!sequence) throw new HttpError(404, "Sequence not found");
     const found = sequence.steps.find((step) => idOf(step.id) === BigInt(raw));
     if (!found) throw new HttpError(404, "Step not found");
     return { sequence, step: found };
