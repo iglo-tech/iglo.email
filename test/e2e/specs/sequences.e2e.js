@@ -161,7 +161,9 @@ test("the editor saves what it shows, keeps what it hides and shows a refusal", 
   await page.getByTestId("step-example").selectOption({ label: "Attribute compare" });
   await page.getByTestId("btn-add-step").click();
   await page.getByTestId("step-template").nth(1).selectOption(String(tx.id));
-  await page.getByTestId("btn-save").click();
+  // Saving an existing sequence reloads the page (the save answers, then the page reloads). The card count
+  // is already 2 in the unsaved form, so wait for the reloaded page before any read of the page's context.
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("btn-save").click()]);
   await expect(page.getByTestId("step-card")).toHaveCount(2);
   const saved = (await api(page, `/api/sequences/${id}`)).body.data;
   expect(saved.steps[0]).toMatchObject({
@@ -434,14 +436,19 @@ test("a changed wait is applied to waiting enrollments on request", async ({ pag
   await expect(button).toBeDisabled();
   await page.getByTestId("btn-save").click();
   await confirmAndReload(page);
+  // The reloaded page shows the saved wait before any read or click: the button was enabled before the reload too.
+  await expect(page.getByTestId("step-wait")).toHaveValue("P2D");
   const kept = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
   expect(kept.due_at).toBe(made.body.data.due_at);
   await expect(button).toBeEnabled();
   await button.click();
   await confirm(page);
-  await expect(page.locator("ot-toast, .toast, [role=status]").first()).toContainText(
-    "1 enrollments rescheduled",
-  );
+  // Only the reschedule's own toast counts: the save's "updated" toast may still be on the page.
+  await expect(
+    page
+      .locator("ot-toast, .toast, [role=status]")
+      .filter({ hasText: "1 enrollments rescheduled" }),
+  ).toHaveCount(1);
   const moved = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
   expect(Date.parse(moved.due_at) - Date.parse(made.body.data.due_at)).toBe(86_400_000);
 });

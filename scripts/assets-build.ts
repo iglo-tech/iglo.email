@@ -39,7 +39,6 @@ if (!built.success) throw new AggregateError(built.logs, "Browser asset build fa
 const packages = [
   "saxes",
   "liquidjs",
-  "marked",
   "nodemailer",
   "qrcode",
   "@alpinejs/csp",

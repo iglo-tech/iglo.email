@@ -393,8 +393,41 @@ export const differences: Difference[] = [
   {
     area: "Campaign Markdown conversion (M3.1)",
     summary:
-      "`POST /api/campaigns/:id/content` uses local `marked`: no goldmark automatic heading IDs or typographer.",
+      "`POST /api/campaigns/:id/content` uses Bun's built-in Markdown API (D113): no goldmark automatic heading IDs or typographer.",
     applies: ["POST /api/campaigns/{id}/content"],
+  },
+  {
+    area: "Markdown task list markup (B106)",
+    summary:
+      'Task items write Bun\'s markup: `<li class="task-list-item">` and `<input type="checkbox" class="task-list-item-checkbox" disabled checked>`, where goldmark writes the checkbox without classes. The same checkbox and text.',
+    applies: [
+      "GET /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/content",
+      "POST /api/campaigns/{id}/test",
+    ],
+  },
+  {
+    area: "Markdown table width (B106)",
+    summary:
+      "A table wider than 128 columns is not a table: its rows render as a paragraph of pipes, because Bun's Markdown API recognizes at most 128 columns.",
+    applies: [
+      "GET /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/content",
+      "POST /api/campaigns/{id}/test",
+    ],
+  },
+  {
+    area: "Markdown table header rule (GFM, unchanged)",
+    summary:
+      "A table whose header row and delimiter row differ in cell count is not a table, as GFM says; goldmark builds one with an empty header cell.",
+    applies: [
+      "GET /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/preview",
+      "POST /api/campaigns/{id}/content",
+      "POST /api/campaigns/{id}/test",
+    ],
   },
   {
     area: "Campaign archive slug conflicts (M3.1)",

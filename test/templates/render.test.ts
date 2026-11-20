@@ -690,13 +690,14 @@ test("Markdown bounds repeated reference URLs and accepts ordinary tables and qu
 });
 
 test("Markdown stage accepts a source of exactly 128 KiB after expansion and rejects one byte past", async () => {
-  // D112: the expanded Markdown source is capped at 128 KiB, checked before marked sees it.
+  // D112: the expanded Markdown source is capped at 128 KiB, checked before the parser sees it.
   const call = caller();
   const body = "<div>{{ x | raw }}{{ y | raw }}</div>";
   const data = { x: "a".repeat(65536), y: "a".repeat(65525) };
   const exact = await call(body, data, "markdown");
   expect(exact.status).toBe(200);
-  expect(Buffer.byteLength(await exact.text())).toBe(128 * 1024);
+  // The raw block is written as it is, with the newline Bun's html() ends a block with (B106, D113).
+  expect(await exact.text()).toBe(`<div>${data.x}${data.y}</div>\n`);
   expect((await call(body, { ...data, y: data.y + "a" }, "markdown")).status).toBe(400);
 });
 

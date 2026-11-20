@@ -183,7 +183,7 @@ Small and justified. v1 runtime dependencies:
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `liquidjs`   | Safe, sandboxed template language for user-authored email ([Templates](06-templates.md))                                                                                                                 |
 | `nodemailer` | SMTP pool, MIME building, attachments, DKIM. Writing a correct SMTP client and MIME encoder is not worth owning                                                                                          |
-| `marked`     | Markdown campaigns and templates                                                                                                                                                                         |
+| `Bun.markdown` | Markdown campaigns and templates (built into Bun, no dependency; unstable upstream API, D113)                                                                                                                                                                         |
 | `qrcode`     | TOTP provisioning QR/PNG response; pinned 1.5.4, MIT ([D30](09-decisions.md#d30-role-mutations-and-the-totp-authentication-boundary))                                                                    |
 | `saxes`      | Strict streaming XML list input; pinned 6.0.0, ISC, xmlchars 2.2.0 MIT; consumed UTF-8/document boundary and declaration/depth restrictions ([D37](09-decisions.md#d37-strict-streaming-xml-list-input)) |
 

@@ -70,7 +70,7 @@ test("five concurrent 64 KiB previews leave a read sent after them answering wit
   }
 }, 120_000);
 
-// One pathological family per link, image, reference, title and emphasis shape that marked scans.
+// One pathological family per link, image, reference, title and emphasis shape that the parser scanned before B106.
 const families: Record<string, string> = {
   "empty link": "[](",
   "block pipe": "|\n-\n",

@@ -486,6 +486,14 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     } catch (error) {
       if (error instanceof RenderCapacityError)
         throw new HttpError(429, "Too many template renders in progress.");
+      // The Markdown size cap (D112) is shown with its own message, not the generic failure page.
+      if (error instanceof MarkdownSourceError)
+        return publicMessage(t(context), {
+          status: 400,
+          title: t(context).T("globals.terms.error"),
+          message: t(context).Ts("templates.errorRendering", "error", error.message),
+          siteName: deps.settings().siteName,
+        });
       return failed();
     }
   };
@@ -495,10 +503,13 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     let out: string | null;
     try {
       out = convertContent(input.body ?? "", input.from ?? "", input.to ?? "");
-    } catch {
+    } catch (error) {
+      // The Markdown size cap (D112) has its own message; any other failure is "invalid markdown".
       throw new HttpError(
         400,
-        t(context).Ts("templates.errorCompiling", "error", "invalid markdown"),
+        error instanceof MarkdownSourceError
+          ? t(context).Ts("templates.errorRendering", "error", error.message)
+          : t(context).Ts("templates.errorCompiling", "error", "invalid markdown"),
       );
     }
     if (out === null) throw new HttpError(400, "unknown formats to convert");

@@ -1,8 +1,8 @@
-// B105 (D112), review of e6fbe3d: the output reserve is the memory guarantee, so it must bound the bytes
-// marked writes. Over the reviewer's shapes, the constructs that the first reserve missed (loose list
-// items, image alternative text, task items) and a seeded random corpus, the reserved bytes must be at
-// least the actual output. renderMarkdown charges the reserve last (the parser charges nothing), so the
-// last charge is the reserve.
+// B105 (D112), updated by B106 (D113): the output bound is the memory guarantee, so it must bound the bytes
+// the Markdown output writes. Over the reviewer's shapes, the constructs the first reserve missed (loose list
+// items, image alternative text, task items) and a seeded random corpus, the charged bound must be at least
+// the actual output. renderMarkdown charges the bound once, before the output is built, so that charge is
+// the bound.
 import { expect, test } from "bun:test";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 
