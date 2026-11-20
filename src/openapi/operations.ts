@@ -1519,6 +1519,8 @@ const mcp: Operation[] = [
     tag: "MCP",
     summary: "MCP Streamable HTTP stream probing endpoint.",
     native: true,
+    // Refused by method before any credential is read, so it needs none.
+    anonymous: true,
     errors: [405],
   },
   {
@@ -1529,6 +1531,9 @@ const mcp: Operation[] = [
     native: true,
     body: free,
     answer: { "application/json": free },
+    // An unauthenticated request is refused with 401 before any JSON-RPC processing (MCP's
+    // authorization convention), not with the API's 403.
+    errors: [401],
   },
 ];
 

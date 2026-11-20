@@ -33,13 +33,27 @@ jobs:
       - run: bun run contract:subscribers
       - run: bun run contract:settings
       - run: bun run contract:sends
+      - run: bun run sends:batch-crash
       - run: bun run contract:fixture
       - run: bun run contract:messaging
       - run: bun run messaging:fixture
+      - run: bun run contract:events
+      - run: bun run contract:sequences
+      - run: bun run contract:bounces
+      - run: bun run contract:media
+      - run: bun run contract:import
+      - run: bun run contract:webhooks
+      - run: bun run contract:campaigns
+      - run: bun run contract:analytics
+      - run: bun run contract:tx
+      - run: bun run contract:unsubscribe
+      - run: bun run contract:public
+      - run: bun run contract:maintenance
+      - run: bun run contract:openapi
 
   reference-linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -62,6 +76,14 @@ jobs:
       - run: bun run contract:settings:reference
       - run: bun run contract:messaging:reference
       - run: bun run contract:templates:reference
+      - run: bun run contract:analytics:reference
+      - run: bun run contract:campaigns:reference
+      - run: bun run contract:tx:reference
+      - run: bun run contract:public:reference
+      - run: bun run contract:bounces:reference
+      - run: bun run contract:maintenance:reference
+      - run: bun run contract:media:reference
+      - run: bun run contract:import:reference
       - run: bun run sends:crash
       - run: bun run sends:proofs
       - run: bun run sends:production

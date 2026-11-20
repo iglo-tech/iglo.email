@@ -296,7 +296,14 @@ export function createCampaignRunner(deps: RunnerDeps) {
     }
     const measured = deps.recipients.measure(audience(campaign));
     if (measured.count === 0n) {
-      // No recipients: listmonk's pipe ends at once and the campaign is finished.
+      // No recipients. listmonk finishes such a campaign on a scan after its start, never on the
+      // wake that started it (D120): the first visit leaves it running for one scan interval.
+      if (!retryAt.has(id)) {
+        store.release(id, token);
+        retryAt.set(id, now + (deps.scanIntervalMs ?? scanInterval));
+        return;
+      }
+      retryAt.delete(id);
       store.finish(id, iso(now));
       store.release(id, token);
       const counts = store.counts(id);

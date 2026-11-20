@@ -317,30 +317,37 @@ export async function runMaintenanceContract(target: {
       ];
       check((await call("/api/settings/smtp", "PUT", smtp)).status === 200, "smtp-settings");
     }
+    // The links come from a real send: a production test send is untracked (D117). The campaign
+    // reaches only `member`, through a list of its own, so one message carries the subject.
+    const linked = await list("links", "single");
+    check(
+      (
+        await call("/api/subscribers/lists", "PUT", {
+          ids: [member.id],
+          action: "add",
+          target_list_ids: [linked],
+          status: "confirmed",
+        })
+      ).status === 200,
+      "links-list",
+    );
+    const subject = `${marker} links`;
+    const url = "https://example.test/maintenance";
     const created = await call("/api/campaigns", "POST", {
       name: `${marker} one, "two"`,
-      subject: "s",
-      lists: [single],
+      subject,
+      lists: [linked],
       content_type: "richtext",
-      body: "<p>b</p>",
+      body: `<a href="${reference ? `{{ TrackLink "${url}" }}` : `{{ "${url}" | track_link }}`}">a</a>`,
     });
     check(created.status === 200, "campaign");
     owned.campaigns.push(created.body.data.id);
     const campaign = created.body.data as { id: number; uuid: string };
-    const templates = (await call("/api/templates?no_body=true")).body.data as any[];
-    const subject = `${marker} links`;
-    const url = "https://example.test/maintenance";
-    const sent = await call(`/api/campaigns/${campaign.id}/test`, "POST", {
-      name: "links",
-      subject,
-      lists: [single],
-      messenger: "email",
-      content_type: "richtext",
-      template_id: templates.find((t) => t.is_default).id,
-      body: `<a href="${reference ? `{{ TrackLink "${url}" }}` : `{{ "${url}" | track_link }}`}">a</a>`,
-      subscribers: [member.email],
-    });
-    check(sent.status === 200, "test-send");
+    check(
+      (await call(`/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status ===
+        200,
+      "links-start",
+    );
     let mails = await mailpit.list();
     for (const deadline = Date.now() + 10_000; Date.now() < deadline; await Bun.sleep(25)) {
       mails = (await mailpit.list()).filter((m) => m.Subject === subject);

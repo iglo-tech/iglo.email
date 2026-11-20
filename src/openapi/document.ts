@@ -12,6 +12,7 @@ const errorContent = {
 };
 const refused: Record<number, string> = {
   400: "Invalid input.",
+  401: "No valid credential.",
   403: "No valid credential, or a missing permission.",
   404: "Not found.",
   405: "Method not allowed.",
