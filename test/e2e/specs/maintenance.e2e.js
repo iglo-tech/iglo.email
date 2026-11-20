@@ -221,7 +221,8 @@ test("campaign analytics reads its charts, with a real view", async ({ page }) =
   await expect(views.locator(".title")).toContainText("(1)");
   await expect(views.locator("canvas").first()).toBeVisible();
   await expect(views).toContainText(campaign.name);
-  await expect(views.getByTestId("legend-count")).toHaveText("1");
+  // The legend shows the count with the campaign's share, now that a delivered campaign has views.
+  await expect(views.getByTestId("legend-count")).toHaveText(/^1\b/);
   await expect(page.locator("ot-taginput .badge")).toContainText(campaign.name);
   await expect(page.getByTestId("chart-clicks")).toContainText("Nothing here");
   await expect(page.getByTestId("chart-subscriptions")).toHaveCount(0);
