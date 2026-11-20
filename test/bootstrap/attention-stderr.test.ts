@@ -188,6 +188,7 @@ test("a test-send bounce through the SES fixture is one plain stderr line, with 
           await changeSettings(port, {
             smtp: [smtp],
             "bounce.enabled": true,
+            "bounce.webhooks_enabled": true,
             "bounce.ses_enabled": true,
             "bounce.ses_topic_arns": [TOPIC],
           })
