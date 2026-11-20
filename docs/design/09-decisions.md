@@ -1224,7 +1224,8 @@ Brief B106, after the B105 round-3 review (PR #157). Three review rounds of per-
 
 - **Decision:** replace marked with a CommonMark parser whose running time is linear in its input by design, chosen and evidenced in B106 (candidates: micromark/mdast-free HTML path, or another maintained parser with a documented linear-time guarantee and a pathological-input test suite). listmonk renders Markdown with goldmark (CommonMark), so output moves toward listmonk's; every output difference from today's is listed in 07-api-and-ui.md as a deliberate difference or a parity fix.
 - **Kept:** the 64 KiB body limit, the 128 KiB post-Liquid cap (D112), the 1 MiB output limit, a true `reserve()` bound, no wall-clock deadline (D110).
-- **Status:** decided; implementation in B106. Until it ships, D112's known limits apply.
+- **Evidence (B106 phase 1, 2026-11-20):** [perf note](../perf/B106-markdown-parser.md). Proposed: `Bun.markdown`, native to the Bun 1.4.5 runtime, so no dependency and no build step. It passes 652 of 652 CommonMark 0.31.2 examples (marked 599 with GFM off), runs at most 11.7 ms on every 128 KiB family and scales linearly. micromark 4.0.3 is quadratic (17 of 64 families time out at 128 KiB, with or without GFM) and is rejected. markdown-it 15.0.3 is the fallback: 153 ms at most, no guarantee, one MIT dependency. Its output differs from today's on about 1,700 of 2,118 corpus documents, most of them random mixes, and from goldmark on 583 of them. Constructs alone, `Bun.markdown` differs from goldmark only on D111's glued title and on a table with mismatched header cells, which GFM rejects.
+- **Status:** proposed in B106 phase 1; awaiting the lead's acceptance of the parser and the decisions in the perf note. Implementation follows in B106. Until it ships, D112's known limits apply.
 
 ## D114. Test sends leave a trace (lead, 2026-11-19)
 
