@@ -40,6 +40,8 @@ The harness labels and removes its own containers and volumes; touch no other Do
 
 ## Acceptance (every task unless the brief adds more)
 
+The release gate's 10-run series is for release commits only (runbook "Release gate"); in a task PR one valid `bun run check` suffices, where a run is invalid only under the runbook's foreign-load rule. Run every check in the foreground: if one would exceed the Bash timeout, split it; never let it continue in the background.
+
 Every task's acceptance includes **every `run:` step of the `ci.yml` check job** in order (not only `bun run check`): `ui:verify`, `templates:compiled` and each `contract:*`/`messaging:fixture` step it lists (lead, 2026-11-19, after B105 left `templates:compiled` stale). Use the container image matching `package.json`'s `packageManager` Bun version.
 
 `bun install --frozen-lockfile`, `bun run check`, `bun test test/server`, `bun test test/contract`, `bun run contract:normal`, `bun run contract:roles`. Paste the summary lines in the PR.
