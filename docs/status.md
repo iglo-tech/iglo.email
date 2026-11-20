@@ -202,6 +202,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
+- Campaign test sends link the real campaign and subscriber UUIDs (and one-click headers when `privacy.unsubscribe_header` is on), so clicking Unsubscribe in a campaign test mail unsubscribes that real subscriber and fires the webhook (B112 review). Predates B112; check against pinned listmonk before deciding.
+
 - Settings: `app.notify_emails` is saved without address validation (B110 review); invalid entries are skipped at send time with an attention line.
 - B110 tests: the "unexpected error keeps its stack" case checks the logger directly, not a handler on the compiled server.
 

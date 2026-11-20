@@ -32,7 +32,7 @@ The harness labels and removes its own containers and volumes; touch no other Do
 - **Test first**, through public boundaries: the HTTP API, the MCP endpoint, SMTP sink mail, rendered pages, the CLI/executable, loops with an injected clock. Use the existing fixtures in the test directories your brief names.
 - Keep the guarantees: marketing at-most-once, no network inside transactions, injected clocks, module ownership of tables/SQL, bounded memory, no new runtime dependency.
 - Update the design docs your brief names in the same PR so code and design agree, plus the OpenAPI document (`src/openapi/*`; MCP tools are generated from it, D98) for any API change.
-- A decision record goes in `docs/design/09-decisions.md` as "(lead, 2026-11-17)" with the number your brief gives. State the decision, what is unchanged, considered alternatives and why.
+- A decision record is **appended at the end** of `docs/design/09-decisions.md` (inserting it earlier split D114 in B107 and D115 in B112); check `git diff origin/main -- docs/design/09-decisions.md` shows only the appended record. It goes in as "(lead, 2026-11-17)" with the number your brief gives. State the decision, what is unchanged, considered alternatives and why.
 - Do not edit `docs/status.md`.
 - Owner rule "Local first": push only code that passed `bun run check` and the brief's acceptance on this host; never trigger CI.
 - Open a PR to `main` titled as your brief says; the body lists what changed, the acceptance summary lines, any macOS-only limits, and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Commits end with `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>`. No CI wait, no workflow trigger, no merge.
