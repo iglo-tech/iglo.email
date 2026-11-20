@@ -198,6 +198,9 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
+- Settings: `app.notify_emails` is saved without address validation (B110 review); invalid entries are skipped at send time with an attention line.
+- B110 tests: the "unexpected error keeps its stack" case checks the logger directly, not a handler on the compiled server.
+
 - B108 tests: the two record-failure 500 tests use `Bun.sleep(50)` to show nothing was sent (AGENTS: no sleeping; wait on the sink/clock instead) and would not catch a single leaked in-flight slot.
 
 - Sequence and transactional sends show a generic error when Markdown exceeds the 128 KiB post-Liquid cap (B105 r2 fixer); campaigns show the cap message.
