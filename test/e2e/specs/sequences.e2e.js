@@ -161,7 +161,9 @@ test("the editor saves what it shows, keeps what it hides and shows a refusal", 
   await page.getByTestId("step-example").selectOption({ label: "Attribute compare" });
   await page.getByTestId("btn-add-step").click();
   await page.getByTestId("step-template").nth(1).selectOption(String(tx.id));
-  await page.getByTestId("btn-save").click();
+  // Saving an existing sequence reloads the page (the save answers, then the page reloads). The card count
+  // is already 2 in the unsaved form, so wait for the reloaded page before any read of the page's context.
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("btn-save").click()]);
   await expect(page.getByTestId("step-card")).toHaveCount(2);
   const saved = (await api(page, `/api/sequences/${id}`)).body.data;
   expect(saved.steps[0]).toMatchObject({

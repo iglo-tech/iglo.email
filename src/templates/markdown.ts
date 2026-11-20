@@ -18,8 +18,9 @@ export const MARKDOWN_SOURCE_LIMIT = 128 * 1024;
 
 const bytes = (value: string) => Buffer.byteLength(value, "utf8");
 
-// Bytes an HTML escape can add, per special character (`&amp;`, `&lt;`, `&gt;`, `&quot;`).
-const SPECIAL_EXTRA: Readonly<Record<string, number>> = { "&": 4, "<": 3, ">": 3, '"': 5 };
+// Bytes an HTML escape can add, per special character: `&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&#x27;` for an
+// apostrophe (Bun writes it in attributes, and the bound charges it everywhere, to be safe).
+const SPECIAL_EXTRA: Readonly<Record<string, number>> = { "&": 4, "<": 3, ">": 3, '"': 5, "'": 5 };
 /** Upper bound on the bytes of `value` once written as escaped HTML text. */
 function escapedBound(value: string): number {
   let total = bytes(value);
@@ -79,12 +80,20 @@ export function markdownOutputBound(source: string, limit: number = OUTPUT_LIMIT
   };
   // Raw inline HTML is copied from the source, and no callback sees it.
   add(bytes(source));
-  // A hard break is a newline after two spaces or a backslash, and writes `<br />` before it.
+  // A hard break is a line ending (LF, CRLF or a lone CR) after two spaces or a backslash; it writes `<br />`
+  // before the line ending. A CRLF is one line ending, counted at its CR.
   let breaks = 0;
-  for (let at = source.indexOf("\n"); at !== -1; at = source.indexOf("\n", at + 1)) {
+  for (let at = 0; at < source.length; at++) {
+    const char = source[at];
+    if (char !== "\n" && char !== "\r") continue;
+    if (char === "\n" && at > 0 && source[at - 1] === "\r") continue;
     if (at > 0 && (source[at - 1] === " " || source[at - 1] === "\\")) breaks++;
   }
   add(HARD_BREAK_BOUND * breaks);
+  // A NUL is one byte in the source and U+FFFD (three bytes) in the output.
+  let nuls = 0;
+  for (let at = source.indexOf("\u0000"); at !== -1; at = source.indexOf("\u0000", at + 1)) nuls++;
+  add(2 * nuls);
 
   // The dry run: every callback returns nothing, so no output string is built.
   const callbacks: Bun.markdown.RenderCallbacks = {
@@ -162,16 +171,17 @@ export function markdownOutputBound(source: string, limit: number = OUTPUT_LIMIT
       return "";
     },
     link: (_children, meta) => {
-      // An href is percent-encoded at most 3 bytes per byte (encoded URIs and entities).
+      // An href is written at most 6 bytes per byte: `&#x27;` for an apostrophe, `&amp;` for an ampersand, and
+      // `%XX` (3) for other bytes. Entities decode before the URL is encoded, so the decoded bytes bound it.
       add(
-        24 + 3 * bytes(meta.href) + (meta.title === undefined ? 0 : 10 + escapedBound(meta.title)),
+        24 + 6 * bytes(meta.href) + (meta.title === undefined ? 0 : 10 + escapedBound(meta.title)),
       );
       return "";
     },
     image: (children, meta) => {
       add(
         48 +
-          3 * bytes(meta.src) +
+          6 * bytes(meta.src) +
           escapedBound(children) +
           (meta.title === undefined ? 0 : 10 + escapedBound(meta.title)),
       );

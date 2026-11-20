@@ -26,6 +26,21 @@ test.each(Object.keys(families))(
   },
 );
 
+// B106 r1 (D113): the shapes the bound undercounted (the reviewer's apostrophe and ampersand reference URLs,
+// CRLF and lone-CR hard breaks, NUL). The bound must be at least the real output for each.
+const reviewerShapes: Record<string, string> = {
+  "apostrophe reference URL used 2,800 times": `[r]: ${"'".repeat(100)}\n\n${"![][r] ".repeat(2800)}`,
+  "ampersand reference URL used 2,000 times": `[r]: ${"&".repeat(100)}\n\n${"[a][r] ".repeat(2000)}`,
+  "CRLF hard breaks": "a  \r\n".repeat(26000),
+  "lone CR hard breaks": "a  \r".repeat(26000),
+  NUL: "\u0000".repeat(128 * 1024),
+};
+test.each(Object.keys(reviewerShapes))("the bound holds for the %s shape", (shape) => {
+  const body = reviewerShapes[shape]!;
+  const actual = Buffer.byteLength(Bun.markdown.html(body));
+  expect(markdownOutputBound(body, Number.MAX_SAFE_INTEGER)).toBeGreaterThanOrEqual(actual);
+});
+
 test("the output of the hr-run family is refused before the output is built", () => {
   // Its HTML is 1,048,587 bytes, over the 1 MiB limit; the bound is charged first and stops the render.
   const body = source("hr-run", 128 * 1024);
