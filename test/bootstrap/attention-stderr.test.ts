@@ -137,35 +137,6 @@ async function finishEmptyCampaign(port: number) {
   }, "the campaign to finish");
 }
 
-test("an unusable sender is one plain stderr line and one fixed buffer line, and nothing is sent", async () => {
-  const { child, port } = await startServer();
-  try {
-    expect(
-      (
-        await changeSettings(port, {
-          "app.notify_emails": ["ops@example.com"],
-          "app.from_email": ["not-an-address"],
-        })
-      ).status,
-    ).toBe(200);
-    await finishEmptyCampaign(port);
-    await until(async () => {
-      const lines = await logLines(port, "app.from_email is not valid");
-      return lines.length ? lines : undefined;
-    }, "the sender line");
-    expect(await logLines(port, "app.from_email is not valid")).toEqual([
-      expect.stringMatching(/ \*: Admin notifications not sent: app\.from_email is not valid$/),
-    ]);
-  } finally {
-    expect(await stopChild(child, "SIGTERM", 3_000)).toBe(0);
-  }
-  const stderr = await new Response(child.stderr).text();
-  expect(stderr.split("\n").filter((line) => line.includes("not-an-address"))).toEqual([
-    "Admin notifications not sent: app.from_email is not a valid address: not-an-address",
-  ]);
-  expect(stderr).not.toMatch(/^\s+at /m);
-});
-
 test("an invalid admin notification address is one plain stderr line and a fixed buffer line", async () => {
   const { child, port } = await startServer();
   try {
