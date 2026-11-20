@@ -5,7 +5,7 @@ import { runSettingsCouncilSmall } from "@/test/contract/settings-council-small"
 import { runSettingsNewItems } from "@/test/contract/settings-new-items";
 import { runSettingsCouncilFinal } from "@/test/contract/settings-council-final";
 import { runSettingsBinding } from "@/test/contract/settings-binding";
-import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { invalidSettingsReadEnd, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSettingsContract(target: {
@@ -403,9 +403,16 @@ export async function runSettingsContract(target: {
   check(unknown.status === (target.mode === "reference" ? 200 : 400), "unknown-key-d44");
   const malformedKey = await request("/api/settings/app.batch_size", "PUT", '"not-an-integer"');
   check(malformedKey.status === (target.mode === "reference" ? 200 : 400), "invalid-key-d44");
-  const finalGet = await request("/api/settings");
-  check(finalGet.status === (target.mode === "reference" ? 500 : 200), "invalid-key-read-d44");
-  if (target.mode === "normal") {
+  if (target.mode === "reference") {
+    // Last reference step. Upstream's accepted write schedules a reload that exits on the
+    // stored invalid value, so the read is a race: accept only its two documented end states.
+    const end = await invalidSettingsReadEnd(`${target.baseUrl}/api/settings`, {
+      headers: { Authorization: authorization },
+    });
+    check(end !== "unexpected", "invalid-key-read-d44");
+  } else {
+    const finalGet = await request("/api/settings");
+    check(finalGet.status === 200, "invalid-key-read-d44");
     check(
       ((await finalGet.json()) as { data: Record<string, any> }).data["app.batch_size"] ===
         snapshot["app.batch_size"],
