@@ -3,6 +3,7 @@
 // Admin mails are durable transactional sends enqueued without a subscriber,
 // rendered from the built-in campaign-status and import-status templates.
 import type { ErrorLogger } from "@/app";
+import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
 import { parseAddress } from "@/settings/mail";
@@ -56,6 +57,11 @@ export function createAdminNotifier(deps: {
   const logError = (error: unknown) => {
     (deps.logger ?? console).error(error);
   };
+  // A misconfigured address needs a person, not a stack: one plain line, and a fixed buffer text.
+  const logAttention = (message: string, safe: SafeMessage) => {
+    if (deps.logger) deps.logger.attention(message, safe);
+    else console.error(message);
+  };
   /** Each unusable sender is reported once per notifier, not on every notification. */
   const reportedFrom = new Set<string>();
 
@@ -75,7 +81,10 @@ export function createAdminNotifier(deps: {
       if (usableAddress(email)) {
         validEmails.push(email);
       } else {
-        logError(new Error(`Skipping invalid admin notification email address: ${email}`));
+        logAttention(
+          `Skipping invalid admin notification email address: ${email}`,
+          "Admin notification address is not valid: skipped",
+        );
       }
     }
     if (!validEmails.length) return;
@@ -86,10 +95,9 @@ export function createAdminNotifier(deps: {
     if (!usableAddress(fromEmail)) {
       if (!reportedFrom.has(fromEmail)) {
         reportedFrom.add(fromEmail);
-        logError(
-          new Error(
-            `Admin notifications not sent: app.from_email is not a valid address: ${fromEmail}`,
-          ),
+        logAttention(
+          `Admin notifications not sent: app.from_email is not a valid address: ${fromEmail}`,
+          "Admin notifications not sent: app.from_email is not valid",
         );
       }
       return;

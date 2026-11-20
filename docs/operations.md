@@ -303,9 +303,10 @@ above has the same settings for nginx.
    one that the proxy's traffic uses, normally the IPv4 one). On Coolify, a Compose service gets its
    own network, named by the service's UUID, and the proxy joins it, so use the network the proxy and
    the app share. To find its name, run `docker inspect <app-container> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'`,
-   which prints the networks the app's container is on, and take the one the proxy also joins
-   (confirm with `docker network ls`); then run the `docker network inspect` command above on that
-   name. Until the proxy is listed, the server logs one line that names the address the request came
+   which prints the networks the app's container is on, and take the one the proxy also joins. To
+   check that the proxy is on it, run `docker network inspect <network> --format '{{range .Containers}}{{.Name}} {{end}}'`,
+   which lists the containers on that network (`docker network ls` shows only names). Then run the
+   `docker network inspect` command above on that name. Until the proxy is listed, the server logs one line that names the address the request came
    from; it logs again only after the list changes.
 3. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
 4. **One container per volume.** Each data directory has one server ([one process per data

@@ -107,36 +107,72 @@ async function until<T>(read: () => Promise<T | undefined>, what: string): Promi
 const logLines = async (port: number, text: string) =>
   ((await api(port, "GET", "/api/logs")).data as string[]).filter((line) => line.includes(text));
 
+/**
+ * A campaign on an empty list, run to its end. Its finish notifies the administrators
+ * (`app.notify_emails`), so this is what an administrator's campaign does.
+ */
+async function finishEmptyCampaign(port: number) {
+  const list = await api(port, "POST", "/api/lists", {
+    name: "Attention",
+    type: "public",
+    optin: "single",
+  });
+  const campaign = await api(port, "POST", "/api/campaigns", {
+    name: "Empty",
+    subject: "S",
+    lists: [list.data.id],
+    from_email: "Fixture <noreply@fixture.test>",
+    content_type: "plain",
+    type: "regular",
+    messenger: "email",
+    body: "Hi",
+  });
+  expect(
+    (await api(port, "PUT", `/api/campaigns/${campaign.data.id}/status`, { status: "running" }))
+      .status,
+  ).toBe(200);
+  await until(async () => {
+    const current = await api(port, "GET", `/api/campaigns/${campaign.data.id}`);
+    return current.data.status === "finished" ? true : undefined;
+  }, "the campaign to finish");
+}
+
+test("an unusable sender is one plain stderr line and one fixed buffer line, and nothing is sent", async () => {
+  const { child, port } = await startServer();
+  try {
+    expect(
+      (
+        await changeSettings(port, {
+          "app.notify_emails": ["ops@example.com"],
+          "app.from_email": ["not-an-address"],
+        })
+      ).status,
+    ).toBe(200);
+    await finishEmptyCampaign(port);
+    await until(async () => {
+      const lines = await logLines(port, "app.from_email is not valid");
+      return lines.length ? lines : undefined;
+    }, "the sender line");
+    expect(await logLines(port, "app.from_email is not valid")).toEqual([
+      expect.stringMatching(/ \*: Admin notifications not sent: app\.from_email is not valid$/),
+    ]);
+  } finally {
+    expect(await stopChild(child, "SIGTERM", 3_000)).toBe(0);
+  }
+  const stderr = await new Response(child.stderr).text();
+  expect(stderr.split("\n").filter((line) => line.includes("not-an-address"))).toEqual([
+    "Admin notifications not sent: app.from_email is not a valid address: not-an-address",
+  ]);
+  expect(stderr).not.toMatch(/^\s+at /m);
+});
+
 test("an invalid admin notification address is one plain stderr line and a fixed buffer line", async () => {
   const { child, port } = await startServer();
   try {
     expect((await changeSettings(port, { "app.notify_emails": ["not-an-address"] })).status).toBe(
       200,
     );
-    const list = await api(port, "POST", "/api/lists", {
-      name: "Attention",
-      type: "public",
-      optin: "single",
-    });
-    const campaign = await api(port, "POST", "/api/campaigns", {
-      name: "Empty",
-      subject: "S",
-      lists: [list.data.id],
-      from_email: "Fixture <noreply@fixture.test>",
-      content_type: "plain",
-      type: "regular",
-      messenger: "email",
-      body: "Hi",
-    });
-    expect(
-      (await api(port, "PUT", `/api/campaigns/${campaign.data.id}/status`, { status: "running" }))
-        .status,
-    ).toBe(200);
-    // The campaign on an empty list finishes; its notification is the attention line.
-    await until(async () => {
-      const current = await api(port, "GET", `/api/campaigns/${campaign.data.id}`);
-      return current.data.status === "finished" ? true : undefined;
-    }, "the campaign to finish");
+    await finishEmptyCampaign(port);
     await until(async () => {
       const lines = await logLines(port, "Admin notification address is not valid");
       return lines.length ? lines : undefined;
