@@ -258,7 +258,7 @@ Kept with listmonk's URL shapes, so the behavior people know stays the same:
 
 New, for sends (transactional and sequence messages):
 
-- `/m/:sendUUID/unsubscribe/:subUUID`: page and one-click `POST` (M2.4). The subscriber UUID must belong to the send; mismatches are 404 and change nothing. The page offers listmonk's blocklist option (`privacy.allow_blocklist`) and the same preference management (`manage=true`) and privacy forms as the campaign page;
+- `/m/:sendUUID/unsubscribe/:subUUID`: page and one-click `POST` (M2.4). The subscriber UUID must belong to the send; mismatches are 404 and change nothing. The placeholder send UUID `00000000-0000-0000-0000-000000000000`, which a test send's links name ([D116](09-decisions.md#d116-test-send-unsubscribe-links-open-an-explanatory-page-lead-2026-11-20)), answers a fixed "test send" page to `GET` and `POST` for any subscriber UUID, and reads and writes nothing. The page offers listmonk's blocklist option (`privacy.allow_blocklist`) and the same preference management (`manage=true`) and privacy forms as the campaign page;
 - `/m/:sendUUID/link/:linkUUID`: tracked links;
 - `/m/:sendUUID/px.png`: view pixel.
 

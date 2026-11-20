@@ -1269,4 +1269,17 @@ Brief B107, after the revert of the unreviewed Bun 1.4.5 bump in B107a (#158).
   - Pinning Bun 1.4.4 and waiting for a fix: the runtime would keep an SQLite behaviour the next version may change, and the release gate would still rest on an unstated driver property.
   - Converting in JavaScript (`JSON.parse` of each list): it moves each row through the runtime and makes the payload SQL a mix of two encoders, so the cost is not justified.
   - Relying on Bun's `json()` subtype across subqueries in general: that is the behaviour that changed, so it is not a basis.
-- **Evidence:** the root-cause table on each runtime, and the before and after runs of `test/webhooks/webhooks.test.ts` and `test/bounces/bounces.test.ts` on `oven/bun:1.4.5` ([B107 measurements](../perf/B107-bun-1.4.5.md)): the four named tests and the new `list_ids` array test fail before the fix, and all pass after it, while on `oven/bun:1.4.4` they pass both before and after.
+- **Evidence:** the root-cause table on each runtime, and the before and after runs of `test/webhooks/webhooks.test.ts` and `test/bounces/bounces.test.ts` on `oven/bun:1.4.5` ([B107 measurements](../perf/B107-bun-1.4.5.md))
+
+## D116. Test send unsubscribe links open an explanatory page (lead, 2026-11-20)
+
+Brief B112, from the first adopter's full Gmail pass of ten sequence step tests on v1.4.0. Every test renders correctly, but a person who clicks Unsubscribe in a test mail to see the flow reached a 404: a step test's `unsubscribe_url` and `manage_url` name the placeholder send UUID of D105 (`00000000-0000-0000-0000-000000000000`), which no send has.
+
+- **Decision:** `GET /m/00000000-0000-0000-0000-000000000000/unsubscribe/:subUUID` (any `:subUUID`, with or without `?manage=true`) answers `200` with the public page layout and one message: "This link is from a test send. Unsubscribing from a test does nothing; in a real message this link opens the unsubscribe page." The title is "Test send". `POST` to the same path answers the same page, for the page form and for a one-click `List-Unsubscribe-Post` alike. Both are `noindex`, and the strings are English in `i18n/en.json`, which other languages fall back to.
+- **Writes and reads nothing:** the placeholder path looks up no send and no subscriber, so the answer does not reveal whether `:subUUID` exists, and no unsubscribe, blocklist, webhook, event or tracking row is written.
+- **Unchanged:** a real send UUID is never the placeholder (sends use random v4 UUIDs), so every real `/m/:sendUUID/…` path behaves as before, including the `px.png` and `link` routes for the placeholder. Campaign test sends (`/subscription/<campaign UUID>/<subscriber UUID>`, listmonk's path) carry the campaign's own UUID, not the placeholder, so they are left as they are; the campaign preview's placeholder link is listmonk's `/subscription/` path and is also left as it is.
+- **Considered:**
+  - Documenting the placeholder only: a dead link in a mail is the confusing part, and the page costs one route.
+  - Making a test unsubscribe real: a test must not change a subscriber (D105), and a mail client's one-click POST on a test mail would otherwise unsubscribe the subscriber the test was rendered for.
+  - Answering `404` with a note: a 404 reads as a broken link, which is the reported problem.
+- **Evidence:** the tests in `test/unsubscribe/test-send-page.test.ts` and the step test-send case in `test/sequences/step-preview.test.ts`; no sending, scheduling or storage path changes, so there is no measurement.: the four named tests and the new `list_ids` array test fail before the fix, and all pass after it, while on `oven/bun:1.4.4` they pass both before and after.

@@ -626,3 +626,44 @@ test("sample aggregates keep the step's aggregate order, which the scheduler's t
   });
   expect(both.body.data.body).toBe("<p>2/4</p>");
 });
+
+test("a marketing step's test send links to a test page, and clicking it changes no subscriber", async () => {
+  const f = await open();
+  const list = (
+    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
+  ).body.data.id as number;
+  const subscriber = await f.subscriber("ada@example.test", { lists: [list] });
+  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
+  const template = await f.template(
+    '<p><a href="{{ unsubscribe_url }}">unsubscribe</a></p>',
+    "Offer",
+  );
+  const sequence = await f.sequence({
+    trigger: { event: "purchase" },
+    list_id: list,
+    steps: [{ wait: "P1D", kind: "marketing", template_id: template, subject: "Offer" }],
+  });
+  const r = await testSend(f, sequence.id, sequence.steps[0]!.id, {
+    emails: ["owner@example.test"],
+    subscriber_id: subscriber,
+  });
+  expect(r.status).toBe(200);
+  await f.until(() => f.sink.messages.length === 1, "the test message");
+  // The SMTP body is quoted-printable: decode it before reading the link.
+  const sent = f.sink.messages[0]!.data.replace(/=\r\n/g, "").replace(
+    /=([0-9A-F]{2})/g,
+    (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+  const url = /href="([^"]+)"/.exec(sent)?.[1];
+  expect(url).toBe(
+    `http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/${uuid}`,
+  );
+  const page = await f.request(new URL(url!).pathname);
+  expect(page.status).toBe(200);
+  expect(await page.text()).toContain("This link is from a test send.");
+  const after = (await f.json(`/api/subscribers/${subscriber}`)).body.data;
+  expect(after.status).toBe("enabled");
+  expect(after.lists.find((l: { id: number }) => l.id === list)?.subscription_status).toBe(
+    "unconfirmed",
+  );
+});

@@ -460,6 +460,8 @@
     "public.subName": "Name (optional)",
     "public.subOptinPending": "An e-mail has been sent to you to confirm your subscription(s).",
     "public.subPrivateList": "Private list",
+    "public.testSendInfo": "This link is from a test send. Unsubscribing from a test does nothing; in a real message this link opens the unsubscribe page.",
+    "public.testSendTitle": "Test send",
     "public.unsubFull": "Also block all future emails from this service.",
     "public.unsubHelp": "Do you want to unsubscribe from this mailing list?",
     "public.unsubbedInfo": "You have unsubscribed successfully.",

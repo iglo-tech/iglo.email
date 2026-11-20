@@ -4,6 +4,7 @@
 // static/public/templates/subscription.html at 6fcd95f, scoped to the send's list.
 import type { Database } from "bun:sqlite";
 import { deflateSync, crc32 } from "node:zlib";
+import { dummyUUID } from "@/campaigns/render";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import type { Sends } from "@/messaging/sends";
@@ -112,9 +113,16 @@ export function registerUnsubscribeRoutes(
   };
   const notFound = (i18n: Translation, headers: Record<string, string> = {}) =>
     page(i18n, 404, i18n.T("globals.terms.notFound"), i18n.T("public.errorFetchingEmail"), headers);
+  /**
+   * D116: a test send's unsubscribe and manage links name the placeholder send UUID, which no send
+   * has. Its page reads and writes nothing, so it does not look up the subscriber either.
+   */
+  const testSendPage = (i18n: Translation) =>
+    page(i18n, 200, i18n.T("public.testSendTitle"), i18n.T("public.testSendInfo"), noIndex);
 
   router.route("GET", "/m/:sendUUID/unsubscribe/:subUUID", (context) => {
     const t = context.app.i18n;
+    if (context.params.sendUUID === dummyUUID) return testSendPage(t);
     const bad = invalidUUID(context, "sendUUID", "subUUID");
     if (bad) return bad;
     const found = target(context.params.sendUUID!, context.params.subUUID!);
@@ -131,6 +139,8 @@ export function registerUnsubscribeRoutes(
     "/m/:sendUUID/unsubscribe/:subUUID",
     async (context) => {
       const t = context.app.i18n;
+      // D116: a mail client's one-click POST to a test send changes nothing and answers the page.
+      if (context.params.sendUUID === dummyUUID) return testSendPage(t);
       const bad = invalidUUID(context, "sendUUID", "subUUID");
       if (bad) return bad;
       if (!target(context.params.sendUUID!, context.params.subUUID!)) return notFound(t);
