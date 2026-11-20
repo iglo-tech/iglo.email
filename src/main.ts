@@ -496,7 +496,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       auth,
       lists,
       subscribers: subscriberStore,
-      tracking,
       emailer,
       settings: campaignSettings,
       attachments,

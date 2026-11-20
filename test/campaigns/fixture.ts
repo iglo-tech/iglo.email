@@ -18,7 +18,7 @@ import { createCampaignTemplateReferences } from "@/campaigns/template-reference
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignRoutes, type CampaignSettings } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
-import { createSubscriberStore } from "@/subscribers/store";
+import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createRoles } from "@/roles/roles";
 import { createRouter } from "@/server/server";
@@ -41,6 +41,10 @@ import { createSettings } from "@/settings/store";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
+import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery";
+import { createWebhookEffects } from "@/webhooks/effects";
+import { registerWebhookRoutes } from "@/webhooks/routes";
+import { createWebhookStore } from "@/webhooks/store";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
@@ -55,6 +59,8 @@ export async function campaignsFixture(
     dkim?: { domain_name: string; key_selector: string; private_key: string };
     /** The app's logger, for a test of what it keeps. */
     logger?: (clock: Clock) => ErrorLogger;
+    /** With a transport, webhooks run as in src/main.ts: their store, effects, routes and delivery. */
+    webhooks?: WebhookTransport;
   } = {},
 ) {
   const sink = await startSink({
@@ -86,7 +92,12 @@ export async function campaignsFixture(
     counts = createListCounts(db),
     listReferences = createCampaignListReferences(db),
     listStore = createListStore(db, clock, counts, listReferences),
-    subscribers = createSubscriberStore(db, clock, lists),
+    webhooks = options.webhooks ? createWebhookStore(db, clock) : undefined,
+    webhookEffects = webhooks && createWebhookEffects(webhooks, () => subscribers),
+    subscribers = createSubscriberStore(db, clock, lists, {
+      ...noSubscriberEffects,
+      ...webhookEffects?.subscriberEffects,
+    }),
     roles = createRoles(db, lists),
     users = createUserStore(db, clock, roles);
   const auth = await createAuthentication(users, roles, clock, root, defaultAuthPolicy);
@@ -175,7 +186,6 @@ export async function campaignsFixture(
     auth,
     lists,
     subscribers,
-    tracking,
     emailer,
     testSends,
     settings: () => settings,
@@ -191,6 +201,19 @@ export async function campaignsFixture(
     settings: () => settings,
     effects: { unsubscribed: (event) => unsubscribed.push(event) },
   });
+  if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
+  const delivery = webhooks
+    ? startWebhookDelivery({
+        db,
+        clock,
+        logger: app.logger,
+        webhooks,
+        blockPrivate: () => false,
+        transport: options.webhooks!,
+      })
+    : undefined;
+  // The loop's zero-length yields need no time to pass, only a turn of the injected clock.
+  const pump = webhooks ? setInterval(() => clock.advance(0), 1) : undefined;
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
     router.handle(app, new Request(`${root}${path}`, init));
@@ -276,6 +299,9 @@ export async function campaignsFixture(
     },
     router,
     async close() {
+      await delivery?.halt();
+      clearInterval(pump);
+      webhooks?.close();
       await emailer.close();
       store.close();
       media.close();

@@ -17,7 +17,7 @@ import type { Router } from "@/server/router";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import type { Tracking } from "@/unsubscribe/tracking";
-import { dummyUUID } from "@/campaigns/render";
+import { dummyUUID, testSendUUID } from "@/campaigns/render";
 import type { CampaignStore } from "@/campaigns/store";
 
 const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -103,7 +103,14 @@ export function registerCampaignPublicRoutes(
       noIndex,
     );
 
+  /** D117: a test send's links carry `testSendUUID` and answer the test page for any subscriber. */
+  const isTestSend = (context: RequestContext) =>
+    context.params.campUUID!.toLowerCase() === testSendUUID;
+  const testPage = (t: Translation) =>
+    page(t, 200, t.T("public.testSendTitle"), t.T("public.testSendInfo"), noIndex);
+
   router.route("GET", "/subscription/:campUUID/:subUUID", (context) => {
+    if (isTestSend(context)) return testPage(context.app.i18n);
     const t = context.app.i18n;
     const bad = invalidUUID(context, "campUUID", "subUUID");
     if (bad) return bad;
@@ -120,6 +127,8 @@ export function registerCampaignPublicRoutes(
     "POST",
     "/subscription/:campUUID/:subUUID",
     async (context) => {
+      // D117: a one-click or page-form POST to a test send changes nothing.
+      if (isTestSend(context)) return testPage(context.app.i18n);
       const t = context.app.i18n;
       const bad = invalidUUID(context, "campUUID", "subUUID");
       if (bad) return bad;

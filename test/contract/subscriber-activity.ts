@@ -67,7 +67,7 @@ export async function runSubscriberActivity(target: {
   };
 
   /** A tracked link as a real send registers it. The reference's preview already does. */
-  const trackedLink = async (campaign: Record<string, unknown>, listId: number, to: string) => {
+  const trackedLink = async (campaign: Record<string, unknown>) => {
     if (reference)
       return /\/link\/([0-9a-f-]{36})\//.exec(
         await (await request(`/api/campaigns/${campaign.id}/preview`)).text(),
@@ -104,13 +104,19 @@ export async function runSubscriberActivity(target: {
         (await request("/api/settings/smtp", "PUT", smtp)).status === 200,
         "subscriber-activity-smtp",
       );
-      const sent = await request(`/api/campaigns/${campaign.id}/test`, "POST", {
-        ...campaign,
-        lists: [listId],
-        subscribers: [to],
+      // D117: a test send's links are untracked, so the tracked link comes from a real send of the
+      // campaign to its list, which holds only this subscriber.
+      const started = await request(`/api/campaigns/${campaign.id}/status`, "PUT", {
+        status: "running",
       });
-      if (sent.status !== 200)
-        throw new Error(`FAIL subscriber-activity-test-send ${await sent.text()}`);
+      if (started.status !== 200)
+        throw new Error(`FAIL subscriber-activity-send ${await started.text()}`);
+      for (
+        const deadline = Date.now() + 10_000;
+        (await (await request(`/api/campaigns/${campaign.id}`)).json()).data.status !== "finished";
+        await Bun.sleep(25)
+      )
+        check(Date.now() < deadline, "subscriber-activity-finished");
       for (const deadline = Date.now() + 10_000; !mail.endsWith("\r\n.\r\n"); await Bun.sleep(25))
         check(Date.now() < deadline, "subscriber-activity-mail");
       return /\/link\/([0-9a-f-]{36})\//.exec(mail.replaceAll("=\r\n", ""))?.[1];
@@ -150,7 +156,7 @@ export async function runSubscriberActivity(target: {
       messenger: "email",
       body: `<a href="${reference ? `{{ TrackLink "${url}" }}` : `{{ "${url}" | track_link }}`}">a</a>`,
     });
-    const link = await trackedLink(campaign, list.id, subscriber.email);
+    const link = await trackedLink(campaign);
     check(link, "subscriber-activity-link");
 
     // No activity yet: both are empty arrays, never null.
