@@ -3,7 +3,18 @@
 // is called with the page's request context, as upstream, and needs no session. Settings apply
 // live here, so setting trusted URLs needs no wait for a reload.
 import { expect } from "@playwright/test";
-import { api, createUser, logout, mailFor, test, unique, signIn } from "../helpers.js";
+import {
+  api,
+  createUser,
+  linkTo,
+  logout,
+  mailAbout,
+  mailFor,
+  test,
+  TRACKED,
+  unique,
+  signIn,
+} from "../helpers.js";
 
 const FORMS = "/admin/lists/forms";
 const SUB_FORM = "/subscription/form";
@@ -158,7 +169,7 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
     subject: "Form campaign",
     type: "regular",
     content_type: "html",
-    body: "Test",
+    body: '<p><a href="{{ unsubscribe_url }}">Unsubscribe</a></p>',
     lists: [optin.id],
   });
   const lists = [optin, single];
@@ -185,8 +196,21 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
     expect(s.lists.map((l) => l.id)).toEqual(expect.arrayContaining([optin.id, single.id]));
   }
 
-  // Unsubscribe from the campaign's list only.
-  const url = `/subscription/${campaign.uuid}/${first.uuid}`;
+  // A campaign links a subscriber only once it has delivered to them (D126). The optin list delivers
+  // to confirmed members, so an administrator confirms both, then the campaign goes out.
+  await ok(page, "/api/subscribers/lists", "PUT", {
+    ids: [first.id, second.id],
+    action: "add",
+    target_list_ids: [optin.id],
+    status: "confirmed",
+  });
+  await ok(page, `/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" });
+  await expect
+    .poll(async () => (await ok(page, `/api/campaigns/${campaign.id}`)).status, { timeout: 60000 })
+    .toBe("finished");
+  // Unsubscribe from the campaign's list only, following the link in the mail it delivered.
+  const delivered = await mailAbout(first.email, campaign.subject);
+  const url = linkTo(delivered, TRACKED.unsubscribe, "the campaign's unsubscribe page");
   await page.goto(url);
   await page.locator("#btn-unsub").click();
   await expect(page.locator("body")).toContainText(/unsubscribed/i);

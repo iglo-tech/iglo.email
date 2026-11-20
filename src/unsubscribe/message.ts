@@ -7,7 +7,7 @@ import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
 
 export interface PreparedLinks {
-  /** `unsubscribe_url` for marketing sends to a subscriber; null otherwise. */
+  /** `unsubscribe_url` for a send to a subscriber, marketing or transactional (D126, r1); null otherwise. */
   unsubscribeUrl: string | null;
   /** RFC 8058 headers when `privacy.unsubscribe_header` is on. */
   headers: Record<string, string>;
@@ -22,12 +22,13 @@ export function messageLinks(settings: MarketingSettings, tracking: Tracking) {
   const root = settings.rootUrl.replace(/\/+$/, "");
   const links = new Map<string, string | null>();
   return (send: { uuid: string; kind: SendKind; subscriberUuid: string | null }): PreparedLinks => {
-    const unsubscribeUrl =
-      send.kind === "marketing" && send.subscriberUuid
-        ? `${root}${unsubscribePath(send.uuid, send.subscriberUuid)}`
-        : null;
+    // D126 (r1): a transactional send's links pair it through its own journal row, as a marketing send's do.
+    const unsubscribeUrl = send.subscriberUuid
+      ? `${root}${unsubscribePath(send.uuid, send.subscriberUuid)}`
+      : null;
+    // The RFC 8058 one-click headers are for marketing mail only.
     const headers: Record<string, string> =
-      unsubscribeUrl && settings.unsubscribeHeader
+      send.kind === "marketing" && unsubscribeUrl && settings.unsubscribeHeader
         ? {
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
             "List-Unsubscribe": `<${unsubscribeUrl}>`,

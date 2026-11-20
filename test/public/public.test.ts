@@ -1,6 +1,7 @@
 // M2.5 behavior through the public HTTP boundary and the SMTP sink, on the injected clock.
 // Upstream-compared results are in test/contract/public.ts.
 import { afterEach, expect, test } from "bun:test";
+import { createRunnerStore } from "@/campaigns/runner/store";
 import { createRateLimit, createThrottle } from "@/public/rate-limit";
 import { createClientAddress } from "@/server/client-address";
 import { imagePng } from "@/test/media/images";
@@ -409,7 +410,9 @@ test("preferences commit with their effects, or not at all", async () => {
     preconfirm_subscriptions: true,
   });
   const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
-  const path = `/subscription/${dummy}/${uuid}`;
+  // A campaign the subscriber was delivered to pairs the save (D126, r1): the placeholder's saves
+  // change no name and no confirmed list.
+  const path = `/subscription/${f.deliveredCampaign([id], [keep.id, drop.id, hidden.id])}/${uuid}`;
   const body = form({ manage: "true", name: "Renamed", l: keep.uuid });
   f.failEffects(true);
   expect((await f.fresh(path, body)).status).toBe(500);
@@ -648,7 +651,11 @@ test("tx templates get manage_url for subscribers, and it opens preferences", as
   };
   expect(await send({ subscriber_id: id })).toBe(200);
   const manage = await url(email);
-  expect(manage).toBe(`http://fixture.test/subscription/${dummy}/${uuid}?manage=true`);
+  // A transactional send names its own paired path, through its journal row (D126, r1).
+  expect(manage).toMatch(
+    /^http:\/\/fixture\.test\/m\/[0-9a-f-]+\/unsubscribe\/[0-9a-f-]+\?manage=true$/,
+  );
+  expect(manage).toContain(`/unsubscribe/${uuid}?manage=true`);
   const page = await f.peer(manage.replace("http://fixture.test", ""), "192.0.2.60");
   expect(page.status).toBe(200);
   expect(await page.text()).toContain("News");
@@ -683,6 +690,8 @@ test("view in browser writes nothing and escapes subscriber data", async () => {
       `{{ subscriber.name }} {{ "https://example.test/a" | track_link }} {{ track_view }}`,
       JSON.stringify({ name: "Sample" }),
     ) as { id: bigint };
+  // The runner delivered the campaign to the subscriber, so their view in browser pairs (D126, r1).
+  createRunnerStore(f.db).claim(campaign.id, row.id, f.clock.now().toISOString());
   const counts = () =>
     f.db
       .query(
@@ -741,6 +750,11 @@ test("embedded images are public media URLs on the campaign page and the archive
       template,
     ],
   );
+  // The runner delivered it to the reader, so the view in browser pairs them (D126, r1).
+  const embedded = f.db.query("SELECT id FROM campaigns WHERE uuid = ?").get(uuid) as {
+    id: bigint;
+  };
+  createRunnerStore(f.db).claim(embedded.id, reader.id, f.clock.now().toISOString());
   const pages = [`/campaign/${uuid}/${reader.uuid}`, "/archive/embedded"];
   for (const path of pages) {
     const page = await (await f.peer(path, "192.0.2.41")).text();

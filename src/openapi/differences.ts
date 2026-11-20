@@ -295,6 +295,12 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Placeholder, transactional and view links (D126, r1)",
+    summary:
+      "The placeholder campaign's manage page and save change pending opt-ins only: no name, no confirmed list, no blocklist. A transactional send's preference and unsubscribe links name its own paired send path, which manages confirmed lists and the name, and blocklist and privacy are refused there. View in browser answers only a subscriber the campaign was delivered to. Upstream acts on the subscriber UUID alone.",
+    applies: [],
+  },
+  {
     area: "Subscriber writable input",
     summary:
       "Ignore read-only/unknown metadata and validate the writable DTO; resolve PATCH omissions at commit time.",

@@ -173,7 +173,8 @@ test("the placeholder campaign keeps opt-in and preferences, and refuses blockli
     ]),
   );
   expect(saved.status).toBe(200);
-  expect((await subscriberOf(f, ada)).name).toBe("Ada Two");
+  // The placeholder's save changes no name and no confirmed list (r1).
+  expect((await subscriberOf(f, ada)).name).toBe("Ada");
   expect(await f.status(ada, news.id)).toBe("confirmed");
 
   // Blocklist and privacy need a pairing: refused, nothing written.
@@ -191,7 +192,7 @@ test("the placeholder campaign keeps opt-in and preferences, and refuses blockli
   const manage = await (
     await visit(f, `/subscription/${placeholder}/${adaUuid}?manage=true`)
   ).text();
-  expect(manage).toContain('name="name"');
+  expect(manage).not.toContain('name="name"');
   expect(manage).not.toContain('name="blocklist"');
   expect(manage).not.toContain("/export/");
   expect(manage).not.toContain("/wipe/");
@@ -238,4 +239,170 @@ test("a marketing send's manage page exports and wipes through its send, for its
   expect((await act(f, `/m/${send}/wipe/${adaUuid}`)).status).toBe(200);
   expect((await f.json(`/api/subscribers/${ada}`)).status).toBe(400);
   expect((await subscriberOf(f, bob)).status).toBe("enabled");
+});
+
+// r1 (D126): the placeholder campaign writes only pending opt-ins; a transactional send pairs its
+// subscriber through the journal; view in browser answers only a delivered subscriber.
+const decoded = (data: string) =>
+  data
+    .replace(/=\r\n/g, "")
+    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+/** Admin confirmation of each list, as an administrator's list change makes it. */
+const confirm = (f: PublicFixture, id: number, lists: number[]) =>
+  f.json("/api/subscribers/lists", "PUT", {
+    ids: [id],
+    action: "add",
+    target_list_ids: lists,
+    status: "confirmed",
+  });
+
+test("the placeholder campaign's manage save renames nobody and leaves confirmed lists alone", async () => {
+  const f = await open();
+  const news = await f.list("News");
+  const double = await f.list("Double", "public", "double");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [double.id] });
+  expect((await confirm(f, ada, [news.id])).status).toBe(200);
+  const adaUuid = await uuidOf(f, ada);
+
+  // The page offers pending lists only: no name field, and the confirmed list is not listed.
+  const manage = await (
+    await visit(f, `/subscription/${placeholder}/${adaUuid}?manage=true`)
+  ).text();
+  expect(manage).toContain(`value="${double.uuid}"`);
+  expect(manage).not.toContain(`value="${news.uuid}"`);
+  expect(manage).not.toContain('name="name"');
+
+  // The reviewer's repro: a rename and no lists. Nothing confirmed is touched, and the name stays.
+  const saved = await act(
+    f,
+    `/subscription/${placeholder}/${adaUuid}?manage=true`,
+    form([
+      ["manage", "true"],
+      ["name", "Hacked"],
+    ]),
+  );
+  expect(saved.status).toBe(200);
+  expect((await subscriberOf(f, ada)).name).toBe("Ada");
+  expect(await f.status(ada, news.id)).toBe("confirmed");
+  // The pending list was not kept, so the save ends it.
+  expect(await f.status(ada, double.id)).toBe("unsubscribed");
+});
+
+test("an old opt-in link still confirms a pending subscription", async () => {
+  const f = await open();
+  const double = await f.list("Double", "public", "double");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [double.id] });
+  const adaUuid = await uuidOf(f, ada);
+  expect(await f.status(ada, double.id)).toBe("unconfirmed");
+  const confirmed = await act(
+    f,
+    `/subscription/optin/${adaUuid}`,
+    form([
+      ["confirm", "true"],
+      ["l", double.uuid],
+    ]),
+  );
+  expect(confirmed.status).toBe(200);
+  expect(await f.status(ada, double.id)).toBe("confirmed");
+});
+
+test("a transactional preference link manages confirmed lists through its own send", async () => {
+  const f = await open();
+  const template = await f.template('<p><a href="{{ manage_url }}">manage</a></p>', "Receipt");
+  const news = await f.list("News");
+  const other = await f.list("Other");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id, other.id] });
+  await confirm(f, ada, [news.id, other.id]);
+  const adaUuid = await uuidOf(f, ada);
+  expect((await f.tx({ subscriber_id: ada, template_id: template })).status).toBe(200);
+  await f.drain();
+  const mail = f.mailTo("ada@example.test").at(-1)!;
+  const link =
+    /http:\/\/fixture\.test(\/m\/[0-9a-f-]+\/unsubscribe\/[0-9a-f-]+\?manage=true)/i.exec(
+      decoded(mail.data),
+    )![1]!;
+  expect(link).toContain(`/unsubscribe/${adaUuid}?manage=true`);
+
+  const page = await visit(f, link);
+  expect(page.status).toBe(200);
+  const html = await page.text();
+  expect(html).toContain(`value="${news.uuid}"`);
+  expect(html).toContain(`value="${other.uuid}"`);
+  expect(html).toContain('name="name"');
+  expect(html).not.toContain('name="blocklist"');
+  expect(html).not.toContain("/export/");
+
+  const saved = await act(
+    f,
+    link,
+    form([
+      ["manage", "true"],
+      ["name", "Ada Two"],
+      ["l", news.uuid],
+    ]),
+  );
+  expect(saved.status).toBe(200);
+  expect((await subscriberOf(f, ada)).name).toBe("Ada Two");
+  expect(await f.status(ada, news.id)).toBe("confirmed");
+  expect(await f.status(ada, other.id)).toBe("unsubscribed");
+  // A transactional send cannot blocklist: that is refused and writes nothing.
+  expect((await act(f, link, "blocklist=true")).status).toBe(404);
+  expect((await subscriberOf(f, ada)).status).toBe("enabled");
+});
+
+test("an old transactional link (the placeholder) can only end pending opt-ins", async () => {
+  const f = await open();
+  const news = await f.list("News");
+  const double = await f.list("Double", "public", "double");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id, double.id] });
+  await confirm(f, ada, [news.id]);
+  const adaUuid = await uuidOf(f, ada);
+  const before = await subscriberOf(f, ada);
+
+  // A save with no lists and a new name: the pending list ends, the confirmed one stays.
+  const saved = await act(
+    f,
+    `/subscription/${placeholder}/${adaUuid}?manage=true`,
+    form([
+      ["manage", "true"],
+      ["name", "Hacked"],
+    ]),
+  );
+  expect(saved.status).toBe(200);
+  expect((await subscriberOf(f, ada)).name).toBe(before.name);
+  expect(await f.status(ada, news.id)).toBe("confirmed");
+  expect(await f.status(ada, double.id)).toBe("unsubscribed");
+  // The one-click ends pending subscriptions, as before, and touches nothing confirmed.
+  expect(
+    (await act(f, `/subscription/${placeholder}/${adaUuid}`, "List-Unsubscribe=One-Click")).status,
+  ).toBe(200);
+  expect(await f.status(ada, news.id)).toBe("confirmed");
+});
+
+test("view in browser answers a subscriber the campaign was delivered to, and no one else", async () => {
+  const f = await open();
+  const news = await f.list("News");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id] });
+  const bob = await f.subscriber("bob@example.test", "Bob", { lists: [news.id] });
+  const adaUuid = await uuidOf(f, ada);
+  const bobUuid = await uuidOf(f, bob);
+  const weekly = delivered(f, news.id, [ada]);
+
+  const view = await visit(f, `/campaign/${weekly.uuid}/${adaUuid}`);
+  expect(view.status).toBe(200);
+  expect(await view.text()).toContain("Hello");
+
+  // Bob was never delivered this campaign, and an absent subscriber is the same answer.
+  const unpaired = await visit(f, `/campaign/${weekly.uuid}/${bobUuid}`);
+  const absent = await visit(f, `/campaign/${weekly.uuid}/${crypto.randomUUID()}`);
+  expect(unpaired.status).toBe(404);
+  expect(absent.status).toBe(404);
+  const unpairedText = await unpaired.text();
+  expect(unpairedText).toBe(await absent.text());
+  expect(unpairedText).not.toContain("Hello");
+
+  // The test placeholder keeps its test page (D117).
+  const testView = await visit(f, `/campaign/00000000-0000-0000-0000-000000000001/${adaUuid}`);
+  expect(testView.status).toBe(200);
+  expect(await testView.text()).toContain("This link is from a test send.");
 });

@@ -104,8 +104,11 @@ test("preview without input renders the dummy subscriber, no trigger and zero ag
     aggregates: { downloads: 0 },
     sequence: { id: sequence, name: "Onboarding" },
     step: { id: step, position: 0, kind: "transactional" },
-    unsubscribe_url: "",
-    manage_url: "",
+    // A transactional step's links name the placeholder send and subscriber (D126, r1): the test page.
+    unsubscribe_url:
+      "http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/00000000-0000-0000-0000-000000000000",
+    manage_url:
+      "http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/00000000-0000-0000-0000-000000000000?manage=true",
   });
   // Nothing is written: no enrollment, no send, no mail.
   expect(await enrollmentTotal(f)).toBe(0);

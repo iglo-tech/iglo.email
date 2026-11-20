@@ -10,7 +10,13 @@ import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
-import { savePreferences, subscriptionPage, type PageOptions } from "@/public/preferences";
+import {
+  savePendingLists,
+  savePreferences,
+  subscriptionPage,
+  type PageMode,
+  type PageOptions,
+} from "@/public/preferences";
 import type { Privacy } from "@/public/privacy";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
@@ -113,8 +119,11 @@ export function registerCampaignPublicRoutes(
     return found && found.campaign !== null ? found.subscriber : null;
   };
   /** The base of this campaign's paired routes, for its manage page's forms; none for the placeholder. */
-  const basePath = (campUuid: string) =>
-    campUuid === dummyUUID ? null : `/subscription/${campUuid}`;
+  // The placeholder's mail manages pending lists only (D126, r1); a campaign's page is paired.
+  const pageMode = (campUuid: string): PageMode =>
+    campUuid === dummyUUID
+      ? { kind: "pending" }
+      : { kind: "paired", base: `/subscription/${campUuid}`, blocklist: true, privacy: true };
   /** Answers a path that pairs nobody. The same page for an unknown subscriber, so none is revealed. */
   const unpaired = (t: Translation) =>
     page(t, 404, t.T("globals.terms.notFound"), t.T("globals.messages.invalidLink"), noIndex);
@@ -143,7 +152,7 @@ export function registerCampaignPublicRoutes(
       options(),
       manage,
       noIndex,
-      basePath(camp),
+      pageMode(camp),
     );
   });
 
@@ -170,16 +179,15 @@ export function registerCampaignPublicRoutes(
       const blocklist = deps.settings().allowBlocklist && form.blocklist;
       // D126: the placeholder campaign pairs no campaign, so its mail cannot blocklist anyone.
       if (blocklist && camp === dummyUUID) return unpaired(t);
-      if (form.manage && !blocklist)
-        return (
-          savePreferences(
-            { ...deps, effects: deps.effects },
-            t,
-            options(),
-            form,
-            () => pairing(camp, subUuid)?.subscriber ?? null,
-          ) ?? unpaired(t)
-        );
+      if (form.manage && !blocklist) {
+        // The placeholder's save ends pending lists only; a campaign's save manages its subscriber.
+        const current = () => pairing(camp, subUuid)?.subscriber ?? null;
+        const save =
+          camp === dummyUUID
+            ? savePendingLists({ ...deps, effects: deps.effects }, t, options(), form, current)
+            : savePreferences({ ...deps, effects: deps.effects }, t, options(), form, current);
+        return save ?? unpaired(t);
+      }
       writeTransaction(deps.db, () => {
         // Re-read inside the write: unsubscribe from the campaign's lists, or blocklist.
         const found = pairing(camp, subUuid);

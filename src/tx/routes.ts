@@ -4,7 +4,6 @@
 // links, headers and tracking come from src/unsubscribe (M2.4).
 import { refuseWhileHeld } from "@/settings/hold";
 import { createHash } from "node:crypto";
-import { dummyUUID } from "@/campaigns/render";
 import type { Message } from "@/messaging/email";
 import type { RequestedSend, Sends } from "@/messaging/sends";
 import type { startOutbox } from "@/messaging/outbox";
@@ -312,7 +311,6 @@ export function registerTxRoutes(
       const requested: RequestedSend[] = [];
       const marketingSettings = deps.marketing.settings();
       const links = messageLinks(marketingSettings, deps.marketing.tracking);
-      const root = marketingSettings.rootUrl.replace(/\/+$/, "");
       const attachments = [
         ...m.attachments.map((a) => ({
           name: a.name,
@@ -331,13 +329,14 @@ export function registerTxRoutes(
           kind,
           subscriberUuid: recipient.row?.uuid ?? null,
         });
-        const unsubscribe = marketing
-          ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
-          : "";
-        // Preferences for a known subscriber: scoped by the send when marketing, else general.
-        const preferences =
-          prepared.unsubscribeUrl ??
-          (recipient.row ? `${root}/subscription/${dummyUUID}/${recipient.row.uuid}` : "");
+        // D126 (r1): the links of a send to a known subscriber name this send's own paired path, so a
+        // transactional preference link manages confirmed lists through its journal row. Without a
+        // subscriber there is no path, as before.
+        const unsubscribe =
+          marketing || prepared.unsubscribeUrl !== null
+            ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
+            : "";
+        const preferences = prepared.unsubscribeUrl ?? "";
         const manage = `,"manage_url":${JSON.stringify(preferences && `${preferences}?manage=true`)}`;
         const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}${manage}}`;
         let rendered: { body: string; subject: string };

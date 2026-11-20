@@ -734,6 +734,9 @@ export async function runPublicContract(target: {
     // Preferences.
     const kim = await createSubscriber("kim", [single.id, double.id, hidden.id], true);
     const prefs = `/subscription/${dummy}/${kim.uuid}`;
+    // B123 r1 (D126, deliberate difference): upstream's placeholder page saves names and lists. Production's
+    // placeholder page changes pending opt-ins only, so its saves below go through a campaign delivered to Kim.
+    const managed = reference ? prefs : `/subscription/${await pairedCampaign(kim)}/${kim.uuid}`;
     const unsubPage = await visit(prefs);
     // B123 (D126, deliberate difference): the placeholder campaign's page offers no privacy form in
     // production, since its links pair no send or campaign; upstream's page offers them.
@@ -750,7 +753,7 @@ export async function runPublicContract(target: {
         !unsubPage.text.includes("manage-form"),
       "prefs-unsub-page",
     );
-    const managePage = await visit(`${prefs}?manage=true`);
+    const managePage = await visit(`${managed}?manage=true`);
     check(
       managePage.status === 200 &&
         managePage.text.includes('class="manage-form"') &&
@@ -762,17 +765,31 @@ export async function runPublicContract(target: {
         !managePage.text.includes(hidden.name),
       "prefs-manage-page",
     );
+    if (!reference) {
+      // The placeholder page's save changes no name and no confirmed list (D126, r1).
+      const nameBefore = (await call(`/api/subscribers/${kim.id}`)).body.data.name;
+      const placeholderSave = await post(
+        prefs,
+        new URLSearchParams({ manage: "true", name: "Hacked" }),
+      );
+      check(
+        placeholderSave.status === 200 &&
+          (await call(`/api/subscribers/${kim.id}`)).body.data.name === nameBefore &&
+          (await status(kim.id, single.id)) === "confirmed",
+        "prefs-placeholder-save",
+      );
+    }
     check(
-      (await post(prefs, new URLSearchParams({ manage: "true", name: "  " }))).status === 400,
+      (await post(managed, new URLSearchParams({ manage: "true", name: "  " }))).status === 400,
       "prefs-empty-name",
     );
     check(
-      (await post(prefs, new URLSearchParams({ manage: "true", name: "n".repeat(257) }))).status ===
-        400,
+      (await post(managed, new URLSearchParams({ manage: "true", name: "n".repeat(257) })))
+        .status === 400,
       "prefs-long-name",
     );
     const saved = await post(
-      prefs,
+      managed,
       new URLSearchParams({
         manage: "true",
         name: " Kim Renamed ",
@@ -792,7 +809,7 @@ export async function runPublicContract(target: {
     );
     // The manage page lists only current subscriptions.
     check(
-      !(await visit(`${prefs}?manage=true`)).text.includes(`value="${double.uuid}"`),
+      !(await visit(`${managed}?manage=true`)).text.includes(`value="${double.uuid}"`),
       "prefs-unsubscribed-hidden",
     );
     // Blocklist through the manage form. B123 (D126, deliberate difference): upstream's placeholder
@@ -989,8 +1006,12 @@ export async function runPublicContract(target: {
 
     const view = `/campaign/${campaign.uuid}/${reader.uuid}`;
     const draftView = await visit(view);
+    // B123 r1 (D126, deliberate difference): a view in browser pairs a subscriber the campaign was
+    // delivered to. Upstream shows an undelivered draft to any subscriber UUID; production answers 404.
     check(
-      draftView.status === 200 && draftView.headers.get("x-robots-tag") === "noindex",
+      reference
+        ? draftView.status === 200 && draftView.headers.get("x-robots-tag") === "noindex"
+        : draftView.status === 404,
       "view-draft",
     );
     // Upstream falls through to a 500 page; a forged UUID is a safe 404 here.

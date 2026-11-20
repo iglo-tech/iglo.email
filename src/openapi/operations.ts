@@ -1068,7 +1068,7 @@ const campaigns: Operation[] = [
     id: "deleteCampaigns",
     tag: "Campaigns",
     summary: "Delete campaigns by ID or query.",
-    permissions: ["campaigns:manage_all"],
+    permissions: ["campaigns:manage_all", "campaigns:manage"],
     query: [
       ids,
       ...q("query", "type"),
