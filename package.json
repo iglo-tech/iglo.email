@@ -147,7 +147,7 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "packageManager": "bun@1.4.4",
+  "packageManager": "bun@1.4.5",
   "patchedDependencies": {
     "saxes@6.0.0": "patches/saxes@6.0.0.patch",
     "liquidjs@10.30.0": "patches/liquidjs@10.30.0.patch",

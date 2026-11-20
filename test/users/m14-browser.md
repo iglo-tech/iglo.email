@@ -1,6 +1,6 @@
 # M1.4 compiled browser check
 
-Run from the repository with Bun 1.4.4 and `agent-browser` installed. The only
+Run from the repository with Bun 1.4.5 and `agent-browser` installed. The only
 credentials are synthetic values in `test/users/fixtures.md`; the factor key is
 the RFC 6238 example in the two helper scripts. No challenge URL, nonce,
 cookie or generated secret needs to be printed.
