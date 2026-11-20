@@ -87,6 +87,12 @@ async function api(port: number, method: string, path: string, body?: unknown) {
   return { status: response.status, data: ((await response.json()) as { data: any }).data };
 }
 
+/** Saves `changes` over the current settings, as the admin form does: a full save, not a partial one. */
+async function changeSettings(port: number, changes: Record<string, unknown>) {
+  const current = (await api(port, "GET", "/api/settings")).data;
+  return api(port, "PUT", "/api/settings", { ...current, ...changes });
+}
+
 /** Polls until `read` gives a value, or fails after a bounded number of tries. */
 async function until<T>(read: () => Promise<T | undefined>, what: string): Promise<T> {
   for (let i = 0; i < 400; i++) {
@@ -104,9 +110,9 @@ const logLines = async (port: number, text: string) =>
 test("an invalid admin notification address is one plain stderr line and a fixed buffer line", async () => {
   const { child, port } = await startServer();
   try {
-    expect(
-      (await api(port, "PUT", "/api/settings", { "app.notify_emails": ["not-an-address"] })).status,
-    ).toBe(200);
+    expect((await changeSettings(port, { "app.notify_emails": ["not-an-address"] })).status).toBe(
+      200,
+    );
     const list = await api(port, "POST", "/api/lists", {
       name: "Attention",
       type: "public",
@@ -179,7 +185,7 @@ test("a test-send bounce through the SES fixture is one plain stderr line, with 
       };
       expect(
         (
-          await api(port, "PUT", "/api/settings", {
+          await changeSettings(port, {
             smtp: [smtp],
             "bounce.enabled": true,
             "bounce.ses_enabled": true,
