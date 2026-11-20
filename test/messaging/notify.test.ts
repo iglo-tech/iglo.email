@@ -1,5 +1,6 @@
 // Public-boundary tests for admin notification mails (task B38).
 import { afterEach, describe, expect, test } from "bun:test";
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -257,6 +258,7 @@ async function createNotifyFixture(
   };
 
   registerCampaignRoutes(router, {
+    page: fixturePageSite,
     store: campaignStore,
     testSends: createTestSends(db, clock),
     templates,

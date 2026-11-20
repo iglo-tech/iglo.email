@@ -52,18 +52,6 @@ const productionHTML = html404(
   true,
   "Mailing list archive - Mailing list",
 );
-// The fixture server has no site settings, so its own unmatched 404 is the plain shell.
-const fixtureHTML = html404(
-  "iglo.email",
-  "iglo.email",
-  "Powered by iglo.email. Based on listmonk.",
-  [
-    { text: "iglo.email", href: "https://iglo.email" },
-    { text: "listmonk", href: "https://listmonk.app" },
-  ],
-  false,
-  null,
-);
 const css: Expectation = {
   status: 200,
   contentType: "text/css; charset=utf-8",
@@ -369,7 +357,7 @@ export const cases: readonly ContractCase[] = freeze([
     difference: "D18",
     reference: endpoint(`/api/lists/${id}`, invalidID),
     production: endpoint(`/api/lists/${id}`, notFound),
-    fixture: endpoint(`/fixture/id/${id}`, fixtureHTML),
+    fixture: endpoint(`/fixture/id/${id}`, productionHTML),
   })),
   {
     id: "literal-backslash",

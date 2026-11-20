@@ -9,6 +9,7 @@ import { openDatabase } from "@/db/connection";
 import { createTranslation } from "@/i18n/i18n";
 import type { Middleware } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
+import { publicNotFound } from "@/public/message";
 import { createRouter, startServer } from "@/server/server";
 import { bindJSON, getID, hasID, strHasLen } from "@/server/validation";
 import type { Credentials } from "@/test/contract/types";
@@ -33,6 +34,18 @@ export function startContractFixture(credentials: Credentials) {
       logger: { error: () => {}, attention: () => {} },
     });
     const router = createRouter();
+    // Unmatched paths answer the branded public 404, as production's do (B121). The fixture's site
+    // has no settings store: its archive link needs a loopback host and a port, which it names here.
+    router.notFound("/", (context) =>
+      publicNotFound(context.app.i18n, context.request.method, {
+        siteName: "Mailing list",
+        rootUrl: "http://127.0.0.1:9",
+        logoUrl: "",
+        faviconUrl: "",
+        subscriptionPage: false,
+        archive: true,
+      }),
+    );
     const auth: Middleware = (context, next) => {
       const pair = `${credentials.user}:${credentials.token}`;
       const header = context.request.headers.get("authorization");

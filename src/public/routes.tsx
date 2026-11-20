@@ -65,7 +65,6 @@ export function registerPublicRoutes(
         status,
         title,
         message: text,
-        siteName: settings.siteName,
         site: settings,
       },
       headers,
@@ -78,7 +77,6 @@ export function registerPublicRoutes(
     const body = render(
       <PublicShell
         title={title}
-        siteName={settings.siteName}
         assetVersion={assetVersion}
         poweredBy={t.T("public.poweredBy")}
         archiveTitle={t.T("public.archiveTitle")}
@@ -198,8 +196,10 @@ export function registerPublicRoutes(
     const settings = deps.settings();
     if (!settings.subscriptionPage) return failed(t, 404, t.T("public.invalidFeature"));
     const lists = deps.lists.publicLists();
-    // B121 (D119): an empty list set is a configuration state, not a fault: the branded message at 200.
-    if (!lists.length) return failed(t, 200, t.T("public.noListsAvailable"));
+    // B121 (D119): an empty list set is a configuration state, not a fault: the branded message at
+    // 200, under the form's own title (a 200 page is not an error).
+    if (!lists.length)
+      return message(t, 200, t.T("globals.buttons.subscribe"), t.T("public.noListsAvailable"));
     const title = t.T("globals.buttons.subscribe");
     return html(
       t,

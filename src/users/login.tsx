@@ -1,7 +1,7 @@
 // Adapted from listmonk cmd/auth.go, internal/utils/utils.go and static/public/templates/login.html at 6fcd95f.
 import { posix } from "node:path";
 import { render } from "@/jsx/render";
-import { PublicShell } from "@/public/layout";
+import { PublicShell, type PageSite } from "@/public/layout";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
@@ -45,14 +45,20 @@ function sanitizeNext(value: string): string {
   }
 }
 
-function page(context: RequestContext, auth: Authentication, next: string, message = ""): Response {
+function page(
+  context: RequestContext,
+  auth: Authentication,
+  site: PageSite,
+  next: string,
+  message = "",
+): Response {
   const nonce = auth.nonce();
   const i18n = context.app.i18n;
   const title = i18n.T("globals.buttons.login");
   const body = render(
     <PublicShell
       title={title}
-      siteName="iglo.email"
+      site={site}
       assetVersion={assetVersion}
       poweredBy={i18n.T("public.poweredBy")}
     >
@@ -100,9 +106,10 @@ function page(context: RequestContext, auth: Authentication, next: string, messa
   });
 }
 
-export function createLoginHandlers(auth: Authentication) {
+/** The sign-in and two-factor pages: the site's branding, read for each request (B121). */
+export function createLoginHandlers(auth: Authentication, site: () => PageSite) {
   const getLogin: Handler = (context) =>
-    page(context, auth, sanitizeNext(context.url.searchParams.get("next") ?? ""));
+    page(context, auth, site(), sanitizeNext(context.url.searchParams.get("next") ?? ""));
   const postLogin: Handler = async (context) => {
     auth.limit(auth.clientAddress(context));
     auth.checkOrigin(context.request);
@@ -121,6 +128,7 @@ export function createLoginHandlers(auth: Authentication) {
       return page(
         context,
         auth,
+        site(),
         next,
         context.app.i18n.Ts("globals.messages.invalidFields", "name", "username"),
       );
@@ -128,11 +136,13 @@ export function createLoginHandlers(auth: Authentication) {
       return page(
         context,
         auth,
+        site(),
         next,
         context.app.i18n.Ts("globals.messages.invalidFields", "name", "password"),
       );
     const session = await auth.login(username, password);
-    if (!session) return page(context, auth, next, context.app.i18n.T("users.invalidLogin"));
+    if (!session)
+      return page(context, auth, site(), next, context.app.i18n.T("users.invalidLogin"));
     if ("token" in session) {
       const params = new URLSearchParams({ token: session.token, next });
       return new Response(null, {
@@ -153,7 +163,7 @@ export function createLoginHandlers(auth: Authentication) {
     const body = render(
       <PublicShell
         title={title}
-        siteName="iglo.email"
+        site={site()}
         assetVersion={assetVersion}
         poweredBy={i18n.T("public.poweredBy")}
       >

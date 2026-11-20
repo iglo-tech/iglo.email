@@ -266,7 +266,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     templates.initialize();
     const router = createRouter(() => restoreHold(db));
     registerTemplateRoutes(router, templates, renderer, auth);
-    registerUserRoutes(router, users, roles, auth);
+    registerUserRoutes(router, users, roles, auth, () => publicSettings(settings!.read()));
     registerListRoutes(router, listStore, roles, auth);
     registerSubscriberRoutes(
       router,
@@ -498,6 +498,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       subscribers: subscriberStore,
       emailer,
       settings: campaignSettings,
+      page: pages,
       attachments,
       embedImages,
       notify: notifier,

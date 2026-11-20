@@ -1,7 +1,7 @@
 // Adapted from listmonk static/public/templates/index.html at 6fcd95f.
 import type { Child } from "@/jsx/render";
 
-/** The site settings the shell links to; pages without them show the plain header. */
+/** The site settings the shell links to. */
 export interface ShellSite {
   readonly rootUrl: string;
   readonly logoUrl: string;
@@ -10,15 +10,14 @@ export interface ShellSite {
   readonly archive: boolean;
 }
 /**
- * What every public page shows of the site: its name and the shell settings above. The public
- * routes take one getter of this (B121), so no public page renders the unbranded shell.
+ * What every page shows of the site: its name and the shell settings above. Public, sign-in and
+ * operator pages all take one getter of this (B121), so no page renders the unbranded shell.
  */
 export type PageSite = ShellSite & { readonly siteName: string };
 export interface PublicShellProps {
   readonly title: string;
   readonly description?: string;
-  readonly site?: ShellSite;
-  readonly siteName: string;
+  readonly site: PageSite;
   readonly assetVersion: string;
   readonly poweredBy: string;
   readonly archiveTitle?: string;
@@ -28,13 +27,13 @@ export function PublicShell({
   title,
   description = "",
   site,
-  siteName,
   assetVersion,
   poweredBy,
   archiveTitle,
   children,
 }: PublicShellProps) {
   if (!/^[a-f0-9]{10}$/.test(assetVersion)) throw new TypeError("Invalid asset version");
+  const siteName = site.siteName;
   return (
     <html>
       <head>
@@ -44,7 +43,7 @@ export function PublicShell({
         </title>
         <meta name="description" content={description} />
         <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-        {site?.archive ? (
+        {site.archive ? (
           <link
             rel="alternate"
             type="application/rss+xml"
@@ -57,13 +56,9 @@ export function PublicShell({
           rel="stylesheet"
           type="text/css"
         />
-        {site ? (
-          <>
-            <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
-            <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
-          </>
-        ) : null}
-        {site?.faviconUrl ? (
+        <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
+        <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
+        {site.faviconUrl ? (
           <link rel="icon" href={site.faviconUrl} type="image/x-icon" />
         ) : (
           <link href={`/public/static/favicon.png?v=${assetVersion}`} rel="icon" type="image/png" />
@@ -73,16 +68,12 @@ export function PublicShell({
         <div class="container wrap">
           <header class="header">
             <div class="logo">
-              {site ? (
-                <a href={site.subscriptionPage ? `${site.rootUrl}/subscription/form` : ""}>
-                  <img
-                    src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`}
-                    alt={siteName}
-                  />
-                </a>
-              ) : (
-                <img src={`/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />
-              )}
+              <a href={site.subscriptionPage ? `${site.rootUrl}/subscription/form` : ""}>
+                <img
+                  src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`}
+                  alt={siteName}
+                />
+              </a>
             </div>
           </header>
           {children}

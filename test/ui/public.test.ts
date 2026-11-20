@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createTranslation } from "@/i18n/i18n";
 import { startFixture } from "@/test/server/fixture";
-import { withProduction } from "@/test/contract/owned";
+import { adminLogin, withProduction } from "@/test/contract/owned";
 import { rawRequest } from "@/test/server/raw-request";
 
 let directory = "";
@@ -172,4 +172,64 @@ test("public fallback uses and escapes the injected translation instance", async
   } finally {
     await fixture.close();
   }
+});
+
+// B121 review: the public catch-all must not take admin or API paths from their own handlers.
+// Through the compiled server, which wires every route, as an operator's instance does.
+const admin = { user: "branding-admin", password: "branding-admin-password" };
+test("admin and API paths keep their own answers; only other paths get the public 404", async () => {
+  await withProduction(
+    executable,
+    new AbortController().signal,
+    async (origin) => {
+      const anonymous = await fetch(`${origin}/admin/no-such-view`, { redirect: "manual" });
+      expect(anonymous.status).toBe(307);
+      expect(anonymous.headers.get("location")).toMatch(/^\/admin\/login\?next=/);
+
+      const { cookie } = await adminLogin(origin, admin);
+      const signedIn = await fetch(`${origin}/admin/no-such-view`, { headers: { Cookie: cookie } });
+      const adminBody = await signedIn.text();
+      expect(signedIn.status).toBe(404);
+      expect(signedIn.headers.get("content-type")).toBe("text/html; charset=UTF-8");
+      expect(adminBody).not.toContain('href="/public/custom.css');
+
+      const api = await fetch(`${origin}/api/no-such`);
+      expect(api.status).toBe(404);
+      expect(api.headers.get("content-type")).toBe("application/json");
+      expect(await api.text()).toContain("404 unknown endpoint");
+
+      const publicPage = await fetch(`${origin}/no-such`);
+      const html = await publicPage.text();
+      expect(publicPage.status).toBe(404);
+      expect(html).toContain("<title>404 - Not found - Mailing list</title>");
+      expect(html).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
+    },
+    admin,
+  );
+});
+
+// B121 review (lead decision): sign-in, two-factor, password reset and the archive preview are
+// branded like the public pages. The sign-in page shows the site's logo.
+test("the sign-in, forgot-password and reset pages show the site's logo", async () => {
+  const logo = "https://brand.example.test/logo.png";
+  await withProduction(
+    executable,
+    new AbortController().signal,
+    async (origin) => {
+      const { cookie, token } = await adminLogin(origin, admin);
+      const set = await fetch(`${origin}/api/settings/app.logo_url`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Cookie: cookie, "X-CSRF-Token": token },
+        body: JSON.stringify(logo),
+      });
+      expect(set.status).toBe(200);
+      for (const path of ["/admin/login", "/admin/forgot", "/admin/reset"]) {
+        const html = await (await fetch(`${origin}${path}`)).text();
+        expect(html).toContain(`src="${logo}"`);
+        expect(html).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
+        expect(html).not.toContain("/public/static/logo.svg");
+      }
+    },
+    admin,
+  );
 });

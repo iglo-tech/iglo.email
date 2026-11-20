@@ -40,7 +40,6 @@ export function subscriptionPage(
   const body = render(
     <PublicShell
       title={t.T("public.unsubscribeTitle")}
-      siteName={options.siteName}
       assetVersion={assetVersion}
       poweredBy={t.T("public.poweredBy")}
       archiveTitle={t.T("public.archiveTitle")}
@@ -215,7 +214,6 @@ export function savePreferences(
       status: 400,
       title: t.T("globals.terms.error"),
       message,
-      siteName: options.siteName,
       site: options,
     });
   if (!options.allowPreferences) return failed(t.T("public.invalidFeature"));
@@ -244,7 +242,6 @@ export function savePreferences(
     status: 200,
     title: t.T("globals.messages.done"),
     message: t.T("public.prefsSaved"),
-    siteName: options.siteName,
     site: options,
   });
 }

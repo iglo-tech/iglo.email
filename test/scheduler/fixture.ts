@@ -1,6 +1,7 @@
 // In-process production owners wired as src/main.ts does, with the sequence scheduler, a fake
 // clock and a loopback SMTP sink. The scheduler's injected clock is observed so a test can wait
 // for one complete pass (an idle sleep) without sleeping in real time.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -234,7 +235,7 @@ export async function schedulerFixture(
   );
 
   const router = createRouter();
-  registerUserRoutes(router, users, roles, auth);
+  registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth, undefined, undefined, {
     events: (id, page, perPage) => events.page(id, page, perPage),

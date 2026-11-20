@@ -439,14 +439,14 @@ export async function runPublicContract(target: {
     // B121 (D119, deliberate difference): with no public list to show, the form page is the
     // branded message at 200; upstream answers 500. The public lists are archived for the check
     // and restored after it, so the rest of the suite sees them as before.
-    const publicIds = (
-      (await call("/api/lists?minimal=true&status=active")).body.data as {
-        id: number;
-        type: string;
-      }[]
-    )
+    const minimal = (await call("/api/lists?minimal=true&status=active")).body.data as {
+      results: { id: number; type: string }[];
+    };
+    const publicIds = minimal.results
       .filter((list) => list.type === "public")
       .map((list) => list.id);
+    // The check must have something to archive; an empty set would pass without testing anything.
+    check(publicIds.length > 0, "form-empty-lists-present");
     const setStatus = async (id: number, status: "active" | "archived") => {
       const full = (await call(`/api/lists/${id}`)).body.data as {
         name: string;

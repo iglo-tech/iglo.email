@@ -64,7 +64,6 @@ export function rateLimited(
         status: 429,
         title: t.T("globals.terms.error"),
         message: "Too many requests",
-        siteName: site.siteName,
         site,
       },
       headers,

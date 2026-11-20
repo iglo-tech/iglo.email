@@ -1,14 +1,11 @@
 // Adapted from listmonk static/public/templates/message.html and cmd/handlers.go at 6fcd95f.
 import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
-import { PublicShell, type PageSite, type ShellSite } from "@/public/layout";
+import { PublicShell, type PageSite } from "@/public/layout";
 import { assetVersion } from "@/server/asset-manifest";
 
-/**
- * The public 404. `site` is the public routes' settings getter (B121): with it the page is branded
- * like every other public page. Without it, only a bare router without settings reaches this.
- */
-export function publicNotFound(i18n: Translation, method: string, site?: PageSite): Response {
+/** The public 404 with the site's branding (B121). */
+export function publicNotFound(i18n: Translation, method: string, site: PageSite): Response {
   if (method === "HEAD")
     return new Response(null, {
       status: 404,
@@ -18,11 +15,10 @@ export function publicNotFound(i18n: Translation, method: string, site?: PageSit
   const body = render(
     <PublicShell
       title={title}
-      siteName={site?.siteName ?? "iglo.email"}
+      site={site}
       assetVersion={assetVersion}
       poweredBy={i18n.T("public.poweredBy")}
       archiveTitle={i18n.T("public.archiveTitle")}
-      {...(site ? { site } : {})}
     >
       <h2>{title}</h2>
       <div></div>
@@ -37,17 +33,16 @@ export function publicNotFound(i18n: Translation, method: string, site?: PageSit
 /** listmonk's public `message` page (makeMsgTpl): a title heading and one message. */
 export function publicMessage(
   i18n: Translation,
-  page: { status: number; title: string; message: string; siteName: string; site?: ShellSite },
+  page: { status: number; title: string; message: string; site: PageSite },
   headers: Record<string, string> = {},
 ): Response {
   const body = render(
     <PublicShell
       title={page.title}
-      siteName={page.siteName}
+      site={page.site}
       assetVersion={assetVersion}
       poweredBy={i18n.T("public.poweredBy")}
       archiveTitle={i18n.T("public.archiveTitle")}
-      {...(page.site ? { site: page.site } : {})}
     >
       <h2>{page.title}</h2>
       <div>{page.message}</div>

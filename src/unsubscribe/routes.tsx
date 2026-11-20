@@ -88,7 +88,7 @@ export function registerUnsubscribeRoutes(
     headers: Record<string, string> = {},
   ) => {
     const site = options();
-    return publicMessage(i18n, { status, title, message, siteName: site.siteName, site }, headers);
+    return publicMessage(i18n, { status, title, message, site }, headers);
   };
   const invalidUUID = (context: RequestContext, ...names: string[]) =>
     names.some((name) => !uuidPattern.test(context.params[name] ?? ""))

@@ -104,6 +104,8 @@ test("the empty public subscription form answers 200 with the branded message, n
   expect(response.status).toBe(200);
   const html = await response.text();
   expect(html).toContain("No lists available to subscribe.");
+  // A 200 page is not an error: it carries the form's own title, not "Error".
+  expect(html).toContain("<title>Subscribe - Mailing list</title>");
   branded(html);
 });
 

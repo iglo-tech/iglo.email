@@ -77,11 +77,7 @@ export function registerArchiveRoutes(
     headers: Record<string, string> = {},
   ) => {
     const settings = deps.settings();
-    return publicMessage(
-      t,
-      { status, title, message: text, siteName: settings.siteName, site: settings },
-      headers,
-    );
+    return publicMessage(t, { status, title, message: text, site: settings }, headers);
   };
   const notFound = (t: Translation, headers = {}) =>
     message(t, 404, t.T("globals.terms.notFound"), t.T("public.campaignNotFound"), headers);
@@ -253,7 +249,6 @@ ${items}  </channel>
       <PublicShell
         title={title}
         description={title}
-        siteName={settings.siteName}
         assetVersion={assetVersion}
         poweredBy={t.T("public.poweredBy")}
         archiveTitle={title}

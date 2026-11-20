@@ -1,4 +1,5 @@
 // In-process production owners for the subscriber query, export and query-selected actions.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,7 +76,7 @@ export async function queryFixture(
   );
   await bootstrapAdmin(users, auth, admin);
   const router = createRouter();
-  registerUserRoutes(router, users, roles, auth);
+  registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   // The activity and export owners stand in for the mail and tracking modules: these fixtures
   // check the routes' own answers (permissions, the missing-subscriber refusal), not the sections.

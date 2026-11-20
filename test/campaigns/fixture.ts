@@ -1,6 +1,7 @@
 // In-process production owners for the campaigns API and its template, list, subscriber,
 // tracking and emailer seams, with a fake clock and a loopback SMTP sink, wired as
 // src/main.ts does.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -174,11 +175,12 @@ export async function campaignsFixture(
   const router = createRouter();
   registerSettingsRoutes(router, stored, auth, undefined, uploadPathCheck(directory, media));
   registerMediaRoutes(router, { store: media, files, auth, settings: mediaSettings });
-  registerUserRoutes(router, users, roles, auth);
+  registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth);
   registerCampaignRoutes(router, {
+    page: fixturePageSite,
     store,
     templates,
     renderer,
