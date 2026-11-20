@@ -45,6 +45,7 @@ import { createTracking } from "@/unsubscribe/tracking";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
+import { createTestSends } from "@/messaging/test-sends";
 import { createEventStore } from "@/events/store";
 import { allowedDomain } from "@/subscribers/email";
 import { startScheduler } from "@/scheduler/scheduler";
@@ -227,8 +228,10 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     };
   };
 
+  const testSends = createTestSends(db, clock);
   registerCampaignRoutes(router, {
     store: campaignStore,
+    testSends,
     templates,
     renderer,
     roles,
@@ -299,6 +302,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
 
   registerSequenceRoutes(router, {
     sequences,
+    testSends,
     enrollments,
     subscribers,
     events,

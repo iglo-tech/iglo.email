@@ -4,7 +4,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApp } from "@/app";
+import { createApp, type ErrorLogger } from "@/app";
+import type { SnsFetch } from "@/bounces/ses";
+import { createLogBuffer } from "@/maintenance/log-buffer";
+import { createTestSends } from "@/messaging/test-sends";
+import { wireNotices } from "@/test/messaging/notice-fixture";
 import type { Clock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
@@ -53,13 +57,23 @@ export const minute = 60_000;
 export const hour = 3_600_000;
 export const day = 86_400_000;
 
-export async function schedulerFixture(options: { sinkReject?: (to: string) => boolean } = {}) {
+export async function schedulerFixture(
+  options: { sinkReject?: (to: string) => boolean; snsFetch?: SnsFetch } = {},
+) {
   const sink = await startSink(options.sinkReject ? { reject: options.sinkReject } : {});
   const directory = mkdtempSync(join(tmpdir(), "iglo-scheduler-"));
   const clock = new TestClock();
   const db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
   const errors: unknown[] = [];
+  // The log buffer keeps what GET /api/logs shows (B108); the error list is what stderr would hold.
+  const logs = createLogBuffer(clock);
+  const logger: ErrorLogger = {
+    error(error, safe) {
+      errors.push(error);
+      logs.add(error, safe);
+    },
+  };
   const app = createApp({
     bootstrap: {
       host: "127.0.0.1",
@@ -71,7 +85,7 @@ export async function schedulerFixture(options: { sinkReject?: (to: string) => b
     db,
     clock,
     i18n: createTranslation(),
-    logger: { error: (error) => errors.push(error) },
+    logger,
   });
   const enrollments = createEnrollments(db, clock);
   const lists = createListReferences(db),
@@ -153,6 +167,7 @@ export async function schedulerFixture(options: { sinkReject?: (to: string) => b
     }),
   });
   const tracking = createTracking(db, clock);
+  const testSends = createTestSends(db, clock);
   const outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
   const events = createEventStore(db, subscribers, {
     emailAllowed: (email) => allowedDomain(email, [], []),
@@ -243,6 +258,7 @@ export async function schedulerFixture(options: { sinkReject?: (to: string) => b
     renderer,
     emailer,
     tracking,
+    testSends,
     settings: () => ({
       fromEmail: "Fixture <noreply@fixture.test>",
       marketing,
@@ -251,6 +267,18 @@ export async function schedulerFixture(options: { sinkReject?: (to: string) => b
     }),
     roles,
     auth,
+  });
+  const notices = wireNotices(router, {
+    db,
+    clock,
+    subscribers,
+    sendTarget: (uuid) => sends.bounceTarget(uuid),
+    roles,
+    auth,
+    testSends,
+    snsFetch: options.snsFetch ?? (() => Promise.reject(new Error("no network in tests"))),
+    logs,
+    logger,
   });
 
   const request = (path: string, init: RequestInit = {}) =>
@@ -375,6 +403,8 @@ export async function schedulerFixture(options: { sinkReject?: (to: string) => b
     clock,
     sink,
     errors,
+    logs,
+    testSends,
     marketing,
     scheduler,
     request,
@@ -405,6 +435,7 @@ export async function schedulerFixture(options: { sinkReject?: (to: string) => b
       await runner.close();
       conditions.close();
       sequences.close();
+      notices.close();
       enrollments.close();
       events.close();
       readonly.close();

@@ -23,6 +23,7 @@ export const tables = [
   "link_clicks",
   "settings",
   "bounces",
+  "test_sends",
   "roles",
   "users",
   "sessions",

@@ -2,11 +2,13 @@
 // routes in cmd/handlers.go at 6fcd95f. Analytics are M3.3; sending to lists is the M3.2
 // runner: status changes here only record the state.
 import { refuseWhileHeld } from "@/settings/hold";
+import { writeTransaction } from "@/db/transaction";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
-import type { Message, Outcome } from "@/messaging/email";
+import { newMessageId, type Message, type Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
+import type { TestSends } from "@/messaging/test-sends";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
 import type { Roles } from "@/roles/roles";
@@ -74,8 +76,10 @@ export interface CampaignDeps {
     push(
       message: Message,
       delivery?: { copies?: boolean; priority?: SendPriority; testPool?: boolean },
-    ): { result: Promise<Outcome> };
+    ): { messageId: string; result: Promise<Outcome> };
   };
+  /** Each test message's Message-ID, so a notice of it is named in the log (B108). */
+  testSends: TestSends;
   settings: () => CampaignSettings;
   /** Reads files, so a caller holds no transaction. */
   attachments(ids: bigint[], inline: InlineImage[]): Promise<NonNullable<Message["attachments"]>>;
@@ -192,8 +196,16 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
   };
 }
 
+/** The first Message-ID among a message's own headers (any case), or undefined when it names none. */
+function headerMessageId(headers: Record<string, string | string[]>): string | undefined {
+  for (const [name, value] of Object.entries(headers))
+    if (name.toLowerCase() === "message-id")
+      return (Array.isArray(value) ? value[0] : value) || undefined;
+  return undefined;
+}
+
 export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
-  const { store, roles, auth } = deps;
+  const { store, roles, auth, testSends } = deps;
   const identity = (context: RequestContext) => {
     if (!context.identity) throw new Error("Authenticated identity required");
     return context.identity;
@@ -836,25 +848,43 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           headers,
           ...(attachments.length ? { attachments } : {}),
           messenger: value.messenger,
+          // B108 (D114): chosen here, so its record is written before the message is queued. A
+          // Message-ID the campaign's own headers name is kept, as the emailer keeps it.
+          messageId: headerMessageId(headers) ?? newMessageId(root),
         });
       }
       auth.revalidate(context);
+      // B108 (D114): every Message-ID is recorded before any message is handed to the emailer. A
+      // failed write throws here, so nothing is sent and the request answers 500.
+      writeTransaction(context.app.db, () =>
+        testSends.record(
+          messages.map((message) => ({
+            messageId: message.messageId!,
+            kind: "campaign",
+            campaign_id: stored.id,
+            sequence_id: null,
+            step_id: null,
+          })),
+        ),
+      );
       // As listmonk, test messages are queued to the messenger; delivery is not awaited. Their
       // bytes stay in the emailer's queue, so the slot does too, until every message settles.
       // A test send has its own pool (B101). An undelivered one is logged (B101): `result` resolves
       // with the outcome and never rejects, so without this its failure would leave no trace.
-      const results = messages.map((message) =>
-        deps.emailer
-          .push(message, { copies: false, priority: "outbox", testPool: true })
-          .result.then((outcome) => {
-            if (outcome.status === "accepted" && !outcome.rejected.length) return;
-            context.app.logger.error(
-              new Error(
-                `Test send to ${message.to[0]} for campaign ${stored.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
-              ),
-              "Test send not delivered: the server error output names the recipient and stage",
-            );
-          }),
+      const dispatched = messages.map((message) => ({
+        message,
+        dispatch: deps.emailer.push(message, { copies: false, priority: "outbox", testPool: true }),
+      }));
+      const results = dispatched.map(({ message, dispatch }) =>
+        dispatch.result.then((outcome) => {
+          if (outcome.status === "accepted" && !outcome.rejected.length) return;
+          context.app.logger.error(
+            new Error(
+              `Test send to ${message.to[0]} for campaign ${stored.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
+            ),
+            "Test send not delivered: the server error output names the recipient and stage",
+          );
+        }),
       );
       queued = true;
       void Promise.all(results).finally(() => testing--);
