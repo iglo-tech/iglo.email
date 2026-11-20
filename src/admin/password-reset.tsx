@@ -5,7 +5,7 @@ import type { ErrorLogger } from "@/app";
 import { render, type Child } from "@/jsx/render";
 import type { Dispatch, Message } from "@/messaging/email";
 import { safeLogo } from "@/messaging/test";
-import { PublicShell } from "@/public/layout";
+import { PublicShell, type PageSite } from "@/public/layout";
 import { publicMessage } from "@/public/message";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
@@ -16,11 +16,9 @@ import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
 import { validPassword } from "@/users/password";
 
-export interface ResetSettings {
-  siteName: string;
-  rootUrl: string;
+/** The site's branding (B121) and the sender of the reset mail. */
+export interface ResetSettings extends PageSite {
   fromEmail: string;
-  logoUrl: string;
 }
 export interface ResetDeps {
   auth: Authentication;
@@ -40,7 +38,7 @@ export function createPasswordReset(deps: ResetDeps) {
     const body = render(
       <PublicShell
         title={title}
-        siteName={settings().siteName}
+        site={settings()}
         assetVersion={assetVersion}
         poweredBy={context.app.i18n.T("public.poweredBy")}
       >
@@ -61,7 +59,7 @@ export function createPasswordReset(deps: ResetDeps) {
         status,
         title: context.app.i18n.T("users.resetPassword"),
         message: text,
-        siteName: settings().siteName,
+        site: settings(),
       },
       pageHeaders,
     );

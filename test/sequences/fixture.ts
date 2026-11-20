@@ -1,5 +1,6 @@
 // In-process production owners for sequences, enrollments and their event, subscriber and
 // unsubscribe seams, with a fake clock and a loopback SMTP sink, wired as src/main.ts does.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -177,7 +178,7 @@ export async function sequencesFixture(
     enrollments,
   });
   const router = createRouter();
-  registerUserRoutes(router, users, roles, auth);
+  registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerSubscriberQueryRoutes(router, query, subscribers, roles, auth);
@@ -207,6 +208,18 @@ export async function sequencesFixture(
     tracking,
     settings: () => marketing,
     effects: enrollments.unsubscribeEffects,
+    page: () => ({
+      siteName: marketing.siteName,
+      rootUrl: marketing.rootUrl,
+      logoUrl: "",
+      faviconUrl: "",
+      subscriptionPage: false,
+      archive: false,
+      allowBlocklist: marketing.allowBlocklist,
+      allowPreferences: false,
+      allowExport: false,
+      allowWipe: false,
+    }),
   });
   registerEventRoutes(router, events, auth, roles);
   const testSends = createTestSends(db, clock);

@@ -536,8 +536,7 @@ async function comparePublic404(
       element(element) {
         count("images");
         logoVersion = version(element.getAttribute("src"), "/public/static/logo.svg");
-        const alt = expected.customScript ? "404 - Not found" : expected.siteName;
-        if (element.getAttribute("alt") !== alt) throw new Error("Wrong logo context");
+        if (element.getAttribute("alt") !== expected.logoAlt) throw new Error("Wrong logo context");
       },
     })
     .on("body > footer", {

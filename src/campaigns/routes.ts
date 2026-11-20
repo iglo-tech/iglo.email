@@ -9,6 +9,7 @@ import { newMessageId, type Message, type Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
+import type { PageSite } from "@/public/layout";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
 import type { Roles } from "@/roles/roles";
@@ -80,6 +81,8 @@ export interface CampaignDeps {
   /** Each test message's Message-ID, so a notice of it is named in the log (B108). */
   testSends: TestSends;
   settings: () => CampaignSettings;
+  /** The site's branding for the archive preview's error pages (B121). */
+  page: () => PageSite;
   /** Reads files, so a caller holds no transaction. */
   attachments(ids: bigint[], inline: InlineImage[]): Promise<NonNullable<Message["attachments"]>>;
   embedImages: EmbedImages;
@@ -462,7 +465,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         status: 500,
         title: t(context).T("globals.terms.error"),
         message: t(context).T("public.errorFetchingCampaign"),
-        siteName: deps.settings().siteName,
+        site: deps.page(),
       });
     // compileArchiveCampaigns: archive_meta is the sample subscriber.
     let meta: Record<string, unknown>;
@@ -491,7 +494,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           status: 400,
           title: t(context).T("globals.terms.error"),
           message: t(context).Ts("templates.errorRendering", "error", error.message),
-          siteName: deps.settings().siteName,
+          site: deps.page(),
         });
       return failed();
     }

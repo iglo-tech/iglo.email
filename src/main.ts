@@ -266,7 +266,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     templates.initialize();
     const router = createRouter(() => restoreHold(db));
     registerTemplateRoutes(router, templates, renderer, auth);
-    registerUserRoutes(router, users, roles, auth);
+    registerUserRoutes(router, users, roles, auth, () => publicSettings(settings!.read()));
     registerListRoutes(router, listStore, roles, auth);
     registerSubscriberRoutes(
       router,
@@ -372,7 +372,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           windowMs: 60_000,
           maxPeers: 10_000,
         },
-        () => pages().siteName,
+        pages,
         clientAddress,
       );
     const limits = {
@@ -498,6 +498,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       subscribers: subscriberStore,
       emailer,
       settings: campaignSettings,
+      page: pages,
       attachments,
       embedImages,
       notify: notifier,
@@ -527,6 +528,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       db,
       clock,
       store: bounces,
+      page: pages,
       logger: app.logger,
       subscribers: subscriberStore,
       roles,
@@ -554,7 +556,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           windowMs: 60_000,
           maxPeers: 10_000,
         },
-        () => pages().siteName,
+        pages,
         clientAddress,
       ),
     });

@@ -1,6 +1,7 @@
 // Route registration adapted from listmonk cmd/handlers.go at 6fcd95f.
 import type { Roles } from "@/roles/roles";
 import { registerRoleRoutes } from "@/roles/routes";
+import type { PageSite } from "@/public/layout";
 import type { Router } from "@/server/router";
 import { hasID } from "@/server/validation";
 import { ok } from "@/server/response";
@@ -15,10 +16,12 @@ export function registerUserRoutes(
   store: UserStore,
   roles: Roles,
   auth: Authentication,
+  /** The site's branding for the sign-in and two-factor pages (B121). */
+  site: () => PageSite,
 ): void {
   registerRoleRoutes(router, roles, store, auth);
   const handlers = createUserHandlers(store, roles, auth);
-  const login = createLoginHandlers(auth);
+  const login = createLoginHandlers(auth, site);
   const factor = createFactorHandlers(store, auth);
   router.route("GET", "/api/users/:id/twofa/totp", factor.generate, auth.middleware(), hasID);
   router.route("PUT", "/api/users/:id/twofa", factor.enable, auth.middleware(), hasID);

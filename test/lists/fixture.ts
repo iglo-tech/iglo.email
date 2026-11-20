@@ -1,4 +1,5 @@
 // Synthetic subscriber and campaign provisioning, not production domain endpoints.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,7 +56,7 @@ export async function startListFixture() {
       logger: { error: () => {}, attention: () => {} },
     });
     const router = createRouter();
-    registerUserRoutes(router, users, roles, auth);
+    registerUserRoutes(router, users, roles, auth, fixturePageSite);
     registerListRoutes(router, lists, roles, auth);
     // Test-only sequence setup; production still allocates every list ID automatically.
     router.route("POST", "/fixture/list-sequence", () => {

@@ -1,4 +1,5 @@
 // Labelled, loopback-only composition of the production owners with a fake clock.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -93,7 +94,7 @@ export async function startUserFixture(
       logger: { error: () => {}, attention: () => {} },
     });
     const router = createRouter();
-    registerUserRoutes(router, users, roles, auth);
+    registerUserRoutes(router, users, roles, auth, fixturePageSite);
     const emailer = smtp
       ? createEmailer({
           clock,
@@ -139,6 +140,9 @@ export async function startUserFixture(
         rootUrl: "http://fixture.test",
         fromEmail: "fixture@example.test",
         logoUrl: "",
+        faviconUrl: "",
+        subscriptionPage: false,
+        archive: false,
       }),
     });
     router.route("GET", "/fixture/mail", () =>

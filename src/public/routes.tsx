@@ -15,7 +15,7 @@ import { publicCors } from "@/public/cors";
 import { parseBool, readFields, type Fields } from "@/public/form";
 import { PublicShell } from "@/public/layout";
 import type { SubscriberMail } from "@/public/mail";
-import { publicMessage } from "@/public/message";
+import { publicMessage, publicNotFound } from "@/public/message";
 import type { PublicSettings } from "@/public/settings";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Middleware, RequestContext } from "@/server/context";
@@ -65,7 +65,6 @@ export function registerPublicRoutes(
         status,
         title,
         message: text,
-        siteName: settings.siteName,
         site: settings,
       },
       headers,
@@ -78,7 +77,6 @@ export function registerPublicRoutes(
     const body = render(
       <PublicShell
         title={title}
-        siteName={settings.siteName}
         assetVersion={assetVersion}
         poweredBy={t.T("public.poweredBy")}
         archiveTitle={t.T("public.archiveTitle")}
@@ -154,6 +152,10 @@ export function registerPublicRoutes(
   }
 
   router.use(publicCors(deps.settings));
+  // B121: every unmatched path answers the public 404 with the site's branding.
+  router.notFound("/", (context) =>
+    publicNotFound(context.app.i18n, context.request.method, deps.settings()),
+  );
   router.route("GET", "/api/public/lists", () =>
     Response.json(deps.lists.publicLists().map((list) => ({ uuid: list.uuid, name: list.name }))),
   );
@@ -194,7 +196,10 @@ export function registerPublicRoutes(
     const settings = deps.settings();
     if (!settings.subscriptionPage) return failed(t, 404, t.T("public.invalidFeature"));
     const lists = deps.lists.publicLists();
-    if (!lists.length) return failed(t, 500, t.T("public.noListsAvailable"));
+    // B121 (D119): an empty list set is a configuration state, not a fault: the branded message at
+    // 200, under the form's own title (a 200 page is not an error).
+    if (!lists.length)
+      return message(t, 200, t.T("globals.buttons.subscribe"), t.T("public.noListsAvailable"));
     const title = t.T("globals.buttons.subscribe");
     return html(
       t,
@@ -317,7 +322,7 @@ export function registerPublicRoutes(
     const headers = post ? {} : noIndex;
     // D117: a test send's opt-in link answers the test page and confirms nothing.
     if (context.params.subUUID?.toLowerCase() === testSendUUID)
-      return message(t, 200, t.T("public.testSendTitle"), t.T("public.testSendInfo"), headers);
+      return message(t, 200, t.T("public.testSendTitle"), t.T("public.testSendOptinInfo"), headers);
     const sub = subscriber(context, headers);
     if (sub instanceof Response) return sub;
     // D81: a blocklisted subscriber has nothing to confirm.

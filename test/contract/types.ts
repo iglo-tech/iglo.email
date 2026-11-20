@@ -23,6 +23,8 @@ export type ExpectedBody =
   | {
       readonly kind: "public-404";
       readonly siteName: string;
+      /** The logo's alt text: upstream's 404 uses its title; the production shell uses the site name. */
+      readonly logoAlt: string;
       readonly footerText: string;
       readonly footerLinks: readonly { readonly text: string; readonly href: string }[];
       readonly customScript: boolean;

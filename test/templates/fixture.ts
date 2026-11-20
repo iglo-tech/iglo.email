@@ -1,4 +1,5 @@
 // Test-only composition and campaign-owner controls; no fixture routes enter production.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,7 +65,7 @@ export async function startTemplateFixture(
       logger,
     });
     const router = createRouter();
-    registerUserRoutes(router, users, roles, auth);
+    registerUserRoutes(router, users, roles, auth, fixturePageSite);
     let saturate = options.saturateFirstPreview === true;
     let previewEntered!: () => void;
     let releasePreview!: () => void;

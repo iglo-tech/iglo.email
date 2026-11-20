@@ -9,6 +9,8 @@ import { createTranslation } from "@/i18n/i18n";
 import type { Middleware } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import { Router } from "@/server/router";
+import { publicNotFound } from "@/public/message";
+import { fixturePageSite } from "@/test/public/site";
 import { createRouter, startServer } from "@/server/server";
 import { bindJSON, getID, hasID, strHasLen } from "@/server/validation";
 
@@ -110,6 +112,10 @@ export function startFixture(
     },
   });
   const router = options.routePaths ? new Router() : createRouter();
+  // Unmatched paths answer the branded public 404, as in production (B121).
+  router.notFound("/", (context) =>
+    publicNotFound(context.app.i18n, context.request.method, fixturePageSite()),
+  );
   function start() {
     try {
       const server = startServer(app, router);

@@ -13,6 +13,7 @@ const invalidID = json(400, '{"message":"invalid ID"}');
 const badEscape = wire(400, "text/plain; charset=utf-8", "400 Bad Request");
 const html404 = (
   siteName: string,
+  logoAlt: string,
   footerText: string,
   footerLinks: readonly { readonly text: string; readonly href: string }[],
   customScript: boolean,
@@ -20,24 +21,36 @@ const html404 = (
 ): Expectation => ({
   status: 404,
   contentType: "text/html; charset=UTF-8",
-  body: { kind: "public-404", siteName, footerText, footerLinks, customScript, archiveTitle },
+  body: {
+    kind: "public-404",
+    siteName,
+    logoAlt,
+    footerText,
+    footerLinks,
+    customScript,
+    archiveTitle,
+  },
 });
 const referenceHTML = html404(
   "Mailing list",
+  "404 - Not found",
   "Powered by listmonk",
   [{ text: "listmonk", href: "https://listmonk.app" }],
   true,
   "Mailing list archive - Mailing list",
 );
+// B121 (D119): the production 404 is the branded public shell with the site's settings: the site
+// name, the custom CSS and JS links, and the logo link. The defaults here are the site defaults.
 const productionHTML = html404(
-  "iglo.email",
+  "Mailing list",
+  "Mailing list",
   "Powered by iglo.email. Based on listmonk.",
   [
     { text: "iglo.email", href: "https://iglo.email" },
     { text: "listmonk", href: "https://listmonk.app" },
   ],
-  false,
-  null,
+  true,
+  "Mailing list archive - Mailing list",
 );
 const css: Expectation = {
   status: 200,

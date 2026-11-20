@@ -77,11 +77,7 @@ export function registerArchiveRoutes(
     headers: Record<string, string> = {},
   ) => {
     const settings = deps.settings();
-    return publicMessage(
-      t,
-      { status, title, message: text, siteName: settings.siteName, site: settings },
-      headers,
-    );
+    return publicMessage(t, { status, title, message: text, site: settings }, headers);
   };
   const notFound = (t: Translation, headers = {}) =>
     message(t, 404, t.T("globals.terms.notFound"), t.T("public.campaignNotFound"), headers);
@@ -126,14 +122,21 @@ export function registerArchiveRoutes(
   };
   const enabled = () => deps.settings().archive;
   /** The upstream routes exist only with the archive enabled. */
-  const hidden = (context: RequestContext) => publicNotFound(context.app.i18n, "GET");
+  const hidden = (context: RequestContext) =>
+    publicNotFound(context.app.i18n, "GET", deps.settings());
 
   router.route("GET", "/campaign/:campUUID/:subUUID", (context) => {
     const t = context.app.i18n;
     const { campUUID = "", subUUID = "" } = context.params;
     // D117: a test send's message link answers the test page, and renders no subscriber's message.
     if (campUUID.toLowerCase() === testSendUUID)
-      return message(t, 200, t.T("public.testSendTitle"), t.T("public.testSendInfo"), noIndex);
+      return message(
+        t,
+        200,
+        t.T("public.testSendTitle"),
+        t.T("public.testSendMessageInfo"),
+        noIndex,
+      );
     if (!uuidPattern.test(campUUID) || !uuidPattern.test(subUUID))
       return message(
         t,
@@ -246,7 +249,6 @@ ${items}  </channel>
       <PublicShell
         title={title}
         description={title}
-        siteName={settings.siteName}
         assetVersion={assetVersion}
         poweredBy={t.T("public.poweredBy")}
         archiveTitle={title}

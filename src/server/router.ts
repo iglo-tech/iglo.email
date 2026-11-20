@@ -5,7 +5,6 @@ import type { App } from "@/app";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { errorResponse, HttpError } from "@/server/response";
 import { assetResponse } from "@/server/assets";
-import { publicNotFound } from "@/public/message";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 type Segment = { name: string } | { literal: string };
@@ -86,7 +85,11 @@ export class Router {
   private readonly middleware: Middleware[] = [];
   private readonly missing: { prefix: string; handler: Handler }[] = [];
 
-  /** Echo's RouteNotFound: answers unmatched paths under a prefix, instead of the public 404. */
+  /**
+   * Echo's RouteNotFound: answers unmatched paths under a prefix, instead of the public 404. The
+   * longest matching prefix answers, whatever the order of registration, so the public catch-all
+   * ("/") never takes an area's own not-found (B121: admin paths).
+   */
   notFound(prefix: string, handler: Handler): void {
     this.missing.push({ prefix, handler });
   }
@@ -155,8 +158,17 @@ export class Router {
       if (url.pathname.startsWith("/api/")) throw new HttpError(404, "404 unknown endpoint");
       const asset = assetResponse(url.pathname, request.method);
       if (asset) return asset;
-      const missing = this.missing.find(({ prefix }) => url.pathname.startsWith(prefix));
-      return missing ? missing.handler(context) : publicNotFound(app.i18n, request.method);
+      const missing = this.missing
+        .filter(({ prefix }) => url.pathname.startsWith(prefix))
+        .sort((a, b) => b.prefix.length - a.prefix.length)[0];
+      // A bare router mounts no public pages, so it has no site to brand one with: the answer is the
+      // public 404's status and type with no body. Production always registers the public not-found.
+      return missing
+        ? missing.handler(context)
+        : new Response(null, {
+            status: 404,
+            headers: { "Content-Type": "text/html; charset=UTF-8" },
+          });
     };
     const chain = [...this.middleware, ...(selected?.middleware ?? [])];
     const handler = selected?.handler ?? fallback;

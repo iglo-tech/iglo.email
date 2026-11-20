@@ -1,5 +1,6 @@
 // B37: One shared send-rate cap for SES (D92).
 import { describe, expect, test } from "bun:test";
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -233,6 +234,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
 
   const testSends = createTestSends(db, clock);
   registerCampaignRoutes(router, {
+    page: fixturePageSite,
     store: campaignStore,
     testSends,
     templates,

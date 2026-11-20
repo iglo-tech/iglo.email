@@ -1,4 +1,5 @@
 // In-process production owners for the subscriber events API with a fake clock.
+import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,7 +81,7 @@ export async function eventsFixture(
       i18n: app.i18n,
     });
     const router = createRouter();
-    registerUserRoutes(router, users, roles, auth);
+    registerUserRoutes(router, users, roles, auth, fixturePageSite);
     registerSubscriberRoutes(router, subscribers, roles, auth);
     registerListRoutes(router, listStore, roles, auth);
     registerEventRoutes(router, events, auth, roles);
