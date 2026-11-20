@@ -1246,6 +1246,7 @@ Brief B108, from the first production adopter's v1.3.0 verification on its dev i
   - Recording a test's bounce as a real bounce, with the action suppressed: it still writes a row that the subscriber's history and exports show, and a later change to the action would act on it.
   - Memory only: lost on restart, and bounces arrive after restarts.
   - A separate attention table: the log buffer already carries fixed lines to `GET /api/logs`, and the table would add a second store for the same thing (D89).
+- **Evidence:** [B108 measurements](../perf/B108-test-send-records.md).
 
 ## D115. Bun 1.4.5, and JSON arrays from SQLite are converted explicitly (lead, 2026-11-20)
 
@@ -1259,4 +1260,4 @@ Brief B107, after the revert of the unreviewed Bun 1.4.5 bump in B107a (#158).
   - Pinning Bun 1.4.4 and waiting for a fix: the runtime would keep an SQLite behaviour the next version may change, and the release gate would still rest on an unstated driver property.
   - Converting in JavaScript (`JSON.parse` of each list): it moves each row through the runtime and makes the payload SQL a mix of two encoders, so the cost is not justified.
   - Relying on Bun's `json()` subtype across subqueries in general: that is the behaviour that changed, so it is not a basis.
-- **Evidence:** [B108 measurements](../perf/B108-test-send-records.md).
+- **Evidence:** the root-cause table on each runtime, and the before and after runs of `test/webhooks/webhooks.test.ts` and `test/bounces/bounces.test.ts` on `oven/bun:1.4.5` ([B107 measurements](../perf/B107-bun-1.4.5.md)): the four named tests and the new `list_ids` array test fail before the fix, and all pass after it, while on `oven/bun:1.4.4` they pass both before and after.
