@@ -402,9 +402,10 @@ test("each subscriber tab refuses a reader outside the list or without its permi
   const f = await open();
   const { shown, hidden, onA } = await scoped(f);
   const tab = (id: number, path: string) => `/api/subscribers/${id}/${path}`;
+  // B123: the events tab needs its own permission, as the other two tabs need theirs.
   const everything = await f.apiUser(
     "tabs-on-a",
-    ["subscribers:get", "sequences:get", "sends:get"],
+    ["subscribers:get", "subscriber_events:get", "sequences:get", "sends:get"],
     onA,
   );
   for (const path of ["subscriber-events", "enrollments", "sends"]) {
@@ -417,7 +418,7 @@ test("each subscriber tab refuses a reader outside the list or without its permi
   }
 
   const subscribersOnly = await f.apiUser("subscribers-on-a", ["subscribers:get"], onA);
-  expect((await subscribersOnly(tab(shown.id, "subscriber-events"))).status).toBe(200);
+  expect((await subscribersOnly(tab(shown.id, "subscriber-events"))).status).toBe(403);
   expect((await subscribersOnly(tab(shown.id, "enrollments"))).status).toBe(403);
   expect((await subscribersOnly(tab(shown.id, "sends"))).status).toBe(403);
 

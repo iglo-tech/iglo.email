@@ -363,7 +363,7 @@ export function registerSubscriberRoutes(
       };
     const route = (path: string, handler: Handler) =>
       router.route("GET", `/api/subscribers/:id/${path}`, handler, auth.middleware(), hasID);
-    route("subscriber-events", paged(activity.events));
+    route("subscriber-events", paged(activity.events, "subscriber_events:get"));
     route("enrollments", paged(activity.enrollments, "sequences:get"));
     route("sends", paged(activity.sends, "sends:get"));
   }

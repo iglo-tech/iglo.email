@@ -565,6 +565,7 @@ const subscribers: Operation[] = [
     summary: "A subscriber's events, newest first.",
     native: true,
     permissions: readSubscribers,
+    alsoPermissions: [["subscriber_events:get"]],
     query: nativePaging,
     data: page(ref("SubscriberEvent")),
   },

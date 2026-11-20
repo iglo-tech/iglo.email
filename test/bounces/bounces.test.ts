@@ -129,7 +129,7 @@ test("a stored bounce delivery is cleared by the delete action and by a wipe", a
     type: "soft",
     source: "api",
   });
-  const response = await f.request(`/subscription/wipe/${wiped.body.data.uuid}`, {
+  const response = await f.request(await f.privacyPath(wiped.body.data.id, "wipe"), {
     method: "POST",
   });
   expect(response.status).toBe(200);
@@ -202,8 +202,9 @@ const sendTo = async (f: TxFixture, body: object) => {
 };
 const uuidOf = async (f: TxFixture, id: number) =>
   (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
-const wipe = async (f: TxFixture, uuid: string) =>
-  expect((await f.request(`/subscription/wipe/${uuid}`, { method: "POST" })).status).toBe(200);
+/** A public wipe through the subscriber's own marketing send (B123, D126). */
+const wipe = async (f: TxFixture, id: number) =>
+  expect((await f.request(await f.privacyPath(id, "wipe"), { method: "POST" })).status).toBe(200);
 
 test("a bounce of a left address names no list, so a wipe has none to clear", async () => {
   const f = await open();
@@ -245,9 +246,8 @@ test("a delayed complaint for a wiped address leaves the address's new subscribe
   const f = await open();
   await hooked(f);
   const first = await f.subscriber("again@example.com");
-  const firstUuid = await uuidOf(f, first);
   const send = await sendTo(f, { subscriber_id: first });
-  await wipe(f, firstUuid);
+  await wipe(f, first);
   const second = await f.subscriber("again@example.com");
   expect(second).not.toBe(first);
   const before = deliveries(f).length;
@@ -328,7 +328,7 @@ test("POST /webhooks/bounce: a send_uuid is authoritative, and only then is the 
   // Nor does an anonymized one.
   const gone = await f.subscriber("gone-api@example.com");
   const goneSend = await sendTo(f, { subscriber_id: gone });
-  await wipe(f, await uuidOf(f, gone));
+  await wipe(f, gone);
   const back = await f.subscriber("gone-api@example.com");
   const stored = rowsOf(f).length;
   const backUuid = await uuidOf(f, back);

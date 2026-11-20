@@ -2,6 +2,7 @@
 // clock, settings, atomic writes, input bounds, Liquid rendering and test-send delivery,
 // through HTTP and mail received by a loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
+import { createRunnerStore } from "@/campaigns/runner/store";
 import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 
@@ -203,6 +204,8 @@ test("campaign unsubscribe changes only the campaign's lists, or blocklists", as
   const other = await f.list("other");
   const ada = await f.subscriber("ada@example.test", [news, other]);
   const c = await f.campaign({ name: "c", subject: "s", lists: [news] });
+  // B123 (D126): the campaign's links pair a subscriber the runner delivered it to.
+  createRunnerStore(f.db).claim(BigInt(c.id), BigInt(ada.id), f.clock.now().toISOString());
   const path = `/subscription/${c.uuid}/${ada.uuid}`;
   const manage = await f.request(path, {
     method: "POST",
@@ -215,10 +218,11 @@ test("campaign unsubscribe changes only the campaign's lists, or blocklists", as
       (l) => l.subscription_status,
     );
   expect(await statuses()).toEqual(["unconfirmed", "unconfirmed"]);
+  // A campaign that delivered nothing to her pairs nobody: the answer is the unpaired one (D126).
   const unknown = await f.request(`/subscription/${crypto.randomUUID()}/${ada.uuid}`, {
     method: "POST",
   });
-  expect(unknown.status).toBe(200);
+  expect(unknown.status).toBe(404);
   expect(await statuses()).toEqual(["unconfirmed", "unconfirmed"]);
   expect((await f.request(path, { method: "POST" })).status).toBe(200);
   expect(await statuses()).toEqual(["unsubscribed", "unconfirmed"]);

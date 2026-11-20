@@ -289,6 +289,12 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Privacy and blocklist need a paired send or campaign (D126, B123)",
+    summary:
+      "`/subscription/export/:subUUID` and `/subscription/wipe/:subUUID` are 404: a subscriber UUID alone reaches no privacy action. Export, wipe and blocklist act only through a send or campaign that paired the subscriber (`/m/:sendUUID/…`, `/subscription/:campUUID/…`), and an unpaired path answers 404 and writes nothing. Upstream acts on the subscriber UUID alone.",
+    applies: [],
+  },
+  {
     area: "Subscriber writable input",
     summary:
       "Ignore read-only/unknown metadata and validate the writable DTO; resolve PATCH omissions at commit time.",

@@ -11,6 +11,7 @@ import type { Translation } from "@/i18n/i18n";
 import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
 import { savePreferences, subscriptionPage, type PageOptions } from "@/public/preferences";
+import type { Privacy } from "@/public/privacy";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -59,12 +60,16 @@ export function registerCampaignPublicRoutes(
     tracking: Tracking;
     settings: () => PublicCampaignSettings;
     effects: UnsubscribeEffects;
-    /** The site's branding and privacy options, read for each page (B121). */
+    /** The site's branding and the privacy options, read for each page (B121). */
     page: () => PageOptions;
     limit?: Middleware;
+    /** The export and wipe answers of a campaign's subscriber (B123, D126). */
+    privacy: Privacy;
+    privacyLimit?: Middleware;
   },
 ) {
   const limit = deps.limit ? [deps.limit] : [];
+  const privacyLimit = deps.privacyLimit ? [deps.privacyLimit] : [];
   const options = deps.page;
   const pixel = transparentPixel();
   // B121: every page of these routes is the branded public page, from the same site settings.
@@ -88,17 +93,31 @@ export function registerCampaignPublicRoutes(
           noIndex,
         )
       : null;
-  /** hasSub: an unknown subscriber is a 404 page. */
-  const subscriber = (context: RequestContext) =>
-    deps.subscribers.byUuid(context.params.subUUID!.toLowerCase());
-  const noSubscriber = (t: Translation) =>
-    page(
-      t,
-      404,
-      t.T("globals.terms.notFound"),
-      t.Ts("globals.messages.notFound", "name", t.T("globals.terms.subscriber")),
-      noIndex,
-    );
+  /**
+   * D126: the subscriber a campaign path pairs. A real campaign pairs only the subscribers the
+   * runner delivered it to. The placeholder campaign (`dummyUUID`) pairs any subscriber, for the
+   * opt-in and transactional mail the server sent them, and its `campaign` is null: that mail's
+   * links cannot blocklist or reach a privacy action. Null when the path pairs nobody.
+   */
+  const pairing = (campUuid: string, subUuid: string) => {
+    const subscriber = deps.subscribers.byUuid(subUuid.toLowerCase());
+    if (!subscriber) return null;
+    if (campUuid === dummyUUID) return { subscriber, campaign: null };
+    const campaign = deps.store.byUuid(campUuid);
+    if (!campaign || !deps.store.delivered(campaign.id, subscriber.id)) return null;
+    return { subscriber, campaign: campaign.id };
+  };
+  /** The subscriber a privacy action pairs: only a campaign's own delivery does (D126). */
+  const privacySubscriber = (campUuid: string, subUuid: string) => {
+    const found = pairing(campUuid, subUuid);
+    return found && found.campaign !== null ? found.subscriber : null;
+  };
+  /** The base of this campaign's paired routes, for its manage page's forms; none for the placeholder. */
+  const basePath = (campUuid: string) =>
+    campUuid === dummyUUID ? null : `/subscription/${campUuid}`;
+  /** Answers a path that pairs nobody. The same page for an unknown subscriber, so none is revealed. */
+  const unpaired = (t: Translation) =>
+    page(t, 404, t.T("globals.terms.notFound"), t.T("globals.messages.invalidLink"), noIndex);
 
   /** D117: a test send's links carry `testSendUUID` and answer the test page for any subscriber. */
   const isTestSend = (context: RequestContext) =>
@@ -111,12 +130,21 @@ export function registerCampaignPublicRoutes(
     const t = context.app.i18n;
     const bad = invalidUUID(context, "campUUID", "subUUID");
     if (bad) return bad;
-    const sub = subscriber(context);
-    if (!sub) return noSubscriber(t);
-    if (sub.status === "blocklisted")
+    const camp = context.params.campUUID!.toLowerCase();
+    const found = pairing(camp, context.params.subUUID!);
+    if (!found) return unpaired(t);
+    if (found.subscriber.status === "blocklisted")
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
     const manage = parseBool(context.url.searchParams.get("manage")) === true;
-    return subscriptionPage(t, deps.subscribers, sub, options(), manage, noIndex);
+    return subscriptionPage(
+      t,
+      deps.subscribers,
+      found.subscriber,
+      options(),
+      manage,
+      noIndex,
+      basePath(camp),
+    );
   });
 
   // RFC 8058 one-click and the page form: no login, CSRF token or CAPTCHA.
@@ -129,7 +157,9 @@ export function registerCampaignPublicRoutes(
       const t = context.app.i18n;
       const bad = invalidUUID(context, "campUUID", "subUUID");
       if (bad) return bad;
-      if (!subscriber(context)) return noSubscriber(t);
+      const camp = context.params.campUUID!.toLowerCase();
+      const subUuid = context.params.subUUID!;
+      if (!pairing(camp, subUuid)) return unpaired(t);
       let form: PreferenceForm;
       try {
         form = await readPreferences(context.request);
@@ -138,19 +168,25 @@ export function registerCampaignPublicRoutes(
         return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
       }
       const blocklist = deps.settings().allowBlocklist && form.blocklist;
-      const campUuid = context.params.campUUID!.toLowerCase();
+      // D126: the placeholder campaign pairs no campaign, so its mail cannot blocklist anyone.
+      if (blocklist && camp === dummyUUID) return unpaired(t);
       if (form.manage && !blocklist)
         return (
-          savePreferences({ ...deps, effects: deps.effects }, t, options(), form, () =>
-            subscriber(context),
-          ) ?? noSubscriber(t)
+          savePreferences(
+            { ...deps, effects: deps.effects },
+            t,
+            options(),
+            form,
+            () => pairing(camp, subUuid)?.subscriber ?? null,
+          ) ?? unpaired(t)
         );
       writeTransaction(deps.db, () => {
         // Re-read inside the write: unsubscribe from the campaign's lists, or blocklist.
-        const sub = subscriber(context);
-        if (!sub) return;
-        // The dummy campaign is the opt-in mail's link: end every unconfirmed subscription.
-        if (campUuid === dummyUUID && !blocklist) {
+        const found = pairing(camp, subUuid);
+        if (!found) return;
+        const sub = found.subscriber;
+        // The placeholder campaign is the opt-in mail's link: end every unconfirmed subscription.
+        if (found.campaign === null) {
           const changed = deps.subscribers.unsubscribeUnconfirmed(sub.id);
           for (const list of changed)
             deps.effects.unsubscribed({
@@ -161,9 +197,7 @@ export function registerCampaignPublicRoutes(
             });
           return;
         }
-        const campaign = deps.store.byUuid(campUuid);
-        const lists =
-          campaign && campaign.uuid !== dummyUUID ? deps.store.listIds(campaign.id) : [];
+        const lists = deps.store.listIds(found.campaign);
         if (blocklist) {
           const changed = deps.subscribers.unsubscribe(sub.id, lists[0] ?? 0n, true);
           deps.effects.unsubscribed({
@@ -187,6 +221,38 @@ export function registerCampaignPublicRoutes(
       return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
     },
     ...limit,
+  );
+
+  // B123 (D126): the manage page's privacy forms of a campaign's subscriber.
+  router.route(
+    "POST",
+    "/subscription/:campUUID/export/:subUUID",
+    (context) => {
+      if (isTestSend(context)) return testPage(context.app.i18n);
+      const bad = invalidUUID(context, "campUUID", "subUUID");
+      if (bad) return bad;
+      const camp = context.params.campUUID!.toLowerCase();
+      return (
+        deps.privacy.export(context, () => privacySubscriber(camp, context.params.subUUID!)) ??
+        unpaired(context.app.i18n)
+      );
+    },
+    ...privacyLimit,
+  );
+  router.route(
+    "POST",
+    "/subscription/:campUUID/wipe/:subUUID",
+    (context) => {
+      if (isTestSend(context)) return testPage(context.app.i18n);
+      const bad = invalidUUID(context, "campUUID", "subUUID");
+      if (bad) return bad;
+      const camp = context.params.campUUID!.toLowerCase();
+      return (
+        deps.privacy.wipe(context, () => privacySubscriber(camp, context.params.subUUID!)) ??
+        unpaired(context.app.i18n)
+      );
+    },
+    ...privacyLimit,
   );
 
   router.route("GET", "/campaign/:campUUID/:subUUID/px.png", (context) => {

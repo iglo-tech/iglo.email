@@ -7,7 +7,8 @@ import { createApp } from "@/app";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
-import { createSubscriberMail } from "@/public/mail";
+import { createSubscriberMail, type SubscriberMail } from "@/public/mail";
+import { createPrivacy } from "@/public/privacy";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings as toPublicSettings } from "@/public/settings";
 import { createSettings, type SettingsStore } from "@/settings/store";
@@ -69,6 +70,11 @@ import type { Captcha } from "@/captcha/captcha";
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
+/** A fixture without a subscriber mail: a privacy action on its routes is a bug in the test. */
+function unwiredMail(): never {
+  throw new Error("this fixture wires no subscriber mail");
+}
+
 export async function txFixture(
   options: {
     reject?: () => boolean;
@@ -78,6 +84,8 @@ export async function txFixture(
     marketing?: Partial<MarketingSettings>;
     effects?: UnsubscribeEffects;
     page?: () => PageOptions;
+    /** The subscriber mail of the privacy routes (B123); unset, a privacy action here throws. */
+    mail?: () => Pick<SubscriberMail, "exportData">;
     /** Wire the production webhook owners, with this transport. */
     webhooks?: WebhookTransport;
     /** The provider route's rate limit, with `webhooks`. */
@@ -336,6 +344,8 @@ export async function txFixture(
       allowExport: false,
       allowWipe: false,
     };
+  // The subscriber mail, made with the public routes below when `webhooks` is set.
+  let subscriberMail: SubscriberMail | undefined;
   registerUnsubscribeRoutes(router, {
     db,
     sends,
@@ -344,6 +354,17 @@ export async function txFixture(
     settings: () => marketing,
     ...(options.effects ? { effects: options.effects } : {}),
     page: pageOptions,
+    privacy: createPrivacy({
+      db,
+      subscribers,
+      mail: options.mail ?? (() => subscriberMail ?? unwiredMail()),
+      // Export and wipe are on unless the fixture's page options turn them off (its default does not).
+      page: () => ({
+        ...pageOptions(),
+        allowExport: options.page ? pageOptions().allowExport : true,
+        allowWipe: options.page ? pageOptions().allowWipe : true,
+      }),
+    }),
   });
   if (webhooks) {
     registerSettingsRoutes(router, settingsStore!, auth);
@@ -351,7 +372,7 @@ export async function txFixture(
       ...toPublicSettings(settingsStore!.read()),
       fromEmail: "Fixture <noreply@fixture.test>",
     });
-    const subscriberMail = createSubscriberMail({
+    subscriberMail = createSubscriberMail({
       subscribers,
       sends,
       campaigns: { subscriberViews: () => [] },
@@ -373,7 +394,7 @@ export async function txFixture(
       settings: getPublicSettings,
       captcha: {} as Captcha,
       altchaComplexity: () => 0,
-      limits: { subscribe: open, optin: open, privacy: open },
+      limits: { subscribe: open, optin: open },
       clientAddress: () => "127.0.0.1",
     });
   }
@@ -426,7 +447,30 @@ export async function txFixture(
     if (created.status !== 200) throw new Error(`subscriber ${created.status}`);
     return created.body.data.id as number;
   };
+  /**
+   * B123 (D126): the path of a subscriber's privacy action through a marketing send of theirs,
+   * made as any marketing send is (POST /api/tx). The send's UUID pairs them with the action.
+   */
+  const privacyPath = async (subscriberId: number, action: "export" | "wipe") => {
+    const list = await json("/api/lists", "POST", {
+      name: `paired ${subscriberId} ${action}`,
+      type: "public",
+      optin: "single",
+    });
+    if (list.status !== 200) throw new Error(`list ${list.status}`);
+    const sent = await json("/api/tx", "POST", {
+      subscriber_id: subscriberId,
+      template_id: await template("<p>Paired</p>", "Paired"),
+      kind: "marketing",
+      list_id: list.body.data.id,
+    });
+    if (sent.status !== 200) throw new Error(`send ${sent.status}`);
+    const send = (await json(`/api/sends/${sent.body.data.sends[0].id}`)).body.data.uuid as string;
+    const who = (await json(`/api/subscribers/${subscriberId}`)).body.data.uuid as string;
+    return `/m/${send}/${action}/${who}`;
+  };
   return {
+    privacyPath,
     app,
     db,
     clock: testClock,

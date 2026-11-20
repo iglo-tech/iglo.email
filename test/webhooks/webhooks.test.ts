@@ -758,7 +758,7 @@ test("a public wipe stores and delivers only the numeric ID and UUID, on older r
   await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
   expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[list], [list]]);
 
-  const wipe = await f.request(`/subscription/wipe/${uuid}`, { method: "POST" });
+  const wipe = await f.request(await f.privacyPath(subscriber, "wipe"), { method: "POST" });
   expect(wipe.status).toBe(200);
   // Nothing is stored from the commit on, while the receiver is still unavailable.
   const body = () =>

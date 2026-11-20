@@ -1,5 +1,6 @@
 // The tx fixture (journal, outbox, loopback SMTP sink, fake clock) with the public pages,
 // campaign public routes and archive on top, wired as src/main.ts does.
+import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createEventStore } from "@/events/store";
@@ -9,6 +10,7 @@ import { createSubscriberMail, startSignupMail } from "@/public/mail";
 import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { createCaptcha } from "@/captcha/captcha";
+import { createPrivacy } from "@/public/privacy";
 import { publicSettings, type PublicSettings } from "@/public/settings";
 import { createRoles } from "@/roles/roles";
 import { createClientAddress } from "@/server/client-address";
@@ -31,7 +33,8 @@ export async function publicFixture() {
   let settings = (): PublicSettings => {
     throw new Error("unset");
   };
-  const f = await txFixture({ effects, page: () => settings() });
+  // The tx fixture mounts the `/m/` routes, so they take this fixture's subscriber mail (B123).
+  const f = await txFixture({ effects, page: () => settings(), mail: () => mail });
   const { router, lists, subscribers, tracking, renderer, templates, media, files } = f.owners;
   const roles = createRoles(f.db, lists);
   const store = createSettings(f.db, f.clock, "http://fixture.test", roles);
@@ -91,7 +94,7 @@ export async function publicFixture() {
     settings,
     captcha,
     altchaComplexity: () => captchaOptions().altcha.complexity,
-    limits: { subscribe: limit(5), optin: limit(5), privacy: limit(5) },
+    limits: { subscribe: limit(5), optin: limit(5) },
     clientAddress,
   });
   registerCampaignPublicRoutes(router, {
@@ -107,6 +110,8 @@ export async function publicFixture() {
     effects,
     page: settings,
     limit: limit(5),
+    privacy: createPrivacy({ db: f.db, subscribers, mail: () => mail, page: settings }),
+    privacyLimit: limit(5),
   });
   registerArchiveRoutes(router, {
     store: campaigns,
@@ -124,6 +129,42 @@ export async function publicFixture() {
   return {
     ...f,
     settings,
+    /**
+     * A campaign the runner has delivered to each of these subscribers: the pairing D126 gives
+     * their privacy paths and their blocklist. Its UUID.
+     */
+    deliveredCampaign(subscribers: number[], lists: number[] = []): string {
+      const campaign = campaigns.create(
+        {
+          type: "regular",
+          name: "Weekly",
+          subject: "Weekly",
+          from_email: "Fixture <noreply@fixture.test>",
+          body: "<p>Hello</p>",
+          body_source: null,
+          altbody: null,
+          content_type: "html",
+          send_at: null,
+          headers: [],
+          attribs: {},
+          tags: [],
+          messenger: "email",
+          template_id: null,
+          archive: false,
+          archive_slug: null,
+          archive_template_id: null,
+          archive_meta: {},
+        },
+        lists.map((id) => BigInt(id)),
+        [],
+      );
+      const runner = createRunnerStore(f.db);
+      const now = f.clock.now().toISOString();
+      for (const id of subscribers) {
+        if (!runner.claim(campaign.id, BigInt(id), now)) throw new Error("delivery not claimed");
+      }
+      return campaign.uuid;
+    },
     store,
     overrides,
     hcaptcha,

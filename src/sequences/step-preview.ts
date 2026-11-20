@@ -144,9 +144,11 @@ export function stepPreview(
     attribs: "{}",
   };
   const named = sample?.subscriber;
+  // D126: a preview or a test names the placeholder subscriber UUID in its data and its links. A test
+  // goes to addresses the operator chose, and a real UUID there would unlock that subscriber's paths.
   const chosen = {
     id: base.id,
-    uuid: base.uuid,
+    uuid: dummyUUID,
     email: named?.email ?? input.recipient ?? base.email,
     name: named?.name ?? base.name,
     external_id: named?.external_id ?? base.external_id ?? "",
@@ -154,6 +156,7 @@ export function stepPreview(
   };
   const kind = step.kind === "marketing" ? "marketing" : "transactional";
   const links = linksFor({ uuid: dummyUUID, kind, subscriberUuid: chosen.uuid });
+  // `chosen.uuid` is the placeholder (above): the links name it, as the send placeholder is named.
   return {
     data: {
       subscriber: chosen,

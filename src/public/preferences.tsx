@@ -22,6 +22,11 @@ export interface PageOptions extends PageSite {
 }
 const script = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
+/**
+ * The subscription page. `paths` is the base of the paired routes its forms post to (`/m/<send>`
+ * or `/subscription/<campaign>`, D126). Null for a mail the server sent without a campaign or
+ * send (opt-in, transactional preferences): then the page offers no blocklist and no privacy form.
+ */
 export function subscriptionPage(
   t: Translation,
   subscribers: SubscriberStore,
@@ -29,6 +34,7 @@ export function subscriptionPage(
   options: PageOptions,
   manage: boolean,
   headers: Record<string, string>,
+  paths: string | null,
 ): Response {
   const showManage = options.allowPreferences && manage;
   const subscriptions = showManage
@@ -36,7 +42,8 @@ export function subscriptionPage(
         .visibleSubscriptions(subscriber.id)
         .filter((list) => list.subscriptionStatus !== "unsubscribed")
     : [];
-  const privacy = options.allowExport || options.allowWipe;
+  const paired = paths !== null;
+  const privacy = paired && (options.allowExport || options.allowWipe);
   const body = render(
     <PublicShell
       title={t.T("public.unsubscribeTitle")}
@@ -52,7 +59,7 @@ export function subscriptionPage(
             <form method="post" class="unsub-form">
               <div>
                 <p>{t.T("public.unsubHelp")}</p>
-                {options.allowBlocklist ? (
+                {paired && options.allowBlocklist ? (
                   <>
                     <hr />
                     <p class="small">
@@ -100,7 +107,7 @@ export function subscriptionPage(
                   </ul>
                 </>
               ) : null}
-              {options.allowBlocklist ? (
+              {paired && options.allowBlocklist ? (
                 <p class="small">
                   <input
                     id="privacy-blocklist"
@@ -170,17 +177,21 @@ export function subscriptionPage(
         </>
       ) : null}
       {raw(`<script>
-function handleData() {
+${
+  privacy
+    ? `function handleData() {
   var a = document.querySelector('input[name="data-action"]:checked').value,
     f = document.querySelector("#data-form");
   if (a == "export") {
-    f.action = ${script(`/subscription/export/${subscriber.uuid}`)};
+    f.action = ${script(`${paths ?? ""}/export/${subscriber.uuid}`)};
     return true;
   } else if (confirm(${script(t.T("public.privacyConfirmWipe"))})) {
-    f.action = ${script(`/subscription/wipe/${subscriber.uuid}`)};
+    f.action = ${script(`${paths ?? ""}/wipe/${subscriber.uuid}`)};
     return true;
   }
   return false;
+}`
+    : ""
 }
 function unsubAll(e) {
   var off = e.target.checked;

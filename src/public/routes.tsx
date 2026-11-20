@@ -2,7 +2,6 @@
 // (public routes, hasUUID, hasSub, noIndex, serveCustomAppearance) and
 // static/public/templates (optin.html, subscription-form.html) at 6fcd95f. The captcha
 // handlers (AltchaChallenge, SubscriptionForm) use @/captcha/captcha.
-import { sendingHeld } from "@/settings/hold";
 import type { Database } from "bun:sqlite";
 import type { Captcha } from "@/captcha/captcha";
 import { testSendUUID } from "@/campaigns/render";
@@ -32,8 +31,6 @@ const stdInputMaxLen = 2000;
 export interface PublicLimits {
   subscribe: Middleware;
   optin: Middleware;
-  /** Export and wipe: mail and deletion a subscriber UUID can trigger. */
-  privacy: Middleware;
 }
 
 export function registerPublicRoutes(
@@ -392,39 +389,12 @@ export function registerPublicRoutes(
   router.route("GET", "/subscription/optin/:subUUID", optin, deps.limits.optin);
   router.route("POST", "/subscription/optin/:subUUID", optin, deps.limits.optin);
 
-  router.route(
-    "POST",
-    "/subscription/export/:subUUID",
-    (context) => {
-      const t = context.app.i18n;
-      const sub = subscriber(context);
-      if (sub instanceof Response) return sub;
-      if (!deps.settings().allowExport) return failed(t, 400, t.T("public.invalidFeature"));
-      if (sendingHeld(context.app.db)) return failed(t, 503, t.T("public.errorProcessingRequest"));
-      try {
-        deps.mail.exportData(sub);
-      } catch (error) {
-        context.app.logger.error(error);
-        return failed(t, 500, t.T("public.errorProcessingRequest"));
-      }
-      return message(t, 200, t.T("public.dataSentTitle"), t.T("public.dataSent"));
-    },
-    deps.limits.privacy,
-  );
-
-  router.route(
-    "POST",
-    "/subscription/wipe/:subUUID",
-    (context) => {
-      const t = context.app.i18n;
-      const sub = subscriber(context);
-      if (sub instanceof Response) return sub;
-      if (!deps.settings().allowWipe) return failed(t, 400, t.T("public.invalidFeature"));
-      writeTransaction(deps.db, () => deps.subscribers.remove([sub.id], { wipe: true }));
-      return message(t, 200, t.T("public.dataRemovedTitle"), t.T("public.dataRemoved"));
-    },
-    deps.limits.privacy,
-  );
+  // B123 (D126): the sub-only export and wipe are retired. A subscriber UUID alone reaches no
+  // privacy action; a send's or a campaign's manage page does, through its paired path.
+  for (const action of ["export", "wipe"])
+    router.route("POST", `/subscription/${action}/:subUUID`, (context) =>
+      publicNotFound(context.app.i18n, context.request.method, deps.settings()),
+    );
 
   const appearance = (type: string, value: (settings: PublicSettings) => string) => () =>
     new Response(value(deps.settings()), {

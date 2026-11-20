@@ -11,6 +11,7 @@ import type { Sends } from "@/messaging/sends";
 import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
 import { savePreferences, subscriptionPage, type PageOptions } from "@/public/preferences";
+import type { Privacy } from "@/public/privacy";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -73,10 +74,14 @@ export function registerUnsubscribeRoutes(
     /** The site's branding and privacy options, read for each page (B121). */
     page: () => PageOptions;
     limit?: Middleware;
+    /** The export and wipe answers of a send's subscriber (B123, D126). */
+    privacy: Privacy;
+    privacyLimit?: Middleware;
   },
 ) {
   const effects = deps.effects ?? noEffects;
   const limit = deps.limit ? [deps.limit] : [];
+  const privacyLimit = deps.privacyLimit ? [deps.privacyLimit] : [];
   const options = deps.page;
   const pixel = transparentPixel();
   // B121: every page of these routes is the branded public page, from the same site settings.
@@ -127,7 +132,17 @@ export function registerUnsubscribeRoutes(
     if (found.subscriber.status === "blocklisted")
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
     const manage = parseBool(context.url.searchParams.get("manage")) === true;
-    return subscriptionPage(t, deps.subscribers, found.subscriber, options(), manage, noIndex);
+    // B123 (D126): the manage page's privacy and blocklist forms post to this send's paired routes.
+    const paths = `/m/${context.params.sendUUID!.toLowerCase()}`;
+    return subscriptionPage(
+      t,
+      deps.subscribers,
+      found.subscriber,
+      options(),
+      manage,
+      noIndex,
+      paths,
+    );
   });
 
   // RFC 8058 one-click and the page form: no login, CSRF token or CAPTCHA.
@@ -180,6 +195,30 @@ export function registerUnsubscribeRoutes(
       return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
     },
     ...limit,
+  );
+
+  // B123 (D126): the manage page's privacy forms. Only a subscriber this send paired is answered.
+  const paired = (context: RequestContext) =>
+    target(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null;
+  router.route(
+    "POST",
+    "/m/:sendUUID/export/:subUUID",
+    (context) => {
+      const bad = invalidUUID(context, "sendUUID", "subUUID");
+      if (bad) return bad;
+      return deps.privacy.export(context, () => paired(context)) ?? notFound(context.app.i18n);
+    },
+    ...privacyLimit,
+  );
+  router.route(
+    "POST",
+    "/m/:sendUUID/wipe/:subUUID",
+    (context) => {
+      const bad = invalidUUID(context, "sendUUID", "subUUID");
+      if (bad) return bad;
+      return deps.privacy.wipe(context, () => paired(context)) ?? notFound(context.app.i18n);
+    },
+    ...privacyLimit,
   );
 
   router.route("GET", "/m/:sendUUID/px.png", (context) => {
