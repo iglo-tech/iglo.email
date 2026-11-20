@@ -178,8 +178,8 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
     if (last !== undefined && now - last < FAILURE_LOG_MS) return;
     logged.set(id, now);
     // Only the webhook's ID and a safe code: its URL can hold a token and bodies are foreign.
-    options.logger.error(
-      new Error(`Webhook ${id} deliveries are failing: ${error}`),
+    options.logger.attention(
+      `Webhook ${id} deliveries are failing: ${error}`,
       "Webhook deliveries are failing",
     );
   }
@@ -188,8 +188,7 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
     db: options.db,
     clock,
     logger: {
-      error: () =>
-        options.logger.error(new Error("Webhook delivery failed"), "Webhook delivery failed"),
+      error: () => options.logger.attention("Webhook delivery failed", "Webhook delivery failed"),
     },
     intervalMs: POLL_MS,
     leaseMs: LEASE_MS,

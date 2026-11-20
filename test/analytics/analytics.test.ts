@@ -364,7 +364,10 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
   const settings = { enabled: true, interval: "TZ=UTC 0 4 * * *" };
   const loop = startSummaryRefresh({
     clock: f.clock,
-    logger: { error: (error) => logged.push(error) },
+    logger: {
+      error: (error) => logged.push(error),
+      attention: (message) => logged.push(new Error(message)),
+    },
     summaries,
     settings: () => settings,
   });
@@ -416,7 +419,10 @@ test("a refresh that fails is logged, keeps the old rows and leaves the loop run
   const logged: unknown[] = [];
   const loop = startSummaryRefresh({
     clock: f.clock,
-    logger: { error: (error) => logged.push(error) },
+    logger: {
+      error: (error) => logged.push(error),
+      attention: (message) => logged.push(new Error(message)),
+    },
     summaries: broken,
     settings: () => ({ enabled: true, interval: "@hourly" }),
   });
@@ -540,7 +546,10 @@ function refreshing(interval: string) {
   const settings = { enabled: true, interval };
   const loop = startSummaryRefresh({
     clock: f.clock,
-    logger: { error: (error) => logged.push(error) },
+    logger: {
+      error: (error) => logged.push(error),
+      attention: (message) => logged.push(new Error(message)),
+    },
     summaries,
     settings: () => settings,
   });

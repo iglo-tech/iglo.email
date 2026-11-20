@@ -109,7 +109,10 @@ async function createNotifyFixture(
     db,
     clock,
     i18n,
-    logger: { error: (error) => errors.push(error) },
+    logger: {
+      error: (error) => errors.push(error),
+      attention: (message) => errors.push(new Error(message)),
+    },
   });
 
   const lists = createListReferences(db);

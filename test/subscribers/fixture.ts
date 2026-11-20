@@ -45,7 +45,10 @@ export async function queryFixture(
     db,
     clock,
     i18n: createTranslation(),
-    logger: { error: (error) => errors.push(error) },
+    logger: {
+      error: (error) => errors.push(error),
+      attention: (message) => errors.push(new Error(message)),
+    },
   });
   const lists = createListReferences(db),
     roles = createRoles(db, lists),

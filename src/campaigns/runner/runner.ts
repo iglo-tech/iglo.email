@@ -165,7 +165,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
   let slidingUntil = 0;
 
   const iso = (ms: number) => new Date(ms).toISOString();
-  const log = (safe: SafeMessage, message: string) => deps.logger.error(new Error(message), safe);
+  const log = (safe: SafeMessage, message: string) => deps.logger.attention(message, safe);
   const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
 
   const pendingNotifications: Array<{

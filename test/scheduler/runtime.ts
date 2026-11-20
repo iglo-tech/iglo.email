@@ -44,6 +44,10 @@ export function startRuntime(options: {
       errors.push(error);
       console.error(error instanceof Error ? error.message : String(error));
     },
+    attention(message: string) {
+      errors.push(new Error(message));
+      console.error(message);
+    },
   };
   const db = openDatabase(options.dataDir);
   runMigrations(db, options.dataDir, clock, productionMigrations);

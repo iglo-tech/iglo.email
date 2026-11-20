@@ -7,7 +7,7 @@ import { writeTransaction } from "@/db/transaction";
 export interface LoopOptions<T> {
   readonly db: Database;
   readonly clock: Clock;
-  readonly logger: ErrorLogger;
+  readonly logger: Pick<ErrorLogger, "error">;
   readonly intervalMs: number;
   readonly leaseMs: number;
   readonly batchSize: number;

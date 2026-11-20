@@ -54,7 +54,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
   const outbox = startOutbox({
     db,
     clock,
-    logger: { error() {} },
+    logger: { error() {}, attention() {} },
     sends,
     emailer: emailer as never,
   });

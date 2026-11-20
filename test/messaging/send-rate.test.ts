@@ -75,7 +75,10 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     db,
     clock,
     i18n: createTranslation(),
-    logger: { error: (e) => errors.push(e) },
+    logger: {
+      error: (e) => errors.push(e),
+      attention: (message) => errors.push(new Error(message)),
+    },
   });
 
   const lists = createListReferences(db);

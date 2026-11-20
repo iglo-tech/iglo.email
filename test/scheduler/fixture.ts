@@ -69,9 +69,13 @@ export async function schedulerFixture(
   // The log buffer keeps what GET /api/logs shows (B108); the error list is what stderr would hold.
   const logs = createLogBuffer(clock);
   const logger: ErrorLogger = {
-    error(error, safe) {
+    error(error) {
       errors.push(error);
-      logs.add(error, safe);
+      logs.add(error);
+    },
+    attention(message, safe) {
+      errors.push(new Error(message));
+      logs.attention(safe);
     },
   };
   const app = createApp({

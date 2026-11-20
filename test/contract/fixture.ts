@@ -30,7 +30,7 @@ export function startContractFixture(credentials: Credentials) {
       clock,
       db,
       i18n: createTranslation(),
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     const router = createRouter();
     const auth: Middleware = (context, next) => {

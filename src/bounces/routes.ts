@@ -311,17 +311,13 @@ export function registerBounceRoutes(
     // The address is the notice's own (bouncedRecipients or complainedRecipients), not a stored one.
     const where = `kind ${test.kind}, ${named}, recipient ${event.email}`;
     if (event.type === "complaint")
-      logger.error(
-        new Error(
-          `Test send got a complaint: ${where}, feedback ${String(codes.feedback_type ?? "unknown")}`,
-        ),
+      logger.attention(
+        `Test send got a complaint: ${where}, feedback ${String(codes.feedback_type ?? "unknown")}`,
         "A test send got a complaint",
       );
     else
-      logger.error(
-        new Error(
-          `Test send bounced: ${where}, bounce ${String(codes.bounce_type ?? "unknown")} ${String(codes.bounce_sub_type ?? "")}`.trimEnd(),
-        ),
+      logger.attention(
+        `Test send bounced: ${where}, bounce ${String(codes.bounce_type ?? "unknown")} ${String(codes.bounce_sub_type ?? "")}`.trimEnd(),
         "A test send bounced",
       );
   };

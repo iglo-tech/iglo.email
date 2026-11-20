@@ -240,7 +240,10 @@ function timed(now: () => Date) {
   };
   return { clock, passes, isIdle: () => idle };
 }
-const logger = { error: (error: unknown) => console.error(error) };
+const logger = {
+  error: (error: unknown) => console.error(error),
+  attention: (message: string) => console.error(message),
+};
 const owners: Record<string, Purge> = {
   sessions: users.purgeSessions,
   deliveries: webhooks.purge,

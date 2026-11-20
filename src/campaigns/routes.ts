@@ -878,10 +878,8 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       const results = dispatched.map(({ message, dispatch }) =>
         dispatch.result.then((outcome) => {
           if (outcome.status === "accepted" && !outcome.rejected.length) return;
-          context.app.logger.error(
-            new Error(
-              `Test send to ${message.to[0]} for campaign ${stored.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
-            ),
+          context.app.logger.attention(
+            `Test send to ${message.to[0]} for campaign ${stored.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
             "Test send not delivered: the server error output names the recipient and stage",
           );
         }),

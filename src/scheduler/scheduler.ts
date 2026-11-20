@@ -95,7 +95,9 @@ export function createScheduler(options: SchedulerOptions) {
   const { db, clock, logger, enrollments, sends } = options;
   const attention = (safe: SafeMessage, message: string, cause?: unknown) => {
     try {
-      logger.error(cause === undefined ? new Error(message) : new Error(message, { cause }), safe);
+      logger.attention(message, safe);
+      // The exception behind a failed decision is an unexpected error: its stack keeps its own line.
+      if (cause !== undefined) logger.error(cause);
     } catch {
       /* Logging never changes a decision. */
     }

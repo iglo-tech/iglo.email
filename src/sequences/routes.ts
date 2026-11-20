@@ -532,10 +532,8 @@ export function registerSequenceRoutes(
         const results = dispatched.map(({ message, dispatch }) =>
           dispatch.result.then((outcome) => {
             if (outcome.status === "accepted" && !outcome.rejected.length) return;
-            c.app.logger.error(
-              new Error(
-                `Test send to ${message.to[0]} for sequence ${sequence.id} step ${step.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
-              ),
+            c.app.logger.attention(
+              `Test send to ${message.to[0]} for sequence ${sequence.id} step ${step.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
               "Test send not delivered: the server error output names the recipient and stage",
             );
           }),

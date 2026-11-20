@@ -78,7 +78,10 @@ export async function sequencesFixture(
     db,
     clock,
     i18n: createTranslation(),
-    logger: { error: (error) => errors.push(error) },
+    logger: {
+      error: (error) => errors.push(error),
+      attention: (message) => errors.push(new Error(message)),
+    },
   });
   const enrollments = createEnrollments(db, clock);
   const lists = createListReferences(db),

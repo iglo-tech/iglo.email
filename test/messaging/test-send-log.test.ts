@@ -93,7 +93,7 @@ test("a refused test send answers true, then one attention line in the log", asy
   });
   const lines = await logLines(f);
   expect(lines.filter((line) => line.includes(FIXED))).toHaveLength(1);
-  expect(lines.find((line) => line.includes(FIXED))).toMatch(/ \*: .* \(Error\)$/);
+  expect(lines.find((line) => line.includes(FIXED))).toMatch(new RegExp(` \\*: ${FIXED}$`));
   // The buffer keeps no address; stderr names the campaign, the recipient and the stage.
   expect(lines.join("\n")).not.toContain(REFUSED);
   const detail = stderr.find((message) => message.includes("not delivered"));

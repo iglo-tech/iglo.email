@@ -609,16 +609,25 @@ describe("compiled executable", () => {
       });
       expect(response.status).toBe(200);
       const lines = (await response.json()).data as string[];
-      // One line per process, in the fixed wording of the log buffer, not "unexpected error".
+      // One line per process, in the fixed wording of the log buffer, with no error class.
       expect(lines.filter((line) => line.includes("X-Forwarded-For"))).toEqual([
         expect.stringMatching(
-          / \*: X-Forwarded-For from an untrusted peer ignored: see security\.trusted_proxies \(Error\)$/,
+          / \*: X-Forwarded-For from an untrusted peer ignored: see security\.trusted_proxies$/,
         ),
       ]);
       expect(lines.join("\n")).not.toContain("203.0.113");
     } finally {
       expect(await shutDown(child, "SIGTERM")).toBe(0);
     }
+    // The same report on stderr is one plain line: the peer, never the header's address, no stack.
+    const stderr = await new Response(child.stderr).text();
+    expect(stderr.split("\n").filter((line) => line.includes("X-Forwarded-For"))).toEqual([
+      expect.stringMatching(
+        /^X-Forwarded-For from \S+ was ignored: that address is not in security\.trusted_proxies\. /,
+      ),
+    ]);
+    expect(stderr).not.toMatch(/^\s+at /m);
+    expect(stderr).not.toContain("203.0.113");
   });
 
   test("root URL errors name the value and the fix, and never echo credentials", async () => {

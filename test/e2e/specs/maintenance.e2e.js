@@ -160,7 +160,7 @@ test("a real failure shows what failed, without what a campaign held", async ({ 
   await page.goto("/admin/settings/logs");
   await expect(page.getByTestId("logs-help")).toContainText("full error");
   await expect(page.locator(".log-view .line").last().locator(".log-message")).toHaveText(
-    "inline image not embedded: no such media (Error)",
+    "inline image not embedded: no such media",
   );
   await expect(page.locator(".log-view")).not.toContainText("Lovelace");
 });

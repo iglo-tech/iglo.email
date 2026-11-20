@@ -82,6 +82,7 @@ const purging = (f: TxFixture, clock: Clock, purges: Purge[], batchSize?: number
 const scalar = (f: TxFixture, sql: string) => Number((f.db.query(sql).get() as { n: bigint }).n);
 const logger = (f: TxFixture) => ({
   error: (error: unknown) => f.errors.push(error),
+  attention: (message: string) => f.errors.push(new Error(message)),
 });
 const stored = (f: TxFixture, id: number) =>
   f.db.query("SELECT payload, tracked_links FROM sends WHERE id = ?").get(id) as {

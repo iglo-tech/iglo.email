@@ -120,7 +120,10 @@ export async function txFixture(
     db,
     clock,
     i18n: createTranslation(),
-    logger: { error: (error) => errors.push(error) },
+    logger: {
+      error: (error) => errors.push(error),
+      attention: (message) => errors.push(new Error(message)),
+    },
   });
   let bounces: ReturnType<typeof createBounceStore> | undefined;
   let settingsStore: SettingsStore | undefined;

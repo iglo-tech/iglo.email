@@ -53,7 +53,10 @@ export async function eventsFixture(
       db,
       clock,
       i18n: createTranslation(options.language),
-      logger: { error: (error) => errors.push(error) },
+      logger: {
+        error: (error) => errors.push(error),
+        attention: (message) => errors.push(new Error(message)),
+      },
     });
     const lists = createListReferences(db),
       counts = createListCounts(db),
@@ -207,7 +210,10 @@ export async function eventsFixture(
       startPurge({
         db: current.db,
         clock,
-        logger: { error: (error) => errors.push(error) },
+        logger: {
+          error: (error) => errors.push(error),
+          attention: (message) => errors.push(new Error(message)),
+        },
         purges: [createEventPurge(current.events)],
         ...retention,
       }),

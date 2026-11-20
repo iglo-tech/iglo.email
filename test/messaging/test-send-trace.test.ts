@@ -165,9 +165,13 @@ test("a campaign test's bounce is named once with its campaign, and records noth
   const errors: unknown[] = [];
   let logs!: LogBuffer;
   const logger: ErrorLogger = {
-    error(error, safe) {
+    error(error) {
       errors.push(error);
-      logs.add(error, safe);
+      logs.add(error);
+    },
+    attention(message, safe) {
+      errors.push(new Error(message));
+      logs.attention(safe);
     },
   };
   const f = await campaignsFixture({
@@ -270,7 +274,7 @@ test("a test record lasts seven days: a bounce within the window names it, and a
   const purge = createPurge({
     db: f.db,
     clock: f.clock,
-    logger: { error: () => {} },
+    logger: { error: () => {}, attention: () => {} },
     purges: [
       (now, limit) => {
         const taken = f.testSends.purge(now, limit);

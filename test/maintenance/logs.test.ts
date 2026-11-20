@@ -36,11 +36,20 @@ const lines = async () => {
   expect(response.status).toBe(200);
   return response.body.data as string[];
 };
-const logged = (error: unknown, safe?: SafeMessage) => {
+const logged = (error: unknown) => {
   const error_ = console.error;
   console.error = () => {};
   try {
-    createErrorLogger(logs).error(error, safe);
+    createErrorLogger(logs).error(error);
+  } finally {
+    console.error = error_;
+  }
+};
+const attended = (message: string, safe: SafeMessage) => {
+  const error_ = console.error;
+  console.error = () => {};
+  try {
+    createErrorLogger(logs).attention(message, safe);
   } finally {
     console.error = error_;
   }
@@ -48,16 +57,33 @@ const logged = (error: unknown, safe?: SafeMessage) => {
 
 test("a line has upstream's shape, and the oldest lines go first", async () => {
   expect(await lines()).toEqual([]);
-  logged(new Error("first"), "Outbox failed");
-  logged(new Error("second"), "Outbox failed");
+  attended("first", "Outbox failed");
+  attended("second", "Outbox failed");
   logged(new TypeError("third"));
   logged(new RangeError("fourth"));
-  logged(new Error("fifth"), "error sending campaign message");
+  attended("fifth", "error sending campaign message");
   expect(await lines()).toEqual([
     "2026/01/02 03:04:05.000000 *: unexpected error (TypeError)",
     "2026/01/02 03:04:05.000000 *: unexpected error (RangeError)",
-    "2026/01/02 03:04:05.000000 *: error sending campaign message (Error)",
+    "2026/01/02 03:04:05.000000 *: error sending campaign message",
   ]);
+});
+
+test("an attention line keeps no error class, and its stderr copy is one plain line", () => {
+  const written: unknown[][] = [];
+  const error_ = console.error;
+  console.error = (...args: unknown[]) => written.push(args);
+  try {
+    createErrorLogger(logs).attention(
+      "Test send bounced: kind campaign,\nrecipient ada@example.com",
+      "A test send bounced",
+    );
+  } finally {
+    console.error = error_;
+  }
+  // The message as given, with its line break folded: no stack, no source excerpt, no class.
+  expect(written).toEqual([["Test send bounced: kind campaign, recipient ada@example.com"]]);
+  expect(logs.lines()).toEqual(["2026/01/02 03:04:05.000000 *: A test send bounced"]);
 });
 
 test("nothing secret or personal reaches a reader of the buffer", async () => {
@@ -104,12 +130,14 @@ test("nothing secret or personal reaches a reader of the buffer", async () => {
   logged(new Error("first\nsecond\tthird"));
   logged(Object.assign(new Error("short"), { cause: new Error("ada@example.com") }));
   logged("ada@example.com");
-  logged(new Error("ada@example.com"), "ada@example.com" as SafeMessage);
+  attended("ada@example.com", "ada@example.com" as SafeMessage);
   const [multiline, withCause, notAnError, unknownMark] = logs.lines().slice(-4);
   expect(multiline).toEndWith("*: unexpected error (Error)");
   expect(withCause).toEndWith("*: unexpected error (Error)");
   expect(notAnError).toEndWith("*: unexpected error (not an Error)");
-  expect(unknownMark).toEndWith("*: unexpected error (Error)");
+  // A mark outside the fixed list names no text and no class: the line is the generic one.
+  expect(unknownMark).toEndWith("*: unexpected error");
+  expect(unknownMark).not.toContain("ada");
 });
 
 test("a line is bounded, and a logger keeps its stderr copy whole", async () => {
@@ -172,18 +200,14 @@ const brokenImage = async (filename: string) => {
 
 test("a settings:get reader sees that an image is missing, not whose it was", async () => {
   const { lines, stderr } = await brokenImage("Ada%20Lovelace.png");
-  expect(lines).toEqual([
-    "2026/01/02 03:04:05.000000 *: inline image not embedded: no such media (Error)",
-  ]);
+  expect(lines).toEqual(["2026/01/02 03:04:05.000000 *: inline image not embedded: no such media"]);
   expect(stderr).toContain("Ada Lovelace.png");
 });
 
 test("the line of a very long file name is the line of any other", async () => {
   const name = "a".repeat(40 * 1024);
   const { lines, stderr } = await brokenImage(name);
-  expect(lines).toEqual([
-    "2026/01/02 03:04:05.000000 *: inline image not embedded: no such media (Error)",
-  ]);
+  expect(lines).toEqual(["2026/01/02 03:04:05.000000 *: inline image not embedded: no such media"]);
   expect(stderr).toContain(name);
 });
 

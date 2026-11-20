@@ -77,7 +77,10 @@ export async function campaignsFixture(
     db,
     clock,
     i18n: createTranslation(),
-    logger: options.logger?.(clock) ?? { error: (error) => errors.push(error) },
+    logger: options.logger?.(clock) ?? {
+      error: (error) => errors.push(error),
+      attention: (message) => errors.push(new Error(message)),
+    },
   });
   const lists = createListReferences(db),
     counts = createListCounts(db),

@@ -52,7 +52,7 @@ export async function startListFixture() {
       db,
       clock,
       i18n: createTranslation(),
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);
