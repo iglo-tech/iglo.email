@@ -104,9 +104,9 @@ test("preview without input renders the dummy subscriber, no trigger and zero ag
     aggregates: { downloads: 0 },
     sequence: { id: sequence, name: "Onboarding" },
     step: { id: step, position: 0, kind: "transactional" },
-    // A transactional step's links name the placeholder send and subscriber (D126, r1): the test page.
-    unsubscribe_url:
-      "http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/00000000-0000-0000-0000-000000000000",
+    // A transactional step carries no unsubscribe_url (D126, r2); its manage link names the placeholder
+    // send and subscriber, the test page (D126, r1).
+    unsubscribe_url: "",
     manage_url:
       "http://fixture.test/m/00000000-0000-0000-0000-000000000000/unsubscribe/00000000-0000-0000-0000-000000000000?manage=true",
   });

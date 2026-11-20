@@ -329,13 +329,12 @@ export function registerTxRoutes(
           kind,
           subscriberUuid: recipient.row?.uuid ?? null,
         });
-        // D126 (r1): the links of a send to a known subscriber name this send's own paired path, so a
-        // transactional preference link manages confirmed lists through its journal row. Without a
-        // subscriber there is no path, as before.
-        const unsubscribe =
-          marketing || prepared.unsubscribeUrl !== null
-            ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
-            : "";
+        // Marketing mail carries unsubscribe_url. A transactional mail carries only manage_url (D126,
+        // r1): its preference link names the send's own paired path, so it manages confirmed lists.
+        // Its unsubscribe_url would render empty, so the key is not offered.
+        const unsubscribe = marketing
+          ? `,"unsubscribe_url":${JSON.stringify(prepared.unsubscribeUrl ?? "")}`
+          : "";
         const preferences = prepared.unsubscribeUrl ?? "";
         const manage = `,"manage_url":${JSON.stringify(preferences && `${preferences}?manage=true`)}`;
         const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}${manage}}`;

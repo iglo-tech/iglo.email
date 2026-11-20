@@ -270,19 +270,25 @@ export function registerCampaignPublicRoutes(
     const campUuid = context.params.campUUID!.toLowerCase();
     const subUuid = context.params.subUUID!.toLowerCase();
     // D126 (r2): a view is recorded only for a delivered campaign. With individual tracking, the
-    // pixel's subscriber must be one the campaign was delivered to. Without it, every pixel of mail
-    // the server sent names the dummy subscriber, and counts as an anonymous view of a sent campaign.
-    // The preview's dummy campaign is never recorded. Every other request gets the same pixel.
+    // pixel's subscriber must be one the campaign was delivered to, and the view names them. Without
+    // it, a pixel counts anonymously when it names the dummy subscriber of a campaign with any delivery
+    // (mail sent with tracking off), or a subscriber the campaign was delivered to (mail sent while
+    // tracking was on, now off). That view names nobody. The preview's dummy campaign is never recorded.
+    // Every other request gets the same pixel.
     if (!settings.disableTracking && campUuid !== dummyUUID) {
       try {
         const campaign = deps.store.byUuid(campUuid);
         if (campaign) {
+          const sub = deps.subscribers.byUuid(subUuid);
           if (settings.individualTracking) {
-            const sub = deps.subscribers.byUuid(subUuid);
             if (sub && deps.store.delivered(campaign.id, sub.id))
               deps.store.registerView(campaign.id, sub.id);
-          } else if (subUuid === dummyUUID && deps.store.hasDeliveries(campaign.id)) {
-            deps.store.registerView(campaign.id, null);
+          } else {
+            const counted =
+              subUuid === dummyUUID
+                ? deps.store.hasDeliveries(campaign.id)
+                : Boolean(sub && deps.store.delivered(campaign.id, sub.id));
+            if (counted) deps.store.registerView(campaign.id, null);
           }
         }
       } catch (error) {

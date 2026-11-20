@@ -838,6 +838,18 @@ uuid is refused with 400 and changes nothing. An install that already holds dupl
 hand-made API calls could store them) gets 400 on every API settings save (`PUT /api/settings` or a
 per-key update), until the settings page is saved once.
 
+From the release that pairs privacy actions (D126), the preference links of mail sent before the
+upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a
+placeholder path: opening it shows a page that lists only the subscriber's pending opt-ins, with
+no name field, so changing confirmed lists or the name from that mail is not possible. Recipients
+who want to change their lists should use a newer mail, or contact the operator. A campaign's
+manage and privacy forms work only for mail the campaign delivered, and a subscriber's UUID alone no
+longer exports, wipes or blocklists anyone: `POST /subscription/export/{uuid}` and
+`POST /subscription/wipe/{uuid}` answer 404. An application that used those sub-only paths for
+data export or erasure must use a campaign's or marketing send's own paths, or the admin API
+(`GET /api/subscribers/{id}/export`, `DELETE /api/subscribers/{id}`). Opt-in mail still ends and
+confirms pending subscriptions as before, and a test send still shows its test page.
+
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,

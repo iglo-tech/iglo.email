@@ -164,7 +164,9 @@ export function stepPreview(
       sequence: { id: sequence.id, name: sequence.name },
       step: { id: step.id, uuid: step.uuid, position: step.position, kind: step.kind },
       aggregates: totals,
-      unsubscribe_url: links.unsubscribeUrl ?? "",
+      // D126 (r2): unsubscribe_url is marketing mail's; every step carries its manage link.
+      unsubscribe_url: kind === "marketing" ? (links.unsubscribeUrl ?? "") : "",
+      manage_url: links.unsubscribeUrl ? `${links.unsubscribeUrl}?manage=true` : "",
     },
     links,
   };

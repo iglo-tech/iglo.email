@@ -275,7 +275,9 @@ export function createScheduler(options: SchedulerOptions) {
       kind: row.kind,
       subscriberUuid: subscriber.uuid,
     });
-    const unsubscribe = links.unsubscribeUrl ?? "";
+    // D126 (r2): unsubscribe_url is marketing mail's; a transactional step carries only manage_url.
+    const unsubscribe = row.kind === "marketing" ? (links.unsubscribeUrl ?? "") : "";
+    const manage = links.unsubscribeUrl ? `${links.unsubscribeUrl}?manage=true` : "";
     const data = stepDataText({
       subscriber: {
         id: subscriber.id,
@@ -297,6 +299,7 @@ export function createScheduler(options: SchedulerOptions) {
       },
       aggregates,
       unsubscribe_url: unsubscribe,
+      manage_url: manage,
     });
     const subject = row.subject || template.subject;
     let prepared: ReturnType<Sends["prepareSequence"]>;

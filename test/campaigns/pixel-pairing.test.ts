@@ -31,6 +31,20 @@ const pixel = async (f: RunnerFixture, path: string) => {
   expect(response.headers.get("content-type")).toBe("image/png");
   return new Uint8Array(await response.arrayBuffer());
 };
+/** Sends a campaign to the list and waits until the runner has finished it. */
+async function send(f: RunnerFixture, lists: number[]) {
+  const c = await f.campaign({
+    name: "Weekly",
+    subject: "Weekly",
+    lists,
+    content_type: "html",
+    body,
+  });
+  await f.status(c.id, "running");
+  f.start();
+  await f.until(c.id, "finished");
+  return c;
+}
 
 test("individual tracking: only a pixel of mail delivered to the subscriber it names counts", async () => {
   const f = await open();
@@ -39,16 +53,7 @@ test("individual tracking: only a pixel of mail delivered to the subscriber it n
   f.publicSettings.individualTracking = true;
   const single = await f.list("single", "single");
   const ada = await f.member("ada@example.test", [single], "confirmed");
-  const c = await f.campaign({
-    name: "Weekly",
-    subject: "Weekly",
-    lists: [single],
-    content_type: "html",
-    body,
-  });
-  await f.status(c.id, "running");
-  f.start();
-  await f.until(c.id, "finished");
+  const c = await send(f, [single]);
   // The pixel of Ada's own delivered message counts, once.
   const genuine = await pixel(f, pixelOf(f, "ada@example.test"));
   expect(await views(f, c.id)).toBe(1);
@@ -79,31 +84,22 @@ test("individual tracking: only a pixel of mail delivered to the subscriber it n
   expect(await views(f, c.id)).toBe(2);
 });
 
-test("anonymous tracking: the dummy pixel of a sent campaign counts; other pixels record nothing", async () => {
+test("anonymous tracking: a pixel of mail the server sent counts, and a subscriber it never reached does not", async () => {
   const f = await open();
   f.settings.individualTracking = false;
   f.publicSettings.individualTracking = false;
   const single = await f.list("single", "single");
   await f.member("ada@example.test", [single], "confirmed");
-  const bob = await f.member("bob@example.test", [single], "confirmed");
-  const c = await f.campaign({
-    name: "Weekly",
-    subject: "Weekly",
-    lists: [single],
-    content_type: "html",
-    body,
-  });
-  await f.status(c.id, "running");
-  f.start();
-  await f.until(c.id, "finished");
+  const c = await send(f, [single]);
   // Without individual tracking the pixel names the dummy subscriber, and counts as anonymous.
   const path = pixelOf(f, "ada@example.test");
   expect(path).toContain(`/${dummy}/px.png`);
   const genuine = await pixel(f, path);
   expect(await views(f, c.id)).toBe(1);
 
-  // A real subscriber's UUID in the path is not an anonymous view of mail: the same image, no view.
-  expect(await pixel(f, `/campaign/${c.uuid}/${bob.uuid}/px.png`)).toEqual(genuine);
+  // A subscriber the campaign never reached: the same image, and no view.
+  const late = await f.member("late@example.test", [single], "confirmed");
+  expect(await pixel(f, `/campaign/${c.uuid}/${late.uuid}/px.png`)).toEqual(genuine);
   expect(await views(f, c.id)).toBe(1);
 
   // An unsent draft: the same image, and no view.
@@ -116,4 +112,21 @@ test("anonymous tracking: the dummy pixel of a sent campaign counts; other pixel
   });
   expect(await pixel(f, `/campaign/${draft.uuid}/${dummy}/px.png`)).toEqual(genuine);
   expect(await views(f, draft.id)).toBe(0);
+});
+
+test("mail sent with individual tracking on still counts after it is turned off, anonymously", async () => {
+  const f = await open();
+  const single = await f.list("single", "single");
+  const ada = await f.member("ada@example.test", [single], "confirmed");
+  // Sent while tracking was on: its pixel names Ada.
+  f.settings.individualTracking = true;
+  f.publicSettings.individualTracking = true;
+  const c = await send(f, [single]);
+  const named = pixelOf(f, "ada@example.test");
+  expect(named).toContain(`/${ada.uuid}/px.png`);
+  // Tracking is now off: the same pixel still counts, anonymously, and names nobody.
+  f.settings.individualTracking = false;
+  f.publicSettings.individualTracking = false;
+  await pixel(f, named);
+  expect(await views(f, c.id)).toBe(1);
 });
