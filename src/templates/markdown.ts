@@ -1,27 +1,34 @@
-// Local Markdown rendering using marked 15.0.12. Its pinned patch reports the characters marked
-// examines (scan), the strings it materializes (charge) and each token (step) through
-// `igloBudget`, so the work counter follows the scanning and not the input's size alone.
-import { Lexer, Parser, type MarkedOptions } from "marked";
-
+// Markdown rendering with Bun's built-in Markdown API (B106, D113). Output is `Bun.markdown.html` with
+// listmonk's GFM options (goldmark's Table, Strikethrough and TaskList): tables, strikethrough and task
+// lists on; bare-URL autolinks and heading ids off, as today; raw HTML passes through (listmonk's
+// WithUnsafe). Bun's Markdown API is marked unstable in its documentation, so this output is tied to the
+// pinned Bun version; a Bun upgrade must pass the Markdown pin suite (D113).
+//
+// The output bound (D112, reworked by B106) is computed before `html()` builds anything. A dry run through
+// `Bun.markdown.render` calls back for every element with callbacks that return nothing, so it builds no
+// output and charges an upper bound of the bytes `html()` writes for that element. Bun's `render` gives no
+// callback for hard breaks (`<br />`), so those are bounded from the source, and inline raw HTML, which no
+// callback sees, is bounded by the source's length.
 const OUTPUT_LIMIT = 1024 * 1024;
-const MAX_DEPTH = 32;
 /**
- * The Markdown source after Liquid expansion, in UTF-8 bytes (D112, B105 r2). It is checked before marked
+ * The Markdown source after Liquid expansion, in UTF-8 bytes (D112). It is checked before the parser
  * sees the source, so an expansion above it is refused at once.
  */
 export const MARKDOWN_SOURCE_LIMIT = 128 * 1024;
-/**
- * Work units approximate time, about 5 ns each. The patched marked charges what each scan consumed, after
- * the scan (a character 1, a block-level character 20, a line 400 more); a closer search 30 per character it
- * examines; a token 800 (a block token, or an inline token that starts with a special character) or 200
- * (plain text); each emphasis closer exec 1500; and a scan that can run past its token at its regex cost (a
- * lazy heading scan 64 per character, an emphasis opener 8, a failed link, code span or strikethrough 8, 8
- * and 40 per character, a blockquote window 16). Some scans are checked, not charged, before they run
- * (`check`): an emphasis closer search (30 per remaining character) and a blockquote attempt (16 per window
- * character), so a scan that the budget cannot cover is refused before it runs. See D112.
- */
-const WORK_LIMIT = 36_000_000;
-const TOKEN_UNITS = 800;
+
+const bytes = (value: string) => Buffer.byteLength(value, "utf8");
+
+// Bytes an HTML escape can add, per special character (`&amp;`, `&lt;`, `&gt;`, `&quot;`).
+const SPECIAL_EXTRA: Readonly<Record<string, number>> = { "&": 4, "<": 3, ">": 3, '"': 5 };
+/** Upper bound on the bytes of `value` once written as escaped HTML text. */
+function escapedBound(value: string): number {
+  let total = bytes(value);
+  for (let i = 0; i < value.length; i++) total += SPECIAL_EXTRA[value[i]!] ?? 0;
+  return total;
+}
+
+/** Bytes a hard break writes before its newline (`<br />`). */
+const HARD_BREAK_BOUND = 7;
 
 /** A Markdown source above MARKDOWN_SOURCE_LIMIT after template expansion (D112). */
 export class MarkdownSourceError extends Error {
@@ -29,180 +36,163 @@ export class MarkdownSourceError extends Error {
     super("Markdown is larger than 128 KiB after template expansion");
   }
 }
-/** Upper bound on the tag bytes marked writes around each token, by type (marked 15 renderer). A table cell
- * (an object without a type) is `<th align="...">` plus its close. A task item's checkbox is TASK_CHECKBOX. */
-const WRAP: Readonly<Record<string, number>> = {
-  list_item: 16,
-  paragraph: 8,
-  heading: 12,
-  hr: 8,
-  br: 8,
-  code: 56,
-  codespan: 16,
-  blockquote: 32,
-  list: 48,
-  table: 64,
-  link: 32,
-  image: 40,
-  em: 16,
-  strong: 20,
-  del: 16,
-  text: 0,
-  escape: 0,
-  html: 0,
-  space: 0,
-  def: 0,
-};
-const WRAP_OTHER = 64;
-const WRAP_CELL = 32;
-/** `<input checked="" disabled="" type="checkbox">` (46 bytes), its separating space and a margin. */
-const TASK_CHECKBOX = 64;
-const bytes = (value: string) => Buffer.byteLength(value, "utf8");
 
+/** A message's emission budget (D54); the renderer and content conversion pass their own. */
 export interface MarkdownBudget {
-  /** Charges bytes to the message's emission budget; throws when the budget is exhausted. */
+  /** Charges bytes to the budget; throws when it is exhausted. */
   charge(bytes: number): void;
-  step(units?: number): void;
-  scan(units: number): void;
-  /** Throws if `units` more work would exceed the limit; charges nothing. */
-  check(units: number): void;
-  depth: number;
 }
 
-/** A budget for one Markdown render. `charge` is the message's (or content conversion's) byte budget. */
 export function createMarkdownBudget(charge: (bytes: number) => void): MarkdownBudget {
-  let work = 0;
-  const add = (units: number) => {
-    if (!Number.isSafeInteger(units) || units < 0 || (work += units) > WORK_LIMIT)
-      throw new Error("Work limit");
-  };
-  return {
-    charge,
-    step: (units = 1) => add(units),
-    scan: add,
-    check: (units: number) => {
-      if (!Number.isSafeInteger(units) || units < 0 || work + units > WORK_LIMIT)
-        throw new Error("Work limit");
-    },
-    depth: 0,
-  };
+  return { charge };
 }
 
-// Characters encodeURI leaves as they are; every other UTF-8 byte becomes %XX.
-const URI_SAFE = /[A-Za-z0-9;,/?:@&=+$\-_.!~*'()#]/;
-/** Bytes of `href` after marked's cleanUrl (encodeURI), an upper bound: one byte when safe, else %XX per byte. */
-function encoded(href: string): number {
-  let total = 0;
-  for (const char of href) total += URI_SAFE.test(char) ? 1 : 3 * bytes(char);
-  return total;
-}
-const SPECIAL_EXTRA: Readonly<Record<string, number>> = { "&": 4, "<": 3, ">": 3, '"': 5, "'": 4 };
-/** Bytes of `value` after escaping, an upper bound: each special character expands to its entity. */
-function escaped(value: string): number {
-  let total = bytes(value);
-  for (let i = 0; i < value.length; i++) total += SPECIAL_EXTRA[value[i]!] ?? 0;
-  return total;
-}
-
-/** The raw bytes of every text string in a token subtree. */
-function leafBytes(value: unknown): number {
-  if (Array.isArray(value))
-    return value.reduce((total: number, item) => total + leafBytes(item), 0);
-  if (!value || typeof value !== "object") return 0;
-  const token = value as Record<string, unknown>;
-  let total = typeof token.text === "string" ? bytes(token.text) : 0;
-  for (const key of ["tokens", "items", "header", "rows"]) total += leafBytes(token[key]);
-  return total;
-}
+// listmonk's configuration (models/common.go at 6fcd95f), as Bun's options: GFM tables, strikethrough and
+// task lists (Bun's defaults); autolinks, heading ids and every other extension off.
+const OPTIONS: Bun.markdown.Options = {
+  tables: true,
+  strikethrough: true,
+  tasklists: true,
+  autolinks: false,
+  headings: false,
+  hardSoftBreaks: false,
+  wikiLinks: false,
+  underline: false,
+  latexMath: false,
+  collapseWhitespace: false,
+  permissiveAtxHeaders: false,
+  noIndentedCodeBlocks: false,
+  noHtmlBlocks: false,
+  noHtmlSpans: false,
+  tagFilter: false,
+};
 
 /**
- * Upper bound on the bytes marked emits, computed once per token (no prefix sums). Text and titles
- * are escaped (at most `&amp;`/`&quot;`-sized expansion per special character), hrefs are
- * percent-encoded (at most 3 bytes per byte), raw HTML is copied, and each tag wrapper has a fixed
- * allowance. Parents count only their own fields; children are counted once, through `tokens`,
- * `items`, `header` and `rows`.
+ * An upper bound, in bytes, on the output `html()` writes for `source`. It throws once the bound exceeds
+ * `limit`, so a source whose output would be larger is refused before any output string is built.
  */
-function reserve(tokens: unknown[], budget: MarkdownBudget): void {
-  const visit = (value: unknown, depth: number): number => {
-    if (depth > MAX_DEPTH) throw new Error("Nesting limit");
-    if (Array.isArray(value)) {
-      let total = 0;
-      for (const item of value) total += visit(item, depth);
-      if (!Number.isSafeInteger(total)) throw new Error("Markdown limit");
-      return total;
-    }
-    if (!value || typeof value !== "object") throw new Error("Invalid Markdown token");
-    budget.step(100);
-    const token = value as Record<string, unknown>;
-    const type = token.type;
-    let upper =
-      typeof type === "string" ? (Object.hasOwn(WRAP, type) ? WRAP[type]! : WRAP_OTHER) : WRAP_CELL;
-    // A task item's checkbox is written into its first child after this reserve (the renderer mutates
-    // the tokens), so each task item reserves its checkbox here.
-    if (token.task === true) upper += TASK_CHECKBOX;
-    if (type === "html") {
-      if (typeof token.text === "string") upper += bytes(token.text);
-    } else {
-      // A token with children emits them, not its own raw text; a leaf emits its text escaped.
-      if (typeof token.text === "string" && !Array.isArray(token.tokens))
-        upper += escaped(token.text);
-      // A block text token in a loose list item is written as a paragraph.
-      if (type === "text" && Array.isArray(token.tokens)) upper += WRAP.paragraph!;
-      // Image alternative text is the plain text of its children, written through the text renderer,
-      // whose escapes can print more than the raw text they came from. Bound it by six bytes per byte.
-      if (type === "image" && Array.isArray(token.tokens)) upper += 6 * leafBytes(token.tokens);
-      if (typeof token.href === "string") upper += encoded(token.href);
-      for (const key of ["title", "lang", "align"]) {
-        const item = token[key];
-        if (typeof item === "string") upper += escaped(item);
-      }
-    }
-    for (const key of ["tokens", "items", "header", "rows"]) {
-      const child = token[key];
-      if (Array.isArray(child)) upper += visit(child, depth + 1);
-    }
-    if (!Number.isSafeInteger(upper)) throw new Error("Markdown limit");
-    return upper;
+export function markdownOutputBound(source: string, limit: number = OUTPUT_LIMIT): number {
+  let bound = 0;
+  const add = (units: number) => {
+    bound += units;
+    if (!Number.isSafeInteger(bound) || bound > limit) throw new Error("Markdown output limit");
   };
-  const upper = visit(tokens, 0);
-  if (upper > OUTPUT_LIMIT) throw new Error("Markdown output limit");
-  budget.charge(upper);
+  // Raw inline HTML is copied from the source, and no callback sees it.
+  add(bytes(source));
+  // A hard break is a newline after two spaces or a backslash, and writes `<br />` before it.
+  let breaks = 0;
+  for (let at = source.indexOf("\n"); at !== -1; at = source.indexOf("\n", at + 1)) {
+    if (at > 0 && (source[at - 1] === " " || source[at - 1] === "\\")) breaks++;
+  }
+  add(HARD_BREAK_BOUND * breaks);
+
+  // The dry run: every callback returns nothing, so no output string is built.
+  const callbacks: Bun.markdown.RenderCallbacks = {
+    text: (children) => {
+      add(escapedBound(children));
+      return "";
+    },
+    paragraph: () => {
+      add(16);
+      return "";
+    },
+    heading: () => {
+      add(16);
+      return "";
+    },
+    blockquote: () => {
+      add(32);
+      return "";
+    },
+    code: (children, meta) => {
+      add(64 + escapedBound(children) + (meta?.language ? 6 * bytes(meta.language) : 0));
+      return "";
+    },
+    list: (_children, meta) => {
+      add(meta.start === undefined ? 16 : 48);
+      return "";
+    },
+    listItem: (_children, meta) => {
+      // A task item writes its checkbox and class (about 104 bytes).
+      add(meta.checked === undefined ? 16 : 144);
+      return "";
+    },
+    hr: () => {
+      add(8);
+      return "";
+    },
+    table: () => {
+      add(24);
+      return "";
+    },
+    thead: () => {
+      add(24);
+      return "";
+    },
+    tbody: () => {
+      add(24);
+      return "";
+    },
+    tr: () => {
+      add(16);
+      return "";
+    },
+    th: () => {
+      add(32);
+      return "";
+    },
+    td: () => {
+      add(32);
+      return "";
+    },
+    html: (children) => {
+      add(bytes(children));
+      return "";
+    },
+    strong: () => {
+      add(24);
+      return "";
+    },
+    emphasis: () => {
+      add(16);
+      return "";
+    },
+    strikethrough: () => {
+      add(16);
+      return "";
+    },
+    link: (_children, meta) => {
+      // An href is percent-encoded at most 3 bytes per byte (encoded URIs and entities).
+      add(
+        24 + 3 * bytes(meta.href) + (meta.title === undefined ? 0 : 10 + escapedBound(meta.title)),
+      );
+      return "";
+    },
+    image: (children, meta) => {
+      add(
+        48 +
+          3 * bytes(meta.src) +
+          escapedBound(children) +
+          (meta.title === undefined ? 0 : 10 + escapedBound(meta.title)),
+      );
+      return "";
+    },
+    codespan: (children) => {
+      add(16 + escapedBound(children));
+      return "";
+    },
+  };
+  Bun.markdown.render(source, callbacks, OPTIONS);
+  return bound;
 }
 
+/** Renders Markdown to HTML, charging `budget` with the output bound (D112) before the output is built. */
 export function renderMarkdown(source: string, budget: MarkdownBudget): string {
-  // Checked before marked sees the source: an expansion above the cap is refused at once (D112).
+  // Checked before the parser sees the source: an expansion above the cap is refused at once (D112).
   if (bytes(source) > MARKDOWN_SOURCE_LIMIT) throw new MarkdownSourceError();
-  const options = {
-    gfm: true,
-    igloBudget: {
-      enter(text: string) {
-        budget.step(TOKEN_UNITS);
-        if (++budget.depth > MAX_DEPTH) throw new Error("Nesting limit");
-        budget.charge(bytes(text));
-      },
-      leave() {
-        budget.depth--;
-      },
-      step(count = 1) {
-        budget.step(count);
-      },
-      scan(count: number) {
-        budget.scan(count);
-      },
-      check(count: number) {
-        budget.check(count);
-      },
-      copy(text: string) {
-        budget.charge(bytes(text));
-      },
-      table(headers: number, rows: number) {
-        budget.step(headers * (rows + 1));
-      },
-    },
-  } as MarkedOptions;
-  const tokens = Lexer.lex(source, options);
-  reserve(tokens, budget);
-  const output = Parser.parse(tokens, options);
+  budget.charge(markdownOutputBound(source));
+  const output = Bun.markdown.html(source, OPTIONS);
+  // The bound above is an upper bound on this output; the check is a guard, not a second limit.
   if (bytes(output) > OUTPUT_LIMIT) throw new Error("Markdown output limit");
   return output;
 }

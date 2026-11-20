@@ -189,14 +189,16 @@ try {
   const wideTable = "|" + "h|".repeat(10001) + "\n|" + "- |".repeat(10001) + "\n";
   const blockquote = "> x\n".repeat(10001);
   for (const [body, sha, length] of [
-    [wideTable, "8e64d44da337ad3650cac83b9dee48a24af1915fac552918ad4c6cadbc57b274", 110056],
+    // B106 (D113): Bun's Markdown API renders at most 128 columns as a table, so this 10,001-column table is a
+    // paragraph (listed in 07 as a deliberate difference). Marked rendered it as a 110,056-byte table.
+    [wideTable, "e938085f6e0c20215bf08f51b0d74d2e7b3b638e783052d2a56b6c8386bcc573", 50016],
     [blockquote, "d22c394328a6b768324b11408b177246bb828a325e4077ed1a94dd59c5e37888", 20036],
   ] as const) {
     const { body: html } = renderer.renderSync({ body, data: "{}", mode: "markdown" });
     assert.equal(Buffer.byteLength(html), length);
     assert.equal(createHash("sha256").update(html).digest("hex"), sha);
   }
-  // B105 (D112): the expanded Markdown source is capped at 128 KiB and refused before marked parses it.
+  // B105 (D112): the expanded Markdown source is capped at 128 KiB and refused before the parser sees it.
   // Exactly the cap renders, byte-equal to the source renderer (length and SHA-256); one byte more is
   // refused with the cap message.
   const cappedData = JSON.stringify({ value: "a".repeat(64 * 1024) });

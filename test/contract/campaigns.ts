@@ -616,7 +616,7 @@ export async function runCampaignsContract(target: {
       from: "markdown",
       to: "html",
     });
-    // D-campaign-markdown: marked does not add goldmark's automatic heading IDs.
+    // D-campaign-markdown: Bun.markdown does not add goldmark's automatic heading IDs (D113).
     check(
       converted.status === 200 &&
         converted.body.data ===

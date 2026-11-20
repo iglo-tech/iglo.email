@@ -69,7 +69,7 @@ A sequence step sends a transactional template and may override its subject. Ste
 
 #### Content types
 
-`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with `marked` after Liquid), and `plain`. There is no visual editor; template editing for agents is via MCP.
+`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with Bun's Markdown API after Liquid, D113), and `plain`. There is no visual editor; template editing for agents is via MCP.
 
 #### Example: Campaign template (layout)
 
@@ -126,14 +126,14 @@ A sequence step sends a transactional template and may override its subject. Ste
 | Lookup | No user partial lookup. Converted system templates are embedded and selected by the owning application, not by user-supplied paths or names |
 | Data | Primitive JSON strings are limited to 256 KiB UTF-8 before parsing and copied to owned dense arrays and null-prototype records; depth 16, 10,000 nodes, 1,024 entries, and 64 KiB per string |
 | Render | Source 64 KiB body/layout and 2 KiB subject; 1 MiB output per body/layout and 2 KiB subject; shared 4 MiB emission/intermediate budget, 10,000 work, depth 32 and 1,024 per range. Work includes expression tokens, property lookup, collection conversion and comparison size. Four admitted renders per instance. A caller can hold a compiled immutable snapshot; there is no retained cache |
-| Markdown | Liquid with HTML escaping, then local `marked` 15.0.12 (a pinned patch), then the optional HTML layout. The lexer charges the characters marked scans, each token and each loop exec to a Markdown work budget of 36,000,000 units of its own (not Liquid's 10,000), and the bytes it materializes to the message's byte budget; a link title must follow whitespace (D111). One linear upper bound on the output is charged before parsing and refuses above 1 MiB (D112); the 1 MiB check after rendering is unchanged. A body is at most 64 KiB of source (D54). The Markdown source after Liquid expansion is capped at 128 KiB, and a larger source is refused with a 400 before parsing (D112); a Liquid loop can expand a body to the 1 MiB output limit within that cap, and the Markdown stage renders or refuses that expansion within the target (D112) |
+| Markdown | Liquid with HTML escaping, then Bun's built-in Markdown API (`Bun.markdown.html` with listmonk's GFM options: tables, strikethrough and task lists; no bare-URL autolinks, no heading IDs), then the optional HTML layout (D113). Bun marks that API unstable, so the output is tied to the pinned Bun version. The Markdown source after Liquid expansion is capped at 128 KiB and refused with a 400 before parsing (D112). An upper bound on the output is computed before `html()` runs, by a dry run through `Bun.markdown.render` that charges each element's bound to the message's byte budget; a bound above 1 MiB is refused before any output string is built (D113). The parser is linear in its input, so there is no work budget. A link title must follow whitespace (D111). A body is at most 64 KiB of source (D54). A Liquid loop can expand a body to the 1 MiB output limit within the 128 KiB source cap, and that expansion renders or is refused within the target (D112) |
 | Tracking and URLs | `track_link` accepts HTTP(S) and `track_view` renders nothing unless the sending owner supplies per-message tracking (M2.4 tx sends: tracked `/m/:sendUUID` links and listmonk's hidden pixel image, inserted after rendering via a per-render marker). Explicit URL fields are checked |
 
 The emitter, subset, JSON boundary and patches await hosted checks and
 independent review before they are treated as an accepted boundary. The time limit remains
 cooperative, and raw author HTML is not sanitized. Preview CSP protects its
 sandboxed browser context; it is not a guarantee about HTML used elsewhere.
-Marked does not sanitize raw HTML or arbitrary author-provided URLs.
+Markdown does not sanitize raw HTML or arbitrary author-provided URLs, as before (listmonk's goldmark runs unsafe too).
 
 [D55](09-decisions.md#d55-bound-serialized-template-context-before-reflection-and-preserve-sandbox-ci)
 refines D54's renderer entry: untrusted context is a primitive, byte-bounded

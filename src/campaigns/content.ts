@@ -1,5 +1,5 @@
 // Content format conversion adapted from listmonk models/campaigns.go (ConvertContent) at
-// 6fcd95f, with the local marked renderer (06-templates.md) instead of goldmark.
+// 6fcd95f, with the local Markdown renderer (06-templates.md, D113) instead of goldmark.
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 
 const LIMIT = 4 * 1024 * 1024;
