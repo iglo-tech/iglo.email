@@ -34,7 +34,10 @@ export async function startTemplateFixture(
   const admin = { user: "fixture-admin", password: "fixture-admin-password" };
   const i18n = createTranslation(),
     errors: unknown[] = [];
-  const logger = { error: (error: unknown) => errors.push(error) };
+  const logger = {
+    error: (error: unknown) => errors.push(error),
+    attention: (message: string) => errors.push(new Error(message)),
+  };
   const renderer = createRenderer(clock, i18n),
     templates = createTemplateStore(db, clock, renderer, campaigns);
   try {

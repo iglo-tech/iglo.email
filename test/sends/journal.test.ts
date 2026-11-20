@@ -69,7 +69,7 @@ async function fixture() {
     db,
     clock,
     i18n: createTranslation(),
-    logger: { error: () => {} },
+    logger: { error: () => {}, attention: () => {} },
   });
   const call = async (path: string, method = "GET", body?: string) => {
     const response = await router.handle(
@@ -193,7 +193,7 @@ test("explicit resend preserves the original and returns one current child", asy
       clock: f.clock,
       sends: f.journal,
       emailer,
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     await loop.stop();
     expect(JSON.parse((await f.call(`/api/sends/${original.id}`)).text).data.status).toBe("failed");
@@ -211,7 +211,7 @@ test("explicit resend preserves the original and returns one current child", asy
       clock: f.clock,
       sends: f.journal,
       emailer,
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     await again.stop();
     const repeated = JSON.parse(
@@ -327,7 +327,7 @@ test("actual TCP refusal retries only at injected-clock deadlines and stops afte
       clock: f.clock,
       sends: f.journal,
       emailer,
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     await outbox.stop();
   };
@@ -367,7 +367,7 @@ test("linked identity changes and unavailable marketing policy fail closed at di
       clock: f.clock,
       sends: f.journal,
       emailer,
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     await loop.stop();
   };
@@ -461,7 +461,7 @@ test("owned enqueue wakes an idle outbox without advancing its polling clock", a
     clock: f.clock,
     sends,
     emailer,
-    logger: { error: () => {} },
+    logger: { error: () => {}, attention: () => {} },
   });
   try {
     await f.clock.whenSleeping();
@@ -488,7 +488,7 @@ test("permissions and live authority are rechecked after the resend body is drai
       clock: f.clock,
       sends: f.journal,
       emailer,
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     await outbox.stop();
     const role = f.roles.mutate(

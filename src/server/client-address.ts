@@ -70,8 +70,8 @@ function report(logger: ErrorLogger, peer: string): void {
   try {
     // The buffer's fixed line names no address: `settings:get` readers are not all administrators.
     // stderr keeps the whole line, with the peer.
-    logger.error(
-      new Error(message),
+    logger.attention(
+      message,
       "X-Forwarded-For from an untrusted peer ignored: see security.trusted_proxies",
     );
   } catch {

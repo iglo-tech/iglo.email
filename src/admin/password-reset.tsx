@@ -99,7 +99,7 @@ export function createPasswordReset(deps: ResetDeps) {
       body: Buffer.from(html),
     }).result.then((outcome) => {
       if (outcome.status !== "accepted")
-        logger.error(new Error("Password reset mail not sent"), "Password reset mail not sent");
+        logger.attention("Password reset mail not sent", "Password reset mail not sent");
     });
   };
   const getForgot: Handler = (context) => {

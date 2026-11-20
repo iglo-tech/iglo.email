@@ -91,8 +91,8 @@ export function createEmbeds(store: Pick<MediaStore, "byFilename">, logger: Erro
       const media = store.byFilename(filename);
       if (!media) {
         cids.set(filename, null);
-        logger.error(
-          new Error(`inline image ${filename} not embedded: no such media`),
+        logger.attention(
+          `inline image ${filename} not embedded: no such media`,
           "inline image not embedded: no such media",
         );
         return null;

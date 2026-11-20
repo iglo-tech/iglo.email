@@ -54,7 +54,7 @@ const app = createApp({
   db,
   clock,
   i18n: createTranslation(),
-  logger: { error: () => {} },
+  logger: { error: () => {}, attention: () => {} },
 });
 const sends = createSends({
   db,

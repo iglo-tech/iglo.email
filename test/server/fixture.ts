@@ -104,7 +104,10 @@ export function startFixture(
     clock,
     db,
     i18n,
-    logger: { error: (error) => errors.push(error) },
+    logger: {
+      error: (error) => errors.push(error),
+      attention: (message) => errors.push(new Error(message)),
+    },
   });
   const router = options.routePaths ? new Router() : createRouter();
   function start() {

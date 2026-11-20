@@ -98,7 +98,7 @@ try {
       loop = startOutbox({
         db,
         clock,
-        logger: { error: () => {} },
+        logger: { error: () => {}, attention: () => {} },
         sends: tracked,
         emailer: mailer,
       });

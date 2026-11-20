@@ -90,7 +90,7 @@ export async function startUserFixture(
       db,
       clock,
       i18n: createTranslation(),
-      logger: { error: () => {} },
+      logger: { error: () => {}, attention: () => {} },
     });
     const router = createRouter();
     registerUserRoutes(router, users, roles, auth);

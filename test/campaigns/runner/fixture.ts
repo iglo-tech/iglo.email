@@ -80,7 +80,10 @@ export async function runnerFixture(
       db: f.db,
       clock,
       registry,
-      logger: { error: (error) => f.errors.push(error) },
+      logger: {
+        error: (error) => f.errors.push(error),
+        attention: (message) => f.errors.push(new Error(message)),
+      },
       store,
       campaigns: f.owners.store,
       recipients,

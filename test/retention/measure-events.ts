@@ -82,7 +82,10 @@ async function run(variant: "idle" | "before" | "after") {
   const left = () => (db.query("SELECT count(*) AS n FROM events").get() as { n: bigint }).n;
   const startCount = Number(left());
 
-  const logger = { error: (error: unknown) => console.error(error) };
+  const logger = {
+    error: (error: unknown) => console.error(error),
+    attention: (message: string) => console.error(message),
+  };
   const message = {
     from: "News <news@example.test>",
     to: ["person@example.test"],

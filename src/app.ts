@@ -3,11 +3,16 @@ import type { Clock } from "@/clock";
 import type { Database } from "bun:sqlite";
 import type { BootstrapConfig } from "@/config/bootstrap";
 import type { Translation } from "@/i18n/i18n";
-import type { SafeMessage } from "@/maintenance/log-buffer";
+import type { LogBuffer, SafeMessage } from "@/maintenance/log-buffer";
 
 export interface ErrorLogger {
-  /** `safe` is what a `settings:get` reader may see of this error; stderr keeps all of it. */
-  error(error: unknown, safe?: SafeMessage): void;
+  /** An unexpected error: its stack goes to stderr; the log buffer keeps only its class. */
+  error(error: unknown): void;
+  /**
+   * An attention line: something that needs a person to look, not an exception. Stderr gets
+   * `message` as one plain line; the log buffer keeps only `safe`, a fixed text.
+   */
+  attention(message: string, safe: SafeMessage): void;
 }
 
 export interface App {
@@ -23,13 +28,16 @@ export function createApp(dependencies: App): App {
 }
 
 /** `buffer` keeps a line with no error text for GET /api/logs; the process's stderr keeps it all. */
-export function createErrorLogger(buffer?: {
-  add(error: unknown, safe?: SafeMessage): void;
-}): ErrorLogger {
+export function createErrorLogger(buffer?: Pick<LogBuffer, "add" | "attention">): ErrorLogger {
   return {
-    error(error, safe) {
+    error(error) {
       console.error("Unexpected request error:", error);
-      buffer?.add(error, safe);
+      buffer?.add(error);
+    },
+    attention(message, safe) {
+      // One line: a line break in a recipient's or a provider's text would make a second one.
+      console.error(message.replace(/[\r\n]+/g, " "));
+      buffer?.attention(safe);
     },
   };
 }

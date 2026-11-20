@@ -227,7 +227,7 @@ async function lockHolds() {
     const importer = createImporter({
       dataDir: directory,
       clock,
-      logger: { error: console.error },
+      logger: { error: console.error, attention: (message: string) => console.error(message) },
       i18n: createTranslation(),
       store: {
         importSubscribe: timed<Parameters<typeof store.importSubscribe>>(store.importSubscribe),

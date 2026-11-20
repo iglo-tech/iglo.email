@@ -104,7 +104,10 @@ function fixture() {
     const running = startOutbox({
       db,
       clock,
-      logger: { error: (e) => errors.push(e) },
+      logger: {
+        error: (e) => errors.push(e),
+        attention: (message) => errors.push(new Error(message)),
+      },
       sends: journal,
       emailer: emailer as never,
     });

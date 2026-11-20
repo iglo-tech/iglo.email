@@ -69,7 +69,7 @@ export function createOutbox(options: OutboxOptions) {
       () => {
         if (!controller.signal.aborted) {
           try {
-            options.logger.error(new Error("Outbox deadline failed"), "Outbox deadline failed");
+            options.logger.attention("Outbox deadline failed", "Outbox deadline failed");
           } catch {
             /* Preserve deadline failure. */
           }
@@ -82,7 +82,7 @@ export function createOutbox(options: OutboxOptions) {
   const loop = createLoop({
     db: options.db,
     clock: options.clock,
-    logger: { error: () => options.logger.error(new Error("Outbox failed"), "Outbox failed") },
+    logger: { error: () => options.logger.attention("Outbox failed", "Outbox failed") },
     intervalMs: 1000,
     leaseMs,
     batchSize: 1,
@@ -183,7 +183,7 @@ export function createOutbox(options: OutboxOptions) {
       const batch = options.sends.claimQueued(ids, now, lease);
       const all = deliver(batch).then(
         () => arm(),
-        () => options.logger.error(new Error("Outbox dispatch failed"), "Outbox dispatch failed"),
+        () => options.logger.attention("Outbox dispatch failed", "Outbox dispatch failed"),
       );
       inflight.add(all);
       void all.finally(() => inflight.delete(all));
