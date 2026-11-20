@@ -246,6 +246,8 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Accepted trade-offs
 
+- Anonymous view counting (lead, B123, 2026-11-20): with individual tracking off, the view pixel names no subscriber, so a request for a delivered campaign's dummy-subscriber pixel adds a view whoever sends it. Anonymous counting cannot tell a real open from a repeat by design; the campaign UUID reaches only that campaign's recipients; a recipient's own client reloading the image counts the same way; view counts are approximate anyway (image proxies, blocked images). Unpaired campaigns record nothing (D126).
+
 - GET-then-PUT lost update in MCP read-modify-write tools and the admin UI (#86, #91): two concurrent edits of one campaign or sequence can overwrite each other. Endpoints have no version check; the agent or admin re-reads before a change it depends on (D91). A version column is not worth it for a single-owner instance (lead, 2026-11-08).
 
 - A hand-typed host change on a saved SMTP server keeps its stored password (lead, B51 #102): editing a host is deliberate, only `settings:manage` admins can, and upstream does the same. A provider template, which swaps the host as a side effect, clears it instead.
