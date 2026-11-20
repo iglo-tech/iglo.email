@@ -130,3 +130,55 @@ Today's `gfm: true` gives tables, strikethrough, task-list items and bare-URL au
 5. Accept the output-bound approach: charge through `render` callbacks if they reproduce `html()`, otherwise a measured ratio with the post-render check.
 
 Commands and checks: the probe (adapters, timing, comparison, goldmark reference, one-construct catalogue) ran inside `oven/bun:1.4.5`; goldmark ran on the host. No test suite ran, because this change adds no code.
+
+## Phase 2: the implementation (decided 2026-11-20, D113)
+
+The lead accepted `Bun.markdown` with no dependency. The implementation is `src/templates/markdown.ts`. The output bound is a dry run through `Bun.markdown.render` that charges an upper bound per element before `html()` runs. `marked` and its patch are removed. The measurement helper is `test/templates/measure-markdown.ts`, with goldmark's reference in `test/templates/goldmark/`.
+
+**Stability condition (D113):** `Bun.markdown` is documented at `docs/runtime/markdown.mdx` at tag `bun-v1.4.5`, under an "Unstable API" callout. The output is tied to the pinned Bun, and a Bun upgrade must pass the Markdown pin suite.
+
+### Timings, container (`oven/bun:1.4.5`, linux/arm64, 6 CPUs)
+
+`bun test/templates/measure-markdown.ts families 128`: each of 64 families and reviewer shapes at 128 KiB, one child per case.
+
+| | Today, as served | Today, raw (no budget) | B106 |
+|---|---|---|---|
+| Slowest case at 128 KiB | 2,451 ms (`ws-tail-tab`) | 9,626 ms (`link-open`) | 42 ms (`link-empty`) |
+| Cases over 100 ms | 3 | 23 | 0 |
+| Timeouts over 10 s | 0 | 7 | 0 |
+| Refused | 45 | 0 | 1 (`hr-run`, see below) |
+| `ws-tail-tab` (reviewer shape) | 2,451 ms | 2,431 ms | 1.1 ms |
+| Slowest case at 64 KiB | not measured | not measured | 15.3 ms |
+
+Each case runs in a fresh child, so the first render in it includes the module's warm-up.
+
+`hr-run` at 128 KiB: the bound is 1,703,952 bytes, over the 1 MiB limit. The real `html()` output is 1,048,587 bytes, which would also be over the limit. The source is refused before `html()` runs.
+
+### Output bound
+
+Over the 64 families at 128 KiB and at 64 KiB, and over the 2,118-document corpus, the bound is at least the real `html()` output in every case (0 violations). The check uses the full bound with no limit, so it also covers `hr-run`. The bound is checked by `test/templates/markdown-families.test.ts` (families at 128 KiB) and `test/templates/markdown-reserve.test.ts` (a seeded random corpus).
+
+### Output differences, against goldmark
+
+Canonical comparison, 2,118 documents (`bun test/templates/measure-markdown.ts compare`):
+
+| Group | Documents | Differ from goldmark |
+|---|---|---|
+| Pins (B104 corpus) | 33 | 0 |
+| Newsletters (4, 16, 64 KiB) | 3 | 0 |
+| Ordinary line lists (7, 13, 20 KiB) | 18 | 0 |
+| Families at 1 KiB | 64 | 0 |
+| Random | 2,000 | 583 |
+
+Pins that moved from marked's output: 15 of the 33 corpus pins, 3 of the 3 newsletter pins, and 1 of the 2 compiled-fixture pins (the 10,001-column table, see below). Every corpus and newsletter pin that moved equals goldmark's canonical output. The fixture's table is the exception, and it is a listed difference.
+
+The 583 random documents are the open part. Phase 1 sampled them: task-list checkbox placement, and tables whose header and delimiter row differ in cell count. They are not minimised yet, so they are not attributed to listed differences one by one.
+
+### Listed differences
+
+In [07](../design/07-api-and-ui.md#api-compatibility-policy), with the parity list above the deliberate-difference table:
+
+- Parity changes: bare-URL autolinks off, CommonMark corrections, XHTML markup (including a newline after a raw HTML block, which is a byte-count change in the compiled fixture).
+- Deliberate differences: task-list markup, tables wider than 128 columns (Bun's limit: 128 is a table, 129 is not, measured), and the GFM header-cell-count rule.
+
+The 128-column limit is the one difference that comes from Bun rather than from a choice. It is listed, not worked around, since working around it needs a second parser.
