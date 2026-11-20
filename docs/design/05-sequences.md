@@ -175,7 +175,7 @@ A step's template receives:
 - `trigger`: the triggering event's `name`, `data` and `occurred_at`;
 - `sequence` and `step`: names and IDs;
 - `aggregates`: the step's named totals as numbers ([Aggregates](#aggregates)); `{}` for a step without them, for transactional and marketing steps alike;
-- the usual functions: `unsubscribe_url` and `manage_url` (marketing steps; empty for transactional steps), `track_link`, `track_view` ([Templates](06-templates.md)).
+- the usual functions: `unsubscribe_url` (marketing steps: the paired `/m/<send>/unsubscribe/<sub>` link; an empty string for transactional steps), `manage_url` (marketing steps: that link with `?manage=true`; transactional steps: the send's own paired `/m/<send>/unsubscribe/<sub>?manage=true`, D126), `track_link`, `track_view` ([Templates](06-templates.md)).
 
 Anything an aggregate cannot express is still computed by the app and sent as event data.
 
