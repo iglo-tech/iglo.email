@@ -47,6 +47,7 @@ import { startScheduler, SCHEDULER_INTERVAL_MS } from "@/scheduler/scheduler";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
+import { createPrivacy } from "@/public/privacy";
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 
@@ -263,8 +264,27 @@ export async function schedulerFixture(
       allowExport: false,
       allowWipe: false,
     }),
-    // The privacy answers are the public fixture's concern; here every path pairs nobody.
-    privacy: { export: () => null, wipe: () => null },
+    // B124 (D125): a paired self-wipe is real here, so its suppression can be tested through HTTP.
+    // Export is not wired: its mail is the public fixture's concern.
+    privacy: createPrivacy({
+      db,
+      subscribers,
+      mail: () => {
+        throw new Error("this fixture sends no subscriber data mail");
+      },
+      page: () => ({
+        siteName: marketing.siteName,
+        rootUrl: marketing.rootUrl,
+        logoUrl: "",
+        faviconUrl: "",
+        subscriptionPage: false,
+        archive: false,
+        allowBlocklist: marketing.allowBlocklist,
+        allowPreferences: false,
+        allowExport: false,
+        allowWipe: true,
+      }),
+    }),
   });
   registerEventRoutes(router, events, auth, roles);
   registerSequenceRoutes(router, {

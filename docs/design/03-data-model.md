@@ -155,11 +155,17 @@ Rows are kept. Thirty days after creation a finished row (`sent`, `failed`, `ski
 
 Deleting a subscriber anonymizes their sends in the same transaction (D25), whichever route deletes them: `to_email` becomes `''` and `payload` NULL on every row linked to the subscriber and on unlinked rows to the same address, and `tracked_links` is cleared with them. Counts, statuses, timings and the send UUID stay. A `queued` row becomes `skipped` with `subscriber_unavailable`. A `sending` row settles by its SMTP outcome, and a retry of it fails with `payload_unavailable` without SMTP. `failed` and `unknown` rows can no longer be resent. A tracked link in a wiped message stops redirecting, because the redirect is checked against the prepared body. `idempotency_key` stays so a replayed producer request can't send again; it holds only digests.
 
+### `suppressions`, `suppression_keys` (B124, D125)
+
+`suppression_keys`: one row (`id` 1), `secret`, 32 random bytes made when migration 23 runs. Only the subscribers module reads it; no route returns it.
+
+`suppressions`: `id`, `email_hash`, `external_hash` (NULL when the subscriber had no external ID), `lists` (JSON array of list IDs the person had), `wiped_at`. The hashes are HMAC-SHA-256 with `secret`, over the normalised address and over the external ID under separate prefixes, so no address or ID is stored in plain. A row is written by a self-wipe and removed by the person's own double opt-in confirmation or by `DELETE /api/suppressions`. It is not purged by retention.
+
 ### `webhooks`, `webhook_deliveries`
 
 `webhooks`: `id`, `url`, `secret`, `events` (JSON array), `enabled`, timestamps.
 
-`webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload` (the exact body, fixed at queueing and changed only by a deletion clearing it), `subscriber_id` (no foreign key, so the row outlives the subscriber; it finds the rows to clear on deletion), `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error` (a safe code, never a response body), `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`. At most 20 webhooks can be configured. `delivered` and `failed` rows are deleted 30 days after their last change, found through the partial `idx_webhook_deliveries_finished` (migration 14, D70). `queued` rows are never deleted.
+`webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload` (the exact body, fixed at queueing and changed only by a deletion clearing it, and by the end of a `subscriber.deleted` delivery clearing its external ID and list IDs), `subscriber_id` (no foreign key, so the row outlives the subscriber; it finds the rows to clear on deletion), `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error` (a safe code, never a response body), `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`. At most 20 webhooks can be configured. `delivered` and `failed` rows are deleted 30 days after their last change, found through the partial `idx_webhook_deliveries_finished` (migration 14, D70). `queued` rows are never deleted.
 
 ## Migrations
 

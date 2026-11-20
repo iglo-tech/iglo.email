@@ -1,5 +1,6 @@
 // Adapted from listmonk cmd/subscribers.go and cmd/handlers.go at 6fcd95f.
 import { refuseWhileHeld } from "@/settings/hold";
+import { readBodyBytes } from "@/users/input";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -441,6 +442,32 @@ export function registerSubscriberRoutes(
     hasID,
   );
   router.route("DELETE", "/api/subscribers", deleteMany, auth.middleware("subscribers:manage"));
+  // B124 (D125): an operator honours a person's later explicit request by clearing the suppression
+  // of their address. The answer is the count removed; nothing reveals what a suppression holds.
+  router.route(
+    "DELETE",
+    "/api/suppressions",
+    async (c) => {
+      const invalid = () =>
+        new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", "email"));
+      let value: unknown;
+      try {
+        value = JSON.parse((await readBodyBytes(c.request)).toString("utf8"));
+      } catch {
+        throw invalid();
+      }
+      const email =
+        typeof value === "object" && value !== null && "email" in value
+          ? typeof value.email === "string"
+            ? sanitizeEmail(value.email)
+            : undefined
+          : undefined;
+      if (email === undefined) throw invalid();
+      auth.revalidate(c, "subscribers:manage");
+      return store.transaction(() => ok({ removed: store.unsuppress(email) }));
+    },
+    auth.middleware("subscribers:manage"),
+  );
   router.route(
     "PUT",
     "/api/subscribers/:id/blocklist",

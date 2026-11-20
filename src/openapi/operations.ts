@@ -402,6 +402,19 @@ const subscribers: Operation[] = [
     data: yes,
   },
   {
+    route: "DELETE /api/suppressions",
+    id: "deleteSuppressions",
+    tag: "Subscribers",
+    summary: "Remove the suppression of an e-mail address, after a self-wipe.",
+    description:
+      "A self-wipe (the public wipe) leaves a suppression, so a later event, subscriber create or import does not re-opt the person into marketing (D125). An operator calls this on the person's explicit request. It matches the address only and answers how many suppressions it removed. Nothing lists or reveals a suppression.",
+    native: true,
+    permissions: ["subscribers:manage"],
+    body: object({ email: string }),
+    errors: [400],
+    data: object({ removed: integer }),
+  },
+  {
     route: "GET /api/subscribers/export",
     id: "exportSubscribers",
     tag: "Subscribers",

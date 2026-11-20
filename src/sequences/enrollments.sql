@@ -11,6 +11,9 @@ UPDATE enrollments SET status = 'exited', exit_reason = ?, step_id = NULL, due_a
   RETURNING id, sequence_id;
 -- name: sequences-triggered-by
 SELECT id, trigger, reentry FROM sequences WHERE status = 'active' AND json_extract(trigger, '$.event') = ? ORDER BY id;
+-- name: sequence-marketing
+-- B124 (D125): whether any active step of the sequence is marketing, which a suppressed person never starts.
+SELECT 1 FROM sequence_steps WHERE sequence_id = ? AND status = 'active' AND kind = 'marketing' LIMIT 1;
 -- name: sequence-for-enroll
 SELECT id, status, reentry, json_extract(trigger, '$.event') AS event FROM sequences WHERE id = ?;
 -- name: first-step

@@ -850,6 +850,14 @@ data export or erasure must use a campaign's or marketing send's own paths, or t
 (`GET /api/subscribers/{id}/export`, `DELETE /api/subscribers/{id}`). Opt-in mail still ends and
 confirms pending subscriptions as before, and a test send still shows its test page.
 
+From the release that suppresses after a wipe (D125), a person who wiped their data is not put back
+on a list by the next event, create or import that names their address. Before upgrading, decide
+whether your integration should re-subscribe such people: it now gets `suppressed` in the event's
+`grants` and must ask the person to confirm, or an operator must clear the suppression with
+`DELETE /api/suppressions`. A wipe's `subscriber.deleted` webhook now carries the external ID and
+list IDs, so a receiver that stored only the numeric ID and UUID needs no change, and one that
+matches on the external ID now sees it for a wipe as well.
+
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
@@ -947,6 +955,29 @@ A session with no stored expiry (written before sessions captured one) goes seve
   and nothing needs watching ([measurements](perf/B2-retention.md)).
 - Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
 - `sends` rows are kept for good. Their size is small, and old links and analytics read them.
+
+## Privacy: wipes and suppressions
+
+A person who wipes their data through a link in mail or a campaign (the paired paths of
+[D126](design/09-decisions.md#d126-privacy-and-blocklist-need-a-paired-send-or-campaign-lead-2026-11-20))
+removes their subscriber row and leaves a suppression ([D125](design/09-decisions.md#d125-a-self-wiped-person-is-not-silently-re-opted-into-marketing-lead-2026-11-20)):
+
+- **What it keeps.** Keyed hashes (HMAC-SHA-256) of the normalised address and of the external ID
+  when there is one, the list IDs the person had, and the time. The key is one random value in
+  the database. No address, name or external ID is stored in plain, and no route returns a hash.
+- **What it does while it stands.** An admin create or an import adds the person to no list. A
+  public signup joins only double opt-in lists, and the person gets the opt-in mail, which is their
+  own confirmation. An event's `grant_lists` answers `suppressed`, and an event starts no sequence
+  with a marketing step. Transactional mail is not affected.
+- **How it ends.** The person confirms through their opt-in mail, or an operator removes it:
+  `DELETE /api/suppressions` with `{"email": "…"}` and `subscribers:manage` answers
+  `{"removed": n}`. Use this only when the person asks for it.
+- **What your system receives.** A wipe's `subscriber.deleted` webhook carries the external ID and
+  the list IDs, with an empty address, so your system can honour the erasure. iglo.email drops
+  both from its stored copy when that delivery ends. Keep them in your system only as long as your
+  own privacy policy says.
+- **Backups.** A wipe does not reach backups taken before it, and a backup holds the suppression key
+  with the hashes, as it holds everything else in the database (see [Backups](#backups)).
 
 ## Attachment sends
 

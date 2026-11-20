@@ -28,6 +28,11 @@ export interface RecordedEvent {
   receivedAt: string;
   /** False for events older than TRIGGER_WINDOW_MS when received. */
   triggerEligible: boolean;
+  /**
+   * Whether a suppression names the subscriber (B124, D125), read on demand: only a marketing
+   * sequence's start asks, so an event with no such sequence does not look one up.
+   */
+  suppressed(): boolean;
 }
 export interface Enrollments {
   started: unknown[];
@@ -47,8 +52,12 @@ export interface ExistingSubscriber {
  * alone and writes nothing.
  */
 export type Authorize = (existing: ExistingSubscriber | null) => void;
-/** What a grant did to one list (D99): `added` is a new confirmed membership. */
-export type GrantResult = "added" | "member" | "unsubscribed" | "blocklisted";
+/**
+ * What a grant did to one list (D99): `added` is a new confirmed membership. `suppressed` (B124,
+ * D125) is a person whose self-wipe still stands: nothing is granted, and only their own
+ * confirmation through a public form ends it.
+ */
+export type GrantResult = "added" | "member" | "unsubscribed" | "blocklisted" | "suppressed";
 export interface Grant {
   list_id: number;
   result: GrantResult;
@@ -140,9 +149,10 @@ export function createEventStore(
    * One grant (D99) after the subscriber upsert. A blocklisted subscriber gets nothing; a
    * missing membership is inserted confirmed, and any existing one is left as it is.
    */
-  function grant(subscriber: Subscriber, list: bigint): Grant {
+  function grant(subscriber: Subscriber, list: bigint, suppressed: boolean): Grant {
     const listId = Number(list);
     if (subscriber.status === "blocklisted") return { list_id: listId, result: "blocklisted" };
+    if (suppressed) return { list_id: listId, result: "suppressed" };
     const previous = subscribers.membership(subscriber.id, list);
     if (!previous) {
       subscribers.insertConfirmedIfAbsent(subscriber.id, list);
@@ -178,7 +188,9 @@ export function createEventStore(
           options.i18n.Ts("globals.messages.invalidFields", "name", "subscriber.grant_lists"),
         );
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
-    const grants = input.grantLists.map((list) => grant(subscriber, list));
+    // B124 (D125): read once, after the upsert, so the address and ID the event leaves are the ones checked.
+    const suppressed = input.grantLists.length > 0 && subscribers.suppressed(subscriber);
+    const grants = input.grantLists.map((list) => grant(subscriber, list, suppressed));
     const occurredAt = input.occurredAt ?? receivedAt;
     const inserted = q
       .get("event-insert")
@@ -199,6 +211,7 @@ export function createEventStore(
       occurredAt,
       receivedAt,
       triggerEligible: triggerEligible(occurredAt, receivedAt),
+      suppressed: () => subscribers.suppressed(subscriber),
     });
     if (
       input.idempotencyKey !== undefined &&

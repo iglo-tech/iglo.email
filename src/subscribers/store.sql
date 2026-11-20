@@ -54,12 +54,23 @@ SELECT json_group_array(json_object(
     'list_ids', json((SELECT json_group_array(list_id) FROM subscriber_lists WHERE subscriber_id = s.id)))) AS data
   FROM subscribers s WHERE s.status != 'blocklisted' AND s.id IN (SELECT value FROM json_each(?));
 -- name: webhook-deleted
--- D61: never the address, and neither the external ID nor memberships for a subscriber's own wipe (?2).
+-- D61, amended by B124 (D125): never the address, but the external ID and the list IDs the subscriber
+-- had, for the operator's own system to honour a wipe. The delivery's end clears both (webhooks).
 SELECT json_group_array(json_object(
-    'subscriber', json_object('id', s.id, 'uuid', s.uuid, 'email', '',
-      'external_id', CASE WHEN ?2 THEN NULL ELSE s.external_id END),
-    'list_ids', json((SELECT json_group_array(list_id) FROM subscriber_lists WHERE subscriber_id = s.id AND NOT ?2)))) AS data
+    'subscriber', json_object('id', s.id, 'uuid', s.uuid, 'email', '', 'external_id', s.external_id),
+    'list_ids', json((SELECT json_group_array(list_id) FROM subscriber_lists WHERE subscriber_id = s.id)))) AS data
   FROM subscribers s WHERE s.id IN (SELECT value FROM json_each(?1));
+-- name: suppression-secret
+SELECT secret FROM suppression_keys WHERE id = 1;
+-- name: suppression-match
+-- B124 (D125): a suppression names this e-mail (?1) or external ID (?2, NULL when there is none).
+SELECT 1 FROM suppressions WHERE email_hash = ?1 OR external_hash = ?2 LIMIT 1;
+-- name: suppression-insert
+INSERT INTO suppressions (email_hash, external_hash, lists, wiped_at) VALUES (?, ?, ?, ?);
+-- name: suppression-clear
+-- The suppressions that name this e-mail (?1) or external ID (?2): an operator's removal passes NULL
+-- for ?2, and a person's own confirmation passes both. Returns nothing; the caller counts changes.
+DELETE FROM suppressions WHERE email_hash = ?1 OR external_hash = ?2;
 -- name: membership-get
 SELECT * FROM subscriber_lists WHERE subscriber_id = ? AND list_id = ?;
 -- name: membership-unsubscribe-list
