@@ -24,6 +24,7 @@ export const tables = [
   "settings",
   "bounces",
   "test_sends",
+  "suppressions",
   "roles",
   "users",
   "sessions",

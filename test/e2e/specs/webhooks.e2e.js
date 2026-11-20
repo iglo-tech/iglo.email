@@ -223,7 +223,7 @@ test("each delivery is signed with its webhook's secret over the timestamp and t
   expect(request.body).not.toContain(secret);
 });
 
-test("a deletion names the person by ID and never by address, and a wipe also clears the external ID and memberships", async ({
+test("a deletion names the person by ID and never by address, and a wipe names the external ID and memberships too", async ({
   page,
 }) => {
   const target = await listener();
@@ -245,7 +245,7 @@ test("a deletion names the person by ID and never by address, and a wipe also cl
   expect(admin.data.list_ids).toEqual([pub.id]);
   expect(JSON.stringify(admin)).not.toContain(deletedAddress);
 
-  // A reader's own wipe from the privacy page clears all three, and sends no address either.
+  // A reader's own wipe from the privacy page names the external ID and lists, and no address.
   const wiped = await reader(page, [pub], { external_id: unique("ext") });
   const mailed = await campaign(
     page,
@@ -270,8 +270,9 @@ test("a deletion names the person by ID and never by address, and a wipe also cl
   const gdpr = bodies(target).find((body) => body.data.subscriber?.id === wiped.id);
   expect(gdpr.event).toBe("subscriber.deleted");
   expect(gdpr.data.subscriber.email).toBe("");
-  expect(gdpr.data.subscriber.external_id).toBeNull();
-  expect(gdpr.data.list_ids).toEqual([]);
+  // B124 (D125): the receiver gets the external ID and the lists the person had, never the address.
+  expect(gdpr.data.subscriber.external_id).toBe(wiped.external_id);
+  expect(gdpr.data.list_ids).toEqual([pub.id]);
   expect(JSON.stringify(gdpr)).not.toContain(wiped.email);
 });
 
