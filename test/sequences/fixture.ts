@@ -207,6 +207,18 @@ export async function sequencesFixture(
     tracking,
     settings: () => marketing,
     effects: enrollments.unsubscribeEffects,
+    page: () => ({
+      siteName: marketing.siteName,
+      rootUrl: marketing.rootUrl,
+      logoUrl: "",
+      faviconUrl: "",
+      subscriptionPage: false,
+      archive: false,
+      allowBlocklist: marketing.allowBlocklist,
+      allowPreferences: false,
+      allowExport: false,
+      allowWipe: false,
+    }),
   });
   registerEventRoutes(router, events, auth, roles);
   const testSends = createTestSends(db, clock);

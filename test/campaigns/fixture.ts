@@ -200,6 +200,18 @@ export async function campaignsFixture(
     tracking,
     settings: () => settings,
     effects: { unsubscribed: (event) => unsubscribed.push(event) },
+    page: () => ({
+      siteName: settings.siteName,
+      rootUrl: settings.rootUrl,
+      logoUrl: "",
+      faviconUrl: "",
+      subscriptionPage: false,
+      archive: false,
+      allowBlocklist: settings.allowBlocklist,
+      allowPreferences: false,
+      allowExport: false,
+      allowWipe: false,
+    }),
   });
   if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
   const delivery = webhooks

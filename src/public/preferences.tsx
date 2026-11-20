@@ -7,19 +7,18 @@ import type { Translation } from "@/i18n/i18n";
 import { raw, render } from "@/jsx/render";
 import { trimSpace } from "@/lists/store";
 import type { PreferenceForm } from "@/public/form";
-import { PublicShell, type ShellSite } from "@/public/layout";
+import { PublicShell, type PageSite } from "@/public/layout";
 import { publicMessage } from "@/public/message";
 import { assetVersion } from "@/server/asset-manifest";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 
-export interface PageOptions {
-  siteName: string;
+/** The site's branding and the privacy options, as the public pages read them (B121). */
+export interface PageOptions extends PageSite {
   allowBlocklist: boolean;
   allowPreferences: boolean;
   allowExport: boolean;
   allowWipe: boolean;
-  site?: ShellSite;
 }
 const script = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
@@ -45,7 +44,7 @@ export function subscriptionPage(
       assetVersion={assetVersion}
       poweredBy={t.T("public.poweredBy")}
       archiveTitle={t.T("public.archiveTitle")}
-      {...(options.site ? { site: options.site } : {})}
+      site={options}
     >
       <section class="section">
         {!showManage ? (
@@ -217,7 +216,7 @@ export function savePreferences(
       title: t.T("globals.terms.error"),
       message,
       siteName: options.siteName,
-      ...(options.site ? { site: options.site } : {}),
+      site: options,
     });
   if (!options.allowPreferences) return failed(t.T("public.invalidFeature"));
   const name = trimSpace(form.name);
@@ -246,6 +245,6 @@ export function savePreferences(
     title: t.T("globals.messages.done"),
     message: t.T("public.prefsSaved"),
     siteName: options.siteName,
-    ...(options.site ? { site: options.site } : {}),
+    site: options,
   });
 }

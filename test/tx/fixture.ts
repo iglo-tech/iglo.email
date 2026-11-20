@@ -264,6 +264,7 @@ export async function txFixture(
       db,
       clock,
       store: bounces,
+      page: () => pageOptions(),
       subscribers,
       roles,
       auth,
@@ -320,6 +321,20 @@ export async function txFixture(
     marketing: { settings: () => marketing, tracking },
     ...(options.limits ? { limits: options.limits } : {}),
   });
+  // The public pages' site options (B121): the fixture's site, unless a test gives its own.
+  const pageOptions = (): PageOptions =>
+    options.page?.() ?? {
+      rootUrl: marketing.rootUrl,
+      logoUrl: "",
+      faviconUrl: "",
+      subscriptionPage: false,
+      archive: false,
+      siteName: marketing.siteName,
+      allowBlocklist: marketing.allowBlocklist,
+      allowPreferences: false,
+      allowExport: false,
+      allowWipe: false,
+    };
   registerUnsubscribeRoutes(router, {
     db,
     sends,
@@ -327,7 +342,7 @@ export async function txFixture(
     tracking,
     settings: () => marketing,
     ...(options.effects ? { effects: options.effects } : {}),
-    ...(options.page ? { page: options.page } : {}),
+    page: pageOptions,
   });
   if (webhooks) {
     registerSettingsRoutes(router, settingsStore!, auth);

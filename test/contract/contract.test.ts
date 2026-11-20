@@ -345,8 +345,10 @@ describe("normalization at the HTTP boundary", () => {
   });
 });
 
+// B121 (D119): the production 404 is the branded shell with the site's settings (the defaults).
+// The archive link's port is free: the matcher checks the loopback host and that a port is set.
 const public404Page =
-  '<!DOCTYPE html><html><head><title>404 - Not found - iglo.email</title><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><img src="/public/static/logo.svg?v=0123456789" alt="iglo.email"></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a>. Based on <a href="https://listmonk.app">listmonk</a>.</footer></body></html>';
+  '<!DOCTYPE html><html><head><title>404 - Not found - Mailing list</title><link rel="alternate" type="application/rss+xml" title="Mailing list archive - Mailing list" href="http://127.0.0.1:9/archive.xml"><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="stylesheet" href="/public/custom.css?v=0123456789"><script src="/public/custom.js?v=0123456789" async defer></script><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><a href=""><img src="/public/static/logo.svg?v=0123456789" alt="Mailing list"></a></div></header><h2>404 - Not found</h2><div></div></div><footer>Powered by <a href="https://iglo.email">iglo.email</a>. Based on <a href="https://listmonk.app">listmonk</a>.</footer></body></html>';
 
 test("public HTML contract rejects missing, duplicated, incorrect, or unsafe page elements", async () => {
   const page = public404Page;
@@ -372,13 +374,13 @@ test("public HTML contract rejects missing, duplicated, incorrect, or unsafe pag
     expect((await cli(args)).code).toBe(0);
     for (const invalid of [
       page.replace("<!DOCTYPE html>", ""),
-      page.replace("404 - Not found - iglo.email", "wrong title"),
+      page.replace("404 - Not found - Mailing list", "wrong title"),
       page.replace("<h2>404 - Not found</h2>", "<h2>404 - Not found</h2><h2>404 - Not found</h2>"),
       page.replace("/public/static/style.css?v=0123456789", "/public/static/style.css?v=bad"),
       page.replace("/public/static/logo.svg?v=0123456789", "/public/static/logo.svg?v=1111111111"),
       page.replace("<div></div>", "<div>unexpected message</div>"),
       page.replace("<footer>", "<script>alert(1)</script><footer>"),
-      page.replace('alt="iglo.email"', 'alt="iglo.email" onerror="alert(1)"'),
+      page.replace('alt="Mailing list"', 'alt="Mailing list" onerror="alert(1)"'),
       page.replace("https://iglo.email", "javascript:alert(1)"),
     ]) {
       body = invalid;

@@ -103,9 +103,11 @@ test("compiled production serves the public message page and asset boundaries", 
       expect(page.status).toBe(404);
       expect(page.contentType).toBe("text/html; charset=UTF-8");
       expect(page.body).toMatch(/<!DOCTYPE html>/i);
-      expect(page.body).toContain("<title>404 - Not found - iglo.email</title>");
+      // B121 (D119): the 404 is the branded public shell, with the site's name (the default here).
+      expect(page.body).toContain("<title>404 - Not found - Mailing list</title>");
       expect(page.body).toContain("<h2>404 - Not found</h2>");
       expect(page.body).toMatch(/href="\/public\/static\/style\.css\?v=[a-z0-9]+"/);
+      expect(page.body).toMatch(/href="\/public\/custom\.css\?v=[a-z0-9]+"/);
       expect(page.body).toMatch(/src="\/public\/static\/logo\.svg\?v=[a-z0-9]+"/);
       expect(page.body).toMatch(
         /<footer[^>]*>[\s\S]*Powered by[\s\S]*iglo\.email[\s\S]*<\/footer>/,

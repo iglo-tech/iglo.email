@@ -70,29 +70,26 @@ export function registerUnsubscribeRoutes(
     tracking: Tracking;
     settings: () => MarketingSettings;
     effects?: UnsubscribeEffects;
-    /** Public page settings; without them only the plain unsubscribe page shows. */
-    page?: () => PageOptions;
+    /** The site's branding and privacy options, read for each page (B121). */
+    page: () => PageOptions;
     limit?: Middleware;
   },
 ) {
   const effects = deps.effects ?? noEffects;
   const limit = deps.limit ? [deps.limit] : [];
-  const options = (): PageOptions =>
-    deps.page?.() ?? {
-      siteName: deps.settings().siteName,
-      allowBlocklist: deps.settings().allowBlocklist,
-      allowPreferences: false,
-      allowExport: false,
-      allowWipe: false,
-    };
+  const options = deps.page;
   const pixel = transparentPixel();
+  // B121: every page of these routes is the branded public page, from the same site settings.
   const page = (
     i18n: Translation,
     status: number,
     title: string,
     message: string,
     headers: Record<string, string> = {},
-  ) => publicMessage(i18n, { status, title, message, siteName: deps.settings().siteName }, headers);
+  ) => {
+    const site = options();
+    return publicMessage(i18n, { status, title, message, siteName: site.siteName, site }, headers);
+  };
   const invalidUUID = (context: RequestContext, ...names: string[]) =>
     names.some((name) => !uuidPattern.test(context.params[name] ?? ""))
       ? page(

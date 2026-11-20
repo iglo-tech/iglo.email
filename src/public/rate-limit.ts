@@ -2,6 +2,7 @@
 // adapted from listmonk internal/throttle at 6fcd95f. Both are in memory, bounded and on the
 // injected clock.
 import type { Clock } from "@/clock";
+import type { PageSite } from "@/public/layout";
 import { publicMessage } from "@/public/message";
 import { HttpError } from "@/server/response";
 import type { Middleware, RequestContext } from "@/server/context";
@@ -45,7 +46,7 @@ export function createRateLimit(clock: Clock, policy: LimitPolicy) {
 export function rateLimited(
   clock: Clock,
   policy: LimitPolicy,
-  siteName: () => string,
+  page: () => PageSite,
   clientAddress: (context: RequestContext) => string,
 ): Middleware {
   const check = createRateLimit(clock, policy);
@@ -56,13 +57,15 @@ export function rateLimited(
     if (context.url.pathname.startsWith("/api/"))
       throw new HttpError(429, "Too many requests", headers);
     const t = context.app.i18n;
+    const site = page();
     return publicMessage(
       t,
       {
         status: 429,
         title: t.T("globals.terms.error"),
         message: "Too many requests",
-        siteName: siteName(),
+        siteName: site.siteName,
+        site,
       },
       headers,
     );

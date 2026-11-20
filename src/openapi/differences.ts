@@ -283,6 +283,12 @@ export const differences: Difference[] = [
     applies: ["POST /api/public/subscription"],
   },
   {
+    area: "Empty public subscription form (D119, B121)",
+    summary:
+      'GET /subscription/form with no public list answers 200 with the branded "No lists available to subscribe." message. Upstream answers 500, which pages the operator for a configuration state.',
+    applies: [],
+  },
+  {
     area: "Subscriber writable input",
     summary:
       "Ignore read-only/unknown metadata and validate the writable DTO; resolve PATCH omissions at commit time.",

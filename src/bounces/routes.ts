@@ -17,6 +17,7 @@ import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import type { TestSendRecord } from "@/messaging/test-sends";
+import type { PageSite } from "@/public/layout";
 import { publicNotFound } from "@/public/message";
 import { parseBool } from "@/public/form";
 import type { Roles } from "@/roles/roles";
@@ -84,6 +85,8 @@ export function registerBounceRoutes(
     roles: Roles;
     auth: Authentication;
     settings: () => BounceSettings;
+    /** The site's branding, for the public 404 when webhooks are off (B121). */
+    page: () => PageSite;
     /** The public rate limit for the provider's route. */
     limit: Middleware;
     /** SNS signature checks and confirmations; tests inject the network. */
@@ -91,7 +94,7 @@ export function registerBounceRoutes(
     logger: ErrorLogger;
   },
 ) {
-  const { db, clock, store, subscribers, roles, auth, settings, logger } = deps;
+  const { db, clock, store, subscribers, roles, auth, settings, page, logger } = deps;
   const sns = deps.sns ?? createSnsClient({ clock });
   const invalidID = (c: RequestContext) =>
     new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
@@ -106,7 +109,7 @@ export function registerBounceRoutes(
 
   /** Upstream has no route at all without `bounce.webhooks_enabled`. */
   const webhooksEnabled: Middleware = (c, next) =>
-    settings().webhooksEnabled ? next() : publicNotFound(c.app.i18n, c.request.method);
+    settings().webhooksEnabled ? next() : publicNotFound(c.app.i18n, c.request.method, page());
 
   /** hasSubPerm: a subscriber who exists must be on a permitted list. */
   const subscriberPermission = (c: RequestContext, id: bigint | number, kind: "get" | "manage") => {

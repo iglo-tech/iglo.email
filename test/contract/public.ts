@@ -436,6 +436,39 @@ export async function runPublicContract(target: {
     const onlyRow = await adminSubscriber(onlyEmail);
     check(reference ? Boolean(onlyRow) : !onlyRow, "archived-only-subscriber-d82");
 
+    // B121 (D119, deliberate difference): with no public list to show, the form page is the
+    // branded message at 200; upstream answers 500. The public lists are archived for the check
+    // and restored after it, so the rest of the suite sees them as before.
+    const publicIds = (
+      (await call("/api/lists?minimal=true&status=active")).body.data as {
+        id: number;
+        type: string;
+      }[]
+    )
+      .filter((list) => list.type === "public")
+      .map((list) => list.id);
+    const setStatus = async (id: number, status: "active" | "archived") => {
+      const full = (await call(`/api/lists/${id}`)).body.data as {
+        name: string;
+        type: string;
+        optin: string;
+      };
+      return call(`/api/lists/${id}`, "PUT", {
+        name: full.name,
+        type: full.type,
+        optin: full.optin,
+        status,
+      });
+    };
+    for (const id of publicIds) await setStatus(id, "archived");
+    const emptyForm = await visit("/subscription/form");
+    check(
+      emptyForm.status === (reference ? 500 : 200) &&
+        emptyForm.text.includes("No lists available to subscribe."),
+      "form-empty-d119",
+    );
+    for (const id of publicIds) await setStatus(id, "active");
+
     // An unsubscribed membership resubscribes as unconfirmed; only a public signup can.
     const carol = await createSubscriber("carol", [single.id], true);
     check(

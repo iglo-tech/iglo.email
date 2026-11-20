@@ -9,6 +9,11 @@ export interface ShellSite {
   readonly subscriptionPage: boolean;
   readonly archive: boolean;
 }
+/**
+ * What every public page shows of the site: its name and the shell settings above. The public
+ * routes take one getter of this (B121), so no public page renders the unbranded shell.
+ */
+export type PageSite = ShellSite & { readonly siteName: string };
 export interface PublicShellProps {
   readonly title: string;
   readonly description?: string;

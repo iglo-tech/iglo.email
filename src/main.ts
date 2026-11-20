@@ -372,7 +372,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           windowMs: 60_000,
           maxPeers: 10_000,
         },
-        () => pages().siteName,
+        pages,
         clientAddress,
       );
     const limits = {
@@ -527,6 +527,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       db,
       clock,
       store: bounces,
+      page: pages,
       logger: app.logger,
       subscribers: subscriberStore,
       roles,
@@ -554,7 +555,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           windowMs: 60_000,
           maxPeers: 10_000,
         },
-        () => pages().siteName,
+        pages,
         clientAddress,
       ),
     });

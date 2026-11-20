@@ -72,12 +72,7 @@ export async function publicFixture() {
   });
   const clientAddress = createClientAddress(() => settings().trustedProxies, f.app.logger);
   const limit = (limit: number) =>
-    rateLimited(
-      f.clock,
-      { limit, windowMs: 60_000, maxPeers: 100 },
-      () => "Fixture",
-      clientAddress,
-    );
+    rateLimited(f.clock, { limit, windowMs: 60_000, maxPeers: 100 }, settings, clientAddress);
   const hcaptcha = { url: "http://127.0.0.1:1/siteverify" };
   const captchaOptions = () => store.read()["security.captcha"];
   const captcha = await createCaptcha({
