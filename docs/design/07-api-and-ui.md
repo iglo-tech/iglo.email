@@ -258,7 +258,7 @@ Kept with listmonk's URL shapes, so the behavior people know stays the same:
 - `/subscription/:campUUID/export/:subUUID` and `/subscription/:campUUID/wipe/:subUUID`: data export and wipe, for the subscriber a real campaign paired (D126). The manage page's privacy forms post here. The sub-only `/subscription/export/:subUUID` and `/subscription/wipe/:subUUID` are retired (`404`);
 - `/link/:linkUUID/:campUUID/:subUUID`: tracked links;
 - `/campaign/:campUUID/:subUUID`: view in browser, for a subscriber the campaign was delivered to (D126, r1); any other path answers the invalid-link `404`;
-- `/campaign/:campUUID/:subUUID/px.png`: view pixel.
+- `/campaign/:campUUID/:subUUID/px.png`: view pixel. Every request gets the same 1×1 image; a view is recorded only for a campaign the runner delivered, and with individual tracking only to the subscriber it was delivered to (D126, r2). With individual tracking off, the dummy-subscriber pixel of a delivered campaign counts one anonymous view (the setting's own trade-off, D126).
 
 New, for sends (transactional and sequence messages):
 

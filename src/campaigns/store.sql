@@ -67,6 +67,10 @@ SELECT EXISTS (SELECT 1 FROM campaign_lists WHERE campaign_id = ?
 -- name: campaign-list-ids
 SELECT list_id FROM campaign_lists WHERE campaign_id = ? AND list_id IS NOT NULL ORDER BY id;
 
+-- name: campaign-has-deliveries
+-- D126 (r2): the runner has delivered this campaign to someone, so an anonymous view is a view of mail sent.
+SELECT EXISTS (SELECT 1 FROM campaign_deliveries WHERE campaign_id = ?) AS has;
+
 -- name: campaign-delivered
 -- D126: the runner claimed a delivery of this campaign to the subscriber, so their links pair.
 SELECT EXISTS (SELECT 1 FROM campaign_deliveries WHERE campaign_id = ? AND subscriber_id = ?) AS has;

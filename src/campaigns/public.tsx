@@ -269,22 +269,26 @@ export function registerCampaignPublicRoutes(
     const settings = deps.settings();
     const campUuid = context.params.campUUID!.toLowerCase();
     const subUuid = context.params.subUUID!.toLowerCase();
-    // Preview hits use the dummy campaign and are never recorded. Without individual tracking
-    // every emitted pixel names the dummy subscriber and counts as an anonymous view.
-    if (
-      !settings.disableTracking &&
-      campUuid !== dummyUUID &&
-      (!settings.individualTracking || subUuid !== dummyUUID)
-    ) {
-      const campaign = deps.store.byUuid(campUuid);
-      if (campaign)
-        try {
-          const sub = settings.individualTracking ? deps.subscribers.byUuid(subUuid) : null;
-          deps.store.registerView(campaign.id, sub?.id ?? null);
-        } catch (error) {
-          // listmonk always answers with the pixel and logs a registration failure.
-          context.app.logger.error(error);
+    // D126 (r2): a view is recorded only for a delivered campaign. With individual tracking, the
+    // pixel's subscriber must be one the campaign was delivered to. Without it, every pixel of mail
+    // the server sent names the dummy subscriber, and counts as an anonymous view of a sent campaign.
+    // The preview's dummy campaign is never recorded. Every other request gets the same pixel.
+    if (!settings.disableTracking && campUuid !== dummyUUID) {
+      try {
+        const campaign = deps.store.byUuid(campUuid);
+        if (campaign) {
+          if (settings.individualTracking) {
+            const sub = deps.subscribers.byUuid(subUuid);
+            if (sub && deps.store.delivered(campaign.id, sub.id))
+              deps.store.registerView(campaign.id, sub.id);
+          } else if (subUuid === dummyUUID && deps.store.hasDeliveries(campaign.id)) {
+            deps.store.registerView(campaign.id, null);
+          }
         }
+      } catch (error) {
+        // listmonk always answers with the pixel and logs a registration failure.
+        context.app.logger.error(error);
+      }
     }
     return new Response(Uint8Array.from(pixel), {
       status: 200,

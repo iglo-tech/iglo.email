@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createRunnerStore } from "@/campaigns/runner/store";
 import { createAnalyticsReader, ReaderError } from "@/analytics/reader";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { dueBetween } from "@/analytics/schedule";
@@ -44,10 +45,23 @@ afterEach(async () => {
   await f.close();
 });
 
-const view = async (campaign: { uuid: string }, subscriber: { uuid: string }) =>
-  expect((await f.request(`/campaign/${campaign.uuid}/${subscriber.uuid}/px.png`)).status).toBe(
-    200,
+const dummy = "00000000-0000-0000-0000-000000000000";
+/**
+ * One view pixel of a campaign delivered to the subscriber (D126, r2): the runner's delivery is
+ * claimed first, and the pixel names the subscriber as the mail does under the tracking setting.
+ */
+const view = async (
+  campaign: { id: number; uuid: string },
+  subscriber: { id: number; uuid: string },
+) => {
+  createRunnerStore(f.db).claim(
+    BigInt(campaign.id),
+    BigInt(subscriber.id),
+    f.clock.now().toISOString(),
   );
+  const named = f.settings.individualTracking ? subscriber.uuid : dummy;
+  expect((await f.request(`/campaign/${campaign.uuid}/${named}/px.png`)).status).toBe(200);
+};
 /** Sign in again after moving the clock past the session's lifetime. */
 const relogin = async () => {
   const session = await f.owners.auth.login("fixture-admin", "fixture-admin-password");

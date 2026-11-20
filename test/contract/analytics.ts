@@ -117,8 +117,13 @@ export async function runAnalyticsContract(target: {
       out[row[key]!] = (out[row[key]!] ?? 0) + row.count;
     return out;
   };
-  const same = (actual: unknown, expected: unknown, label: string) =>
+  const same = (actual: unknown, expected: unknown, label: string) => {
+    if (JSON.stringify(actual) !== JSON.stringify(expected))
+      process.stdout.write(
+        `ACTUAL ${label} ${JSON.stringify(actual)} EXPECTED ${JSON.stringify(expected)}\n`,
+      );
     check(JSON.stringify(actual) === JSON.stringify(expected), label);
+  };
 
   const owned = {
     campaigns: [] as number[],
@@ -303,8 +308,9 @@ export async function runAnalyticsContract(target: {
 
     // Unattributed rows, the default: individual tracking is off.
     const startedAt = new Date();
-    for (let i = 0; i < 3; i++) await view(camp1.uuid, ada.uuid);
-    for (let i = 0; i < 2; i++) await view(camp2.uuid, ada.uuid);
+    // Individual tracking is off here, so mail names the dummy subscriber (D126, r2).
+    for (let i = 0; i < 3; i++) await view(camp1.uuid, dummy);
+    for (let i = 0; i < 2; i++) await view(camp2.uuid, dummy);
     await click(links1.a, camp1.uuid, ada.uuid);
     await click(links1.a, camp1.uuid, ada.uuid);
     await click(links1.b, camp1.uuid, ada.uuid);
@@ -682,13 +688,15 @@ export async function runAnalyticsContract(target: {
     await click(links1.b, camp1.uuid, bob.uuid);
     same(
       summed(await analytics("campaigns", "views", ids), "campaign_id"),
-      { [camp1.id]: 6, [camp2.id]: 3 },
+      // Bob was blocklisted before the send, so the runner delivered nothing to him and his view
+      // pairs with no delivery (D126, r2). Upstream counts every view.
+      { [camp1.id]: reference ? 6 : 5, [camp2.id]: 3 },
       "tracked-views-total",
     );
     // Unattributed rows collapse into one unknown subscriber per campaign.
     same(
       summed(await analytics("campaigns", "views", ids, "&unique=true"), "campaign_id"),
-      { [camp1.id]: 3, [camp2.id]: 2 },
+      { [camp1.id]: reference ? 3 : 2, [camp2.id]: 2 },
       "tracked-views-unique",
     );
     same(
@@ -698,12 +706,12 @@ export async function runAnalyticsContract(target: {
     );
     same(
       summed(await analytics("campaigns", "total_views", ids, "&unique=true"), "campaign_id"),
-      { [camp1.id]: 6, [camp2.id]: 3 },
+      { [camp1.id]: reference ? 6 : 5, [camp2.id]: 3 },
       "tracked-total-type",
     );
     same(
       summed(await analytics("lists", "views", [news, other], "&unique=true"), "list_id"),
-      { [news]: 5, [other]: 2 },
+      { [news]: reference ? 5 : 4, [other]: 2 },
       "tracked-list-unique",
     );
     // With individual tracking links always count distinct known subscribers.
@@ -754,7 +762,7 @@ export async function runAnalyticsContract(target: {
       await fetch(local(tracked!), { redirect: "manual" });
 
       // They stay out of the campaign routes and charts.
-      same((await charts()).campaign_views, [{ count: 9, date: today }], "sends-not-in-charts");
+      same((await charts()).campaign_views, [{ count: 8, date: today }], "sends-not-in-charts");
       const sendPath = `/api/sends/analytics?${wide}`;
       check((await call(sendPath, "GET", undefined, "")).status === 403, "sends-anon");
       check((await call(sendPath, "GET", undefined, scoped)).status === 403, "sends-permission");

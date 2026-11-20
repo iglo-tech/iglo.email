@@ -409,21 +409,22 @@ test("custom header values are limited in number", async () => {
   expect(many.body.message).toBe("Invalid fields: headers");
 });
 
-test("a view pixel counts an anonymous view without individual tracking; previews record nothing", async () => {
+test("a view pixel records nothing for a campaign that was never delivered; previews record nothing", async () => {
   const f = await open();
   const news = await f.list("news");
   const ada = await f.subscriber("ada@example.test", [news]);
   const c = await f.campaign({ name: "c", subject: "s", lists: [news] });
-  // A real send's pixel is covered with real sends (B115, D117: a test send emits none).
+  // D126 (r2): an unsent campaign has no delivery, so its pixel records nothing, whoever it names.
+  // A delivered campaign's genuine pixels count, in test/campaigns/pixel-pairing.test.ts.
   expect((await f.request(`/campaign/${c.uuid}/${ada.uuid}/px.png`)).status).toBe(200);
-  expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(1);
+  expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(0);
   // The dummy campaign (previews) never records; with individual tracking the dummy
   // subscriber is a preview hit and records nothing either.
   const dummy = "00000000-0000-0000-0000-000000000000";
   expect((await f.request(`/campaign/${dummy}/${dummy}/px.png`)).status).toBe(200);
   f.settings.individualTracking = true;
   expect((await f.request(`/campaign/${c.uuid}/${dummy}/px.png`)).status).toBe(200);
-  expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(1);
+  expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(0);
 });
 
 test("campaign search and query deletion fold Unicode case", async () => {

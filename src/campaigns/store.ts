@@ -166,6 +166,9 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       ).map((row) => ({ campaign: row.campaign, views: Number(row.views) })),
     listIds: (id: bigint) =>
       (q.get("campaign-list-ids").all(id) as { list_id: bigint }[]).map((r) => r.list_id),
+    /** D126 (r2): whether the runner has delivered this campaign to anyone. */
+    hasDeliveries: (id: bigint) =>
+      (q.get("campaign-has-deliveries").get(id) as { has: bigint }).has === 1n,
     /** D126: whether the runner delivered this campaign to the subscriber (their links pair). */
     delivered: (id: bigint, subscriberId: bigint) =>
       (q.get("campaign-delivered").get(id, subscriberId) as { has: bigint }).has === 1n,
