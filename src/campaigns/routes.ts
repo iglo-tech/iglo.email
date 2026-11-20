@@ -21,7 +21,6 @@ import type { TemplateRenderer } from "@/templates/renderer";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
 import { MarkdownSourceError } from "@/templates/markdown";
 import type { TemplateStore } from "@/templates/store";
-import type { Tracking } from "@/unsubscribe/tracking";
 import type { Authentication } from "@/users/auth";
 import { convertContent } from "@/campaigns/content";
 import {
@@ -40,6 +39,7 @@ import {
   compileCampaign,
   dummySubscriber,
   dummyUUID,
+  testSendUUID,
   type CampaignSubscriber,
   type MessageCampaign,
 } from "@/campaigns/render";
@@ -71,7 +71,6 @@ export interface CampaignDeps {
   auth: Authentication;
   lists: ListReferences;
   subscribers: SubscriberStore;
-  tracking: Tracking;
   emailer: {
     push(
       message: Message,
@@ -787,38 +786,18 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       });
       const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
       const messages: Message[] = [];
-      const links = new Map<string, string | null>();
       let totalBytes = 0;
       let totalWork = 0;
       for (const sub of recipients) {
         const budget = createMessageBudget();
-        const unsubscribeUrl = `${root}/subscription/${stored.uuid}/${sub.uuid}`;
-        const trackedUuid = settings.individualTracking ? sub.uuid : dummyUUID;
+        // D117: a test's links name the test page, and its message has no tracking (no tracked
+        // link, no view pixel), so following any of them changes nothing and records nothing.
+        const unsubscribeUrl = `${root}/subscription/${testSendUUID}/${sub.uuid}`;
         let out;
         try {
           out = compiled.render(
             subscriberContext(sub),
-            {
-              rootUrl: root,
-              unsubscribeUrl,
-              ...(settings.disableTracking
-                ? {}
-                : {
-                    tracking: {
-                      view: `${root}/campaign/${stored.uuid}/${trackedUuid}/px.png`,
-                      link(url: string) {
-                        let uuid = links.get(url);
-                        if (uuid === undefined) {
-                          uuid = deps.tracking.link(url);
-                          const link = uuid === null ? null : deps.tracking.get(uuid);
-                          if (link) deps.store.registerLink(stored.id, link.id);
-                          links.set(url, uuid);
-                        }
-                        return uuid ? `${root}/link/${uuid}/${stored.uuid}/${trackedUuid}` : url;
-                      },
-                    },
-                  }),
-            },
+            { rootUrl: root, unsubscribeUrl, test: true },
             budget,
           );
         } catch (error) {

@@ -3,14 +3,23 @@
 // through HTTP and mail received by a loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
 import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { runnerFixture } from "@/test/campaigns/runner/fixture";
 
 const fixtures: CampaignsFixture[] = [];
+const runnerCloses: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
+  for (const close of runnerCloses.splice(0)) await close();
 });
 async function open() {
   const f = await campaignsFixture();
   fixtures.push(f);
+  return f;
+}
+/** Real sends (the runner), for the links and views that a test send does not record (D117). */
+async function openRunner() {
+  const f = await runnerFixture();
+  runnerCloses.push(() => f.close());
   return f;
 }
 // The sink keeps latin1 octets; decode quoted-printable and then UTF-8.
@@ -113,7 +122,7 @@ test("cookie sessions need the CSRF token for writes", async () => {
   expect((await f.json("/api/campaigns")).body.data.total).toBe(0);
 });
 
-test("a test send renders Liquid per recipient with unsubscribe headers and tracking", async () => {
+test("a test send renders Liquid per recipient, with unsubscribe headers that name the test page and no tracking", async () => {
   const f = await open();
   const news = await f.list("news");
   const other = await f.list("other");
@@ -142,29 +151,24 @@ test("a test send renders Liquid per recipient with unsubscribe headers and trac
   expect(data).toContain("Subject: Hi Ada");
   expect(data).toContain("X-Who: ada@example.test");
   expect(data).toContain(`X-Listmonk-Campaign: ${c.uuid}`);
+  // D117: the unsubscribe link names the test page, not the campaign or the subscriber's list.
   expect(data).toContain(
-    `List-Unsubscribe: <http://fixture.test/subscription/${c.uuid}/${ada.uuid}>`,
+    `List-Unsubscribe: <http://fixture.test/subscription/00000000-0000-0000-0000-000000000001/${ada.uuid}>`,
   );
   expect(data).toContain("<h1>Weekly</h1>");
   expect(data).toContain("Kraków");
-  const link = new RegExp(
-    `http://fixture\\.test/link/([0-9a-f-]{36})/${c.uuid}/0{8}-0{4}-0{4}-0{4}-0{12}`,
-  ).exec(data);
-  expect(link).not.toBeNull();
-  expect(data).toContain(
-    `http://fixture.test/campaign/${c.uuid}/00000000-0000-0000-0000-000000000000/px.png`,
-  );
-  const redirect = await f.request(new URL(link![0]).pathname);
-  expect(redirect.status).toBe(307);
-  expect(redirect.headers.get("location")).toBe("https://example.test/o?a=1&b=2");
+  // The tracked link is the plain target, and the message has no view pixel.
+  expect(data).toMatch(/href="https:\/\/example\.test\/o\?a=1(&amp;|&)b=2"/);
+  expect(data).not.toMatch(/\/link\/|px\.png/);
   const after = (await f.json(`/api/campaigns/${c.id}`)).body.data;
-  expect([after.sent, after.to_send, after.clicks, after.status, after.subject]).toEqual([
-    0,
-    0,
-    1,
-    "draft",
-    "Stored",
-  ]);
+  expect([
+    after.sent,
+    after.to_send,
+    after.clicks,
+    after.views,
+    after.status,
+    after.subject,
+  ]).toEqual([0, 0, 0, 0, "draft", "Stored"]);
 });
 
 test("disabled tracking and headers follow the privacy settings", async () => {
@@ -296,43 +300,44 @@ test("deleting a campaign removes its list links; deleted lists keep the name", 
 });
 
 test("the campaign redirect follows only links that campaign's content registered", async () => {
-  const f = await open();
+  const f = await openRunner();
   const news = await f.list("news");
-  await f.subscriber("ada@example.test", [news]);
-  const send = async (name: string, url: string) => {
-    const c = await f.campaign({ name, subject: name, lists: [news] });
-    const sent = await f.json(`/api/campaigns/${c.id}/test`, "POST", {
-      name,
-      subject: name,
-      lists: [news],
-      messenger: "email",
-      content_type: "html",
-      body: `<a href="{{ "${url}" | track_link }}">x</a>`,
-      subscribers: ["ada@example.test"],
-    });
-    expect(sent.status).toBe(200);
-    return c;
-  };
-  const own = await send("own", "https://example.test/own");
-  const other = await send("other", "https://attacker.example/phish");
-  const links = (await f.mail(2)).map((m) =>
-    /http:\/\/fixture\.test(\/link\/([0-9a-f-]{36})\/[0-9a-f-]{36}\/[0-9a-f-]{36})/.exec(
-      decode(m.data),
-    )!,
-  );
-  const [ownLink, otherLink] = links[0]![1]!.includes(own.uuid) ? links : [links[1]!, links[0]!];
+  await f.member("ada@example.test", [news]);
+  const own = await f.campaign({
+    name: "own",
+    subject: "own",
+    lists: [news],
+    content_type: "html",
+    body: '<a href="{{ "https://example.test/own" | track_link }}">x</a>',
+  });
+  const other = await f.campaign({
+    name: "other",
+    subject: "other",
+    lists: [news],
+    content_type: "html",
+    body: '<a href="{{ "https://attacker.example/phish" | track_link }}">x</a>',
+  });
+  await f.status(own.id, "running");
+  await f.status(other.id, "running");
+  f.start();
+  await f.until(own.id, "finished");
+  await f.until(other.id, "finished");
+  // Real sends: the campaign's own rendered content registers its links (D117 test sends do not).
+  const linkOf = (subject: string) =>
+    /http:\/\/fixture\.test(\/link\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36})/.exec(
+      Buffer.from(f.pushes.find((p) => p.message.subject === subject)!.message.body).toString(),
+    )![1]!;
+  const ownLink = linkOf("own");
+  const otherLink = linkOf("other");
   const dummy = "00000000-0000-0000-0000-000000000000";
-  const replayed = `/link/${otherLink![2]}/${own.uuid}/${dummy}`;
-  for (const disabled of [false, true]) {
-    f.settings.disableTracking = disabled;
-    const followed = await f.request(ownLink![1]!);
-    expect(followed.status).toBe(307);
-    expect(followed.headers.get("location")).toBe("https://example.test/own");
-    // Another campaign's link UUID with this campaign's UUID: no redirect, no click.
-    const refused = await f.request(replayed);
-    expect(refused.status).toBe(404);
-    expect(refused.headers.get("location")).toBeNull();
-  }
+  const replayed = `/link/${otherLink.split("/")[2]}/${own.uuid}/${dummy}`;
+  const followed = await f.request(ownLink);
+  expect(followed.status).toBe(307);
+  expect(followed.headers.get("location")).toBe("https://example.test/own");
+  // Another campaign's link UUID with this campaign's UUID: no redirect, no click.
+  const refused = await f.request(replayed);
+  expect(refused.status).toBe(404);
+  expect(refused.headers.get("location")).toBeNull();
   expect((await f.json(`/api/campaigns/${own.id}`)).body.data.clicks).toBe(1);
   expect((await f.json(`/api/campaigns/${other.id}`)).body.data.clicks).toBe(0);
 });
@@ -400,33 +405,20 @@ test("custom header values are limited in number", async () => {
   expect(many.body.message).toBe("Invalid fields: headers");
 });
 
-test("the emitted view pixel counts as an anonymous view without individual tracking", async () => {
+test("a view pixel counts an anonymous view without individual tracking; previews record nothing", async () => {
   const f = await open();
   const news = await f.list("news");
-  await f.subscriber("ada@example.test", [news]);
+  const ada = await f.subscriber("ada@example.test", [news]);
   const c = await f.campaign({ name: "c", subject: "s", lists: [news] });
-  const sent = await f.json(`/api/campaigns/${c.id}/test`, "POST", {
-    name: "c",
-    subject: "s",
-    lists: [news],
-    messenger: "email",
-    content_type: "html",
-    body: "<p>hi</p>{{ track_view }}",
-    subscribers: ["ada@example.test"],
-  });
-  expect(sent.status).toBe(200);
-  const pixel = new RegExp(
-    `http://fixture\\.test(/campaign/${c.uuid}/[0-9a-f-]{36}/px\\.png)`,
-  ).exec(decode((await f.mail(1))[0]!.data))![1]!;
-  expect(pixel).toBe(`/campaign/${c.uuid}/00000000-0000-0000-0000-000000000000/px.png`);
-  expect((await f.request(pixel)).status).toBe(200);
+  // A real send's pixel is covered with real sends (B115, D117: a test send emits none).
+  expect((await f.request(`/campaign/${c.uuid}/${ada.uuid}/px.png`)).status).toBe(200);
   expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(1);
   // The dummy campaign (previews) never records; with individual tracking the dummy
   // subscriber is a preview hit and records nothing either.
   const dummy = "00000000-0000-0000-0000-000000000000";
   expect((await f.request(`/campaign/${dummy}/${dummy}/px.png`)).status).toBe(200);
   f.settings.individualTracking = true;
-  expect((await f.request(pixel)).status).toBe(200);
+  expect((await f.request(`/campaign/${c.uuid}/${dummy}/px.png`)).status).toBe(200);
   expect((await f.json(`/api/campaigns/${c.id}`)).body.data.views).toBe(1);
 });
 

@@ -265,7 +265,6 @@ async function createNotifyFixture(
     auth,
     lists,
     subscribers,
-    tracking,
     emailer,
     settings: () => campaignSettings,
     attachments,

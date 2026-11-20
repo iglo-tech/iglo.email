@@ -241,7 +241,6 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     auth,
     lists,
     subscribers,
-    tracking,
     emailer: {
       push: (m: any, opt: any) => emailer.push(m, opt),
     },

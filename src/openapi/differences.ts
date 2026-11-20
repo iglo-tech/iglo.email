@@ -477,6 +477,12 @@ export const differences: Difference[] = [
     applies: ["POST /api/campaigns/{id}/test"],
   },
   {
+    area: "Campaign test links (D117)",
+    summary:
+      "A campaign test message is untracked, with plain target links and no view pixel. Its unsubscribe, manage, `List-Unsubscribe`, message and opt-in links name the test placeholder `00000000-0000-0000-0000-000000000001`, which answers the test page and changes nothing. Upstream tracks a test's links, and its unsubscribe link acts on the recipient.",
+    applies: ["POST /api/campaigns/{id}/test"],
+  },
+  {
     area: "Campaign runner delivery (M3.2)",
     summary:
       "At-most-once: the cursor and a per-subscriber claim commit before a batch is sent; a crash skips at most that batch and logs its range.",

@@ -2,7 +2,12 @@
 // (ViewCampaignMessage), cmd/archive.go, gorilla/feeds RSS output and
 // static/public/templates/archive.html at 6fcd95f. Pages render without tracking, so a GET
 // changes nothing; archive pages use only the campaign's sample subscriber.
-import { archiveSubscriber, compileCampaign, type CampaignSubscriber } from "@/campaigns/render";
+import {
+  archiveSubscriber,
+  compileCampaign,
+  testSendUUID,
+  type CampaignSubscriber,
+} from "@/campaigns/render";
 import { writable } from "@/campaigns/routes";
 import type { CampaignRow, CampaignStore } from "@/campaigns/store";
 import type { Translation } from "@/i18n/i18n";
@@ -126,6 +131,9 @@ export function registerArchiveRoutes(
   router.route("GET", "/campaign/:campUUID/:subUUID", (context) => {
     const t = context.app.i18n;
     const { campUUID = "", subUUID = "" } = context.params;
+    // D117: a test send's message link answers the test page, and renders no subscriber's message.
+    if (campUUID.toLowerCase() === testSendUUID)
+      return message(t, 200, t.T("public.testSendTitle"), t.T("public.testSendInfo"), noIndex);
     if (!uuidPattern.test(campUUID) || !uuidPattern.test(subUUID))
       return message(
         t,

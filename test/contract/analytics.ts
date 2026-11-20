@@ -230,27 +230,61 @@ export async function runAnalyticsContract(target: {
     );
     check((await counts()).subscribers.blocklisted === 1, "counts-blocklisted");
 
-    // Register two tracked links for a campaign through a real test send.
-    const linksOf = async (camp: { id: number; name: string }) => {
+    // Register two tracked links for a campaign. Upstream's test send is tracked; a production test
+    // send is not (D117), so production takes the links from a real send of the campaign.
+    const linksOf = async (camp: { id: number; name: string; uuid: string }, lists: number[]) => {
       const subject = `${marker} links ${camp.id}`;
       const track = (url: string) =>
         reference ? `{{ TrackLink "${url}" }}` : `{{ "${url}" | track_link }}`;
-      const sent = await call(`/api/campaigns/${camp.id}/test`, "POST", {
-        name: camp.name,
-        subject,
-        lists: [news],
-        messenger: "email",
-        content_type: "richtext",
-        template_id: defaultTemplate,
-        body: `<a href="${track("https://example.test/a")}">a</a><a href="${track("https://example.test/b")}">b</a>`,
-        subscribers: [ada.email],
-      });
-      check(sent.status === 200, "test-send");
-      const [mail] = await received(subject);
-      check(mail, "test-received");
-      const found = [
-        ...(await mailpit.message(mail!.ID)).HTML.matchAll(/\/link\/([0-9a-f-]{36})\//g),
-      ].map((m) => m[1]!);
+      const body = `<a href="${track("https://example.test/a")}">a</a><a href="${track("https://example.test/b")}">b</a>`;
+      let html: string | undefined;
+      if (reference) {
+        const sent = await call(`/api/campaigns/${camp.id}/test`, "POST", {
+          name: camp.name,
+          subject,
+          lists: [news],
+          messenger: "email",
+          content_type: "richtext",
+          template_id: defaultTemplate,
+          body,
+          subscribers: [ada.email],
+        });
+        check(sent.status === 200, "test-send");
+        const [mail] = await received(subject);
+        check(mail, "test-received");
+        html = (await mailpit.message(mail!.ID)).HTML;
+      } else {
+        const updated = await call(`/api/campaigns/${camp.id}`, "PUT", {
+          name: camp.name,
+          subject,
+          lists,
+          content_type: "richtext",
+          template_id: defaultTemplate,
+          body,
+        });
+        check(updated.status === 200, "links-update");
+        const started = await call(`/api/campaigns/${camp.id}/status`, "PUT", {
+          status: "running",
+        });
+        check(started.status === 200, "links-run");
+        for (
+          const deadline = Date.now() + 20_000;
+          (await call(`/api/campaigns/${camp.id}`)).body.data.status !== "finished";
+          await Bun.sleep(25)
+        )
+          check(Date.now() < deadline, "links-finished");
+        // The send's mail names the campaign in every link, so it is found by that campaign's UUID.
+        const deadline = Date.now() + 10_000;
+        while (html === undefined) {
+          for (const mail of await received(subject)) {
+            const text = (await mailpit.message(mail.ID)).HTML;
+            if (text.includes(`/${camp.uuid}/`)) html = text;
+          }
+          check(html !== undefined || Date.now() < deadline, "links-received");
+          if (html === undefined) await Bun.sleep(25);
+        }
+      }
+      const found = [...html.matchAll(/\/link\/([0-9a-f-]{36})\//g)].map((m) => m[1]!);
       check(found.length === 2, "test-links");
       return { a: found[0]!, b: found[1]! };
     };
@@ -264,8 +298,8 @@ export async function runAnalyticsContract(target: {
       });
       check(followed.status === 307 || followed.status === 302, `click-${followed.status}`);
     };
-    const links1 = await linksOf(camp1);
-    const links2 = await linksOf(camp2);
+    const links1 = await linksOf(camp1, [news]);
+    const links2 = await linksOf(camp2, [news, other]);
 
     // Unattributed rows, the default: individual tracking is off.
     const startedAt = new Date();

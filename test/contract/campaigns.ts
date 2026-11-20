@@ -53,6 +53,9 @@ export async function runCampaignsContract(target: {
   restart?: () => Promise<void>;
 }) {
   const reference = target.mode === "reference";
+  /** D117: a production test send's campaign part is this placeholder; its page says `testSendText`. */
+  const testSendUuid = "00000000-0000-0000-0000-000000000001";
+  const testSendText = "This link is from a test send.";
   const sink = referenceMailpit(process.env);
   await assertOwnedMailpit(sink);
   const marker = `m08${randomBytes(10).toString("hex")}`;
@@ -725,7 +728,9 @@ export async function runCampaignsContract(target: {
     check(mails.length === 1, "test-received");
     const mail = await mailpit.message(mails[0]!.ID);
     const raw = await mailpit.raw(mails[0]!.ID);
-    const unsubscribeUrl = `${rootUrl}/subscription/${testCampaign.uuid}/${ada.uuid}`;
+    // D117: a production test send names the test placeholder where upstream names the campaign.
+    const campaignPart = reference ? testCampaign.uuid : testSendUuid;
+    const unsubscribeUrl = `${rootUrl}/subscription/${campaignPart}/${ada.uuid}`;
     check(
       mail.To.length === 1 &&
         mail.To[0]!.Address === ada.email &&
@@ -739,54 +744,77 @@ export async function runCampaignsContract(target: {
         mail.Text.trim() === "Alt Ada Lovelace",
       "test-message",
     );
-    const tracked = new RegExp(
-      `href="(${rootUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/link/[0-9a-f-]{36}/${testCampaign.uuid}/[0-9a-f-]{36})"`,
-    ).exec(mail.HTML)?.[1];
-    check(tracked, "test-tracked-link");
-    const redirect = await fetch(tracked!, { redirect: "manual" });
-    check(
-      redirect.status === 307 &&
-        redirect.headers.get("location") === "https://example.test/x?a=1&b=2",
-      "test-link-redirect",
-    );
+    // Upstream's test send is tracked and unsubscribes, a declared difference (D117). Production
+    // renders the test untracked: its links are plain, and every link answers the test page.
+    if (reference) {
+      const tracked = new RegExp(
+        `href="(${rootUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/link/[0-9a-f-]{36}/${testCampaign.uuid}/[0-9a-f-]{36})"`,
+      ).exec(mail.HTML)?.[1];
+      check(tracked, "test-tracked-link");
+      const redirect = await fetch(tracked!, { redirect: "manual" });
+      check(
+        redirect.status === 307 &&
+          redirect.headers.get("location") === "https://example.test/x?a=1&b=2",
+        "test-link-redirect",
+      );
+    } else {
+      check(
+        !/\/link\/|px\.png/.test(mail.HTML) && mail.HTML.includes("https://example.test/x?a=1"),
+        "test-plain-links",
+      );
+    }
+    const listsBefore = JSON.stringify((await call(`/api/subscribers/${ada.id}`)).body.data.lists);
     const page = await fetch(unsubscribeUrl, { signal: AbortSignal.timeout(20_000) });
-    check(page.status === 200 && (await page.text()).includes("<form"), "unsubscribe-page");
+    const pageText = await page.text();
+    check(
+      page.status === 200 && pageText.includes(reference ? "<form" : testSendText),
+      "unsubscribe-page",
+    );
     const oneClick = await fetch(unsubscribeUrl, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: "List-Unsubscribe=One-Click",
       signal: AbortSignal.timeout(20_000),
     });
-    check(oneClick.status === 200, "unsubscribe-one-click");
+    check(
+      oneClick.status === 200 && (reference || (await oneClick.text()).includes(testSendText)),
+      "unsubscribe-one-click",
+    );
     const memberships = (await call(`/api/subscribers/${ada.id}`)).body.data.lists as any[];
     check(
-      memberships.find((l) => l.id === news.id)?.subscription_status === "unsubscribed" &&
-        memberships.find((l) => l.id === double.id)?.subscription_status === "unconfirmed",
+      reference
+        ? memberships.find((l) => l.id === news.id)?.subscription_status === "unsubscribed" &&
+            memberships.find((l) => l.id === double.id)?.subscription_status === "unconfirmed"
+        : JSON.stringify(memberships) === listsBefore,
       "unsubscribe-campaign-lists",
     );
     const badSubscriber = await fetch(unsubscribeUrl.replace(ada.uuid, crypto.randomUUID()), {
       method: "POST",
     });
-    check(badSubscriber.status === 404, "unsubscribe-unknown-subscriber");
+    check(badSubscriber.status === (reference ? 404 : 200), "unsubscribe-unknown-subscriber");
     check(
-      (await fetch(`${rootUrl}/subscription/${testCampaign.uuid}/nope`)).status === 400,
+      (await fetch(`${rootUrl}/subscription/${campaignPart}/nope`)).status ===
+        (reference ? 400 : 200),
       "unsubscribe-invalid-uuid",
     );
-    const pixel = await fetch(`${rootUrl}/campaign/${testCampaign.uuid}/${ada.uuid}/px.png`);
-    check(
-      pixel.status === 200 &&
-        pixel.headers.get("content-type") === "image/png" &&
-        pixel.headers.get("cache-control") === "no-cache",
-      "view-pixel",
-    );
+    if (reference) {
+      const pixel = await fetch(`${rootUrl}/campaign/${testCampaign.uuid}/${ada.uuid}/px.png`);
+      check(
+        pixel.status === 200 &&
+          pixel.headers.get("content-type") === "image/png" &&
+          pixel.headers.get("cache-control") === "no-cache",
+        "view-pixel",
+      );
+    }
     const afterTest = await get(testCampaign.id);
     check(
       afterTest.sent === 0 &&
         afterTest.to_send === 0 &&
         afterTest.status === "draft" &&
         afterTest.subject === "Stored" &&
-        afterTest.views === 1 &&
-        afterTest.clicks === 1,
+        // Upstream's test records one view and one click; a production test records none (D117).
+        afterTest.views === (reference ? 1 : 0) &&
+        afterTest.clicks === (reference ? 1 : 0),
       "test-counters",
     );
     const plainSent = await call(`/api/campaigns/${testCampaign.id}/test`, "POST", {

@@ -5,6 +5,7 @@
 import { sendingHeld } from "@/settings/hold";
 import type { Database } from "bun:sqlite";
 import type { Captcha } from "@/captcha/captcha";
+import { testSendUUID } from "@/campaigns/render";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
@@ -314,6 +315,9 @@ export function registerPublicRoutes(
     const t = context.app.i18n;
     const post = context.request.method === "POST";
     const headers = post ? {} : noIndex;
+    // D117: a test send's opt-in link answers the test page and confirms nothing.
+    if (context.params.subUUID?.toLowerCase() === testSendUUID)
+      return message(t, 200, t.T("public.testSendTitle"), t.T("public.testSendInfo"), headers);
     const sub = subscriber(context, headers);
     if (sub instanceof Response) return sub;
     // D81: a blocklisted subscriber has nothing to confirm.

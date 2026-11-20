@@ -10,6 +10,13 @@ import {
 } from "@/templates/renderer";
 
 export const dummyUUID = "00000000-0000-0000-0000-000000000000";
+/**
+ * D117: the campaign part of a test message's per-subscriber links. Where a real send names its
+ * campaign, a test names this, so its unsubscribe, manage, message and opt-in links open the test
+ * page and change nothing. Not `dummyUUID`: that one is the opt-in mail's placeholder, which ends a
+ * subscriber's unconfirmed subscriptions.
+ */
+export const testSendUUID = "00000000-0000-0000-0000-000000000001";
 /** listmonk's preview subscriber (cmd/subscribers.go dummySubscriber). */
 export const dummySubscriber: CampaignSubscriber = {
   uuid: dummyUUID,
@@ -35,6 +42,8 @@ export interface MessageLinks {
   rootUrl: string;
   unsubscribeUrl: string;
   tracking?: RenderTracking;
+  /** A test message (D117): its per-subscriber links name `testSendUUID`, not the campaign. */
+  test?: boolean;
 }
 export interface CampaignMessage {
   subject: string;
@@ -107,8 +116,10 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
         campaign: { uuid: c.uuid, name: c.name, subject: c.subject, attribs: c.attribs },
         unsubscribe_url: links.unsubscribeUrl,
         manage_url: links.unsubscribeUrl ? `${links.unsubscribeUrl}?manage=true` : "",
-        optin_url: `${root}/subscription/optin/${sub.uuid}`,
-        message_url: `${root}/campaign/${c.uuid}/${sub.uuid}`,
+        optin_url: links.test
+          ? `${root}/subscription/optin/${testSendUUID}`
+          : `${root}/subscription/optin/${sub.uuid}`,
+        message_url: `${root}/campaign/${links.test ? testSendUUID : c.uuid}/${sub.uuid}`,
         archive_url: `${root}/archive`,
       });
       const out = main.renderSync(data, links.tracking, budget);
