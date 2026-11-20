@@ -64,3 +64,46 @@ export async function settingsFetch(
     }
   }
 }
+
+const INVALID_BATCH_SIZE_EXIT = "'batch_size' cannot parse value as 'int'";
+
+function upstreamLogHas(text: string): boolean {
+  const path = process.env.REFERENCE_LOG;
+  if (!path) return false;
+  try {
+    return readFileSync(path, "utf8").includes(text);
+  } catch {
+    return false;
+  }
+}
+
+// Outcome of a read after upstream accepted an invalid settings value. That write
+// schedules a reload which loads the stored value and exits. Either the running
+// process answers the read with 500, or the read finds the listener already closed
+// and the reference's log shows the failed boot. Only these two end states are
+// accepted; a healthy 200 or any other status is "unexpected".
+export type InvalidSettingsReadEnd = "500" | "exited" | "unexpected";
+
+export async function invalidSettingsReadEnd(
+  url: string,
+  init: RequestInit,
+): Promise<InvalidSettingsReadEnd> {
+  let status: number | undefined;
+  try {
+    const response = await fetch(url, init);
+    status = response.status;
+    await response.text();
+  } catch {
+    // No response: refused or closed while the reload runs. The log decides below.
+  }
+  if (status === 500) return "500";
+  if (status !== undefined) return "unexpected";
+  // Upstream's awaitReload waits up to 3 s for shutdown before it respawns, and the
+  // respawned process must then fail to boot, so the exit line can trail the refusal.
+  const deadline = Date.now() + 10_000;
+  while (!upstreamLogHas(INVALID_BATCH_SIZE_EXIT)) {
+    if (Date.now() >= deadline) return "unexpected";
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return "exited";
+}
