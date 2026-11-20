@@ -322,6 +322,14 @@ above has the same settings for nginx.
 6. **Bootstrap variables.** Remove `IGLO_EMAIL_ADMIN_*` and `IGLO_EMAIL_API_*` after the first start,
    and restart. The server ignores them from then on. To change the API token, create a new API user
    under Users, which shows its token once, switch the integration to it, and delete the old one.
+7. **First test mail, opened in a real inbox.** Send a sequence-step or campaign test to your own
+   mailbox and look at the links and images in the received message. Test sends are never tracked
+   by iglo.email, so their links must point straight at your site. A link through
+   `*.awstrack.me`, or a 1×1 image from an SES domain, means SES engagement tracking (Virtual
+   Deliverability Manager) is on for the account or the configuration set. SES rewrites the mail
+   after it accepts it, so iglo.email cannot see or report this; only the delivered message shows
+   it. Switch it off for your configuration set as [Sending with Amazon SES](#sending-with-amazon-ses)
+   describes (`put-configuration-set-vdm-options` with `EngagementMetrics=DISABLED`).
 
 ## API user for an app integration
 
