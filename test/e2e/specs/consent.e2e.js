@@ -164,11 +164,15 @@ async function mailsFor(email, count = 1, timeout = 60_000) {
   return mails;
 }
 
-// Every absolute link in a mail body, with HTML's `&amp;` read as `&`, as a reader's click would.
+// Every absolute link in a mail body, with HTML's `&amp;` read as `&`, as a reader's click would. A
+// multipart mail also has a text part, which writes a link as `text (URL)` (D118): a closing `)` that
+// the URL does not open is the text's punctuation, not part of the link, as a mail client reads it.
 const linksIn = (mail) =>
-  [...mail.body.matchAll(/https?:\/\/[^\s"'<>]+/g)].map((match) =>
-    match[0].replaceAll("&amp;", "&"),
-  );
+  [...mail.body.matchAll(/https?:\/\/[^\s"'<>]+/g)].map((match) => {
+    let url = match[0].replaceAll("&amp;", "&");
+    while (url.endsWith(")") && !url.includes("(")) url = url.slice(0, -1);
+    return url;
+  });
 
 const optinLink = (mail) => {
   const found = linksIn(mail).find((url) => OPTIN.test(new URL(url).pathname));
