@@ -146,7 +146,7 @@ export function buildDocument(): string {
       responses: {
         Error: { description: "The error envelope.", content: errorContent },
       },
-      schemas: schemas,
+      schemas,
     },
     "x-deliberate-differences": differences.map(({ area, summary }) => ({ area, summary })),
     "x-excluded-routes": excluded,

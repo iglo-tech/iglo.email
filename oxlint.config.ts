@@ -101,7 +101,6 @@ export default defineConfig({
     "no-promise-executor-return": "off", // B134b
     "no-useless-assignment": "off", // B134b
     "preserve-caught-error": "off", // B134b
-    "object-shorthand": "off", // B134b
     "typescript/no-explicit-any": "off", // B134b
     "typescript/no-floating-promises": "off", // B134b
     "typescript/no-misused-promises": "off", // B134b
