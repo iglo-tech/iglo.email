@@ -63,6 +63,7 @@ export default defineConfig({
         "no-useless-assignment": "off",
         "typescript/require-array-sort-compare": "off",
         "unicorn/prefer-top-level-await": "off",
+        "typescript/await-thenable": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -132,7 +133,6 @@ export default defineConfig({
     "unicorn/prefer-string-replace-all": "off", // B134b
 
     // B134c: findings remain only in test/.
-    "typescript/await-thenable": "off", // B134c
     "typescript/no-require-imports": "off", // B134c
     "typescript/no-import-type-side-effects": "off", // B134c
     "typescript/no-unsafe-function-type": "off", // B134c
