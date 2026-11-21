@@ -122,8 +122,17 @@ export function subscriptionPage(
           : "already"
       : null;
   const alreadyNames = already ?? (transactionalView === "already" ? [] : null);
-  // B126 (D123 item 8): a transactional link with nothing to unsubscribe is the email settings page.
-  const settingsPage = transactionalView === "already";
+  // B126 (D123 item 8): a transactional link with an active subscription and no manage view is the email
+  // settings page. Its pending form is titled as its button, and its already-unsubscribed page is titled
+  // as a marketing link's already-unsubscribed page is.
+  const pageTitle =
+    transactionalView === "confirmed"
+      ? t.T("public.emailSettings")
+      : transactionalView === "form"
+        ? t.T("public.cancelPending")
+        : alreadyNames
+          ? t.T("globals.terms.unsubscribed")
+          : t.T("public.unsubscribeTitle");
   const pending = mode.kind === "pending";
   const subscriptions = showManage
     ? subscribers
@@ -143,13 +152,7 @@ export function subscriptionPage(
   const base = mode.kind === "pending" ? "" : mode.base;
   const body = render(
     <PublicShell
-      title={
-        settingsPage
-          ? t.T("public.emailSettings")
-          : alreadyNames
-            ? t.T("globals.terms.unsubscribed")
-            : t.T("public.unsubscribeTitle")
-      }
+      title={pageTitle}
       assetVersion={assetVersion}
       archiveTitle={t.T("public.archiveTitle")}
       site={options}
@@ -157,9 +160,7 @@ export function subscriptionPage(
       <section class="section">
         {alreadyNames ? (
           <>
-            <h2>
-              {settingsPage ? t.T("public.emailSettings") : t.T("globals.terms.unsubscribed")}
-            </h2>
+            <h2>{t.T("globals.terms.unsubscribed")}</h2>
             <div>
               <p>
                 {alreadyNames.length
@@ -177,7 +178,7 @@ export function subscriptionPage(
           </>
         ) : transactionalView === "confirmed" ? (
           <>
-            <h2>{t.T("public.unsubscribeTitle")}</h2>
+            <h2>{t.T("public.emailSettings")}</h2>
             <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
           </>
         ) : !showManage ? (

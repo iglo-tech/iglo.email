@@ -59,6 +59,7 @@ test("pending opt-ins are named for their public lists only, and the button canc
   expect(asked).toContain('id="btn-unsub"');
   expect(asked).toContain("Cancel pending subscriptions");
   expect(asked).toContain("<h2>Cancel pending subscriptions</h2>");
+  expect(asked).toContain("<title>Cancel pending subscriptions - Brand Co</title>");
   expect(asked).not.toContain('class="manage-form"');
 
   // Two pending opt-ins were cancelled, so the result is plural.
@@ -80,6 +81,7 @@ test("a pending opt-in on a private list is named generically", async () => {
   expect(asked).toContain("You have not confirmed a subscription. Do you want to cancel it?");
   expect(asked).not.toContain("Members");
   expect(asked).toContain("Cancel pending subscriptions");
+  expect(asked).toContain("<title>Cancel pending subscriptions - Mailing list</title>");
 
   const cancelled = await (await f.fresh(link.page, "")).text();
   expect(cancelled).toContain("Your pending subscription was cancelled.");
@@ -130,9 +132,10 @@ test("with no open membership, the page says already unsubscribed, on private an
   for (const link of [adaLink, bobLink]) {
     const html = await (await f.request(link.page)).text();
     expect(html).toContain("You are already unsubscribed from these emails.");
-    // Nothing to unsubscribe: the page is titled and headed as the email settings.
-    expect(html).toContain("<title>Your email settings - Brand Co</title>");
-    expect(html).toContain("<h2>Your email settings</h2>");
+    // Nothing to unsubscribe: the page is titled and headed as a marketing link's already-unsubscribed page.
+    expect(html).toContain("<title>Unsubscribed - Brand Co</title>");
+    expect(html).toContain("<h2>Unsubscribed</h2>");
+    expect(html).not.toContain("Your email settings");
     expect(html).not.toContain("News");
     expect(html).not.toContain("Members");
     expect(html).not.toContain('id="btn-unsub"');
@@ -151,6 +154,35 @@ test("with no open membership, the page says already unsubscribed, on private an
   expect(await (await f.request(`${adaLink.page}?manage=true`)).text()).toContain(
     'class="manage-form"',
   );
+});
+
+test("an active subscriber with preferences off gets the email settings page, reached by an API create and by a confirmed list", async () => {
+  const f = await open({ siteName: "Brand Co", allowPreferences: false });
+  const template = await receipt(f);
+  // Created through the API without preconfirm_subscriptions: an unconfirmed membership of a single
+  // opt-in list is an active subscription (D126).
+  const weekly = await f.list("Weekly News", "public", "single");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [weekly.id] });
+  expect(await f.status(ada, weekly.id)).toBe("unconfirmed");
+  // A confirmed membership of a public single opt-in list.
+  const news = await f.list("News", "public", "single");
+  const bob = await f.subscriber("bob@example.test", "Bob", {});
+  expect((await change(f, bob, "add", [news.id], "confirmed")).status).toBe(200);
+  expect(await f.status(bob, news.id)).toBe("confirmed");
+
+  for (const id of [ada, bob]) {
+    const link = await txPage(f, template, id);
+    for (const path of [link.page, `${link.page}?manage=true`]) {
+      const html = await (await f.request(path)).text();
+      expect(html).toContain("<title>Your email settings - Brand Co</title>");
+      expect(html).toContain("<h2>Your email settings</h2>");
+      expect(html).not.toContain("Unsubscribe from mailing list");
+      expect(html).toContain(
+        "This message was sent about your account with Brand Co. To stop other emails, use the unsubscribe link in one of them.",
+      );
+      expect(html).not.toContain('id="btn-unsub"');
+    }
+  }
 });
 
 test("with preferences off, the already-unsubscribed page has no manage link", async () => {
