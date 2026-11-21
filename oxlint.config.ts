@@ -150,20 +150,21 @@ export default defineConfig({
     "react/rules-of-hooks": "off", // no hooks in the in-house runtime
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
-    // B134b: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed.
-    "typescript/no-non-null-assertion": "off", // B134b
-    "typescript/no-unsafe-argument": "off", // B134b
-    "typescript/no-unsafe-assignment": "off", // B134b
-    "typescript/no-unsafe-call": "off", // B134b
-    "typescript/no-unsafe-member-access": "off", // B134b
-    "typescript/no-unsafe-return": "off", // B134b
-    "typescript/no-unsafe-type-assertion": "off", // B134b
-    "typescript/unbound-method": "off", // B134b
-    "quality/no-conditional-empty-object-spread": "off", // B134b
-    "quality/no-known-value-widening": "off", // B134b
-    "quality/no-unknown-returns": "off", // B134b
-    "quality/no-unsafe-dictionary-type": "off", // B134b
-    "unicorn/consistent-function-scoping": "off", // B134b
+    // B134d/B134e: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed:
+    // B134e takes the typescript/no-unsafe-* rules, B134d takes the rest.
+    "typescript/no-non-null-assertion": "off", // B134d
+    "typescript/no-unsafe-argument": "off", // B134e
+    "typescript/no-unsafe-assignment": "off", // B134e
+    "typescript/no-unsafe-call": "off", // B134e
+    "typescript/no-unsafe-member-access": "off", // B134e
+    "typescript/no-unsafe-return": "off", // B134e
+    "typescript/no-unsafe-type-assertion": "off", // B134e
+    "typescript/unbound-method": "off", // B134d
+    "quality/no-conditional-empty-object-spread": "off", // B134d
+    "quality/no-known-value-widening": "off", // B134d
+    "quality/no-unknown-returns": "off", // B134d
+    "quality/no-unsafe-dictionary-type": "off", // B134d
+    "unicorn/consistent-function-scoping": "off", // B134d
 
     // B134c: findings remain only in test/.
     "typescript/no-require-imports": "off", // B134c
