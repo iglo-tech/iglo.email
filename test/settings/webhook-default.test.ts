@@ -37,20 +37,15 @@ test("a new install refuses private webhook targets by default", () => {
   expect(reopen().read()[key]).toBe(true);
 });
 
-test("a stored false stays false when the store is opened again, as on an upgrade", () => {
+test("a stored false stays false when the store is opened again (the upgrade itself is in private-target-upgrade.test.ts)", () => {
   const { reopen } = open();
   // An install that had turned the blocking off keeps that choice.
   reopen().update((current) => ({ ...current, [key]: false }));
   expect(reopen().read()[key]).toBe(false);
 });
 
-test("a row seeded false by an earlier release is kept as stored, and an operator's true survives a restart", () => {
-  const { db, reopen } = open();
-  // The first start seeds every row, as an earlier release did with `false` for this key.
-  reopen();
-  db.run("UPDATE settings SET value = 'false' WHERE key = ?", [key]);
-  expect(reopen().read()[key]).toBe(false);
+test("an operator's true survives a restart", () => {
+  const { reopen } = open();
   reopen().update((current) => ({ ...current, [key]: true }));
-  expect(reopen().read()[key]).toBe(true);
   expect(reopen().read()[key]).toBe(true);
 });

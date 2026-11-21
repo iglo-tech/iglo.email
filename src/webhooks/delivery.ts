@@ -60,6 +60,22 @@ async function pinned(url: URL, transport: WebhookTransport) {
   };
 }
 
+/**
+ * Whether the block would refuse this target's address, by the delivery's own check (B125, D122).
+ * A lookup that fails is not a refusal: the delivery would report a network error instead.
+ */
+export async function refusesTarget(
+  url: string,
+  transport: WebhookTransport = {},
+): Promise<boolean> {
+  try {
+    await pinned(new URL(url), transport);
+    return false;
+  } catch (error) {
+    return error instanceof Refused;
+  }
+}
+
 async function drain(response: Response) {
   const reader = response.body?.getReader();
   if (!reader) return;

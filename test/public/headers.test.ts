@@ -42,7 +42,6 @@ test("every personal page answers with the hardening headers, its 404 included",
   });
   const send = sent.body.data.sends[0].uuid as string;
   const pages = [
-    "/subscription/form",
     `/subscription/optin/${adaUuid}`,
     `/m/${send}/unsubscribe/${adaUuid}`,
     `/m/${send}/unsubscribe/${adaUuid}?manage=true`,
@@ -55,15 +54,32 @@ test("every personal page answers with the hardening headers, its 404 included",
   for (const path of pages) expectHardened(await f.peer(path, "198.51.100.1"));
 });
 
-test("the limited answer of a personal page carries the headers too", async () => {
+/**
+ * The signup form shows no subscriber data, and framing it is legitimate, so it keeps the two
+ * caching and referrer headers only (B125, D122 revision).
+ */
+function expectFrameable(response: Response) {
+  expect(response.headers.get("content-type")).toContain("text/html");
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  expect(response.headers.get("x-frame-options")).toBeNull();
+  expect(response.headers.get("content-security-policy") ?? "").not.toContain("frame-ancestors");
+}
+
+test("the signup form may be framed: its GET, its POST answers and its limited answer keep no-store and no-referrer only", async () => {
   const f = await open();
   const news = await f.list("News");
+  expectFrameable(await f.peer("/subscription/form", "198.51.100.3"));
   const bad = new URLSearchParams({ email: "bad", l: news.uuid }).toString();
-  for (let i = 0; i < 5; i++)
-    expect((await f.post("/subscription/form", bad, "192.0.2.70")).status).toBe(400);
+  expectFrameable(await f.post("/subscription/form", bad, "192.0.2.71"));
+  const accepted = new URLSearchParams({ email: "framed@example.test", l: news.uuid }).toString();
+  const posted = await f.post("/subscription/form", accepted, "192.0.2.72");
+  expect(posted.status).toBe(200);
+  expectFrameable(posted);
+  for (let i = 0; i < 5; i++) await f.post("/subscription/form", bad, "192.0.2.70");
   const limited = await f.post("/subscription/form", bad, "192.0.2.70");
   expect(limited.status).toBe(429);
-  expectHardened(limited);
+  expectFrameable(limited);
 });
 
 test("a campaign page keeps its own Content-Security-Policy and gains frame-ancestors", async () => {

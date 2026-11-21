@@ -314,8 +314,8 @@ above has the same settings for nginx.
    That covers a platform's internal service names and the cloud metadata address `169.254.169.254`.
    Leave `webhooks.block_private_addresses` on, which is the default, unless a receiver you run is on
    a private network. Turn it off then, under Settings → Security, or with
-   `PUT /api/settings/webhooks.block_private_addresses` and the body `false`. A value stored before
-   the upgrade stays as it is, so check it after upgrading ([Upgrades](#upgrades)).
+   `PUT /api/settings/webhooks.block_private_addresses` and the body `false`. An upgrade turns a
+   stored `false` on once, and names each webhook the block refuses ([Upgrades](#upgrades)).
 4. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
 5. **One container per volume.** Each data directory has one server ([one process per data
    directory](#one-process-per-data-directory)). A rolling deploy that starts the new container
@@ -870,14 +870,22 @@ whether your integration should re-subscribe such people: it now gets `suppresse
 list IDs, so a receiver that stored only the numeric ID and UUID needs no change, and one that
 matches on the external ID now sees it for a wipe as well.
 
-From the release that hardens personal pages and throttles export mail (D122), three things change.
-The block on private webhook targets is on for a new install. An upgraded install keeps the value it
-stores, and an earlier release stored `false` for every install, so an install that never changed the
-setting still allows private targets. Check `webhooks.block_private_addresses` under Settings →
-Security and turn it on, unless a receiver you run is on a private network. The personal pages (the
-`/subscription/`, `/m/` and `/campaign/` paths) answer with `X-Frame-Options: DENY`, so a signup form
-embedded in an iframe stops showing: link to it, or paste its markup. A person who asks for their data
-twice within ten minutes gets one data mail; the second request answers the same page and sends nothing.
+From the release that hardens personal pages and throttles export mail (D122), four things change.
+The block on private webhook targets (`webhooks.block_private_addresses`) is on for a new install. An
+upgrade turns it on once, when it stored `false`: an earlier release stored `false` for every install,
+so the upgrade cannot tell a value nobody chose from one somebody did. An operator who chose `false`
+for a receiver on a private network sets it back to `false` after the upgrade, under Settings →
+Security, or with `PUT /api/settings/webhooks.block_private_addresses` and the body `false`. A later
+`false` is kept, and the upgrade does not run again. On the first start after the upgrade, the log
+and stderr name each enabled webhook whose target the block now refuses, as
+`Webhook <id> target <host> is refused by webhooks.block_private_addresses`: the ID and the host
+only, never the path, the query or the secret. A refused webhook gets no request until you turn the
+block off or point the webhook at a public address. The personal pages (the `/subscription/`, `/m/`
+and `/campaign/` paths) answer with `Cache-Control: no-store`, `Referrer-Policy: no-referrer`,
+`X-Frame-Options: DENY` and `frame-ancestors 'none'`, so they cannot be framed, except the signup form
+(`/subscription/form`), which shows no subscriber data and keeps only the first two, so it can still be
+embedded in an iframe. A person who asks for their data twice within ten minutes gets one data mail;
+the second request answers the same page and sends nothing.
 
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain

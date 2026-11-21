@@ -937,6 +937,15 @@ export async function runPublicContract(target: {
           csp.includes("frame-ancestors 'none'"),
         "personal-page-headers",
       );
+      // B125 (lead decisions, D122): the signup form shows no subscriber data, so it may be framed.
+      const signup = await visit("/subscription/form");
+      check(
+        signup.headers.get("cache-control") === "no-store" &&
+          signup.headers.get("referrer-policy") === "no-referrer" &&
+          signup.headers.get("x-frame-options") === null &&
+          !(signup.headers.get("content-security-policy") ?? "").includes("frame-ancestors"),
+        "signup-form-frameable",
+      );
     }
 
     // Wipe.

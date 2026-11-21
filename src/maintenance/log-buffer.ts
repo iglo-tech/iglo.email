@@ -45,6 +45,7 @@ const SAFE_MESSAGES = [
   "Sequence step has no transactional template: skipped",
   "Test send not delivered: the server error output names the recipient and stage",
   "unknown messenger on campaign: campaign cancelled",
+  "A webhook target is refused by the private-address block",
   "Webhook deliveries are failing",
   "Webhook delivery failed",
   "X-Forwarded-For from an untrusted peer ignored: see security.trusted_proxies",

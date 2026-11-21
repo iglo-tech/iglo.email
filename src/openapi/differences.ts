@@ -798,13 +798,13 @@ export const differences: Difference[] = [
   {
     area: "Personal page headers (D122, B125)",
     summary:
-      "Every HTML answer under /m/, /subscription/ and /campaign/ sends no-store caching, no-referrer, X-Frame-Options DENY and frame-ancestors 'none' (merged into a page's own CSP). Upstream sends none.",
+      "Every HTML answer under /m/, /subscription/ and /campaign/ sends no-store caching, no-referrer, X-Frame-Options DENY and frame-ancestors 'none' (merged into a page's own CSP), except the signup form at /subscription/form, which sends no-store and no-referrer only and may be framed. Upstream sends none.",
     applies: [],
   },
   {
     area: "Private webhook targets (D122, B125)",
     summary:
-      "webhooks.block_private_addresses is on by default, refusing private, loopback, link-local and unique-local targets at delivery, with no redirects. A stored value, including a stored false, is kept on upgrade. Outbound webhooks are native.",
+      "webhooks.block_private_addresses is on by default, refusing private, loopback, link-local and unique-local targets at delivery, with no redirects. An upgrade turns a stored false on once and logs each enabled webhook it now refuses. Outbound webhooks are native.",
     applies: [],
   },
   {

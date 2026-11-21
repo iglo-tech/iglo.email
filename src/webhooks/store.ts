@@ -128,6 +128,12 @@ export function createWebhookStore(db: Database, clock: Clock) {
   let wake = () => {};
   const subscribed = (event: WebhookEvent) => q.get("webhooks-for-event").all(event).length;
   return {
+    /** The enabled webhooks' IDs and targets, for the upgrade notice (B125). No secrets. */
+    enabledTargets(): { id: number; url: string }[] {
+      return (q.get("webhook-enabled-targets").all() as { id: bigint; url: string }[]).map(
+        ({ id, url }) => ({ id: Number(id), url }),
+      );
+    },
     list(pageNumber: number, perPage: number) {
       const rows = q.get("webhook-list").all(perPage, (pageNumber - 1) * perPage) as Row[];
       return page(rows.map(project), count("webhook-count"), pageNumber, perPage);

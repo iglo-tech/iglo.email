@@ -1,0 +1,160 @@
+// B125 (D122, lead decisions): an upgrade from an earlier release turns a stored
+// `webhooks.block_private_addresses = false` on, once, and names each enabled webhook whose target
+// is now refused, by ID and host, on stderr and in the log buffer. Through the compiled executable,
+// with the data directory seeded as an earlier release left it. No receiver and no DNS: the
+// targets are IP literals, and the notice only checks them.
+import { Database } from "bun:sqlite";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { ensureProductionBuild } from "@/test/production-build";
+import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
+
+const repository = resolve(import.meta.dir, "../..");
+setDefaultTimeout(60_000);
+const key = "webhooks.block_private_addresses";
+/** The buffer's fixed text for the notice (src/webhooks/upgrade.ts). */
+const fixed = "A webhook target is refused by the private-address block";
+const tokenAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const apiUser = "upgrade-api";
+const token = Array.from(
+  crypto.getRandomValues(new Uint8Array(48)),
+  (byte) => tokenAlphabet[byte % 62],
+).join("");
+let temporaryDirectory = "";
+let executable = "";
+let adminUser = "";
+let adminPassword = "";
+
+beforeAll(async () => {
+  const fixture = await Bun.file(join(repository, "test/bootstrap/fixtures.md")).text();
+  adminUser = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1] ?? "";
+  adminPassword = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1] ?? "";
+  if (!adminUser || !adminPassword) throw new Error("Bootstrap test credentials are missing");
+  await ensureProductionBuild();
+  temporaryDirectory = await mkdtemp(join(tmpdir(), "iglo-email-upgrade-"));
+  executable = join(temporaryDirectory, "iglo.email");
+  await copyFile(join(repository, "dist", "iglo.email"), executable);
+  await chmod(executable, 0o755);
+}, 60_000);
+
+afterAll(async () => {
+  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+});
+
+/** The executable with a clean environment. */
+function start(port: number, dataDir: string) {
+  return Bun.spawn([executable, "--port", String(port), "--data-dir", dataDir], {
+    cwd: temporaryDirectory,
+    env: {
+      PATH: "",
+      IGLO_EMAIL_ADMIN_USER: adminUser,
+      IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+      IGLO_EMAIL_API_USER: apiUser,
+      IGLO_EMAIL_API_TOKEN: token,
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+}
+
+/** A started process, healthy on its port. */
+async function up(dataDir: string) {
+  return startOnFreePort(async (port) => {
+    const child = start(port, dataDir);
+    try {
+      await healthWhenReady(child, port, 30_000);
+    } catch (error) {
+      child.kill("SIGKILL");
+      await child.exited;
+      throw error;
+    }
+    return { child, port };
+  });
+}
+
+/** An API call as the API user. */
+async function api(port: number, method: string, path: string, body?: unknown) {
+  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    method,
+    headers: {
+      authorization: `token ${apiUser}:${token}`,
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return { status: response.status, data: ((await response.json()) as { data: any }).data };
+}
+
+/** The log buffer's lines that contain `text`. */
+const logLines = async (port: number, text: string) =>
+  ((await api(port, "GET", "/api/logs")).data as string[]).filter((line) => line.includes(text));
+
+/** An earlier release's data directory: one first start, then schema 23 with this key false. */
+async function earlierRelease(): Promise<string> {
+  const dataDir = join(temporaryDirectory, crypto.randomUUID());
+  const first = await up(dataDir);
+  await stopChild(first.child);
+  const db = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
+  try {
+    db.run("UPDATE settings SET value = 'false' WHERE key = ?", [key]);
+    db.run("INSERT INTO webhooks (id, url, secret, events) VALUES (1, ?, 'secret', '[]')", [
+      "http://127.0.0.1:9/hook",
+    ]);
+    db.run("INSERT INTO webhooks (id, url, secret, events) VALUES (2, ?, 'secret', '[]')", [
+      "http://93.184.216.34/hook",
+    ]);
+    db.run("PRAGMA user_version = 23");
+  } finally {
+    db.close(true);
+  }
+  return dataDir;
+}
+
+function userVersion(dataDir: string): number {
+  const db = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
+  try {
+    return Number(
+      db.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version,
+    );
+  } finally {
+    db.close(true);
+  }
+}
+
+test("an upgrade turns a stored false on, names the refused webhook on stderr and in the log, then keeps an operator's false across a restart", async () => {
+  const dataDir = await earlierRelease();
+
+  // The first start after the upgrade: the migration runs, the notice follows the bind.
+  const upgraded = await up(dataDir);
+  const deadline = Date.now() + 20_000;
+  while (!(await logLines(upgraded.port, fixed)).length) {
+    expect(Date.now()).toBeLessThan(deadline);
+    await Bun.sleep(50);
+  }
+  expect((await api(upgraded.port, "GET", "/api/settings")).data[key]).toBe(true);
+  expect(await logLines(upgraded.port, fixed)).toHaveLength(1);
+  await stopChild(upgraded.child);
+  const stderr = await new Response(upgraded.child.stderr).text();
+  const named = stderr.split("\n").filter((line) => line.includes("Webhook "));
+  expect(named).toEqual([
+    `Webhook 1 target 127.0.0.1:9 is refused by webhooks.block_private_addresses (D122)`,
+  ]);
+  expect(stderr).not.toContain("/hook");
+  expect(userVersion(dataDir)).toBe(24);
+
+  // An operator turns it off after the upgrade; a restart keeps that, and the notice is not repeated.
+  const operator = await up(dataDir);
+  expect((await api(operator.port, "PUT", `/api/settings/${key}`, false)).status).toBe(200);
+  await stopChild(operator.child);
+
+  const restarted = await up(dataDir);
+  expect((await api(restarted.port, "GET", "/api/settings")).data[key]).toBe(false);
+  await Bun.sleep(1000);
+  expect(await logLines(restarted.port, fixed)).toHaveLength(0);
+  await stopChild(restarted.child);
+  const again = await new Response(restarted.child.stderr).text();
+  expect(again).not.toContain("Webhook 1 target");
+  expect(userVersion(dataDir)).toBe(24);
+});
