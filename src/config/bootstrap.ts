@@ -172,7 +172,7 @@ function portInRange(digits: string): boolean {
  * `https://<value>` for a bare host, when the value matches the host allow-list and the URL built
  * from it has the same host and port and passes the validator. Otherwise nothing.
  */
-function suggestionFor(value: string, label: string): string | undefined {
+function suggestionFor(value: string, kind: AbsoluteUrlKind): string | undefined {
   const match = bareRootUrl.exec(value);
   if (!match) return undefined;
   const host = match[1] ?? "";
@@ -190,7 +190,7 @@ function suggestionFor(value: string, label: string): string | undefined {
   const expectedPort = port === undefined || port === "443" ? "" : port;
   if (url.hostname !== host.toLowerCase() || url.port !== expectedPort) return undefined;
   try {
-    validateAbsoluteUrl(candidate, label);
+    validateAbsoluteUrl(candidate, kind);
   } catch {
     return undefined;
   }
@@ -207,22 +207,31 @@ function missingSchemeReason(value: string): string {
 }
 
 /**
- * The D107 rules for an absolute http(s) URL: the root URL, and the operator's site (`app.site_url`,
- * B126). `label` names the value in the message.
+ * Which absolute http(s) URL a value is (D107, D123). The root URL names this installation and takes
+ * no query string. The site URL (`app.site_url`, B126) is the operator's own site, and takes one, as a
+ * homepage's tracking parameter does. Both take no credentials, no fragment and no control character.
  */
-export function validateAbsoluteUrl(value: string, label: string): void {
+export type AbsoluteUrlKind = "root-url" | "site-url";
+
+/** The D107 rules for an absolute http(s) URL of the given kind. The message names that kind. */
+export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void {
+  const site = kind === "site-url";
+  const name = site ? "site URL" : "root-url";
+  const noun = site ? "site URL" : "root URL";
   // A value with credentials, a query or a fragment may hold a secret, so the message leaves it out.
   const withheld = /[@?#]/.test(value);
   const shown = withheld ? "(value not shown)" : JSON.stringify(value);
   const fail = (reason: string): never => {
-    throw new Error(`Invalid ${label} ${shown}: ${reason}`);
+    throw new Error(`Invalid ${name} ${shown}: ${reason}`);
   };
 
   if (/\s|\\/.test(value)) fail("the value contains whitespace or a backslash; remove it");
+  // oxlint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(value)) fail("the value contains a control character; remove it");
   // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,
   // because `https://` in front of it would be wrong too (`https://https://host` is host `https`).
   if (!hasScheme(value)) {
-    const suggestion = suggestionFor(value, label);
+    const suggestion = suggestionFor(value, kind);
     if (suggestion) fail(`${expectedUrl}, such as ${suggestion}`);
     fail(missingSchemeReason(value));
   }
@@ -237,8 +246,13 @@ export function validateAbsoluteUrl(value: string, label: string): void {
   if (url && !["http:", "https:"].includes(url.protocol))
     fail("the scheme must be http:// or https://");
   if (url && (url.username !== "" || url.password !== ""))
-    fail("remove the user name and password from the URL; the root URL is a public address");
-  if (url && (url.search !== "" || url.hash !== ""))
+    fail(`remove the user name and password from the URL; the ${noun} is a public address`);
+  if (site) {
+    if (value.includes("#"))
+      fail(
+        "remove the fragment; the site URL is a scheme, a host and an optional path, with an optional query string",
+      );
+  } else if (url && (url.search !== "" || url.hash !== ""))
     fail(
       "remove the query string and fragment; the root URL is a scheme, a host and an optional path",
     );

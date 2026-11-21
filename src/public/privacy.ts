@@ -17,8 +17,11 @@ type Subscriber = NonNullable<ReturnType<SubscriberStore["get"]>>;
 export interface Privacy {
   /** Mails the subscriber their data. `null`: the path pairs nobody. */
   export(context: RequestContext, current: () => Subscriber | null): Response | null;
-  /** Removes the subscriber and their data in one write. `null`: the path pairs nobody. */
-  wipe(context: RequestContext, current: () => Subscriber | null): Response | null;
+  /**
+   * Removes the subscriber and their data in one write. `null`: the path pairs nobody. `manage` is the
+   * path of the manage page the confirmation's "Keep my data" link returns to.
+   */
+  wipe(context: RequestContext, current: () => Subscriber | null, manage: string): Response | null;
 }
 
 export function createPrivacy(deps: {
@@ -28,8 +31,8 @@ export function createPrivacy(deps: {
   /** The site's branding and the privacy options, read for each answer. */
   page: () => PageOptions;
 }): Privacy {
-  const message = (t: Translation, status: number, title: string, text: string, back = false) =>
-    publicMessage(t, { status, title, message: text, site: deps.page(), back });
+  const message = (t: Translation, status: number, title: string, text: string) =>
+    publicMessage(t, { status, title, message: text, site: deps.page() });
   const failed = (t: Translation, status: number, text: string) =>
     message(t, status, t.T("globals.terms.error"), text);
   return {
@@ -47,13 +50,13 @@ export function createPrivacy(deps: {
       }
       return message(t, 200, t.T("public.dataSentTitle"), t.T("public.dataSent"));
     },
-    wipe(context, current) {
+    wipe(context, current, manage) {
       const t = context.app.i18n;
       if (!current()) return null;
       if (!deps.page().allowWipe) return failed(t, 400, t.T("public.invalidFeature"));
       // B126 (D123): the first POST asks on its own page. Only the confirmed POST deletes anything.
       if (context.url.searchParams.get("confirm") !== "true")
-        return wipeConfirmation(t, context.url.pathname, deps.page());
+        return wipeConfirmation(t, context.url.pathname, manage, deps.page());
       // The pairing is read again inside the write, so a change since the check writes nothing.
       const removed = writeTransaction(deps.db, () => {
         const sub = current();
@@ -62,7 +65,7 @@ export function createPrivacy(deps: {
         return true;
       });
       if (!removed) return null;
-      return message(t, 200, t.T("public.dataRemovedTitle"), t.T("public.dataRemoved"), true);
+      return message(t, 200, t.T("public.dataRemovedTitle"), t.T("public.dataRemoved"));
     },
   };
 }

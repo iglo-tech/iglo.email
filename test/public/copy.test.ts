@@ -1,7 +1,8 @@
 // B126 (D123): the public pages and the subscriber mail read right for the person. Each copy change,
-// the already-unsubscribed state, the wipe confirmation, the site URL and its back links, the label
-// of the manage name field, and the branded data and opt-in mails with their text part. Through HTTP
-// and the SMTP sink, on the public fixture that mounts the /m/ routes.
+// the already-unsubscribed state (decided by membership, whatever the list's type), the wipe
+// confirmation, the site URL and its back links, the subscriber mails' footers, the campaign links,
+// the disabled form's 404, the label of the manage name field and the `$` patterns in names. Through
+// HTTP and the SMTP sink, on the public fixture that mounts the /m/ and /subscription/ routes.
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture, type PublicFixture } from "@/test/public/fixture";
 
@@ -21,10 +22,15 @@ async function open(overrides: Partial<Record<string, unknown>> = {}) {
   return f;
 }
 
-/** A marketing send to one list, to a subscriber on it. */
-async function sendTo(f: PublicFixture, name = "News") {
-  const list = await f.list(name);
-  const id = await f.subscriber(`${name.toLowerCase()}@example.test`, "Ada", { lists: [list.id] });
+/** A marketing send to one list of the given type, to a subscriber on it. */
+async function sendTo(
+  f: PublicFixture,
+  name = "News",
+  type = "public",
+  email = `${name.toLowerCase()}@example.test`,
+) {
+  const list = await f.list(name, type);
+  const id = await f.subscriber(email, "Ada", { lists: [list.id] });
   const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
   const template = await f.template(`<a href="{{ unsubscribe_url }}">unsub</a>`, name);
   const sent = await f.tx({
@@ -144,6 +150,13 @@ test("a wipe asks for confirmation on its own page and deletes only when confirm
   const askedHtml = await asked.text();
   expect(askedHtml).toContain("Delete your email data?");
   expect(askedHtml).toContain(`action="/m/${send}/wipe/${uuid}?confirm=true"`);
+  // Keep my data leads back to the manage page, which still answers the person's address.
+  expect(askedHtml).toContain(
+    `<a href="/m/${send}/unsubscribe/${uuid}?manage=true">Keep my data</a>`,
+  );
+  expect(await (await f.request(`/m/${send}/unsubscribe/${uuid}?manage=true`)).text()).toContain(
+    'class="manage-form"',
+  );
   expect((await f.json(`/api/subscribers/${id}`)).status).toBe(200);
 
   const removed = await f.fresh(`/m/${send}/wipe/${uuid}?confirm=true`);
@@ -258,4 +271,161 @@ test("the opt-in mail is branded and carries no product credit", async () => {
   expect(mail.body).toContain("Brand Co");
   expect(mail.body).not.toContain("Powered by");
   expect(mail.body).not.toContain("listmonk");
+});
+
+test("a private list's revisited link says so from the membership, and never names the private list", async () => {
+  const f = await open();
+  const { list, id, uuid, send } = await sendTo(f, "Members", "private");
+  const page = `/m/${send}/unsubscribe/${uuid}`;
+  expect(await (await f.request(page)).text()).toContain(
+    "Do you want to unsubscribe from this mailing list?",
+  );
+
+  expect((await f.fresh(page, "List-Unsubscribe=One-Click")).status).toBe(200);
+  expect(await f.status(id, list.id)).toBe("unsubscribed");
+
+  const again = await (await f.request(page)).text();
+  expect(again).toContain("You are already unsubscribed from these emails.");
+  expect(again).not.toContain("Members");
+  expect(again).not.toContain("Do you want to unsubscribe");
+  expect(again).not.toContain('id="btn-unsub"');
+});
+
+test("the already-unsubscribed page keeps the export, wipe and manage links, and links back when the site URL is set", async () => {
+  const f = await open({ siteName: "Brand Co" });
+  const { send, uuid } = await sendTo(f, "Members", "private");
+  const page = `/m/${send}/unsubscribe/${uuid}`;
+  await f.fresh(page, "List-Unsubscribe=One-Click");
+
+  const without = await (await f.request(page)).text();
+  expect(without).toContain('id="data-form"');
+  expect(without).toContain('href="?manage=true"');
+  expect(without).not.toContain("Back to Brand Co");
+
+  Object.assign(f.overrides, { siteUrl: brandUrl });
+  const withSite = await (await f.request(page)).text();
+  expect(withSite).toContain('id="data-form"');
+  expect(withSite).toContain(`<a href="${brandUrl}">Back to Brand Co</a>`);
+  // The manage link leads to the manage view, so the page is not a dead end.
+  expect(await (await f.request(`${page}?manage=true`)).text()).toContain('class="manage-form"');
+});
+
+test("a campaign's revisited link covers its own lists only, and its unsubscribed page links back", async () => {
+  const f = await open({ siteName: "Brand Co", siteUrl: brandUrl });
+  const news = await f.list("News");
+  const other = await f.list("Other");
+  const id = await f.subscriber("camp@example.test", "Cam", { lists: [news.id, other.id] });
+  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const camp = f.deliveredCampaign([id], [news.id]);
+  const page = `/subscription/${camp}/${uuid}`;
+
+  const asked = await (await f.fresh(`/subscription/${camp}/wipe/${uuid}`)).text();
+  expect(asked).toContain(`<a href="/subscription/${camp}/${uuid}?manage=true">Keep my data</a>`);
+
+  const done = await (await f.fresh(page, "List-Unsubscribe=One-Click")).text();
+  expect(done).toContain("You have unsubscribed successfully.");
+  expect(done).toContain(`<a href="${brandUrl}">Back to Brand Co</a>`);
+  expect(await f.status(id, news.id)).toBe("unsubscribed");
+
+  // The campaign's list is unsubscribed, and the person is still on Other: the link still says so.
+  expect(await f.status(id, other.id)).not.toBe("unsubscribed");
+  const again = await (await f.request(page)).text();
+  expect(again).toContain("You are already unsubscribed from these emails: News.");
+  expect(again).not.toContain("Do you want to unsubscribe");
+});
+
+test("the error, expired, invalid and not-found pages link back to the site when the site URL is set", async () => {
+  const f = await open({ siteName: "Brand Co", siteUrl: brandUrl });
+  const { send, uuid } = await sendTo(f);
+  const back = `<a href="${brandUrl}">Back to Brand Co</a>`;
+
+  expect(await (await f.request(`/m/${send}/unsubscribe/not-a-uuid`)).text()).toContain(back);
+  for (const path of ["/", "/no-such-public-page"]) {
+    const missing = await f.request(path);
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toContain(back);
+  }
+
+  expect((await f.fresh(`/m/${send}/wipe/${uuid}?confirm=true`)).status).toBe(200);
+  const expired = await f.request(`/m/${send}/unsubscribe/${uuid}`);
+  expect(expired.status).toBe(404);
+  expect(await expired.text()).toContain(back);
+});
+
+test("a site name and a list name with $ patterns are printed as typed, wherever they are substituted", async () => {
+  const name = "Shop $& Co $$ $1 x";
+  const f = await open({ siteName: name, siteUrl: brandUrl });
+  const { send, uuid } = await sendTo(f, "Deals $& $1", "public", "deals@example.test");
+  const page = `/m/${send}/unsubscribe/${uuid}`;
+  // The text is escaped as HTML, so `&` reads `&amp;` on the page; the `$` patterns stay as typed.
+  const shown = "Shop $&amp; Co $$ $1 x";
+
+  await f.fresh(page, "List-Unsubscribe=One-Click");
+  const already = await (await f.request(page)).text();
+  expect(already).toContain("You are already unsubscribed from these emails: Deals $&amp; $1.");
+  expect(already).toContain(`<a href="${brandUrl}">Back to ${shown}</a>`);
+
+  const wipe = await (await f.fresh(`/m/${send}/wipe/${uuid}`)).text();
+  expect(wipe).toContain(`This does not close your account with ${shown}.`);
+
+  expect((await f.fresh(`/m/${send}/export/${uuid}`)).status).toBe(200);
+  await f.drain();
+  const subjects = f.mailTo("deals@example.test").map((m) => decoded(m.data).header("Subject"));
+  expect(subjects).toContain(`Your data from ${name}`);
+});
+
+test("the subscriber mails name the site and link it when the site URL is set, and the text part prints the link", async () => {
+  const f = await open({ siteName: "Brand Co", logoUrl: logo, siteUrl: brandUrl });
+  const { send, uuid, id } = await sendTo(f, "Noa");
+  const email = (await f.json(`/api/subscribers/${id}`)).body.data.email as string;
+  expect((await f.fresh(`/m/${send}/export/${uuid}`)).status).toBe(200);
+  const list = await f.list("Monthly", "public", "double");
+  await f.fresh(
+    "/subscription/form",
+    new URLSearchParams({ email: "opt@example.test", name: "Opt", l: list.uuid }).toString(),
+  );
+  await f.drain();
+
+  const data = f
+    .mailTo(email)
+    .map((m) => decoded(m.data))
+    .find((m) => m.header("Subject") === "Your data from Brand Co");
+  expect(data).toBeDefined();
+  expect(data!.body).toContain(`<a href="${brandUrl}">Brand Co</a>`);
+  expect(data!.body).toContain(`Brand Co <${brandUrl}>`);
+
+  const optin = f.mailTo("opt@example.test").map((m) => decoded(m.data));
+  expect(optin.length).toBeGreaterThan(0);
+  expect(optin[0]!.body).toContain(`<a href="${brandUrl}">Brand Co</a>`);
+  expect(optin[0]!.body).toContain(`Brand Co <${brandUrl}>`);
+});
+
+test("without a site URL the subscriber mails name the site as plain text", async () => {
+  const f = await open({ siteName: "Brand Co", logoUrl: logo });
+  const { send, uuid, id } = await sendTo(f, "Noa");
+  const email = (await f.json(`/api/subscribers/${id}`)).body.data.email as string;
+  expect((await f.fresh(`/m/${send}/export/${uuid}`)).status).toBe(200);
+  await f.drain();
+
+  const data = f
+    .mailTo(email)
+    .map((m) => decoded(m.data))
+    .find((m) => m.header("Subject") === "Your data from Brand Co");
+  expect(data).toBeDefined();
+  expect(data!.body).toContain("Brand Co</p>");
+  expect(data!.body).not.toContain(`href="${brandUrl}"`);
+  expect(data!.body).not.toContain("Brand Co <");
+});
+
+test("the subscription form's 404 is the branded page, on GET and POST, when the public form is off", async () => {
+  const f = await open({ subscriptionPage: false });
+  const got = await f.request("/subscription/form");
+  expect(got.status).toBe(404);
+  const gotHtml = await got.text();
+  expect(gotHtml).toContain("<h2>Page not found</h2>");
+  expect(gotHtml).not.toContain("That feature is not available.");
+
+  const posted = await f.fresh("/subscription/form", "email=off@example.test");
+  expect(posted.status).toBe(404);
+  expect(await posted.text()).toContain("<h2>Page not found</h2>");
 });

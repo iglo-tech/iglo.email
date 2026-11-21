@@ -118,12 +118,21 @@ export function registerCampaignPublicRoutes(
     const found = pairing(campUuid, subUuid);
     return found && found.campaign !== null ? found.subscriber : null;
   };
-  /** The base of this campaign's paired routes, for its manage page's forms; none for the placeholder. */
-  // The placeholder's mail manages pending lists only (D126, r1); a campaign's page is paired.
-  const pageMode = (campUuid: string): PageMode =>
-    campUuid === dummyUUID
+  /**
+   * The base of this campaign's paired routes, for its manage page's forms; none for the placeholder.
+   * The placeholder's mail manages pending lists only (D126, r1). A campaign's link covers its own lists,
+   * so its already-unsubscribed check reads only those (B126, D123).
+   */
+  const pageMode = (campUuid: string, campaign: bigint | null): PageMode =>
+    campaign === null
       ? { kind: "pending" }
-      : { kind: "paired", base: `/subscription/${campUuid}`, blocklist: true, privacy: true };
+      : {
+          kind: "paired",
+          base: `/subscription/${campUuid}`,
+          blocklist: true,
+          privacy: true,
+          lists: deps.store.listIds(campaign),
+        };
   /** Answers a path that pairs nobody. The same page for an unknown subscriber, so none is revealed. */
   const unpaired = (t: Translation) =>
     page(t, 404, t.T("globals.terms.notFound"), t.T("globals.messages.invalidLink"), noIndex);
@@ -152,7 +161,7 @@ export function registerCampaignPublicRoutes(
       options(),
       manage,
       noIndex,
-      pageMode(camp),
+      pageMode(camp, found.campaign),
     );
   });
 
@@ -255,9 +264,14 @@ export function registerCampaignPublicRoutes(
       const bad = invalidUUID(context, "campUUID", "subUUID");
       if (bad) return bad;
       const camp = context.params.campUUID!.toLowerCase();
+      // B126 (D123): the confirmation's "Keep my data" returns to this campaign's manage page.
+      const manage = `/subscription/${camp}/${context.params.subUUID!.toLowerCase()}?manage=true`;
       return (
-        deps.privacy.wipe(context, () => privacySubscriber(camp, context.params.subUUID!)) ??
-        unpaired(context.app.i18n)
+        deps.privacy.wipe(
+          context,
+          () => privacySubscriber(camp, context.params.subUUID!),
+          manage,
+        ) ?? unpaired(context.app.i18n)
       );
     },
     ...privacyLimit,

@@ -992,15 +992,17 @@ A session with no stored expiry (written before sessions captured one) goes seve
 ## Site URL and the public pages
 
 `app.site_url` is your own site, such as its homepage ([D123](design/09-decisions.md#d123-public-pages-and-subscriber-mail-say-what-happened-and-a-wipe-asks-first-lead-2026-11-21)).
-It is empty by default. When it is set, the logo on every public page and mail links to it, and
-the "Done", "Unsubscribed" and "Data removed" pages get a "Back to <site name>" link. Without it, the
-logo links to the subscription page when that page is on, and to nothing otherwise.
+It is empty by default. When it is set, the logo on every public page links to it, every result,
+error and missing page gets a "Back to <site name>" link, and the site name in the subscriber mails
+(the data and the opt-in mail) links to it in their footers. Without it, the logo links to the
+subscription page when that page is on, and to nothing otherwise.
 
 - **How to set it.** In the admin's General settings, under Site URL, or with
   `PUT /api/settings/app.site_url` and a JSON string. It takes effect at once.
 - **What it accepts.** An absolute `http://` or `https://` URL with a host, such as
-  `https://www.example.com`. It takes no user name, password, query or fragment. A value that
-  is refused names the fix, and the stored value stays as it was.
+  `https://www.example.com`, with or without a query string (for example
+  `https://www.example.com/?utm_source=email`). It takes no user name, password or fragment, and no
+  control character. A value that is refused names the fix, and the stored value stays as it was.
 - **What it is not.** It is not the root URL. The root URL is the address of this installation,
   which the links in mail and in the admin are built from.
 

@@ -29,11 +29,13 @@ At 1280 and 390 px, with no horizontal scroll at either width:
 - The manage page, with its labelled name field and the wipe copy.
 - The wipe confirmation page, reached by choosing the wipe option and pressing Continue. Nothing
   was deleted there, and the subscriber still answered `200` through the API.
-- The already-unsubscribed page, on a second visit to an unsubscribe link.
-- The Done, Unsubscribed and Data removed pages, each with "Back to Mailing list" when `app.site_url`
-  is set, and the header logo linking to that site.
-- The "Page not found" 404, the invalid-link page and the expired-link page.
+- The already-unsubscribed page, on a second visit to an unsubscribe link, with its export and wipe
+  forms and its manage link.
+- The Done, Unsubscribed, Data removed, "Page not found", invalid-link and expired-link pages, each
+  with "Back to Mailing list" when `app.site_url` is set, and the header logo linking to that site.
+- The wipe confirmation, with its "Keep my data" link back to the manage page.
+- The data mail and the opt-in mail, with the site name linked in their footers.
 - The admin sign-in page, and the admin settings page's Site URL field.
 
-Without `app.site_url` the logo links to the subscription page, and the result pages have no back link.
+Without `app.site_url` the logo links to the subscription page, and the pages have no back link.
 When no logo is set, the shell shows the default product logo, as it did before this change.

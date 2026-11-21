@@ -816,7 +816,7 @@ export const differences: Difference[] = [
   {
     area: "Public page copy (B126, D123)",
     summary:
-      "The public pages say what happened: an invalid link reads 'This link is not valid.', an old link after a wipe reads 'This link has expired or the data was removed.', an unknown page is 'Page not found' with no footer, and the Done, Unsubscribed and Data removed pages link back to app.site_url when it is set. The header logo links to app.site_url, else the subscription page, else nowhere. The API's messages are unchanged. Upstream names a missing record and links a logo to an empty href.",
+      "The public pages say what happened: an invalid link reads 'This link is not valid.', an old link after a wipe reads 'This link has expired or the data was removed.', an unknown page is 'Page not found' with no footer, every result, error and missing page links back to app.site_url when it is set, and a disabled subscription form answers the branded 'Page not found'. The header logo links to app.site_url, else the subscription page, else nowhere. The API's messages are unchanged. Upstream names a missing record and links a logo to an empty href.",
     applies: [],
   },
   {
@@ -828,7 +828,7 @@ export const differences: Difference[] = [
   {
     area: "Already unsubscribed links (B126, D123)",
     summary:
-      "A marketing link revisited after the person unsubscribed from its list says so, with no form, and names the list. The manage view still lists what remains. Upstream shows the unsubscribe form again.",
+      "A marketing link revisited after the person is unsubscribed from every list it covers says so, with no form. It names only public lists, decided by membership whatever the list's type, and keeps the privacy forms and the manage link. The manage view still lists what remains. Upstream shows the unsubscribe form again.",
     applies: [],
   },
   {
@@ -840,7 +840,7 @@ export const differences: Difference[] = [
   {
     area: "Site URL setting (B126, D123)",
     summary:
-      "app.site_url is a native setting for the operator's own site, empty by default, validated under the D107 root URL rules. The logo and back links point to it. The root URL is iglo.email's own address and cannot serve. Upstream has no such setting.",
+      "app.site_url is a native setting for the operator's own site, empty by default, validated like the D107 root URL, except that a query string is allowed. The logo and back links point to it. The root URL is iglo.email's own address and cannot serve. Upstream has no such setting.",
     applies: [],
   },
   {

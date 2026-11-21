@@ -477,6 +477,7 @@
     "public.wipeConfirmButton": "Delete my email data",
     "public.wipeConfirmInfo": "Your address, name and list memberships are deleted from this mailing service. This does not close your account with {site}.",
     "public.wipeConfirmTitle": "Delete your email data?",
+    "public.wipeKeep": "Keep my data",
     "sequences.activate": "Activate",
     "sequences.addStep": "Add step",
     "sequences.archive": "Archive",

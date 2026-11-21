@@ -32,6 +32,36 @@ test("app.site_url is empty by default and takes an absolute http(s) URL", async
   expect(await siteUrl()).toBe("https://brand.example.test/");
 });
 
+test("app.site_url takes a query string, such as a homepage's tracking parameter", async () => {
+  const saved = await api(
+    f,
+    cookie,
+    "/api/settings/app.site_url",
+    "PUT",
+    "https://brand.example.test/?utm_source=email",
+  );
+  expect(saved.status).toBe(200);
+  expect(await siteUrl()).toBe("https://brand.example.test/?utm_source=email");
+  await api(f, cookie, "/api/settings/app.site_url", "PUT", "https://brand.example.test/");
+});
+
+test("a rejected app.site_url names the site URL, not the root URL, and keeps the stored value", async () => {
+  const kept = "https://brand.example.test/";
+  for (const value of [
+    "https://brand.example.test/#top",
+    "https://brand.example.test/\u0001",
+    "ftp://brand.example.test/",
+  ]) {
+    const refused = await api(f, cookie, "/api/settings/app.site_url", "PUT", value);
+    expect(refused.status).toBe(400);
+    const message = ((await refused.json()) as { message: string }).message;
+    expect(message).toContain("site URL");
+    expect(message).not.toContain("root URL");
+    expect(message).not.toContain("root-url");
+  }
+  expect(await siteUrl()).toBe(kept);
+});
+
 test("a rejected app.site_url names the fix, keeps the stored value and echoes no credential", async () => {
   const kept = "https://brand.example.test/";
   const bare = await api(f, cookie, "/api/settings/app.site_url", "PUT", "brand.example.test");

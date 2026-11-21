@@ -157,7 +157,7 @@ export function registerUnsubscribeRoutes(
       base,
       blocklist: found.marketing,
       privacy: found.marketing,
-      ...(found.marketing ? { lists: [found.list] } : {}),
+      lists: found.marketing ? [found.list] : [],
     };
     return subscriptionPage(
       t,
@@ -234,7 +234,6 @@ export function registerUnsubscribeRoutes(
         title: t.T("globals.terms.unsubscribed"),
         message: t.T("public.unsubbedInfo"),
         site: options(),
-        back: true,
       });
     },
     ...limit,
@@ -259,7 +258,11 @@ export function registerUnsubscribeRoutes(
     (context) => {
       const bad = invalidUUID(context, "sendUUID", "subUUID");
       if (bad) return bad;
-      return deps.privacy.wipe(context, () => paired(context)) ?? notFound(context.app.i18n);
+      // B126 (D123): the confirmation's "Keep my data" returns to this send's manage page.
+      const manage = `/m/${context.params.sendUUID!.toLowerCase()}/unsubscribe/${context.params.subUUID!.toLowerCase()}?manage=true`;
+      return (
+        deps.privacy.wipe(context, () => paired(context), manage) ?? notFound(context.app.i18n)
+      );
     },
     ...privacyLimit,
   );

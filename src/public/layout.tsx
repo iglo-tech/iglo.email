@@ -28,10 +28,11 @@ export interface PublicShellProps {
 
 /**
  * A line of copy with the site's name in place of `{site}` (B126). The copy is trusted text, and the
- * name is not resolved as a translation key, so a name cannot pull in other copy.
+ * name is not resolved as a translation key, so a name cannot pull in other copy. A function gives
+ * the name as typed: a string replacement would read its `$&`, `$$` and `$1` patterns.
  */
 export function siteText(text: string, siteName: string): string {
-  return text.replaceAll("{site}", siteName);
+  return text.replaceAll("{site}", () => siteName);
 }
 
 /**
