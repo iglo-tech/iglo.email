@@ -153,7 +153,8 @@ test("a multi-list double opt-in mail keeps both list parameters, with & not &am
     expect(created.status).toBe(200);
     const text = await textTo(s, "ada-optin@example.test");
     const link = /https?:\/\/\S+\/subscription\/optin\/\S+/.exec(text ?? "")?.[0] ?? "";
-    expect(link.split("&l=").length - 1).toBe(2);
+    // The query carries one list parameter per list: `?l=…&l=…`.
+    expect(link.match(/[?&]l=/g)?.length).toBe(2);
     expect(link).not.toContain("&amp;");
   } finally {
     await s.close();
