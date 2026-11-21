@@ -48,6 +48,26 @@ export default defineConfig({
     },
     // B134b: src/messaging/notify.ts falls back to console when no logger is injected; inject the logger instead.
     { files: ["src/messaging/notify.ts"], rules: { "no-console": "off" } },
+    // Exception, for the lead to decide at review: these files test `instanceof` for their own error classes and
+    // for the values it is the only exact check for (Promise, Response, Uint8Array, liquidjs Output and Drop). A
+    // brand or duck-type check would also accept thenables and objects from other realms, which changes behaviour.
+    {
+      files: [
+        "src/admin/page.tsx",
+        "src/conditions/validate.ts",
+        "src/db/transaction.ts",
+        "src/events/store.ts",
+        "src/loops/loop.ts",
+        "src/messaging/payload.ts",
+        "src/public/routes.tsx",
+        "src/sequences/routes.ts",
+        "src/settings/validate.ts",
+        "src/subscribers/import/routes.ts",
+        "src/templates/renderer.ts",
+        "src/webhooks/delivery.ts",
+      ],
+      rules: { "@nkzw/no-instanceof": "off" },
+    },
     // Exception, for the lead to decide at review: the Nodemailer envelope in messaging/email.ts carries address
     // objects that @types/nodemailer 8 omits, so its SDK boundary cast can only be a chained one, never a checked type.
     { files: ["src/messaging/email.ts"], rules: { "quality/no-chained-type-assertions": "off" } },
@@ -78,6 +98,7 @@ export default defineConfig({
         "quality/no-object-parameters": "off",
         "typescript/no-misused-spread": "off",
         "typescript/no-unnecessary-type-assertion": "off",
+        "@nkzw/no-instanceof": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -123,7 +144,6 @@ export default defineConfig({
     "typescript/no-unsafe-return": "off", // B134b
     "typescript/no-unsafe-type-assertion": "off", // B134b
     "typescript/unbound-method": "off", // B134b
-    "@nkzw/no-instanceof": "off", // B134b
     "quality/no-conditional-empty-object-spread": "off", // B134b
     "quality/no-known-value-widening": "off", // B134b
     "quality/no-unknown-returns": "off", // B134b
