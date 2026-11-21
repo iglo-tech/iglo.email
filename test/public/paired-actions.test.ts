@@ -131,7 +131,9 @@ test("a delivered campaign's manage page exports and wipes its subscriber throug
   await f.drain();
   expect(f.mailTo("ada@example.test")).toHaveLength(1);
 
-  expect((await act(f, `/subscription/${weekly.uuid}/wipe/${adaUuid}`)).status).toBe(200);
+  expect((await act(f, `/subscription/${weekly.uuid}/wipe/${adaUuid}?confirm=true`)).status).toBe(
+    200,
+  );
   expect((await f.json(`/api/subscribers/${ada}`)).status).toBe(400);
 });
 
@@ -236,7 +238,7 @@ test("a marketing send's manage page exports and wipes through its send, for its
   await f.drain();
   expect(f.mailTo("ada@example.test")).toHaveLength(exports + 1);
 
-  expect((await act(f, `/m/${send}/wipe/${adaUuid}`)).status).toBe(200);
+  expect((await act(f, `/m/${send}/wipe/${adaUuid}?confirm=true`)).status).toBe(200);
   expect((await f.json(`/api/subscribers/${ada}`)).status).toBe(400);
   expect((await subscriberOf(f, bob)).status).toBe("enabled");
 });

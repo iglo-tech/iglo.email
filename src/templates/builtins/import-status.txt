@@ -83,7 +83,7 @@
     <div class="wrap">
         <div class="header">
             {% if logo_url != "" %}
-                <img src="{{ logo_url }}" alt="listmonk" />
+                <img src="{{ logo_url }}" alt="{{ site_name }}" />
             {% endif %}
         </div>
 
@@ -106,7 +106,7 @@
     </div>
 
     <div class="footer">
-        <p>{{ "public.poweredBy" | t }} <a href="https://listmonk.app" target="_blank" rel="noreferrer">listmonk</a></p>
+        <p>{{ site_name }}</p>
     </div>
     <div class="gutter">&nbsp;</div>
 </body>

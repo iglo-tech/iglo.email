@@ -10,4 +10,5 @@ export const fixturePageSite = (): PageSite => ({
   faviconUrl: "",
   subscriptionPage: false,
   archive: false,
+  siteUrl: "",
 });

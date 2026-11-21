@@ -296,7 +296,7 @@ describe("one server", () => {
       })
     ).body.data.sends[0].id as number;
     const sendUuid = (await c.call(`/api/sends/${sent}`)).body.data.uuid as string;
-    const wiped = await fetch(`${origin}/m/${sendUuid}/wipe/${uuid}`, {
+    const wiped = await fetch(`${origin}/m/${sendUuid}/wipe/${uuid}?confirm=true`, {
       method: "POST",
       headers: { "sec-fetch-site": "same-origin" },
     });

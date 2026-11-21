@@ -106,7 +106,7 @@ export function registerUnsubscribeRoutes(
           context.app.i18n,
           400,
           context.app.i18n.T("globals.terms.error"),
-          context.app.i18n.T("globals.messages.invalidUUID"),
+          context.app.i18n.T("public.linkNotValid"),
         )
       : null;
   /**
@@ -151,11 +151,13 @@ export function registerUnsubscribeRoutes(
     // B123 (D126): the page's forms post to this send's paired routes. A transactional send's page
     // manages confirmed lists and the name only: no blocklist and no privacy form (r1).
     const base = `/m/${context.params.sendUUID!.toLowerCase()}`;
+    // B126 (D123): a marketing link covers its send's list; a transactional link covers none.
     const mode: PageMode = {
       kind: "paired",
       base,
       blocklist: found.marketing,
       privacy: found.marketing,
+      lists: found.marketing ? [found.list] : [],
     };
     return subscriptionPage(
       t,
@@ -227,7 +229,12 @@ export function registerUnsubscribeRoutes(
         return true;
       });
       if (!done) return notFound(t);
-      return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
+      return publicMessage(t, {
+        status: 200,
+        title: t.T("globals.terms.unsubscribed"),
+        message: t.T("public.unsubbedInfo"),
+        site: options(),
+      });
     },
     ...limit,
   );
@@ -251,7 +258,11 @@ export function registerUnsubscribeRoutes(
     (context) => {
       const bad = invalidUUID(context, "sendUUID", "subUUID");
       if (bad) return bad;
-      return deps.privacy.wipe(context, () => paired(context)) ?? notFound(context.app.i18n);
+      // B126 (D123): the confirmation's "Keep my data" returns to this send's manage page.
+      const manage = `/m/${context.params.sendUUID!.toLowerCase()}/unsubscribe/${context.params.subUUID!.toLowerCase()}?manage=true`;
+      return (
+        deps.privacy.wipe(context, () => paired(context), manage) ?? notFound(context.app.i18n)
+      );
     },
     ...privacyLimit,
   );

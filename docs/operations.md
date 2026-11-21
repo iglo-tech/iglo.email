@@ -989,11 +989,30 @@ A session with no stored expiry (written before sessions captured one) goes seve
 - Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
 - `sends` rows are kept for good. Their size is small, and old links and analytics read them.
 
+## Site URL and the public pages
+
+`app.site_url` is your own site, such as its homepage ([D123](design/09-decisions.md#d123-public-pages-and-subscriber-mail-say-what-happened-and-a-wipe-asks-first-lead-2026-11-21)).
+It is empty by default. When it is set, the logo on every public page links to it, every result,
+error and missing page gets a "Back to <site name>" link, and the site name in the subscriber mails
+(the data and the opt-in mail) links to it in their footers. Without it, the logo links to the
+subscription page when that page is on, and to nothing otherwise.
+
+- **How to set it.** In the admin's General settings, under Site URL, or with
+  `PUT /api/settings/app.site_url` and a JSON string. It takes effect at once.
+- **What it accepts.** An absolute `http://` or `https://` URL with a host, such as
+  `https://www.example.com`, with or without a query string (for example
+  `https://www.example.com/?utm_source=email`). It takes no user name, password or fragment, and no
+  control character. A value that is refused names the fix, and the stored value stays as it was.
+- **What it is not.** It is not the root URL. The root URL is the address of this installation,
+  which the links in mail and in the admin are built from.
+
 ## Privacy: wipes and suppressions
 
 A person who wipes their data through a link in mail or a campaign (the paired paths of
 [D126](design/09-decisions.md#d126-privacy-and-blocklist-need-a-paired-send-or-campaign-lead-2026-11-20))
-removes their subscriber row and leaves a suppression ([D125](design/09-decisions.md#d125-a-self-wiped-person-is-not-silently-re-opted-into-marketing-lead-2026-11-20)):
+first sees a page that says what the wipe removes. Nothing is deleted until they press its button
+([D123](design/09-decisions.md#d123-public-pages-and-subscriber-mail-say-what-happened-and-a-wipe-asks-first-lead-2026-11-21)).
+The wipe removes their subscriber row and leaves a suppression ([D125](design/09-decisions.md#d125-a-self-wiped-person-is-not-silently-re-opted-into-marketing-lead-2026-11-20)):
 
 - **What it keeps.** Keyed hashes (HMAC-SHA-256) of the normalised address and of the external ID
   when there is one, the list IDs the person had, and the time. The key is one random value in

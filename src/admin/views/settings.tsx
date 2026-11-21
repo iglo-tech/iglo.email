@@ -132,6 +132,15 @@ function General({ t }: { t: Translation }) {
           maxlength="300"
           placeholder="https://mail.yoursite.com/favicon.png"
         />
+        <TextField
+          model="form['app.site_url']"
+          name="app.site_url"
+          type="url"
+          label={t.T("settings.general.siteURL")}
+          hint={t.T("settings.general.siteURLHelp")}
+          maxlength="300"
+          placeholder="https://www.yoursite.com"
+        />
       </fieldset>
       <fieldset class="card" data-keywords="from email address sender admin notification emails">
         <legend>{t.T("globals.fields.email")}</legend>

@@ -7,8 +7,8 @@ import type { Translation } from "@/i18n/i18n";
 import { raw, render } from "@/jsx/render";
 import { trimSpace } from "@/lists/store";
 import type { PreferenceForm } from "@/public/form";
-import { PublicShell, type PageSite } from "@/public/layout";
-import { publicMessage } from "@/public/message";
+import { PublicShell, siteText, type PageSite } from "@/public/layout";
+import { backLink, publicMessage } from "@/public/message";
 import { assetVersion } from "@/server/asset-manifest";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
@@ -25,15 +25,39 @@ export interface PageOptions extends PageSite {
  * What a subscription page offers, by how its path pairs the subscriber (D126, r1).
  * - `paired`: a campaign, a marketing send or a transactional send paired them. `base` is the
  *   paired path the forms post to. The manage view changes the name and the confirmed lists.
- *   `blocklist` and `privacy` say whether those forms appear.
+ *   `blocklist` and `privacy` say whether those forms appear. `lists` are the lists the link covers:
+ *   a marketing send's list, a campaign's lists, none for a transactional send (B126, D123).
  * - `pending`: a mail the server sent with no campaign or send (opt-in). The manage view changes
  *   pending lists only: no name, no blocklist, no privacy form.
  */
 export type PageMode =
-  | { kind: "paired"; base: string; blocklist: boolean; privacy: boolean }
+  | {
+      kind: "paired";
+      base: string;
+      blocklist: boolean;
+      privacy: boolean;
+      lists: bigint[];
+    }
   | { kind: "pending" };
 
 const script = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
+
+/**
+ * The public lists a revisited link covers, when every membership it covers is unsubscribed; `null`
+ * while the link still has something to unsubscribe from (B126, D123). The memberships decide,
+ * whatever the list's type, so a private list counts. Only public lists are named, as the manage view
+ * names them: a link that covers private lists alone names none.
+ */
+function alreadyUnsubscribed(
+  subscribers: SubscriberStore,
+  id: bigint,
+  lists: bigint[],
+): string[] | null {
+  const covered = subscribers.allSubscriptions(id).filter((list) => lists.includes(list.listId));
+  if (!covered.length || covered.some((list) => list.subscriptionStatus !== "unsubscribed"))
+    return null;
+  return covered.filter((list) => list.type === "public").map((list) => list.name);
+}
 
 export function subscriptionPage(
   t: Translation,
@@ -44,6 +68,13 @@ export function subscriptionPage(
   headers: Record<string, string>,
   mode: PageMode,
 ): Response {
+  // B126 (D123): a marketing or campaign link revisited after every list it covers is unsubscribed says
+  // so, with the privacy forms and the manage link it offered before. The manage view is not answered
+  // this way: it still shows what remains.
+  const already =
+    !manage && mode.kind === "paired" && mode.blocklist
+      ? alreadyUnsubscribed(subscribers, subscriber.id, mode.lists)
+      : null;
   const showManage = options.allowPreferences && manage;
   const pending = mode.kind === "pending";
   const subscriptions = showManage
@@ -61,14 +92,31 @@ export function subscriptionPage(
   const base = mode.kind === "paired" ? mode.base : "";
   const body = render(
     <PublicShell
-      title={t.T("public.unsubscribeTitle")}
+      title={already ? t.T("globals.terms.unsubscribed") : t.T("public.unsubscribeTitle")}
       assetVersion={assetVersion}
-      poweredBy={t.T("public.poweredBy")}
       archiveTitle={t.T("public.archiveTitle")}
       site={options}
     >
       <section class="section">
-        {!showManage ? (
+        {already ? (
+          <>
+            <h2>{t.T("globals.terms.unsubscribed")}</h2>
+            <div>
+              <p>
+                {already.length
+                  ? t
+                      .T("public.alreadyUnsubscribedLists")
+                      .replaceAll("{lists}", () => already.join(", "))
+                  : t.T("public.alreadyUnsubscribed")}
+              </p>
+              {options.allowPreferences ? (
+                <p>
+                  <a href="?manage=true">{t.T("public.managePrefs")}</a>
+                </p>
+              ) : null}
+            </div>
+          </>
+        ) : !showManage ? (
           <>
             <h2>{t.T("globals.buttons.unsubscribe")}</h2>
             <form method="post" class="unsub-form">
@@ -101,8 +149,15 @@ export function subscriptionPage(
               <h2>{t.T("public.managePrefs")}</h2>
               {pending ? null : (
                 <>
-                  <label>{t.T("globals.fields.name")}</label>
-                  <input type="text" name="name" value={subscriber.name} maxlength="256" required />
+                  <label for="manage-name">{t.T("globals.fields.name")}</label>
+                  <input
+                    id="manage-name"
+                    type="text"
+                    name="name"
+                    value={subscriber.name}
+                    maxlength="256"
+                    required
+                  />
                 </>
               )}
               {subscriptions.length ? (
@@ -181,7 +236,7 @@ export function subscriptionPage(
                     <strong>{t.T("public.privacyWipe")}</strong>
                   </label>
                   <br />
-                  {t.T("public.privacyWipeHelp")}
+                  {siteText(t.T("public.privacyWipeHelp"), options.siteName)}
                 </div>
               ) : null}
               <p>
@@ -195,20 +250,18 @@ export function subscriptionPage(
           </form>
         </>
       ) : null}
+      {already ? backLink(t, options) : null}
       {raw(`<script>
 ${
   privacy
     ? `function handleData() {
+  // B126 (D123): a wipe posts to its own confirmation page, which deletes nothing until confirmed.
   var a = document.querySelector('input[name="data-action"]:checked').value,
     f = document.querySelector("#data-form");
-  if (a == "export") {
-    f.action = ${script(`${base}/export/${subscriber.uuid}`)};
-    return true;
-  } else if (confirm(${script(t.T("public.privacyConfirmWipe"))})) {
-    f.action = ${script(`${base}/wipe/${subscriber.uuid}`)};
-    return true;
-  }
-  return false;
+  f.action = a == "export"
+    ? ${script(`${base}/export/${subscriber.uuid}`)}
+    : ${script(`${base}/wipe/${subscriber.uuid}`)};
+  return true;
 }`
     : ""
 }
@@ -273,6 +326,46 @@ export function savePreferences(
     title: t.T("globals.messages.done"),
     message: t.T("public.prefsSaved"),
     site: options,
+  });
+}
+
+/**
+ * The first step of a wipe (B126, D123): a page that names what the wipe removes and posts `confirm=true`
+ * to the same path. Nothing is deleted by it; a browser dialog is not used.
+ */
+export function wipeConfirmation(
+  t: Translation,
+  action: string,
+  manage: string,
+  options: PageOptions,
+): Response {
+  const title = t.T("public.wipeConfirmTitle");
+  const body = render(
+    <PublicShell
+      title={title}
+      site={options}
+      assetVersion={assetVersion}
+      archiveTitle={t.T("public.archiveTitle")}
+    >
+      <section class="section">
+        <h2>{title}</h2>
+        <p>{siteText(t.T("public.wipeConfirmInfo"), options.siteName)}</p>
+        <form method="post" action={`${action}?confirm=true`}>
+          <p>
+            <button type="submit" class="button" id="btn-wipe">
+              {t.T("public.wipeConfirmButton")}
+            </button>
+          </p>
+        </form>
+        <p>
+          <a href={manage}>{t.T("public.wipeKeep")}</a>
+        </p>
+      </section>
+    </PublicShell>,
+  );
+  return new Response(`<!DOCTYPE html>${body}`, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=UTF-8", "X-Robots-Tag": "noindex" },
   });
 }
 

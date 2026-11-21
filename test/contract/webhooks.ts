@@ -266,9 +266,11 @@ export async function runWebhooksContract(target: {
     }
     await call(`/api/subscribers/${wiped.id}/blocklist`, "PUT", {});
     await arrived("subscriber.blocklisted", 4);
-    const wipe = await fetch(`${target.baseUrl}/subscription/${paired.uuid}/wipe/${wiped.uuid}`, {
-      method: "POST",
-    });
+    // B126 (D123): a wipe deletes only when confirmed.
+    const wipe = await fetch(
+      `${target.baseUrl}/subscription/${paired.uuid}/wipe/${wiped.uuid}?confirm=true`,
+      { method: "POST" },
+    );
     check(wipe.status === 200, `wipe-${wipe.status}`);
     await arrived("subscriber.deleted", 1);
     const gone = ofEvent("subscriber.deleted")[0]!.body.data.subscriber;

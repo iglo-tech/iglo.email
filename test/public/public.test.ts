@@ -28,8 +28,9 @@ const api = (f: PublicFixture, email: string, uuid: string, peer = "203.0.113.9"
   });
 const form = (values: Record<string, string>) => new URLSearchParams(values).toString();
 /** A subscriber's paired privacy path: a campaign the runner delivered to them names it (D126). */
+// A wipe deletes only when confirmed (B126, D123): its path carries the confirmation.
 const paired = async (f: PublicFixture, id: number, action: "export" | "wipe") =>
-  `/subscription/${f.deliveredCampaign([id])}/${action}/${(await f.json(`/api/subscribers/${id}`)).body.data.uuid}`;
+  `/subscription/${f.deliveredCampaign([id])}/${action}/${(await f.json(`/api/subscribers/${id}`)).body.data.uuid}${action === "wipe" ? "?confirm=true" : ""}`;
 
 test("each limit is per peer, answers 429 and reopens on the clock", async () => {
   const f = await open();

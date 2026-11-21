@@ -140,7 +140,7 @@ async function wiped(addresses: string[]): Promise<void> {
   }
   for (const subscriber of subscribers) {
     const response = await fetch(
-      `${production.origin}/subscription/${campaign.uuid}/wipe/${subscriber.uuid}`,
+      `${production.origin}/subscription/${campaign.uuid}/wipe/${subscriber.uuid}?confirm=true`,
       { method: "POST" },
     );
     expect(response.status).toBe(200);

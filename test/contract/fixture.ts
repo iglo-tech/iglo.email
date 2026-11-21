@@ -42,8 +42,10 @@ export function startContractFixture(credentials: Credentials) {
         rootUrl: "http://127.0.0.1:9",
         logoUrl: "",
         faviconUrl: "",
-        subscriptionPage: false,
+        // The production defaults: the subscription page is on, so the logo links to its form (B126).
+        subscriptionPage: true,
         archive: true,
+        siteUrl: "",
       }),
     );
     const auth: Middleware = (context, next) => {

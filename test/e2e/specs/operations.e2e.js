@@ -477,19 +477,20 @@ test("the privacy page e-mails a person's data and wipes it, after which no camp
     "Your data has been e-mailed to you as an attachment.",
   );
   const mails = await mailFor(person.email, 2);
-  const exported = mails.find((item) => item.subject === "Your data");
+  // B126 (D123): the subject names the site.
+  const exported = mails.find((item) => item.subject.startsWith("Your data from "));
   expect(exported, "the export mail").toBeTruthy();
   const data = attachedJSON(exported, "data.json");
   expect(data.profile[0].email).toBe(person.email);
   expect(JSON.stringify(data.subscriptions)).toContain(list.name);
 
   await page.goto(manage);
+  // B126 (D123): a wipe asks on its own page first, and deletes only on that page's button.
   await page.locator("#privacy-wipe").check();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#data-form input[type=submit]").click();
-  await expect(page.locator("body")).toContainText(
-    "Your subscriptions and all associated data have been removed.",
-  );
+  await expect(page.locator("h2")).toContainText("Delete your email data?");
+  await page.locator("#btn-wipe").click();
+  await expect(page.locator("body")).toContainText("Your email data has been deleted.");
   // A missing subscriber answers 400 "Subscriber (<id>: ) not found", as listmonk's API does;
   // AGENTS.md keeps that contract, so this is not a 404.
   const gone = await api(page, `/api/subscribers/${person.id}`);

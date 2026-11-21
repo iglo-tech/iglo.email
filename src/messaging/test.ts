@@ -148,7 +148,10 @@ export function createSMTPTest(
           {
             body: systemTemplates.smtpTest,
             mode: "html",
-            data: JSON.stringify({ logo_url: safeLogo(current["app.logo_url"]) }),
+            data: JSON.stringify({
+              logo_url: safeLogo(current["app.logo_url"]),
+              site_name: current["app.site_name"],
+            }),
           },
           budget,
         ).body;

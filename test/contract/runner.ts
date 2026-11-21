@@ -575,14 +575,16 @@ async function comparePublic404(
     "style",
     "icon",
     "images",
-    "footer",
   ]) {
     if (counts[name] !== 1) throw new Error(`Expected exactly one ${name}`);
   }
+  // B126 (D123): production's shell has no footer; upstream's has one with its credit.
+  if ((counts.footer ?? 0) !== (expected.footerText ? 1 : 0))
+    throw new Error("Wrong public footer count");
   if ((counts.script ?? 0) !== (expected.customScript ? 1 : 0))
     throw new Error("Wrong script count");
   if (
-    counts.footerLinks !== expected.footerLinks.length ||
+    (counts.footerLinks ?? 0) !== expected.footerLinks.length ||
     (counts.logoLink ?? 0) !== (expected.customScript ? 1 : 0)
   )
     throw new Error("Wrong public link count");
@@ -591,7 +593,7 @@ async function comparePublic404(
     (counts.archive ?? 0) !== (expected.archiveTitle ? 1 : 0)
   )
     throw new Error("Wrong reference-only asset count");
-  if (title !== `404 - Not found - ${expected.siteName}` || heading !== "404 - Not found")
+  if (title !== `${expected.heading} - ${expected.siteName}` || heading !== expected.heading)
     throw new Error("Wrong public 404 title or heading");
   if (message.trim() !== "" || footer.replace(/\s+/g, " ").trim() !== expected.footerText)
     throw new Error("Wrong public 404 message or attribution");

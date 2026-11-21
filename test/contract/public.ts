@@ -173,10 +173,17 @@ export async function runPublicContract(target: {
    * the path names a campaign the runner delivered to the subscriber, so the reference target keeps
    * its sub-only path and production pairs the subscriber through a campaign of their own.
    */
-  const privacyPath = async (who: { id: number; uuid: string }, action: "export" | "wipe") =>
-    reference
+  const privacyPath = async (
+    who: { id: number; uuid: string },
+    action: "export" | "wipe",
+    confirmed = true,
+  ) => {
+    const path = reference
       ? `/subscription/${action}/${who.uuid}`
       : `/subscription/${await pairedCampaign(who)}/${action}/${who.uuid}`;
+    // B126 (D123, deliberate difference): production's wipe deletes only a confirmed POST.
+    return action === "wipe" && !reference && confirmed ? `${path}?confirm=true` : path;
+  };
   /** A campaign the runner has delivered to this subscriber: its UUID (D126, production). */
   const pairedCampaign = async (who: { id: number }) => {
     const list = await call("/api/lists", "POST", {
@@ -879,10 +886,12 @@ export async function runPublicContract(target: {
       "export",
     );
     // Production's paired campaign mailed Noa too: wait for both, and take the export by its subject.
+    // B126 (D123, deliberate difference): production's subject names the site; upstream's is "Your data".
+    const exportSubject = reference ? "Your data" : "Your data from Mailing list";
     const noaMail = (await received(noa.email, reference ? 1 : 2)).find(
-      (m) => m.Subject === "Your data",
+      (m) => m.Subject === exportSubject,
     );
-    check(noaMail?.Subject === "Your data", "export-subject");
+    check(noaMail?.Subject === exportSubject, "export-subject");
     const noaMessage = await message(noaMail!.ID);
     check(noaMessage.Attachments.length === 1, "export-attachment");
     const attachment = noaMessage.Attachments[0]!;
@@ -950,9 +959,25 @@ export async function runPublicContract(target: {
 
     // Wipe.
     const oli = await createSubscriber("oli", [single.id], true);
+    // B126 (D123, deliberate difference): production asks first on its own page and deletes nothing
+    // until the confirmed POST; upstream deletes on the first POST.
+    if (!reference) {
+      const asked = await post(await privacyPath(oli, "wipe", false));
+      check(
+        asked.status === 200 &&
+          asked.text.includes("Delete your email data?") &&
+          (await call(`/api/subscribers/${oli.id}`)).status === 200,
+        "wipe-asks",
+      );
+    }
     const wiped = await post(await privacyPath(oli, "wipe"));
     check(
-      wiped.status === 200 && wiped.text.includes("Your subscriptions and all associated data"),
+      wiped.status === 200 &&
+        wiped.text.includes(
+          reference
+            ? "Your subscriptions and all associated data have been removed."
+            : "Your email data has been deleted.",
+        ),
       "wipe",
     );
     check((await call(`/api/subscribers/${oli.id}`)).status === 400, "wipe-gone");

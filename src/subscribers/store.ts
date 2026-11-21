@@ -141,6 +141,12 @@ export function createSubscriberStore(
   const q = prepareNamedQueries(db, [{ name: "subscribers/store", sql }]);
   const get = (id: bigint) => q.get("subscriber-by-id").get(id) as Row | null;
   const memberships = (id: bigint) => q.get("subscriber-memberships").all(id) as Membership[];
+  /** The memberships with their list's metadata; a membership whose list is gone is left out. */
+  const subscriptions = (id: bigint) =>
+    memberships(id).flatMap((m) => {
+      const list = lists.subscriberMetadata(m.list_id);
+      return list ? [{ ...list, listId: m.list_id, subscriptionStatus: m.status }] : [];
+    });
   const project = (row: Row, scope: Scope) => ({
     id: numberID(row.id),
     created_at: row.created_at,
@@ -561,14 +567,15 @@ export function createSubscriberStore(
         .filter((list) => list !== null)
         .sort((a, b) => a.id - b.id);
     },
-    /** The memberships public pages may show: not private, not already unsubscribed. */
+    /**
+     * Every membership with its list's name, type and status, whatever the list's type (B126, D123).
+     * A link's already-unsubscribed check reads these, because a private list is the normal case for
+     * a sequence's or a transactional send's link.
+     */
+    allSubscriptions: subscriptions,
+    /** The memberships public pages may show: the ones on public lists, whatever their status. */
     visibleSubscriptions(id: bigint) {
-      return memberships(id).flatMap((m) => {
-        const list = lists.subscriberMetadata(m.list_id);
-        return list && list.type !== "private"
-          ? [{ ...list, listId: m.list_id, subscriptionStatus: m.status }]
-          : [];
-      });
+      return subscriptions(id).filter((list) => list.type !== "private");
     },
     /** Adapted from export-subscriber-data: private list names stay hidden. */
     exportSubscriptions(id: bigint) {

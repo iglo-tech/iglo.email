@@ -56,12 +56,7 @@ function page(
   const i18n = context.app.i18n;
   const title = i18n.T("globals.buttons.login");
   const body = render(
-    <PublicShell
-      title={title}
-      site={site}
-      assetVersion={assetVersion}
-      poweredBy={i18n.T("public.poweredBy")}
-    >
+    <PublicShell title={title} site={site} assetVersion={assetVersion}>
       <section class="login">
         <h2>{title}</h2>
         {/* D26 installs no first-account form; a fresh install says how to provision instead. */}
@@ -161,12 +156,7 @@ export function createLoginHandlers(auth: Authentication, site: () => PageSite) 
     const i18n = context.app.i18n;
     const title = i18n.T("users.twoFA");
     const body = render(
-      <PublicShell
-        title={title}
-        site={site()}
-        assetVersion={assetVersion}
-        poweredBy={i18n.T("public.poweredBy")}
-      >
+      <PublicShell title={title} site={site()} assetVersion={assetVersion}>
         <section class="login">
           <h2>{title}</h2>
           <p>{i18n.T("users.totpCodeHelp")}</p>

@@ -111,7 +111,9 @@ test("a suppressed person's marketing start is named suppressed, and their trans
   // The person wipes through the paired link of that marketing mail.
   const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
   const send = (await f.sendLog("&kind=marketing"))[0]!.uuid as string;
-  expect((await f.request(`/m/${send}/wipe/${uuid}`, { method: "POST" })).status).toBe(200);
+  expect((await f.request(`/m/${send}/wipe/${uuid}?confirm=true`, { method: "POST" })).status).toBe(
+    200,
+  );
 
   // An operator re-creates the address with the list: the wipe still stands, so none is granted.
   expect(

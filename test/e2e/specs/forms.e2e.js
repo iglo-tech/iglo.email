@@ -217,8 +217,13 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
   expect(status(await sub(a), optin)).toBe("unsubscribed");
   expect(status(await sub(a), single)).not.toBe("unsubscribed");
 
-  // Unsubscribe from everything and blocklist.
+  // The link now says the campaign's list is already unsubscribed (B126, D123). Blocking all mail is on
+  // the manage page that the link offers, so the person keeps the one way to block everything.
   await page.goto(url);
+  await expect(page.locator("body")).toContainText(/already unsubscribed/i);
+  const manage = new URL(url);
+  manage.searchParams.set("manage", "true");
+  await page.goto(manage.href);
   await page.locator("#privacy-blocklist").check();
   await page.locator("#btn-unsub").click();
   await expect(page.locator("body")).toContainText(/unsubscribed/i);

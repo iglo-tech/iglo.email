@@ -135,7 +135,8 @@ try {
     });
     assert.equal(response.status, 404);
     assert.equal(response.contentType, "text/html; charset=UTF-8");
-    assert.match(response.body, /<h2>404 - Not found<\/h2>/);
+    assert.match(response.body, /<h2>Page not found<\/h2>/);
+    assert.doesNotMatch(response.body, /<footer|Powered by/);
     for (const [file, notice] of [
       ["go-1.27.2-BSD.txt", "Redistribution and use in source and binary forms"],
       ["unicode-17.0.0-3.0.txt", "UNICODE LICENSE V3"],

@@ -1,6 +1,8 @@
 // Defaults adapted from listmonk schema.sql at 6fcd95f.
 export const defaults = {
   "app.site_name": "Mailing list",
+  // Native (B126, D123): the operator's own site. Empty is none. Validated as a root URL is (D107).
+  "app.site_url": "",
   "app.favicon_url": "",
   "app.from_email": ["listmonk <noreply@listmonk.yoursite.com>"],
   "app.logo_url": "",
