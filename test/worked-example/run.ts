@@ -95,6 +95,8 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     },
   ]);
   await ok("/api/settings/marketing.min_interval", "PUT", CAP);
+  // The app's endpoint is on loopback, which the default refuses (D122): this operator turns the block off.
+  await ok("/api/settings/webhooks.block_private_addresses", "PUT", false);
   const { secret } = await ok("/api/webhooks", "POST", {
     url: app.url(),
     events: ["subscriber.unsubscribed"],

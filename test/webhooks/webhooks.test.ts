@@ -700,10 +700,80 @@ test("block_private_addresses refuses private targets after resolution, without 
   for (const id of ids) await queued(f, id, 1);
   for (const id of ids) expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
   expect(r.received.length).toBe(0);
-  // Off (the default), a self-hosted receiver on a private address works.
+  // Off (an operator's stored choice), a self-hosted receiver on a private address works.
   f.blockPrivate.value = false;
   f.advanceWebhooks(30_000);
   await r.waitFor(1);
+});
+
+test("with blocking on, every private, loopback, link-local and unique-local family is refused before a request; a public one connects to its checked address (B125, D122)", async () => {
+  // One name per address, each resolving to that address alone, so every target is a name.
+  const privateAddresses = [
+    "10.1.2.3",
+    "172.16.0.9",
+    "192.168.1.20",
+    "127.0.0.1",
+    "169.254.169.254",
+    "100.64.0.1",
+    "0.0.0.0",
+    "::1",
+    "::",
+    "fe80::1",
+    "fd00::5",
+    "fc00::1",
+    "::ffff:10.0.0.1",
+    "::ffff:127.0.0.1",
+    "64:ff9b::a00:1",
+    "2002:7f00:1::1",
+    "2001:db8::1",
+    "ff02::1",
+  ];
+  const publicAddresses = ["93.184.216.34", "2606:4700:4700::1111"];
+  const resolved: Record<string, string[]> = {};
+  const sent: string[] = [];
+  const f = await open({
+    webhooks: {
+      lookup: async (host: string) => resolved[host] ?? [],
+      fetch: (async (url: string | URL | Request) => {
+        sent.push(String(url));
+        return new Response(null, { status: 200 });
+      }) as typeof fetch,
+    },
+  });
+  f.blockPrivate.value = true;
+  const refused: number[] = [];
+  for (const [index, address] of privateAddresses.entries()) {
+    resolved[`private${index}.test`] = [address];
+    refused.push(
+      (
+        await f.json("/api/webhooks", "POST", {
+          url: `http://private${index}.test/`,
+          events: ["subscriber.blocklisted"],
+        })
+      ).body.data.id,
+    );
+  }
+  const allowed: number[] = [];
+  for (const [index, address] of publicAddresses.entries()) {
+    resolved[`public${index}.test`] = [address];
+    allowed.push(
+      (
+        await f.json("/api/webhooks", "POST", {
+          url: `http://public${index}.test/path`,
+          events: ["subscriber.blocklisted"],
+        })
+      ).body.data.id,
+    );
+  }
+  await blocklist(f, await f.subscriber("a@example.test"));
+  for (const id of refused) {
+    await queued(f, id, 1);
+    expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
+  }
+  for (const id of allowed)
+    await until(async () => (await deliveries(f, id))[0]?.status === "delivered");
+  // Only the public targets were requested, each at the address that was checked.
+  expect(sent.sort()).toEqual(["http://93.184.216.34/path", "http://[2606:4700:4700::1111]/path"]);
 });
 
 test("a resolver that never answers cannot outlast the request deadline", async () => {
@@ -1177,4 +1247,67 @@ test("non-public addresses are classified as blocked", () => {
     "2002:808:808::",
   ])
     expect([address, blockedAddress(address)]).toEqual([address, false]);
+});
+
+test("every start names each enabled webhook the block refuses, one line each, and a lookup gets the delivery deadline (B125 r2, D122)", async () => {
+  const resolved: Record<string, string[]> = {
+    "private.test": ["10.0.0.5"],
+    "public.test": ["93.184.216.34"],
+  };
+  const f = await open({
+    webhooks: {
+      // The hanging name never answers, so only the injected clock can end its check.
+      lookup: (host: string) =>
+        host === "hang.test"
+          ? new Promise<string[]>(() => {})
+          : Promise.resolve(resolved[host] ?? []),
+    },
+  });
+  const created = async (url: string) =>
+    (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
+      .id as number;
+  const privateHook = await created("http://private.test/hook");
+  const hanging = await created("http://hang.test/hook");
+  await created("http://public.test/hook");
+  const notices = () =>
+    f.errors.map((error) => (error as Error).message).filter((line) => line.startsWith("Webhook "));
+  const line = (id: number, host: string) =>
+    `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`;
+  // The check's promise is returned inside an object: an async function would adopt it, and wait.
+  const restart = async () => {
+    await f.crashWebhooks();
+    return { checked: f.startWebhooks() };
+  };
+
+  f.blockPrivate.value = true;
+  // The first start: the refused target is named while the hanging lookup is still pending.
+  let { checked } = await restart();
+  await until(() => notices().length === 1);
+  expect(notices()).toEqual([line(privateHook, "private.test")]);
+  let finished = false;
+  void checked!.then(() => (finished = true));
+  await Bun.sleep(20);
+  expect(finished).toBe(false);
+  f.advanceWebhooks(10_000);
+  await checked;
+  expect(notices()).toHaveLength(1);
+  await f.json(`/api/webhooks/${hanging}`, "DELETE");
+
+  // Every start, while the block is on: a second restart names it again.
+  checked = (await restart()).checked;
+  await checked;
+  expect(notices()).toEqual([line(privateHook, "private.test"), line(privateHook, "private.test")]);
+
+  // Fixing the target stops it.
+  await f.json(`/api/webhooks/${privateHook}`, "PUT", { url: "http://public.test/hook" });
+  checked = (await restart()).checked;
+  await checked;
+  expect(notices()).toHaveLength(2);
+
+  // Setting the block off stops it, for a target that is refused while it is on.
+  await f.json(`/api/webhooks/${privateHook}`, "PUT", { url: "http://private.test/hook" });
+  f.blockPrivate.value = false;
+  checked = (await restart()).checked;
+  await checked;
+  expect(notices()).toHaveLength(2);
 });

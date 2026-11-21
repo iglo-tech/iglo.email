@@ -13,6 +13,8 @@ UPDATE webhooks SET url = ?, events = ?, enabled = ?, updated_at = ? WHERE id = 
   RETURNING id, url, events, enabled, created_at, updated_at;
 -- name: webhook-delete
 DELETE FROM webhooks WHERE id = ?;
+-- name: webhook-enabled-targets
+SELECT id, url FROM webhooks WHERE enabled = 1 ORDER BY id;
 -- name: webhook-targets
 SELECT id, url, secret, enabled FROM webhooks ORDER BY id;
 -- name: webhooks-for-event

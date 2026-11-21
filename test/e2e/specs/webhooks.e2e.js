@@ -36,6 +36,8 @@ let changed = {};
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
+  // The receivers here are on loopback, which the default refuses (D122); the blocked case turns it on.
+  await change(page, "webhooks.block_private_addresses", false);
 });
 
 test.afterEach(async ({ request }) => {

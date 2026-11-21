@@ -602,6 +602,8 @@ export async function runBouncesContract(target: {
     const receiver = startReceiver();
     const sink = await startSink();
     try {
+      // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
+      await setting("webhooks.block_private_addresses", false);
       const events = ["bounce.recorded", "subscriber.blocklisted", "subscriber.deleted"];
       const hook = await call("/api/webhooks", "POST", { url: receiver.url(), events });
       check(hook.status === 200, "hook");

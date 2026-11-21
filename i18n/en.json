@@ -686,7 +686,7 @@
     "settings.security.altchaComplexity": "Altcha Complexity",
     "settings.security.altchaComplexityHelp": "Higher values provide better security but slower solving (1000-1000000).",
     "settings.security.blockPrivateAddresses": "Block private webhook addresses",
-    "settings.security.blockPrivateAddressesHelp": "Refuse webhook targets outside public unicast addresses, checked after DNS resolution.",
+    "settings.security.blockPrivateAddressesHelp": "Refuse webhook targets outside public unicast addresses, checked after DNS resolution. On by default; turn it off only to deliver to a receiver on a private network.",
     "settings.security.captchaKey": "hCaptcha.com SiteKey",
     "settings.security.captchaKeyHelp": "Visit www.hcaptcha.com to obtain the key and secret.",
     "settings.security.captchaSecret": "hCaptcha.com secret",

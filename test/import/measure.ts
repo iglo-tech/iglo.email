@@ -126,6 +126,8 @@ async function overHttp() {
       out.hwmAfterFreshMiB = +peak(pid).toFixed(0);
       out.overwrite = await probing(() => importing({ ...subscribe, overwrite: true }, file));
       out.hwmAfterOverwriteMiB = +peak(pid).toFixed(0);
+      // A loopback target, which the default refuses (D122): this operator turns the block off.
+      await json("/api/settings/webhooks.block_private_addresses", "PUT", false);
       const hook = await json("/api/webhooks", "POST", {
         url: "http://127.0.0.1:9/hook",
         events: ["subscriber.blocklisted", "subscriber.unsubscribed"],

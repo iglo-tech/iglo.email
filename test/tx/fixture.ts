@@ -7,6 +7,7 @@ import { createApp } from "@/app";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
+import { personalPageHeaders } from "@/public/headers";
 import { createSubscriberMail, type SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
 import { registerPublicRoutes } from "@/public/routes";
@@ -231,6 +232,8 @@ export async function txFixture(
   const tracking = createTracking(db, clock);
   let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
   const router = createRouter();
+  // As src/main.ts: the personal public pages' headers (B125).
+  router.use(personalPageHeaders);
   registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
@@ -533,8 +536,10 @@ export async function txFixture(
       await delivery?.halt();
     },
     /** A fresh loop over the same rows, as after a process restart. */
+    /** Resolves when this start's check of refused targets has ended (B125 r2). */
     startWebhooks() {
       delivery = startDelivery();
+      return delivery?.checked;
     },
     count: () => Number((db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n),
     settings: settingsStore,

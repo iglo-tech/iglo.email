@@ -92,6 +92,8 @@ try {
     assert.equal(response.status, 200, path);
     return ((await response.json()) as { data: any }).data;
   };
+  // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
+  await api("/api/settings/webhooks.block_private_addresses", "PUT", false);
   const { secret } = await api("/api/webhooks", "POST", {
     url: receiver.url(),
     events: ["subscriber.blocklisted"],

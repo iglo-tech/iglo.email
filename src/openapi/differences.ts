@@ -790,6 +790,24 @@ export const differences: Difference[] = [
     ],
   },
   {
+    area: "Public export mail budget (D122, B125)",
+    summary:
+      "The data mail is throttled per subscriber, one in ten minutes, on the opt-in mail's window and allowance; a request inside the window gets the same page and sends nothing. Upstream mails on every request.",
+    applies: [],
+  },
+  {
+    area: "Personal page headers (D122, B125)",
+    summary:
+      "Every HTML answer under /m/, /subscription/ and /campaign/ sends no-store caching, no-referrer, X-Frame-Options DENY and frame-ancestors 'none' (merged into a page's own CSP), except the signup form at /subscription/form, which sends no-store and no-referrer only and may be framed. Upstream sends none.",
+    applies: [],
+  },
+  {
+    area: "Private webhook targets (D122, B125)",
+    summary:
+      "webhooks.block_private_addresses is on by default, refusing private, loopback, link-local and unique-local targets at delivery, with no redirects. An upgrade turns a stored false on once, and at every start while the block is on the log names each enabled webhook it refuses. Outbound webhooks are native.",
+    applies: [],
+  },
+  {
     area: "Dropped features",
     summary:
       "Their endpoints return 404: `/api/admin/reload`, OIDC routes, update checks, and anything listed as dropped in Scope.",

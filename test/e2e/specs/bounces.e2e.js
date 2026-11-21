@@ -39,6 +39,8 @@ async function enableBounces(page) {
     ...settings,
     "bounce.enabled": true,
     "bounce.webhooks_enabled": true,
+    // The receiver below is on loopback, which the default refuses (D122).
+    "webhooks.block_private_addresses": false,
     "bounce.actions": {
       soft: { count: 2, action: "none" },
       hard: { count: 2, action: "blocklist" },
@@ -114,6 +116,7 @@ test.afterEach(async ({ page, context, request }) => {
     ...current,
     "bounce.enabled": enabled,
     "bounce.webhooks_enabled": webhooks,
+    "webhooks.block_private_addresses": before["webhooks.block_private_addresses"],
     "bounce.actions": before["bounce.actions"],
   });
   if (leftover) throw leftover;

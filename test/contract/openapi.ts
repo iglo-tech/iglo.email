@@ -255,6 +255,8 @@ export async function runOpenApiContract(target: {
     });
     await send("PUT", "/api/settings/bounce.enabled", { body: true });
     await send("PUT", "/api/settings/bounce.webhooks_enabled", { body: true });
+    // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
+    await send("PUT", "/api/settings/webhooks.block_private_addresses", { body: false });
     await send("PUT", "/api/settings/privacy.individual_tracking", {
       body: true,
     });
