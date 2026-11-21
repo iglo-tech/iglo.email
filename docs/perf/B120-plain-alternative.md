@@ -27,6 +27,8 @@ The send cost is the converter (0.6 ms) plus the larger outbox payload (the text
 - Size: the output is never longer than the input in bytes. It is charged to the message budget, which every part of the message shares, and the stored text is bounded by the existing 1 MiB per-body limit in `src/messaging/payload.ts`.
 - The 8 MiB payload bound is unchanged and now includes the text part (see D118, Known edges).
 
+The send-rate tests (B37, `test/messaging/send-rate.test.ts`) are changed in their own commit: tests 1 and 7b drive the injected clock in 10 ms steps, and tests 1b and 7b wait for the campaign delivery rows as well as the sink count, because a 50 ms step quantized the receipt times they read and the sink can hold a message before its row is written; the cap itself is unchanged. Sink receipts also carry each send's own latency, so the rolling one-per-second check at the sink is sensitive to a fresh pool connection after a restart (test 7b does not assert it).
+
 ## Reproduce
 
 ```sh
