@@ -191,8 +191,9 @@ export async function runWebhooksContract(target: {
     const failed = ofEvent("send.failed")[0]!.body.data;
     check(failed.subscriber.id === failing.id && failed.send.status === "failed", "send-failed");
 
-    // The public wipe and an admin delete: no address in anything stored afterwards. The wipe's own
-    // deleted event names its external ID and lists (B124, D125), and the address stays out.
+    // The public wipe and an admin delete: no address in anything stored afterwards. B124 (D125,
+    // deliberate difference): the wipe's own deleted event names its external ID and lists, which
+    // upstream's deleted event does not; the address stays out.
     const wiped = await subscriber("wiped", "app-wiped-7");
     // B123 (D126): a wipe pairs the subscriber through a campaign the runner delivered to them. It
     // is made before the blocklist below, since a blocklisted subscriber gets no delivery.
@@ -232,6 +233,16 @@ export async function runWebhooksContract(target: {
       "wiped-list-ids",
     );
     check(!stored().includes("wiped@example.test"), "wiped-stored");
+    // B124 (D125, deliberate difference): the wiped address is suppressed, so its next event grants
+    // nothing and answers `suppressed`. Upstream keeps no suppression and grants again.
+    const granted = await call("/api/subscriber-events", "POST", {
+      subscriber: { email: "wiped@example.test", grant_lists: [list] },
+      name: "order_paid",
+    });
+    check(
+      granted.status === 200 && granted.body.data.grants[0]?.result === "suppressed",
+      "wiped-grant-suppressed",
+    );
     check(signatureValid(ofEvent("subscriber.deleted")[0]!, secret), "deleted-signature");
     await call(`/api/subscribers/${bulk.id}`, "DELETE");
     await arrived("subscriber.deleted", 2);
