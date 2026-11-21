@@ -24,14 +24,11 @@ const HEAD_CONTENT = new Set([
   "title",
 ]);
 /**
- * Open elements tracked at once. Each has an end-tag handler, and Bun's rewriter charges every end tag
- * for the handlers still pending, so nesting beyond this depth would cost time with its square.
- */
-const HANDLER_CAP = 256;
-/**
- * End-tag handlers Bun holds at once: registered and not yet fired. An implied end leaves its handler
- * pending until an ancestor's end tag, so omitted end tags grow this count without growing the stack.
- * Past it the conversion stops, and the message goes without a text part (D118).
+ * End-tag handlers Bun holds at once: registered and not yet fired. Every open element registers one,
+ * so this count is also the depth of Bun's stack of open elements, which an end tag that matches
+ * nothing searches in full. Omitted end tags leave their handlers pending until an ancestor ends, so
+ * they grow the count too. Past it the conversion stops, and the message goes without a text part
+ * (D118). The one cap bounds both costs.
  */
 const HELD_CAP = 1024;
 /** Block elements: a line break before and after. A list item gets a bullet instead. */
@@ -451,11 +448,6 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
     .on("*", {
       element(el) {
         const name = el.tagName.toLowerCase();
-        // Past the cap, markup is not tracked: no entry and no end handler, so deeper structure is plain
-        // text, and the rewriter's cost per end tag stays bounded (D118).
-        if (stack.length >= HANDLER_CAP && el.canHaveContent) return;
-        // An implied end pops an entry that the rewriter still holds, so running the rules past the cap
-        // would grow the held count (a deep nested list would then abort).
         impliedEnds(name);
         // A void or self-closing element has no content, so it hides nothing and has no end tag.
         const content = el.canHaveContent;

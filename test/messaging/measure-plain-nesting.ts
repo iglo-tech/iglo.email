@@ -1,7 +1,7 @@
-// B120 (D118): the converter's time on nested and implied-end markup, at 256 KiB and 1 MiB. Run from a
-// checkout: `bun test/messaging/measure-plain-nesting.ts`. Nested shapes stay linear through the cap on
-// open tracked elements (HANDLER_CAP). Implied-end shapes are bounded by the cap on held end-tag
-// handlers (HELD_CAP): past it the conversion stops, and the result is empty (no text part).
+// B120 (D118): the converter's time on nested, implied-end and stray-end-tag markup, at 256 KiB and
+// 1 MiB. Run from a checkout: `bun test/messaging/measure-plain-nesting.ts`. One cap, HELD_CAP, bounds
+// every open element and every held end-tag handler: past it the conversion stops, and the result is
+// empty (no text part). The worst shape the cap allows is timed in test/messaging/plain-review.test.ts.
 import { plainText } from "@/messaging/plain";
 import { createMessageBudget } from "@/templates/renderer";
 
@@ -23,6 +23,12 @@ const shapes: Record<string, { bytes: number; prefix?: string; build: (n: number
   "unclosed tr cell": { bytes: 17, prefix: "<table>", build: (n) => "<tr><td>x<b>y</b>".repeat(n) },
   "unclosed dd": { bytes: 13, prefix: "<dl>", build: (n) => "<dd>x<b>y</b>".repeat(n) },
   "unclosed option": { bytes: 17, prefix: "<select>", build: (n) => "<option>x<b>y</b>".repeat(n) },
+  "open span, stray </q>": { bytes: 11, build: (n) => "<span>x</q>".repeat(n) },
+  "256 div, then stray </q>": {
+    bytes: 8,
+    prefix: "<div>".repeat(256),
+    build: (n) => "<p>x</q>".repeat(n),
+  },
 };
 
 function median(values: number[]): number {

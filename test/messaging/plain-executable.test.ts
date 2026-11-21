@@ -230,8 +230,8 @@ test("a 14 KB template that renders to 840 KB converts promptly, and /health ans
     const health = await s.call("/health");
     expect(health.status).toBe(200);
     expect(performance.now() - started).toBeLessThan(10_000);
-    const text = await textTo(s, "nested@example.test");
-    expect(text).toContain("t");
+    // Past the 1024 cap on open elements (D118 r4): the message sends its HTML with no text part.
+    expect(await textTo(s, "nested@example.test")).toBeUndefined();
   } finally {
     await s.close();
   }
@@ -267,8 +267,8 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
     expect(health.status).toBe(200);
     expect(performance.now() - asked).toBeLessThan(1_000);
     expect((await sending).status).toBe(200);
-    const text = await textTo(s, "bold@example.test");
-    expect(text).toContain("t");
+    // Past the 1024 cap on open elements (D118 r4): the message sends its HTML with no text part.
+    expect(await textTo(s, "bold@example.test")).toBeUndefined();
   } finally {
     await s.close();
   }
@@ -303,6 +303,43 @@ test("a 12 KB template of unclosed <p> elements does not delay /health by more t
     const mail = await waitFor(
       async () => s.sink.messages.find((m) => m.to.includes("unclosed@example.test")),
       "the unclosed-p mail",
+    );
+    expect(mail.data).toContain("text/html");
+    expect(mail.data).not.toContain("text/plain");
+  } finally {
+    await s.close();
+  }
+});
+
+// r4 B1: the reviewer's 11 KB template of unclosed spans with stray end tags, which renders to about
+// 1 MB. Each stray end tag searched every open element, so /health waited for the conversion; now the
+// cap on open elements stops it, /health answers within 200 ms, and the message sends its HTML.
+test("an 11 KB template of unclosed spans with stray end tags does not delay /health by more than 200 ms", async () => {
+  const s = await stack();
+  try {
+    const body = "{% for i in (1..95) %}" + "<span>x</q>".repeat(1000) + "{% endfor %}";
+    const template = await s.call("/api/templates", "POST", {
+      name: "stray-span",
+      type: "tx",
+      subject: "Stray",
+      body,
+    });
+    expect(template.status).toBe(200);
+    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const sending = s.call("/api/tx", "POST", {
+      subscriber_mode: "external",
+      subscriber_emails: ["stray@example.test"],
+      template_id: id,
+    });
+    await Bun.sleep(300);
+    const asked = performance.now();
+    const health = await s.call("/health");
+    expect(health.status).toBe(200);
+    expect(performance.now() - asked).toBeLessThan(200);
+    expect((await sending).status).toBe(200);
+    const mail = await waitFor(
+      async () => s.sink.messages.find((m) => m.to.includes("stray@example.test")),
+      "the stray-span mail",
     );
     expect(mail.data).toContain("text/html");
     expect(mail.data).not.toContain("text/plain");

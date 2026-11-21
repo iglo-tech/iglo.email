@@ -51,15 +51,21 @@ test("70k nested links convert within a generous real-time bound", async () => {
   const started = performance.now();
   const result = await text(html);
   const elapsed = performance.now() - started;
-  expect(result).toContain("t");
+  // Past the 1024 cap on open elements (D118 r4), the message has no text part.
+  expect(result).toBe("");
   expect(elapsed).toBeLessThan(5_000);
 });
 
 test("70k nested blocks convert within a generous real-time bound", async () => {
   const html = "<div>".repeat(70_000) + "t" + "</div>".repeat(70_000);
   const started = performance.now();
-  expect(await text(html)).toBe("t");
+  expect(await text(html)).toBe("");
   expect(performance.now() - started).toBeLessThan(5_000);
+});
+
+// r4: every open element counts toward the cap, so nesting within it keeps its text.
+test("nesting within the cap keeps its text: 200 nested <b> round-trip to t", async () => {
+  expect(await text("<b>".repeat(200) + "t" + "</b>".repeat(200))).toBe("t");
 });
 
 // S1: a self-closing element in SVG or MathML does not fault the conversion.
@@ -210,10 +216,10 @@ const bytesPerLevel: Record<keyof typeof nested, number> = {
   td: 34,
 };
 for (const kind of Object.keys(nested) as (keyof typeof nested)[]) {
-  test(`1 MiB of nested ${kind} converts in under 1 s`, async () => {
+  test(`1 MiB of nested ${kind} is under 1 s, and past the 1024 cap it has no text part`, async () => {
     const html = nested[kind](Math.floor(MIB / bytesPerLevel[kind]));
     const started = performance.now();
-    expect(await text(html)).toContain("t");
+    expect(await text(html)).toBe("");
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 }
@@ -252,6 +258,10 @@ const implied: Record<string, { unit: string; bytes: number }> = {
   "unclosed tr cell": { unit: "<tr><td>x<b>y</b>", bytes: 17 },
   "unclosed dd": { unit: "<dd>x<b>y</b>", bytes: 13 },
   "unclosed option": { unit: "<option>x<b>y</b>", bytes: 17 },
+  // r4 (the stray end tag): each </q> searches every open element, so open spans and a stack of divs
+  // closed by a stray end tag are timed the same way as the implied ends above.
+  "unclosed span with stray end tags": { unit: "<span>x</q>", bytes: 11 },
+  "div stack then stray end tags": { unit: "<p>x</q>", bytes: 8 },
 };
 const prefix: Record<string, string> = {
   "unclosed p": "",
@@ -260,6 +270,8 @@ const prefix: Record<string, string> = {
   "unclosed tr cell": "<table>",
   "unclosed dd": "<dl>",
   "unclosed option": "<select>",
+  "unclosed span with stray end tags": "",
+  "div stack then stray end tags": "<div>".repeat(256),
 };
 for (const kind of Object.keys(implied)) {
   test(`${kind} at 256 KiB and 1 MiB: 4x the input costs at most 5x the time, and 1 MiB is under 1 s`, async () => {
@@ -280,6 +292,15 @@ for (const kind of Object.keys(implied)) {
     expect(large).toBeLessThan(1_000);
   });
 }
+
+// r4: the worst case the cap still allows. 1023 open elements, then stray end tags to 1 MiB: each
+// stray end tag searches the open elements, so the time is at most about 1023 steps per tag.
+test("the worst linear case, 1023 open spans then stray end tags to 1 MiB, is under 1 s", async () => {
+  const html = "<span>".repeat(1023) + "x</q>".repeat(Math.floor(MIB / 5));
+  const started = performance.now();
+  await text(html);
+  expect(performance.now() - started).toBeLessThan(1_000);
+});
 
 test("a message past the implied-end cap gives no text part, and its HTML is still converted by the caller", async () => {
   expect(await text("<p>x".repeat(4000))).toBe("");
