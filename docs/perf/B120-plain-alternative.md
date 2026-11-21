@@ -24,29 +24,43 @@ The send cost is the converter (0.6 ms) plus the larger outbox payload (the text
 ## Bounds
 
 - Time is linear for flat markup: 47 KB takes 0.61 ms and 0.99 MiB takes 15.5 ms, the same per-byte rate. Every pass after the one HTMLRewriter stream is a linear scan of the collected text, and no regular expression is quadratic on its input.
-- Nesting is linear too, but only because the open tracked elements are capped at 256 (`HANDLER_CAP`, D118). Bun's rewriter charges each end tag for the end-tag handlers still pending, so an uncapped stack of N nested elements cost about N squared. Before the cap, the r2 review measured 150k nested `<b>` (1 MiB) at 5.7 s in the converter. Measured in the container (`bun test/messaging/measure-plain-nesting.ts`, median of 5 runs):
+- One cap bounds nesting and omitted end tags alike. Bun's rewriter keeps an end-tag handler for every element until its end tag fires, and it charges each end tag for the handlers still pending, so the cost of a stack of N elements grows with N squared. The converter counts the handlers it holds (registered minus fired: every open element, and every element whose end tag was implied and never fired) and stops at 1024 (`HELD_CAP`, D118). Past the cap the conversion stops, and the message sends without a text part. Before the cap, the r2 review measured 150k nested `<b>` (1 MiB) at 5.7 s in the converter.
 
-  | Kind | 256 KiB | 1 MiB | Ratio (4x input) |
+  Measured in the container (`bun test/messaging/measure-plain-nesting.ts`, median of 5 runs per size). The ratio is the 1 MiB time over the 256 KiB time, floored at 5 ms. Two runs of the script agree within 4 ms on every row; the tables show the second run.
+
+  | Kind | 256 KiB | 1 MiB | Ratio | 1 MiB result |
+  | --- | --- | --- | --- | --- |
+  | `b` | 0.5 ms | 0.5 ms | 0.10 | no text part |
+  | `div` | 0.7 ms | 0.6 ms | 0.12 | no text part |
+  | `a` | 1.4 ms | 0.8 ms | 0.17 | no text part |
+  | `li` | 1.0 ms | 0.7 ms | 0.14 | no text part |
+  | `td` | 0.8 ms | 0.8 ms | 0.17 | no text part |
+
+  The nested shapes pass the cap within the first few kilobytes, so both sizes take about a millisecond. A valid message nested deeper than 1024 elements now sends without a text part, which is the cost of the bound.
+
+- Omitted end tags leave Bun's end-tag handlers pending, and the stack does not show them: `<p>x<b>y</b>` repeated leaves one held handler per `<p>` until an ancestor ends. The r3 review measured a ratio of about 12 for these shapes before the held count existed. A stray end tag such as `</q>` does not close an open `span`, so `<span>x</q>` repeated also holds one handler per span. Each shape below takes milliseconds at either size and sends no text part at 1 MiB.
+
+  | Shape | 256 KiB | 1 MiB | Ratio |
   | --- | --- | --- | --- |
-  | `b` | 13.0 ms | 45.1 ms | 3.46 |
-  | `div` | 7.3 ms | 27.1 ms | 3.72 |
-  | `a` | 5.3 ms | 20.0 ms | 3.75 |
-  | `li` | 8.5 ms | 33.2 ms | 3.91 |
-  | `td` | 6.9 ms | 29.9 ms | 4.31 |
+  | unclosed `p` | 2.8 ms | 2.3 ms | 0.46 |
+  | unclosed `li` | 2.6 ms | 3.6 ms | 0.71 |
+  | unclosed `td` | 2.6 ms | 2.3 ms | 0.47 |
+  | unclosed tr cell | 1.4 ms | 1.4 ms | 0.29 |
+  | unclosed `dd` | 2.2 ms | 2.2 ms | 0.43 |
+  | unclosed `option` | 2.4 ms | 2.6 ms | 0.51 |
+  | open `span`, stray `</q>` | 1.8 ms | 1.7 ms | 0.33 |
+  | 256 `div`, then stray `</q>` | 1.8 ms | 2.0 ms | 0.41 |
 
-  The tests bound this: each kind at 1 MiB under 1 s (`test/messaging/plain-review.test.ts`), a 4x input within 6x time, and a 7 KB template that renders to 1 MB answering `/health` within 1 s (`test/messaging/plain-executable.test.ts`). Past the cap, markup is plain text.
-- Omitted end tags leave Bun's end-tag handlers pending, and the stack does not show them: `<p>x<b>y</b>` repeated leaves one held handler per `<p>` until an ancestor ends, so the open-element cap alone did not bound them (the r3 review measured a ratio of about 12 for these shapes). The converter now counts the handlers the rewriter holds, registered minus fired, and stops at 1024 (`HELD_CAP`, D118), sending no text part. Measured in the container (`bun test/messaging/measure-plain-nesting.ts`, median of 5 runs):
+  The tests check each held shape at 4x the input within 5x the time (`test/messaging/plain-review.test.ts`), a 12 KB unclosed-`<p>` template through HTTP leaves `/health` answering within 200 ms, and an 11 KB template of unclosed spans with stray end tags does the same (`test/messaging/plain-executable.test.ts`).
+
+- The worst shape the cap allows is 1023 open elements, the largest count under 1024, followed by stray end tags to 1 MiB. Each stray end tag pays for all 1023 held handlers. It took 370 ms and 368 ms in two runs, against 131 ms and 135 ms for flat `<b>t</b>` markup of the same size (about 2.8 times the flat cost), and its text part is kept (209,715 characters):
 
   | Shape | 256 KiB | 1 MiB | Ratio | 1 MiB result |
   | --- | --- | --- | --- | --- |
-  | unclosed `p` | 2.9 ms | 2.4 ms | 0.48 | no text part |
-  | unclosed `li` | 2.6 ms | 2.8 ms | 0.57 | no text part |
-  | unclosed `td` | 2.6 ms | 2.5 ms | 0.51 | no text part |
-  | unclosed tr cell | 1.4 ms | 1.4 ms | 0.27 | no text part |
-  | unclosed `dd` | 2.4 ms | 2.4 ms | 0.48 | no text part |
-  | unclosed `option` | 2.9 ms | 2.4 ms | 0.49 | no text part |
+  | 1023 open, stray `</q>` | 92.7 ms | 369.9 ms | 3.99 | text 209,715 chars |
+  | flat `<b>t</b>` (baseline) | 32.9 ms | 130.9 ms | 3.98 | text 149,796 chars |
 
-  The conversion stops at about 1024 held handlers, so these shapes take milliseconds at either size. A valid message with more than about 1024 omitted end tags now sends without a text part, which is the cost of the bound. The tests check each shape at 4x the input within 5x the time, and a 12 KB unclosed-`<p>` template through HTTP leaves `/health` answering within 200 ms (`test/messaging/plain-executable.test.ts`).
+  The test bounds it under 1 s (`test/messaging/plain-review.test.ts`, the worst linear case), and a 1 MiB nested-markup test checks that every nested shape at 1 MiB is under 1 s with no text part past the cap. The timing script prints the worst shape beside the flat baseline.
 - Size: the output is never longer than the input in bytes. It is charged to the message budget, which every part of the message shares, and the stored text is bounded by the existing 1 MiB per-body limit in `src/messaging/payload.ts`.
 - The 8 MiB payload bound is unchanged and now includes the text part (see D118, Known edges).
 
