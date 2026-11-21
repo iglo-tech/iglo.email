@@ -13,6 +13,8 @@ export const permissions = [
   "subscribers:manage",
   "subscribers:import",
   "subscribers:sql_query",
+  // B124 (D125): removing a suppression. Super Admin holds it; no other default role does.
+  "suppressions:manage",
   "tx:send",
   "campaigns:get",
   "campaigns:get_all",

@@ -443,7 +443,8 @@ export function registerSubscriberRoutes(
   );
   router.route("DELETE", "/api/subscribers", deleteMany, auth.middleware("subscribers:manage"));
   // B124 (D125): an operator honours a person's later explicit request by clearing the suppression
-  // of their address. The answer is the count removed; nothing reveals what a suppression holds.
+  // of their address, with suppressions:manage of its own. The answer is the count removed; nothing
+  // reveals what a suppression holds.
   router.route(
     "DELETE",
     "/api/suppressions",
@@ -463,10 +464,10 @@ export function registerSubscriberRoutes(
             : undefined
           : undefined;
       if (email === undefined) throw invalid();
-      auth.revalidate(c, "subscribers:manage");
+      auth.revalidate(c, "suppressions:manage");
       return store.transaction(() => ok({ removed: store.unsuppress(email) }));
     },
-    auth.middleware("subscribers:manage"),
+    auth.middleware("suppressions:manage"),
   );
   router.route(
     "PUT",

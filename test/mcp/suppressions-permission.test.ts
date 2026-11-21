@@ -60,7 +60,7 @@ afterAll(async () => {
   await mailbox?.close().catch(() => {});
 });
 
-async function api(path: string, method: string, body?: unknown, auth = adminAuth) {
+async function api(path: string, method = "GET", body?: unknown, auth = adminAuth) {
   const response = await fetch(`${production.origin}${path}`, {
     method,
     headers: { authorization: auth, "content-type": "application/json" },
@@ -131,9 +131,9 @@ async function wiped(addresses: string[]): Promise<void> {
       body: "<p>Hello</p>",
     })
   ).body.data;
-  expect((await api(`/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status).toBe(
-    200,
-  );
+  expect(
+    (await api(`/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status,
+  ).toBe(200);
   for (let i = 0; i < 300; i++) {
     if ((await api(`/api/campaigns/${campaign.id}`)).body.data.status === "finished") break;
     await Bun.sleep(100);
