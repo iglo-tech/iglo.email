@@ -617,6 +617,18 @@ export function createSubscriberStore(
       consentChanged(id, false, changed);
       return changed;
     },
+    /**
+     * A transactional link's cancel (B126, D123 item 8): ends the unconfirmed memberships of double
+     * opt-in lists only. An unconfirmed single opt-in membership is active and stays. Returns changed lists.
+     */
+    unsubscribeDoubleOptinPending(id: bigint): bigint[] {
+      const rows = q
+        .get("membership-unsubscribe-double-pending")
+        .all(clock.now().toISOString(), id);
+      const changed = (rows as { list_id: bigint }[]).map((row) => row.list_id);
+      consentChanged(id, false, changed);
+      return changed;
+    },
     membership: (id: bigint, list: bigint) =>
       q.get("membership-get").get(id, list) as Membership | null,
     /**

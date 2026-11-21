@@ -28,9 +28,10 @@ export interface PageOptions extends PageSite {
  *   `blocklist` and `privacy` say whether those forms appear. `lists` are the lists the link covers:
  *   a marketing send's list, a campaign's lists, none for a transactional send (B126, D123).
  * - `transactional`: a transactional send paired them through its journal row (D126, r1). Its form
- *   cancels pending opt-ins only; with no open membership it says already unsubscribed; a confirmed
- *   subscriber gets the manage view, or with preferences off a pointer to a marketing link (B126 r2,
- *   D123). It has no blocklist. Its privacy forms post to `base`.
+ *   cancels pending opt-ins only, which are unconfirmed memberships of double opt-in lists; with no open
+ *   membership it says already unsubscribed; an active subscriber gets the manage view, or with
+ *   preferences off a pointer to a marketing link (B126 r2, D123 item 8). It has no blocklist and no
+ *   wipe; its export form posts to `base`.
  * - `pending`: a mail the server sent with no campaign or send (opt-in). The manage view changes
  *   pending lists only: no name, no blocklist, no privacy form.
  */
@@ -65,17 +66,25 @@ function alreadyUnsubscribed(
 }
 
 /**
- * What a transactional link's page reads from the subscriber's memberships (B126 r2, D123): an open
- * opt-in, which its form cancels, and whether a confirmed membership remains, which the link cannot end
- * (D126). A pending list names the page only when it is public.
+ * What a transactional link's page reads from the subscriber's memberships (B126 r2, D123 item 8).
+ * `pending` is an unconfirmed membership of a double opt-in list only: the open opt-in its form cancels.
+ * An unconfirmed membership of a single opt-in list is an active subscription (an API create without
+ * `preconfirm_subscriptions`, or an import), so `active` counts it with the confirmed ones, which the
+ * link cannot end (D126). A pending list names the page only when it is public.
  */
 function transactionalMemberships(subscribers: SubscriberStore, id: bigint) {
   const all = subscribers.allSubscriptions(id);
-  const pending = all.filter((list) => list.subscriptionStatus === "unconfirmed");
+  const pending = all.filter(
+    (list) => list.subscriptionStatus === "unconfirmed" && list.optin === "double",
+  );
   return {
     pending: pending.length > 0,
     pendingNames: pending.filter((list) => list.type === "public").map((list) => list.name),
-    confirmed: all.some((list) => list.subscriptionStatus === "confirmed"),
+    active: all.some(
+      (list) =>
+        list.subscriptionStatus === "confirmed" ||
+        (list.subscriptionStatus === "unconfirmed" && list.optin === "single"),
+    ),
   };
 }
 
@@ -90,11 +99,11 @@ export function subscriptionPage(
 ): Response {
   const transactional = mode.kind === "transactional";
   const memberships = transactional ? transactionalMemberships(subscribers, subscriber.id) : null;
-  // The manage view needs preferences. A transactional link with a confirmed membership and no open
+  // The manage view needs preferences. A transactional link with an active subscription and no open
   // opt-in is the manage view, since its page has no unsubscribe button to offer (B126 r2).
   const showManage =
     options.allowPreferences &&
-    (manage || (memberships !== null && memberships.confirmed && !memberships.pending));
+    (manage || (memberships !== null && memberships.active && !memberships.pending));
   // B126 (D123): a marketing or campaign link revisited after every list it covers is unsubscribed says
   // so, with the privacy forms and the manage link it offered before. The check follows the manage view
   // actually shown, so a `?manage=true` with preferences off is answered here too.
@@ -102,17 +111,19 @@ export function subscriptionPage(
     !showManage && mode.kind === "paired" && mode.blocklist
       ? alreadyUnsubscribed(subscribers, subscriber.id, mode.lists)
       : null;
-  // A transactional link: an open opt-in gets the form, a confirmed membership without preferences gets
+  // A transactional link: an open opt-in gets the form, an active subscription without preferences gets
   // the pointer page, and nothing open gets the already page, which names no list (D126 r2).
   const transactionalView =
     memberships !== null && !showManage
       ? memberships.pending
         ? "form"
-        : memberships.confirmed
+        : memberships.active
           ? "confirmed"
           : "already"
       : null;
   const alreadyNames = already ?? (transactionalView === "already" ? [] : null);
+  // B126 (D123 item 8): a transactional link with nothing to unsubscribe is the email settings page.
+  const settingsPage = transactionalView === "already";
   const pending = mode.kind === "pending";
   const subscriptions = showManage
     ? subscribers
@@ -124,13 +135,21 @@ export function subscriptionPage(
         )
     : [];
   const blocklist = mode.kind === "paired" && mode.blocklist && options.allowBlocklist;
-  const privacy =
-    (mode.kind === "paired" ? mode.privacy : transactional) &&
-    (options.allowExport || options.allowWipe);
+  // B126 (D123 item 8): a transactional link offers export only. A wipe is a marketing or campaign link's.
+  const privacyPaired = mode.kind === "paired" ? mode.privacy : transactional;
+  const offersExport = privacyPaired && options.allowExport;
+  const offersWipe = mode.kind === "paired" && mode.privacy && options.allowWipe;
+  const privacy = offersExport || offersWipe;
   const base = mode.kind === "pending" ? "" : mode.base;
   const body = render(
     <PublicShell
-      title={alreadyNames ? t.T("globals.terms.unsubscribed") : t.T("public.unsubscribeTitle")}
+      title={
+        settingsPage
+          ? t.T("public.emailSettings")
+          : alreadyNames
+            ? t.T("globals.terms.unsubscribed")
+            : t.T("public.unsubscribeTitle")
+      }
       assetVersion={assetVersion}
       archiveTitle={t.T("public.archiveTitle")}
       site={options}
@@ -138,7 +157,9 @@ export function subscriptionPage(
       <section class="section">
         {alreadyNames ? (
           <>
-            <h2>{t.T("globals.terms.unsubscribed")}</h2>
+            <h2>
+              {settingsPage ? t.T("public.emailSettings") : t.T("globals.terms.unsubscribed")}
+            </h2>
             <div>
               <p>
                 {alreadyNames.length
@@ -161,7 +182,9 @@ export function subscriptionPage(
           </>
         ) : !showManage ? (
           <>
-            <h2>{t.T("globals.buttons.unsubscribe")}</h2>
+            <h2>
+              {transactional ? t.T("public.cancelPending") : t.T("globals.buttons.unsubscribe")}
+            </h2>
             <form method="post" class="unsub-form">
               <div>
                 {transactional ? (
@@ -202,6 +225,9 @@ export function subscriptionPage(
             <div>
               <input type="hidden" name="manage" value="true" />
               <h2>{t.T("public.managePrefs")}</h2>
+              {transactional && !subscriptions.length ? (
+                <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
+              ) : null}
               {pending ? null : (
                 <>
                   <label for="manage-name">{t.T("globals.fields.name")}</label>
@@ -268,7 +294,7 @@ export function subscriptionPage(
           >
             <section>
               <h2>{t.T("public.privacyTitle")}</h2>
-              {options.allowExport ? (
+              {offersExport ? (
                 <div class="row">
                   <input
                     id="privacy-export"
@@ -284,7 +310,7 @@ export function subscriptionPage(
                   {t.T("public.privacyExportHelp")}
                 </div>
               ) : null}
-              {options.allowWipe ? (
+              {offersWipe ? (
                 <div class="row">
                   <input id="privacy-wipe" type="radio" name="data-action" value="wipe" required />{" "}
                   <label for="privacy-wipe">
@@ -311,11 +337,15 @@ ${
   privacy
     ? `function handleData() {
   // B126 (D123): a wipe posts to its own confirmation page, which deletes nothing until confirmed.
-  var a = document.querySelector('input[name="data-action"]:checked').value,
-    f = document.querySelector("#data-form");
+  var f = document.querySelector("#data-form");
+  ${
+    offersWipe
+      ? `var a = document.querySelector('input[name="data-action"]:checked').value;
   f.action = a == "export"
     ? ${script(`${base}/export/${subscriber.uuid}`)}
-    : ${script(`${base}/wipe/${subscriber.uuid}`)};
+    : ${script(`${base}/wipe/${subscriber.uuid}`)};`
+      : `f.action = ${script(`${base}/export/${subscriber.uuid}`)};`
+  }
   return true;
 }`
     : ""
