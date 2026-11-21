@@ -35,6 +35,18 @@ The send cost is the converter (0.6 ms) plus the larger outbox payload (the text
   | `td` | 6.9 ms | 29.9 ms | 4.31 |
 
   The tests bound this: each kind at 1 MiB under 1 s (`test/messaging/plain-review.test.ts`), a 4x input within 6x time, and a 7 KB template that renders to 1 MB answering `/health` within 1 s (`test/messaging/plain-executable.test.ts`). Past the cap, markup is plain text.
+- Omitted end tags leave Bun's end-tag handlers pending, and the stack does not show them: `<p>x<b>y</b>` repeated leaves one held handler per `<p>` until an ancestor ends, so the open-element cap alone did not bound them (the r3 review measured a ratio of about 12 for these shapes). The converter now counts the handlers the rewriter holds, registered minus fired, and stops at 1024 (`HELD_CAP`, D118), sending no text part. Measured in the container (`bun test/messaging/measure-plain-nesting.ts`, median of 5 runs):
+
+  | Shape | 256 KiB | 1 MiB | Ratio | 1 MiB result |
+  | --- | --- | --- | --- | --- |
+  | unclosed `p` | 2.9 ms | 2.4 ms | 0.48 | no text part |
+  | unclosed `li` | 2.6 ms | 2.8 ms | 0.57 | no text part |
+  | unclosed `td` | 2.6 ms | 2.5 ms | 0.51 | no text part |
+  | unclosed tr cell | 1.4 ms | 1.4 ms | 0.27 | no text part |
+  | unclosed `dd` | 2.4 ms | 2.4 ms | 0.48 | no text part |
+  | unclosed `option` | 2.9 ms | 2.4 ms | 0.49 | no text part |
+
+  The conversion stops at about 1024 held handlers, so these shapes take milliseconds at either size. A valid message with more than about 1024 omitted end tags now sends without a text part, which is the cost of the bound. The tests check each shape at 4x the input within 5x the time, and a 12 KB unclosed-`<p>` template through HTTP leaves `/health` answering within 200 ms (`test/messaging/plain-executable.test.ts`).
 - Size: the output is never longer than the input in bytes. It is charged to the message budget, which every part of the message shares, and the stored text is bounded by the existing 1 MiB per-body limit in `src/messaging/payload.ts`.
 - The 8 MiB payload bound is unchanged and now includes the text part (see D118, Known edges).
 
