@@ -80,10 +80,10 @@ export default defineConfig({
       ],
       rules: { "unicorn/text-encoding-identifier-case": "off" },
     },
-    // The preset's TypeScript override re-enables this rule under its alias, so the root `off` below needs
-    // this override after it. B134b: src and B134c: test still have unawaited promises.
+    // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
+    // test/ still has unawaited promises; src/ and scripts/ are fixed (B134b).
     {
-      files: ["**/*.{ts,tsx,mts,cts}"],
+      files: ["test/**"],
       rules: { "@typescript-eslint/no-floating-promises": "off" },
     },
   ],
@@ -106,7 +106,6 @@ export default defineConfig({
     "no-promise-executor-return": "off", // B134b
     "preserve-caught-error": "off", // B134b
     "typescript/no-explicit-any": "off", // B134b
-    "typescript/no-floating-promises": "off", // B134b
     "typescript/no-misused-spread": "off", // B134b
     "typescript/no-non-null-assertion": "off", // B134b
     "typescript/no-unnecessary-type-assertion": "off", // B134b

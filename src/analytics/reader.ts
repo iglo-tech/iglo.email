@@ -247,7 +247,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
     }, 20);
     try {
       try {
-        child.stdin.write(request);
+        await child.stdin.write(request);
         await child.stdin.end();
       } catch {
         /* A child that exited early reports through its exit code. */

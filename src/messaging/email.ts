@@ -564,7 +564,7 @@ export function createEmailer(options: {
       resolve(outcome);
     };
 
-    (async () => {
+    void (async () => {
       if (options.limiter) {
         // A bounded wait (the SMTP settings test) gives up with not-started; the wait itself is
         // on the injected clock and ends as soon as the grant arrives. Any other wait needs no

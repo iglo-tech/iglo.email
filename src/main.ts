@@ -843,7 +843,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         const readerClose = analyticsReader!.close();
         const messagingClose = emailer!.close();
         const httpStop = listening.stop();
-        Promise.allSettled([
+        void Promise.allSettled([
           importStop,
           maintenanceStop,
           runnerStop,

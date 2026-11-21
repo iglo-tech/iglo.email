@@ -302,7 +302,7 @@ export function createQueryRunner(options: RunnerOptions) {
       releaseSlot();
     });
     const pump = async () => {
-      child.stdin.write(
+      await child.stdin.write(
         JSON.stringify({
           path: options.path,
           spool: prefix,
