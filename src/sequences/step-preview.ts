@@ -49,7 +49,7 @@ export interface StepPreview {
   links: PreparedLinks;
 }
 
-const has = (object: object | undefined, key: string) =>
+const has = (object: Record<string, unknown> | undefined, key: string) =>
   object !== undefined && Object.hasOwn(object, key);
 
 /**

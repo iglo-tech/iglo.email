@@ -13,8 +13,10 @@ class TrustedMarkup implements Element {
     this.#markup = markup;
     Object.freeze(this);
   }
-  static read(value: object): string | undefined {
-    return #markup in value ? value.#markup : undefined;
+  static read(value: unknown): string | undefined {
+    return typeof value === "object" && value !== null && #markup in value
+      ? value.#markup
+      : undefined;
   }
 }
 class ElementNode implements Element {
@@ -24,8 +26,8 @@ class ElementNode implements Element {
     this.#data = { type, props: Object.freeze({ ...props }) };
     Object.freeze(this);
   }
-  static read(value: object) {
-    return #data in value ? value.#data : undefined;
+  static read(value: unknown) {
+    return typeof value === "object" && value !== null && #data in value ? value.#data : undefined;
   }
 }
 

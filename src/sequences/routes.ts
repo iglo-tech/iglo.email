@@ -77,8 +77,8 @@ const MAX_TEST_SENDS = 4;
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 /** A step or template ID as the API numbers it: a number, or a raw JSON integer beyond 2^53. */
-const idOf = (value: number | object): bigint =>
-  BigInt(typeof value === "number" ? value : (value as { rawJSON: string }).rawJSON);
+const idOf = (value: number | { rawJSON: string }): bigint =>
+  BigInt(typeof value === "number" ? value : value.rawJSON);
 
 export function registerSequenceRoutes(
   router: Router,
@@ -429,7 +429,7 @@ export function registerSequenceRoutes(
     return row;
   };
   /** The step's template, which must be transactional: a step sends one (05-sequences.md). */
-  const stepTemplate = (step: { template_id: number | object | null }) => {
+  const stepTemplate = (step: { template_id: number | { rawJSON: string } | null }) => {
     const template = step.template_id === null ? null : templates.get(idOf(step.template_id));
     if (!template || template.type !== "tx") {
       throw new HttpError(409, "The step does not send a transactional template.");

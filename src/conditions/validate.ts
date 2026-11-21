@@ -30,7 +30,7 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const bytes = (value: string) => Buffer.byteLength(value);
 
 /** Own enumerable keys of `value`, or undefined beyond `max`; never lists a wider object. */
-function boundedKeys(value: object, max: number): Array<string> | undefined {
+function boundedKeys(value: Record<string, unknown>, max: number): Array<string> | undefined {
   const keys: Array<string> = [];
   for (const key in value) {
     if (!Object.hasOwn(value, key)) {

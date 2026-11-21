@@ -75,6 +75,7 @@ export default defineConfig({
         "no-promise-executor-return": "off",
         "quality/no-array-filter-map": "off",
         "quality/no-chained-type-assertions": "off",
+        "quality/no-object-parameters": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -126,7 +127,6 @@ export default defineConfig({
     "@nkzw/no-instanceof": "off", // B134b
     "quality/no-conditional-empty-object-spread": "off", // B134b
     "quality/no-known-value-widening": "off", // B134b
-    "quality/no-object-parameters": "off", // B134b
     "quality/no-unknown-returns": "off", // B134b
     "quality/no-unsafe-dictionary-type": "off", // B134b
     "unicorn/consistent-function-scoping": "off", // B134b

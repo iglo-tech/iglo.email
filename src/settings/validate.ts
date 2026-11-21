@@ -140,7 +140,7 @@ function entries(value: unknown): Array<[string, unknown]> {
 const foldField = (value: string) => value.replaceAll("ſ", "s").replaceAll("K", "k").toLowerCase();
 // Folded name -> declared name for one static shape; the first declared match wins, as with find.
 const foldedNames = new WeakMap<object, Map<string, string>>();
-function lookup(shape: object, key: string): string | undefined {
+function lookup(shape: Record<string, unknown>, key: string): string | undefined {
   let names = foldedNames.get(shape);
   if (!names) {
     names = new Map();
