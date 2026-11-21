@@ -23,7 +23,18 @@ The send cost is the converter (0.6 ms) plus the larger outbox payload (the text
 
 ## Bounds
 
-- Time is linear: 47 KB takes 0.61 ms and 0.99 MiB takes 15.5 ms, the same per-byte rate. Every pass after the one HTMLRewriter stream is a linear scan of the collected text, and no regular expression is quadratic on its input (whitespace runs are collapsed before the line-break pass).
+- Time is linear for flat markup: 47 KB takes 0.61 ms and 0.99 MiB takes 15.5 ms, the same per-byte rate. Every pass after the one HTMLRewriter stream is a linear scan of the collected text, and no regular expression is quadratic on its input.
+- Nesting is linear too, but only because the open tracked elements are capped at 256 (`HANDLER_CAP`, D118). Bun's rewriter charges each end tag for the end-tag handlers still pending, so an uncapped stack of N nested elements cost about N squared. Before the cap, the r2 review measured 150k nested `<b>` (1 MiB) at 5.7 s in the converter. Measured in the container (`bun test/messaging/measure-plain-nesting.ts`, median of 5 runs):
+
+  | Kind | 256 KiB | 1 MiB | Ratio (4x input) |
+  | --- | --- | --- | --- |
+  | `b` | 13.0 ms | 45.1 ms | 3.46 |
+  | `div` | 7.3 ms | 27.1 ms | 3.72 |
+  | `a` | 5.3 ms | 20.0 ms | 3.75 |
+  | `li` | 8.5 ms | 33.2 ms | 3.91 |
+  | `td` | 6.9 ms | 29.9 ms | 4.31 |
+
+  The tests bound this: each kind at 1 MiB under 1 s (`test/messaging/plain-review.test.ts`), a 4x input within 6x time, and a 7 KB template that renders to 1 MB answering `/health` within 1 s (`test/messaging/plain-executable.test.ts`). Past the cap, markup is plain text.
 - Size: the output is never longer than the input in bytes. It is charged to the message budget, which every part of the message shares, and the stored text is bounded by the existing 1 MiB per-body limit in `src/messaging/payload.ts`.
 - The 8 MiB payload bound is unchanged and now includes the text part (see D118, Known edges).
 
