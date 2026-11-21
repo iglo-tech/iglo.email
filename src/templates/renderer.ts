@@ -1,18 +1,11 @@
 // Liquid rendering context and composition adapted from listmonk models/campaigns.go,
 // models/messages.go and internal/manager/message.go at 6fcd95f.
-import {
-  Context,
-  Drop,
-  Liquid,
-  Output,
-  defaultOperators,
-  toValueSync,
-  type Emitter,
-  type Template,
-} from "liquidjs";
+import { Context, Drop, Liquid, Output, defaultOperators, toValueSync } from "liquidjs";
+import type { Emitter, Template } from "liquidjs";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
-import { parseTemplateData, type TemplateData } from "@/templates/data";
+import { parseTemplateData } from "@/templates/data";
+import type { TemplateData } from "@/templates/data";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 
 const SOURCE_LIMIT = 64 * 1024;
@@ -51,13 +44,15 @@ class Budget {
   work = 0;
   depth = 0;
   charge(n: number) {
-    if (!Number.isSafeInteger(n) || n < 0 || this.bytes + n > TOTAL_LIMIT)
+    if (!Number.isSafeInteger(n) || n < 0 || this.bytes + n > TOTAL_LIMIT) {
       throw new Error("Render limit");
+    }
     this.bytes += n;
   }
   step(count = 1) {
-    if (!Number.isSafeInteger(count) || count < 0 || this.work + count > MAX_WORK)
+    if (!Number.isSafeInteger(count) || count < 0 || this.work + count > MAX_WORK) {
       throw new Error("Work limit");
+    }
     this.work += count;
   }
 }
@@ -85,33 +80,45 @@ class BoundedEmitter implements Emitter {
   write(value: unknown) {
     const string = scalar(value);
     const n = byteLength(string);
-    if (this.bytes + n > this.limit) throw new Error("Output limit");
+    if (this.bytes + n > this.limit) {
+      throw new Error("Output limit");
+    }
     this.budget.charge(n);
     this.bytes += n;
     this.buffer += string;
   }
 }
 function scalar(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)))
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
     return String(value);
+  }
   throw new Error("Invalid value");
 }
 function url(value: unknown): string {
   const text = scalar(value);
-  if (!text) return "";
+  if (!text) {
+    return "";
+  }
   try {
     const parsed = new URL(text);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Invalid URL");
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Invalid URL");
+    }
     return text;
   } catch {
     throw new Error("Invalid URL");
   }
 }
 function checkSource(value: string, limit: number) {
-  if (typeof value !== "string" || byteLength(value) > limit || value.includes("\0"))
+  if (typeof value !== "string" || byteLength(value) > limit || value.includes("\0")) {
     throw new Error("Invalid source");
+  }
 }
 export interface RenderRequest {
   body: string;
@@ -131,7 +138,7 @@ export interface RenderTracking {
   /** Rewrites an accepted HTTP(S) URL from `track_link` to its tracked redirect. */
   readonly link?: (url: string) => string;
 }
-const attribute = (value: string) => value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 export function createRenderer(clock: Clock, translation: Translation) {
@@ -141,7 +148,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
   const trackers = new WeakMap<Context, RenderTracking>();
   const budget = (ctx: Context) => {
     const result = budgets.get(ctx);
-    if (!result) throw new Error("Missing budget");
+    if (!result) {
+      throw new Error("Missing budget");
+    }
     return result;
   };
   function engine(html: boolean) {
@@ -154,10 +163,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
         b.step(textCost);
         cost += textCost;
       } else if (Array.isArray(value)) {
-        if (value.length > 1024) throw new Error("Array limit");
+        if (value.length > 1024) {
+          throw new Error("Array limit");
+        }
         for (let i = 0; i < value.length; i++) {
           const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
-          if (descriptor && !("value" in descriptor)) throw new Error("Invalid value");
+          if (descriptor && !("value" in descriptor)) {
+            throw new Error("Invalid value");
+          }
           cost += chargeComparison(descriptor?.value, b);
         }
       }
@@ -166,10 +179,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // JavaScript's relational operators join arrays into one string before
     // comparing. Reserve a conservative size for that string first.
     const joinedBytes = (value: unknown): number => {
-      if (typeof value === "string") return byteLength(value);
+      if (typeof value === "string") {
+        return byteLength(value);
+      }
       if (Array.isArray(value)) {
         let bytes = Math.max(0, value.length - 1);
-        for (const item of value) bytes += joinedBytes(item);
+        for (const item of value) {
+          bytes += joinedBytes(item);
+        }
         return bytes;
       }
       return value == null ? 0 : 32;
@@ -180,11 +197,13 @@ export function createRenderer(clock: Clock, translation: Translation) {
         const b = budget(ctx);
         chargeComparison(left, b);
         const rightCost = chargeComparison(right, b);
-        if (name !== "==" && name !== "!=" && name !== "contains")
+        if (name !== "==" && name !== "!=" && name !== "contains") {
           for (const operand of [left, right])
             if (Array.isArray(operand)) b.charge(joinedBytes(operand));
-        if (name === "contains" && Array.isArray(left) && left.length > 1)
+        }
+        if (name === "contains" && Array.isArray(left) && left.length > 1) {
           b.step((left.length - 1) * rightCost);
+        }
         return yield original(left, right, ctx);
       };
     }
@@ -199,7 +218,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       locale: "en-US",
       ...(html
         ? {
-            outputEscape: function (this: { context: Context }, value: unknown) {
+            outputEscape(this: { context: Context }, value: unknown) {
               const input = scalar(value);
               let size = 0;
               for (const c of input)
@@ -220,7 +239,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
           }
         : {}),
     });
-    for (const tag of Object.keys(liquid.tags))
+    for (const tag of Object.keys(liquid.tags)) {
       if (
         ![
           "assign",
@@ -235,7 +254,10 @@ export function createRenderer(clock: Clock, translation: Translation) {
         ].includes(tag)
       )
         delete liquid.tags[tag];
-    for (const filter of Object.keys(liquid.filters)) liquid.unregisterFilter(filter);
+    }
+    for (const filter of Object.keys(liquid.filters)) {
+      liquid.unregisterFilter(filter);
+    }
     liquid.registerFilter("raw", {
       raw: true,
       handler(value) {
@@ -265,7 +287,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
       let size = 0;
       for (const c of input) {
         size += byteLength(c.toUpperCase());
-        if (b.bytes + size > TOTAL_LIMIT) throw new Error("Render limit");
+        if (b.bytes + size > TOTAL_LIMIT) {
+          throw new Error("Render limit");
+        }
       }
       b.charge(size);
       return input.toUpperCase();
@@ -274,15 +298,17 @@ export function createRenderer(clock: Clock, translation: Translation) {
       const b = budget(this.context);
       b.step();
       const key = scalar(value);
-      if (byteLength(key) > 256 || args.length > 8 || args.length % 2)
+      if (byteLength(key) > 256 || args.length > 8 || args.length % 2) {
         throw new Error("Invalid translation");
+      }
       let out = translation.T(key);
       b.charge(byteLength(out));
       for (let i = 0; i < args.length; i += 2) {
         const name = scalar(args[i]);
         const value = scalar(args[i + 1]);
-        if (!/^[a-z0-9_.-]{1,128}$/i.test(name) || byteLength(value) > 1024)
+        if (!/^[a-z0-9_.-]{1,128}$/i.test(name) || byteLength(value) > 1024) {
           throw new Error("Invalid translation");
+        }
         const marker = `{${name}}`;
         let count = 0,
           pos = 0;
@@ -302,7 +328,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
       let out = url(value);
       // listmonk trackLink: unescape &amp; and register the URL for this message.
       const link = trackers.get(this.context)?.link;
-      if (out && link) out = link(out.replaceAll("&amp;", "&"));
+      if (out && link) {
+        out = link(out.replaceAll("&amp;", "&"));
+      }
       b.charge(byteLength(out));
       return out;
     });
@@ -311,16 +339,20 @@ export function createRenderer(clock: Clock, translation: Translation) {
       b.step();
       const text = scalar(value);
       const fmt = scalar(format);
-      if (byteLength(fmt) > 256 || /%(?![%YmdHMS])/.test(fmt))
+      if (byteLength(fmt) > 256 || /%(?![%YmdHMS])/.test(fmt)) {
         throw new Error("Invalid date format");
+      }
       if (
         text !== "now" &&
         text !== "today" &&
         !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)?$/.test(text)
-      )
+      ) {
         throw new Error("Invalid date");
+      }
       const date = text === "now" || text === "today" ? clock.now() : new Date(text);
-      if (!Number.isFinite(date.getTime())) throw new Error("Invalid date");
+      if (!Number.isFinite(date.getTime())) {
+        throw new Error("Invalid date");
+      }
       const pad = (n: number) => String(n).padStart(2, "0");
       const values: Record<string, string> = {
         "%": "%",
@@ -331,7 +363,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
         M: pad(date.getUTCMinutes()),
         S: pad(date.getUTCSeconds()),
       };
-      const out = fmt.replace(/%(.)/g, (_, key: string) => values[key]!);
+      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => values[key]!);
       b.charge(byteLength(out));
       return out;
     });
@@ -342,7 +374,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
       // without the filter: text is kept, nil is empty, and objects, arrays and non-finite numbers
       // are refused by the output step exactly as they are without it.
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        if (typeof value === "string") b.charge(byteLength(value));
+        if (typeof value === "string") {
+          b.charge(byteLength(value));
+        }
         return value;
       }
       // The largest finite number has 309 integer digits; with grouping and sign, at most 412 bytes.
@@ -352,20 +386,26 @@ export function createRenderer(clock: Clock, translation: Translation) {
     });
     // Every nested render, including capture, receives a bounded emitter and the same context budget.
     liquid.renderer.renderTemplates = function* (
-      templates: Template[],
+      templates: Array<Template>,
       ctx: Context,
       emitter?: Emitter,
     ): IterableIterator<unknown> {
       const b = budget(ctx);
       b.step();
-      if (++b.depth > MAX_DEPTH) throw new Error("Nesting limit");
+      if (++b.depth > MAX_DEPTH) {
+        throw new Error("Nesting limit");
+      }
       const out = emitter ?? new BoundedEmitter(b, OUTPUT_LIMIT);
       try {
         for (const template of templates) {
           b.step();
           const value: unknown = yield template.render(ctx, out);
-          if (value) out.write(value);
-          if (ctx.breakCalled || ctx.continueCalled) break;
+          if (value) {
+            out.write(value);
+          }
+          if (ctx.breakCalled || ctx.continueCalled) {
+            break;
+          }
         }
         return out.buffer;
       } finally {
@@ -380,23 +420,27 @@ export function createRenderer(clock: Clock, translation: Translation) {
     checkSource(source, limit);
     return (html ? htmlEngine : plainEngine).parse(source);
   }
-  function hasContent(templates: Template[]): boolean {
+  function hasContent(templates: Array<Template>): boolean {
     for (const tpl of templates) {
-      if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText()))
+      if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
         return true;
+      }
       // A content reference captured into a variable is not itself a layout output.
-      if ("name" in tpl && tpl.name === "capture") continue;
+      if ("name" in tpl && tpl.name === "capture") {
+        continue;
+      }
       if (
         "children" in tpl &&
         tpl.children &&
-        hasContent(toValueSync(tpl.children(false, true)) as Template[])
-      )
+        hasContent(toValueSync(tpl.children(false, true)) as Array<Template>)
+      ) {
         return true;
+      }
     }
     return false;
   }
   function validate(body: string, subject: string, campaign: boolean) {
-    let compiled: Template[];
+    let compiled: Array<Template>;
     try {
       compiled = parse(body, true);
     } catch {
@@ -407,10 +451,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
     } catch {
       throw new TemplateSourceError("subject");
     }
-    if (campaign && !hasContent(compiled)) throw new TemplateSourceError("slot");
+    if (campaign && !hasContent(compiled)) {
+      throw new TemplateSourceError("slot");
+    }
   }
   let active = 0;
-  type Compiled = { body: Template[]; subject: Template[]; layout?: Template[] };
+  type Compiled = { body: Array<Template>; subject: Array<Template>; layout?: Array<Template> };
   function runMessage(
     request: RenderRequest,
     data: { [key: string]: TemplateData },
@@ -418,9 +464,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
     tracking?: RenderTracking,
     budget?: MessageBudget,
   ): { body: string; subject: string } {
-    if (budget !== undefined && !(budget instanceof Budget)) throw new Error("Invalid budget");
-    if (request.mode !== "html" && request.mode !== "plain" && request.mode !== "markdown")
+    if (budget !== undefined && !(budget instanceof Budget)) {
+      throw new Error("Invalid budget");
+    }
+    if (request.mode !== "html" && request.mode !== "plain" && request.mode !== "markdown") {
       throw new Error("Invalid render mode");
+    }
     for (const key of [
       "unsubscribe_url",
       "manage_url",
@@ -431,21 +480,27 @@ export function createRenderer(clock: Clock, translation: Translation) {
       "reset_url",
       "root_url",
     ]) {
-      if (data[key] != null) data[key] = url(data[key]);
+      if (data[key] != null) {
+        data[key] = url(data[key]);
+      }
     }
-    if (request.transactional) data.unsubscribe_url = "";
+    if (request.transactional) {
+      data.unsubscribe_url = "";
+    }
     // A per-render random marker survives escaping and Markdown; the trusted pixel
     // markup replaces it after the whole message is rendered.
     const viewMarker = tracking?.view ? `igloview${crypto.randomUUID().replaceAll("-", "")}` : "";
     data.track_view = viewMarker;
     const b = budget ?? new Budget();
-    const run = (source: string, html: boolean, limit: number, ready?: Template[]): string => {
+    const run = (source: string, html: boolean, limit: number, ready?: Array<Template>): string => {
       const e = html ? htmlEngine : plainEngine;
       const parsed =
         ready ?? parse(source, html, limit === SUBJECT_LIMIT ? SUBJECT_LIMIT : SOURCE_LIMIT);
       const ctx = new Context(data, e.options, { sync: true }, { liquid: e });
       budgets.set(ctx, b);
-      if (tracking) trackers.set(ctx, tracking);
+      if (tracking) {
+        trackers.set(ctx, tracking);
+      }
       // The pinned LiquidJS patch charges expression and property evaluation to
       // the same message budget used by tags, filters and emitters.
       const bounded = ctx as Context & {
@@ -463,13 +518,16 @@ export function createRenderer(clock: Clock, translation: Translation) {
       bounded.igloBudgetRange = (size) => b.step(size);
       bounded.igloBudgetFilter = (name, count) => {
         // Liquid also creates a zero-argument filter for the trusted HTML escaper.
-        if (name === "[object Function]" && count === 0) return;
+        if (name === "[object Function]" && count === 0) {
+          return;
+        }
         if (
           !Object.hasOwn(filterArguments, name) ||
           count > filterArguments[name]! ||
           (name === "t" && count % 2 !== 0)
-        )
+        ) {
           throw new Error("Invalid filter arguments");
+        }
       };
       bounded.igloBudgetForArguments = (args) => {
         let count = 0;
@@ -481,8 +539,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
             !Object.hasOwn(args, key) ||
             (key !== "offset" && key !== "limit" && key !== "reversed") ||
             ++count > 3
-          )
+          ) {
             throw new Error("Invalid for arguments");
+          }
         }
         b.step(1 + count * 2);
       };
@@ -492,13 +551,16 @@ export function createRenderer(clock: Clock, translation: Translation) {
           if (typeof value === "string") {
             b.step(Math.ceil(byteLength(value) / 1024));
             // Store numeric slice bounds so offset:continue adds, not concatenates.
-            if (key === "offset" || key === "limit") args[key] = Number(value) || 0;
+            if (key === "offset" || key === "limit") {
+              args[key] = Number(value) || 0;
+            }
           } else if (
             value != null &&
             typeof value !== "boolean" &&
             !(typeof value === "number" && Number.isFinite(value))
-          )
+          ) {
             throw new Error("Invalid for argument value");
+          }
         }
       };
       bounded.igloBudgetForloop = (name) => {
@@ -510,15 +572,21 @@ export function createRenderer(clock: Clock, translation: Translation) {
       };
       bounded.igloBudgetCollection = (value) => {
         if (Array.isArray(value)) {
-          if (value.length > 1024) throw new Error("Array limit");
+          if (value.length > 1024) {
+            throw new Error("Array limit");
+          }
           b.step(value.length);
           return;
         }
         if (value && typeof value === "object") {
-          if (Object.getPrototypeOf(value) !== null) throw new Error("Invalid collection");
+          if (Object.getPrototypeOf(value) !== null) {
+            throw new Error("Invalid collection");
+          }
           let count = 0;
           for (const _key in value) {
-            if (++count > 1024) throw new Error("Array limit");
+            if (++count > 1024) {
+              throw new Error("Array limit");
+            }
             b.step(3);
           }
           return;
@@ -531,16 +599,20 @@ export function createRenderer(clock: Clock, translation: Translation) {
           (typeof key !== "string" && typeof key !== "number") ||
           (typeof key === "number" && !Number.isFinite(key)) ||
           (typeof key === "string" && dangerous.has(key))
-        )
+        ) {
           throw new Error("Invalid lookup");
-        if (object instanceof Drop && (typeof key !== "string" || !loopProperties.has(key)))
+        }
+        if (object instanceof Drop && (typeof key !== "string" || !loopProperties.has(key))) {
           throw new Error("Invalid loop property");
+        }
         return read(object, key);
       };
       // Only the range evaluator uses the built-in memory limiter in our supported subset.
       const use = ctx.memoryLimit.use.bind(ctx.memoryLimit);
       ctx.memoryLimit.use = (n: number) => {
-        if (!Number.isInteger(n) || n < 0 || n > 1024) throw new Error("Range limit");
+        if (!Number.isInteger(n) || n < 0 || n > 1024) {
+          throw new Error("Range limit");
+        }
         use(n);
       };
       const out = new BoundedEmitter(b, limit);
@@ -550,11 +622,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
     };
     let subject = run(request.subject ?? "", false, SUBJECT_LIMIT, compiled?.subject);
     let body = run(request.body, request.mode !== "plain", OUTPUT_LIMIT, compiled?.body);
-    if (request.mode === "markdown")
+    if (request.mode === "markdown") {
       body = renderMarkdown(
         body,
         createMarkdownBudget((n) => b.charge(n)),
       );
+    }
     if (request.layout !== undefined) {
       data.content = body;
       body = run(request.layout, request.mode !== "plain", OUTPUT_LIMIT, compiled?.layout);
@@ -566,7 +639,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
           : `<img src="${attribute(tracking!.view!)}" width="1" height="1" style="display:none;max-height:0;max-width:0;opacity:0" alt="">`;
       const count = body.split(viewMarker).length - 1;
       const size = byteLength(body) + count * (byteLength(pixel) - byteLength(viewMarker));
-      if (size > OUTPUT_LIMIT) throw new Error("Output limit");
+      if (size > OUTPUT_LIMIT) {
+        throw new Error("Output limit");
+      }
       b.charge(Math.max(0, size - byteLength(body)));
       body = body.replaceAll(viewMarker, () => pixel);
       subject = subject.replaceAll(viewMarker, "");
@@ -578,7 +653,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
     request: RenderRequest,
     budget?: MessageBudget,
   ): { body: string; subject: string } {
-    if (active >= 4) throw new RenderCapacityError();
+    if (active >= 4) {
+      throw new RenderCapacityError();
+    }
     active++;
     try {
       return runMessage(request, parseTemplateData(request.data), undefined, undefined, budget);
@@ -587,7 +664,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
   }
   async function render(request: RenderRequest): Promise<{ body: string; subject: string }> {
-    if (active >= 4) throw new RenderCapacityError();
+    if (active >= 4) {
+      throw new RenderCapacityError();
+    }
     active++;
     try {
       const data = parseTemplateData(request.data);
@@ -599,8 +678,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
   }
   function compile(input: Omit<RenderRequest, "data">) {
-    if (input.mode !== "html" && input.mode !== "plain" && input.mode !== "markdown")
+    if (input.mode !== "html" && input.mode !== "plain" && input.mode !== "markdown") {
       throw new Error("Invalid render mode");
+    }
     // Strings and mode are captured once; neither a caller mutation nor a same-clock
     // database update can change this snapshot. There is no instance-wide cache.
     const snapshot = {
@@ -619,7 +699,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
     };
     return Object.freeze({
       renderSync(data: string, tracking?: RenderTracking, budget?: MessageBudget) {
-        if (active >= 4) throw new RenderCapacityError();
+        if (active >= 4) {
+          throw new RenderCapacityError();
+        }
         active++;
         try {
           const clean = parseTemplateData(data);
@@ -629,7 +711,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
         }
       },
       async render(data: string) {
-        if (active >= 4) throw new RenderCapacityError();
+        if (active >= 4) {
+          throw new RenderCapacityError();
+        }
         active++;
         try {
           const clean = parseTemplateData(data);

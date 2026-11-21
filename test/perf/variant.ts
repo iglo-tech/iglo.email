@@ -6,9 +6,11 @@ import { join } from "node:path";
 
 const sha256 = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex");
 
-function git(repository: string, args: string[]) {
+function git(repository: string, args: Array<string>) {
   const result = Bun.spawnSync(["git", ...args], { cwd: repository });
-  if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed`);
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed`);
+  }
   return result.stdout;
 }
 

@@ -3,11 +3,14 @@
 // production router: a role without the permission is refused, one with it is served, and the
 // subscriber read scope still applies.
 import { afterEach, expect, test } from "bun:test";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
-const fixtures: QueryFixture[] = [];
+const fixtures: Array<QueryFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 
 async function open() {

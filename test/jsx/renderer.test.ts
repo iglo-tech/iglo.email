@@ -14,7 +14,9 @@ test("compiled TSX escapes by default and rejects malformed values", async () =>
       { cwd: resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" },
     );
     const [code, error] = await Promise.all([build.exited, new Response(build.stderr).text()]);
-    if (code !== 0) throw new Error(`TSX fixture build failed: ${error}`);
+    if (code !== 0) {
+      throw new Error(`TSX fixture build failed: ${error}`);
+    }
     const started = Bun.spawn([executable], {
       cwd: directory,
       env: { PATH: "" },

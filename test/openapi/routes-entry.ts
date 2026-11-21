@@ -7,5 +7,7 @@ await main((router) => {
   process.stdout.write(JSON.stringify(router.list()));
   throw new Listed();
 }).catch((error: unknown) => {
-  if (!(error instanceof Listed)) throw error;
+  if (!(error instanceof Listed)) {
+    throw error;
+  }
 });

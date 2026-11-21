@@ -30,7 +30,7 @@ const DAILY = `${RANGE}&interval=day`;
 async function expectShownCount(locator, total) {
   await expect
     .poll(async () => {
-      const digits = ((await locator.textContent()) ?? "").replace(/\D/g, "");
+      const digits = ((await locator.textContent()) ?? "").replaceAll(/\D/g, "");
       return digits === "" ? null : Number(digits);
     })
     .toBe(Number(total));
@@ -40,7 +40,9 @@ async function expectShownCount(locator, total) {
 // that timed out has closed its page by then.
 let changed = {};
 async function change(page, key, value) {
-  if (!(key in changed)) changed[key] = (await ok(page, "/api/settings"))[key];
+  if (!(key in changed)) {
+    changed[key] = (await ok(page, "/api/settings"))[key];
+  }
   await ok(page, `/api/settings/${key}`, "PUT", value);
 }
 
@@ -51,7 +53,9 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async ({ request }) => {
   const pending = changed;
   changed = {};
-  if (Object.keys(pending).length === 0) return;
+  if (Object.keys(pending).length === 0) {
+    return;
+  }
   const call = await requestAdmin(request);
   // Every setting is attempted, so one that fails does not leave the others changed for the file's
   // later tests; the failures are reported together at the end.
@@ -59,7 +63,9 @@ test.afterEach(async ({ request }) => {
   for (const [key, value] of Object.entries(pending)) {
     try {
       const response = await call(`/api/settings/${key}`, "PUT", value);
-      if (response.status !== 200) failures.push(`${key} answered ${response.status}`);
+      if (response.status !== 200) {
+        failures.push(`${key} answered ${response.status}`);
+      }
     } catch (error) {
       failures.push(`${key}: ${error.message}`);
     }
@@ -214,7 +220,9 @@ test("the unique toggle with individual tracking on: two readers, one opening tw
   // than per reader, would read 1 here instead of 2.
   const ann = linkTo(await mailAbout(person.email, made.subject), TRACKED.pixel, "the pixel");
   const ben = linkTo(await mailAbout(other.email, made.subject), TRACKED.pixel, "the pixel");
-  for (const pixel of [ann, ann, ben]) expect((await page.request.get(pixel)).status()).toBe(200);
+  for (const pixel of [ann, ann, ben]) {
+    expect((await page.request.get(pixel)).status()).toBe(200);
+  }
 
   expect(total(await read(page, "campaigns", "views", [made.id], DAILY))).toBe(3);
   expect(total(await read(page, "campaigns", "views", [made.id], `${DAILY}&unique=true`))).toBe(2);
@@ -239,13 +247,18 @@ test("day, week, month and hour buckets hold known dates alike, and a bounce now
   const { list, person } = await audience(page);
   const made = await make(page, list);
   // The webhook takes `created_at`, so these bounces sit on known dates inside a fixed range.
-  for (const createdAt of ["2026-10-07T12:00:00Z", "2026-10-08T09:00:00Z", "2026-10-14T08:00:00Z"])
+  for (const createdAt of [
+    "2026-10-07T12:00:00Z",
+    "2026-10-08T09:00:00Z",
+    "2026-10-14T08:00:00Z",
+  ]) {
     await ok(page, "/webhooks/bounce", "POST", {
       email: person.email,
       campaign_uuid: made.uuid,
       type: "soft",
       created_at: createdAt,
     });
+  }
 
   const october = "from=2026-10-01T00:00&to=2026-10-31T23:59";
   const series = async (interval) =>

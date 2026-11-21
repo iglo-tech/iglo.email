@@ -4,8 +4,10 @@
 // `page` line below with upstream's path and permissions (any one of them is enough). A module in
 // assets/admin/js/views/<name>.js is built by itself and loaded by returning `script: "<name>"`
 // from the view.
-import { createAdminPages, type AdminSite, type AdminView } from "@/admin/page";
-import { createPasswordReset, type ResetDeps } from "@/admin/password-reset";
+import { createAdminPages } from "@/admin/page";
+import type { AdminSite, AdminView } from "@/admin/page";
+import { createPasswordReset } from "@/admin/password-reset";
+import type { ResetDeps } from "@/admin/password-reset";
 import { adminPolicyHeader } from "@/admin/policy";
 import { analyticsView } from "@/admin/views/analytics";
 import { bouncesView } from "@/admin/views/bounces";
@@ -54,9 +56,9 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   const { auth, roles, site } = deps;
   const { adminPage } = createAdminPages({ auth, roles, site });
   router.use(adminPolicyHeader(site));
-  const page = (path: string, view: AdminView, ...permissions: string[]) =>
+  const page = (path: string, view: AdminView, ...permissions: Array<string>) =>
     router.route("GET", path, adminPage(view, ...permissions));
-  const withID = (path: string, view: AdminView, ...permissions: string[]) =>
+  const withID = (path: string, view: AdminView, ...permissions: Array<string>) =>
     page(path, checkedID(view), ...permissions);
 
   // Appearance settings as authored: only pages behind this session check load them.

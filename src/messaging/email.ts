@@ -1,6 +1,7 @@
 // SMTP messenger adapted from listmonk internal/messenger/email/email.go and models/messages.go at 6fcd95f.
 import nodemailer from "nodemailer";
-import { createConnection, isIP, type Socket } from "node:net";
+import { createConnection, isIP } from "node:net";
+import type { Socket } from "node:net";
 import type { Clock } from "@/clock";
 import type { SendRateLimiter, SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
@@ -26,17 +27,17 @@ export interface SMTPServer {
   tls_type: string;
   tls_skip_verify: boolean;
   email_headers: Array<Record<string, string> | null> | null;
-  from_addresses: string[] | null;
+  from_addresses: Array<string> | null;
   dkim?: { domain_name: string; key_selector: string; private_key: string } | null;
 }
 export interface Message {
   from: string;
-  to: string[];
+  to: Array<string>;
   subject: string;
   contentType: "plain" | "html";
   body: Uint8Array;
   altBody?: Uint8Array;
-  headers?: Record<string, string | string[]>;
+  headers?: Record<string, string | Array<string>>;
   attachments?: Array<{
     name: string;
     content: Uint8Array;
@@ -52,8 +53,8 @@ export type Outcome = {
   messageId: string;
   status: "accepted" | "proven-not-accepted" | "ambiguous";
   stage: "local" | "setup" | "recipients" | "smtp-complete" | "unknown" | "not-started";
-  accepted: string[];
-  rejected: string[];
+  accepted: Array<string>;
+  rejected: Array<string>;
   retry?: "transient";
 };
 export interface Dispatch {
@@ -79,7 +80,7 @@ type Pool = {
 
 function duration(value: string, fallback: number): number {
   const ms = goDuration(value);
-  return Number.isFinite(ms) && ms >= 1000 && ms <= 300000 ? ms : fallback;
+  return Number.isFinite(ms) && ms >= 1000 && ms <= 300_000 ? ms : fallback;
 }
 export function validServer(s: SMTPServer): boolean {
   return (
@@ -87,10 +88,10 @@ export function validServer(s: SMTPServer): boolean {
     !!s.host.trim() &&
     // A host with whitespace or control characters is refused on purpose.
     // oxlint-disable-next-line no-control-regex
-    !/[\s\x00-\x1f\x7f]/.test(s.host) &&
+    !/[\s\u0000-\u001f\x7f]/.test(s.host) &&
     Number.isInteger(s.port) &&
     s.port >= 1 &&
-    s.port <= 65535 &&
+    s.port <= 65_535 &&
     Number.isSafeInteger(s.max_conns) &&
     s.max_conns >= 1 &&
     ["", "none", "plain", "login", "cram"].includes(s.auth_protocol) &&
@@ -139,7 +140,9 @@ function makeTransport(
         sockets.add(socket);
         let pending = true;
         const fail = (error: NodeJS.ErrnoException) => {
-          if (!pending) return;
+          if (!pending) {
+            return;
+          }
           pending = false;
           socket.destroy();
           callback(
@@ -154,13 +157,17 @@ function makeTransport(
         socket.once("error", fail);
         socket.once("close", () => {
           sockets.delete(socket);
-          if (pending) fail(new Error("Connection closed"));
+          if (pending) {
+            fail(new Error("Connection closed"));
+          }
           socketState.waiting.shift()?.();
           socketState.onClose();
         });
         socket.setTimeout(wait, () => fail(new Error("Connection timed out")));
         socket.once("connect", () => {
-          if (!pending) return;
+          if (!pending) {
+            return;
+          }
           pending = false;
           socket.setTimeout(0);
           socket.removeListener("error", fail);
@@ -193,10 +200,10 @@ function makeTransport(
     maxConnections: test ? 1 : s.max_conns,
     maxMessages: 100,
     maxRequeues: 0,
-    idleTimeout: test ? 2000 : duration(s.idle_timeout, 15000),
+    idleTimeout: test ? 2000 : duration(s.idle_timeout, 15_000),
     connectionTimeout: wait,
     greetingTimeout: wait,
-    socketTimeout: test ? 5000 : 30000,
+    socketTimeout: test ? 5000 : 30_000,
     disableFileAccess: true,
     disableUrlAccess: true,
     ...(s.dkim
@@ -227,18 +234,23 @@ function build(
   copies: boolean,
 ) {
   const headers = new Map<string, { name: string; value: string }>();
-  const add = (name: string, raw: string | string[]) => {
+  const add = (name: string, raw: string | Array<string>) => {
     const value = Array.isArray(raw) ? (raw[0] ?? "") : raw;
-    if (!headerName.test(name) || typeof value !== "string" || !safeValue(value))
+    if (!headerName.test(name) || typeof value !== "string" || !safeValue(value)) {
       throw new Error("Invalid header");
+    }
     const lower = name.toLowerCase();
     headers.set(lower, { name, value });
   };
-  for (const group of s.email_headers ?? [])
+  for (const group of s.email_headers ?? []) {
     for (const [k, v] of Object.entries(group ?? {})) add(k, v);
-  for (const [k, v] of Object.entries(input.headers ?? {})) add(k, v);
-  if (!safeValue(input.from) || !safeValue(input.subject) || input.to.some((v) => !safeValue(v)))
+  }
+  for (const [k, v] of Object.entries(input.headers ?? {})) {
+    add(k, v);
+  }
+  if (!safeValue(input.from) || !safeValue(input.subject) || input.to.some((v) => !safeValue(v))) {
     throw new Error("Invalid address or subject");
+  }
   const returnPath = headers.get("return-path")?.value;
   headers.delete("return-path");
   // Filter copies after merging server settings, so configured Cc/Bcc obey the same policy.
@@ -269,12 +281,16 @@ function build(
     "date",
     "content-type",
     "content-transfer-encoding",
-  ])
+  ]) {
     headers.delete(field);
-  if (s.dkim && headers.has("dkim-signature")) throw new Error("Duplicate signature");
+  }
+  if (s.dkim && headers.has("dkim-signature")) {
+    throw new Error("Duplicate signature");
+  }
   const attachments = (input.attachments ?? []).map((a) => {
-    if (![a.name, a.cid ?? "", a.contentType ?? ""].every(safeValue))
+    if (![a.name, a.cid ?? "", a.contentType ?? ""].every(safeValue)) {
       throw new Error("Invalid attachment");
+    }
     return {
       filename: a.name,
       // A view: a campaign's messages share one buffer, which nothing here writes to.
@@ -288,7 +304,9 @@ function build(
   const customHeaders = Array.from(headers.values(), ({ name: key, value }) => ({ key, value }));
   const one = (value: string) => {
     const address = parseAddress(value);
-    if (address === undefined) throw new Error("Invalid mailbox");
+    if (address === undefined) {
+      throw new Error("Invalid mailbox");
+    }
     return { address };
   };
   // Nodemailer 10 supports explicit address objects here. The separately pinned
@@ -301,7 +319,7 @@ function build(
       ...(cc ? cc.split(",").map((value) => one(trimSpace(value))) : []),
       ...(bcc ? bcc.split(",").map((value) => one(trimSpace(value))) : []),
     ],
-  } as unknown as { from: string; to: string[] };
+  } as unknown as { from: string; to: Array<string> };
   return {
     from,
     to,
@@ -340,15 +358,17 @@ export function newMessageId(rootUrl: string): string {
 }
 function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
   let result: string | undefined;
-  for (const group of s?.email_headers ?? [])
+  for (const group of s?.email_headers ?? []) {
     for (const [k, v] of Object.entries(group ?? {}))
       if (k.toLowerCase() === "message-id") result = v;
-  for (const [k, v] of Object.entries(m.headers ?? {}))
+  }
+  for (const [k, v] of Object.entries(m.headers ?? {})) {
     if (k.toLowerCase() === "message-id") result = Array.isArray(v) ? v[0] : v;
+  }
   return m.messageId || result || undefined;
 }
 export function createEmailer(options: {
-  settings: () => { smtp: SMTPServer[]; rootUrl: string };
+  settings: () => { smtp: Array<SMTPServer>; rootUrl: string };
   clock: Clock;
   limiter?: SendRateLimiter;
   select?: (count: number) => number;
@@ -369,11 +389,15 @@ export function createEmailer(options: {
   let closed = false;
   let closing: Promise<void> | undefined;
   function finishPool(pool: Pool) {
-    if (!pool.retired || pool.operations.size !== 0) return;
+    if (!pool.retired || pool.operations.size !== 0) {
+      return;
+    }
     if (!pool.stopped) {
       pool.stopped = true;
       pool.socketState.stopped = true;
-      for (const resume of pool.socketState.waiting.splice(0)) resume();
+      for (const resume of pool.socketState.waiting.splice(0)) {
+        resume();
+      }
       pool.transport.close();
     }
     if (pool.sockets.size === 0) {
@@ -382,30 +406,50 @@ export function createEmailer(options: {
     }
   }
   function retire(pool: Pool) {
-    if (pool.retired) return;
+    if (pool.retired) {
+      return;
+    }
     pool.retired = true;
     retired.add(pool);
     finishPool(pool);
   }
   function cancelPool(pool: Pool) {
-    if (!pool.retired) retire(pool);
-    if (pools.get(pool.key) === pool) pools.delete(pool.key);
-    if (testPools.get(pool.key) === pool) testPools.delete(pool.key);
+    if (!pool.retired) {
+      retire(pool);
+    }
+    if (pools.get(pool.key) === pool) {
+      pools.delete(pool.key);
+    }
+    if (testPools.get(pool.key) === pool) {
+      testPools.delete(pool.key);
+    }
     // Stop the library queue before destroying sockets; no work is resubmitted.
     pool.stopped = true;
     pool.socketState.stopped = true;
-    for (const resume of pool.socketState.waiting.splice(0)) resume();
+    for (const resume of pool.socketState.waiting.splice(0)) {
+      resume();
+    }
     pool.transport.close();
-    for (const socket of pool.sockets) socket.destroy();
-    for (const operation of Array.from(pool.operations)) operation.cancel();
+    for (const socket of pool.sockets) {
+      socket.destroy();
+    }
+    for (const operation of Array.from(pool.operations)) {
+      operation.cancel();
+    }
     retired.delete(pool);
     pool.resolve();
   }
   function pump(pool: Pool) {
-    if (pool.stopped) return;
+    if (pool.stopped) {
+      return;
+    }
     for (const operation of pool.operations) {
-      if (pool.active >= pool.limit) break;
-      if (!operation.started) operation.start();
+      if (pool.active >= pool.limit) {
+        break;
+      }
+      if (!operation.started) {
+        operation.start();
+      }
     }
   }
   function createPool(key: string, server: SMTPServer, temporary = false): Pool {
@@ -431,14 +475,15 @@ export function createEmailer(options: {
     socketState.onClose = () => finishPool(pool);
     return pool;
   }
-  function reconcile(servers: SMTPServer[]) {
+  function reconcile(servers: Array<SMTPServer>) {
     const keys = new Set(servers.map((s) => JSON.stringify(s)));
-    for (const table of [pools, testPools])
+    for (const table of [pools, testPools]) {
       for (const [key, pool] of table)
         if (!keys.has(key)) {
           table.delete(key);
           retire(pool);
         }
+    }
   }
   function dispatch(
     server: SMTPServer | undefined,
@@ -469,16 +514,21 @@ export function createEmailer(options: {
     });
     const local = (): Dispatch => ({ messageId, result: Promise.resolve(localOutcome()) });
     // A closed emailer never starts a message: the work is handed back (not-started), not failed.
-    if (closed) return { messageId, result: Promise.resolve(notStartedOutcome()) };
-    if (!server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId))
+    if (closed) {
+      return { messageId, result: Promise.resolve(notStartedOutcome()) };
+    }
+    if (!server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId)) {
       return local();
+    }
     let data: ReturnType<typeof build>;
     try {
       data = build(server, message, messageId, options.clock.now(), copyAllowed, copies);
     } catch {
       return local();
     }
-    if (options.clock.now().getTime() - startedAt >= (temporary ? 10000 : 60000)) return local();
+    if (options.clock.now().getTime() - startedAt >= (temporary ? 10_000 : 60_000)) {
+      return local();
+    }
 
     let timer: AbortController | undefined;
     let resolve!: (outcome: Outcome) => void;
@@ -490,12 +540,16 @@ export function createEmailer(options: {
     let operation: Operation | undefined;
 
     const complete = (outcome: Outcome) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       timer?.abort();
       if (pool && operation) {
         pool.operations.delete(operation);
-        if (operation.started) pool.active--;
+        if (operation.started) {
+          pool.active--;
+        }
         finishPool(pool);
         pump(pool);
       }
@@ -519,33 +573,43 @@ export function createEmailer(options: {
         try {
           await options.limiter.acquire(priority, bound?.signal);
         } catch {
-          if (!settled) complete(notStartedOutcome());
+          if (!settled) {
+            complete(notStartedOutcome());
+          }
           return;
         } finally {
           bound?.abort();
         }
       }
       if (settled || closed) {
-        if (!settled) complete(notStartedOutcome());
+        if (!settled) {
+          complete(notStartedOutcome());
+        }
         return;
       }
       try {
         options.refuse?.();
       } catch {
-        if (!settled) complete(localOutcome());
+        if (!settled) {
+          complete(localOutcome());
+        }
         return;
       }
 
-      const remaining = temporary ? 10000 : 60000;
+      const remaining = temporary ? 10_000 : 60_000;
       const timeout = new AbortController();
       timer = timeout;
       void new Promise<void>((resolve) =>
         resolve(options.clock.sleep(remaining, timeout.signal)),
       ).then(
         () => {
-          if (settled) return;
+          if (settled) {
+            return;
+          }
           if (operation?.started) {
-            if (pool) cancelPool(pool);
+            if (pool) {
+              cancelPool(pool);
+            }
           } else if (operation) {
             operation.cancel();
           } else {
@@ -555,8 +619,9 @@ export function createEmailer(options: {
         () => {},
       );
 
-      if (temporary) pool = createPool("", server, true);
-      else {
+      if (temporary) {
+        pool = createPool("", server, true);
+      } else {
         const key = JSON.stringify(server);
         const table = testPool ? testPools : pools;
         pool = table.get(key) ?? createPool(key, server);
@@ -585,7 +650,7 @@ export function createEmailer(options: {
           pool!.active++;
           // The executor turns a synchronous throw from the transport into a rejection, so
           // nothing after the hand-off to a pool can throw out of `push`.
-          void new Promise<{ accepted: unknown[]; rejected: unknown[] }>((resolve) =>
+          void new Promise<{ accepted: Array<unknown>; rejected: Array<unknown> }>((resolve) =>
             resolve(pool!.transport.sendMail(data)),
           )
             .then((info) =>
@@ -604,7 +669,7 @@ export function createEmailer(options: {
                 ownerAuthNotAccepted?: boolean;
                 response?: string;
                 responseCode?: number;
-                rejected?: unknown[];
+                rejected?: Array<unknown>;
                 rejectedErrors?: Array<{
                   recipient?: string;
                   responseCode?: number;
@@ -695,7 +760,9 @@ export function createEmailer(options: {
     const startedAt = options.clock.now().getTime();
     const copies = delivery.copies ?? true;
     const priority = delivery.priority ?? "outbox";
-    if (closed) return dispatch(undefined, message, "", false, startedAt, copies, priority);
+    if (closed) {
+      return dispatch(undefined, message, "", false, startedAt, copies, priority);
+    }
     const current = options.settings();
     const servers = structuredClone(current.smtp).filter((s) => s.enabled);
     reconcile(servers);
@@ -750,10 +817,14 @@ export function createEmailer(options: {
       return closed;
     },
     close() {
-      if (closing) return closing;
+      if (closing) {
+        return closing;
+      }
       closed = true;
       options.limiter?.stop();
-      for (const pool of [...pools.values(), ...testPools.values()]) retire(pool);
+      for (const pool of [...pools.values(), ...testPools.values()]) {
+        retire(pool);
+      }
       pools.clear();
       testPools.clear();
       const draining = [...retired];
@@ -761,7 +832,9 @@ export function createEmailer(options: {
       closing = (async () => {
         const timeout = options.clock.sleep(5000, timer.signal).then(
           () => {
-            for (const pool of draining) if (retired.has(pool)) cancelPool(pool);
+            for (const pool of draining) {
+              if (retired.has(pool)) cancelPool(pool);
+            }
           },
           () => {},
         );

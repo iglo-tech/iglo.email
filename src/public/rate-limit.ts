@@ -22,8 +22,9 @@ export function createRateLimit(clock: Clock, policy: LimitPolicy) {
   return (peer: string): number => {
     const time = clock.now().getTime();
     if (time >= sweepAt || time < sweepAt - policy.windowMs) {
-      for (const [key, entry] of peers)
+      for (const [key, entry] of peers) {
         if (time - entry.start >= policy.windowMs || time < entry.start) peers.delete(key);
+      }
       sweepAt = time + policy.windowMs;
     }
     let current = peers.get(peer);
@@ -32,11 +33,15 @@ export function createRateLimit(clock: Clock, policy: LimitPolicy) {
       current = undefined;
     }
     if (!current) {
-      if (peers.size >= policy.maxPeers) peers.delete(peers.keys().next().value!);
+      if (peers.size >= policy.maxPeers) {
+        peers.delete(peers.keys().next().value!);
+      }
       current = { start: time, count: 0 };
       peers.set(peer, current);
     }
-    if (current.count >= policy.limit) return current.start + policy.windowMs - time;
+    if (current.count >= policy.limit) {
+      return current.start + policy.windowMs - time;
+    }
     current.count++;
     return 0;
   };
@@ -52,10 +57,13 @@ export function rateLimited(
   const check = createRateLimit(clock, policy);
   return (context, next) => {
     const wait = check(clientAddress(context));
-    if (!wait) return next();
+    if (!wait) {
+      return next();
+    }
     const headers = { "Retry-After": String(Math.ceil(wait / 1000)) };
-    if (context.url.pathname.startsWith("/api/"))
+    if (context.url.pathname.startsWith("/api/")) {
       throw new HttpError(429, "Too many requests", headers);
+    }
     const t = context.app.i18n;
     const site = page();
     return publicMessage(
@@ -81,13 +89,19 @@ export function createThrottle(clock: Clock, ttlMs: number, capacity: number) {
   return (key: string): boolean => {
     const time = clock.now().getTime();
     if (time >= cleanAt) {
-      for (const [item, expiry] of expires) if (time >= expiry) expires.delete(item);
+      for (const [item, expiry] of expires) {
+        if (time >= expiry) expires.delete(item);
+      }
       cleanAt = time + Math.min(ttlMs, 60_000);
     }
     const expiry = expires.get(key);
     if (expiry !== undefined) {
-      if (time < expiry) return false;
-    } else if (expires.size >= capacity) return false;
+      if (time < expiry) {
+        return false;
+      }
+    } else if (expires.size >= capacity) {
+      return false;
+    }
     expires.set(key, time + ttlMs);
     return true;
   };

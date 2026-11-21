@@ -14,7 +14,7 @@ export function startReceiver(
   respond: (received: Received, count: number) => Response | Promise<Response> = () =>
     new Response("ok"),
 ) {
-  const received: Received[] = [];
+  const received: Array<Received> = [];
   const waiters = new Set<() => void>();
   let handler = respond;
   const server = Bun.serve({
@@ -23,7 +23,9 @@ export function startReceiver(
     idleTimeout: 0,
     async fetch(request) {
       // Other processes on a shared host can probe a loopback port.
-      if (request.method !== "POST") return new Response(null, { status: 404 });
+      if (request.method !== "POST") {
+        return new Response(null, { status: 404 });
+      }
       const text = await request.text();
       const entry: Received = {
         path: new URL(request.url).pathname,
@@ -34,7 +36,9 @@ export function startReceiver(
         at: Date.now(),
       };
       received.push(entry);
-      for (const wake of waiters) wake();
+      for (const wake of waiters) {
+        wake();
+      }
       return handler(entry, received.length);
     },
   });
@@ -49,8 +53,9 @@ export function startReceiver(
     async waitFor(count: number) {
       const deadline = Date.now() + 10_000;
       while (received.length < count) {
-        if (Date.now() > deadline)
+        if (Date.now() > deadline) {
           throw new Error(`Receiver got ${received.length} of ${count} requests`);
+        }
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, 200);
           const wake = () => {
@@ -71,7 +76,9 @@ export type Receiver = ReturnType<typeof startReceiver>;
 /** The documented receiver check: HMAC-SHA256 of `t.body` over the exact bytes received. */
 export function signatureValid(received: Received, secret: string) {
   const match = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(received.signature);
-  if (!match) return false;
+  if (!match) {
+    return false;
+  }
   const expected = createHmac("sha256", secret).update(`${match[1]}.${received.text}`).digest();
   return timingSafeEqual(expected, Buffer.from(match[2]!, "hex"));
 }

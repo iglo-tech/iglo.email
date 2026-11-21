@@ -67,7 +67,9 @@ test.describe("Lists", () => {
 
   test.beforeEach(async ({ page }) => {
     await signIn(page);
-    if (seeded) return;
+    if (seeded) {
+      return;
+    }
     seeded = true;
     const first = await makeList(page, { name: defaultList, tags: [run, "test"] });
     const second = await makeList(page, {
@@ -202,7 +204,7 @@ test.describe("Lists: filters and sorting", () => {
   const run = unique("run");
   const here = `${LISTS}?tag=${run}`;
   const name = (type, optin, n) => `${run}-${type}-${optin}-${n}`;
-  let ids = [];
+  const ids = [];
 
   test.beforeEach(async ({ page }) => {
     await signIn(page);
@@ -423,7 +425,9 @@ test.describe("Lists: filtered bulk deletion", () => {
           tags: ["target", "news"],
           ...overrides,
         });
-        if (Object.keys(overrides).length) preserved.push(list.id);
+        if (Object.keys(overrides).length) {
+          preserved.push(list.id);
+        }
       }
       await page.goto(`${LISTS}?${filter}`);
       await page.locator("thead input[type=checkbox]").check();

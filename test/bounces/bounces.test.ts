@@ -3,13 +3,16 @@
 import { afterEach, expect, test } from "bun:test";
 import { HttpError } from "@/server/response";
 import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { bounceMessage, envelope, network, post } from "@/test/bounces/ses-fixture";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 const events = ["bounce.recorded", "subscriber.blocklisted", "subscriber.deleted"];
 async function open(options: Parameters<typeof txFixture>[0] = {}) {
@@ -17,7 +20,7 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
   cleanups.push(() => f.close());
   return f;
 }
-async function hooked(f: TxFixture, subscribed: string[] = events) {
+async function hooked(f: TxFixture, subscribed: Array<string> = events) {
   const r = startReceiver();
   cleanups.push(() => r.close());
   const created = await f.json("/api/webhooks", "POST", { url: r.url(), events: subscribed });
@@ -25,27 +28,27 @@ async function hooked(f: TxFixture, subscribed: string[] = events) {
   return { receiver: r, secret: created.body.data.secret as string };
 }
 const rowsOf = (f: TxFixture) =>
-  f.db.query("SELECT subscriber_id, send_id, type, meta FROM bounces ORDER BY id").all() as {
+  f.db.query("SELECT subscriber_id, send_id, type, meta FROM bounces ORDER BY id").all() as Array<{
     subscriber_id: bigint | null;
     send_id: bigint | null;
     type: string;
     meta: string;
-  }[];
+  }>;
 const statusOf = async (f: TxFixture, id: number) =>
   (await f.json(`/api/subscribers/${id}`)).body.data?.status as string | undefined;
 const deliveries = (f: TxFixture) =>
   (
-    f.db.query("SELECT event, payload FROM webhook_deliveries ORDER BY id").all() as {
+    f.db.query("SELECT event, payload FROM webhook_deliveries ORDER BY id").all() as Array<{
       event: string;
       payload: string;
-    }[]
+    }>
   ).map((row) => ({ event: row.event, body: JSON.parse(row.payload) }));
 
 test("native meta spellings are stored as objects", async () => {
   const f = await open();
   await f.subscriber("meta@example.com");
   f.setBounceAction("soft", { count: 9, action: "none" });
-  for (const meta of ['{"a":1}', "plain text", 7, ["x"], null])
+  for (const meta of ['{"a":1}', "plain text", 7, ["x"], null]) {
     expect(
       (
         await f.json("/webhooks/bounce", "POST", {
@@ -56,6 +59,7 @@ test("native meta spellings are stored as objects", async () => {
         })
       ).status,
     ).toBe(200);
+  }
   expect(rowsOf(f).map((row) => JSON.parse(row.meta))).toEqual([
     { a: 1 },
     { value: "plain text" },
@@ -152,7 +156,7 @@ test("a stored bounce delivery is cleared by the delete action and by a wipe", a
 
 test("an action on an existing subscriber goes through the consent effects once", async () => {
   const f = await open();
-  const calls: unknown[][] = [];
+  const calls: Array<unknown>[] = [];
   const store = createSubscriberStore(f.db, f.clock, f.owners.lists, {
     ...noSubscriberEffects,
     blocklisted: (ids) => calls.push(["blocklisted", ids]),
@@ -181,7 +185,9 @@ test("the provider route takes its rate limit before reading the body", async ()
   let used = 0;
   const f = await open({
     bounceLimit: (_context, next) => {
-      if (used++) throw new HttpError(429, "Too many requests");
+      if (used++) {
+        throw new HttpError(429, "Too many requests");
+      }
       return next();
     },
   });
@@ -200,7 +206,7 @@ const sendTo = async (f: TxFixture, body: object) => {
     ...body,
   });
   expect(sent.status).toBe(200);
-  const [row] = sent.body.data.sends as { id: number; status: string }[];
+  const [row] = sent.body.data.sends as Array<{ id: number; status: string }>;
   expect(row!.status).toBe("sent");
   return (await f.json(`/api/sends/${row!.id}`)).body.data as {
     id: number;
@@ -387,7 +393,9 @@ test("one request prunes a bounded batch of expired receipts, and a backlog stil
   const expired = new Date(f.clock.now().getTime() - 1000).toISOString();
   const insert = f.db.query("INSERT INTO bounce_receipts (key, expires_at) VALUES (?, ?)");
   f.db.transaction(() => {
-    for (let i = 0; i < seed; i++) insert.run(`sns:seed-${i}`, expired);
+    for (let i = 0; i < seed; i++) {
+      insert.run(`sns:seed-${i}`, expired);
+    }
   })();
   const expiredLeft = () =>
     Number(

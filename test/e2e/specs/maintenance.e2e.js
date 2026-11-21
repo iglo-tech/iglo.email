@@ -212,7 +212,7 @@ test("campaign analytics reads its charts, with a real view", async ({ page }) =
   });
   await ok(page, `/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" });
   await expect
-    .poll(async () => (await ok(page, `/api/campaigns/${campaign.id}`)).status, { timeout: 60000 })
+    .poll(async () => (await ok(page, `/api/campaigns/${campaign.id}`)).status, { timeout: 60_000 })
     .toBe("finished");
   const mail = await mailAbout(sub.email, campaign.subject);
   await page.request.get(linkTo(mail, TRACKED.pixel, "the open pixel"));

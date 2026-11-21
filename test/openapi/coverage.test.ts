@@ -10,18 +10,18 @@ import { validate } from "@/test/openapi/schema";
 
 const repository = resolve(import.meta.dir, "../..");
 const document = JSON.parse(buildDocument());
-const methods = ["get", "post", "put", "patch", "delete"];
+const methods = new Set(["get", "post", "put", "patch", "delete"]);
 const documented = Object.entries(document.paths as Record<string, object>).flatMap(
   ([path, item]) =>
     Object.keys(item)
-      .filter((method) => methods.includes(method))
-      .map((method) => `${method.toUpperCase()} ${path.replace(/\{(\w+)\}/g, ":$1")}`),
+      .filter((method) => methods.has(method))
+      .map((method) => `${method.toUpperCase()} ${path.replaceAll(/\{(\w+)\}/g, ":$1")}`),
 );
 const skipped = excluded.flatMap(({ routes }) => routes);
 const exact = skipped.filter((route) => !route.endsWith("/*"));
 const prefixes = skipped.filter((route) => route.endsWith("/*")).map((route) => route.slice(0, -1));
 
-async function registered(): Promise<string[]> {
+async function registered(): Promise<Array<string>> {
   const directory = await mkdtemp(join(tmpdir(), "iglo-openapi-routes-"));
   try {
     const child = Bun.spawn(
@@ -33,8 +33,10 @@ async function registered(): Promise<string[]> {
       new Response(child.stderr).text(),
       child.exited,
     ]);
-    if (code !== 0) throw new Error(`Route listing failed: ${errors}`);
-    return (JSON.parse(text) as { method: string; path: string }[]).map(
+    if (code !== 0) {
+      throw new Error(`Route listing failed: ${errors}`);
+    }
+    return (JSON.parse(text) as Array<{ method: string; path: string }>).map(
       ({ method, path }) => `${method} ${path}`,
     );
   } finally {
@@ -60,7 +62,9 @@ describe("coverage", async () => {
   test("every exclusion names a route that exists, with a reason", () => {
     const real = new Set(routes);
     expect(exact.filter((route) => !real.has(route))).toEqual([]);
-    for (const { reason } of excluded) expect(reason.length).toBeGreaterThan(10);
+    for (const { reason } of excluded) {
+      expect(reason.length).toBeGreaterThan(10);
+    }
   });
   test("a route is never both documented and excluded", () => {
     const listed = new Set(documented);
@@ -103,8 +107,9 @@ describe("document", () => {
     }
   });
   test("each operation answers with the error envelope by default", () => {
-    for (const { operation } of operations)
+    for (const { operation } of operations) {
       expect(operation.responses.default).toEqual({ $ref: "#/components/responses/Error" });
+    }
   });
   test("every reference resolves and each schema is used", () => {
     const text = JSON.stringify(document);
@@ -113,10 +118,11 @@ describe("document", () => {
     expect(Object.keys(document.components.schemas).filter((name) => !names.has(name))).toEqual([]);
   });
   test("every schema compiles under the fail-closed validator", () => {
-    for (const name of Object.keys(document.components.schemas))
+    for (const name of Object.keys(document.components.schemas)) {
       expect(() =>
         validate(document, { $ref: `#/components/schemas/${name}` }, null),
       ).not.toThrow();
+    }
   });
   test("the error envelope is exactly a message", () => {
     expect(validate(document, { $ref: "#/components/schemas/Error" }, { message: "x" })).toEqual(
@@ -143,7 +149,7 @@ describe("deliberate differences", () => {
   };
 
   test("every row of 07 is in the document", async () => {
-    const shown = (document["x-deliberate-differences"] as { area: string }[]).map(
+    const shown = (document["x-deliberate-differences"] as Array<{ area: string }>).map(
       ({ area }) => area,
     );
     expect(shown.sort()).toEqual((await areas()).sort());
@@ -154,7 +160,8 @@ describe("deliberate differences", () => {
         Object.values(item).flatMap((operation) => operation["x-differences"] ?? []),
       ),
     );
-    for (const { area, applies } of differences)
+    for (const { area, applies } of differences) {
       if (applies.length) expect([area, named.has(area)]).toEqual([area, true]);
+    }
   });
 });

@@ -21,8 +21,10 @@ const record = (value: unknown) =>
 
 /** Provider text is bounded and loses addresses, which it often repeats. */
 function safeText(value: unknown) {
-  if (typeof value !== "string" || !value) return undefined;
-  return value.slice(0, MAX_TEXT_LENGTH).replace(addresses, "[address]");
+  if (typeof value !== "string" || !value) {
+    return undefined;
+  }
+  return value.slice(0, MAX_TEXT_LENGTH).replaceAll(addresses, "[address]");
 }
 
 /**
@@ -57,11 +59,15 @@ const accountArn = /^(arn:aws(?:-cn|-us-gov)?:sns):\*:(\d{12}):\*$/;
 export const validTopicArn = (value: string) => fullArn.test(value) || accountArn.test(value);
 
 /** Whether the signed `TopicArn` is on the list. An empty list allows nothing. */
-export function topicAllowed(topic: string | undefined, allowed: readonly string[]) {
-  if (!topic || !fullArn.test(topic)) return false;
+export function topicAllowed(topic: string | undefined, allowed: ReadonlyArray<string>) {
+  if (!topic || !fullArn.test(topic)) {
+    return false;
+  }
   const [, partition, , , account] = topic.split(":");
   return allowed.some((entry) => {
-    if (entry === topic) return true;
+    if (entry === topic) {
+      return true;
+    }
     const wild = accountArn.exec(entry);
     return !!wild && wild[1] === `arn:${partition}:sns` && wild[2] === account;
   });
@@ -97,8 +103,12 @@ export function parseSns(text: string): Sns | null {
   const out: Sns = {};
   for (const key of strings) {
     const value = raw[key];
-    if (value === undefined || value === null) continue;
-    if (typeof value !== "string") return null;
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      return null;
+    }
     out[key] = value;
   }
   return out;
@@ -108,16 +118,24 @@ export function parseSns(text: string): Sns | null {
 function stringToSign(n: Sns) {
   const field = (name: keyof Sns) => `${name}\n${n[name] ?? ""}\n`;
   let out = field("Message") + field("MessageId");
-  if (n.Subject) out += field("Subject");
-  if (n.SubscribeURL) out += field("SubscribeURL");
+  if (n.Subject) {
+    out += field("Subject");
+  }
+  if (n.SubscribeURL) {
+    out += field("SubscribeURL");
+  }
   out += field("Timestamp");
-  if (n.Token) out += field("Token");
+  if (n.Token) {
+    out += field("Token");
+  }
   return out + field("TopicArn") + field("Type");
 }
 
 /** True when the URL is exactly an SNS endpoint of the pattern; the host carries no userinfo or port. */
 function snsUrl(value: string, pattern: RegExp) {
-  if (!pattern.test(value)) return false;
+  if (!pattern.test(value)) {
+    return false;
+  }
   try {
     const url = new URL(value);
     return !url.username && !url.password && !url.port && url.protocol === "https:";
@@ -128,11 +146,13 @@ function snsUrl(value: string, pattern: RegExp) {
 
 async function readCapped(response: Response, limit: number) {
   const length = Number(response.headers.get("content-length"));
-  if (length > limit) throw new Error("too large");
-  const chunks: Uint8Array[] = [];
+  if (length > limit) {
+    throw new Error("too large");
+  }
+  const chunks: Array<Uint8Array> = [];
   let size = 0;
   const reader = response.body?.getReader();
-  if (reader)
+  if (reader) {
     for (;;) {
       const item = await reader.read();
       if (item.done) break;
@@ -143,6 +163,7 @@ async function readCapped(response: Response, limit: number) {
       }
       chunks.push(item.value);
     }
+  }
   return Buffer.concat(chunks);
 }
 
@@ -173,7 +194,9 @@ export function createSnsClient(deps: {
   };
   async function certificate(url: string) {
     const cached = certs.get(url);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
     let loading = pending.get(url);
     if (!loading) {
       loading = load(url);
@@ -182,7 +205,9 @@ export function createSnsClient(deps: {
         (cert) => {
           pending.delete(url);
           certs.set(url, cert);
-          while (certs.size > size) certs.delete(certs.keys().next().value!);
+          while (certs.size > size) {
+            certs.delete(certs.keys().next().value!);
+          }
         },
         () => pending.delete(url),
       );
@@ -197,16 +222,27 @@ export function createSnsClient(deps: {
     async verify(n: Sns): Promise<boolean> {
       try {
         const { Signature, SignatureVersion, SigningCertURL, Timestamp } = n;
-        if (!Signature || !SigningCertURL || !snsUrl(SigningCertURL, certUrl)) return false;
+        if (!Signature || !SigningCertURL || !snsUrl(SigningCertURL, certUrl)) {
+          return false;
+        }
         const algorithm =
           SignatureVersion === "1" ? "RSA-SHA1" : SignatureVersion === "2" ? "RSA-SHA256" : null;
-        if (!algorithm) return false;
+        if (!algorithm) {
+          return false;
+        }
         const sent = Date.parse(Timestamp ?? "");
         const now = deps.clock.now().getTime();
-        if (!Number.isFinite(sent) || now - sent > SNS_MAX_AGE_MS || sent - now > SNS_MAX_AHEAD_MS)
+        if (
+          !Number.isFinite(sent) ||
+          now - sent > SNS_MAX_AGE_MS ||
+          sent - now > SNS_MAX_AHEAD_MS
+        ) {
           return false;
+        }
         const cert = await certificate(SigningCertURL);
-        if (now < cert.validFromDate.getTime() || now > cert.validToDate.getTime()) return false;
+        if (now < cert.validFromDate.getTime() || now > cert.validToDate.getTime()) {
+          return false;
+        }
         const signature = Buffer.from(Signature, "base64");
         return createVerify(algorithm).update(stringToSign(n)).verify(cert.publicKey, signature);
       } catch {
@@ -216,7 +252,9 @@ export function createSnsClient(deps: {
     /** Confirm a verified subscription by requesting its `SubscribeURL`. */
     async confirm(n: Sns): Promise<boolean> {
       const url = n.SubscribeURL;
-      if (!url || !snsUrl(url, confirmUrl)) return false;
+      if (!url || !snsUrl(url, confirmUrl)) {
+        return false;
+      }
       try {
         await get(url, (r) => r.status === 200, CERT_LIMIT);
         return true;
@@ -236,8 +274,12 @@ function bounceKind(inner: Record<string, unknown>) {
   const notification = typeof inner.notificationType === "string" ? inner.notificationType : "";
   // ses.go accepts eventType Bounce and notificationType Bounce or Complaint; a complaint event
   // published through a configuration set reports the same thing as eventType Complaint.
-  if (kind && kind !== "Bounce" && kind !== "Complaint") return null;
-  if (notification && notification !== "Bounce" && notification !== "Complaint") return null;
+  if (kind && kind !== "Bounce" && kind !== "Complaint") {
+    return null;
+  }
+  if (notification && notification !== "Bounce" && notification !== "Complaint") {
+    return null;
+  }
   return (kind || notification) === "Complaint" ? "Complaint" : "Bounce";
 }
 
@@ -254,7 +296,9 @@ export function sesEvents(message: string, now: Date) {
   }
   const inner = record(parsed);
   const kind = bounceKind(inner);
-  if (!kind) return null;
+  if (!kind) {
+    return null;
+  }
   const mail = record(inner.mail);
   const destination = Array.isArray(mail.destination)
     ? mail.destination.filter((item): item is string => typeof item === "string")
@@ -265,10 +309,12 @@ export function sesEvents(message: string, now: Date) {
     kind === "Complaint" ? complaint.complainedRecipients : bounce.bouncedRecipients,
   );
   // ses.go takes `destination[0]`; the recipients SES names are used when it names any.
-  let named: Record<string, unknown>[] = listed.length
+  let named: Array<Record<string, unknown>> = listed.length
     ? listed
     : destination.slice(0, 1).map((emailAddress) => ({ emailAddress }));
-  if (!named.length) return null;
+  if (!named.length) {
+    return null;
+  }
   named = named.slice(0, MAX_RECIPIENTS);
 
   let campaignUuid = "",
@@ -277,12 +323,18 @@ export function sesEvents(message: string, now: Date) {
   if (mail.headersTruncated !== true && Array.isArray(mail.headers)) {
     for (const header of mail.headers) {
       const { name, value } = record(header);
-      if (typeof name !== "string" || typeof value !== "string") continue;
+      if (typeof name !== "string" || typeof value !== "string") {
+        continue;
+      }
       const lower = name.toLowerCase();
       // ses.go compares the name exactly; header names are case-insensitive.
-      if (lower === "x-listmonk-campaign" && !campaignUuid) campaignUuid = value.trim();
-      else if (lower === "x-listmonk-subscriber" && !subscriberUuid) subscriberUuid = value.trim();
-      else if (lower === "message-id" && !messageId) messageId = value.trim();
+      if (lower === "x-listmonk-campaign" && !campaignUuid) {
+        campaignUuid = value.trim();
+      } else if (lower === "x-listmonk-subscriber" && !subscriberUuid) {
+        subscriberUuid = value.trim();
+      } else if (lower === "message-id" && !messageId) {
+        messageId = value.trim();
+      }
     }
   }
 
@@ -297,17 +349,22 @@ export function sesEvents(message: string, now: Date) {
     Number.isFinite(timestamp) ? Math.min(timestamp, now.getTime()) : now.getTime(),
   ).toISOString();
   const type = typeof bounce.bounceType === "string" ? bounce.bounceType : "";
-  const events: BounceEvent[] = [];
+  const events: Array<BounceEvent> = [];
   for (const entry of named) {
     const email =
       typeof entry.emailAddress === "string" ? sanitizeEmail(entry.emailAddress) : undefined;
-    if (!email) continue;
+    if (!email) {
+      continue;
+    }
     const status = typeof entry.status === "string" ? entry.status : "";
     let kindOfBounce: BounceType = "soft";
-    if (kind === "Complaint") kindOfBounce = "complaint";
-    else if (type === "Permanent" || (type === "Transient" && status === "5.4.4"))
-      // "Invalid domain" is permanent, whatever SES calls it.
+    if (kind === "Complaint") {
+      kindOfBounce = "complaint";
+    } else if (type === "Permanent" || (type === "Transient" && status === "5.4.4"))
+    // "Invalid domain" is permanent, whatever SES calls it.
+    {
       kindOfBounce = "hard";
+    }
     const codes = {
       type: kind.toLowerCase(),
       bounce_type: safeText(type),

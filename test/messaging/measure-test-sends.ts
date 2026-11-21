@@ -7,7 +7,7 @@ import { createTestSends } from "@/messaging/test-sends";
 import { schedulerFixture } from "@/test/scheduler/fixture";
 
 const N = Number(process.argv[2] ?? 100);
-const median = (values: number[]) => {
+const median = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 };
@@ -20,7 +20,7 @@ try {
   const testSends = createTestSends(f.db, f.clock);
 
   // The record alone: one row, in its own write transaction, as a test send writes it.
-  const recording: number[] = [];
+  const recording: Array<number> = [];
   for (let i = 0; i < N; i++) {
     const start = performance.now();
     writeTransaction(f.db, () =>
@@ -43,7 +43,7 @@ try {
     trigger: { event: "purchase" },
     steps: [{ wait: "P1D", kind: "transactional", template_id: template, subject: "Measured" }],
   });
-  const requests: number[] = [];
+  const requests: Array<number> = [];
   for (let i = 0; i < N; i++) {
     const address = `request-${i}@example.test`;
     const start = performance.now();
@@ -53,14 +53,16 @@ try {
       { emails: [address] },
     );
     requests.push(performance.now() - start);
-    if (sent.status !== 200) throw new Error(`test send ${sent.status}`);
+    if (sent.status !== 200) {
+      throw new Error(`test send ${sent.status}`);
+    }
     // Wait for the message before the next one: four test sends may be in flight at once.
     await f.until(() => f.sink.messages.some((m) => m.to.includes(address)), "the test message");
   }
 
   // The lookup an unmatched notice pays: an indexed miss, in the window or past it.
   const lookups = () => {
-    const samples: number[] = [];
+    const samples: Array<number> = [];
     for (let i = 0; i < N; i++) {
       const start = performance.now();
       testSends.find(`<${uuid()}@elsewhere.test>`);
@@ -75,7 +77,9 @@ try {
        VALUES (?, 'sequence_step', NULL, 1, 1, ?)`,
     );
     const at = f.clock.now().toISOString();
-    for (let i = 0; i < 100_000; i++) insert.run(`<${uuid()}@bulk.test>`, at);
+    for (let i = 0; i < 100_000; i++) {
+      insert.run(`<${uuid()}@bulk.test>`, at);
+    }
   });
   const large = lookups();
 

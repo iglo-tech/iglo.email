@@ -1,11 +1,14 @@
 // Test mode and the read endpoints of the sequence screens (docs/design/05-sequences.md#test-mode,
 // 07-api-and-ui.md), through the HTTP API and the SMTP sink, with time on the injected clock.
 import { afterEach, expect, test } from "bun:test";
-import { day, minute, schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -25,7 +28,7 @@ const testEnroll = (f: SchedulerFixture, sequence: number, subscriber: number) =
     test: true,
   });
 const entries = async (f: SchedulerFixture, id: number) =>
-  (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries as Record<string, any>[];
+  (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries as Array<Record<string, any>>;
 
 test("a test enrollment shortens every wait to a minute and sends labelled mail", async () => {
   const f = await open();
@@ -62,7 +65,9 @@ test("a test enrollment shortens every wait to a minute and sends labelled mail"
   await f.pass(minute);
   await delivered(3);
   await f.until(async () => (await f.enrollment(id)).status === "completed", "completion");
-  for (const message of f.sink.messages) expect(message.data).toContain("Subject: [Test] Welcome");
+  for (const message of f.sink.messages) {
+    expect(message.data).toContain("Subject: [Test] Welcome");
+  }
 
   // The definition is as it was.
   const after = (await f.json(`/api/sequences/${sequence.id}`)).body.data;
@@ -232,7 +237,7 @@ test("a timeline never reads history from the current definition", async () => {
 
   // A step appended after the end was never reached by this enrollment.
   const kept = sequence.steps.map((s) => s.id);
-  const put = (definition: object[]) =>
+  const put = (definition: Array<object>) =>
     f.json(`/api/sequences/${sequence.id}`, "PUT", {
       name: "Onboarding",
       status: "active",
@@ -308,13 +313,14 @@ async function expectAnonymous(
     });
     expect(enrollment).not.toHaveProperty("subscriber_email");
   }
-  const found = timeline.body.data.entries as Record<string, any>[];
+  const found = timeline.body.data.entries as Array<Record<string, any>>;
   expect(found.map((e) => e.type)).toEqual(["enrolled", "step", "waiting"]);
   expect(found[1]).toMatchObject({ removed: false, kind: "transactional" });
   expect(found[1]).not.toHaveProperty("position");
   const text = JSON.stringify([row, detail.body, timeline.body]);
-  for (const secret of ["example.test", "Hidden Street", "order_paid"])
+  for (const secret of ["example.test", "Hidden Street", "order_paid"]) {
     expect(text).not.toContain(secret);
+  }
 }
 
 test("sequences:get alone shows an enrollment without its person", async () => {
@@ -322,8 +328,9 @@ test("sequences:get alone shows an enrollment without its person", async () => {
   const { sequence, hidden } = await scoped(f);
   const read = await f.apiUser("sequences-only", ["sequences:get"]);
   await expectAnonymous(read, sequence.id, hidden);
-  for (const path of ["", "/subscriber-events", "/enrollments", "/sends"])
+  for (const path of ["", "/subscriber-events", "/enrollments", "/sends"]) {
     expect((await read(`/api/subscribers/${hidden.id}${path}`)).status).toBe(403);
+  }
 });
 
 test("a list role decides each enrollment row, whatever the subscriber permission", async () => {
@@ -428,8 +435,9 @@ test("each subscriber tab refuses a reader outside the list or without its permi
     "sends:get",
     "lists:get_all",
   ]);
-  for (const path of ["subscriber-events", "enrollments", "sends"])
+  for (const path of ["subscriber-events", "enrollments", "sends"]) {
     expect((await recordsOnly(tab(shown.id, path))).status).toBe(403);
+  }
 });
 
 test("a day-long wait for a real enrollment is untouched by test mode", async () => {

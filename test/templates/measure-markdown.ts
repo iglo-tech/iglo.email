@@ -40,7 +40,7 @@ export const families: Record<string, [string, string]> = {
   "autolink-mail": ["<a@b ", ""],
   "html-comment": ["<!-- ", ""],
   "html-tag": ["<span ", ""],
-  escape: ["\\[", ""],
+  escape: [String.raw`\[`, ""],
   "paren-open": ["(", ""],
   "link-valid": ["[a](b) ", ""],
   "table-row": ["|a|\n", ""],
@@ -62,7 +62,7 @@ export const families: Record<string, [string, string]> = {
   "block-newline-dashes": ["\n--", ""],
   "block-dash-dash": ["-\n-", ""],
   "block-rule-run": ["a\n***\n", ""],
-  "reflink-escape": ["\\[", "[a]: /u\n\n"],
+  "reflink-escape": [String.raw`\[`, "[a]: /u\n\n"],
   "emphasis-run": ["__+", ""],
   "tilde-run": ["w ~", ""],
   "table-row-run": ["|a|\n", ""],
@@ -79,7 +79,9 @@ export const families: Record<string, [string, string]> = {
 
 export function source(family: string, bytes: number): string {
   const entry = families[family];
-  if (!entry) throw new Error(`unknown family ${family}`);
+  if (!entry) {
+    throw new Error(`unknown family ${family}`);
+  }
   const [unit, prefix] = entry;
   const body = unit.repeat(Math.ceil((bytes - prefix.length) / unit.length));
   return (prefix + body).slice(0, bytes);
@@ -113,7 +115,7 @@ function timed(body: string) {
 
 // Canonical form for comparing two renderers (goldmark's typographer, heading ids, self-closing tags,
 // attribute order and checkbox markup folded away). Approximate, and applied to both sides of every comparison.
-const TYPO: [RegExp, string][] = [
+const TYPO: Array<[RegExp, string]> = [
   [/&amp;/g, "&"],
   [/&quot;/g, '"'],
   [/&#0*39;|&#x0*27;|&apos;|&rsquo;|&lsquo;|’|‘/gi, "'"],
@@ -135,36 +137,39 @@ const TAG =
 const ATTR = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 
 function normTag(_: string, name: string, attrs: string): string {
-  const pairs: string[] = [];
-  for (const m of attrs.matchAll(ATTR))
+  const pairs: Array<string> = [];
+  for (const m of attrs.matchAll(ATTR)) {
     pairs.push(`${m[1]!.toLowerCase()}="${m[2] ?? m[3] ?? m[4] ?? ""}"`);
+  }
   pairs.sort();
   return `<${name.toLowerCase()}${pairs.length ? " " + pairs.join(" ") : ""}>`;
 }
 
 export function canon(html: string): string {
   let s = html;
-  for (const [re, rep] of TYPO) s = s.replace(re, rep);
-  s = s.replace(/<h([1-6])\s+id="[^"]*"/g, "<h$1");
-  s = s.replace(/ class="task-list-item[^"]*"/g, "");
-  s = s.replace(/ style="text-align:(\w+)"/g, ' align="$1"');
-  s = s.replace(/<(\/?)(s|strike)>/g, "<$1del>");
-  s = s.replace(CHECKBOX, (tag) => (/\bchecked\b/.test(tag) ? "[x]" : "[ ]"));
-  s = s.replace(/\[( |x)\]\s*/g, "[$1]");
-  s = s.replace(TAG, normTag);
-  s = s.replace(/\s+/g, " ").replace(/> </g, "><").trim();
-  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  for (const [re, rep] of TYPO) {
+    s = s.replace(re, rep);
+  }
+  s = s.replaceAll(/<h([1-6])\s+id="[^"]*"/g, "<h$1");
+  s = s.replaceAll(/ class="task-list-item[^"]*"/g, "");
+  s = s.replaceAll(/ style="text-align:(\w+)"/g, ' align="$1"');
+  s = s.replaceAll(/<(\/?)(s|strike)>/g, "<$1del>");
+  s = s.replaceAll(CHECKBOX, (tag) => (/\bchecked\b/.test(tag) ? "[x]" : "[ ]"));
+  s = s.replaceAll(/\[( |x)\]\s*/g, "[$1]");
+  s = s.replaceAll(TAG, normTag);
+  s = s.replaceAll(/\s+/g, " ").replaceAll("> <", "><").trim();
+  return s.replaceAll("&lt;", "<").replaceAll("&gt;", ">");
 }
 
 // The random corpus: seeded documents of up to 4 KiB, each joining 3 to 40 fragments.
 function rng(seed: number) {
   let a = seed >>> 0;
   return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
+    a = (a + 0x6d_2b_79_f5) >>> 0;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
   };
 }
 const FRAGMENTS = [
@@ -201,7 +206,7 @@ const FRAGMENTS = [
   "===",
   "- [ ] task",
   "- [x] done",
-  "\\*esc\\*",
+  String.raw`\*esc\*`,
   "a  \nb",
   "a\\\nb",
   "&amp; &copy; &#35;",
@@ -263,7 +268,9 @@ const lineLists: Record<string, (i: number) => string> = {
 };
 function lines(make: (i: number) => string, bytes: number): string {
   let s = "";
-  for (let i = 1; s.length < bytes; i++) s += make(i);
+  for (let i = 1; s.length < bytes; i++) {
+    s += make(i);
+  }
   return s.slice(0, bytes);
 }
 
@@ -297,9 +304,15 @@ if (Bun.argv[2] === "one") {
       actual: number;
     };
     slowest = Math.max(slowest, r.ms);
-    if (r.ms > 100) over100++;
-    if (r.status !== "ok") refused++;
-    if (r.actual > r.bound) violations++;
+    if (r.ms > 100) {
+      over100++;
+    }
+    if (r.status !== "ok") {
+      refused++;
+    }
+    if (r.actual > r.bound) {
+      violations++;
+    }
     console.log(
       `${family.padEnd(22)} ${r.ms.toFixed(1).padStart(8)} ms  bound ${String(r.bound).padStart(8)} B  html ${String(r.actual).padStart(8)} B  ${r.status}`,
     );
@@ -309,37 +322,46 @@ if (Bun.argv[2] === "one") {
   );
 } else if (Bun.argv[2] === "corpus") {
   // Pins, newsletters, ordinary line lists, families at 1 KiB and 2000 random documents.
-  const docs: { id: string; src: string }[] = [];
+  const docs: Array<{ id: string; src: string }> = [];
   markdownCorpus.forEach((src, i) => docs.push({ id: `pin-${i + 1}`, src }));
-  for (const kib of [4, 16, 64]) docs.push({ id: `nl-${kib}`, src: newsletter(kib).source });
-  for (const [name, make] of Object.entries(lineLists)) {
-    for (const kib of [7, 13, 20])
-      docs.push({ id: `list-${name}-${kib}`, src: lines(make, kib * 1024) });
+  for (const kib of [4, 16, 64]) {
+    docs.push({ id: `nl-${kib}`, src: newsletter(kib).source });
   }
-  for (const name of Object.keys(families))
+  for (const [name, make] of Object.entries(lineLists)) {
+    for (const kib of [7, 13, 20]) {
+      docs.push({ id: `list-${name}-${kib}`, src: lines(make, kib * 1024) });
+    }
+  }
+  for (const name of Object.keys(families)) {
     docs.push({ id: `fam-${name}`, src: source(name, 1024) });
-  for (let seed = 1; seed <= 2000; seed++)
+  }
+  for (let seed = 1; seed <= 2000; seed++) {
     docs.push({ id: `rand-${seed}`, src: randomDocument(seed) });
+  }
   await Bun.write(Bun.argv[3]!, JSON.stringify(docs));
   console.log(`wrote ${docs.length} documents`);
 } else if (Bun.argv[2] === "compare") {
   const gm = new Map<string, string>(
-    (JSON.parse(await Bun.file(Bun.argv[3]!).text()) as { id: string; html: string }[]).map((r) => [
-      r.id,
-      r.html,
-    ]),
+    (JSON.parse(await Bun.file(Bun.argv[3]!).text()) as Array<{ id: string; html: string }>).map(
+      (r) => [r.id, r.html],
+    ),
   );
-  const corpus: { id: string; src: string }[] = [];
+  const corpus: Array<{ id: string; src: string }> = [];
   markdownCorpus.forEach((src, i) => corpus.push({ id: `pin-${i + 1}`, src }));
-  for (const kib of [4, 16, 64]) corpus.push({ id: `nl-${kib}`, src: newsletter(kib).source });
-  for (const [name, make] of Object.entries(lineLists)) {
-    for (const kib of [7, 13, 20])
-      corpus.push({ id: `list-${name}-${kib}`, src: lines(make, kib * 1024) });
+  for (const kib of [4, 16, 64]) {
+    corpus.push({ id: `nl-${kib}`, src: newsletter(kib).source });
   }
-  for (const name of Object.keys(families))
+  for (const [name, make] of Object.entries(lineLists)) {
+    for (const kib of [7, 13, 20]) {
+      corpus.push({ id: `list-${name}-${kib}`, src: lines(make, kib * 1024) });
+    }
+  }
+  for (const name of Object.keys(families)) {
     corpus.push({ id: `fam-${name}`, src: source(name, 1024) });
-  for (let seed = 1; seed <= 2000; seed++)
+  }
+  for (let seed = 1; seed <= 2000; seed++) {
     corpus.push({ id: `rand-${seed}`, src: randomDocument(seed) });
+  }
   const groups: Record<
     string,
     { docs: number; refused: number; differs: number; boundViolations: number }
@@ -347,11 +369,15 @@ if (Bun.argv[2] === "one") {
   for (const doc of corpus) {
     const group = doc.id.split("-")[0]!;
     groups[group] ??= { docs: 0, refused: 0, differs: 0, boundViolations: 0 };
-    const g = groups[group]!;
+    const g = groups[group];
     g.docs++;
     const r = timed(doc.src);
-    if (r.status !== "ok") g.refused++;
-    if (r.actual > r.bound) g.boundViolations++;
+    if (r.status !== "ok") {
+      g.refused++;
+    }
+    if (r.actual > r.bound) {
+      g.boundViolations++;
+    }
     const reference = gm.get(doc.id);
     // The helper's output is Bun's html() with its defaults, which are listmonk's options (renderer).
     if (
@@ -360,8 +386,9 @@ if (Bun.argv[2] === "one") {
       canon(Bun.markdown.html(doc.src)) !== canon(reference)
     ) {
       g.differs++;
-      if (g.differs <= 3)
+      if (g.differs <= 3) {
         console.log(`differs ${doc.id}: ${JSON.stringify(doc.src.slice(0, 120))}`);
+      }
     }
   }
   console.log(JSON.stringify(groups, null, 1));

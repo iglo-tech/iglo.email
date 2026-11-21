@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, get, login, userWith, type Fixture } from "@/test/admin/support";
+import { admin, get, login, userWith } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;
@@ -105,8 +106,9 @@ test("each route asks for its endpoint's permissions, and controls follow them",
     "btn-manage-lists",
     "btn-manage-blocklist",
     "btn-delete-subscribers",
-  ])
+  ]) {
     expect(listing).not.toContain(`data-testid="${control}"`);
+  }
   expect(listing).not.toContain("/bounces`");
   expect((await get(f, "/admin/subscribers/new", reader)).status).toBe(403);
   expect((await get(f, "/admin/subscribers/lists/7", reader)).status).toBe(403);

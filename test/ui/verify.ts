@@ -3,7 +3,8 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { command, spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
+import { command, spawnGroup, stopGroup } from "@/test/reference/command";
+import type { GroupChild } from "@/test/reference/command";
 import { withProduction } from "@/test/contract/owned";
 import { runContract } from "@/test/contract/runner";
 import { rawRequest } from "@/test/server/raw-request";
@@ -27,7 +28,9 @@ try {
       [process.execPath, "build", "--compile", source!, "--outfile", output!],
       { cwd: root, timeout: 30_000, signal: controller.signal },
     );
-    if (result.code !== 0) throw new Error(`Compile failed: ${result.stderr}`);
+    if (result.code !== 0) {
+      throw new Error(`Compile failed: ${result.stderr}`);
+    }
   }
   fixture = spawnGroup(fixturePath, [], {
     cwd: directory,
@@ -40,16 +43,18 @@ try {
   });
   void closed.catch(() => {});
   const origin = await new Promise<string>((resolveReady, reject) => {
-    const timer = setTimeout(() => reject(new Error("Fixture readiness timeout")), 5_000);
+    const timer = setTimeout(() => reject(new Error("Fixture readiness timeout")), 5000);
     const abort = () => reject(controller.signal.reason);
     controller.signal.addEventListener("abort", abort, { once: true });
     fixture!.stdout!.once("data", (chunk: Buffer) => {
       clearTimeout(timer);
       controller.signal.removeEventListener("abort", abort);
       const value = chunk.toString().trim();
-      if (!/^http:\/\/127\.0\.0\.1:[0-9]+$/.test(value))
+      if (!/^http:\/\/127\.0\.0\.1:[0-9]+$/.test(value)) {
         reject(new Error("Invalid fixture origin"));
-      else resolveReady(value);
+      } else {
+        resolveReady(value);
+      }
     });
     fixture!.once("error", reject);
     fixture!.once("exit", () => reject(new Error("Fixture exited before readiness")));
@@ -90,9 +95,15 @@ try {
     assert.equal(response.status, 200, path);
     assert.equal(response.contentType, contentType, path);
     assert.ok(response.body.length > 100, path);
-    if (path.endsWith("oat.min.css")) assert.ok(response.body.includes("@layer"));
-    if (path.endsWith("/style.css")) assert.ok(response.body.includes("@font-face"));
-    if (path.endsWith("logo.svg")) assert.ok(response.body.includes("<svg"));
+    if (path.endsWith("oat.min.css")) {
+      assert.ok(response.body.includes("@layer"));
+    }
+    if (path.endsWith("/style.css")) {
+      assert.ok(response.body.includes("@font-face"));
+    }
+    if (path.endsWith("logo.svg")) {
+      assert.ok(response.body.includes("<svg"));
+    }
     assert.deepEqual(await get(path, "HEAD"), { status: 200, contentType, body: "" });
     if (path.endsWith(".js")) {
       for (const match of response.body.matchAll(
@@ -169,7 +180,9 @@ try {
   );
 } finally {
   if (fixture && closed) {
-    if (fixture.exitCode === null && fixture.signalCode === null) stopGroup(fixture);
+    if (fixture.exitCode === null && fixture.signalCode === null) {
+      stopGroup(fixture);
+    }
     const force = setTimeout(() => stopGroup(fixture!, "SIGKILL"), 2000);
     try {
       await closed;

@@ -1,7 +1,8 @@
 // Compiled test-only driver of the production messaging owner, not a TX endpoint.
 import assert from "node:assert/strict";
 import { createRealClock } from "@/clock";
-import { createEmailer, type SMTPServer, type Message } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer, Message } from "@/messaging/email";
 const server: SMTPServer = {
   name: "",
   enabled: true,
@@ -25,8 +26,10 @@ const message = JSON.parse(process.env.M21_MESSAGE!) as Message & {
   inline?: { name: string; cid: string; bytes: string };
 };
 message.body = Buffer.from(message.body as unknown as string);
-if (message.alt) message.altBody = Buffer.from(message.alt);
-if (message.binary)
+if (message.alt) {
+  message.altBody = Buffer.from(message.alt);
+}
+if (message.binary) {
   message.attachments = [
     {
       name: "fixture.bin",
@@ -34,7 +37,8 @@ if (message.binary)
       contentType: "application/octet-stream",
     },
   ];
-if (message.inline)
+}
+if (message.inline) {
   message.attachments = [
     {
       name: message.inline.name,
@@ -44,10 +48,11 @@ if (message.inline)
       contentType: "image/svg+xml",
     },
   ];
+}
 const emailer = createEmailer({
   settings: () => ({
     smtp: process.env.M21_SERVERS
-      ? (JSON.parse(process.env.M21_SERVERS) as SMTPServer[])
+      ? (JSON.parse(process.env.M21_SERVERS) as Array<SMTPServer>)
       : [server],
     rootUrl: "https://example.test",
   }),

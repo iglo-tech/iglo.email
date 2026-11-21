@@ -4,13 +4,8 @@
 // served, and never a row without its file. Deletion removes the row first for the same reason.
 // Thumbnails are not generated (01-scope.md): `thumb` names the image itself. See 07-api-and-ui.md.
 import { imageSize } from "@/media/image";
-import {
-  extensionOf,
-  makeFilename,
-  uploadRoot,
-  UploadRootError,
-  type Filesystem,
-} from "@/media/filesystem";
+import { extensionOf, makeFilename, uploadRoot, UploadRootError } from "@/media/filesystem";
+import type { Filesystem } from "@/media/filesystem";
 import type { MediaRow, MediaStore } from "@/media/store";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -28,7 +23,7 @@ const MAX_UPLOADS = 8;
 /** Long enough to matter, short enough that a deleted file does not linger. */
 const CACHE_CONTROL = "public, max-age=3600";
 
-const vectorExtensions = ["svg"];
+const vectorExtensions = new Set(["svg"]);
 const imageExtensions = ["gif", "png", "jpg", "jpeg"];
 /** Types a browser shows without running anything from them, or under the CSP below. */
 const inlineTypes =
@@ -200,7 +195,7 @@ export function registerMediaRoutes(
           project(
             store.insert({
               filename: stored,
-              thumb: imageExtensions.includes(ext) || vectorExtensions.includes(ext) ? stored : "",
+              thumb: imageExtensions.includes(ext) || vectorExtensions.has(ext) ? stored : "",
               contentType: file.type,
               provider: "filesystem",
               meta: size ?? {},
@@ -218,10 +213,14 @@ export function registerMediaRoutes(
   const collection: Handler = (c) => {
     const params = c.url.searchParams;
     let page = atoi(params.get("page"));
-    if (page < 1) page = 1;
+    if (page < 1) {
+      page = 1;
+    }
     const rawPer = params.get("per_page");
     let perPage = rawPer === "all" ? 0 : atoi(rawPer);
-    if (rawPer !== "all" && perPage < 1) perPage = 20;
+    if (rawPer !== "all" && perPage < 1) {
+      perPage = 20;
+    }
     const { results, total } = store.query(
       settings().provider,
       params.get("query") ?? "",
@@ -239,14 +238,18 @@ export function registerMediaRoutes(
   };
   const one: Handler = (c) => {
     const row = store.get(getID(c));
-    if (!row) throw notFound();
+    if (!row) {
+      throw notFound();
+    }
     return ok(project(row));
   };
   const remove: Handler = async (c) => {
     const row = store.delete(getID(c));
-    if (!row) throw notFound();
+    if (!row) {
+      throw notFound();
+    }
     // Once the row is gone a failure here leaves only an unlisted file: the delete still holds.
-    if (row.provider === "filesystem")
+    if (row.provider === "filesystem") {
       try {
         await files.remove(row.filename);
         if (row.thumb && row.thumb !== row.filename && !store.filenameTaken(row.thumb))
@@ -254,6 +257,7 @@ export function registerMediaRoutes(
       } catch (error) {
         c.app.logger.error(error);
       }
+    }
     return ok(true);
   };
 
@@ -266,12 +270,20 @@ export function registerMediaRoutes(
    */
   const serve: Middleware = async (c, next) => {
     const { method } = c.request;
-    if (method !== "GET" && method !== "HEAD") return next();
+    if (method !== "GET" && method !== "HEAD") {
+      return next();
+    }
     const name = files.nameOf(c.url.pathname);
-    if (name === undefined || settings().provider !== "filesystem") return next();
-    if (!store.byFilename(name)) return next();
+    if (name === undefined || settings().provider !== "filesystem") {
+      return next();
+    }
+    if (!store.byFilename(name)) {
+      return next();
+    }
     const file = await files.stat(name).catch(() => null);
-    if (!file) return next();
+    if (!file) {
+      return next();
+    }
     const ext = extensionOf(name);
     // Same origin as the admin: with `nosniff`, this type is what stops `<script src>` on an upload
     // from passing the admin's `script-src 'self'` (D71).
@@ -288,13 +300,17 @@ export function registerMediaRoutes(
     };
     // A CSP sandbox can stop a browser's built-in viewer, so a PDF has none and `nosniff` keeps
     // it a PDF. That viewers are isolated from the origin is their design, not verified here.
-    if (type !== "application/pdf") headers["Content-Security-Policy"] = SANDBOX;
-    if (type !== "application/pdf" && !inlineTypes.test(type))
+    if (type !== "application/pdf") {
+      headers["Content-Security-Policy"] = SANDBOX;
+    }
+    if (type !== "application/pdf" && !inlineTypes.test(type)) {
       headers["Content-Disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(name)}`;
+    }
     const since = c.request.headers.get("if-modified-since");
     const match = c.request.headers.get("if-none-match");
-    if (match === tag || (!match && since && Date.parse(since) >= Date.parse(modified)))
+    if (match === tag || (!match && since && Date.parse(since) >= Date.parse(modified))) {
       return new Response(null, { status: 304, headers });
+    }
     headers["Content-Length"] = String(file.size);
     return new Response(method === "HEAD" ? null : Bun.file(file.path), { headers });
   };

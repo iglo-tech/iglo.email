@@ -31,7 +31,7 @@ export const coercionCases = [
   },
   ...[">", "<", ">=", "<="].map((operator) => ({
     body: `{% for outer in (1..40) %}{% if values ${operator} 0 %}x{% endif %}{% endfor %}`,
-    data: { values: Array(3).fill("1".repeat(60000)) },
+    data: { values: Array(3).fill("1".repeat(60_000)) },
   })),
 ];
 export const loopModifierControls = [

@@ -5,7 +5,8 @@ import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApp, type ErrorLogger } from "@/app";
+import { createApp } from "@/app";
+import type { ErrorLogger } from "@/app";
 import type { SnsFetch } from "@/bounces/ses";
 import { createLogBuffer } from "@/maintenance/log-buffer";
 import { createTestSends } from "@/messaging/test-sends";
@@ -39,14 +40,16 @@ import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
 import { createEventStore } from "@/events/store";
 import { registerEventRoutes } from "@/events/routes";
-import { createConditionEvaluator, type ConditionEvaluator } from "@/conditions/evaluate";
+import { createConditionEvaluator } from "@/conditions/evaluate";
+import type { ConditionEvaluator } from "@/conditions/evaluate";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
 import { startScheduler, SCHEDULER_INTERVAL_MS } from "@/scheduler/scheduler";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
-import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
+import { createMarketingPolicy } from "@/unsubscribe/policy";
+import type { MarketingSettings } from "@/unsubscribe/policy";
 import { createPrivacy } from "@/public/privacy";
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
@@ -67,7 +70,7 @@ export async function schedulerFixture(
   const clock = new TestClock();
   const db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   // The log buffer keeps what GET /api/logs shows (B108); the error list is what stderr would hold.
   const logs = createLogBuffer(clock);
   const logger: ErrorLogger = {
@@ -118,7 +121,9 @@ export async function schedulerFixture(
   // Tests advance the clock by days; a fresh session replaces one that expired.
   const login = async () => {
     const session = await auth.login(admin.user, admin.password);
-    if (!session || !("id" in session)) throw new Error("fixture login failed");
+    if (!session || !("id" in session)) {
+      throw new Error("fixture login failed");
+    }
     return { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   };
   let sessionHeaders = await login();
@@ -207,7 +212,9 @@ export async function schedulerFixture(
   const schedulerClock: Clock = {
     now: () => clock.now(),
     sleep(ms, signal) {
-      if (ms === SCHEDULER_INTERVAL_MS) passes++;
+      if (ms === SCHEDULER_INTERVAL_MS) {
+        passes++;
+      }
       return clock.sleep(ms, signal);
     },
   };
@@ -345,12 +352,15 @@ export async function schedulerFixture(
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
   /** An API user with exactly `permissions`, and list grants like `{ id, permissions }`. */
-  const apiUser = async (name: string, permissions: string[], lists?: object[]) => {
+  const apiUser = async (name: string, permissions: Array<string>, lists?: Array<object>) => {
     const role = await json("/api/roles/users", "POST", { name, permissions });
-    if (role.status !== 200) throw new Error(`role ${JSON.stringify(role.body)}`);
+    if (role.status !== 200) {
+      throw new Error(`role ${JSON.stringify(role.body)}`);
+    }
     const listRole = lists && (await json("/api/roles/lists", "POST", { name, lists }));
-    if (listRole && listRole.status !== 200)
+    if (listRole && listRole.status !== 200) {
       throw new Error(`list role ${JSON.stringify(listRole.body)}`);
+    }
     const user = await json("/api/users", "POST", {
       username: name,
       type: "api",
@@ -358,7 +368,9 @@ export async function schedulerFixture(
       user_role_id: role.body.data.id,
       ...(listRole ? { list_role_id: listRole.body.data.id } : {}),
     });
-    if (user.status !== 200) throw new Error(`user ${JSON.stringify(user.body)}`);
+    if (user.status !== 200) {
+      throw new Error(`user ${JSON.stringify(user.body)}`);
+    }
     const authorization = `Basic ${btoa(`${name}:${user.body.data.password}`)}`;
     return async (path: string) => {
       const response = await request(path, { headers: { authorization } });
@@ -370,7 +382,9 @@ export async function schedulerFixture(
   async function until(check: () => boolean | Promise<boolean>, label = "condition") {
     const deadline = Date.now() + 15_000;
     while (!(await check())) {
-      if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+      if (Date.now() > deadline) {
+        throw new Error(`timed out waiting for ${label}`);
+      }
       clock.advance(0);
       await new Promise((resolve) => setImmediate(resolve));
     }
@@ -379,8 +393,11 @@ export async function schedulerFixture(
   async function pass(ms = SCHEDULER_INTERVAL_MS) {
     await until(() => passes > 0, "scheduler start");
     const before = passes;
-    if (ms) clock.advance(ms);
-    else scheduler.wake();
+    if (ms) {
+      clock.advance(ms);
+    } else {
+      scheduler.wake();
+    }
     // A stopped scheduler ends the wait, so a test can assert that it is still running.
     await until(() => passes > before || stopped, "scheduler pass");
   }
@@ -391,7 +408,9 @@ export async function schedulerFixture(
       subject,
       body,
     });
-    if (created.status !== 200) throw new Error(`template ${JSON.stringify(created.body)}`);
+    if (created.status !== 200) {
+      throw new Error(`template ${JSON.stringify(created.body)}`);
+    }
     return created.body.data.id as number;
   };
   const list = async (name: string, optin = "single") =>
@@ -402,7 +421,9 @@ export async function schedulerFixture(
       name: "Fixture",
       ...extra,
     });
-    if (created.status !== 200) throw new Error(`subscriber ${JSON.stringify(created.body)}`);
+    if (created.status !== 200) {
+      throw new Error(`subscriber ${JSON.stringify(created.body)}`);
+    }
     return created.body.data.id as number;
   };
   const sequence = async (definition: object) => {
@@ -413,10 +434,12 @@ export async function schedulerFixture(
       reentry: "always",
       ...definition,
     });
-    if (created.status !== 200) throw new Error(JSON.stringify(created.body));
+    if (created.status !== 200) {
+      throw new Error(JSON.stringify(created.body));
+    }
     return created.body.data as {
       id: number;
-      steps: { id: number }[];
+      steps: Array<{ id: number }>;
     } & Record<string, any>;
   };
   const event = async (email: string, name = "order_paid", extra: object = {}) => {
@@ -425,18 +448,22 @@ export async function schedulerFixture(
       name,
       ...extra,
     });
-    if (r.status !== 200) throw new Error(JSON.stringify(r.body));
+    if (r.status !== 200) {
+      throw new Error(JSON.stringify(r.body));
+    }
     return r.body.data as {
       subscriber_id: number;
-      enrollments: { started: { id: number }[] };
+      enrollments: { started: Array<{ id: number }> };
     };
   };
   const enrollment = async (id: number) =>
     (await json(`/api/enrollments/${id}`)).body.data as Record<string, any>;
   const sendLog = async (query = "") => {
     const r = await json(`/api/sends?per_page=100${query}`);
-    if (r.status !== 200) throw new Error(`send log ${r.status} ${JSON.stringify(r.body)}`);
-    return (r.body.data.results as Record<string, any>[]).slice().reverse();
+    if (r.status !== 200) {
+      throw new Error(`send log ${r.status} ${JSON.stringify(r.body)}`);
+    }
+    return (r.body.data.results as Array<Record<string, any>>).slice().reverse();
   };
   return {
     app,

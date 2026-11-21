@@ -2,11 +2,14 @@
 // began: a permission revoked while the body is held, and a replayed token that lost the list.
 // Through POST /api/subscriber-events and the role APIs, observed through the stored rows.
 import { afterEach, expect, test } from "bun:test";
-import { eventsFixture, type EventsFixture } from "@/test/events/fixture";
+import { eventsFixture } from "@/test/events/fixture";
+import type { EventsFixture } from "@/test/events/fixture";
 
-const fixtures: EventsFixture[] = [];
+const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
-  for (const f of fixtures.splice(0)) f.close();
+  for (const f of fixtures.splice(0)) {
+    f.close();
+  }
 });
 async function open() {
   const f = await eventsFixture();
@@ -20,7 +23,7 @@ const order = (subscriber: object, extra: object = {}) => ({
 });
 
 /** A user whose role grants `permissions` and whose list role manages `lists`; its ids returned. */
-async function grantUser(f: EventsFixture, name: string, lists: number[]) {
+async function grantUser(f: EventsFixture, name: string, lists: Array<number>) {
   const role = await f.json("/api/roles/users", "POST", {
     name,
     permissions: ["subscriber_events:create", "subscribers:manage"],

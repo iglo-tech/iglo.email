@@ -11,7 +11,7 @@
  * `bun run test` / `check` pass 30 s. Fixture setup runs inside a test too, so a stuck wait must
  * report its state before 5 s: 3 s leaves room for setup (B49, "Why 3 s").
  */
-export const WAIT_WALL_MS = 3_000;
+export const WAIT_WALL_MS = 3000;
 
 export interface WaitOptions {
   /** Starts a failure message, so the wait is named by the test that owns it. */
@@ -48,9 +48,13 @@ export async function waitWall(
   let last = false;
   let i = 0;
   for (; i < limit && performance.now() - started < wallMs; i++) {
-    for (let j = 0; j < 3; j++) await Bun.sleep(0);
+    for (let j = 0; j < 3; j++) {
+      await Bun.sleep(0);
+    }
     last = await done();
-    if (last) return;
+    if (last) {
+      return;
+    }
     advance?.(step);
   }
   const reason = i >= limit ? `iteration limit ${limit}` : `wall limit ${wallMs} ms`;

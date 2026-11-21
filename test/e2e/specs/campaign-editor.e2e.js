@@ -227,8 +227,12 @@ test("links and images cannot carry a script or a data document", async ({ page 
   await open(page, c);
   const attr = (id, name) => page.locator(`${EDITOR} #${id}`).getAttribute(name);
   await expect(page.locator(`${EDITOR} #pixel`)).toHaveCount(1);
-  for (const id of ["tab", "case", "doc", "linked"]) expect(await attr(id, "href")).toBeNull();
-  for (const id of ["frame", "vector"]) expect(await attr(id, "src")).toBeNull();
+  for (const id of ["tab", "case", "doc", "linked"]) {
+    expect(await attr(id, "href")).toBeNull();
+  }
+  for (const id of ["frame", "vector"]) {
+    expect(await attr(id, "src")).toBeNull();
+  }
   expect(await attr("pixel", "src")).toMatch(/^data:image\/gif/);
 
   // The link dialog refuses what the sanitizer would strip.
@@ -407,7 +411,9 @@ test("a role that can send and not manage starts a saved campaign from the form"
     await login(other, sender.username, PASSWORD);
     const writes = [];
     other.on("request", (r) => {
-      if (r.method() !== "GET") writes.push(new URL(r.url()).pathname);
+      if (r.method() !== "GET") {
+        writes.push(new URL(r.url()).pathname);
+      }
     });
     await other.goto(`${CAMPAIGNS}/${c.id}`);
     await expect(other.locator('input[name="name"]')).toHaveValue(c.name);

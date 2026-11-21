@@ -2,10 +2,12 @@
 import type { App } from "@/app";
 import type { Router } from "@/server/router";
 import { TEMPLATE_REFERENCE } from "@/mcp/reference";
-import { DESTRUCTIVE, OPEN_WORLD, READ_ONLY, WRITE, type ToolAnnotations } from "@/mcp/annotations";
+import { DESTRUCTIVE, OPEN_WORLD, READ_ONLY, WRITE } from "@/mcp/annotations";
+import type { ToolAnnotations } from "@/mcp/annotations";
 import { HANDWRITTEN_COVERAGE } from "@/mcp/coverage";
 import { GENERATED, GENERATED_BY_NAME, operationRequest, toolFor } from "@/mcp/generated";
-import { operations, type Operation } from "@/openapi/operations";
+import { operations } from "@/openapi/operations";
+import type { Operation } from "@/openapi/operations";
 
 /** The largest non-JSON answer a tool returns (CSV, HTML); a larger one is refused with the REST endpoint to use (D98). */
 const MCP_MAX_ANSWER_BYTES = 1024 * 1024;
@@ -16,14 +18,14 @@ export interface ToolDefinition {
   inputSchema: {
     type: "object";
     properties?: Record<string, unknown>;
-    required?: string[];
+    required?: Array<string>;
     additionalProperties?: boolean;
   };
   annotations: ToolAnnotations;
 }
 
 export interface ToolResult {
-  content: { type: "text"; text: string }[];
+  content: Array<{ type: "text"; text: string }>;
   structuredContent?: unknown;
   isError?: boolean;
   resultType?: string;
@@ -32,7 +34,9 @@ export interface ToolResult {
 const OPERATION = new Map(operations.map((op) => [op.id, op]));
 const operation = (id: string): Operation => {
   const op = OPERATION.get(id);
-  if (!op) throw new Error(`no operation ${id} for a hand-written MCP tool`);
+  if (!op) {
+    throw new Error(`no operation ${id} for a hand-written MCP tool`);
+  }
   return op;
 };
 
@@ -59,14 +63,18 @@ const UNTAKEN_FIELDS: Record<string, Record<string, string>> = {
  * it (generated.ts, D98). A path parameter is the tool's own `id`, so it is left out.
  */
 function operationFields(op: Operation): Record<string, unknown> {
-  const properties = (toolFor(op.id, op).inputSchema.properties ?? {}) as Record<string, unknown>;
+  const properties = toolFor(op.id, op).inputSchema.properties ?? {};
   const query = new Set((op.query ?? []).map((param) => param.name));
   const fields: Record<string, unknown> = {};
   for (const [name, schema] of Object.entries(properties)) {
-    if (op.route.includes(`{${name}}`)) continue;
-    if (name === "body" && op.body && !query.has(name))
+    if (op.route.includes(`{${name}}`)) {
+      continue;
+    }
+    if (name === "body" && op.body && !query.has(name)) {
       Object.assign(fields, (schema as { properties?: Record<string, unknown> }).properties);
-    else fields[name] = schema;
+    } else {
+      fields[name] = schema;
+    }
   }
   return fields;
 }
@@ -78,10 +86,16 @@ function operationFields(op: Operation): Record<string, unknown> {
 function withOperationFields(tool: ToolDefinition): ToolDefinition {
   const properties: Record<string, unknown> = { ...tool.inputSchema.properties };
   for (const [id, covered] of Object.entries(HANDWRITTEN_COVERAGE)) {
-    if (covered !== tool.name) continue;
+    if (covered !== tool.name) {
+      continue;
+    }
     for (const [field, schema] of Object.entries(operationFields(operation(id)))) {
-      if (UNTAKEN_FIELDS[tool.name]?.[field]) continue;
-      if (argumentFor(tool.name, field) in properties) continue;
+      if (UNTAKEN_FIELDS[tool.name]?.[field]) {
+        continue;
+      }
+      if (argumentFor(tool.name, field) in properties) {
+        continue;
+      }
       properties[field] = schema;
     }
   }
@@ -101,12 +115,15 @@ function queryFor(tool: string, opId: string, args: Record<string, unknown>): st
   for (const { name } of operation(opId).query ?? []) {
     const argument = argumentFor(tool, name);
     const value = args[argument];
-    if (value === undefined || value === null || value === "") continue;
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
     for (const item of Array.isArray(value) ? value : [value]) {
-      if (!["string", "number", "boolean"].includes(typeof item))
+      if (!["string", "number", "boolean"].includes(typeof item)) {
         throw new ToolArgumentError(
           `${argument} must be a string, a number, a boolean or a list of those; an object is not a query value.`,
         );
+      }
       search.append(name, String(item));
     }
   }
@@ -114,7 +131,7 @@ function queryFor(tool: string, opId: string, args: Record<string, unknown>): st
   return qs ? `?${qs}` : "";
 }
 
-const HANDWRITTEN_DEFINITIONS: ToolDefinition[] = [
+const HANDWRITTEN_DEFINITIONS: Array<ToolDefinition> = [
   {
     name: "list_templates",
     annotations: READ_ONLY,
@@ -544,10 +561,15 @@ const HANDWRITTEN = HANDWRITTEN_DEFINITIONS.map(withOperationFields);
 const CREATE_CAMPAIGN_FIELDS = Object.keys(operationFields(operation("createCampaign")));
 
 /** Every tool: the hand-written ones, then one per operation the document has and no hand-written tool covers (D98). */
-export const TOOLS: ToolDefinition[] = [...HANDWRITTEN, ...GENERATED.map((entry) => entry.tool)];
+export const TOOLS: Array<ToolDefinition> = [
+  ...HANDWRITTEN,
+  ...GENERATED.map((entry) => entry.tool),
+];
 
-function extractPositiveIds(items: unknown): number[] {
-  if (!Array.isArray(items)) return [];
+function extractPositiveIds(items: unknown): Array<number> {
+  if (!Array.isArray(items)) {
+    return [];
+  }
   return items
     .map((item) =>
       typeof item === "object" && item !== null ? (item as { id?: unknown }).id : item,
@@ -580,10 +602,18 @@ async function callEndpoint(
 ): Promise<EndpointReply> {
   const url = `http://127.0.0.1${path}`;
   const headers: Record<string, string> = {};
-  if (authHeader) headers["authorization"] = authHeader;
-  if (cookieHeader) headers["cookie"] = cookieHeader;
-  if (csrfHeader) headers["x-csrf-token"] = csrfHeader;
-  if (originHeader) headers["origin"] = originHeader;
+  if (authHeader) {
+    headers["authorization"] = authHeader;
+  }
+  if (cookieHeader) {
+    headers["cookie"] = cookieHeader;
+  }
+  if (csrfHeader) {
+    headers["x-csrf-token"] = csrfHeader;
+  }
+  if (originHeader) {
+    headers["origin"] = originHeader;
+  }
 
   let requestBody: BodyInit | undefined;
   if (body !== undefined && method !== "GET" && method !== "HEAD") {
@@ -635,7 +665,9 @@ async function callEndpoint(
     if (isJson) {
       try {
         const parsed = JSON.parse(text) as { message?: string };
-        if (parsed.message) errorMessage = parsed.message;
+        if (parsed.message) {
+          errorMessage = parsed.message;
+        }
       } catch {}
     }
     return {
@@ -678,14 +710,18 @@ async function callEndpoint(
 
 /** The body as text, or undefined once it is over `limit` bytes. Reading stops and the stream is cancelled at the cap. */
 async function readCapped(response: Response, limit: number): Promise<string | undefined> {
-  if (!response.body) return "";
+  if (!response.body) {
+    return "";
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let text = "";
   let size = 0;
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      break;
+    }
     size += value.byteLength;
     if (size > limit) {
       await reader.cancel();
@@ -768,7 +804,9 @@ export async function executeTool(
       originHeader,
     );
   } catch (error) {
-    if (error instanceof ToolArgumentError) return toolError(error.message);
+    if (error instanceof ToolArgumentError) {
+      return toolError(error.message);
+    }
     throw error;
   }
 }
@@ -816,12 +854,15 @@ async function runTool(
     id: unknown,
     wanted: boolean,
   ): Promise<ToolResult> => {
-    if (!wanted || saved.result.isError) return saved.result;
+    if (!wanted || saved.result.isError) {
+      return saved.result;
+    }
     const set = await call("PUT", `/api/templates/${encodeURIComponent(String(id))}/default`);
-    if (set.result.isError)
+    if (set.result.isError) {
       return toolError(
         `Template ${String(id)} was saved, but it was not made the default: ${set.result.content[0]?.text ?? "the default could not be set"}`,
       );
+    }
     const savedData = (
       saved.result.structuredContent as { data?: Record<string, unknown> } | undefined
     )?.data;
@@ -851,9 +892,15 @@ async function runTool(
         name: args.name,
         type: args.type,
       };
-      if (args.subject !== undefined) body.subject = args.subject;
-      if (args.body !== undefined) body.body = args.body;
-      if (args.body_source !== undefined) body.body_source = args.body_source;
+      if (args.subject !== undefined) {
+        body.subject = args.subject;
+      }
+      if (args.body !== undefined) {
+        body.body = args.body;
+      }
+      if (args.body_source !== undefined) {
+        body.body_source = args.body_source;
+      }
       const saved = await call("POST", "/api/templates", body);
       const id = (saved.result.structuredContent as { data?: { id?: unknown } } | undefined)?.data
         ?.id;
@@ -861,11 +908,21 @@ async function runTool(
     }
     case "update_template": {
       const body: Record<string, unknown> = {};
-      if (args.name !== undefined) body.name = args.name;
-      if (args.type !== undefined) body.type = args.type;
-      if (args.subject !== undefined) body.subject = args.subject;
-      if (args.body !== undefined) body.body = args.body;
-      if (args.body_source !== undefined) body.body_source = args.body_source;
+      if (args.name !== undefined) {
+        body.name = args.name;
+      }
+      if (args.type !== undefined) {
+        body.type = args.type;
+      }
+      if (args.subject !== undefined) {
+        body.subject = args.subject;
+      }
+      if (args.body !== undefined) {
+        body.body = args.body;
+      }
+      if (args.body_source !== undefined) {
+        body.body_source = args.body_source;
+      }
       const saved = await call(
         "PUT",
         `/api/templates/${encodeURIComponent(String(args.id))}`,
@@ -888,7 +945,9 @@ async function runTool(
       if (args.id !== undefined && args.id !== null) {
         // A stored template with a sample is previewed from its body, as the sample applies to a body.
         const reply = await call("GET", `/api/templates/${encodeURIComponent(String(args.id))}`);
-        if (reply.result.isError) return reply.result;
+        if (reply.result.isError) {
+          return reply.result;
+        }
         const stored = (
           reply.result.structuredContent as { data?: { type?: string; body?: string } }
         )?.data;
@@ -897,7 +956,9 @@ async function runTool(
       }
       form.set("template_type", type);
       form.set("body", body);
-      if (args.sample !== undefined) form.set("sample", JSON.stringify(args.sample));
+      if (args.sample !== undefined) {
+        form.set("sample", JSON.stringify(args.sample));
+      }
       return invoke(
         "POST",
         "/api/templates/preview",
@@ -918,7 +979,9 @@ async function runTool(
     case "update_campaign": {
       const id = encodeURIComponent(String(args.id));
       const stored = await storedCampaign(args.id as string | number);
-      if (stored.error) return stored.error;
+      if (stored.error) {
+        return stored.error;
+      }
       const data = stored.data ?? {};
 
       const storedLists = extractPositiveIds(data.lists);
@@ -957,7 +1020,9 @@ async function runTool(
         "archive_meta",
       ] as const) {
         const value = args[field] !== undefined ? args[field] : data[field];
-        if (value !== undefined) body[field] = value;
+        if (value !== undefined) {
+          body[field] = value;
+        }
       }
 
       return invoke("PUT", `/api/campaigns/${id}`, body);
@@ -978,10 +1043,15 @@ async function runTool(
 
       if (body === undefined || contentType === undefined || templateId === undefined) {
         const stored = await storedCampaign(args.id as string | number);
-        if (stored.error) return stored.error;
-        if (body === undefined) body = String(stored.data?.body ?? "");
-        if (contentType === undefined)
+        if (stored.error) {
+          return stored.error;
+        }
+        if (body === undefined) {
+          body = String(stored.data?.body ?? "");
+        }
+        if (contentType === undefined) {
           contentType = String(stored.data?.content_type ?? "richtext");
+        }
         if (templateId === undefined && typeof stored.data?.template_id === "number") {
           templateId = stored.data.template_id;
         }
@@ -989,8 +1059,12 @@ async function runTool(
 
       const form = new URLSearchParams();
       form.set("body", body ?? "");
-      if (contentType) form.set("content_type", contentType);
-      if (templateId !== undefined) form.set("template_id", String(templateId));
+      if (contentType) {
+        form.set("content_type", contentType);
+      }
+      if (templateId !== undefined) {
+        form.set("template_id", String(templateId));
+      }
 
       return invoke(
         "POST",
@@ -1001,18 +1075,21 @@ async function runTool(
     }
     case "campaign_text": {
       const id = encodeURIComponent(String(args.id));
-      let body = typeof args.body === "string" ? (args.body as string) : undefined;
-      let contentType =
-        typeof args.content_type === "string" ? (args.content_type as string) : undefined;
-      let templateId =
-        typeof args.template_id === "number" ? (args.template_id as number) : undefined;
+      let body = typeof args.body === "string" ? args.body : undefined;
+      let contentType = typeof args.content_type === "string" ? args.content_type : undefined;
+      let templateId = typeof args.template_id === "number" ? args.template_id : undefined;
 
       if (body === undefined || contentType === undefined || templateId === undefined) {
         const stored = await storedCampaign(args.id as string | number);
-        if (stored.error) return stored.error;
-        if (body === undefined) body = String(stored.data?.body ?? "");
-        if (contentType === undefined)
+        if (stored.error) {
+          return stored.error;
+        }
+        if (body === undefined) {
+          body = String(stored.data?.body ?? "");
+        }
+        if (contentType === undefined) {
           contentType = String(stored.data?.content_type ?? "richtext");
+        }
         if (templateId === undefined && typeof stored.data?.template_id === "number") {
           templateId = stored.data.template_id;
         }
@@ -1020,8 +1097,12 @@ async function runTool(
 
       const form = new URLSearchParams();
       form.set("body", body ?? "");
-      if (contentType) form.set("content_type", contentType);
-      if (templateId !== undefined) form.set("template_id", String(templateId));
+      if (contentType) {
+        form.set("content_type", contentType);
+      }
+      if (templateId !== undefined) {
+        form.set("template_id", String(templateId));
+      }
 
       return invoke(
         "POST",
@@ -1033,7 +1114,9 @@ async function runTool(
     case "send_campaign_test": {
       const id = encodeURIComponent(String(args.id));
       const stored = await storedCampaign(args.id as string | number);
-      if (stored.error) return stored.error;
+      if (stored.error) {
+        return stored.error;
+      }
       const data = stored.data ?? {};
 
       const storedLists = extractPositiveIds(data.lists);
@@ -1074,7 +1157,9 @@ async function runTool(
     case "create_campaign": {
       const body: Record<string, unknown> = {};
       for (const field of CREATE_CAMPAIGN_FIELDS) {
-        if (args[field] !== undefined) body[field] = args[field];
+        if (args[field] !== undefined) {
+          body[field] = args[field];
+        }
       }
       return invoke("POST", "/api/campaigns", body);
     }
@@ -1097,13 +1182,17 @@ async function runTool(
       const id = encodeURIComponent(String(args.id));
       const current = await call("GET", `/api/sequences/${id}`);
       const readError = storedReadError(current, name, "sequences:get");
-      if (readError) return readError;
+      if (readError) {
+        return readError;
+      }
       const sequence = (
         current.result.structuredContent as { data?: Record<string, unknown> } | undefined
       )?.data;
-      if (!sequence) return toolError("Sequence not found");
+      if (!sequence) {
+        return toolError("Sequence not found");
+      }
       const stored = Array.isArray(sequence.steps)
-        ? (sequence.steps as Record<string, unknown>[])
+        ? (sequence.steps as Array<Record<string, unknown>>)
         : [];
       const index = stored.findIndex((step) => step.id === args.step_id);
       if (index < 0) {
@@ -1120,8 +1209,12 @@ async function runTool(
         cap_policy: step.cap_policy,
         max_late: step.max_late,
       }));
-      if (args.subject !== undefined) steps[index]!.subject = args.subject;
-      if (args.template_id !== undefined) steps[index]!.template_id = args.template_id;
+      if (args.subject !== undefined) {
+        steps[index]!.subject = args.subject;
+      }
+      if (args.template_id !== undefined) {
+        steps[index]!.template_id = args.template_id;
+      }
       // status is left out: the endpoint keeps the stored status, so a status change made since the read is not reverted.
       return invoke("PUT", `/api/sequences/${id}`, {
         name: sequence.name,
@@ -1144,7 +1237,9 @@ async function runTool(
       const generated = GENERATED_BY_NAME.get(name);
       if (generated) {
         const request = operationRequest(generated.operation, args);
-        if ("error" in request) return toolError(request.error);
+        if ("error" in request) {
+          return toolError(request.error);
+        }
         return invoke(request.method, request.path, request.body, request.contentType);
       }
       return {

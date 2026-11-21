@@ -7,7 +7,8 @@ import type { Database, Statement } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { compile } from "@/conditions/compile";
 import { parseDuration } from "@/conditions/duration";
-import { compareSQL, type Param } from "@/conditions/json";
+import { compareSQL } from "@/conditions/json";
+import type { Param } from "@/conditions/json";
 import type { Condition, Scalar } from "@/conditions/types";
 import { prepareNamedQueries } from "@/db/queries";
 import type { ExitThenTrigger, RecordedEvent } from "@/events/store";
@@ -49,7 +50,7 @@ const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJS
 export const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(id) : rawJSON(id.toString());
 const nullableID = (id: bigint | null) => (id === null ? null : numberID(id));
-const json = (ids: bigint[]) => `[${ids.join(",")}]`;
+const json = (ids: Array<bigint>) => `[${ids.join(",")}]`;
 
 export function project(row: EnrollmentRow) {
   return {
@@ -75,7 +76,9 @@ export function project(row: EnrollmentRow) {
  */
 function dueAfter(from: string, wait: string, test: boolean): string {
   const ms = parseDuration(wait);
-  if (ms === undefined) throw new Error("Stored step wait is invalid");
+  if (ms === undefined) {
+    throw new Error("Stored step wait is invalid");
+  }
   return new Date(Date.parse(from) + (test ? Math.min(ms, TEST_WAIT_MS) : ms)).toISOString();
 }
 
@@ -165,7 +168,9 @@ export function createEnrollments(db: Database, clock: Clock) {
       };
     }
     const compiled = compile(where as Condition);
-    if (compiled.fragments.length) throw new Error("Trigger filters cannot contain sql");
+    if (compiled.fragments.length) {
+      throw new Error("Trigger filters cannot contain sql");
+    }
     const bound = (since: string) => (e: RecordedEvent) => {
       // At trigger time the enrollment starts now and no step has run: `last_step` falls back
       // to the trigger, like the evaluator.
@@ -190,10 +195,15 @@ export function createEnrollments(db: Database, clock: Clock) {
   }
   function matches(trigger: string, event: RecordedEvent): boolean {
     const where = (JSON.parse(trigger) as { where?: Record<string, unknown> }).where;
-    if (!where) return true;
+    if (!where) {
+      return true;
+    }
     let filter = filters.get(trigger);
-    if (filter) filters.delete(trigger);
-    else filter = prepareFilter(where);
+    if (filter) {
+      filters.delete(trigger);
+    } else {
+      filter = prepareFilter(where);
+    }
     filters.set(trigger, filter);
     if (filters.size > CACHE) {
       const [oldest, old] = filters.entries().next().value!;
@@ -201,7 +211,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       old.statement.finalize();
     }
     const args = filter.params.map((p) => (typeof p === "function" ? p(event) : p));
-    const value = (filter.statement.values(...args) as unknown[][])[0]?.[0];
+    const value = (filter.statement.values(...args) as Array<unknown>[])[0]?.[0];
     return value === 1n || value === 1;
   }
 
@@ -242,7 +252,9 @@ export function createEnrollments(db: Database, clock: Clock) {
       }
     ).id;
     // The scheduler claims in its own transaction, after the caller's commit.
-    if (dueAt <= now) due();
+    if (dueAt <= now) {
+      due();
+    }
     return id;
   }
   const end = (id: bigint, status: string, reason: string, now: string) =>
@@ -253,41 +265,50 @@ export function createEnrollments(db: Database, clock: Clock) {
     const now = event.receivedAt;
     const reason = `event:${event.name}`;
     const exited = (
-      q.get("exit-by-event").all(reason, now, now, event.subscriberId, event.name) as {
+      q.get("exit-by-event").all(reason, now, now, event.subscriberId, event.name) as Array<{
         id: bigint;
         sequence_id: bigint;
-      }[]
+      }>
     ).sort((a, b) => (a.id < b.id ? -1 : 1));
     const ended = exited.map((row) => ({
       id: numberID(row.id),
       sequence_id: numberID(row.sequence_id),
       exit_reason: reason,
     }));
-    const started: { id: number | object; sequence_id: number | object }[] = [];
-    const skipped: { sequence_id: number | object; reason: string }[] = [];
+    const started: Array<{ id: number | object; sequence_id: number | object }> = [];
+    const skipped: Array<{ sequence_id: number | object; reason: string }> = [];
     // Old events never start sequences, and name no skip: that is a window, not the subscriber.
-    if (!event.triggerEligible) return { started, ended, skipped };
-    const sequences = q.get("sequences-triggered-by").all(event.name) as {
+    if (!event.triggerEligible) {
+      return { started, ended, skipped };
+    }
+    const sequences = q.get("sequences-triggered-by").all(event.name) as Array<{
       id: bigint;
       trigger: string;
       reentry: string;
-    }[];
+    }>;
     for (const sequence of sequences) {
-      if (!matches(sequence.trigger, event)) continue;
+      if (!matches(sequence.trigger, event)) {
+        continue;
+      }
       const first = q.get("first-step").get(sequence.id) as {
         id: bigint;
         wait: string;
       } | null;
-      if (!first) continue;
+      if (!first) {
+        continue;
+      }
       if (
         sequence.reentry === "never" &&
         q.get("any-enrollment").get(event.subscriberId, sequence.id)
-      )
+      ) {
         continue;
+      }
       const active = q.get("active-enrollment").get(event.subscriberId, sequence.id) as {
         id: bigint;
       } | null;
-      if (active && sequence.reentry !== "always") continue;
+      if (active && sequence.reentry !== "always") {
+        continue;
+      }
       // The event would start this sequence (or replace its running enrollment). A blocklisted
       // subscriber starts none; a suppressed person (B124, D125) starts no marketing sequence. A
       // transactional sequence still starts for a suppressed person. Each refusal is named (B116, D131).
@@ -325,39 +346,57 @@ export function createEnrollments(db: Database, clock: Clock) {
    * can refuse it.
    */
   function blockedStart(event: RecordedEvent, sequenceId: bigint): string | null {
-    if (event.subscriberStatus === "blocklisted") return "subscriber_blocklisted";
-    if (q.get("sequence-marketing").get(sequenceId) !== null && event.suppressed())
+    if (event.subscriberStatus === "blocklisted") {
+      return "subscriber_blocklisted";
+    }
+    if (q.get("sequence-marketing").get(sequenceId) !== null && event.suppressed()) {
       return "suppressed";
+    }
     return null;
   }
 
   const at = () => clock.now().toISOString();
   const subscriberEffects: SubscriberEffects = {
     blocklisted(ids) {
-      if (ids.length) q.get("exit-by-subscribers").run(at(), at(), json(ids));
+      if (ids.length) {
+        q.get("exit-by-subscribers").run(at(), at(), json(ids));
+      }
     },
     unsubscribed(ids, listIds) {
-      if (ids.length && listIds.length)
+      if (ids.length && listIds.length) {
         q.get("exit-by-lists").run(at(), at(), json(ids), json(listIds));
+      }
     },
   };
   const unsubscribeEffects: UnsubscribeEffects = {
     unsubscribed({ subscriberId, listId, listIds, blocklisted }) {
-      if (blocklisted) subscriberEffects.blocklisted([subscriberId]);
+      if (blocklisted) {
+        subscriberEffects.blocklisted([subscriberId]);
+      }
       // The requested list exits even when its membership was already unsubscribed, so a
       // repeated request ends an enrollment started after the first one.
-      else subscriberEffects.unsubscribed([subscriberId], [...new Set([listId, ...listIds])]);
+      else {
+        subscriberEffects.unsubscribed([subscriberId], [...new Set([listId, ...listIds])]);
+      }
     },
   };
 
   // Listing builds its statement from the filters present, so each shape uses its index.
   const listStatements = new Map<string, { rows: Statement; total: Statement }>();
   function listStatement(filter: EnrollmentFilter) {
-    const clauses: string[] = [];
-    if (filter.sequenceId !== undefined) clauses.push("sequence_id = ?");
-    if (filter.subscriberId !== undefined) clauses.push("subscriber_id = ?");
-    if (filter.status !== undefined) clauses.push("status = ?");
-    if (filter.exitReason !== undefined) clauses.push("exit_reason = ?");
+    const clauses: Array<string> = [];
+    if (filter.sequenceId !== undefined) {
+      clauses.push("sequence_id = ?");
+    }
+    if (filter.subscriberId !== undefined) {
+      clauses.push("subscriber_id = ?");
+    }
+    if (filter.status !== undefined) {
+      clauses.push("status = ?");
+    }
+    if (filter.exitReason !== undefined) {
+      clauses.push("exit_reason = ?");
+    }
     const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
     let statements = listStatements.get(where);
     if (!statements) {
@@ -369,7 +408,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       };
       listStatements.set(where, statements);
     }
-    const args: Param[] = [
+    const args: Array<Param> = [
       ...(filter.sequenceId !== undefined ? [filter.sequenceId] : []),
       ...(filter.subscriberId !== undefined ? [filter.subscriberId] : []),
       ...(filter.status !== undefined ? [filter.status] : []),
@@ -385,14 +424,14 @@ export function createEnrollments(db: Database, clock: Clock) {
     get: byId,
     list<T = ReturnType<typeof project>>(
       filter: EnrollmentFilter,
-      view: (rows: EnrollmentRow[]) => T[] = (rows) => rows.map(project) as T[],
+      view: (rows: Array<EnrollmentRow>) => Array<T> = (rows) => rows.map(project) as Array<T>,
     ) {
       const { statements, args } = listStatement(filter);
       const rows = statements.rows.all(
         ...args,
         filter.perPage,
         (filter.page - 1) * filter.perPage,
-      ) as EnrollmentRow[];
+      ) as Array<EnrollmentRow>;
       const total = (statements.total.get(...args) as { n: bigint }).n;
       return {
         results: view(rows),
@@ -419,26 +458,37 @@ export function createEnrollments(db: Database, clock: Clock) {
         reentry: string;
         event: string;
       } | null;
-      if (!sequence) return { error: "sequence_missing" };
-      if (sequence.status !== "active") return { error: "sequence_inactive" };
+      if (!sequence) {
+        return { error: "sequence_missing" };
+      }
+      if (sequence.status !== "active") {
+        return { error: "sequence_inactive" };
+      }
       const first = q.get("first-step").get(sequenceId) as {
         id: bigint;
         wait: string;
       } | null;
-      if (!first) return { error: "no_steps" };
-      if (!triggerFits(trigger, subscriberId, sequence.event)) return { error: "trigger_event" };
+      if (!first) {
+        return { error: "no_steps" };
+      }
+      if (!triggerFits(trigger, subscriberId, sequence.event)) {
+        return { error: "trigger_event" };
+      }
       const now = at();
       if (
         !force &&
         sequence.reentry === "never" &&
         q.get("any-enrollment").get(subscriberId, sequenceId)
-      )
+      ) {
         return { error: "reentry" };
+      }
       const active = q.get("active-enrollment").get(subscriberId, sequenceId) as {
         id: bigint;
       } | null;
       if (active) {
-        if (!force && sequence.reentry !== "always") return { error: "reentry" };
+        if (!force && sequence.reentry !== "always") {
+          return { error: "reentry" };
+        }
         end(active.id, "canceled", "manual", now);
       }
       const id = start(
@@ -471,16 +521,28 @@ export function createEnrollments(db: Database, clock: Clock) {
         status: string;
         event: string;
       } | null;
-      if (!sequence) return { error: "sequence_missing" };
-      if (sequence.status !== "active") return { error: "sequence_inactive" };
+      if (!sequence) {
+        return { error: "sequence_missing" };
+      }
+      if (sequence.status !== "active") {
+        return { error: "sequence_inactive" };
+      }
       const first = q.get("first-step").get(sequenceId) as { id: bigint; wait: string } | null;
-      if (!first) return { error: "no_steps" };
-      if (!triggerFits(trigger, subscriberId, sequence.event)) return { error: "trigger_event" };
-      if (q.get("active-test").get(subscriberId, sequenceId)) return { error: "test_running" };
+      if (!first) {
+        return { error: "no_steps" };
+      }
+      if (!triggerFits(trigger, subscriberId, sequence.event)) {
+        return { error: "trigger_event" };
+      }
+      if (q.get("active-test").get(subscriberId, sequenceId)) {
+        return { error: "test_running" };
+      }
       const marketing = q.get("test-list").get(sequenceId) as { list_id: bigint | null } | null;
       if (marketing) {
         const reason = consent(marketing.list_id);
-        if (reason && reason !== "frequency_cap") return { error: "no_consent", reason };
+        if (reason && reason !== "frequency_cap") {
+          return { error: "no_consent", reason };
+        }
       }
       const now = at();
       return {
@@ -491,31 +553,35 @@ export function createEnrollments(db: Database, clock: Clock) {
     },
     /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */
     steps(sequenceId: bigint) {
-      return q.get("enrollment-steps").all(sequenceId) as {
+      return q.get("enrollment-steps").all(sequenceId) as Array<{
         id: bigint;
         position: bigint;
         kind: string;
         status: string;
-      }[];
+      }>;
     },
     /** Cancel an active enrollment (canceled, manual). The caller holds the write. */
     cancel(id: bigint): EnrollmentRow | "missing" | "inactive" {
       const row = byId(id);
-      if (!row) return "missing";
-      if (!end(id, "canceled", "manual", at())) return "inactive";
+      if (!row) {
+        return "missing";
+      }
+      if (!end(id, "canceled", "manual", at())) {
+        return "inactive";
+      }
       return byId(id)!;
     },
     /**
      * Scheduler claim (05-sequences.md#scheduler): lease up to `limit` due enrollments of
      * active or archived sequences. The loop helper holds the write transaction.
      */
-    claimDue(now: Date, lease: Date, limit: number): bigint[] {
+    claimDue(now: Date, lease: Date, limit: number): Array<bigint> {
       // In claim order (RETURNING has none), so a retry claimed with due work runs after it.
       return (
-        q.get("claim-due").all(lease.toISOString(), now.toISOString(), limit) as {
+        q.get("claim-due").all(lease.toISOString(), now.toISOString(), limit) as Array<{
           id: bigint;
           run_at: string;
-        }[]
+        }>
       )
         .sort((a, b) =>
           a.run_at !== b.run_at ? (a.run_at < b.run_at ? -1 : 1) : a.id < b.id ? -1 : 1,
@@ -589,9 +655,11 @@ export function createEnrollments(db: Database, clock: Clock) {
       limit: number,
     ): { changed: number; next: bigint | null; dueNow: boolean } | "missing" {
       const step = q.get("reschedule-step").get(stepId, sequenceId) as { wait: string } | null;
-      if (!step) return "missing";
+      if (!step) {
+        return "missing";
+      }
       const now = at();
-      const rows = q.get("reschedule-batch").all(sequenceId, stepId, cursor, now, limit) as {
+      const rows = q.get("reschedule-batch").all(sequenceId, stepId, cursor, now, limit) as Array<{
         id: bigint;
         due_at: string | null;
         retry_at: string | null;
@@ -600,7 +668,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         test: bigint | number;
         wait_from_event: bigint | number;
         event_at: string | null;
-      }[];
+      }>;
       let changed = 0,
         dueNow = false;
       for (const row of rows) {
@@ -613,16 +681,22 @@ export function createEnrollments(db: Database, clock: Clock) {
         // stays as it is, which also keeps a repeated call from changing anything.
         const dueAt =
           computed > now ? computed : row.due_at !== null && row.due_at <= now ? row.due_at : now;
-        if (dueAt <= now) dueNow = true;
-        if (dueAt === row.due_at) continue;
+        if (dueAt <= now) {
+          dueNow = true;
+        }
+        if (dueAt === row.due_at) {
+          continue;
+        }
         const written = q.get("reschedule-set").run(dueAt, row.id, stepId, now).changes;
         // Claims order by `coalesce(retry_at, due_at)`: a backoff in progress decides when the
         // row runs, so a changed `due_at` there changes nothing the operator would see.
-        if (row.retry_at === null) changed += written;
+        if (row.retry_at === null) {
+          changed += written;
+        }
       }
       return {
         changed,
-        next: rows.length === limit ? rows[rows.length - 1]!.id : null,
+        next: rows.length === limit ? rows.at(-1)!.id : null,
         dueNow,
       };
     },
@@ -640,7 +714,9 @@ export function createEnrollments(db: Database, clock: Clock) {
     },
     close() {
       due = () => {};
-      for (const filter of filters.values()) filter.statement.finalize();
+      for (const filter of filters.values()) {
+        filter.statement.finalize();
+      }
       filters.clear();
       for (const s of listStatements.values()) {
         s.rows.finalize();

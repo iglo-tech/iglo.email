@@ -19,8 +19,10 @@ import { createRenderer } from "@/templates/renderer";
 import { createEventStore } from "@/events/store";
 import { createConditionEvaluator } from "@/conditions/evaluate";
 import { createEnrollments } from "@/sequences/enrollments";
-import { startScheduler, type Scheduler } from "@/scheduler/scheduler";
-import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
+import { startScheduler } from "@/scheduler/scheduler";
+import type { Scheduler } from "@/scheduler/scheduler";
+import { createMarketingPolicy } from "@/unsubscribe/policy";
+import type { MarketingSettings } from "@/unsubscribe/policy";
 import { createTracking } from "@/unsubscribe/tracking";
 
 export type Wrap = <T extends object>(name: string, owner: T) => T;
@@ -38,7 +40,7 @@ export function startRuntime(options: {
 }) {
   const { clock } = options;
   const wrap: Wrap = options.wrap ?? ((_name, owner) => owner);
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const logger = {
     error(error: unknown) {
       errors.push(error);
@@ -128,7 +130,9 @@ export function startRuntime(options: {
           conditions,
           settings: () => ({ fromEmail: "Fixture <noreply@scheduler.test>", marketing }),
         });
-  if (scheduler) enrollments.onDue(() => scheduler.wake());
+  if (scheduler) {
+    enrollments.onDue(() => scheduler.wake());
+  }
   return {
     db,
     errors,
@@ -165,7 +169,7 @@ export function seed(
   db: Database,
   enrollments: ReturnType<typeof createEnrollments>,
   count: number,
-  steps: { wait: string; kind: "transactional" | "marketing" }[],
+  steps: Array<{ wait: string; kind: "transactional" | "marketing" }>,
   prefix = "s",
 ) {
   return writeTransaction(db, () => {
@@ -205,7 +209,9 @@ export function seed(
       )!.id;
       member.run(id, list);
       const outcome = enrollments.enroll(sequence, id, false);
-      if (!("enrollment" in outcome)) throw new Error(outcome.error);
+      if (!("enrollment" in outcome)) {
+        throw new Error(outcome.error);
+      }
     }
     return { list, template, sequence };
   });

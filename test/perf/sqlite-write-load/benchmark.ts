@@ -7,11 +7,13 @@ import { spawnSync } from "node:child_process";
 import { createRealClock } from "@/clock";
 import { SpikeStore } from "@/test/perf/sqlite-write-load/store";
 import { runFtsIsolation } from "@/test/perf/sqlite-write-load/fts-isolation";
-import { Workload, type Mode } from "@/test/perf/sqlite-write-load/workload";
+import { Workload } from "@/test/perf/sqlite-write-load/workload";
+import type { Mode } from "@/test/perf/sqlite-write-load/workload";
 
 const args = new Set(process.argv.slice(2));
-for (const arg of args)
+for (const arg of args) {
   if (!["--control-only", "--smoke"].includes(arg)) throw new Error(`Unknown argument: ${arg}`);
+}
 const smoke = args.has("--smoke");
 const durationMs = smoke ? 2000 : 60_000;
 const repetitions = smoke ? 1 : 3;
@@ -22,18 +24,21 @@ const base = resolve(
 mkdirSync(base, { recursive: true });
 const directory = realpathSync(base);
 const filesystemType = Number(statfsSync(directory).type);
-if ([0x01021994, 0x858458f6].includes(filesystemType))
+if ([0x01_02_19_94, 0x85_84_58_f6].includes(filesystemType)) {
   throw new Error(
     "Storage measurements cannot use tmpfs/ramfs; set IGLO_EMAIL_PERF_DIR to disk-backed storage",
   );
-function command(program: string, args: string[]) {
+}
+function command(program: string, args: Array<string>) {
   const result = spawnSync(program, args, { encoding: "utf8" });
   return result.status === 0
     ? result.stdout.trim()
     : `unavailable: ${result.error?.message ?? result.stderr.trim()}`;
 }
-function summarize(values: number[]) {
-  if (!values.length) return null;
+function summarize(values: Array<number>) {
+  if (!values.length) {
+    return null;
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const pick = (fraction: number) =>
     Number(sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)]!.toFixed(3));
@@ -62,7 +67,7 @@ try {
       smoke,
     }),
   );
-  const modes: Mode[] = args.has("--control-only")
+  const modes: Array<Mode> = args.has("--control-only")
     ? ["record"]
     : ["record", "batch", "campaign-only"];
   for (let repetition = 1; repetition <= repetitions; repetition++) {
@@ -108,7 +113,9 @@ try {
         workload.pump();
         workload.samples.pumpBlockMs.push(performance.now() - blockStarted);
         const now = clock.now().getTime();
-        if (now >= workload.endAt) break;
+        if (now >= workload.endAt) {
+          break;
+        }
         const regular =
           workload.startedAt + (Math.floor((now - workload.startedAt) / 100) + 1) * 100;
         const candidates = [
@@ -122,8 +129,9 @@ try {
       }
       // Date-based injected clock deadlines have millisecond precision. Wait out any
       // fractional offset so the monotonic measured window is at least the requested duration.
-      while (performance.now() - measuredStart < durationMs)
+      while (performance.now() - measuredStart < durationMs) {
         await clock.sleep(Math.ceil(durationMs - (performance.now() - measuredStart)));
+      }
       const measuredElapsedMs = performance.now() - measuredStart;
       const window = structuredClone(workload.result());
       const sizesBeforeCheckpoint = store.sizes();

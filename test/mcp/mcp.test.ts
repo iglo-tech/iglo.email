@@ -4,13 +4,8 @@ import { resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ensureProductionBuild } from "@/test/production-build";
-import {
-  startProduction,
-  startMailbox,
-  admin,
-  type Production,
-  type Mailbox,
-} from "@/test/worked-example/harness";
+import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
+import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { version } from "@/../package.json";
 
@@ -117,7 +112,9 @@ describe("B34 MCP endpoint tests", () => {
       "update_sequence_step",
     ];
 
-    for (const name of expectedTools) expect(toolNames).toContain(name);
+    for (const name of expectedTools) {
+      expect(toolNames).toContain(name);
+    }
 
     for (const tool of toolsResult.tools) {
       expect(typeof tool.name).toBe("string");
@@ -400,7 +397,7 @@ describe("B34 MCP endpoint tests", () => {
       arguments: { query: "MCP" },
     });
     expect(listCampsRes.isError).toBeFalsy();
-    const listedCamps = (listCampsRes.structuredContent as { data: { results: any[] } }).data
+    const listedCamps = (listCampsRes.structuredContent as { data: { results: Array<any> } }).data
       .results;
     expect(listedCamps.some((c: any) => c.id === campId)).toBe(true);
 
@@ -809,7 +806,7 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(badJsonRes.status).toBe(200);
     const badJsonBody = await badJsonRes.json();
-    expect(badJsonBody.error?.code).toBe(-32700);
+    expect(badJsonBody.error?.code).toBe(-32_700);
 
     // 2. Unknown method -> -32601 Method not found
     const unknownMethodRes = await fetch(`${production.origin}/api/mcp`, {
@@ -819,7 +816,7 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(unknownMethodRes.status).toBe(200);
     const unknownBody = await unknownMethodRes.json();
-    expect(unknownBody.error?.code).toBe(-32601);
+    expect(unknownBody.error?.code).toBe(-32_601);
     expect(unknownBody.id).toBe(42);
 
     // 3. Invalid params -> -32602 Invalid params
@@ -835,7 +832,7 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(badParamsRes.status).toBe(200);
     const badParamsBody = await badParamsRes.json();
-    expect(badParamsBody.error?.code).toBe(-32602);
+    expect(badParamsBody.error?.code).toBe(-32_602);
 
     // 4. Notifications: message without id returns HTTP 202 with no body and executes no tool
     const notifCancelledRes = await fetch(`${production.origin}/api/mcp`, {
@@ -879,7 +876,7 @@ describe("B34 MCP endpoint tests", () => {
       });
       expect(badIdRes.status).toBe(200);
       const badIdBody = await badIdRes.json();
-      expect(badIdBody.error?.code).toBe(-32600);
+      expect(badIdBody.error?.code).toBe(-32_600);
     }
 
     // 6. JSON array batch gets -32600
@@ -893,7 +890,7 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(batchRes.status).toBe(200);
     const batchBody = await batchRes.json();
-    expect(batchBody.error?.code).toBe(-32600);
+    expect(batchBody.error?.code).toBe(-32_600);
     expect(batchBody.error?.message).toContain("Batch requests are not supported");
 
     // 7. MCP-Protocol-Version request header validation
@@ -907,7 +904,7 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(badVersionHeaderRes.status).toBe(400);
     const badVersionHeaderBody = await badVersionHeaderRes.json();
-    expect(badVersionHeaderBody.error?.code).toBe(-32000);
+    expect(badVersionHeaderBody.error?.code).toBe(-32_000);
 
     // 8. GET /api/mcp -> 405 Method Not Allowed
     const getRes = await fetch(`${production.origin}/api/mcp`, {
@@ -1132,7 +1129,7 @@ describe("B34 MCP endpoint tests", () => {
     return { status: res.status, text, json };
   }
 
-  async function createApiUser(username: string, permissions: string[]) {
+  async function createApiUser(username: string, permissions: Array<string>) {
     const roleRes = await api("POST", "/api/roles/users", {
       name: `${username} role`,
       permissions,
@@ -1183,7 +1180,7 @@ describe("B34 MCP endpoint tests", () => {
     return (await res.json()).data.id as number;
   }
 
-  const withoutKeys = (value: Record<string, unknown>, keys: string[]) =>
+  const withoutKeys = (value: Record<string, unknown>, keys: Array<string>) =>
     Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 
   // 9. list_lists and list_media return what the HTTP API returns, and their query filters the items created through it.
@@ -1427,7 +1424,7 @@ describe("B34 MCP endpoint tests", () => {
     expect(getTextContent(badTemplate)).toContain("transactional");
     const unknownStep = await client.callTool({
       name: "update_sequence_step",
-      arguments: { id: seqId, step_id: 999999, subject: "Nope" },
+      arguments: { id: seqId, step_id: 999_999, subject: "Nope" },
     });
     expect(unknownStep.isError).toBe(true);
     expect((await api("GET", `/api/sequences/${seqId}`)).json.data).toEqual(after);
@@ -1913,7 +1910,7 @@ describe("B34 MCP endpoint tests", () => {
 
     const after = (await api("GET", `/api/campaigns/${campId}`)).json.data;
     expect(after.subject).toBe("B44 Partial Updated");
-    const positiveListIds = (after.lists as { id: number }[])
+    const positiveListIds = (after.lists as Array<{ id: number }>)
       .map((list) => list.id)
       .filter((id) => id > 0);
     expect(positiveListIds).toEqual([keepId]);

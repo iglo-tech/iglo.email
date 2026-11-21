@@ -13,7 +13,7 @@ export interface PreparedQueries {
 
 export function prepareNamedQueries(
   db: Database,
-  sources: readonly QuerySource[],
+  sources: ReadonlyArray<QuerySource>,
 ): PreparedQueries {
   const statements = new Map<string, Statement>();
   try {
@@ -26,13 +26,18 @@ export function prepareNamedQueries(
       let block = "";
       const finish = () => {
         if (name === undefined) {
-          if (maskSql(block).trim())
+          if (maskSql(block).trim()) {
             throw new Error(`SQL before the first named query in ${source.name}`);
+          }
           return;
         }
-        if (statements.has(name)) throw new Error(`Duplicate named query: ${name}`);
+        if (statements.has(name)) {
+          throw new Error(`Duplicate named query: ${name}`);
+        }
         const maskedBlock = maskSql(block);
-        if (!maskedBlock.replaceAll(";", "").trim()) throw new Error(`Empty named query: ${name}`);
+        if (!maskedBlock.replaceAll(";", "").trim()) {
+          throw new Error(`Empty named query: ${name}`);
+        }
         const firstEnd = maskedBlock.indexOf(";");
         if (firstEnd >= 0 && maskedBlock.slice(firstEnd + 1).trim()) {
           throw new Error(`Named query ${name} must contain one SQL statement`);
@@ -57,25 +62,35 @@ export function prepareNamedQueries(
         if (marker && inLexicalContext) {
           finish();
           name = marker[1]!.trim();
-          if (!name) throw new Error(`Empty named query name in ${source.name}`);
+          if (!name) {
+            throw new Error(`Empty named query name in ${source.name}`);
+          }
           block = "";
-        } else block += line;
+        } else {
+          block += line;
+        }
         offset += line.length;
       }
       finish();
     }
   } catch (error) {
-    for (const statement of statements.values()) statement.finalize();
+    for (const statement of statements.values()) {
+      statement.finalize();
+    }
     throw error;
   }
   return {
     get(name) {
       const statement = statements.get(name);
-      if (!statement) throw new Error(`Unknown named query: ${name}`);
+      if (!statement) {
+        throw new Error(`Unknown named query: ${name}`);
+      }
       return statement;
     },
     close() {
-      for (const statement of statements.values()) statement.finalize();
+      for (const statement of statements.values()) {
+        statement.finalize();
+      }
       statements.clear();
     },
   };

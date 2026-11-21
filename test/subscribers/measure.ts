@@ -4,7 +4,7 @@ import { provisionApiUser, withProduction } from "@/test/contract/owned";
 const admin = { user: "m16-measure-admin", password: "m16-measure-password" };
 const executable = resolve(process.argv[2] ?? "dist/iglo.email");
 const candidate = process.argv[3] === "candidate";
-const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+const mean = (a: Array<number>) => a.reduce((x, y) => x + y, 0) / a.length;
 for (let repetition = 1; repetition <= 3; repetition++) {
   await withProduction(
     executable,
@@ -23,15 +23,19 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
         const value = await response.json();
-        if (response.status !== 200) throw new Error(`Unexpected ${response.status} for ${path}`);
+        if (response.status !== 200) {
+          throw new Error(`Unexpected ${response.status} for ${path}`);
+        }
         return { data: value.data, ms: performance.now() - t };
       };
       const measure = async (n: number, warmup: number, fn: (i: number) => Promise<void>) => {
-        const samples: number[] = [];
+        const samples: Array<number> = [];
         for (let i = 0; i < n + warmup; i++) {
           const start = performance.now();
           await fn(i);
-          if (i >= warmup) samples.push(performance.now() - start);
+          if (i >= warmup) {
+            samples.push(performance.now() - start);
+          }
         }
         return mean(samples);
       };
@@ -43,8 +47,9 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         await request(`/api/lists/${a.data.id}`, "PUT", { name: `list-cycle-new-${i}` });
         await request(`/api/lists/${a.data.id}`, "DELETE");
       });
-      for (let i = 0; i < 20; i++)
+      for (let i = 0; i < 20; i++) {
         await request("/api/lists", "POST", { name: `filter-${i}`, tags: ["sample"] });
+      }
       const listQuery = await measure(50, 5, async () => {
         await request("/api/lists?query=filter&tag=sample&per_page=20");
       });
@@ -69,7 +74,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           });
           await request(`/api/subscribers/${a.data.id}`, "DELETE");
         });
-        const ids: number[] = [];
+        const ids: Array<number> = [];
         for (let i = 0; i < 100; i++) {
           const a = await request("/api/subscribers", "POST", {
             email: `count-${i}@example.test`,
@@ -98,7 +103,9 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         });
         const counts = await measure(50, 5, async () => {
           const a = await request("/api/lists?query=membership&order_by=subscriber_count");
-          if (a.data.total !== 2) throw new Error("Count mismatch");
+          if (a.data.total !== 2) {
+            throw new Error("Count mismatch");
+          }
         });
         Object.assign(result, {
           subCrud,

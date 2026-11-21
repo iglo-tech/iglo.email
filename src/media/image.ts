@@ -6,7 +6,9 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let at = 2;
   while (at + 9 <= bytes.length) {
-    if (bytes[at] !== 0xff) return null;
+    if (bytes[at] !== 0xff) {
+      return null;
+    }
     const marker = bytes[at + 1]!;
     // Fill bytes before a marker, and standalone markers without a length.
     if (marker === 0xff) {
@@ -18,9 +20,12 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
       continue;
     }
     // SOF0-SOF15, except DHT, JPG and DAC, which share the range.
-    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker))
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
       return { width: view.getUint16(at + 7), height: view.getUint16(at + 5) };
-    if (marker === 0xda) return null;
+    }
+    if (marker === 0xda) {
+      return null;
+    }
     at += 2 + view.getUint16(at + 2);
   }
   return null;
@@ -30,10 +35,14 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
 export function imageSize(bytes: Uint8Array): { width: number; height: number } | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const text = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
-  if (bytes.length >= 24 && text(1, 4) === "PNG" && text(12, 16) === "IHDR")
+  if (bytes.length >= 24 && text(1, 4) === "PNG" && text(12, 16) === "IHDR") {
     return { width: view.getUint32(16), height: view.getUint32(20) };
-  if (bytes.length >= 10 && (text(0, 6) === "GIF87a" || text(0, 6) === "GIF89a"))
+  }
+  if (bytes.length >= 10 && (text(0, 6) === "GIF87a" || text(0, 6) === "GIF89a")) {
     return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
-  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) return jpegSize(bytes);
+  }
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    return jpegSize(bytes);
+  }
   return null;
 }

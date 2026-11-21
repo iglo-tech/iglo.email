@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { createRealClock } from "@/clock";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";

@@ -32,7 +32,9 @@ beforeAll(async () => {
   const fixture = await Bun.file(join(repository, "test/bootstrap/fixtures.md")).text();
   adminUser = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1] ?? "";
   adminPassword = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1] ?? "";
-  if (!adminUser || !adminPassword) throw new Error("Bootstrap test credentials are missing");
+  if (!adminUser || !adminPassword) {
+    throw new Error("Bootstrap test credentials are missing");
+  }
   await ensureProductionBuild();
   temporaryDirectory = await mkdtemp(join(tmpdir(), "iglo-email-upgrade-"));
   executable = join(temporaryDirectory, "iglo.email");
@@ -41,7 +43,9 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+  if (temporaryDirectory) {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 /** The executable with a clean environment. */
@@ -90,7 +94,9 @@ async function api(port: number, method: string, path: string, body?: unknown) {
 
 /** The log buffer's lines that contain `text`. */
 const logLines = async (port: number, text: string) =>
-  ((await api(port, "GET", "/api/logs")).data as string[]).filter((line) => line.includes(text));
+  ((await api(port, "GET", "/api/logs")).data as Array<string>).filter((line) =>
+    line.includes(text),
+  );
 
 /** Waits until this process has named a refused webhook in its log buffer. */
 async function noticed(port: number) {

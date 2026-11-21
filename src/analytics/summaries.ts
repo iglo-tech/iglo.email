@@ -4,8 +4,10 @@
 // reader child and only its last step, one short transaction, holds the write lock.
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
-import { ReaderError, type AnalyticsReader } from "@/analytics/reader";
-import { createSchedule, type Schedule } from "@/analytics/schedule";
+import { ReaderError } from "@/analytics/reader";
+import type { AnalyticsReader } from "@/analytics/reader";
+import { createSchedule } from "@/analytics/schedule";
+import type { Schedule } from "@/analytics/schedule";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
@@ -13,7 +15,7 @@ import type { ListCounts } from "@/subscribers/list-counts";
 import sql from "@/analytics/summaries.sql" with { type: "text" };
 
 export type SummaryName = "dashboard_counts" | "dashboard_charts" | "list_stats";
-const names: SummaryName[] = ["dashboard_counts", "dashboard_charts", "list_stats"];
+const names: Array<SummaryName> = ["dashboard_counts", "dashboard_charts", "list_stats"];
 
 export function createSummaries(db: Database, clock: Clock, reader: AnalyticsReader) {
   const q = prepareNamedQueries(db, [{ name: "analytics/summaries", sql }]);
@@ -26,7 +28,9 @@ export function createSummaries(db: Database, clock: Clock, reader: AnalyticsRea
     };
     const at = clock.now().toISOString();
     writeTransaction(db, () => {
-      for (const name of names) q.get("upsert-summary").run(name, JSON.stringify(data[name]), at);
+      for (const name of names) {
+        q.get("upsert-summary").run(name, JSON.stringify(data[name]), at);
+      }
     });
   };
   return {
@@ -37,7 +41,9 @@ export function createSummaries(db: Database, clock: Clock, reader: AnalyticsRea
     missing: () => names.some((name) => get(name) === null),
     /** The stored view, computed on first use after caching was turned on. */
     async read(name: SummaryName): Promise<unknown> {
-      if (get(name) === null) await this.refresh();
+      if (get(name) === null) {
+        await this.refresh();
+      }
       return JSON.parse(get(name)!);
     },
     /** Turning caching off forgets the rows, so turning it on again never shows old ones. */
@@ -45,7 +51,9 @@ export function createSummaries(db: Database, clock: Clock, reader: AnalyticsRea
     /** The list counters for GET /api/lists; null falls back to the live count. */
     listCounts(): ReturnType<ListCounts["all"]> | null {
       const data = get("list_stats");
-      if (data === null) return null;
+      if (data === null) {
+        return null;
+      }
       return new Map(
         Object.entries(JSON.parse(data) as Record<string, Record<string, number>>).map(
           ([id, counts]) => [BigInt(id), counts],
@@ -98,7 +106,9 @@ export function createSummaryRefresh(options: SummaryRefreshOptions) {
   let current: { interval: string; schedule: Schedule } | undefined;
   let refused: string | undefined;
   const schedule = (interval: string, now: Date) => {
-    if (current?.interval === interval) return current.schedule;
+    if (current?.interval === interval) {
+      return current.schedule;
+    }
     current = undefined;
     try {
       current = { interval, schedule: createSchedule(interval, now) };
@@ -106,7 +116,9 @@ export function createSummaryRefresh(options: SummaryRefreshOptions) {
       return current.schedule;
     } catch (error) {
       // Logged once per value: it stays wrong until someone changes the setting.
-      if (refused !== interval) logger.error(error);
+      if (refused !== interval) {
+        logger.error(error);
+      }
       refused = interval;
       return undefined;
     }
@@ -116,7 +128,9 @@ export function createSummaryRefresh(options: SummaryRefreshOptions) {
       await summaries.refresh();
     } catch (error) {
       // The next due time tries again; a failed refresh keeps the previous numbers.
-      if (!(error instanceof ReaderError && error.kind === "closed")) logger.error(error);
+      if (!(error instanceof ReaderError && error.kind === "closed")) {
+        logger.error(error);
+      }
     }
   };
   /** One check; returns how long to sleep. */
@@ -130,7 +144,9 @@ export function createSummaryRefresh(options: SummaryRefreshOptions) {
       return CHECK_MS;
     }
     const due = schedule(interval, now);
-    if (due?.due(now) || summaries.missing()) await refresh();
+    if (due?.due(now) || summaries.missing()) {
+      await refresh();
+    }
     return due ? Math.min(CHECK_MS, Math.max(0, due.delay(clock.now()))) : CHECK_MS;
   };
   const run = async () => {
@@ -144,20 +160,26 @@ export function createSummaryRefresh(options: SummaryRefreshOptions) {
       try {
         await clock.sleep(wait, controller.signal);
       } catch (error) {
-        if (!controller.signal.aborted) throw error;
+        if (!controller.signal.aborted) {
+          throw error;
+        }
       }
     }
   };
   return {
     done,
     start() {
-      if (started || controller.signal.aborted) return;
+      if (started || controller.signal.aborted) {
+        return;
+      }
       started = true;
       run().then(finish, fail);
     },
     stop() {
       controller.abort();
-      if (!started) finish();
+      if (!started) {
+        finish();
+      }
       return done;
     },
   };

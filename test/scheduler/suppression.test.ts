@@ -3,11 +3,14 @@
 // a grant and a marketing mail, a self-wipe, the same event again (suppressed, no marketing,
 // transactional still sent), a replay under an idempotency key, and an operator's explicit removal.
 import { afterEach, expect, test } from "bun:test";
-import { schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();

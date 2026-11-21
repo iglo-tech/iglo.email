@@ -16,7 +16,9 @@ const fileOf = (text, name = "subs.csv") => ({
 
 function csv(domain, rows = 100) {
   const lines = ["email,name,attributes"];
-  for (let i = 0; i < rows; i += 1) lines.push(`user${i}@${domain},"User ${i}","{}"`);
+  for (let i = 0; i < rows; i += 1) {
+    lines.push(`user${i}@${domain},"User ${i}","{}"`);
+  }
   return lines.join("\n");
 }
 
@@ -169,7 +171,9 @@ test("a file over the webhook budget ends failed with the reason in the log", as
     expect(await countOf(page, domain)).toBe(0);
     await finishImport(page);
   } finally {
-    for (const id of hooks) await api(page, `/api/webhooks/${id}`, "DELETE");
+    for (const id of hooks) {
+      await api(page, `/api/webhooks/${id}`, "DELETE");
+    }
   }
 });
 
@@ -215,7 +219,9 @@ test("a CSV that produces log lines renders as text", async ({ page }) => {
 async function running(page, status = () => "importing") {
   const seen = { status: 0, logs: 0 };
   await page.route(STATUS, (route) => {
-    if (route.request().method() !== "GET") return route.continue();
+    if (route.request().method() !== "GET") {
+      return route.continue();
+    }
     seen.status += 1;
     return route.fulfill({
       json: { data: { name: "subscribers.csv", total: 10, imported: 3, status: status(seen) } },

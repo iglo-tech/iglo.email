@@ -17,7 +17,8 @@ import { createRouter } from "@/server/server";
 import { allowedDomain } from "@/subscribers/email";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createSubscriberStore } from "@/subscribers/store";
-import { createEventStore, type ExitThenTrigger } from "@/events/store";
+import { createEventStore } from "@/events/store";
+import type { ExitThenTrigger } from "@/events/store";
 import { registerEventRoutes } from "@/events/routes";
 import { createEventPurge } from "@/events/retention";
 import { startPurge } from "@/loops/purge";
@@ -32,14 +33,14 @@ export const admin = { user: "fixture-admin", password: "fixture-admin-password"
 export async function eventsFixture(
   options: {
     exitThenTrigger?: ExitThenTrigger;
-    domains?: { allow?: string[]; block?: string[] };
+    domains?: { allow?: Array<string>; block?: Array<string> };
     /** The app's language code, as the settings choose it. */
     language?: string;
   } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "iglo-events-"));
   const clock = new TestClock();
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const open = async () => {
     const db = openDatabase(directory);
     runMigrations(db, directory, clock, productionMigrations);
@@ -102,7 +103,9 @@ export async function eventsFixture(
   };
   let current = await open();
   const session = await current.auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("fixture login failed");
+  }
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
     current.router.handle(current.app, new Request(`http://fixture.test${path}`, init));
@@ -126,11 +129,15 @@ export async function eventsFixture(
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
   /** An API user whose role grants exactly `permissions`, and list grants like `{ id, permissions }`. */
-  const apiUser = async (name: string, permissions: string[], lists?: object[]) => {
+  const apiUser = async (name: string, permissions: Array<string>, lists?: Array<object>) => {
     const role = await json("/api/roles/users", "POST", { name, permissions });
-    if (role.status !== 200) throw new Error(`role ${role.status}`);
+    if (role.status !== 200) {
+      throw new Error(`role ${role.status}`);
+    }
     const listRole = lists && (await json("/api/roles/lists", "POST", { name, lists }));
-    if (listRole && listRole.status !== 200) throw new Error(`list role ${listRole.status}`);
+    if (listRole && listRole.status !== 200) {
+      throw new Error(`list role ${listRole.status}`);
+    }
     const user = await json("/api/users", "POST", {
       username: name,
       type: "api",
@@ -138,7 +145,9 @@ export async function eventsFixture(
       user_role_id: role.body.data.id,
       ...(listRole ? { list_role_id: listRole.body.data.id } : {}),
     });
-    if (user.status !== 200) throw new Error(`user ${user.status}`);
+    if (user.status !== 200) {
+      throw new Error(`user ${user.status}`);
+    }
     return { authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}` };
   };
   // Events that grant lists need subscribers:manage and list management too (D99).
@@ -166,7 +175,9 @@ export async function eventsFixture(
   /** A list of the given opt-in kind, created through the admin API. */
   const list = async (name: string, optin = "single") => {
     const created = await json("/api/lists", "POST", { name, type: "public", optin });
-    if (created.status !== 200) throw new Error(`list ${created.status}`);
+    if (created.status !== 200) {
+      throw new Error(`list ${created.status}`);
+    }
     return created.body.data.id as number;
   };
   const count = (table: "events" | "subscribers") =>

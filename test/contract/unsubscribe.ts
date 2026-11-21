@@ -23,7 +23,9 @@ export async function runUnsubscribeContract(target: {
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL unsubscribe-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL unsubscribe-${label}`);
+    }
   };
   const api = async (path: string, method = "GET", body?: unknown) => {
     const response = await fetch(`${target.baseUrl}${path}`, {
@@ -45,7 +47,9 @@ export async function runUnsubscribeContract(target: {
     const deadline = Date.now() + 10_000;
     for (;;) {
       const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length || Date.now() > deadline) return found;
+      if (found.length || Date.now() > deadline) {
+        return found;
+      }
       await Bun.sleep(25);
     }
   };
@@ -54,7 +58,11 @@ export async function runUnsubscribeContract(target: {
       (l: { id: number }) => l.id === list,
     )?.subscription_status as string | undefined;
 
-  const owned = { templates: [] as number[], subscribers: [] as number[], lists: [] as number[] };
+  const owned = {
+    templates: [] as Array<number>,
+    subscribers: [] as Array<number>,
+    lists: [] as Array<number>,
+  };
   let cleanupFailed = false;
   try {
     const current = await api("/api/settings");
@@ -101,7 +109,7 @@ export async function runUnsubscribeContract(target: {
       owned.lists.push(response.body.data.id);
       return response.body.data.id as number;
     };
-    const subscriber = async (name: string, lists: number[]) => {
+    const subscriber = async (name: string, lists: Array<number>) => {
       const response = await api("/api/subscribers", "POST", {
         email: `${name}-${marker}@example.test`,
         name,
@@ -152,7 +160,7 @@ export async function runUnsubscribeContract(target: {
     check(header(raw, "List-Unsubscribe-Post") === "List-Unsubscribe=One-Click", "one-click");
     check(html.includes(`<a href="${unsubscribe}">Unsubscribe</a>`), "body-link");
     const offer = new RegExp(
-      `<a href="(${target.baseUrl.replace(/[.]/g, "\\.")}/m/${first.uuid}/link/[0-9a-f-]{36})">Offer</a>`,
+      `<a href="(${target.baseUrl.replaceAll(/[.]/g, String.raw`\.`)}/m/${first.uuid}/link/[0-9a-f-]{36})">Offer</a>`,
     ).exec(html)?.[1];
     check(offer, "tracked-link");
     check(html.includes(`<img src="${target.baseUrl}/m/${first.uuid}/px.png"`), "pixel");
@@ -169,11 +177,11 @@ export async function runUnsubscribeContract(target: {
     check(stranger.body.data.sends[0].status === "skipped", "skip-stranger");
     check((await send(ada.id, other, "A2")).skip_reason === "frequency_cap", "skip-cap");
     await Bun.sleep(200);
-    const subjects = (await mailpit.list()).map((m) => m.Subject);
+    const subjects = new Set((await mailpit.list()).map((m) => m.Subject));
     check(
-      !subjects.includes(`${marker} C1`) &&
-        !subjects.includes(`${marker} S1`) &&
-        !subjects.includes(`${marker} A2`),
+      !subjects.has(`${marker} C1`) &&
+        !subjects.has(`${marker} S1`) &&
+        !subjects.has(`${marker} A2`),
       "skips-no-mail",
     );
 
@@ -250,13 +258,18 @@ export async function runUnsubscribeContract(target: {
       check((await send(ada.id, other, "A3")).status === "sent", "restart-send");
     }
   } finally {
-    for (const id of owned.subscribers)
+    for (const id of owned.subscribers) {
       if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.lists)
+    }
+    for (const id of owned.lists) {
       if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.templates)
+    }
+    for (const id of owned.templates) {
       if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
     await mailpit.removeOwned();
   }
-  if (cleanupFailed) throw new Error("FAIL unsubscribe-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL unsubscribe-cleanup");
+  }
 }

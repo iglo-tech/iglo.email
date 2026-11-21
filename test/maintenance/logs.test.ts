@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createAnalyticsPurge } from "@/analytics/purge";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
-import { createLogBuffer, type LogBuffer, type SafeMessage } from "@/maintenance/log-buffer";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
+import { createLogBuffer } from "@/maintenance/log-buffer";
+import type { LogBuffer, SafeMessage } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createErrorLogger } from "@/app";
 
@@ -34,7 +36,7 @@ afterEach(async () => {
 const lines = async () => {
   const response = await f.json("/api/logs");
   expect(response.status).toBe(200);
-  return response.body.data as string[];
+  return response.body.data as Array<string>;
 };
 const logged = (error: unknown) => {
   const error_ = console.error;
@@ -70,9 +72,9 @@ test("a line has upstream's shape, and the oldest lines go first", async () => {
 });
 
 test("an attention line keeps no error class, and its stderr copy is one plain line", () => {
-  const written: unknown[][] = [];
+  const written: Array<unknown>[] = [];
   const error_ = console.error;
-  console.error = (...args: unknown[]) => written.push(args);
+  console.error = (...args: Array<unknown>) => written.push(args);
   try {
     createErrorLogger(logs).attention(
       "Test send bounced: kind campaign,\nrecipient ada@example.com",
@@ -123,8 +125,9 @@ test("nothing secret or personal reaches a reader of the buffer", async () => {
       "192.0.2.10",
       "2001:db8",
       "ab12ab12",
-    ])
+    ]) {
       expect(line).not.toContain(value);
+    }
   }
   logs = createLogBuffer(f.clock, 4);
   logged(new Error("first\nsecond\tthird"));
@@ -141,9 +144,9 @@ test("nothing secret or personal reaches a reader of the buffer", async () => {
 });
 
 test("a line is bounded, and a logger keeps its stderr copy whole", async () => {
-  const seen: unknown[] = [];
+  const seen: Array<unknown> = [];
   const error_ = console.error;
-  console.error = (...args: unknown[]) => seen.push(args[1]);
+  console.error = (...args: Array<unknown>) => seen.push(args[1]);
   const failure = new Error(`${"long ".repeat(500)}ada@example.com`);
   try {
     createErrorLogger(logs).error(failure);
@@ -181,9 +184,9 @@ const brokenImage = async (filename: string) => {
     from_email: "Fixture <noreply@fixture.test>",
   };
   const campaign = await f.campaign(input);
-  const stderr: unknown[] = [];
+  const stderr: Array<unknown> = [];
   const error_ = console.error;
-  console.error = (...args: unknown[]) => stderr.push(...args);
+  console.error = (...args: Array<unknown>) => stderr.push(...args);
   try {
     const sent = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", {
       ...input,
@@ -195,7 +198,7 @@ const brokenImage = async (filename: string) => {
   }
   const read = await f.json("/api/logs", "GET", undefined, { authorization });
   expect(read.status).toBe(200);
-  return { lines: read.body.data as string[], stderr: stderr.map(String).join(" ") };
+  return { lines: read.body.data as Array<string>, stderr: stderr.map(String).join(" ") };
 };
 
 test("a settings:get reader sees that an image is missing, not whose it was", async () => {
@@ -212,15 +215,16 @@ test("the line of a very long file name is the line of any other", async () => {
 });
 
 test("the buffer reads no text of an error, so its work cannot grow with one", () => {
-  const read: string[] = [];
+  const read: Array<string> = [];
   const failure = new Error("unused");
-  for (const key of ["message", "stack", "cause"])
+  for (const key of ["message", "stack", "cause"]) {
     Object.defineProperty(failure, key, {
       get: () => {
         read.push(key);
         return "x".repeat(1024);
       },
     });
+  }
   logs.add(failure);
   expect(read).toEqual([]);
 });

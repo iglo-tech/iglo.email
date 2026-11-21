@@ -4,12 +4,13 @@
 // that is the default.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import { startProduction, admin, type Production } from "@/test/worked-example/harness";
+import { startProduction, admin } from "@/test/worked-example/harness";
+import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 
 type ToolResult = {
   isError?: boolean;
-  content: { type: string; text: string }[];
+  content: Array<{ type: string; text: string }>;
   structuredContent?: any;
 };
 
@@ -76,7 +77,9 @@ describe("MCP template default fallback for a user without templates:get (B82)",
   /** Calls an MCP tool as the given API user and returns its result. */
   async function callTool(auth: string, name: string, args: Record<string, unknown>) {
     const reply = await rpc(auth, name, args);
-    if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
+    if (reply.error) {
+      throw new Error(`${name}: ${reply.error.message}`);
+    }
     return reply.result as ToolResult;
   }
 
@@ -86,16 +89,18 @@ describe("MCP template default fallback for a user without templates:get (B82)",
       headers: { authorization: auth, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    return { status: response.status, json: (await response.json()) as any };
+    return { status: response.status, json: await response.json() };
   }
 
   /** The templates the admin lists, as the API returns them. */
-  async function listedTemplates(): Promise<{ id: number; name: string; is_default: boolean }[]> {
+  async function listedTemplates(): Promise<
+    Array<{ id: number; name: string; is_default: boolean }>
+  > {
     return (await api(adminAuth, "GET", "/api/templates")).json.data;
   }
 
   /** The IDs of every template that is the default, as the admin sees them. */
-  async function defaultIds(): Promise<number[]> {
+  async function defaultIds(): Promise<Array<number>> {
     return (await listedTemplates())
       .filter((template) => template.is_default)
       .map((template) => template.id);

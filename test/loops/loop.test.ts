@@ -152,7 +152,7 @@ test("HTTP can stop a busy synchronous loop using the real clock before its back
       name: "busy",
       synchronous: true,
       realClock: true,
-      leaseMs: 2147483647,
+      leaseMs: 2_147_483_647,
     });
     await request(origin, { action: "stop", name: "busy" });
     expect((await request(origin, { action: "done", name: "busy" })).result.error).toBeNull();

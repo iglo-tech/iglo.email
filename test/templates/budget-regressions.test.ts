@@ -72,8 +72,9 @@ test("loop conversions and filter/for arguments obey the message budget", async 
       "{{ 'x' | raw: 1 }}",
       "{{ 'https://example.test' | track_link: 1 }}",
       "{{ 'x' | t: 'a' }}",
-    ])
+    ]) {
       expect((await fetch(server.url, { method: "POST", body })).status).toBe(400);
+    }
     const supported = await fetch(server.url, {
       method: "POST",
       body: "{{ ' x ' | strip | upcase }}{{ '' | default: 'fallback' }}{{ 'now' | date: '%Y' }}{{ 'x' | t: 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' }}",

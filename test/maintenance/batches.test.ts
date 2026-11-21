@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createAnalyticsPurge } from "@/analytics/purge";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { MAINTENANCE_SUBSCRIBERS as BATCH } from "@/subscribers/store";
@@ -109,7 +110,9 @@ test("an export stops with a client that goes away, and at most two run at once"
   const open = await Promise.all([get(), get()]);
   expect(open.map((r) => r.status)).toEqual([200, 200]);
   expect((await get()).status).toBe(429);
-  for (const response of open) await response.body!.cancel();
+  for (const response of open) {
+    await response.body!.cancel();
+  }
   // The server sees the cancels when the connections close.
   for (let i = 0; i < 200; i++) {
     const again = await get();

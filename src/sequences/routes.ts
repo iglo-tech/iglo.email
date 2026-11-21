@@ -8,21 +8,22 @@ import { writeTransaction } from "@/db/transaction";
 import { parseJson, readBounded } from "@/events/input";
 import type { Aggregate } from "@/events/aggregate";
 import type { EventStore } from "@/events/store";
-import { newMessageId, type Message } from "@/messaging/email";
+import { newMessageId } from "@/messaging/email";
+import type { Message } from "@/messaging/email";
 import type { createEmailer } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
 import type { TestSends } from "@/messaging/test-sends";
 import type { Roles } from "@/roles/roles";
 import {
   createMessageBudget,
-  type MessageBudget,
   RenderCapacityError,
   TemplateSourceError,
-  type TemplateRenderer,
 } from "@/templates/renderer";
+import type { MessageBudget, TemplateRenderer } from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 import type { TemplateStore } from "@/templates/store";
-import { parseSampleValue, SampleError, type Sample } from "@/templates/sample";
+import { parseSampleValue, SampleError } from "@/templates/sample";
+import type { Sample } from "@/templates/sample";
 import { messageLinks } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
@@ -37,16 +38,17 @@ import {
   sequenceStatuses,
 } from "@/sequences/input";
 import type { SequenceStatus } from "@/sequences/input";
-import {
-  project,
-  type EnrollmentFilter,
-  type EnrollmentRow,
-  type Enrollments,
-  type TriggerEvent,
+import { project } from "@/sequences/enrollments";
+import type {
+  EnrollmentFilter,
+  EnrollmentRow,
+  Enrollments,
+  TriggerEvent,
 } from "@/sequences/enrollments";
 import { validate } from "@/conditions/validate";
 import { compile } from "@/conditions/compile";
-import { SequenceConflict, type SequenceStore } from "@/sequences/store";
+import { SequenceConflict } from "@/sequences/store";
+import type { SequenceStore } from "@/sequences/store";
 import { timeline } from "@/sequences/timeline";
 import type { RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -60,7 +62,7 @@ const GET = "sequences:get";
 const MANAGE = "sequences:manage";
 /** Small bodies: status changes and manual enrolls. */
 const SMALL_BODY_BYTES = 4 * 1024;
-const enrollmentStatuses = ["active", "completed", "exited", "canceled"];
+const enrollmentStatuses = new Set(["active", "completed", "exited", "canceled"]);
 const MAX_EXIT_REASON = 256;
 /** Enrollments rescheduled per write transaction, so the write lock is held briefly. */
 export const RESCHEDULE_BATCH = 500;
@@ -609,13 +611,24 @@ export function registerSequenceRoutes(
         subscriberId = positive("subscriber_id", maxID),
         status = one("status"),
         exitReason = one("exit_reason");
-      if (status !== undefined && !enrollmentStatuses.includes(status)) throw invalid(c, "status");
-      if (exitReason !== undefined && (!exitReason || exitReason.length > MAX_EXIT_REASON))
+      if (status !== undefined && !enrollmentStatuses.has(status)) {
+        throw invalid(c, "status");
+      }
+      if (exitReason !== undefined && (!exitReason || exitReason.length > MAX_EXIT_REASON)) {
         throw invalid(c, "exit_reason");
-      if (sequenceId !== undefined) filter.sequenceId = sequenceId;
-      if (subscriberId !== undefined) filter.subscriberId = subscriberId;
-      if (status !== undefined) filter.status = status;
-      if (exitReason !== undefined) filter.exitReason = exitReason;
+      }
+      if (sequenceId !== undefined) {
+        filter.sequenceId = sequenceId;
+      }
+      if (subscriberId !== undefined) {
+        filter.subscriberId = subscriberId;
+      }
+      if (status !== undefined) {
+        filter.status = status;
+      }
+      if (exitReason !== undefined) {
+        filter.exitReason = exitReason;
+      }
       return ok(
         enrollments.list(filter, (rows) => {
           const addresses = readable(c, rows);
@@ -630,7 +643,9 @@ export function registerSequenceRoutes(
     "/api/enrollments/:id",
     (c) => {
       const row = enrollments.get(BigInt(getID(c)));
-      if (!row) throw new HttpError(404, "Enrollment not found");
+      if (!row) {
+        throw new HttpError(404, "Enrollment not found");
+      }
       return ok(addressed(row, readable(c, [row])));
     },
     auth.middleware(GET),
@@ -641,7 +656,9 @@ export function registerSequenceRoutes(
     "/api/enrollments/:id/timeline",
     (c) => {
       const row = enrollments.get(BigInt(getID(c)));
-      if (!row) throw new HttpError(404, "Enrollment not found");
+      if (!row) {
+        throw new HttpError(404, "Enrollment not found");
+      }
       const addresses = readable(c, [row]);
       return ok({
         enrollment: addressed(row, addresses),
@@ -670,33 +687,55 @@ export function registerSequenceRoutes(
         subscriberId = idValue(value.subscriber_id, "subscriber_id");
         triggerEventId = idValue(value.trigger_event_id, "trigger_event_id");
       } catch (error) {
-        if (error instanceof DefinitionError) throw invalid(c, error.field);
+        if (error instanceof DefinitionError) {
+          throw invalid(c, error.field);
+        }
         throw error;
       }
-      if (sequenceId === undefined) throw invalid(c, "sequence_id");
-      if (subscriberId === undefined) throw invalid(c, "subscriber_id");
-      if (value.force !== undefined && typeof value.force !== "boolean") throw invalid(c, "force");
-      if (value.test !== undefined && typeof value.test !== "boolean") throw invalid(c, "test");
+      if (sequenceId === undefined) {
+        throw invalid(c, "sequence_id");
+      }
+      if (subscriberId === undefined) {
+        throw invalid(c, "subscriber_id");
+      }
+      if (value.force !== undefined && typeof value.force !== "boolean") {
+        throw invalid(c, "force");
+      }
+      if (value.test !== undefined && typeof value.test !== "boolean") {
+        throw invalid(c, "test");
+      }
       const force = value.force === true;
       const test = value.test === true;
       // A test never replaces anything, which is what `force` asks for.
-      if (test && force) throw invalid(c, "force");
-      if (test) refuseWhileHeld(c.app.db);
+      if (test && force) {
+        throw invalid(c, "force");
+      }
+      if (test) {
+        refuseWhileHeld(c.app.db);
+      }
       const outcome = writeTransaction(c.app.db, () => {
         auth.revalidate(c, MANAGE);
         const subscriber = subscribers.get(subscriberId);
-        if (!subscriber) throw new HttpError(404, "Subscriber not found");
+        if (!subscriber) {
+          throw new HttpError(404, "Subscriber not found");
+        }
         // D103: a subscriber the caller cannot read under GET's rule is absent to it, so the
         // answer and the write it refuses match an absent subscriber's.
-        if (!readableSubscribers(roles, subscribers, identity(c), [subscriberId]).has(subscriberId))
+        if (
+          !readableSubscribers(roles, subscribers, identity(c), [subscriberId]).has(subscriberId)
+        ) {
           throw new HttpError(404, "Subscriber not found");
-        if (subscriber.status === "blocklisted")
+        }
+        if (subscriber.status === "blocklisted") {
           throw new HttpError(409, "The subscriber is blocklisted.");
+        }
         // An existing event the enrollment starts from (D101); an unknown one is refused here.
         let trigger: TriggerEvent | null = null;
         if (triggerEventId !== undefined) {
           const event = events.get(triggerEventId);
-          if (!event) throw invalid(c, "trigger_event_id");
+          if (!event) {
+            throw invalid(c, "trigger_event_id");
+          }
           trigger = { id: event.id, subscriber_id: event.subscriber_id, name: event.name };
         }
         return test
@@ -708,19 +747,30 @@ export function registerSequenceRoutes(
             )
           : enrollments.enroll(sequenceId, subscriberId, force, trigger);
       });
-      if ("enrollment" in outcome) return ok(project(outcome.enrollment));
-      if (outcome.error === "sequence_missing") throw new HttpError(404, "Sequence not found");
-      if (outcome.error === "trigger_event") throw invalid(c, "trigger_event_id");
-      if (outcome.error === "sequence_inactive")
+      if ("enrollment" in outcome) {
+        return ok(project(outcome.enrollment));
+      }
+      if (outcome.error === "sequence_missing") {
+        throw new HttpError(404, "Sequence not found");
+      }
+      if (outcome.error === "trigger_event") {
+        throw invalid(c, "trigger_event_id");
+      }
+      if (outcome.error === "sequence_inactive") {
         throw new HttpError(409, "The sequence is not active.");
-      if (outcome.error === "no_steps") throw new HttpError(409, "The sequence has no steps.");
-      if (outcome.error === "test_running")
+      }
+      if (outcome.error === "no_steps") {
+        throw new HttpError(409, "The sequence has no steps.");
+      }
+      if (outcome.error === "test_running") {
         throw new HttpError(409, "A test of this sequence is already running for this subscriber.");
-      if (outcome.error === "no_consent")
+      }
+      if (outcome.error === "no_consent") {
         throw new HttpError(
           409,
           `The subscriber can't receive this sequence's marketing steps (${outcome.reason}).`,
         );
+      }
       throw new HttpError(409, "The sequence's reentry rule does not allow this enrollment.");
     },
     auth.middleware(MANAGE),
@@ -734,8 +784,12 @@ export function registerSequenceRoutes(
         auth.revalidate(c, MANAGE);
         return enrollments.cancel(id);
       });
-      if (result === "missing") throw new HttpError(404, "Enrollment not found");
-      if (result === "inactive") throw new HttpError(409, "The enrollment is not active.");
+      if (result === "missing") {
+        throw new HttpError(404, "Enrollment not found");
+      }
+      if (result === "inactive") {
+        throw new HttpError(409, "The enrollment is not active.");
+      }
       return ok(project(result));
     },
     auth.middleware(MANAGE),

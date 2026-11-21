@@ -4,7 +4,7 @@ import { createTranslation, Translation } from "@/i18n/i18n";
 import { startFixture, TestClock } from "@/test/server/fixture";
 import { rawGet } from "@/test/server/raw-request";
 
-const fixtures: ReturnType<typeof startFixture>[] = [];
+const fixtures: Array<ReturnType<typeof startFixture>> = [];
 function fixture(options: Parameters<typeof startFixture>[0] = {}) {
   const result = startFixture(options);
   fixtures.push(result);
@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 async function request(origin: string, path: string, init: RequestInit = {}) {
-  const response = await fetch(`${origin}${path}`, { ...init, signal: AbortSignal.timeout(2_000) });
+  const response = await fetch(`${origin}${path}`, { ...init, signal: AbortSignal.timeout(2000) });
   return {
     status: response.status,
     contentType: response.headers.get("content-type"),
@@ -245,12 +245,12 @@ describe("shared HTTP contracts", () => {
 
   test("D18 deliberate difference: Bun normalizes literal backslashes before routing", async () => {
     const { origin } = fixture();
-    expect(await rawGet(origin, "/fixture/id\\12")).toMatchObject({
+    expect(await rawGet(origin, String.raw`/fixture/id\12`)).toMatchObject({
       status: 200,
       contentType: "application/json",
       body: '{"data":12}\n',
     });
-    expect(await rawGet(origin, "/fixture\\items\\x")).toMatchObject({
+    expect(await rawGet(origin, String.raw`/fixture\items\x`)).toMatchObject({
       status: 200,
       contentType: "application/json",
       body: '{"data":{"item":"x","query":null}}\n',

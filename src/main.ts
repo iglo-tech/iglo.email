@@ -66,7 +66,8 @@ import { createScheduler } from "@/scheduler/scheduler";
 import { createCampaignStore } from "@/campaigns/store";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
-import { createAdminNotifier, type AdminNotifier } from "@/messaging/notify";
+import { createAdminNotifier } from "@/messaging/notify";
+import type { AdminNotifier } from "@/messaging/notify";
 import { createImporter } from "@/subscribers/import/importer";
 import { registerImportRoutes } from "@/subscribers/import/routes";
 import { backupHelp, runBackup } from "@/backup/cli";
@@ -80,7 +81,8 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import { registerArchiveRoutes } from "@/public/archive";
-import { createSubscriberMail, createSignupMail, type SubscriberMail } from "@/public/mail";
+import { createSubscriberMail, createSignupMail } from "@/public/mail";
+import type { SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
 import { rateLimited } from "@/public/rate-limit";
 import { personalPageHeaders } from "@/public/headers";
@@ -113,13 +115,24 @@ const BOUNCE_WEBHOOK_PER_MINUTE = 6000;
 /** `inspect` sees the composed router before anything listens; a test may throw to stop there. */
 export async function main(inspect?: (router: Router) => void): Promise<void> {
   // The compiled executable re-runs itself to evaluate raw subscriber SQL in a killable process.
-  if (process.argv[2] === childArgument) return runQueryChild();
-  if (process.argv[2] === analyticsChildArgument) return runAnalyticsChild();
-  if (process.argv[2] === flushChildArgument) return runFlushChild();
-  if (process.argv[2] === "backup") return runBackup(process.argv.slice(3), process.env);
-  if (process.argv[2] === "reset-password")
+  if (process.argv[2] === childArgument) {
+    return runQueryChild();
+  }
+  if (process.argv[2] === analyticsChildArgument) {
+    return runAnalyticsChild();
+  }
+  if (process.argv[2] === flushChildArgument) {
+    return runFlushChild();
+  }
+  if (process.argv[2] === "backup") {
+    return runBackup(process.argv.slice(3), process.env);
+  }
+  if (process.argv[2] === "reset-password") {
     return runResetPassword(process.argv.slice(3), process.env);
-  if (process.argv[2] === "reset-totp") return runResetTotp(process.argv.slice(3), process.env);
+  }
+  if (process.argv[2] === "reset-totp") {
+    return runResetTotp(process.argv.slice(3), process.env);
+  }
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {
     process.stdout.write(helpText + backupHelp + resetPasswordHelp + resetTotpHelp);
@@ -195,7 +208,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     const subscriberEffects = {
       ...enrollments.subscriberEffects,
       ...webhookEffects.subscriberEffects,
-      deleting(deleted: { id: bigint; email: string }[], wipe?: boolean) {
+      deleting(deleted: Array<{ id: bigint; email: string }>, wipe?: boolean) {
         bounces!.deleteForSends(unlinkedSends(deleted.map(({ email }) => email)));
         anonymizeSends(deleted);
         webhookEffects.deleting(deleted, wipe);
@@ -491,7 +504,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         siteName: current["app.site_name"],
         messengers: [
           "email",
-          ...(current.smtp as { enabled: boolean; name: string }[])
+          ...(current.smtp as Array<{ enabled: boolean; name: string }>)
             .filter((s) => s.enabled && s.name)
             .map((s) => s.name),
         ],
@@ -810,7 +823,9 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       let closing = false;
       const shutdown = (failure?: unknown) => {
-        if (closing) return;
+        if (closing) {
+          return;
+        }
         closing = true;
         process.off("SIGTERM", onSignal);
         process.off("SIGINT", onSignal);
@@ -844,7 +859,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           httpStop,
         ]).then((results) => {
           const error = failure ?? results.find((result) => result.status === "rejected");
-          if (error)
+          if (error) {
             reject(
               error instanceof Error
                 ? error
@@ -852,7 +867,9 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
                   ? error.reason
                   : new Error("Outbox stopped"),
             );
-          else resolve();
+          } else {
+            resolve();
+          }
         });
       };
       const onSignal = () => shutdown();
@@ -938,8 +955,9 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   }
 }
 
-if (import.meta.main)
+if (import.meta.main) {
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : "Failed to start server");
     process.exitCode = 1;
   });
+}

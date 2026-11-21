@@ -13,7 +13,9 @@ export function createTracking(db: Database, clock: Clock) {
   return {
     /** The link UUID for a URL, registering it once; null when it cannot be tracked. */
     link(url: string): string | null {
-      if (Buffer.byteLength(url) > MAX_URL_BYTES) return null;
+      if (Buffer.byteLength(url) > MAX_URL_BYTES) {
+        return null;
+      }
       const row = q.get("create-link").get(crypto.randomUUID(), url) as { uuid: string };
       return row.uuid;
     },
@@ -27,9 +29,9 @@ export function createTracking(db: Database, clock: Clock) {
       q.get("register-send-view").run(sendId, subscriberId, clock.now().toISOString());
     },
     subscriberClicks: (subscriberId: bigint) =>
-      (q.get("subscriber-link-clicks").all(subscriberId) as { url: string; clicks: bigint }[]).map(
-        (row) => ({ url: row.url, clicks: Number(row.clicks) }),
-      ),
+      (
+        q.get("subscriber-link-clicks").all(subscriberId) as Array<{ url: string; clicks: bigint }>
+      ).map((row) => ({ url: row.url, clicks: Number(row.clicks) })),
     close: () => q.close(),
   };
 }

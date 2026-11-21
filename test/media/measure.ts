@@ -46,7 +46,9 @@ for (const s of scenarios) {
     Object.assign(f.settings, { concurrency: s.concurrency, batchSize: s.concurrency });
     const list = await f.list("measure");
     const recipients = 4 * s.concurrency;
-    for (let i = 0; i < recipients; i++) await f.member(`to-${i}@example.com`, [list]);
+    for (let i = 0; i < recipients; i++) {
+      await f.member(`to-${i}@example.com`, [list]);
+    }
     const upload = async (i: number) => {
       const body = new FormData();
       const content = new Uint8Array(8 * mebibyte).fill(i);
@@ -59,7 +61,7 @@ for (const s of scenarios) {
       return (await response.json()).data.id as number;
     };
     const shared = s.shared ? await upload(0) : 0;
-    const ids: number[] = [];
+    const ids: Array<number> = [];
     for (let i = 0; i < s.campaigns; i++) {
       const media = s.shared ? shared : await upload(i + 1);
       const c = await f.campaign({
@@ -83,7 +85,9 @@ for (const s of scenarios) {
     f.start();
     let done = false;
     while (!done) {
-      for (let i = 0; i < 20; i++) await Bun.sleep(1);
+      for (let i = 0; i < 20; i++) {
+        await Bun.sleep(1);
+      }
       signed += f.sink.messages.filter((m) => /^DKIM-Signature:/im.test(m.data)).length;
       f.sink.messages.length = 0;
       f.clock.advance(100);
@@ -124,7 +128,7 @@ for (const s of scenarios) {
       from_email: "Fixture <noreply@fixture.test>",
     };
     const campaign = await f.campaign(input);
-    const ids: number[] = [];
+    const ids: Array<number> = [];
     for (let i = 0; i < 16; i++) {
       const body = new FormData();
       const content = new Uint8Array(8 * mebibyte).fill(i);

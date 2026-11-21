@@ -18,7 +18,7 @@ const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
 const mailpit = new Mailpit(sink, marker);
-const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+const mean = (a: Array<number>) => a.reduce((x, y) => x + y, 0) / a.length;
 const bytes = async (file: string) => (await stat(file).catch(() => ({ size: 0 }))).size;
 try {
   for (let repetition = 1; repetition <= 3; repetition++) {
@@ -54,13 +54,13 @@ try {
         ],
       }),
     });
-    const enqueue: number[] = [],
-      claim: number[] = [],
-      commit: number[] = [];
+    const enqueue: Array<number> = [],
+      claim: Array<number> = [],
+      commit: Array<number> = [];
     try {
       const dbPath = join(directory, "iglo-email.db");
       const initial = (await bytes(dbPath)) + (await bytes(`${dbPath}-wal`));
-      const ids: string[] = [];
+      const ids: Array<string> = [];
       const beginQueue = performance.now();
       for (let i = 0; i < 32; i++) {
         const start = performance.now();
@@ -76,7 +76,7 @@ try {
           },
         });
         enqueue.push(performance.now() - start);
-        ids.push(row.smtp_message_id.replace(/[<>]/g, ""));
+        ids.push(row.smtp_message_id.replaceAll(/[<>]/g, ""));
       }
       const queueMs = performance.now() - beginQueue;
       assert.equal(sends.list({ page: 1, perPage: 100, status: "queued" }).total, 32);
@@ -84,7 +84,7 @@ try {
       // Commit one claim, then reopen as a real restart recovery would.
       let start = performance.now();
       const interrupted = writeTransaction(db, () =>
-        sends.claim(clock.now(), new Date(clock.now().getTime() + 60000)),
+        sends.claim(clock.now(), new Date(clock.now().getTime() + 60_000)),
       )[0]!;
       claim.push(performance.now() - start);
       sends.close();
@@ -102,7 +102,7 @@ try {
       for (let i = 1; i < 32; i++) {
         start = performance.now();
         const row = writeTransaction(db, () =>
-          sends.claim(clock.now(), new Date(clock.now().getTime() + 60000)),
+          sends.claim(clock.now(), new Date(clock.now().getTime() + 60_000)),
         )[0]!;
         claim.push(performance.now() - start);
         const message = sends.admit(row);
@@ -116,7 +116,7 @@ try {
       const received = await mailpit.list();
       assert.equal(received.length, 31);
       assert.deepEqual(
-        received.map((m) => m.MessageID.replace(/[<>]/g, "")).sort(),
+        received.map((m) => m.MessageID.replaceAll(/[<>]/g, "")).sort(),
         ids.slice(1).sort(),
       );
       assert.equal(sends.list({ page: 1, perPage: 100, status: "sent" }).total, 31);

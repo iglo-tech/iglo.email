@@ -29,7 +29,7 @@ try {
   seed(db, size);
   db.run("PRAGMA wal_checkpoint(TRUNCATE)");
   process.stdout.write(
-    `${JSON.stringify({ seed_ms: Math.round(performance.now() - started), db_mib: Math.round(statSync(resolve(directory, "iglo-email.db")).size / 1048576), ...size })}\n`,
+    `${JSON.stringify({ seed_ms: Math.round(performance.now() - started), db_mib: Math.round(statSync(resolve(directory, "iglo-email.db")).size / 1_048_576), ...size })}\n`,
   );
   const store = createAnalyticsStore(db);
   const counts = createListCounts(db);
@@ -43,7 +43,7 @@ try {
   };
   const big = ["90"];
   const all = Array.from({ length: 20 }, (_, i) => String(i + 1));
-  const cases: [string, () => unknown][] = [
+  const cases: Array<[string, () => unknown]> = [
     ["dashboard/counts", () => store.dashboardCounts()],
     ["dashboard/charts", () => store.dashboardCharts()],
     ["lists counts.all", () => counts.all()],
@@ -71,7 +71,7 @@ try {
     ["sends by step year", () => store.sends("step", year)],
   ];
   const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
-  const stats = (times: number[]) => {
+  const stats = (times: Array<number>) => {
     const sorted = [...times].sort((a, b) => a - b);
     return {
       median_ms: +sorted[sorted.length >> 1]!.toFixed(1),
@@ -79,7 +79,7 @@ try {
     };
   };
   for (const [name, read] of cases) {
-    const times: number[] = [];
+    const times: Array<number> = [];
     for (let run = 0; run < runs; run++) {
       const before = performance.now();
       read();
@@ -95,7 +95,7 @@ try {
     ...(existsSync(compiled) ? { command: [compiled, analyticsChildArgument] } : {}),
   });
   const timed = async (read: () => Promise<unknown>) => {
-    const times: number[] = [];
+    const times: Array<number> = [];
     for (let run = 0; run < runs; run++) {
       const before = performance.now();
       await read();
@@ -112,19 +112,20 @@ try {
     ],
     ["list views unique 20 lists", () => reader.read("listCounts", ["views", all, year, "day"])],
     ["sends by template year", () => reader.read("sends", ["template", year])],
-  ] as [string, () => Promise<unknown>][])
+  ] as Array<[string, () => Promise<unknown>]>) {
     report({
       name,
       in_child: true,
       compiled: existsSync(compiled),
       ...(await timed(read)),
     });
+  }
 
   // Summary refresh: the child's read, then the only part that holds the write lock.
   const clock = createRealClock();
   const summaries = createSummaries(db, clock, reader);
-  const holds: number[] = [];
-  const refreshes: number[] = [];
+  const holds: Array<number> = [];
+  const refreshes: Array<number> = [];
   for (let run = 0; run < runs; run++) {
     const before = performance.now();
     await summaries.refresh();
@@ -135,12 +136,13 @@ try {
       data: Record<string, unknown>;
     };
     writeTransaction(db, () => {
-      for (const [name, value] of Object.entries(data))
+      for (const [name, value] of Object.entries(data)) {
         db.query("UPDATE analytics_summaries SET data = ?, updated_at = ? WHERE name = ?").run(
           JSON.stringify(value),
           clock.now().toISOString(),
           name,
         );
+      }
     });
     holds.push(performance.now() - hold);
   }
@@ -155,7 +157,7 @@ try {
     "INSERT INTO campaign_views (campaign_id, subscriber_id, created_at) VALUES (90, 1, ?)",
   );
   const lagDuring = async (read: () => Promise<unknown> | unknown) => {
-    const gaps: number[] = [];
+    const gaps: Array<number> = [];
     let done = false;
     const work = (async () => {
       await Bun.sleep(5);
@@ -198,5 +200,7 @@ try {
   store.close();
 } finally {
   db.close();
-  if (process.env.ANALYTICS_KEEP !== "1") rmSync(directory, { recursive: true, force: true });
+  if (process.env.ANALYTICS_KEEP !== "1") {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }

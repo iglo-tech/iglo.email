@@ -36,19 +36,24 @@ function field(text: string, index: number): Set<number> | null {
   for (const option of text.split(",").filter(Boolean)) {
     const [range, step] = option.split("/") as [string, string | undefined];
     const [first, last] = range.split("-") as [string, string | undefined];
-    if (/[LW#]/.test(first) && !names.includes(first.toLowerCase())) return null;
+    if (/[LW#]/.test(first) && !names.includes(first.toLowerCase())) {
+      return null;
+    }
     const wild = first === "*" || first === "?";
     const low = wild ? min : value(first);
     const high = wild ? max : last !== undefined ? value(last) : step ? max : low;
-    for (let n = low; n <= high; n += Number(step ?? 1)) out.add(n);
+    for (let n = low; n <= high; n += Number(step ?? 1)) {
+      out.add(n);
+    }
   }
   return out;
 }
 
 /** Calendar fields of an instant in a zone; a null format reads the system zone. */
 function zoned(at: Date, format: Intl.DateTimeFormat | null) {
-  if (!format)
+  if (!format) {
     return [at.getMinutes(), at.getHours(), at.getDate(), at.getMonth() + 1, at.getDay()] as const;
+  }
   const parts = format.formatToParts(at);
   const part = (type: string) => parts.find((p) => p.type === type)!.value;
   return [
@@ -66,11 +71,15 @@ function parts(input: string): {
   spec: string;
 } {
   const spec = input.trim();
-  if (!spec.startsWith("TZ=") && !spec.startsWith("CRON_TZ=")) return { zone: null, spec };
+  if (!spec.startsWith("TZ=") && !spec.startsWith("CRON_TZ=")) {
+    return { zone: null, spec };
+  }
   const space = spec.indexOf(" ");
   const name = spec.slice(spec.indexOf("=") + 1, space);
   const rest = spec.slice(space).trim();
-  if (name === "Local") return { zone: null, spec: rest };
+  if (name === "Local") {
+    return { zone: null, spec: rest };
+  }
   // Go's LoadLocation reads an empty name as UTC, and tzdata's Factory has no offset.
   const timeZone = name === "" || name === "Factory" ? "UTC" : name;
   const zone = new Intl.DateTimeFormat("en-US", {
@@ -88,7 +97,9 @@ function parts(input: string): {
 /** Whether a cron expression matches the minute that starts at an instant. */
 function matcher(spec: string, zone: Intl.DateTimeFormat | null) {
   const fields = (descriptors[spec] ?? spec).split(/\s+/);
-  if (fields.length !== 5) throw new Error(`Invalid cron expression: ${spec}`);
+  if (fields.length !== 5) {
+    throw new Error(`Invalid cron expression: ${spec}`);
+  }
   const sets = fields.map(field);
   // Robfig semantics: two restricted day fields match when either does.
   const wild = (text: string) => text.startsWith("*") || text.startsWith("?");
@@ -96,7 +107,9 @@ function matcher(spec: string, zone: Intl.DateTimeFormat | null) {
   return (at: Date) => {
     const [minute, hour, day, month, weekday] = zoned(at, zone);
     const has = (index: number, value: number) => sets[index] === null || sets[index]!.has(value);
-    if (!has(0, minute) || !has(1, hour) || !has(3, month)) return false;
+    if (!has(0, minute) || !has(1, hour) || !has(3, month)) {
+      return false;
+    }
     return anyDay ? has(2, day) || has(4, weekday) : has(2, day) && has(4, weekday);
   };
 }
@@ -105,8 +118,9 @@ function matcher(spec: string, zone: Intl.DateTimeFormat | null) {
 function matchedBetween(matches: (at: Date) => boolean, after: Date, until: Date): boolean {
   const end = Math.floor(until.getTime() / MINUTE);
   const start = Math.max(Math.floor(after.getTime() / MINUTE) + 1, end - 1439);
-  for (let minute = start; minute <= end; minute++)
+  for (let minute = start; minute <= end; minute++) {
     if (matches(new Date(minute * MINUTE))) return true;
+  }
   return false;
 }
 
@@ -133,12 +147,16 @@ export function createSchedule(input: string, start: Date): Schedule {
   const { zone, spec } = parts(input);
   if (spec.startsWith("@every ")) {
     const { nanos, error } = cronDuration(spec.slice(7));
-    if (error || nanos <= 0n) throw new Error(`Invalid duration: ${spec}`);
+    if (error || nanos <= 0n) {
+      throw new Error(`Invalid duration: ${spec}`);
+    }
     const every = Number(nanos / 1_000_000n);
     let next = start.getTime() + every;
     return {
       due(now) {
-        if (now.getTime() < next) return false;
+        if (now.getTime() < next) {
+          return false;
+        }
         next = now.getTime() + every;
         return true;
       },

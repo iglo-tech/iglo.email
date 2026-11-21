@@ -13,8 +13,8 @@ const output = join(repository, "docs/perf/B6-results.jsonl");
 const head = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: repository })
   .stdout.toString()
   .trim();
-const mib = (bytes: number) => +(bytes / 1048576).toFixed(1);
-const stats = (values: number[]) => {
+const mib = (bytes: number) => +(bytes / 1_048_576).toFixed(1);
+const stats = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
   return {
@@ -93,5 +93,7 @@ async function run(variant: "before" | "after") {
 }
 // One variant per process, so the first run's garbage does not move the second's baseline.
 const variant = process.argv[3];
-if (variant !== "before" && variant !== "after") throw new Error("Usage: [requests] before|after");
+if (variant !== "before" && variant !== "after") {
+  throw new Error("Usage: [requests] before|after");
+}
 await run(variant);

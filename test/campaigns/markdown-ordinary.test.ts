@@ -3,8 +3,10 @@
 // heading then quote, testimonials as quote then a rule), and a 64 KiB document of 200 real tables, are rendered
 // as a preview and sent by a campaign to two subscribers.
 import { afterEach, expect, test } from "bun:test";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
-import { runnerFixture, type RunnerFixture } from "@/test/campaigns/runner/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
+import { runnerFixture } from "@/test/campaigns/runner/fixture";
+import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import { previewForm, readerSession } from "@/test/campaigns/markdown-support";
 
 let f: CampaignsFixture | undefined;
@@ -19,13 +21,13 @@ afterEach(async () => {
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** The documents; `marker` is text near the end that the rendered output must contain. */
-const documents: {
+const documents: Array<{
   name: string;
   source: string;
   marker: string;
   /** Rendered `<table>` elements the output must contain, when the document is a table document. */
   tables?: number;
-}[] = [
+}> = [
   {
     name: "schedule with hard breaks",
     source: Array.from(
@@ -108,7 +110,9 @@ for (const { name, source, marker, tables } of documents) {
     expect(performance.now() - started).toBeLessThan(1000);
     expect(response.status).toBe(200);
     expect(html).toContain(marker);
-    if (tables !== undefined) expect(html.split("<table>").length - 1).toBe(tables);
+    if (tables !== undefined) {
+      expect(html.split("<table>").length - 1).toBe(tables);
+    }
   });
 
   test(`${name} (${kib} KiB) is sent by a campaign to two subscribers`, async () => {
@@ -132,8 +136,9 @@ for (const { name, source, marker, tables } of documents) {
     expect(r.pushes.map((p) => p.to).sort()).toEqual(["a@x.test", "b@x.test"]);
     for (const push of r.pushes) {
       expect(Buffer.from(push.message.body).toString()).toContain(marker);
-      if (tables !== undefined)
+      if (tables !== undefined) {
         expect(Buffer.from(push.message.body).toString().split("<table>").length - 1).toBe(tables);
+      }
     }
   });
 }

@@ -1,10 +1,7 @@
 // New synthetic workload: fixed deadlines and progress timing, not an upstream send pipeline.
 import type { Clock } from "@/clock";
-import {
-  SpikeStore,
-  type Mutation,
-  type SyntheticEvent,
-} from "@/test/perf/sqlite-write-load/store";
+import type { SpikeStore } from "@/test/perf/sqlite-write-load/store";
+import { type Mutation, type SyntheticEvent } from "@/test/perf/sqlite-write-load/store";
 
 export type Mode = "record" | "batch" | "campaign-only";
 export interface WorkloadOptions {
@@ -14,12 +11,12 @@ export interface WorkloadOptions {
   churn?: boolean;
 }
 type Samples = {
-  campaignLagMs: number[];
-  eventAcceptLagMs: number[];
-  eventCommitLagMs: number[];
-  transactionMs: number[];
-  wakeLagMs: number[];
-  pumpBlockMs: number[];
+  campaignLagMs: Array<number>;
+  eventAcceptLagMs: Array<number>;
+  eventCommitLagMs: Array<number>;
+  transactionMs: Array<number>;
+  wakeLagMs: Array<number>;
+  pumpBlockMs: Array<number>;
 };
 
 export class Workload {
@@ -49,13 +46,16 @@ export class Workload {
     private readonly clock: Clock,
     readonly options: WorkloadOptions,
   ) {
-    if (options.durationMs < 1 || options.subscribers < Math.ceil(options.durationMs / 20))
+    if (options.durationMs < 1 || options.subscribers < Math.ceil(options.durationMs / 20)) {
       throw new Error("Invalid workload bounds");
+    }
     this.startedAt = clock.now().getTime();
     this.endAt = this.startedAt + options.durationMs;
     store.observer = (kind, size, ms) => {
       const inWindow = this.clock.now().getTime() < this.endAt;
-      if (inWindow) this.samples.transactionMs.push(ms);
+      if (inWindow) {
+        this.samples.transactionMs.push(ms);
+      }
       const target = inWindow ? this.transactions : this.postWindowTransactions;
       const count = (target[kind] ??= { count: 0, records: 0 });
       count.count++;
@@ -88,24 +88,28 @@ export class Workload {
   pump(drain = false) {
     const now = this.clock.now().getTime();
     this.observeQueues(now);
-    if (!drain && now >= this.endAt) return;
+    if (!drain && now >= this.endAt) {
+      return;
+    }
     const maxBatch = this.options.mode === "record" ? 1 : 50;
     const campaignEnd = Math.min(this.offered(now, 20), this.campaignDone + 50);
     while (this.campaignDone < campaignEnd) {
       const index = this.campaignDone;
       const count = Math.min(maxBatch, campaignEnd - index);
       const ids = this.store.reserve(count);
-      if (ids.length !== count || ids.some((id, offset) => id !== index + offset + 1))
+      if (ids.length !== count || ids.some((id, offset) => id !== index + offset + 1)) {
         throw new Error("Unexpected campaign reservation");
+      }
       this.store.process(count);
       const completed = this.clock.now().getTime();
       this.campaignDone += count;
       if (completed < this.endAt) {
         this.inWindowCampaign += count;
-        for (let offset = 0; offset < count; offset++)
+        for (let offset = 0; offset < count; offset++) {
           this.samples.campaignLagMs.push(
             Math.max(0, completed - (this.startedAt + (index + offset) * 20)),
           );
+        }
       }
     }
     const eventsEnd = Math.min(this.eventOffered(now), this.eventsDone + 50);
@@ -113,7 +117,7 @@ export class Workload {
       const index = this.eventsDone;
       const count = Math.min(maxBatch, eventsEnd - index);
       const accepted = this.clock.now().getTime();
-      const events: SyntheticEvent[] = Array.from({ length: count }, (_, offset) => {
+      const events: Array<SyntheticEvent> = Array.from({ length: count }, (_, offset) => {
         const sequence = index + offset;
         return {
           subscriber: (sequence % this.options.subscribers) + 1,
@@ -137,7 +141,7 @@ export class Workload {
     const churnEnd = Math.min(this.churnOffered(now), this.churnDone + 20);
     while (this.churnDone < churnEnd) {
       const count = Math.min(maxBatch, churnEnd - this.churnDone);
-      const operations: Mutation[] = [];
+      const operations: Array<Mutation> = [];
       for (let offset = 0; offset < count; offset++) {
         const id = this.options.subscribers + this.churnDone + offset + 1;
         operations.push(
@@ -157,10 +161,16 @@ export class Workload {
         );
       }
       if (this.options.mode === "record") {
-        for (const operation of operations) this.store.mutate([operation]);
-      } else this.store.mutate(operations);
+        for (const operation of operations) {
+          this.store.mutate([operation]);
+        }
+      } else {
+        this.store.mutate(operations);
+      }
       this.churnDone += count;
-      if (this.clock.now().getTime() < this.endAt) this.inWindowChurn += count;
+      if (this.clock.now().getTime() < this.endAt) {
+        this.inWindowChurn += count;
+      }
     }
   }
   drain() {
@@ -168,8 +178,9 @@ export class Workload {
       this.campaignDone < this.offered(this.endAt, 20) ||
       this.eventsDone < this.eventOffered(this.endAt) ||
       this.churnDone < this.churnOffered(this.endAt)
-    )
+    ) {
       this.pump(true);
+    }
   }
   result() {
     const now = this.clock.now().getTime();

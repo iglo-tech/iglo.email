@@ -1,18 +1,23 @@
-import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 
 export interface GroupChild extends ChildProcess {
   stopGroup(signal?: NodeJS.Signals): void;
 }
 
-export function spawnGroup(executable: string, args: string[], options: SpawnOptions = {}) {
+export function spawnGroup(executable: string, args: Array<string>, options: SpawnOptions = {}) {
   const child = spawn(executable, args, { ...options, detached: true }) as GroupChild;
   let owned = true;
   child.stopGroup = (signal = "SIGTERM") => {
-    if (!owned || !child.pid) return;
+    if (!owned || !child.pid) {
+      return;
+    }
     try {
       process.kill(-child.pid, signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+        throw error;
+      }
     }
   };
   child.once("exit", () => {
@@ -42,7 +47,7 @@ export function stopGroup(child: GroupChild, signal: NodeJS.Signals = "SIGTERM")
 }
 
 export async function command(
-  args: string[],
+  args: Array<string>,
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
@@ -51,7 +56,9 @@ export async function command(
   } = {},
 ): Promise<CommandResult> {
   const executable = args[0];
-  if (!executable) throw new Error("Missing executable");
+  if (!executable) {
+    throw new Error("Missing executable");
+  }
   options.signal?.throwIfAborted();
   const child = spawnGroup(executable, args.slice(1), {
     cwd: options.cwd,
@@ -72,7 +79,7 @@ export async function command(
   const terminate = (why: string) => {
     reason ||= why;
     stopGroup(child);
-    force ??= setTimeout(() => stopGroup(child, "SIGKILL"), 2_000);
+    force ??= setTimeout(() => stopGroup(child, "SIGKILL"), 2000);
   };
   const timer = setTimeout(
     () => terminate(`timed out after ${options.timeout ?? 30_000}ms`),
@@ -85,11 +92,15 @@ export async function command(
       child.once("error", reject);
       child.once("close", (value) => resolve(value ?? 1));
     });
-    if (reason) throw new Error(`${executable} ${reason}`);
+    if (reason) {
+      throw new Error(`${executable} ${reason}`);
+    }
     return { code, stdout, stderr };
   } finally {
     clearTimeout(timer);
-    if (force) clearTimeout(force);
+    if (force) {
+      clearTimeout(force);
+    }
     options.signal?.removeEventListener("abort", abort);
   }
 }

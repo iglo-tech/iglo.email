@@ -22,7 +22,7 @@ export interface InlineImage {
 }
 export interface EmbeddedImages<C> {
   campaign: C;
-  images: InlineImage[];
+  images: Array<InlineImage>;
   /** Over a limit, so the message cannot go out as written: it behaves as a missing attachment. */
   problem: string | null;
 }
@@ -43,25 +43,35 @@ function filenameFromSrc(src: string): string {
 
 /** Replaces the source of each `data-embed` image for which `resolve` returns a new one. */
 function rewriteImages(body: string, resolve: (filename: string) => string | null): string {
-  if (!body.includes(ATTRIBUTE)) return body;
+  if (!body.includes(ATTRIBUTE)) {
+    return body;
+  }
   let out = "";
   let copied = 0;
   const opening = /<img\b/gi;
   for (let found = opening.exec(body); found; found = opening.exec(body)) {
     const end = body.indexOf(">", found.index);
-    if (end < 0) break;
+    if (end < 0) {
+      break;
+    }
     opening.lastIndex = end + 1;
     const tag = body.slice(found.index, end + 1);
-    if (!attribute.test(tag)) continue;
+    if (!attribute.test(tag)) {
+      continue;
+    }
     const match = source.exec(tag);
     const src = match?.[2] || match?.[3] || "";
-    if (!src || src.toLowerCase().startsWith("cid:")) continue;
+    if (!src || src.toLowerCase().startsWith("cid:")) {
+      continue;
+    }
     const filename = filenameFromSrc(src);
     const replacement = filename ? resolve(filename) : null;
-    if (replacement === null) continue;
+    if (replacement === null) {
+      continue;
+    }
     out +=
       body.slice(copied, found.index) +
-      tag.replace(sources, (_, space: string) => `${space}src="${replacement}"`);
+      tag.replaceAll(sources, (_, space: string) => `${space}src="${replacement}"`);
     copied = end + 1;
   }
   return out + body.slice(copied);
@@ -76,14 +86,18 @@ export function createEmbeds(store: Pick<MediaStore, "byFilename">, logger: Erro
   return function embedImages<
     C extends { content_type: string; body: string; templateBody: string },
   >(c: C): EmbeddedImages<C> {
-    if (c.content_type === "plain") return { campaign: c, images: [], problem: null };
+    if (c.content_type === "plain") {
+      return { campaign: c, images: [], problem: null };
+    }
     const cids = new Map<string, string | null>();
-    const images: InlineImage[] = [];
+    const images: Array<InlineImage> = [];
     let problem: string | null = null;
 
     function sourceOf(filename: string): string | null {
       const known = cids.get(filename);
-      if (known !== undefined) return known === null ? null : `cid:${known}`;
+      if (known !== undefined) {
+        return known === null ? null : `cid:${known}`;
+      }
       if (cids.size >= MAX_LOOKUPS) {
         problem ??= `more than ${MAX_LOOKUPS} embedded image names`;
         return null;
@@ -126,16 +140,22 @@ export function createPublicImages(
   return function publicImages<
     C extends { content_type: string; body: string; templateBody: string },
   >(c: C): C {
-    if (c.content_type === "plain") return c;
+    if (c.content_type === "plain") {
+      return c;
+    }
     const urls = new Map<string, string | null>();
     function urlOf(filename: string): string | null {
       const known = urls.get(filename);
-      if (known !== undefined) return known;
-      if (urls.size >= MAX_LOOKUPS) return null;
+      if (known !== undefined) {
+        return known;
+      }
+      if (urls.size >= MAX_LOOKUPS) {
+        return null;
+      }
       const media = store.byFilename(filename);
       // The result is template source inside an attribute, and a name is neither.
       const found = media
-        ? url(media.filename).replace(/[{}&]/g, (char) => encodeURIComponent(char))
+        ? url(media.filename).replaceAll(/[{}&]/g, (char) => encodeURIComponent(char))
         : null;
       urls.set(filename, found);
       return found;

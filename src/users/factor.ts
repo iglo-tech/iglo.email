@@ -18,29 +18,37 @@ function self(context: RequestContext): Identity {
     identity.transport !== "session" ||
     identity.user.type !== "user" ||
     identity.user.password_login === 0n
-  )
+  ) {
     throw new HttpError(403, "invalid session");
+  }
   return identity;
 }
 async function fields(request: Request): Promise<Record<string, unknown>> {
   const text = await readBody(request);
-  if (text && request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json")
+  if (
+    text &&
+    request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json"
+  ) {
     throw new HttpError(415);
+  }
   let value: unknown;
   try {
     value = text ? JSON.parse(text) : {};
   } catch {
     throw new HttpError(400);
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError(400);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400);
+  }
   return value as Record<string, unknown>;
 }
 export function createFactorHandlers(store: UserStore, auth: Authentication) {
   const generate: Handler = async (context) => {
     const identity = self(context);
     return auth.withIdentityProof(identity.user.id, async (currentProof) => {
-      if (identity.user.twofa_type === "totp")
+      if (identity.user.twofa_type === "totp") {
         throw new HttpError(400, context.app.i18n.T("users.twoFAAlreadyEnabled"));
+      }
       const secret = newSecret();
       const uri = new URL(
         `otpauth://totp/${encodeURIComponent(`iglo.email:${identity.user.email}`)}`,
@@ -62,8 +70,9 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
         current.user.twofa_type !== "none" ||
         current.user.password !== identity.user.password ||
         current.user.email !== identity.user.email
-      )
+      ) {
         throw new HttpError(403, "invalid session");
+      }
       return ok({ secret, qr });
     });
   };
@@ -78,20 +87,28 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
           400,
           context.app.i18n.Ts("globals.messages.invalidFields", "name", "{users.totpCode}"),
         );
-      if (!secret || !code) throw invalid();
+      if (!secret || !code) {
+        throw invalid();
+      }
       auth.revalidate(context);
       self(context);
-      if (!currentProof()) throw new HttpError(403, "invalid session");
-      if (identity.user.twofa_type === "totp")
+      if (!currentProof()) {
+        throw new HttpError(403, "invalid session");
+      }
+      if (identity.user.twofa_type === "totp") {
         throw new HttpError(400, context.app.i18n.T("users.twoFAAlreadyEnabled"));
-      if (!verifyTOTP(secret, code, context.app.clock.now())) throw invalid();
+      }
+      if (!verifyTOTP(secret, code, context.app.clock.now())) {
+        throw invalid();
+      }
       if (
         !store.setFactor(identity.user, "totp", secret, identity.sessionId!, () => {
           auth.revalidate(context);
           self(context);
         })
-      )
+      ) {
         throw new HttpError(403, "invalid session");
+      }
       return ok(true);
     });
   };
@@ -100,25 +117,34 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
     return auth.withIdentityProof(identity.user.id, async (currentProof) => {
       const value = await fields(context.request);
       const password = typeof value.password === "string" ? value.password : "";
-      if (identity.user.twofa_type !== "totp")
+      if (identity.user.twofa_type !== "totp") {
         throw new HttpError(400, context.app.i18n.T("users.twoFANotEnabled"));
-      if (!validPassword(password))
+      }
+      if (!validPassword(password)) {
         throw new HttpError(
           400,
           context.app.i18n.Ts("globals.messages.invalidFields", "name", "password"),
         );
-      if (!identity.user.password || !(await auth.verifyPassword(password, identity.user.password)))
+      }
+      if (
+        !identity.user.password ||
+        !(await auth.verifyPassword(password, identity.user.password))
+      ) {
         throw new HttpError(403, context.app.i18n.T("globals.messages.invalidPassword"));
+      }
       auth.revalidate(context);
       self(context);
-      if (!currentProof()) throw new HttpError(403, "invalid session");
+      if (!currentProof()) {
+        throw new HttpError(403, "invalid session");
+      }
       if (
         !store.setFactor(identity.user, "none", null, identity.sessionId!, () => {
           auth.revalidate(context);
           self(context);
         })
-      )
+      ) {
         throw new HttpError(403, "invalid session");
+      }
       return ok(true);
     });
   };

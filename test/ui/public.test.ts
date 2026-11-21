@@ -17,10 +17,14 @@ beforeAll(async () => {
     { cwd: resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" },
   );
   const [code, error] = await Promise.all([build.exited, new Response(build.stderr).text()]);
-  if (code !== 0) throw new Error(`Production build failed: ${error}`);
+  if (code !== 0) {
+    throw new Error(`Production build failed: ${error}`);
+  }
 }, 30_000);
 afterAll(async () => {
-  if (directory) await rm(directory, { recursive: true, force: true });
+  if (directory) {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("compiled executable includes the vendored editor theme MIT notice", async () => {
@@ -54,9 +58,11 @@ test.each([
       expect(response.headers.get("content-type")).toBe(
         path.endsWith("woff2") ? "font/woff2" : "text/css; charset=utf-8",
       );
-      if (path.endsWith("woff2"))
+      if (path.endsWith("woff2")) {
         expect(new TextDecoder().decode((await response.arrayBuffer()).slice(0, 4))).toBe("wOF2");
-      else expect(await response.text()).toContain("box-sizing");
+      } else {
+        expect(await response.text()).toContain("box-sizing");
+      }
       const head = await fetch(origin + path, { method: "HEAD" });
       expect(head.status).toBe(200);
       expect(await head.text()).toBe("");

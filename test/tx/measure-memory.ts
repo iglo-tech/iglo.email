@@ -17,12 +17,14 @@ const gated = gating === "gated" || gating === "serial";
 const attachmentMiB = Number(mibArg ?? 4);
 const recipients = Number(recipientsArg ?? 1);
 const requests = Number(requestsArg ?? 1);
-if (mode !== "sync" && mode !== "async") throw new Error("Usage: <MiB> <recipients> sync|async");
-const git = (...args: string[]) =>
+if (mode !== "sync" && mode !== "async") {
+  throw new Error("Usage: <MiB> <recipients> sync|async");
+}
+const git = (...args: Array<string>) =>
   Bun.spawnSync(["git", ...args], { cwd: repository })
     .stdout.toString()
     .trim();
-const mib = (bytes: number) => +(bytes / 1048576).toFixed(1);
+const mib = (bytes: number) => +(bytes / 1_048_576).toFixed(1);
 /** The kernel's peak resident size, which a timer cannot miss while the thread is busy. */
 const highWater = () =>
   Number(/VmHWM:\s+(\d+) kB/.exec(readFileSync("/proc/self/status", "utf8"))![1]) * 1024;
@@ -38,7 +40,7 @@ const f = await txFixture({
 const template = await f.template("<p>x</p>");
 // Request i's multipart body, streamed: the client side holds only one 64 KiB chunk at a time, so
 // the in-process harness does not add the copies a real client keeps in its own process (B28).
-const chunk = crypto.getRandomValues(new Uint8Array(65536));
+const chunk = crypto.getRandomValues(new Uint8Array(65_536));
 const encoder = new TextEncoder();
 const build = (i: number) => {
   const boundary = `----b28-${i}`;
@@ -53,7 +55,7 @@ const build = (i: number) => {
       "Content-Type: application/octet-stream\r\n\r\n",
   );
   const tail = encoder.encode(`\r\n--${boundary}--\r\n`);
-  const fileBytes = attachmentMiB * 1048576;
+  const fileBytes = attachmentMiB * 1_048_576;
   let sent = 0;
   let stage = 0;
   const body = new ReadableStream<Uint8Array>({
@@ -105,7 +107,9 @@ const send = (encoded: ReturnType<typeof build>) =>
     headers: f.sessionHeaders,
     body: warm,
   });
-  if (response.status !== 200) throw new Error("warm-up failed");
+  if (response.status !== 200) {
+    throw new Error("warm-up failed");
+  }
 }
 Bun.gc(true);
 await Bun.sleep(200);
@@ -115,13 +119,15 @@ const load = loadavg()[0]!;
 const begin = performance.now();
 // "serial" sends the requests one after another, to see garbage pile up without concurrency; each
 // body is built when it is sent, so its build time is in `seconds`.
-const statuses: number[] = [];
-if (gating === "serial") for (let i = 0; i < requests; i++) statuses.push(await send(build(i)));
-else
+const statuses: Array<number> = [];
+if (gating === "serial") {
+  for (let i = 0; i < requests; i++) statuses.push(await send(build(i)));
+} else {
   statuses.push(...(await Promise.all(Array.from({ length: requests }, (_, i) => send(build(i))))));
+}
 const seconds = (performance.now() - begin) / 1000;
 const peak = highWater();
-const attachmentBytes = attachmentMiB * 1048576;
+const attachmentBytes = attachmentMiB * 1_048_576;
 const entry = {
   scenario: "tx memory",
   attachmentMiB,

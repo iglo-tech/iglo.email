@@ -10,9 +10,11 @@ import { startStalledSink } from "@/test/tx/sink";
 import { imageSize } from "@/media/image";
 import { makeFilename } from "@/media/filesystem";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 async function open() {
   const f = await campaignsFixture();
@@ -76,8 +78,9 @@ test("concurrent uploads of one name get distinct files with their own bytes", a
   const parts = Array.from({ length: 6 }, (_, i) => `content ${i}`);
   const media = await Promise.all(parts.map((part) => stored(f, "same.txt", part)));
   expect(new Set(media.map((m) => m.filename)).size).toBe(6);
-  for (const [i, m] of media.entries())
+  for (const [i, m] of media.entries()) {
     expect(await Bun.file(join(uploads(f), m.filename)).text()).toBe(parts[i]!);
+  }
 });
 
 test("uploads held in memory are bounded", async () => {
@@ -95,8 +98,12 @@ test("uploads held in memory are bounded", async () => {
   const refused = await upload(f, "ninth.txt", "x");
   expect(refused.status).toBe(429);
   expect(refused.headers.get("retry-after")).toBe("1");
-  for (const { writer } of held) await writer.close();
-  for (const { response } of held) expect((await response).status).toBe(400);
+  for (const { writer } of held) {
+    await writer.close();
+  }
+  for (const { response } of held) {
+    expect((await response).status).toBe(400);
+  }
   expect((await upload(f, "ninth.txt", "x")).status).toBe(200);
 });
 
@@ -122,7 +129,9 @@ test("a campaign's media goes out with every message, read once", async () => {
   const f = await openRunner();
   const media = await stored(f, "guide.pdf", "%PDF-1.4 guide");
   const list = await f.list("attachments");
-  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  for (const i of [1, 2, 3]) {
+    await f.member(`to-${i}@example.com`, [list]);
+  }
   const campaign = await f.campaign({
     name: "With a file",
     subject: "S",
@@ -171,7 +180,9 @@ test("a missing file pauses the campaign unsent, and resuming sends everyone onc
   const f = await openRunner();
   const media = await stored(f, "lost.pdf", "%PDF");
   const list = await f.list("missing");
-  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  for (const i of [1, 2, 3]) {
+    await f.member(`to-${i}@example.com`, [list]);
+  }
   const campaign = await f.campaign({
     name: "Lost file",
     subject: "S",
@@ -238,7 +249,9 @@ function carriedBuffers() {
   let count = 0;
   return {
     note(buffer: object) {
-      if (seen.has(buffer)) return;
+      if (seen.has(buffer)) {
+        return;
+      }
       seen.add(buffer);
       count++;
     },
@@ -246,7 +259,7 @@ function carriedBuffers() {
     carried: () => count,
   };
 }
-const campaignInput = (lists: number[], extra: object) => ({
+const campaignInput = (lists: Array<number>, extra: object) => ({
   subject: "S",
   lists,
   content_type: "plain",
@@ -261,7 +274,7 @@ async function sendHeld(
   count: number,
   carried: ReturnType<typeof carriedBuffers>,
 ) {
-  const seen: string[] = [];
+  const seen: Array<string> = [];
   for (let sent = 0; sent < count; sent++) {
     await f.drive(() => f.pushes.length > sent);
     const push = f.pushes[sent]!;
@@ -278,7 +291,9 @@ test("two campaigns sharing attachments hold them once, with concurrency 1", asy
   Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
   const media = await stored(f, "brochure.pdf", mebibytes(8));
   const list = await f.list("shared");
-  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  for (const i of [1, 2, 3]) {
+    await f.member(`to-${i}@example.com`, [list]);
+  }
   for (const name of ["First", "Second"]) {
     const c = await f.campaign(campaignInput([list], { name, media: [media.id] }));
     await f.status(c.id, "running");
@@ -296,8 +311,10 @@ test("attachments over the cache budget are evicted and read again for the next 
   const f = await openRunner({ hold: true, attachmentCacheBytes: 9 * 1024 * 1024 });
   Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
   const list = await f.list("evicted");
-  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
-  const campaigns: number[] = [];
+  for (const i of [1, 2, 3]) {
+    await f.member(`to-${i}@example.com`, [list]);
+  }
+  const campaigns: Array<number> = [];
   for (const fill of [1, 2]) {
     const media = await stored(f, `file-${fill}.pdf`, mebibytes(8, fill));
     const c = await f.campaign(campaignInput([list], { name: `C${fill}`, media: [media.id] }));
@@ -316,10 +333,16 @@ test("attachments over the cache budget are evicted and read again for the next 
   // buffer per batch either way.
   expect(carried.carried()).toBe(6);
   f.control.hold = false;
-  for (const push of f.pushes) push.settle();
-  for (const id of campaigns) await f.until(id, "finished");
+  for (const push of f.pushes) {
+    push.settle();
+  }
+  for (const id of campaigns) {
+    await f.until(id, "finished");
+  }
   // Every message of both campaigns went out, with its file.
-  for (const id of campaigns) expect((await f.read(id)).sent).toBe(3);
+  for (const id of campaigns) {
+    expect((await f.read(id)).sent).toBe(3);
+  }
   expect(new Set(seen)).toEqual(new Set(["01", "02"]));
 });
 
@@ -328,7 +351,9 @@ test("a file lost between batches pauses the campaign, and resuming sends the re
   Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
   const media = await stored(f, "lost.pdf", "%PDF");
   const list = await f.list("between");
-  for (const i of [1, 2, 3]) await f.member(`to-${i}@example.com`, [list]);
+  for (const i of [1, 2, 3]) {
+    await f.member(`to-${i}@example.com`, [list]);
+  }
   const c = await f.campaign(campaignInput([list], { name: "Later", media: [media.id] }));
   await f.status(c.id, "running");
   f.start();
@@ -398,8 +423,10 @@ test("queued test sends keep their slots until they settle, and the next is refu
       subscribers: ["test@example.com"],
     });
   };
-  const statuses: number[] = [];
-  for (let i = 0; i < 6; i++) statuses.push((await send(i)).status);
+  const statuses: Array<number> = [];
+  for (let i = 0; i < 6; i++) {
+    statuses.push((await send(i)).status);
+  }
   expect(statuses).toEqual([200, 200, 200, 200, 429, 429]);
   // The emailer's own deadline settles them, and the slots come back.
   f.clock.advance(60_000);
@@ -413,7 +440,7 @@ test("queued test sends keep their slots until they settle, and the next is refu
 
 const embedded = (src: string) => `<p><img alt="Logo" src="${src}" data-embed="true"></p>`;
 const inlineParts = (raw: string) => {
-  const text = raw.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+  const text = raw.replaceAll("=\r\n", "").replaceAll("=3D", "=");
   return {
     text,
     cids: [...text.matchAll(/^Content-ID: <([^>]+)>/gim)].map((m) => m[1]!),
@@ -451,7 +478,7 @@ test("data-embed images in a body and a template go out as inline parts of a cam
   expect(text).toMatch(/^Content-Disposition: inline/im);
   expect(new Set(cids).size).toBe(2);
   expect(sources.sort()).toEqual(cids.map((cid) => `cid:${cid}`).sort());
-  expect(text.replace(/\r\n/g, "")).toContain(
+  expect(text.replaceAll("\r\n", "")).toContain(
     Buffer.from(imagePng).toString("base64").replace(/=+$/, ""),
   );
   expect(text).toContain(`filename=${header.filename}`);
@@ -656,20 +683,23 @@ test("a test send carries the request's media through SMTP", async () => {
 });
 
 test("makeFilename leaves one visible path component", () => {
-  for (const raw of ["../../x.png", "..\\..\\x.png", "/etc/x.png", "a/b/x.png", "x.png/"])
+  for (const raw of ["../../x.png", String.raw`..\..\x.png`, "/etc/x.png", "a/b/x.png", "x.png/"]) {
     expect(makeFilename(raw)).toBe("x.png");
+  }
   expect(makeFilename("a\u0000b\nc‮.png")).toBe("ab-c.png");
   expect(makeFilename(".hidden.png")).toBe("hidden.png");
-  for (const raw of ["..", ".", "...", "/", "", "   "])
+  for (const raw of ["..", ".", "...", "/", "", "   "]) {
     expect(makeFilename(raw)).toMatch(/^[0-9A-Za-z]{10}$/);
+  }
   const long = makeFilename(`${"ż".repeat(300)}.png`);
   expect(long.endsWith(".png")).toBe(true);
   expect(Buffer.byteLength(long)).toBeLessThanOrEqual(200);
 });
 
 test("image headers that are cut short give no dimensions", () => {
-  for (let length = 0; length < imagePng.length; length += 3)
+  for (let length = 0; length < imagePng.length; length += 3) {
     expect(() => imageSize(imagePng.subarray(0, length))).not.toThrow();
+  }
   expect(
     imageSize(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x02, 0xff, 0xff, 0xff])),
   ).toBeNull();

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import nodemailer from "nodemailer";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 import { TestClock } from "@/test/server/fixture";
 
 // The outbox treats a synchronous throw from `push` as "never reached a pool". Everything
@@ -31,7 +32,9 @@ const message = {
 };
 const restore: Array<() => void> = [];
 afterEach(() => {
-  for (const fn of restore.splice(0)) fn();
+  for (const fn of restore.splice(0)) {
+    fn();
+  }
 });
 
 describe("emailer failure after pool hand-off", () => {

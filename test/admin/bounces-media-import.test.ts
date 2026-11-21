@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, get, login, userWith, type Fixture } from "@/test/admin/support";
+import { admin, get, login, userWith } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;

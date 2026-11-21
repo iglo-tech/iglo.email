@@ -2,16 +2,19 @@
 // and static/public/templates/{forgot,reset}-password.html at 6fcd95f.
 import { restoreHold } from "@/settings/hold";
 import type { ErrorLogger } from "@/app";
-import { render, type Child } from "@/jsx/render";
+import { render } from "@/jsx/render";
+import type { Child } from "@/jsx/render";
 import type { Dispatch, Message } from "@/messaging/email";
 import { safeLogo } from "@/messaging/test";
-import { PublicShell, type PageSite } from "@/public/layout";
+import { PublicShell } from "@/public/layout";
+import type { PageSite } from "@/public/layout";
 import { publicMessage } from "@/public/message";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import { systemTemplates } from "@/templates/builtins";
-import { createMessageBudget, type TemplateRenderer } from "@/templates/renderer";
+import { createMessageBudget } from "@/templates/renderer";
+import type { TemplateRenderer } from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
@@ -67,13 +70,16 @@ export function createPasswordReset(deps: ResetDeps) {
     if (
       context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !==
       "application/x-www-form-urlencoded"
-    )
+    ) {
       throw new HttpError(415);
+    }
     return new URLSearchParams(await readBody(context.request));
   };
   const mail = async (context: RequestContext, email: string) => {
     const reset = auth.issueReset(email);
-    if (!reset) return;
+    if (!reset) {
+      return;
+    }
     const t = context.app.i18n;
     const current = settings();
     const query = new URLSearchParams({ token: reset.token, email });
@@ -101,8 +107,9 @@ export function createPasswordReset(deps: ResetDeps) {
       body: Buffer.from(html),
       ...(text ? { altBody: Buffer.from(text) } : {}),
     }).result.then((outcome) => {
-      if (outcome.status !== "accepted")
+      if (outcome.status !== "accepted") {
         logger.attention("Password reset mail not sent", "Password reset mail not sent");
+      }
     });
   };
   const getForgot: Handler = (context) => {
@@ -131,7 +138,9 @@ export function createPasswordReset(deps: ResetDeps) {
   const postForgot: Handler = async (context) => {
     // Refused for every address alike, so this says nothing about any of them.
     const hold = restoreHold(context.app.db);
-    if (hold) return message(context, 503, `Sending is held. ${hold.reason}`);
+    if (hold) {
+      return message(context, 503, `Sending is held. ${hold.reason}`);
+    }
     const fields = await formFields(context);
     const email = (fields.get("email") ?? "").trim().toLowerCase();
     // The answer leaves first, so neither it nor its timing depends on the address.
@@ -176,26 +185,34 @@ export function createPasswordReset(deps: ResetDeps) {
   };
   const getReset: Handler = (context) => {
     const { token, email } = link(context);
-    if (!auth.resetValid(email, token)) return invalidLink(context);
+    if (!auth.resetValid(email, token)) {
+      return invalidLink(context);
+    }
     return resetForm(context, token, email);
   };
   const postReset: Handler = async (context) => {
     const fields = await formFields(context);
     const { token, email } = link(context);
-    if (!auth.resetValid(email, token)) return invalidLink(context);
+    if (!auth.resetValid(email, token)) {
+      return invalidLink(context);
+    }
     const t = context.app.i18n;
     const password = fields.get("password") ?? "";
-    if (!validPassword(password))
+    if (!validPassword(password)) {
       return resetForm(
         context,
         token,
         email,
         t.Ts("globals.messages.invalidFields", "name", "password"),
       );
-    if (password !== (fields.get("password2") ?? ""))
+    }
+    if (password !== (fields.get("password2") ?? "")) {
       return resetForm(context, token, email, t.T("users.passwordMismatch"));
+    }
     const session = await auth.resetPassword(email, token, password);
-    if (!session) return invalidLink(context);
+    if (!session) {
+      return invalidLink(context);
+    }
     if ("token" in session) {
       const params = new URLSearchParams({ token: session.token, next: "/admin" });
       return new Response(null, {
@@ -205,8 +222,9 @@ export function createPasswordReset(deps: ResetDeps) {
     }
     auth.replaceSession(context.request);
     const headers = new Headers({ Location: "/admin", ...pageHeaders });
-    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration))
+    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration)) {
       headers.append("Set-Cookie", value);
+    }
     return new Response(null, { status: 302, headers });
   };
   return { getForgot, postForgot, getReset, postReset };

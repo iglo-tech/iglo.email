@@ -1,13 +1,16 @@
 // Real settings SMTP route with the user fixture's body-read barrier and loopback-only SMTP.
 import { afterEach, expect, test } from "bun:test";
-import { createConnection, createServer, type Socket } from "node:net";
+import { createConnection, createServer } from "node:net";
+import type { Socket } from "node:net";
 import { startUserFixture } from "@/test/users/fixture";
 import { defaultAuthPolicy } from "@/users/auth";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
-const fixtures: Fixture[] = [];
+const fixtures: Array<Fixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function login(f: Fixture, username: string, password: string) {
   const page = await fetch(`${f.origin}/admin/login`);
@@ -16,7 +19,9 @@ async function login(f: Fixture, username: string, password: string) {
     .getSetCookie()
     .find((c) => c.startsWith("nonce="))
     ?.split(";")[0];
-  if (!nonce || !cookie) throw new Error("missing login nonce");
+  if (!nonce || !cookie) {
+    throw new Error("missing login nonce");
+  }
   const response = await fetch(`${f.origin}/admin/login`, {
     method: "POST",
     redirect: "manual",
@@ -26,7 +31,9 @@ async function login(f: Fixture, username: string, password: string) {
   const cookies = response.headers.getSetCookie();
   const session = cookies.find((c) => c.startsWith("session="))?.split(";")[0];
   const csrf = cookies.find((c) => c.startsWith("csrf="))?.split(";")[0];
-  if (!session || !csrf) throw new Error("login failed");
+  if (!session || !csrf) {
+    throw new Error("login failed");
+  }
   return { cookie: `${session}; ${csrf}`, csrf: csrf.slice(5) };
 }
 async function request(
@@ -54,7 +61,7 @@ async function peer(hold = false) {
   });
   const sockets = new Set<Socket>();
   // Every counted client (remote port and opening line), so a failure names who connected.
-  const clients: string[] = [];
+  const clients: Array<string> = [];
   // The host's dev runtime probes every new loopback port, some silently and some with HTTP or
   // TLS, sooner or later. An SMTP client speaks after the greeting and opens with EHLO or HELO, so
   // only that is a connection. A held peer counts it and never answers.
@@ -69,28 +76,40 @@ async function peer(hold = false) {
       pending += part.toString();
       for (;;) {
         const end = pending.indexOf("\r\n");
-        if (end < 0) break;
+        if (end < 0) {
+          break;
+        }
         const line = pending.slice(0, end);
         pending = pending.slice(end + 2);
         if (!spoken) {
-          if (!/^(EHLO|HELO) /i.test(line)) return void socket.destroy();
+          if (!/^(EHLO|HELO) /i.test(line)) {
+            return void socket.destroy();
+          }
           spoken = true;
           count++;
           clients.push(`${socket.remotePort}: ${line.slice(0, 40)}`);
-          if (count === 4) ready();
+          if (count === 4) {
+            ready();
+          }
         }
-        if (hold) continue;
+        if (hold) {
+          continue;
+        }
         if (data) {
           if (line === ".") {
             data = false;
             socket.write("250 queued\r\n");
           }
-        } else if (/^EHLO/i.test(line)) socket.write("250 fixture\r\n");
-        else if (/^DATA/i.test(line)) {
+        } else if (/^EHLO/i.test(line)) {
+          socket.write("250 fixture\r\n");
+        } else if (/^DATA/i.test(line)) {
           data = true;
           socket.write("354 send\r\n");
-        } else if (/^QUIT/i.test(line)) socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (/^QUIT/i.test(line)) {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   };
@@ -110,14 +129,18 @@ async function peer(hold = false) {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const addr = server.address();
-  if (!addr || typeof addr === "string") throw new Error("missing port");
+  if (!addr || typeof addr === "string") {
+    throw new Error("missing port");
+  }
   return {
     port: addr.port,
     four,
     count: () => count,
     clients: () => clients,
     close: async () => {
-      for (const s of sockets) s.destroy();
+      for (const s of sockets) {
+        s.destroy();
+      }
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
@@ -287,7 +310,7 @@ test("SMTP capacity releases after absolute timeout, malformed input and shutdow
     await held.four;
     expect((await send(held.port)).status).toBe(429);
     expect(held.count()).toBe(4);
-    f.persisted.clock.advance(10000);
+    f.persisted.clock.advance(10_000);
     for (const response of await Promise.all(pending)) {
       expect(response.status).toBe(500);
       expect(await response.json()).toEqual({ message: "SMTP test outcome is unknown." });

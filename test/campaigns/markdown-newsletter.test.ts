@@ -1,8 +1,10 @@
 // B105 (D112): a realistic Markdown newsletter of 4, 16 and 64 KiB renders in a preview, a test send
 // to the SMTP sink and a campaign send to two subscribers, each within a second of being sent.
 import { afterEach, expect, test } from "bun:test";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
-import { runnerFixture, type RunnerFixture } from "@/test/campaigns/runner/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
+import { runnerFixture } from "@/test/campaigns/runner/fixture";
+import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import { previewForm, readerSession } from "@/test/campaigns/markdown-support";
 import { newsletter } from "@/test/templates/markdown-newsletter";
 

@@ -2,7 +2,8 @@
 // placeholder. They answer the test page and confirm nothing, where a real opt-in link confirms.
 // Through HTTP, on the public fixture that mounts those routes.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
 const testSend = "00000000-0000-0000-0000-000000000001";
 // B121: each route says what its link does in a real message, not the unsubscribe wording.
@@ -11,9 +12,11 @@ const viewMessage =
 const optinMessage =
   "This link is from a test send. It confirms nothing here; in a real message it opens the subscription confirmation page.";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();

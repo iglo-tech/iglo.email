@@ -12,7 +12,9 @@ export function createRouter(hold: () => RestoreHold | null = () => null): Route
   router.route("GET", "/health", () => {
     const response = ok(true);
     const held = hold();
-    if (held) response.headers.set(HOLD_HEADER, held.since);
+    if (held) {
+      response.headers.set(HOLD_HEADER, held.since);
+    }
     return response;
   });
   return router;

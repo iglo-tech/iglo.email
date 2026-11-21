@@ -20,7 +20,7 @@ export async function runMessagingContract(target: {
       method: "POST",
       headers: { "content-type": "application/json", ...(auth ? { authorization: auth } : {}) },
       body,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(15_000),
     });
   assert.equal((await request("{}", "")).status, 403);
   const missing = await request("{}");
@@ -39,7 +39,9 @@ export async function runMessagingContract(target: {
   assert.equal(response.status, 200);
   const envelope = (await response.json()) as { data: unknown };
   assert.ok(Array.isArray(envelope.data));
-  if (target.mode === "normal") assert.deepEqual(envelope.data, []); // D49
+  if (target.mode === "normal") {
+    assert.deepEqual(envelope.data, []);
+  } // D49
   const query = new URLSearchParams({ query: `to:${recipient}`, limit: "100" });
   const list = await fetch(`${sink.api}/api/v1/search?${query}`, {
     signal: AbortSignal.timeout(5000),
@@ -68,13 +70,14 @@ export async function runMessagingContract(target: {
       }),
     );
     assert.equal(invalid.status, 500);
-    if (target.mode === "normal")
+    if (target.mode === "normal") {
       assert.deepEqual(await invalid.json(), { message: "SMTP test failed." });
+    }
     const query = new URLSearchParams({ query: `to:one-${recipient}`, limit: "100" });
     assert.equal(
       (
         (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-          messages: unknown[];
+          messages: Array<unknown>;
         }
       ).messages.length,
       0,
@@ -135,14 +138,15 @@ export async function runMessagingContract(target: {
       }),
     );
     assert.equal(insecure.status, 500);
-    if (target.mode === "normal")
+    if (target.mode === "normal") {
       assert.deepEqual(await insecure.json(), { message: "SMTP test failed." });
+    }
     assert.equal(plainRelay.authAttempts(), 0);
     const query = new URLSearchParams({ query: `to:insecure-${recipient}`, limit: "100" });
     assert.equal(
       (
         (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-          messages: unknown[];
+          messages: Array<unknown>;
         }
       ).messages.length,
       0,
@@ -171,16 +175,17 @@ export async function runMessagingContract(target: {
         }),
       );
       assert.equal(response.status, reverse ? 200 : 500);
-      if (target.mode === "normal")
+      if (target.mode === "normal") {
         assert.deepEqual(
           await response.json(),
           reverse ? { data: [] } : { message: "SMTP test failed." },
         );
+      }
       assert.equal(relay.authenticated(), reverse ? 1 : 0);
       assert.equal(relay.loginReplies(), reverse ? 2 : 0);
       const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
       const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-        messages: unknown[];
+        messages: Array<unknown>;
       };
       assert.equal(intake.messages.length, reverse ? 1 : 0);
     } finally {
@@ -202,11 +207,12 @@ export async function runMessagingContract(target: {
       }),
     );
     assert.equal(failed.status, 500);
-    if (target.mode === "normal")
+    if (target.mode === "normal") {
       assert.deepEqual(await failed.json(), { message: "SMTP test failed." });
+    }
     const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
     const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-      messages: unknown[];
+      messages: Array<unknown>;
     };
     assert.equal(intake.messages.length, 0);
     // D51 also refuses an unadvertised selected method, even if the peer would accept it.
@@ -229,11 +235,12 @@ export async function runMessagingContract(target: {
         }),
       );
       assert.equal(unsupported.status, target.mode === "normal" ? 500 : 200);
-      if (target.mode === "normal")
+      if (target.mode === "normal") {
         assert.deepEqual(await unsupported.json(), { message: "SMTP test failed." });
+      }
       const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
       const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-        messages: unknown[];
+        messages: Array<unknown>;
       };
       assert.equal(intake.messages.length, target.mode === "normal" ? 0 : 1);
       assert.equal(relay.authAttempts(), target.mode === "normal" ? 0 : 1);
@@ -258,13 +265,14 @@ export async function runMessagingContract(target: {
         }),
       );
       assert.equal(partial.status, 500);
-      if (target.mode === "normal")
+      if (target.mode === "normal") {
         assert.deepEqual(await partial.json(), {
           message: "SMTP test was accepted for some recipients only.",
         });
+      }
       const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
       const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-        messages: unknown[];
+        messages: Array<unknown>;
       };
       assert.equal(intake.messages.length, target.mode === "normal" ? 1 : 0);
       assert.equal(relay.connections(), 1);
@@ -285,7 +293,9 @@ export async function runMessagingContract(target: {
       refusedSocket.listen(0, "127.0.0.1", resolve);
     });
     const address = refusedSocket.address();
-    if (!address || typeof address === "string") throw new Error("Missing refusal port");
+    if (!address || typeof address === "string") {
+      throw new Error("Missing refusal port");
+    }
     const refusedPort = address.port;
     await new Promise<void>((resolve, reject) =>
       refusedSocket.close((error) => (error ? reject(error) : resolve())),
@@ -394,13 +404,17 @@ export async function runMessagingContract(target: {
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runMessagingContract({ mode: "reference", baseUrl, credentials: { user, token } });
   } catch {
     process.stderr.write("Messaging contract failed\n");

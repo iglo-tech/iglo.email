@@ -3,14 +3,17 @@
 // refused within a second; the same shapes expanded to 1000 KiB are refused at once by the cap, with its
 // message; and a read sent after five concurrent previews is not delayed by more than a second.
 import { afterEach, expect, test } from "bun:test";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { previewForm, readerSession } from "@/test/campaigns/markdown-support";
 
 const CAP_MESSAGE = "Markdown is larger than 128 KiB after template expansion";
 
-const fixtures: CampaignsFixture[] = [];
+const fixtures: Array<CampaignsFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 
 /** A loop of `kib` iterations, each emitting exactly 1 KiB of `unit` after `prefix`. */
@@ -26,7 +29,7 @@ function exact128(prefix: string, unit: string): string {
   return `${prefix}{% for i in (1..127) %}${piece}{% endfor %}${pad}`;
 }
 
-const shapes: [string, string, string][] = [
+const shapes: Array<[string, string, string]> = [
   // [name, prefix before the loop, unit repeated by the loop]
   ["backtick", "x\n", "`"],
   ["tilde", "x\n", "~"],
@@ -52,7 +55,7 @@ const shapes: [string, string, string][] = [
   ["empty link", "x\n", "[]("],
   ["empty image", "x\n", "![]("],
   ["reference", "x\n", "[x]["],
-  ["escaped bracket", "x\n", "\\["],
+  ["escaped bracket", "x\n", String.raw`\[`],
   ["quote run", "x\n", ">=\n"],
   ["list quote", "x\n", "- > "],
   ["quote list", "x\n", "> - "],
@@ -128,7 +131,9 @@ async function firstLine(stream: ReadableStream<Uint8Array>): Promise<string> {
   let text = "";
   while (!text.includes("\n")) {
     const { value, done } = await reader.read();
-    if (done) throw new Error("served fixture exited before it was ready");
+    if (done) {
+      throw new Error("served fixture exited before it was ready");
+    }
     text += decoder.decode(value, { stream: true });
   }
   reader.releaseLock();
@@ -147,7 +152,7 @@ test("five concurrent 128 KiB Liquid previews of the slowest forms leave a read 
       campaign: number;
       headers: Record<string, string>;
     };
-    const forms: [string, string][] = [
+    const forms: Array<[string, string]> = [
       ["| a |\n|---|\n| b |\n", "_"],
       ["| a |\n|---|\n| b |\n", "* *"],
       ["x\n", "__+"],

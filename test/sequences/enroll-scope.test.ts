@@ -2,11 +2,14 @@
 // GET /api/subscribers/:id (D103): one it cannot read answers 404 like an absent one, and writes
 // nothing. Through the HTTP API with scoped API users and an all-access reader for the checks.
 import { afterEach, expect, test } from "bun:test";
-import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
+import { sequencesFixture } from "@/test/sequences/fixture";
+import type { SequencesFixture } from "@/test/sequences/fixture";
 
-const fixtures: SequencesFixture[] = [];
+const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await sequencesFixture();
@@ -25,7 +28,9 @@ async function sequence(f: SequencesFixture, extra: object = {}) {
     steps: [{ wait: "P3D", kind: "transactional", template_id: tx }],
     ...extra,
   });
-  if (created.status !== 200) throw new Error(JSON.stringify(created.body));
+  if (created.status !== 200) {
+    throw new Error(JSON.stringify(created.body));
+  }
   return created.body.data.id as number;
 }
 
@@ -99,7 +104,7 @@ test("D103: the refusal is the same for test enrollments and for a trigger event
   const before = f.count("enrollments");
   const baseline = await enrollmentsOf(f, other);
   // The subscriber check comes first: neither the event nor the test rules are reached.
-  const cases: object[] = [
+  const cases: Array<object> = [
     { test: true },
     { force: true },
     { trigger_event_id: event.body.data.event_id },

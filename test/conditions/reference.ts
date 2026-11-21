@@ -16,8 +16,12 @@ const missing = Symbol("missing");
 function lookup(root: Record<string, unknown>, path: string): Value | typeof missing {
   let current: unknown = root;
   for (const segment of path.split(".")) {
-    if (typeof current !== "object" || current === null || Array.isArray(current)) return missing;
-    if (!Object.hasOwn(current, segment)) return missing;
+    if (typeof current !== "object" || current === null || Array.isArray(current)) {
+      return missing;
+    }
+    if (!Object.hasOwn(current, segment)) {
+      return missing;
+    }
     current = (current as Record<string, unknown>)[segment];
   }
   return current;
@@ -27,37 +31,55 @@ function lookup(root: Record<string, unknown>, path: string): Value | typeof mis
 const utf8Compare = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 
 function equals(actual: Value | typeof missing, expected: unknown): boolean {
-  if (typeof expected === "string") return typeof actual === "string" && actual === expected;
-  if (typeof expected === "number") return typeof actual === "number" && actual === expected;
-  if (typeof expected === "boolean") return actual === expected;
+  if (typeof expected === "string") {
+    return typeof actual === "string" && actual === expected;
+  }
+  if (typeof expected === "number") {
+    return typeof actual === "number" && actual === expected;
+  }
+  if (typeof expected === "boolean") {
+    return actual === expected;
+  }
   return false;
 }
 
 function ordered(actual: Value | typeof missing, op: string, expected: unknown): boolean {
   let order: number;
-  if (typeof expected === "string" && typeof actual === "string")
+  if (typeof expected === "string" && typeof actual === "string") {
     order = utf8Compare(actual, expected);
-  else if (typeof expected === "number" && typeof actual === "number")
+  } else if (typeof expected === "number" && typeof actual === "number") {
     order = actual < expected ? -1 : actual > expected ? 1 : 0;
-  else return false;
+  } else {
+    return false;
+  }
   return op === "gt" ? order > 0 : op === "gte" ? order >= 0 : op === "lt" ? order < 0 : order <= 0;
 }
 
 function durationMs(text: string): number {
   const m = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(text)!;
-  const [w, d, h, min, s] = m.slice(1).map((part) => Number(part ?? 0)) as number[];
+  const [w, d, h, min, s] = m.slice(1).map((part) => Number(part ?? 0)) as Array<number>;
   return ((((w! * 7 + d!) * 24 + h!) * 60 + min!) * 60 + s!) * 1000;
 }
 
 function lowerBound(since: string | undefined, context: Context): number | undefined {
-  if (since === undefined) return undefined;
+  if (since === undefined) {
+    return undefined;
+  }
   const at = (value: string | null | undefined) => {
-    if (!value) throw new Error("missing context time");
+    if (!value) {
+      throw new Error("missing context time");
+    }
     return Date.parse(value);
   };
-  if (since === "trigger") return at(context.triggerAt);
-  if (since === "enrollment") return at(context.enrolledAt);
-  if (since === "last_step") return at(context.lastStepAt ?? context.triggerAt);
+  if (since === "trigger") {
+    return at(context.triggerAt);
+  }
+  if (since === "enrollment") {
+    return at(context.enrolledAt);
+  }
+  if (since === "last_step") {
+    return at(context.lastStepAt ?? context.triggerAt);
+  }
   return context.now.getTime() - durationMs(since);
 }
 
@@ -67,22 +89,30 @@ export function referenceEvaluate(
   context: Context,
   sql?: (fragment: string, subscriber: ModelSubscriber) => boolean,
 ): boolean {
-  if ("all" in condition)
+  if ("all" in condition) {
     return (condition.all as Record<string, unknown>[]).every((c) =>
       referenceEvaluate(c, subscriber, context, sql),
     );
-  if ("any" in condition)
+  }
+  if ("any" in condition) {
     return (condition.any as Record<string, unknown>[]).some((c) =>
       referenceEvaluate(c, subscriber, context, sql),
     );
-  if ("not" in condition)
+  }
+  if ("not" in condition) {
     return !referenceEvaluate(condition.not as Record<string, unknown>, subscriber, context, sql);
+  }
   if ("sql" in condition) {
-    if (!sql) throw new Error("no sql model");
+    if (!sql) {
+      throw new Error("no sql model");
+    }
     return sql(condition.sql as string, subscriber);
   }
   if ("list" in condition) {
-    const statuses = (condition.status as string[] | undefined) ?? ["unconfirmed", "confirmed"];
+    const statuses = (condition.status as Array<string> | undefined) ?? [
+      "unconfirmed",
+      "confirmed",
+    ];
     return subscriber.lists.some((m) => m.list === condition.list && statuses.includes(m.status));
   }
   if ("attr" in condition) {
@@ -98,7 +128,7 @@ export function referenceEvaluate(
       case "ne":
         return !equals(actual, value);
       case "in":
-        return (value as unknown[]).some((v) => equals(actual, v));
+        return (value as Array<unknown>).some((v) => equals(actual, v));
       case "exists":
         return actual !== missing && actual !== null;
       default:

@@ -1,7 +1,8 @@
 // Campaign runner behavior through the campaigns API, the emailer seam and public pages,
 // on the injected clock (docs/design/04-sending.md#campaigns).
 import { afterEach, expect, test } from "bun:test";
-import { runnerFixture, type RunnerFixture } from "@/test/campaigns/runner/fixture";
+import { runnerFixture } from "@/test/campaigns/runner/fixture";
+import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import { createSends } from "@/messaging/sends";
 import { createMarketingPolicy } from "@/unsubscribe/policy";
 
@@ -10,8 +11,10 @@ afterEach(async () => {
   await f?.close();
 });
 const recipientsOf = () => f.pushes.map((p) => p.to).sort();
-const header = (p: { message: { headers?: Record<string, string | string[]> } }, name: string) =>
-  p.message.headers?.[name];
+const header = (
+  p: { message: { headers?: Record<string, string | Array<string>> } },
+  name: string,
+) => p.message.headers?.[name];
 
 test("sends once to every eligible member and finishes", async () => {
   f = await runnerFixture();
@@ -101,7 +104,9 @@ test("a scheduled campaign starts when send_at passes on the injected clock", as
 
 async function campaignOf(count: number) {
   const list = await f.list("l");
-  for (let i = 0; i < count; i++) await f.member(`s${String(i).padStart(4, "0")}@x.test`, [list]);
+  for (let i = 0; i < count; i++) {
+    await f.member(`s${String(i).padStart(4, "0")}@x.test`, [list]);
+  }
   return f.campaign({ name: "bulk", subject: "s", lists: [list] });
 }
 
@@ -114,15 +119,18 @@ test("concurrency and the per-worker message rate bound sends", async () => {
   f.start();
   await f.drive(async () => {
     // Each held message is accepted after 20 ms of SMTP time.
-    for (const push of f.pushes) if (f.clock.now().getTime() - push.at >= 20) push.settle();
+    for (const push of f.pushes) {
+      if (f.clock.now().getTime() - push.at >= 20) push.settle();
+    }
     return (await f.read(c.id)).status === "finished";
   }, 10);
   expect(recipientsOf().length).toBe(40);
   expect(new Set(recipientsOf()).size).toBe(40);
   expect(f.maxInFlight).toBeLessThanOrEqual(2);
   const times = f.pushes.map((p) => p.at).sort((a, b) => a - b);
-  for (const t of times)
+  for (const t of times) {
     expect(times.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(6);
+  }
   // 40 messages at no more than 6 per second take at least six seconds.
   expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(6000);
 });
@@ -138,16 +146,20 @@ test("D59 pacing never exceeds the per-worker rate in any one-second window", as
   const smtpMs = (i: number) => ((i * 7) % 10) * 30;
   await f.drive(async () => {
     f.pushes.forEach((push, i) => {
-      if (f.clock.now().getTime() - push.at >= smtpMs(i)) push.settle();
+      if (f.clock.now().getTime() - push.at >= smtpMs(i)) {
+        push.settle();
+      }
     });
     return (await f.read(c.id)).status === "finished";
   }, 10);
   expect(new Set(recipientsOf()).size).toBe(41);
   const times = f.pushes.map((p) => p.at).sort((a, b) => a - b);
-  for (const t of times)
+  for (const t of times) {
     expect(times.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(4);
-  for (const t of times)
+  }
+  for (const t of times) {
     expect(times.filter((u) => u > t - 1000 && u <= t).length).toBeLessThanOrEqual(4);
+  }
   // The worker waits only for the rest of each window: 41 messages at 4/s take ten seconds
   // plus SMTP time, where a full-second sleep after every four would take over 13 s.
   expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(10_000);
@@ -168,8 +180,9 @@ test("the sliding window holds sends until the window is over", async () => {
   await f.until(c.id, "finished");
   const times = f.pushes.map((p) => p.at).sort((a, b) => a - b);
   expect(times.length).toBe(25);
-  for (const t of times)
+  for (const t of times) {
     expect(times.filter((u) => u >= t && u < t + 10_000).length).toBeLessThanOrEqual(10);
+  }
   expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(20_000);
 });
 
@@ -212,7 +225,9 @@ test("pause takes effect mid-batch and resume sends only the unsent rest", async
   f.start();
   await f.drive(() => f.pushes.length === 2);
   expect((await f.status(c.id, "paused")).status).toBe(200);
-  for (const push of f.pushes) push.settle();
+  for (const push of f.pushes) {
+    push.settle();
+  }
   await f.drive(async () => (await f.read(c.id)).sent === 2);
   await f.drive(() => false, 1000, 10).catch(() => {});
   expect(f.pushes.length).toBe(2);
@@ -248,7 +263,9 @@ test("shutdown returns the unsent rest and a restarted runner resumes without du
   const first = f.start();
   await f.drive(() => f.pushes.length === 3);
   const stopping = first.stop();
-  for (const push of f.pushes) push.settle();
+  for (const push of f.pushes) {
+    push.settle();
+  }
   await stopping;
   expect(f.pushes.length).toBe(3);
   expect((await f.read(c.id)).status).toBe("running");
@@ -266,9 +283,9 @@ test("a held lease keeps a second runner off the campaign", async () => {
   const c = await campaignOf(4);
   Object.assign(f.settings, { concurrency: 1, batchSize: 2 });
   await f.status(c.id, "running");
-  f.start(3_000);
+  f.start(3000);
   await f.drive(() => f.pushes.length === 1);
-  f.start(3_000);
+  f.start(3000);
   // Longer than the lease: the first runner's heartbeat keeps it.
   await f.drive(() => false, 500, 20).catch(() => {});
   expect(f.pushes.length).toBe(1);
@@ -419,10 +436,10 @@ test("an unsubscribe or blocklist during a batch stops that subscriber's message
 });
 
 /** The campaign's skipped deliveries as [subscriber id, reason], by subscriber ID. */
-async function skippedOf(campaign: number): Promise<[number, string][]> {
+async function skippedOf(campaign: number): Promise<Array<[number, string]>> {
   const r = await f.json(`/api/campaigns/${campaign}/skipped`);
   expect(r.status).toBe(200);
-  return (r.body.data.results as { subscriber_id: number; reason: string }[])
+  return (r.body.data.results as Array<{ subscriber_id: number; reason: string }>)
     .map((row): [number, string] => [row.subscriber_id, row.reason])
     .sort((x, y) => x[0] - y[0]);
 }
@@ -531,7 +548,9 @@ test("a batch still in flight holds the cap for messages sent late in the batch"
     const t0 = f.clock.now().getTime();
     // Each message takes 30 s of SMTP time: b goes out at about 60 s, c is still in flight.
     await f.drive(() => {
-      for (const push of f.pushes) if (f.clock.now().getTime() - push.at >= 30_000) push.settle();
+      for (const push of f.pushes) {
+        if (f.clock.now().getTime() - push.at >= 30_000) push.settle();
+      }
       return f.clock.now().getTime() - t0 >= 64_000;
     }, 1000);
     expect(f.pushes.map((p) => p.to)).toEqual(["a@x.test", "b@x.test", "c@x.test"]);
@@ -558,7 +577,7 @@ test("claims a stopped runner left on a cancelled campaign stop holding the cap 
   try {
     expect(sends.marketingReason(BigInt(b.id), BigInt(list))).toBe("frequency_cap");
     f.start();
-    f.clock.advance(2_000);
+    f.clock.advance(2000);
     expect(sends.marketingReason(BigInt(b.id), BigInt(list))).toBeNull();
     expect(f.pushes.length).toBe(0);
     expect(f.errors.map(String).join("\n")).toContain("may not have received the campaign");
@@ -579,15 +598,17 @@ test("a runner whose heartbeat stalled keeps its campaign from a second pipe in 
   const stallable = {
     now: () => f.clock.now(),
     async sleep(ms: number, signal?: AbortSignal) {
-      if (stall) await stalled;
+      if (stall) {
+        await stalled;
+      }
       return f.clock.sleep(ms, signal);
     },
   };
-  f.start(3_000, stallable);
+  f.start(3000, stallable);
   await f.drive(() => f.pushes.length === 1);
   stall = true;
   // Well past the lease; a second runner in the same process scans meanwhile.
-  f.start(3_000);
+  f.start(3000);
   await f.drive(() => false, 500, 30).catch(() => {});
   expect(f.pushes.length).toBe(1);
   expect(f.maxInFlight).toBe(1);
@@ -606,7 +627,9 @@ test("tracked links personalized per subscriber do not accumulate across batches
   const { heapStats } = await import("bun:jsc");
   const list = await f.list("l");
   const count = 300;
-  for (let i = 0; i < count; i++) await f.member(`p${String(i).padStart(4, "0")}@x.test`, [list]);
+  for (let i = 0; i < count; i++) {
+    await f.member(`p${String(i).padStart(4, "0")}@x.test`, [list]);
+  }
   const pad = "x".repeat(7000);
   const links = Array.from(
     { length: 8 },
@@ -639,9 +662,15 @@ test("tracked links personalized per subscriber do not accumulate across batches
   // with its state.
   await f.drive(
     () => {
-      if (f.pushes.length >= 60 && !first) first = heap();
-      if (f.pushes.length === count) return true;
-      for (const push of f.pushes) push.settle();
+      if (f.pushes.length >= 60 && !first) {
+        first = heap();
+      }
+      if (f.pushes.length === count) {
+        return true;
+      }
+      for (const push of f.pushes) {
+        push.settle();
+      }
       return false;
     },
     0,
@@ -652,7 +681,9 @@ test("tracked links personalized per subscriber do not accumulate across batches
   // About 13 MB of distinct tracked URLs were rendered since the first measurement.
   expect(last - first).toBeLessThan(6 * 1024 * 1024);
   f.control.hold = false;
-  for (const push of f.pushes) push.settle();
+  for (const push of f.pushes) {
+    push.settle();
+  }
   await f.until(c.id, "finished");
   // Every link still redirects: campaign_links is the lasting record.
   const body = Buffer.from(f.pushes.at(-1)!.message.body).toString();
@@ -672,7 +703,7 @@ test("a wait that never completes fails with the stuck state, not at the test ti
     .drive(() => false, 10, 50)
     .then(
       () => "",
-      (failure: Error) => failure.message,
+      (error_: Error) => error_.message,
     );
   expect(error).toContain("condition not reached after 50 iterations");
   expect(error).toContain("last condition value false");
@@ -695,9 +726,9 @@ test("a wait with no iteration limit ends at the wall bound and names it", async
     .drive(() => false, 50, undefined, 200)
     .then(
       () => "",
-      (failure: Error) => failure.message,
+      (error_: Error) => error_.message,
     );
-  expect(performance.now() - started).toBeLessThan(2_000);
+  expect(performance.now() - started).toBeLessThan(2000);
   expect(error).toContain("wall limit 200 ms");
   expect(error).not.toContain("iteration limit");
   expect(error).toContain("last condition value false");
@@ -809,7 +840,9 @@ async function staleSetup() {
   f = await runnerFixture();
   const list = await f.list("l");
   const subs = [];
-  for (const email of ["a@x.test", "b@x.test"]) subs.push(await f.member(email, [list]));
+  for (const email of ["a@x.test", "b@x.test"]) {
+    subs.push(await f.member(email, [list]));
+  }
   const c = await f.campaign({ name: "stale", subject: "s", lists: [list] });
   await f.status(c.id, "running");
   const now = f.clock.now().toISOString();
@@ -817,7 +850,9 @@ async function staleSetup() {
   const held = f.runnerStore.acquire(BigInt(c.id), "A", until, now)!;
   expect(held).not.toBeNull();
   const id = BigInt(c.id);
-  for (const s of subs) expect(f.runnerStore.claim(id, BigInt(s.id), now)).toBe(true);
+  for (const s of subs) {
+    expect(f.runnerStore.claim(id, BigInt(s.id), now)).toBe(true);
+  }
   // The lease passes to another holder.
   f.db.run("UPDATE campaigns SET runner_lease = 'B' WHERE id = ?", [c.id]);
   return { id, subs, now, held };
@@ -881,7 +916,7 @@ const statuses = (id: number) =>
   (
     f.db
       .query("SELECT status FROM campaign_deliveries WHERE campaign_id = ? ORDER BY subscriber_id")
-      .all(id) as { status: string }[]
+      .all(id) as Array<{ status: string }>
   ).map((d) => d.status);
 
 test("a runner that loses its lease between batches stops sending and writes nothing more", async () => {
@@ -889,7 +924,7 @@ test("a runner that loses its lease between batches stops sending and writes not
   const c = await campaignOf(4);
   Object.assign(f.settings, { concurrency: 1, batchSize: 2 });
   await f.status(c.id, "running");
-  f.start(3_000);
+  f.start(3000);
   await f.drive(() => sentOf(c.id) === 2n);
   stealLease(c.id);
   const cursor = f.runnerStore.state(BigInt(c.id))!.last_subscriber_id;
@@ -910,11 +945,13 @@ test("a runner that loses its lease mid-batch writes nothing, and no one is sent
   const c = await campaignOf(4);
   Object.assign(f.settings, { concurrency: 2, batchSize: 2 });
   await f.status(c.id, "running");
-  f.start(3_000);
+  f.start(3000);
   await f.drive(() => f.pushes.length === 2);
   stealLease(c.id);
   f.control.hold = false;
-  for (const push of f.pushes) push.settle();
+  for (const push of f.pushes) {
+    push.settle();
+  }
   await f.drive(() => false, 500, 40).catch(() => {});
   // The stale batch wrote no count and no settlement; its claims stay for the next holder.
   expect(f.pushes.length).toBe(2);

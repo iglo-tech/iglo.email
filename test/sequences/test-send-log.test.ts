@@ -2,14 +2,17 @@
 // and the SMTP sink: the send answers `true`, a refused recipient is logged with its sequence, step,
 // recipient and stage, and a delivered one is not. Time is the injected clock.
 import { afterEach, expect, test } from "bun:test";
-import { schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
 const REFUSED = "refused@example.test";
 const DELIVERED = "delivered@example.test";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 
 async function open(sinkReject?: (to: string) => boolean) {

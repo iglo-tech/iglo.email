@@ -2,7 +2,8 @@
 // (getDashboardCampaigns) and cmd/admin.go (GetDashboardCharts, GetDashboardCounts) at 6fcd95f.
 // GET /api/sends/analytics is native. Reads run in the reader child; see src/analytics/reader.ts.
 import { parseBound } from "@/analytics/dates";
-import { ReaderError, type AnalyticsReader } from "@/analytics/reader";
+import { ReaderError } from "@/analytics/reader";
+import type { AnalyticsReader } from "@/analytics/reader";
 import type { CountType, Interval, Range } from "@/analytics/store";
 import type { Summaries, SummaryName } from "@/analytics/summaries";
 import type { CampaignStore, Scope } from "@/campaigns/store";
@@ -13,7 +14,7 @@ import type { Router } from "@/server/router";
 import { strHasLen } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 
-const intervals = ["hour", "day", "week", "month"];
+const intervals = new Set(["hour", "day", "week", "month"]);
 const campaignTypes = ["views", "clicks", "total_views", "total_clicks", "bounces"];
 const listTypes = [...campaignTypes, "subscriptions", "unsubscriptions"];
 /** A page of the sequence list. */
@@ -164,7 +165,9 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
       }
       if (!(resource === "list" ? listTypes : campaignTypes).includes(counted))
         throw invalidData(context);
-      if (!intervals.includes(interval)) throw invalidData(context);
+      if (!intervals.has(interval)) {
+        throw invalidData(context);
+      }
       return served(context, (signal) =>
         reader.respond(
           resource === "list" ? "listCounts" : "campaignCounts",
@@ -196,14 +199,18 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const sendAnalytics: Handler = (context) => {
     const range = parseRange(context);
     const group = context.url.searchParams.get("group_by") ?? "template";
-    if (group !== "template" && group !== "step") throw invalidData(context);
+    if (group !== "template" && group !== "step") {
+      throw invalidData(context);
+    }
     return served(context, (signal) => reader.respond("sends", [group, range], signal));
   };
 
   /** Native: the counts of a page of sequences; 07-api-and-ui.md. */
   const sequenceCounts: Handler = (context) => {
     const ids = parseIDs(context);
-    if (ids.length > MAX_SEQUENCE_IDS) throw invalidData(context);
+    if (ids.length > MAX_SEQUENCE_IDS) {
+      throw invalidData(context);
+    }
     return served(context, (signal) => reader.respond("sequenceCounts", [ids.map(String)], signal));
   };
 

@@ -75,6 +75,8 @@ export function renderStep(
   budget?: MessageBudget,
 ): { subject: string; body: string } {
   const rendered = compiled.renderSync(data, tracking, budget);
-  if (/[\r\n\0]/.test(rendered.subject)) throw new Error("Invalid subject");
+  if (/[\r\n\0]/.test(rendered.subject)) {
+    throw new Error("Invalid subject");
+  }
   return rendered;
 }

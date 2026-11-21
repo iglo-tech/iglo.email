@@ -12,7 +12,7 @@ export const defaults = {
   "app.max_send_errors": 1000,
   "app.message_sliding_window": false,
   "app.message_sliding_window_duration": "1h",
-  "app.message_sliding_window_rate": 10000,
+  "app.message_sliding_window_rate": 10_000,
   "app.cache_slow_queries": false,
   "app.cache_slow_queries_interval": "0 3 * * *",
   "app.enable_public_archive": true,
@@ -44,7 +44,7 @@ export const defaults = {
   "security.captcha": {
     altcha: {
       enabled: false,
-      complexity: 300000,
+      complexity: 300_000,
     },
     hcaptcha: {
       enabled: false,

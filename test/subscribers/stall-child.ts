@@ -11,4 +11,6 @@ for (const index of [0, 1]) {
   writer.close();
   writeSync(1, `R${index}\nB1\n`);
 }
-for (;;) Bun.sleepSync(50);
+for (;;) {
+  Bun.sleepSync(50);
+}

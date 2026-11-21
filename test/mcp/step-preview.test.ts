@@ -4,13 +4,8 @@
 // preview_template takes the same sample as the REST preview.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import {
-  startProduction,
-  startMailbox,
-  admin,
-  type Production,
-  type Mailbox,
-} from "@/test/worked-example/harness";
+import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
+import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 
 describe("D105 step preview and test send through MCP", () => {
@@ -55,7 +50,9 @@ describe("D105 step preview and test send through MCP", () => {
       await production.stop().catch(() => {});
       await production.close().catch(() => {});
     }
-    if (mailbox) await mailbox.close().catch(() => {});
+    if (mailbox) {
+      await mailbox.close().catch(() => {});
+    }
   });
 
   async function rpc(method: string, params?: unknown) {
@@ -68,10 +65,12 @@ describe("D105 step preview and test send through MCP", () => {
   }
   async function callTool(name: string, args: Record<string, unknown>) {
     const reply = await rpc("tools/call", { name, arguments: args });
-    if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
+    if (reply.error) {
+      throw new Error(`${name}: ${reply.error.message}`);
+    }
     return reply.result as {
       isError?: boolean;
-      content: { type: string; text: string }[];
+      content: Array<{ type: string; text: string }>;
       structuredContent?: any;
     };
   }
@@ -81,11 +80,11 @@ describe("D105 step preview and test send through MCP", () => {
       headers: adminHeaders,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    return { status: response.status, body: (await response.json()) as any };
+    return { status: response.status, body: await response.json() };
   }
 
   test("the step tools are listed with D98's annotations, and preview_template takes a sample", async () => {
-    const tools = (await rpc("tools/list")).result.tools as any[];
+    const tools = (await rpc("tools/list")).result.tools as Array<any>;
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     expect(byName.get("preview_sequence_step")?.annotations).toMatchObject({
       readOnlyHint: true,
@@ -132,7 +131,7 @@ describe("D105 step preview and test send through MCP", () => {
     const sample = {
       subscriber: { name: "Grace" },
       trigger: { data: { items: 7 } },
-      aggregates: { downloads: 1234567 },
+      aggregates: { downloads: 1_234_567 },
     };
     const shown = await callTool("preview_sequence_step", { id, step, body: { sample } });
     expect(shown.isError).toBeFalsy();
@@ -144,7 +143,7 @@ describe("D105 step preview and test send through MCP", () => {
     const template_preview = await callTool("preview_template", {
       template_type: "tx",
       body: "{{ subscriber.name }}|{{ aggregates.x | number | default: 0 }}",
-      sample: { subscriber: { name: "Grace" }, aggregates: { x: 1234567 } },
+      sample: { subscriber: { name: "Grace" }, aggregates: { x: 1_234_567 } },
     });
     expect(template_preview.content[0]!.text).toBe("Grace|1,234,567");
   });

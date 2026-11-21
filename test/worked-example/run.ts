@@ -2,15 +2,10 @@
 // its public HTTP API, with every wait shortened to seconds. Each email is checked by what the
 // loopback SMTP sink received (recipient, subject, body marker). Run with `bun run worked-example`.
 // Scenarios and data: test/worked-example/README.md.
-import {
-  apiClient,
-  check,
-  startMailbox,
-  startProduction,
-  type Api,
-  type Mailbox,
-} from "@/test/worked-example/harness";
-import { signatureValid, startReceiver, type Receiver } from "@/test/webhooks/receiver";
+import { apiClient, check, startMailbox, startProduction } from "@/test/worked-example/harness";
+import type { Api, Mailbox } from "@/test/worked-example/harness";
+import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import type { Receiver } from "@/test/webhooks/receiver";
 
 /** Every shortened `P3D`/`P5D`/`P45D` wait. */
 const WAIT = "PT10S";
@@ -53,7 +48,7 @@ const mailbox = await startMailbox();
 /** The app's webhook endpoint: its consent field follows these deliveries. */
 const appEndpoint = startReceiver();
 /** Every message the run expects, exactly once. */
-const expected: [string, string][] = [];
+const expected: Array<[string, string]> = [];
 let failure: unknown;
 try {
   const api = await apiClient(production.origin);
@@ -71,12 +66,14 @@ try {
   appEndpoint.close();
 }
 if (failure) {
-  if (production.errors()) console.error(`production stderr:\n${production.errors()}`);
+  if (production.errors()) {
+    console.error(`production stderr:\n${production.errors()}`);
+  }
   throw failure;
 }
 log(`worked example passed: ${expected.length} emails, each received exactly once`);
 
-async function scenario(api: Api, mail: Mailbox, expected: [string, string][], app: Receiver) {
+async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string]>, app: Receiver) {
   const { ok } = api;
 
   // --- Setup: SMTP to the sink, a short cap, templates, a marketing list and the sequences.
@@ -119,7 +116,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     ).id as number;
   };
   const t = Object.fromEntries(
-    await Promise.all((Object.keys(subjects) as Key[]).map(async (k) => [k, await template(k)])),
+    await Promise.all(
+      (Object.keys(subjects) as Array<Key>).map(async (k) => [k, await template(k)]),
+    ),
   ) as Record<Key, number>;
 
   const sequence = async (definition: Record<string, unknown>) =>
@@ -215,21 +214,22 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     }) as Promise<{
       subscriber_id: number;
       enrollments: {
-        started: { id: number; sequence_id: number }[];
-        ended: { id: number; sequence_id: number; exit_reason: string }[];
+        started: Array<{ id: number; sequence_id: number }>;
+        ended: Array<{ id: number; sequence_id: number; exit_reason: string }>;
       };
     }>;
   const startedIn = (response: Awaited<ReturnType<typeof event>>, sequence: { id: number }) =>
     response.enrollments.started.find((e) => e.sequence_id === sequence.id)?.id;
   const enrollment = (id: number) => ok(`/api/enrollments/${id}`);
   const enrollmentsOf = async (name: string) =>
-    (await ok(`/api/enrollments?subscriber_id=${subscribers.get(name)}&per_page=50`)).results as {
+    (await ok(`/api/enrollments?subscriber_id=${subscribers.get(name)}&per_page=50`))
+      .results as Array<{
       id: number;
       sequence_id: number;
       status: string;
       exit_reason: string | null;
       due_at: string | null;
-    }[];
+    }>;
   const membership = async (name: string) =>
     (await ok(`/api/subscribers/${subscribers.get(name)}`)).lists.find(
       (l: { id: number }) => l.id === list,
@@ -245,7 +245,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const current = await enrollment(id);
-      if (current.status !== "active") return current;
+      if (current.status !== "active") {
+        return current;
+      }
       check(Date.now() < deadline, `enrollment ${id} still active`);
       await Bun.sleep(250);
     }
@@ -254,7 +256,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const current = await enrollment(id);
-      if (current.status === status) return current;
+      if (current.status === status) {
+        return current;
+      }
       check(Date.now() < deadline, `enrollment ${id} still ${current.status}, wanted ${status}`);
       await Bun.sleep(250);
     }
@@ -280,7 +284,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     "r1",
     "w1",
   ];
-  for (const name of names) await person(name, name.startsWith("p") ? "prepaid" : "subscription");
+  for (const name of names) {
+    await person(name, name.startsWith("p") ? "prepaid" : "subscription");
+  }
 
   // ===== Phase 1: every flow starts; immediate emails arrive.
   // 1. Prepaid. p1 never downloads; p2 downloads; p3 buys again.
@@ -300,7 +306,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     p3third.enrollments.started.length === 0 && p3again.enrollments.started.length === 0,
     "third order and a repeated order_number 2 start nothing (reentry never)",
   );
-  for (const name of ["p1", "p2", "p3"]) await receive(name, "credits");
+  for (const name of ["p1", "p2", "p3"]) {
+    await receive(name, "credits");
+  }
   const p3secondMail = await receive("p3", "second");
   check(p3secondMail.header("List-Unsubscribe"), "marketing step carries List-Unsubscribe");
 
@@ -332,7 +340,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
   );
 
   // 4. Cancel and win-back: c1 says "price", c4 another reason, c3 resubscribes, c2 silent.
-  for (const name of ["c1", "c2", "c3", "c4"]) await event(name, "subscription_canceled");
+  for (const name of ["c1", "c2", "c3", "c4"]) {
+    await event(name, "subscription_canceled");
+  }
   await event("c1", "feedback_given", { reason: "price" });
   await event("c4", "feedback_given", { reason: "too_complex" });
   const resubscribed = await event("c3", "subscription_created");
@@ -341,7 +351,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
       startedIn(resubscribed, welcome),
     "subscription_created exits the Cancellation sequence and starts Welcome",
   );
-  for (const name of ["c1", "c2", "c3", "c4"]) await receive(name, "question");
+  for (const name of ["c1", "c2", "c3", "c4"]) {
+    await receive(name, "question");
+  }
   await receive("c3", "welcome");
 
   // 4b. Send-time consent: n1 is created by the event with no list membership. The
@@ -392,10 +404,10 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
   }
   const link = /<a href="([^"]+\/unsubscribe\/[^"]+)">Unsubscribe<\/a>/.exec(u1mail.body)?.[1];
   check(link, "u1's Second pack has an unsubscribe link");
-  const page = await fetch(link!, { signal: AbortSignal.timeout(10_000) });
+  const page = await fetch(link, { signal: AbortSignal.timeout(10_000) });
   check(page.status === 200 && (await page.text()).includes("<form"), "unsubscribe page");
   check((await membership("u1")) === "unconfirmed", "viewing the page changes nothing");
-  const form = await fetch(link!, {
+  const form = await fetch(link, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: "",
@@ -407,7 +419,7 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     oneClick && u2mail.header("List-Unsubscribe-Post") === "List-Unsubscribe=One-Click",
     "u2's Second pack has the RFC 8058 header pair",
   );
-  const posted = await fetch(oneClick!, {
+  const posted = await fetch(oneClick, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: "List-Unsubscribe=One-Click",
@@ -454,7 +466,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     const waiting = await enrollment(r1);
     const due = Date.parse(waiting.due_at);
     check(due > Date.now(), "Payment failed paused before r1's step 2 is due");
-    while (Date.now() <= due + 1000) await Bun.sleep(100);
+    while (Date.now() <= due + 1000) {
+      await Bun.sleep(100);
+    }
     const w1 = startedIn(await event("w1", "subscription_created"), welcome)!;
     await receive("w1", "welcome");
     const r1now = await enrollment(r1);
@@ -499,7 +513,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
   const r1mail = await receive("r1", "failed2", 2 * TICK_MS);
   check(r1mail.at >= resumedAt, "r1's due step 2 arrived after the restart and resume");
   await receive("w1", "setup", 2 * TICK_MS);
-  for (const name of ["u1", "u2"]) await receive(name, "failed2", 2 * TICK_MS);
+  for (const name of ["u1", "u2"]) {
+    await receive(name, "failed2", 2 * TICK_MS);
+  }
   const kMonthMail = await receive("k1", "month", 60_000 + 2 * TICK_MS);
   check(
     kMonthMail.at >= kSecond.at + CAP_MS - 1000,
@@ -539,7 +555,9 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
 
   // ===== Phase 2: edit a template and a wait mid-flight, then delete a step.
   // e1 has passed step 1 and waits on step 2; f2 already received step 2.
-  for (const name of ["e1", "e4", "d1", "d2"]) await person(name, "subscription");
+  for (const name of ["e1", "e4", "d1", "d2"]) {
+    await person(name, "subscription");
+  }
   const e1 = startedIn(await event("e1", "subscription_past_due"), payment)!;
   await receive("e1", "failed");
   const e1before = await enrollment(e1);
@@ -595,14 +613,17 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
   check(d2tips.at >= Date.parse(d2waiting.due_at), "d2's Tips not before its full wait");
   const e4mail = await receive("e4", "failedFinal", 40_000 + 2 * TICK_MS);
   check(e4mail.at >= Date.parse(e4waiting.due_at), "e4's step 2 not before its new due time");
-  for (const id of [e1, e4, d1, d2]) await waitForStatus(id, "completed");
+  for (const id of [e1, e4, d1, d2]) {
+    await waitForStatus(id, "completed");
+  }
   log("phase 2 complete: edits applied only to steps not yet reached");
 
   // ===== Final: nothing else arrived, nothing twice, no errors logged.
   await Bun.sleep(TICK_MS);
   const counts = new Map<string, number>();
-  for (const m of mail.mails)
+  for (const m of mail.mails) {
     counts.set(`${m.to}|${m.subject}`, (counts.get(`${m.to}|${m.subject}`) ?? 0) + 1);
+  }
   const unexpected = [...counts.keys()].filter(
     (k) => !expected.some(([to, subject]) => `${to}|${subject}` === k),
   );
@@ -625,7 +646,8 @@ async function scenario(api: Api, mail: Mailbox, expected: [string, string][], a
     [email("e1"), subjects.failed2],
     [email("d1"), subjects.setup],
     [email("d2"), subjects.setup],
-  ] as const)
+  ] as const) {
     check(mail.find(to, subject).length === 0, `no "${subject}" for ${to}`);
+  }
   check(production.errors() === "", `production logged: ${production.errors()}`);
 }

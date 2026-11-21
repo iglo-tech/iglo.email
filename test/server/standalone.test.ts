@@ -28,7 +28,9 @@ test("compiled translation fixture embeds its selected pack", async () => {
       build.exited,
       new Response(build.stderr).text(),
     ]);
-    if (buildCode !== 0) throw new Error(`Fixture build failed: ${buildError}`);
+    if (buildCode !== 0) {
+      throw new Error(`Fixture build failed: ${buildError}`);
+    }
     const started = Bun.spawn([executable], {
       cwd: temporaryDirectory,
       env: { PATH: "" },

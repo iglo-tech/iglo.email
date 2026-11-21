@@ -15,7 +15,7 @@ const ownerFile = join(lock, "owner");
 // A held lock is waited for as long as its owner lives (a build takes about a minute).
 const holdLimitMs = 15 * 60_000;
 // Any other `mkdir` failure (permissions, full disk) cannot clear by waiting.
-const faultLimitMs = 5_000;
+const faultLimitMs = 5000;
 let built: Promise<void> | undefined;
 
 function alive(pid: number): boolean {
@@ -32,7 +32,9 @@ function alive(pid: number): boolean {
 function stale(dir = lock): boolean {
   try {
     const pid = Number(readFileSync(join(dir, "owner"), "utf8"));
-    if (Number.isInteger(pid) && pid > 0) return !alive(pid);
+    if (Number.isInteger(pid) && pid > 0) {
+      return !alive(pid);
+    }
   } catch {}
   try {
     return Date.now() - statSync(dir).mtimeMs > 10_000;
@@ -73,7 +75,9 @@ async function acquire(): Promise<void> {
       if (code === "EEXIST") {
         if (stale() && takeOver()) continue;
         if (Date.now() - start > holdLimitMs) {
-          throw new Error(`Production build lock ${lock} is still held by a live process`);
+          throw new Error(`Production build lock ${lock} is still held by a live process`, {
+            cause: error,
+          });
         }
       } else if (Date.now() - start > faultLimitMs) {
         throw new Error(`Cannot create production build lock ${lock}: ${(error as Error).message}`);
@@ -97,14 +101,18 @@ async function build(): Promise<void> {
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
     ]);
-    if (code !== 0) throw new Error(`Build failed:\n${stdout}\n${stderr}`);
+    if (code !== 0) {
+      throw new Error(`Build failed:\n${stdout}\n${stderr}`);
+    }
   } finally {
     rmSync(lock, { recursive: true, force: true });
   }
 }
 
 export function ensureProductionBuild(): Promise<void> {
-  if (process.env.IGLO_TEST_PREBUILT === "1") return Promise.resolve();
+  if (process.env.IGLO_TEST_PREBUILT === "1") {
+    return Promise.resolve();
+  }
   built ??= build();
   return built;
 }

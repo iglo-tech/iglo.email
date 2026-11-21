@@ -6,7 +6,9 @@ import { writeTransaction } from "@/db/transaction";
 const db = openDatabase(process.argv[2]!);
 try {
   const lock = process.argv[3] === "lock";
-  if (!lock) process.stdout.write("attempt\n");
+  if (!lock) {
+    process.stdout.write("attempt\n");
+  }
   writeTransaction(db, () => {
     db.run("INSERT INTO fixture_records (id, value) VALUES (?, ?)", [
       lock ? 10 : 20,

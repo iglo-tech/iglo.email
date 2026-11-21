@@ -1,11 +1,14 @@
 // A list grant on the trigger event lands before the sequence starts (D99): a PT0S marketing
 // first step sends when granted and ends unsubscribed when the grant is missing or refused.
 import { afterEach, expect, test } from "bun:test";
-import { schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();

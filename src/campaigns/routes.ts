@@ -5,7 +5,8 @@ import { refuseWhileHeld } from "@/settings/hold";
 import { writeTransaction } from "@/db/transaction";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
-import { newMessageId, type Message, type Outcome } from "@/messaging/email";
+import { newMessageId } from "@/messaging/email";
+import type { Message, Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
@@ -32,8 +33,8 @@ import {
   readCampaignBody,
   slug,
   validateCampaign,
-  type CampaignRequest,
 } from "@/campaigns/input";
+import type { CampaignRequest } from "@/campaigns/input";
 import { optinBody } from "@/campaigns/optin";
 import {
   CampaignSourceError,
@@ -42,16 +43,15 @@ import {
   dummySubscriber,
   dummyUUID,
   testSendUUID,
-  type CampaignSubscriber,
-  type MessageCampaign,
 } from "@/campaigns/render";
-import {
-  CampaignError,
-  type CampaignFilter,
-  type CampaignRow,
-  type CampaignStore,
-  type Scope,
-  type WritableCampaign,
+import type { CampaignSubscriber, MessageCampaign } from "@/campaigns/render";
+import { CampaignError } from "@/campaigns/store";
+import type {
+  CampaignFilter,
+  CampaignRow,
+  CampaignStore,
+  Scope,
+  WritableCampaign,
 } from "@/campaigns/store";
 
 export interface CampaignSettings {
@@ -59,7 +59,7 @@ export interface CampaignSettings {
   rootUrl: string;
   siteName: string;
   /** "email" and the names of enabled SMTP servers (listmonk's messengers). */
-  messengers: string[];
+  messengers: Array<string>;
   unsubscribeHeader: boolean;
   disableTracking: boolean;
   individualTracking: boolean;
@@ -85,7 +85,10 @@ export interface CampaignDeps {
   /** The site's branding for the archive preview's error pages (B121). */
   page: () => PageSite;
   /** Reads files, so a caller holds no transaction. */
-  attachments(ids: bigint[], inline: InlineImage[]): Promise<NonNullable<Message["attachments"]>>;
+  attachments(
+    ids: Array<bigint>,
+    inline: Array<InlineImage>,
+  ): Promise<NonNullable<Message["attachments"]>>;
   embedImages: EmbedImages;
   notify?: AdminNotifier;
   /** Wakes the campaign runner (B75): a start, resume or due schedule need not wait for its scan. */
@@ -158,7 +161,9 @@ const truthy = (value: string | null) =>
   ["1", "t", "T", "TRUE", "true", "True"].includes(value ?? "");
 /** Go strconv.Atoi with errors ignored. */
 const atoi = (value: string | null | undefined) => {
-  if (!value || !/^[+-]?\d+$/.test(value)) return 0;
+  if (!value || !/^[+-]?\d+$/.test(value)) {
+    return 0;
+  }
   const n = Number(value);
   return Number.isSafeInteger(n) ? n : 0;
 };
@@ -175,15 +180,21 @@ const FORM_LIMIT = 2 * 1024 * 1024;
 /** Echo FormValue: url-encoded or multipart body fields, then query parameters. */
 async function formValues(context: RequestContext): Promise<(key: string) => string | null> {
   const query = context.url.searchParams;
-  if (context.request.method === "GET") return (key) => query.get(key);
+  if (context.request.method === "GET") {
+    return (key) => query.get(key);
+  }
   const media = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-  if (Number(context.request.headers.get("content-length")) > FORM_LIMIT) throw new HttpError(413);
+  if (Number(context.request.headers.get("content-length")) > FORM_LIMIT) {
+    throw new HttpError(413);
+  }
   const bytes = new Uint8Array(await context.request.arrayBuffer());
-  if (bytes.length > FORM_LIMIT) throw new HttpError(413);
+  if (bytes.length > FORM_LIMIT) {
+    throw new HttpError(413);
+  }
   let form: URLSearchParams | FormData | null = null;
-  if (media === "application/x-www-form-urlencoded")
+  if (media === "application/x-www-form-urlencoded") {
     form = new URLSearchParams(Buffer.from(bytes).toString("utf8"));
-  else if (media === "multipart/form-data" && bytes.length)
+  } else if (media === "multipart/form-data" && bytes.length) {
     try {
       form = await new Request("http://form.invalid", {
         method: "POST",
@@ -193,6 +204,7 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
     } catch {
       throw new HttpError(400);
     }
+  }
   return (key) => {
     const value = form?.get(key);
     return typeof value === "string" ? value : query.get(key);
@@ -200,45 +212,54 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
 }
 
 /** The first Message-ID among a message's own headers (any case), or undefined when it names none. */
-function headerMessageId(headers: Record<string, string | string[]>): string | undefined {
-  for (const [name, value] of Object.entries(headers))
+function headerMessageId(headers: Record<string, string | Array<string>>): string | undefined {
+  for (const [name, value] of Object.entries(headers)) {
     if (name.toLowerCase() === "message-id")
       return (Array.isArray(value) ? value[0] : value) || undefined;
+  }
   return undefined;
 }
 
 export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const { store, roles, auth, testSends } = deps;
   const identity = (context: RequestContext) => {
-    if (!context.identity) throw new Error("Authenticated identity required");
+    if (!context.identity) {
+      throw new Error("Authenticated identity required");
+    }
     return context.identity;
   };
   const can = (context: RequestContext, permission: string) =>
     roles.can(identity(context).role, permission);
   /** auth.Perm: any of the permissions; the message names the last one checked. */
   const any =
-    (...permissions: string[]): Middleware =>
+    (...permissions: Array<string>): Middleware =>
     (context, next) => {
-      if (!permissions.some((p) => can(context, p)))
+      if (!permissions.some((p) => can(context, p))) {
         throw new HttpError(403, `permission denied: ${permissions.at(-1)}`);
+      }
       return next();
     };
-  const recheck = (context: RequestContext, ...permissions: string[]) => {
+  const recheck = (context: RequestContext, ...permissions: Array<string>) => {
     auth.revalidate(context);
-    if (!permissions.some((p) => can(context, p)))
+    if (!permissions.some((p) => can(context, p))) {
       throw new HttpError(403, `permission denied: ${permissions.at(-1)}`);
+    }
   };
   /** User.GetPermittedLists: get|manage uses get grants when there are any. */
   const permitted = (context: RequestContext, manage: boolean): Scope => {
     const { role, user } = identity(context);
     const manageScope = roles.listScope(role, user.list_role_id, "list:manage");
-    if (manage) return manageScope;
+    if (manage) {
+      return manageScope;
+    }
     const getScope = roles.listScope(role, user.list_role_id, "list:get");
-    if (getScope.all || manageScope.all) return { all: true, ids: [] };
+    if (getScope.all || manageScope.all) {
+      return { all: true, ids: [] };
+    }
     return getScope.ids.length ? getScope : manageScope;
   };
   /** User.FilterListsByPerm for list:manage. */
-  const manageable = (context: RequestContext, ids: bigint[]) => {
+  const manageable = (context: RequestContext, ids: Array<bigint>) => {
     const scope = permitted(context, true);
     return scope.all ? ids : ids.filter((id) => scope.ids.includes(id));
   };
@@ -250,9 +271,11 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     );
   /** checkCampaignPerm. */
   const checkCampaign = (context: RequestContext, manage: boolean, id: bigint) => {
-    if (can(context, manage ? "campaigns:manage_all" : "campaigns:get_all")) return;
+    if (can(context, manage ? "campaigns:manage_all" : "campaigns:get_all")) {
+      return;
+    }
     const scope = permitted(context, manage);
-    if (!scope.all && !store.hasLists(id, scope.ids))
+    if (!scope.all && !store.hasLists(id, scope.ids)) {
       throw new HttpError(
         403,
         t(context).Ts(
@@ -261,6 +284,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           manage ? "campaigns:manage" : "campaigns:get",
         ),
       );
+    }
   };
   const row = (context: RequestContext, id: bigint) =>
     store.get(id) ??
@@ -269,18 +293,24 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     })();
   const translate = (context: RequestContext, error: unknown): never => {
     if (error instanceof CampaignError) {
-      if (error.reason === "missing") throw notFound(context);
+      if (error.reason === "missing") {
+        throw notFound(context);
+      }
       if (error.reason === "slug")
-        // D-campaign-slug: a safe conflict instead of upstream's database error.
+      // D-campaign-slug: a safe conflict instead of upstream's database error.
+      {
         throw new HttpError(409, "Archive slug already exists.");
-      if (error.reason === "template")
+      }
+      if (error.reason === "template") {
         throw new HttpError(
           400,
           t(context).Ts("globals.messages.invalidFields", "name", "template_id"),
         );
+      }
       const key = error.reason.slice("status:".length);
-      if (key === "invalid")
+      if (key === "invalid") {
         throw new HttpError(400, t(context).Ts("globals.messages.invalidFields", "name", "status"));
+      }
       throw new HttpError(400, t(context).T(`campaigns.${key}`));
     }
     throw error;
@@ -297,7 +327,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           compileCampaign(deps.renderer, { ...value, uuid: dummyUUID, templateBody: "" });
           return null;
         } catch (error) {
-          if (error instanceof CampaignSourceError) return `invalid ${error.field}`;
+          if (error instanceof CampaignSourceError) {
+            return `invalid ${error.field}`;
+          }
           throw error;
         }
       },
@@ -307,12 +339,16 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const templateBody = (id: bigint | null) =>
     id === null ? "" : (deps.templates.get(id)?.body ?? "");
   const renderFailure = (context: RequestContext, error: unknown, key: string): never => {
-    if (error instanceof HttpError) throw error;
-    if (error instanceof RenderCapacityError)
+    if (error instanceof HttpError) {
+      throw error;
+    }
+    if (error instanceof RenderCapacityError) {
       throw new HttpError(429, "Too many template renders in progress.");
+    }
     // The Markdown size cap (D112) is a clear 400 with its own message, as on test send and send.
-    if (error instanceof MarkdownSourceError)
+    if (error instanceof MarkdownSourceError) {
       throw new HttpError(400, t(context).Ts(key, "error", error.message));
+    }
     throw new HttpError(
       400,
       t(context).Ts(
@@ -342,11 +378,15 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       ? { all: true, ids: [] }
       : permitted(context, false);
     let page = atoi(params.get("page"));
-    if (page < 1) page = 1;
+    if (page < 1) {
+      page = 1;
+    }
     const rawPer = params.get("per_page");
     let perPage = rawPer === "all" ? 0 : atoi(rawPer);
-    if (rawPer !== "all" && perPage < 1) perPage = 20;
-    const query = (params.get("query") ?? "").trim().replace(/\s+/g, " ");
+    if (rawPer !== "all" && perPage < 1) {
+      perPage = 20;
+    }
+    const query = (params.get("query") ?? "").trim().replaceAll(/\s+/g, " ");
     const filter: CampaignFilter = {
       query,
       statuses: params.getAll("status"),
@@ -362,13 +402,16 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       offset,
       perPage,
     );
-    if (!result.rows.length)
+    if (!result.rows.length) {
       return ok({ results: [], search: "", query: "", total: 0, per_page: 0, page: 0 });
+    }
     const noBody = truthy(params.get("no_body"));
     return ok({
       results: result.rows.map((r) => {
         const out = projectCampaign(r, noBody);
-        if (noBody) out.body_source = null;
+        if (noBody) {
+          out.body_source = null;
+        }
         return out;
       }),
       search: "",
@@ -395,7 +438,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           const started = Date.parse(c.started_at ?? "");
           const minutes = Math.floor((Date.parse(c.updated_at ?? "") - started) / 60_000);
           let rate = Number.isNaN(minutes) ? 0 : Math.floor(sent / Math.max(minutes, 1));
-          if (rate > sent || rate > toSend) rate = sent;
+          if (rate > sent || rate > toSend) {
+            rate = sent;
+          }
           return {
             id: idValue(c.id),
             status: c.status,
@@ -422,7 +467,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     row(context, id);
     const number = (key: string, fallback: number, limit: number) => {
       const value = context.url.searchParams.get(key) ?? String(fallback);
-      if (!/^[1-9]\d{0,6}$/.test(value) || Number(value) > limit) throw new HttpError(400);
+      if (!/^[1-9]\d{0,6}$/.test(value) || Number(value) > limit) {
+        throw new HttpError(400);
+      }
       return Number(value);
     };
     const page = number("page", 1, 1_000_000);
@@ -448,7 +495,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     checkCampaign(context, false, id);
     const contentType = value("content_type") ?? "";
     let templateId = atoi(value("template_id"));
-    if (contentType === "visual" || templateId < 1) templateId = 0;
+    if (contentType === "visual" || templateId < 1) {
+      templateId = 0;
+    }
     const stored = row(context, id);
     const campaign: MessageCampaign = {
       ...writable(stored),
@@ -458,7 +507,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     if (context.request.method === "POST") {
       campaign.content_type = contentType as MessageCampaign["content_type"];
       campaign.body = value("body") ?? "";
-      if (contentType === "visual") campaign.templateBody = "";
+      if (contentType === "visual") {
+        campaign.templateBody = "";
+      }
     }
     let compiled;
     try {
@@ -475,8 +526,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     } catch (error) {
       return renderFailure(context, error, "templates.errorRendering");
     }
-    if (campaign.content_type === "plain")
+    if (campaign.content_type === "plain") {
       return new Response(body, { headers: { "Content-Type": "text/plain; charset=UTF-8" } });
+    }
     return new Response(body, { headers: previewHeaders });
   };
   const archivePreview: Handler = async (context) => {
@@ -498,9 +550,13 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     let meta: Record<string, unknown>;
     try {
       const parsed = JSON.parse(value("archive_meta") ?? "") as unknown;
-      if (parsed === null) meta = {};
-      else if (typeof parsed !== "object" || Array.isArray(parsed)) return failed();
-      else meta = parsed as Record<string, unknown>;
+      if (parsed === null) {
+        meta = {};
+      } else if (typeof parsed !== "object" || Array.isArray(parsed)) {
+        return failed();
+      } else {
+        meta = parsed as Record<string, unknown>;
+      }
     } catch {
       return failed();
     }
@@ -513,16 +569,18 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       }).render(subscriber, { rootUrl: deps.settings().rootUrl, unsubscribeUrl: "" }).body;
       return new Response(body, { headers: previewHeaders });
     } catch (error) {
-      if (error instanceof RenderCapacityError)
+      if (error instanceof RenderCapacityError) {
         throw new HttpError(429, "Too many template renders in progress.");
+      }
       // The Markdown size cap (D112) is shown with its own message, not the generic failure page.
-      if (error instanceof MarkdownSourceError)
+      if (error instanceof MarkdownSourceError) {
         return publicMessage(t(context), {
           status: 400,
           title: t(context).T("globals.terms.error"),
           message: t(context).Ts("templates.errorRendering", "error", error.message),
           site: deps.page(),
         });
+      }
       return failed();
     }
   };
@@ -541,7 +599,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           : t(context).Ts("templates.errorCompiling", "error", "invalid markdown"),
       );
     }
-    if (out === null) throw new HttpError(400, "unknown formats to convert");
+    if (out === null) {
+      throw new HttpError(400, "unknown formats to convert");
+    }
     return ok(out);
   };
   const create: Handler = async (context) => {
@@ -550,20 +610,29 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     const listIds = manageable(context, input.lists ?? []);
     let value = mergeCampaign(emptyCampaign, input);
     if (input.type === "optin") {
-      if (!listIds.length) throw new HttpError(400, t(context).T("campaigns.fieldInvalidListIDs"));
+      if (!listIds.length) {
+        throw new HttpError(400, t(context).T("campaigns.fieldInvalidListIDs"));
+      }
       const lists = listIds
         .map((id) => deps.lists.subscriberMetadata(id))
         .filter((l) => l !== null && l.optin === "double")
         .sort((a, b) => a!.id - b!.id);
-      if (!lists.length) throw new HttpError(400, t(context).T("campaigns.noOptinLists"));
+      if (!lists.length) {
+        throw new HttpError(400, t(context).T("campaigns.noOptinLists"));
+      }
       value = {
         ...value,
         type: "optin",
-        body: optinBody(t(context), lists as NonNullable<(typeof lists)[number]>[]),
+        body: optinBody(t(context), lists as Array<NonNullable<(typeof lists)[number]>>),
       };
-    } else if (!input.type || input.type === "regular") value.type = "regular";
-    else throw new HttpError(400, t(context).Ts("globals.messages.invalidFields", "name", "type"));
-    if (!value.messenger) value.messenger = "email";
+    } else if (!input.type || input.type === "regular") {
+      value.type = "regular";
+    } else {
+      throw new HttpError(400, t(context).Ts("globals.messages.invalidFields", "name", "type"));
+    }
+    if (!value.messenger) {
+      value.messenger = "email";
+    }
     value = validateCampaign(value, listIds, policy(context));
     if (input.archive_template_id !== undefined && input.archive_template_id !== null) {
       value.archive_template_id =
@@ -578,8 +647,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const update: Handler = async (context) => {
     const id = BigInt(getID(context));
     checkCampaign(context, true, id);
-    if (!editable(row(context, id).status))
+    if (!editable(row(context, id).status)) {
       throw new HttpError(400, t(context).T("campaigns.cantUpdate"));
+    }
     const input = bindCampaign(await readCampaignBody(context.request));
     recheck(context, "campaigns:manage_all", "campaigns:manage");
     checkCampaign(context, true, id);
@@ -589,8 +659,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       return ok(
         projectCampaign(
           store.update(id, (current) => {
-            if (!editable(current.status))
+            if (!editable(current.status)) {
               throw new HttpError(400, t(context).T("campaigns.cantUpdate"));
+            }
             const merged = mergeCampaign(writable(current), input);
             merged.type = current.type;
             return {
@@ -611,7 +682,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     const input = bindCampaign(await readCampaignBody(context.request));
     recheck(context, "campaigns:send");
     checkCampaign(context, true, id);
-    if (input.status === "running" || input.status === "scheduled") refuseWhileHeld(context.app.db);
+    if (input.status === "running" || input.status === "scheduled") {
+      refuseWhileHeld(context.app.db);
+    }
     try {
       const updated = store.updateStatus(id, input.status ?? "");
       if (input.status === "cancelled") {
@@ -654,18 +727,20 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       raw.archive_template_id !== undefined &&
       raw.archive_template_id !== null &&
       input.archive_template_id! < 0n
-    )
+    ) {
       throw new HttpError(400);
+    }
     recheck(context, "campaigns:manage_all", "campaigns:manage");
     checkCampaign(context, true, id);
     const archiveSlug = input.archive_slug ? slug(input.archive_slug) : "";
     const templateId = input.archive_template_id ?? 0n;
     const meta = input.archive_meta ?? null;
-    if (meta && JSON.stringify(meta).length > 64 * 1024)
+    if (meta && JSON.stringify(meta).length > 64 * 1024) {
       throw new HttpError(
         400,
         t(context).Ts("globals.messages.invalidFields", "name", "archive_meta"),
       );
+    }
     try {
       store.updateArchive(id, input.archive ?? false, templateId, meta, archiveSlug);
     } catch (error) {
@@ -681,7 +756,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const removeOne: Handler = (context) => {
     const id = BigInt(getID(context));
     checkCampaign(context, true, id);
-    if (!store.remove(id)) throw notFound(context);
+    if (!store.remove(id)) {
+      throw notFound(context);
+    }
     return ok(true);
   };
   const removeMany: Handler = (context) => {
@@ -689,41 +766,46 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     const scope = can(context, "campaigns:manage_all")
       ? { all: true, ids: [] }
       : permitted(context, true);
-    const ids: bigint[] = [];
+    const ids: Array<bigint> = [];
     let query = "";
     let all = false;
     const raw = params.getAll("id");
     if (raw.length) {
       for (const value of raw) {
         let reason = "";
-        if (!/^[+-]?\d+$/.test(value))
+        if (!/^[+-]?\d+$/.test(value)) {
           reason = `strconv.Atoi: parsing ${JSON.stringify(value)}: invalid syntax`;
-        else {
+        } else {
           const id = BigInt(value);
-          if (id < -9223372036854775808n || id > 9223372036854775807n)
+          if (id < -9_223_372_036_854_775_808n || id > 9_223_372_036_854_775_807n) {
             reason = `strconv.Atoi: parsing ${JSON.stringify(value)}: value out of range`;
-          else if (id < 1n) reason = `${id} is not a valid ID`;
-          else ids.push(id);
+          } else if (id < 1n) {
+            reason = `${id} is not a valid ID`;
+          } else {
+            ids.push(id);
+          }
         }
-        if (reason)
+        if (reason) {
           throw new HttpError(
             400,
             t(context).Ts("globals.messages.errorInvalidIDs", "error", reason),
           );
+        }
       }
     } else {
       query = (params.get("query") ?? "").trim();
       all = params.get("all") === "true";
     }
-    if (!ids.length && !query && !all)
+    if (!ids.length && !query && !all) {
       throw new HttpError(
         400,
         t(context).Ts("globals.messages.errorInvalidIDs", "error", "id or query required"),
       );
+    }
     store.removeMany(
       ids,
       {
-        query: query.replace(/\s+/g, " "),
+        query: query.replaceAll(/\s+/g, " "),
         statuses: params.getAll("status"),
         tags: params.getAll("tag"),
         type: params.get("type") ?? "",
@@ -751,27 +833,35 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       policy(context),
     );
     const emails = input.subscribers ?? [];
-    if (!emails.length) throw new HttpError(400, t(context).T("campaigns.noSubsToTest"));
+    if (!emails.length) {
+      throw new HttpError(400, t(context).T("campaigns.noSubsToTest"));
+    }
     const scope = permitted(context, false);
     const seen = new Set<bigint>();
     const recipients = [];
     for (const email of emails) {
       const sub = deps.subscribers.byEmail(email.trim().toLowerCase());
       // Blocklisted subscribers never receive mail (04-sending.md).
-      if (!sub || seen.has(sub.id) || sub.status === "blocklisted") continue;
+      if (!sub || seen.has(sub.id) || sub.status === "blocklisted") {
+        continue;
+      }
       if (
         !scope.all &&
         !deps.subscribers.memberships(sub.id).some((m) => scope.ids.includes(m.list_id))
-      )
+      ) {
         continue;
+      }
       seen.add(sub.id);
       recipients.push(sub);
     }
-    if (!recipients.length) throw new HttpError(400, t(context).T("campaigns.noKnownSubsToTest"));
+    if (!recipients.length) {
+      throw new HttpError(400, t(context).T("campaigns.noKnownSubsToTest"));
+    }
     const stored = row(context, id);
     const templateId = atoi(context.url.searchParams.get("template_id"));
-    if (testing >= MAX_TEST_SENDS)
+    if (testing >= MAX_TEST_SENDS) {
       throw new HttpError(429, "Too many test sends in progress.", { "Retry-After": "1" });
+    }
     testing++;
     let queued = false;
     try {
@@ -785,13 +875,15 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         templateBody: templateBody(templateId > 0 ? BigInt(templateId) : stored.template_id),
       });
       const sendError = (error: unknown): never => {
-        if (error instanceof RenderCapacityError)
+        if (error instanceof RenderCapacityError) {
           throw new HttpError(429, "Too many template renders in progress.");
-        if (error instanceof MarkdownSourceError)
+        }
+        if (error instanceof MarkdownSourceError) {
           throw new HttpError(
             400,
             t(context).Ts("campaigns.errorSendTest", "error", error.message),
           );
+        }
         throw new HttpError(
           500,
           t(context).Ts(
@@ -807,15 +899,16 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       } catch (error) {
         return sendError(error);
       }
-      if (problem)
+      if (problem) {
         throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", problem));
+      }
       // As listmonk, the request names the media of a test send.
       const attachments = await deps.attachments(input.media ?? [], images).catch((error) => {
         const reason = error instanceof UploadRootError ? error.message : "attachment";
         throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", reason));
       });
       const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
-      const messages: Message[] = [];
+      const messages: Array<Message> = [];
       let totalBytes = 0;
       let totalWork = 0;
       for (const sub of recipients) {
@@ -844,15 +937,17 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         totalWork += budget.work;
         totalBytes += size(out.body) + size(altBody ?? "") + size(out.subject) + size(out.from);
         totalBytes += attachmentBytes;
-        for (const set of out.headers)
+        for (const set of out.headers) {
           for (const [name, header] of Object.entries(set)) totalBytes += size(name) + size(header);
+        }
         // Nothing is queued until every message is rendered, so a refusal sends nothing.
-        if (totalBytes > TEST_SEND_BYTES || totalWork > TEST_SEND_WORK)
+        if (totalBytes > TEST_SEND_BYTES || totalWork > TEST_SEND_WORK) {
           throw new HttpError(
             400,
             "The test send is too large: send it to fewer recipients or reduce the rendered size.",
           );
-        const headers: Record<string, string | string[]> = {
+        }
+        const headers: Record<string, string | Array<string>> = {
           "X-Listmonk-Campaign": stored.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
         };
@@ -860,11 +955,12 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
           headers["List-Unsubscribe"] = `<${unsubscribeUrl}>`;
         }
-        for (const set of out.headers)
+        for (const set of out.headers) {
           for (const [name, header] of Object.entries(set)) {
             const prior = headers[name];
             headers[name] = prior === undefined ? header : [...[prior].flat(), header];
           }
+        }
         messages.push({
           from: out.from,
           to: [sub.email],
@@ -904,7 +1000,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       }));
       const results = dispatched.map(({ message, dispatch }) =>
         dispatch.result.then((outcome) => {
-          if (outcome.status === "accepted" && !outcome.rejected.length) return;
+          if (outcome.status === "accepted" && !outcome.rejected.length) {
+            return;
+          }
           context.app.logger.attention(
             `Test send to ${message.to[0]} for campaign ${stored.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
             "Test send not delivered: the server error output names the recipient and stage",
@@ -915,7 +1013,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       void Promise.all(results).finally(() => testing--);
       return ok(true);
     } finally {
-      if (!queued) testing--;
+      if (!queued) {
+        testing--;
+      }
     }
   };
 

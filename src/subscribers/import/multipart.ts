@@ -20,20 +20,25 @@ export interface ReceivedForm {
 }
 
 async function write(file: FileHandle, bytes: Uint8Array) {
-  for (let done = 0; done < bytes.length;)
+  for (let done = 0; done < bytes.length;) {
     done += (await file.write(bytes, done, bytes.length - done)).bytesWritten;
+  }
 }
 const disposition = (headers: string, key: string) => {
   const line = /^content-disposition:(.*)$/im.exec(headers)?.[1] ?? "";
   const match = new RegExp(`(?:^|[;\\s])${key}=(?:"((?:[^"\\\\]|\\\\.)*)"|([^;\\s]*))`, "i").exec(
     line,
   );
-  if (!match) return undefined;
-  return match[1]?.replace(/\\(.)/g, "$1") ?? match[2];
+  if (!match) {
+    return undefined;
+  }
+  return match[1]?.replaceAll(/\\(.)/g, "$1") ?? match[2];
 };
 
 export function multipartBoundary(contentType: string | null): string | undefined {
-  if (!contentType || !/^\s*multipart\/form-data\s*(;|$)/i.test(contentType)) return undefined;
+  if (!contentType || !/^\s*multipart\/form-data\s*(;|$)/i.test(contentType)) {
+    return undefined;
+  }
   const boundary = /;\s*boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
   const value = boundary?.[1] ?? boundary?.[2];
   return value && value.length <= 200 ? value : undefined;
@@ -53,14 +58,17 @@ export async function receiveForm(
   let pending: Buffer = Buffer.alloc(0);
   let state = "preamble" as "preamble" | "boundary" | "headers" | "body" | "done";
   let target: "file" | "params" | "none" = "none";
-  let params: Buffer[] = [];
+  let params: Array<Buffer> = [];
   let paramsSize = 0;
   let received = 0;
   const emit = async (bytes: Uint8Array) => {
-    if (target === "file") await write(file, bytes);
-    else if (target === "params") {
+    if (target === "file") {
+      await write(file, bytes);
+    } else if (target === "params") {
       paramsSize += bytes.length;
-      if (paramsSize > MAX_PARAMS_BYTES) throw new MalformedForm();
+      if (paramsSize > MAX_PARAMS_BYTES) {
+        throw new MalformedForm();
+      }
       params.push(Buffer.from(bytes));
     }
   };
@@ -77,7 +85,9 @@ export async function receiveForm(
     }
   };
   const closePart = () => {
-    if (target === "params") form.params = Buffer.concat(params).toString("utf8");
+    if (target === "params") {
+      form.params = Buffer.concat(params).toString("utf8");
+    }
     target = "none";
   };
   const consume = async () => {
@@ -91,14 +101,18 @@ export async function receiveForm(
         pending = pending.subarray(at + first.length);
         state = "boundary";
       } else if (state === "boundary") {
-        if (pending.length < 2) return;
+        if (pending.length < 2) {
+          return;
+        }
         if (pending[0] === 45 && pending[1] === 45) {
           state = "done";
           return;
         }
         const at = pending.indexOf(CRLF);
         if (at < 0) {
-          if (pending.length > 1024) throw new MalformedForm();
+          if (pending.length > 1024) {
+            throw new MalformedForm();
+          }
           return;
         }
         // Keep the line break: a part without headers starts with the blank line.
@@ -107,7 +121,9 @@ export async function receiveForm(
       } else if (state === "headers") {
         const at = pending.indexOf(HEADERS_END);
         if (at < 0) {
-          if (pending.length > MAX_HEADER_BYTES) throw new MalformedForm();
+          if (pending.length > MAX_HEADER_BYTES) {
+            throw new MalformedForm();
+          }
           return;
         }
         openPart(pending.toString("utf8", 0, at));
@@ -136,8 +152,11 @@ export async function receiveForm(
   let onAbort = () => {};
   const aborted = new Promise<never>((_, reject) => {
     onAbort = () => reject(signal.reason);
-    if (signal.aborted) onAbort();
-    else signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
   });
   void aborted.catch(() => {});
   try {
@@ -147,19 +166,27 @@ export async function receiveForm(
         throw new MalformedForm();
       });
       const item = await Promise.race([read, aborted]);
-      if (item.done) break;
+      if (item.done) {
+        break;
+      }
       received += item.value.length;
-      if (received > maxBytes) throw new UploadTooLarge();
+      if (received > maxBytes) {
+        throw new UploadTooLarge();
+      }
       pending = pending.length
         ? Buffer.concat([pending, item.value])
         : Buffer.from(item.value.buffer, item.value.byteOffset, item.value.length);
       await consume();
-      if (state === "done") break;
+      if (state === "done") {
+        break;
+      }
     }
   } finally {
     signal.removeEventListener("abort", onAbort);
     await reader.cancel().catch(() => {});
   }
-  if (state !== "done") throw new MalformedForm();
+  if (state !== "done") {
+    throw new MalformedForm();
+  }
   return form;
 }

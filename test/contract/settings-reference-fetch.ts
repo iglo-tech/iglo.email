@@ -3,15 +3,18 @@ import { readFileSync } from "node:fs";
 // Last lines of the reference's own log, on one printable line, without credentials.
 function upstreamLogTail(): string {
   const path = process.env.REFERENCE_LOG;
-  if (!path) return "";
+  if (!path) {
+    return "";
+  }
   try {
     let text = readFileSync(path, "utf8").slice(-600);
-    for (const secret of [process.env.REFERENCE_API_TOKEN, process.env.REFERENCE_API_USER])
+    for (const secret of [process.env.REFERENCE_API_TOKEN, process.env.REFERENCE_API_USER]) {
       if (secret) text = text.split(secret).join("[redacted]");
+    }
     const lines = text.split("\n").filter(Boolean).slice(-4);
     return ` log=${lines
       .join(" | ")
-      .replace(/[^ -~]/g, "?")
+      .replaceAll(/[^ -~]/g, "?")
       .replaceAll("(", "[")
       .replaceAll(")", "]")}`;
   } catch {
@@ -27,7 +30,7 @@ export async function settingsFetch(
   reference: boolean,
 ): Promise<Response> {
   const started = Date.now();
-  const deadline = started + 5_000;
+  const deadline = started + 5000;
   let attempts = 0;
   for (;;) {
     attempts++;
@@ -58,7 +61,7 @@ export async function settingsFetch(
         const reason = code === "ECONNREFUSED" ? "refused" : "other";
         const waited = Date.now() - started;
         const detail = `attempts=${attempts} waited=${waited}ms code=${code ?? "none"} reference=${reference}${reference ? upstreamLogTail() : ""}`;
-        throw new Error(`FAIL settings-fetch-${method}-${reason} (${detail})`);
+        throw new Error(`FAIL settings-fetch-${method}-${reason} (${detail})`, { cause: error });
       }
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
@@ -69,7 +72,9 @@ const INVALID_BATCH_SIZE_EXIT = "'batch_size' cannot parse value as 'int'";
 
 function upstreamLogHas(text: string): boolean {
   const path = process.env.REFERENCE_LOG;
-  if (!path) return false;
+  if (!path) {
+    return false;
+  }
   try {
     return readFileSync(path, "utf8").includes(text);
   } catch {
@@ -96,13 +101,19 @@ export async function invalidSettingsReadEnd(
   } catch {
     // No response: refused or closed while the reload runs. The log decides below.
   }
-  if (status === 500) return "500";
-  if (status !== undefined) return "unexpected";
+  if (status === 500) {
+    return "500";
+  }
+  if (status !== undefined) {
+    return "unexpected";
+  }
   // Upstream's awaitReload waits up to 3 s for shutdown before it respawns, and the
   // respawned process must then fail to boot, so the exit line can trail the refusal.
   const deadline = Date.now() + 10_000;
   while (!upstreamLogHas(INVALID_BATCH_SIZE_EXIT)) {
-    if (Date.now() >= deadline) return "unexpected";
+    if (Date.now() >= deadline) {
+      return "unexpected";
+    }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   return "exited";

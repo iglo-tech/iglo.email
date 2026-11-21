@@ -50,7 +50,7 @@ export interface StepPreview {
 }
 
 const has = (object: object | undefined, key: string) =>
-  object !== undefined && Object.prototype.hasOwnProperty.call(object, key);
+  object !== undefined && Object.hasOwn(object, key);
 
 /**
  * The step's data for one send. `linksFor` is the send links of a message (unsubscribe and
@@ -67,8 +67,9 @@ export function stepPreview(
 ): StepPreview {
   const { sequence, step, subscriber, sample, now } = input;
   const defined = step.aggregates;
-  for (const name of Object.keys(sample?.aggregates ?? {}))
+  for (const name of Object.keys(sample?.aggregates ?? {})) {
     if (!has(defined, name)) throw new FieldError(`sample.aggregates.${name}`);
+  }
 
   // The trigger: the named event, else the subscriber's latest one under the trigger's name.
   let event: EventRow | null = null;
@@ -79,8 +80,9 @@ export function stepPreview(
       !named ||
       named.subscriber_id !== subscriber.id ||
       named.name !== sequence.event
-    )
+    ) {
       throw new FieldError("trigger_event_id");
+    }
     event = named;
   } else if (subscriber) {
     event = events.latest(subscriber.id, sequence.event);
@@ -116,12 +118,13 @@ export function stepPreview(
         now,
       },
     );
-    if (!result.ok)
+    if (!result.ok) {
       throw new StepRefusal(
         "limit" in result
           ? "An aggregate of this step is past its limit for this subscriber, so the step would be skipped."
           : "The step's aggregates could not be computed for this subscriber.",
       );
+    }
     measured = result.values;
   }
   // In the step's own order, as the scheduler's totals are (events.evaluate iterates the same

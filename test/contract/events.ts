@@ -12,7 +12,9 @@ export async function runEventsContract(target: {
   dataDir: string;
 }) {
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL events-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL events-${label}`);
+    }
   };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
@@ -47,7 +49,7 @@ export async function runEventsContract(target: {
         .query(
           "SELECT id, subscriber_id, name, data, occurred_at, created_at FROM events ORDER BY id",
         )
-        .all() as { id: bigint; subscriber_id: bigint; name: string; data: string }[];
+        .all() as Array<{ id: bigint; subscriber_id: bigint; name: string; data: string }>;
     } finally {
       db.close();
     }
@@ -102,7 +104,9 @@ export async function runEventsContract(target: {
       post({ ...body, subscriber: { external_id: "c_1", attribs: { plan: "paid" } } }),
     ),
   );
-  for (const r of retries) check(JSON.stringify(r) === JSON.stringify(first), "concurrent-replay");
+  for (const r of retries) {
+    check(JSON.stringify(r) === JSON.stringify(first), "concurrent-replay");
+  }
   // Concurrent distinct first requests for one new subscriber create it once.
   const racing = await Promise.all(
     Array.from({ length: 16 }, (_, i) =>

@@ -6,8 +6,8 @@ const executables = [
   ["control", resolve("node_modules/.cache/m18-baseline/dist/iglo.email")],
   ["candidate", resolve("dist/iglo.email")],
 ] as const;
-const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
-for (const [kind, executable] of executables)
+const mean = (v: Array<number>) => v.reduce((a, b) => a + b, 0) / v.length;
+for (const [kind, executable] of executables) {
   for (let rep = 1; rep <= 3; rep++) {
     await withProduction(
       executable,
@@ -92,3 +92,4 @@ for (const [kind, executable] of executables)
       120000,
     );
   }
+}

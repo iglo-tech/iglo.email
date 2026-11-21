@@ -13,7 +13,8 @@ import { ok, HttpError } from "@/server/response";
 import { hasID } from "@/server/validation";
 import { createRouter } from "@/server/server";
 import { TestClock } from "@/test/server/fixture";
-import { createAuthentication, defaultAuthPolicy, type AuthPolicy } from "@/users/auth";
+import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
+import type { AuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserHandlers } from "@/users/handlers";
 import { createFactorHandlers } from "@/users/factor";
@@ -79,7 +80,9 @@ export async function startUserFixture(
       },
     );
     const admin = { user: "fixture-admin", password: "fixture-admin-password" };
-    if (initialize) await bootstrapAdmin(users, auth, admin);
+    if (initialize) {
+      await bootstrapAdmin(users, auth, admin);
+    }
     const app = createApp({
       bootstrap: {
         host: "127.0.0.1",
@@ -110,7 +113,7 @@ export async function startUserFixture(
       auth,
       emailer && createSMTPTest(settings, emailer, app.i18n, createRenderer(clock, app.i18n)),
     );
-    const outgoing: Message[] = [];
+    const outgoing: Array<Message> = [];
     registerAdminRoutes(router, {
       auth,
       roles,
@@ -244,8 +247,9 @@ export async function startUserFixture(
     });
     router.route("POST", "/fixture/clock", async ({ request }) => {
       const value: unknown = await request.json();
-      if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+      if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
         throw new HttpError(400);
+      }
       clock.advance(value);
       return ok(true);
     });
@@ -255,13 +259,14 @@ export async function startUserFixture(
         typeof value.name !== "string" ||
         !Array.isArray(value.permissions) ||
         value.permissions.some((item) => typeof item !== "string")
-      )
+      ) {
         throw new HttpError(400);
+      }
       return ok(
         Number(
           roles.createUserRole(
             value.name,
-            value.permissions as string[],
+            value.permissions as Array<string>,
             clock.now().toISOString(),
           ),
         ),
@@ -323,8 +328,11 @@ export async function startUserFixture(
               async pull(controller) {
                 bodyRead();
                 const result = await reader.read();
-                if (result.done) controller.close();
-                else controller.enqueue(result.value);
+                if (result.done) {
+                  controller.close();
+                } else {
+                  controller.enqueue(result.value);
+                }
               },
               cancel: () => reader.cancel(),
             },
@@ -353,28 +361,31 @@ export async function startUserFixture(
         expiry: "legacy" | "invalid" | "overflow" | "before-created" | "future-created",
       ) {
         const id = /(?:^|;\s*)session=([^;]+)/.exec(cookie)?.[1];
-        if (!id) throw new Error("Missing synthetic session");
-        if (expiry === "legacy")
+        if (!id) {
+          throw new Error("Missing synthetic session");
+        }
+        if (expiry === "legacy") {
           db.query("UPDATE sessions SET data = json_remove(data, '$.expires_at') WHERE id = ?").run(
             id,
           );
-        else if (expiry === "invalid")
+        } else if (expiry === "invalid") {
           db.query(
             "UPDATE sessions SET data = json_set(data, '$.expires_at', 'invalid') WHERE id = ?",
           ).run(id);
-        else if (expiry === "overflow")
+        } else if (expiry === "overflow") {
           db.query(
             "UPDATE sessions SET data = json_set(data, '$.expires_at', 8640000000000001) WHERE id = ?",
           ).run(id);
-        else if (expiry === "before-created")
+        } else if (expiry === "before-created") {
           db.query("UPDATE sessions SET data = json_set(data, '$.expires_at', 0) WHERE id = ?").run(
             id,
           );
-        else
+        } else {
           db.query("UPDATE sessions SET created_at = ? WHERE id = ?").run(
             new Date(clock.now().getTime() + 1000).toISOString(),
             id,
           );
+        }
       },
       async close(preserve = false) {
         try {
@@ -388,7 +399,9 @@ export async function startUserFixture(
           roles.close();
           lists.close();
           db.close(true);
-          if (!preserve) rmSync(dataDir, { recursive: true, force: true });
+          if (!preserve) {
+            rmSync(dataDir, { recursive: true, force: true });
+          }
         }
       },
     };

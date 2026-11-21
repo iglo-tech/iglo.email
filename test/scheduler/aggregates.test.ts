@@ -2,17 +2,14 @@
 // observed through the events and sequences APIs, the scheduler loop with an injected clock, and
 // the Mailpit-style SMTP sink.
 import { afterEach, expect, test } from "bun:test";
-import {
-  day,
-  hour,
-  minute,
-  schedulerFixture,
-  type SchedulerFixture,
-} from "@/test/scheduler/fixture";
+import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -24,8 +21,10 @@ function decoded(data: string) {
   const at = data.indexOf("\r\n\r\n");
   const body = data
     .slice(at + 4)
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   return { body };
 }
 const tx = (template: number, extra: object = {}) => ({
@@ -65,7 +64,7 @@ function during(f: SchedulerFixture, act: () => Promise<unknown> | unknown) {
   };
   return state;
 }
-const save = (f: SchedulerFixture, id: number, steps: object[]) =>
+const save = (f: SchedulerFixture, id: number, steps: Array<object>) =>
   f.json(`/api/sequences/${id}`, "PUT", {
     name: "Your month",
     status: "active",
@@ -190,8 +189,9 @@ test("distinct counts numbers, text and booleans as the condition language's eq 
     "{}",
     '{"v": {"a": 1}}',
     '{"v": [1]}',
-  ])
+  ]) {
     rawEvent(f, subscriber, "sample", data);
+  }
   await f.pass(hour);
   await delivered(f, 1);
   // Numbers {5, 6, 1}, text {"5", ""}, booleans {true}.
@@ -211,7 +211,7 @@ test("an edit while the aggregates are read discards the stale decision and read
       }),
     ],
   });
-  const [step] = seq.steps as { id: number }[];
+  const [step] = seq.steps as Array<{ id: number }>;
   const email = "inflight@example.test";
   await f.event(email, "ping");
   await f.event(email, "subscription_created");
@@ -291,7 +291,9 @@ function bulkEvents(
     "INSERT INTO events (subscriber_id, name, data, occurred_at, created_at) VALUES (?, ?, ?, ?, ?)",
   );
   f.db.transaction(() => {
-    for (let i = 0; i < count; i++) insert.run(subscriberId, name, data(i), at(i), iso(f));
+    for (let i = 0; i < count; i++) {
+      insert.run(subscriberId, name, data(i), at(i), iso(f));
+    }
   })();
   insert.finalize();
 }
@@ -530,8 +532,8 @@ test("a step formats its aggregate totals with the number filter", async () => {
   const email = "grouped@example.test";
   await f.event(email, "subscription_created");
   await f.pass(10 * day);
-  await f.event(email, "download_finished", { data: { items: 1000000 } });
-  await f.event(email, "download_finished", { data: { items: 234567 } });
+  await f.event(email, "download_finished", { data: { items: 1_000_000 } });
+  await f.event(email, "download_finished", { data: { items: 234_567 } });
   await f.pass(20 * day);
   await delivered(f, 1);
   expect(decoded(f.sink.messages[0]!.data).body).toContain("items 1,234,567|count 2");

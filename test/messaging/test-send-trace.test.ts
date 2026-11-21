@@ -5,19 +5,24 @@
 import { afterEach, expect, test } from "bun:test";
 import type { ErrorLogger } from "@/app";
 import { createPurge } from "@/loops/purge";
-import { createLogBuffer, type LogBuffer } from "@/maintenance/log-buffer";
-import { bounceMessage, envelope, network, type Network } from "@/test/bounces/ses-fixture";
+import { createLogBuffer } from "@/maintenance/log-buffer";
+import type { LogBuffer } from "@/maintenance/log-buffer";
+import { bounceMessage, envelope, network } from "@/test/bounces/ses-fixture";
+import type { Network } from "@/test/bounces/ses-fixture";
 import { campaignsFixture } from "@/test/campaigns/fixture";
-import { schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 import { wireNotices } from "@/test/messaging/notice-fixture";
 
 const DELIVERED = "delivered@example.test";
 const BLOCKED = "blocked@example.test";
 const DAY = 86_400_000;
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 
 /** A fixture's router entry point: the request is answered as the server would answer it. */
@@ -36,20 +41,26 @@ async function setup(f: SchedulerFixture) {
     trigger: { event: "purchase" },
     steps: [{ wait: "P1D", kind: "transactional", template_id: template, subject: "Order update" }],
   });
-  return { sequence: sequence.id as number, step: sequence.steps[0]!.id as number };
+  return { sequence: sequence.id, step: sequence.steps[0]!.id };
 }
 
 /** The Message-ID the sink received for the message to `to`: the one the test send used. */
-function messageIdFor(messages: { to: string[]; data: string }[], to: string) {
+function messageIdFor(messages: Array<{ to: string[]; data: string }>, to: string) {
   const message = messages.find((m) => m.to.includes(to));
   const match = /^Message-ID: (.+)$/im.exec(message?.data ?? "");
-  if (!match) throw new Error(`no Message-ID for ${to}`);
+  if (!match) {
+    throw new Error(`no Message-ID for ${to}`);
+  }
   return match[1]!.trim();
 }
 
 const header = (value: string) => [{ name: "Message-ID", value }];
 
-function complaintMessage(f: { clock: { now(): Date } }, recipient: string, headers: object[]) {
+function complaintMessage(
+  f: { clock: { now(): Date } },
+  recipient: string,
+  headers: Array<object>,
+) {
   return JSON.stringify({
     notificationType: "Complaint",
     complaint: {
@@ -82,7 +93,7 @@ const notice = (f: Requests & { clock: { now(): Date } }, message: string) =>
 const bounceTotal = async (f: Api) => (await f.json("/api/bounces")).body.data.total as number;
 
 const logLines = async (f: Api, text: string) =>
-  ((await f.json("/api/logs")).body.data as string[]).filter((line) => line.includes(text));
+  ((await f.json("/api/logs")).body.data as Array<string>).filter((line) => line.includes(text));
 
 /** A step test to one address: the Message-ID it used, once the sink has it. */
 async function stepTest(f: SchedulerFixture, to: string) {
@@ -162,7 +173,7 @@ test("a complaint about a step test is named once, and the subscriber is not uns
 
 test("a campaign test's bounce is named once with its campaign, and records nothing", async () => {
   // The same logger the app holds: its lines are the log buffer's, and its errors are stderr's.
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   let logs!: LogBuffer;
   const logger: ErrorLogger = {
     error(error) {
@@ -246,9 +257,11 @@ test("a deleted subscriber's address stays in no record B108 keeps", async () =>
   expect(await logLines(f, "A test send bounced")).toHaveLength(1);
   expect(await bounceTotal(f)).toBe(0);
   // The log buffer holds fixed text only, so no line it returns carries the address.
-  for (const line of await logLines(f, "")) expect(line).not.toContain("wipe-me@example.test");
+  for (const line of await logLines(f, "")) {
+    expect(line).not.toContain("wipe-me@example.test");
+  }
   // The one table read: no route lists `test_sends`, so its stored values are read directly.
-  const rows = f.db.query("SELECT * FROM test_sends").all() as Record<string, unknown>[];
+  const rows = f.db.query("SELECT * FROM test_sends").all() as Array<Record<string, unknown>>;
   expect(rows).toHaveLength(1);
   const values = rows.flatMap((row) => Object.values(row).map(String)).join("\n");
   expect(values).not.toContain("wipe-me@example.test");
@@ -270,7 +283,7 @@ test("a test record lasts seven days: a bounce within the window names it, and a
 
   f.clock.advance(2 * DAY);
   // The retention loop runs the record's purge; the returned IDs show when it has removed it.
-  const removed: unknown[] = [];
+  const removed: Array<unknown> = [];
   const purge = createPurge({
     db: f.db,
     clock: f.clock,

@@ -5,7 +5,8 @@
 // Mail goes only to the loopback sink below.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createServer, type Socket } from "node:net";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { imagePng } from "@/test/media/images";
@@ -26,7 +27,7 @@ async function startSink() {
     socket.on("error", () => {});
     socket.setEncoding("latin1");
     let buffer = "";
-    let data: string[] | null = null;
+    let data: Array<string> | null = null;
     let to = "";
     socket.write("220 sink.test ESMTP\r\n");
     socket.on("data", (chunk: string) => {
@@ -40,30 +41,40 @@ async function startSink() {
             messages.push({ to, data: data.join("\r\n") });
             data = null;
             socket.write("250 queued\r\n");
-          } else data.push(line.startsWith("..") ? line.slice(1) : line);
+          } else {
+            data.push(line.startsWith("..") ? line.slice(1) : line);
+          }
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === "EHLO") socket.write("250-sink.test\r\n250 8BITMIME\r\n");
-        else if (verb === "RCPT") {
+        if (verb === "EHLO") {
+          socket.write("250-sink.test\r\n250 8BITMIME\r\n");
+        } else if (verb === "RCPT") {
           to = /<([^>]*)>/.exec(line)?.[1] ?? "";
           socket.write("250 ok\r\n");
         } else if (verb === "DATA") {
           data = [];
           socket.write("354 go\r\n");
-        } else if (verb === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (verb === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("sink address");
+  if (!address || typeof address === "string") {
+    throw new Error("sink address");
+  }
   return {
     port: address.port,
     messages,
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((done) => server.close(() => done()));
     },
   };
@@ -73,7 +84,7 @@ async function startSink() {
 function parts(raw: string) {
   const boundaries = [...raw.matchAll(/boundary="?([^"\r\n;]+)"?/gi)].map((m) => m[1]!);
   const found: Array<{ headers: string; body: Buffer }> = [];
-  for (const boundary of boundaries)
+  for (const boundary of boundaries) {
     for (const section of raw.split(`--${boundary}`)) {
       const split = section.indexOf("\r\n\r\n");
       if (split < 0) continue;
@@ -82,6 +93,7 @@ function parts(raw: string) {
       const body = Buffer.from(section.slice(split + 4).replace(/\s+/g, ""), "base64");
       found.push({ headers, body });
     }
+  }
   return found;
 }
 
@@ -130,7 +142,9 @@ try {
       assert.equal(updated.status, 200, updated.text);
       for (let i = 0; i < 100; i++) {
         // A settings save restarts the SMTP pool in place; wait for the next request to answer.
-        if ((await fetch(`${origin}/health`)).ok) break;
+        if ((await fetch(`${origin}/health`)).ok) {
+          break;
+        }
         await Bun.sleep(50);
       }
 
@@ -157,7 +171,7 @@ try {
       assert.equal(sent.body.data.sends[0].status, "sent");
       const message = sink.messages.find((m) => m.to === "tx-embed@example.test")!;
       assert.ok(message, "tx message arrived");
-      const text = message.data.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+      const text = message.data.replaceAll("=\r\n", "").replaceAll("=3D", "=");
       const cid = /^Content-ID: <([^>]+)>/im.exec(text)?.[1];
       assert.ok(cid, "inline part has a Content-ID");
       assert.ok(text.includes(`src="cid:${cid}"`), "the body points at the inline part");
@@ -213,7 +227,9 @@ try {
       });
       assert.equal(running.status, 200, running.text);
       for (let i = 0; i < 400; i++) {
-        if (sink.messages.some((m) => m.to === "campaign-embed@example.test")) break;
+        if (sink.messages.some((m) => m.to === "campaign-embed@example.test")) {
+          break;
+        }
         await Bun.sleep(50);
       }
       const delivered = sink.messages.find((m) => m.to === "campaign-embed@example.test");

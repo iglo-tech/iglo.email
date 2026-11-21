@@ -82,8 +82,10 @@ for (const path of [
     response.headers.get("content-type"),
     path.endsWith("woff2") ? "font/woff2" : "text/css; charset=utf-8",
   );
-  if (path.endsWith("woff2"))
+  if (path.endsWith("woff2")) {
     assert.equal(new TextDecoder().decode((await response.arrayBuffer()).slice(0, 4)), "wOF2");
-  else assert.ok((await response.text()).includes("box-sizing"));
+  } else {
+    assert.ok((await response.text()).includes("box-sizing"));
+  }
   console.log(`PASS GET ${path}: equivalent embedded resource spelling`);
 }

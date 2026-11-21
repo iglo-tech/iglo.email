@@ -7,7 +7,7 @@ interface Delivery {
 
 // The receiver and its captured requests belong to one reference run.
 export function startReceiver() {
-  const deliveries: Delivery[] = [];
+  const deliveries: Array<Delivery> = [];
   let responseStatus = 200;
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -24,7 +24,9 @@ export function startReceiver() {
         });
         return new Response(null, { status: responseStatus });
       }
-      if (path === "/deliveries" && request.method === "GET") return Response.json(deliveries);
+      if (path === "/deliveries" && request.method === "GET") {
+        return Response.json(deliveries);
+      }
       if (path === "/deliveries" && request.method === "DELETE") {
         deliveries.length = 0;
         return new Response(null, { status: 204 });
@@ -37,8 +39,9 @@ export function startReceiver() {
             !Number.isInteger(input.status) ||
             input.status < 200 ||
             input.status > 599
-          )
+          ) {
             throw new Error("invalid status");
+          }
           responseStatus = input.status;
           return Response.json({ status: responseStatus });
         } catch {

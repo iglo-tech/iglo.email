@@ -6,13 +6,14 @@ import { admin } from "@/test/worked-example/harness";
 
 const session = `m44-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
-function browser(...args: string[]): string {
+function browser(...args: Array<string>): string {
   const run = Bun.spawnSync(
     ["agent-browser", "--session", session, "--allowed-domains", "127.0.0.1", ...args],
     { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
   );
-  if (run.exitCode !== 0)
+  if (run.exitCode !== 0) {
     throw new Error(`agent-browser ${args[0]}: ${run.stdout} ${run.stderr.toString()}`);
+  }
   return run.stdout.toString().trim();
 }
 const value = (expression: string) => JSON.parse(browser("eval", expression));
@@ -26,7 +27,9 @@ process.exitCode = await withStack(async ({ origin }) => {
   const visit = (path: string, name: string) => {
     browser("open", `${origin}${path}`);
     settle();
-    if (shots) browser("screenshot", `${shots}/${name}.png`);
+    if (shots) {
+      browser("screenshot", `${shots}/${name}.png`);
+    }
   };
   try {
     browser("open", `${origin}/admin/login`);
@@ -64,7 +67,9 @@ process.exitCode = await withStack(async ({ origin }) => {
     );
     for (const name of ["performance", "privacy", "security", "media", "smtp", "bounces"]) {
       browser("eval", `document.querySelector("#${name}").click()`);
-      if (shots) browser("screenshot", `${shots}/settings-${name}.png`);
+      if (shots) {
+        browser("screenshot", `${shots}/settings-${name}.png`);
+      }
       see(name, text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 160));
     }
     browser(
@@ -72,7 +77,9 @@ process.exitCode = await withStack(async ({ origin }) => {
       `document.querySelector("#bounces").click(); [...document.querySelectorAll("input[type=checkbox]")].find((i) => i.closest("label")?.innerText.includes("Enable bounce processing")).click()`,
     );
     browser("eval", `document.querySelector("#appearance").click()`);
-    if (shots) browser("screenshot", `${shots}/settings-appearance.png`);
+    if (shots) {
+      browser("screenshot", `${shots}/settings-appearance.png`);
+    }
     see("appearance", text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 200));
 
     visit("/admin/users", "users");

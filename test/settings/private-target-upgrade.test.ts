@@ -14,9 +14,11 @@ import { createSettings } from "@/settings/store";
 import { TestClock } from "@/test/server/fixture";
 
 const key = "webhooks.block_private_addresses";
-const directories: string[] = [];
+const directories: Array<string> = [];
 afterEach(() => {
-  while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true });
+  while (directories.length) {
+    rmSync(directories.pop()!, { recursive: true, force: true });
+  }
 });
 
 /** One data directory; `connect` opens it again, as a restart does. */

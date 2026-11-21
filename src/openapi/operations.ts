@@ -1,6 +1,7 @@
 // Every documented route. Upstream's docs/swagger/collections.yaml is the starting point for the
 // ported ones; `native` marks those listmonk does not have.
-import { array, free, nullable, object, page, ref, type Schema } from "@/openapi/schemas";
+import { array, free, nullable, object, page, ref } from "@/openapi/schemas";
+import type { Schema } from "@/openapi/schemas";
 
 export interface Parameter {
   name: string;
@@ -24,10 +25,10 @@ export interface Operation {
    * Any one of these; the first is the one a refusal names. `list:get` and `list:manage` are
    * grants on the list in question, from the caller's list role.
    */
-  permissions?: string[];
+  permissions?: Array<string>;
   /** Needed on top of `permissions`: any one of each group. */
-  alsoPermissions?: string[][];
-  query?: Parameter[];
+  alsoPermissions?: Array<string>[];
+  query?: Array<Parameter>;
   /** A JSON schema, or a named media type with its schema. */
   body?: Schema;
   bodyType?: string;
@@ -38,43 +39,44 @@ export interface Operation {
   /** Path parameters that are not a plain string or numeric ID. */
   path?: Record<string, Schema>;
   /** Refusals worth naming, on top of 400 for a bad ID and 403 for a missing credential. */
-  errors?: number[];
+  errors?: Array<number>;
 }
 
 const string = { type: "string" };
 const integer = { type: "integer" };
 const boolean = { type: "boolean" };
 const yes = { type: "boolean", const: true };
-const paging: Parameter[] = [
+const paging: Array<Parameter> = [
   { name: "page", schema: integer },
   { name: "per_page", schema: { oneOf: [integer, { const: "all" }] } },
 ];
-const sorted: Parameter[] = [
+const sorted: Array<Parameter> = [
   { name: "order_by", schema: string },
   { name: "order", schema: { enum: ["ASC", "DESC", "asc", "desc"] } },
 ];
-const nativePaging: Parameter[] = [
-  { name: "page", schema: { ...integer, minimum: 1, maximum: 1000000 } },
+const nativePaging: Array<Parameter> = [
+  { name: "page", schema: { ...integer, minimum: 1, maximum: 1_000_000 } },
   { name: "per_page", schema: { ...integer, minimum: 1, maximum: 100 } },
 ];
-const q = (...names: string[]): Parameter[] => names.map((name) => ({ name, schema: string }));
+const q = (...names: Array<string>): Array<Parameter> =>
+  names.map((name) => ({ name, schema: string }));
 const ids: Parameter = { name: "id", schema: array(integer) };
 const tags: Parameter = { name: "tag", schema: array(string) };
 const noBody: Parameter = { name: "no_body", schema: boolean };
-const range: Parameter[] = [
+const range: Array<Parameter> = [
   { name: "from", required: true, schema: string, description: "ISO date or date-time, as UTC." },
   { name: "to", required: true, schema: string, description: "ISO date or date-time, as UTC." },
 ];
-const before: Parameter[] = [
+const before: Array<Parameter> = [
   { name: "before_date", required: true, schema: { type: "string", format: "date-time" } },
 ];
-const analytics: Parameter[] = [
+const analytics: Array<Parameter> = [
   { name: "id", required: true, schema: array(integer) },
   ...range,
   { name: "interval", schema: { enum: ["hour", "day", "week", "month"] } },
   { name: "unique", schema: boolean },
 ];
-const subscriberSelection: Parameter[] = [
+const subscriberSelection: Array<Parameter> = [
   {
     name: "query",
     schema: string,
@@ -101,7 +103,7 @@ const readSubscribers = ["subscribers:get", "subscribers:get_all"];
 const readList = ["list:get", "lists:get_all"];
 const manageList = ["list:manage", "lists:manage_all"];
 
-const health: Operation[] = [
+const health: Array<Operation> = [
   {
     route: "GET /health",
     id: "getHealthCheck",
@@ -137,7 +139,7 @@ const health: Operation[] = [
   },
 ];
 
-const users: Operation[] = [
+const users: Array<Operation> = [
   {
     route: "GET /api/profile",
     id: "getProfile",
@@ -295,7 +297,7 @@ const users: Operation[] = [
   },
 ];
 
-const lists: Operation[] = [
+const lists: Array<Operation> = [
   {
     route: "GET /api/lists",
     id: "getLists",
@@ -373,7 +375,7 @@ const lists: Operation[] = [
   },
 ];
 
-const subscribers: Operation[] = [
+const subscribers: Array<Operation> = [
   {
     route: "GET /api/subscribers",
     id: "getSubscribers",
@@ -604,7 +606,7 @@ const subscribers: Operation[] = [
     query: nativePaging,
     data: page(ref("Send")),
   },
-  ...(["", "/{external_id}"] as const).flatMap((suffix): Operation[] => {
+  ...(["", "/{external_id}"] as const).flatMap((suffix): Array<Operation> => {
     const query = suffix ? [] : [externalSelector];
     const name = suffix ? "ByExternalId" : "ByExternalQuery";
     return [
@@ -686,7 +688,7 @@ const subscribers: Operation[] = [
   },
 ];
 
-const templates: Operation[] = [
+const templates: Array<Operation> = [
   {
     route: "GET /api/templates",
     id: "getTemplates",
@@ -770,7 +772,7 @@ const templates: Operation[] = [
   },
 ];
 
-const sending: Operation[] = [
+const sending: Array<Operation> = [
   {
     route: "POST /api/tx",
     id: "transactWithSubscriber",
@@ -1049,7 +1051,7 @@ const sending: Operation[] = [
   },
 ];
 
-const campaigns: Operation[] = [
+const campaigns: Array<Operation> = [
   {
     route: "GET /api/campaigns",
     id: "getCampaigns",
@@ -1235,7 +1237,7 @@ const campaigns: Operation[] = [
   },
 ];
 
-const media: Operation[] = [
+const media: Array<Operation> = [
   {
     route: "GET /api/media",
     id: "getMedia",
@@ -1275,7 +1277,7 @@ const media: Operation[] = [
   },
 ];
 
-const bounces: Operation[] = [
+const bounces: Array<Operation> = [
   {
     route: "GET /api/bounces",
     id: "getBounces",
@@ -1340,7 +1342,7 @@ const bounces: Operation[] = [
   },
 ];
 
-const webhooks: Operation[] = [
+const webhooks: Array<Operation> = [
   {
     route: "GET /api/webhooks",
     id: "getWebhooks",
@@ -1395,7 +1397,7 @@ const webhooks: Operation[] = [
   },
 ];
 
-const publicApi: Operation[] = [
+const publicApi: Array<Operation> = [
   {
     route: "GET /api/public/lists",
     id: "getPublicLists",
@@ -1448,7 +1450,7 @@ const publicApi: Operation[] = [
   },
 ];
 
-const settings: Operation[] = [
+const settings: Array<Operation> = [
   {
     route: "GET /api/settings",
     id: "getSettings",
@@ -1536,7 +1538,7 @@ const settings: Operation[] = [
   },
 ];
 
-const mcp: Operation[] = [
+const mcp: Array<Operation> = [
   {
     route: "GET /api/mcp",
     id: "mcpGet",
@@ -1561,7 +1563,7 @@ const mcp: Operation[] = [
   },
 ];
 
-export const operations: Operation[] = [
+export const operations: Array<Operation> = [
   ...health,
   ...users,
   ...lists,

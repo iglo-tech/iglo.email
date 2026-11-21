@@ -1,5 +1,6 @@
 // Compiled test-only admin shell. This fixture is never installed in production.
-import { renderAdminShell, type AdminShellProps } from "@/admin/layout/shell";
+import { renderAdminShell } from "@/admin/layout/shell";
+import type { AdminShellProps } from "@/admin/layout/shell";
 import { createTranslation } from "@/i18n/i18n";
 import { assetVersion } from "@/server/asset-manifest";
 import { assetResponse } from "@/server/assets";
@@ -23,17 +24,21 @@ const server = Bun.serve({
   fetch(request) {
     const path = new URL(request.url).pathname;
     const asset = assetResponse(path, request.method);
-    if (asset) return asset;
+    if (asset) {
+      return asset;
+    }
     try {
-      if (path === "/invalid-navigation")
+      if (path === "/invalid-navigation") {
         renderAdminShell({ ...props, navigation: [{ label: "bad", href: "//example.invalid" }] });
-      else if (path === "/invalid-config")
+      } else if (path === "/invalid-config") {
         renderAdminShell({ ...props, config: { bad: (() => {}) as never } });
-      else if (path === "/")
+      } else if (path === "/") {
         return new Response(renderAdminShell(props), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
-      else return new Response("missing", { status: 404 });
+      } else {
+        return new Response("missing", { status: 404 });
+      }
     } catch {
       return new Response("rejected", { status: 400 });
     }
@@ -41,7 +46,8 @@ const server = Bun.serve({
   },
 });
 process.stdout.write(`http://127.0.0.1:${server.port}\n`);
-for (const signal of ["SIGTERM", "SIGINT"] as const)
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     void server.stop(true);
   });
+}

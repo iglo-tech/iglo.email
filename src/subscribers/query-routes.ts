@@ -15,8 +15,8 @@ import {
   formatSQLExp,
   subscriberStatuses,
   subscriptionStatuses,
-  type SubscriberFilter,
 } from "@/subscribers/query-filter";
+import type { SubscriberFilter } from "@/subscribers/query-filter";
 import type { IdList } from "@/subscribers/id-stage";
 import { MEMORY_PAGE } from "@/subscribers/query";
 import { RunnerError } from "@/subscribers/query-runner";
@@ -35,29 +35,37 @@ const LARGE_PAGE = MEMORY_PAGE;
 const throwTooMany = (): never => {
   throw new HttpError(429, "Too many large subscriber selections in progress.");
 };
-const max = 9223372036854775807n,
-  min = -9223372036854775808n;
+const max = 9_223_372_036_854_775_807n,
+  min = -9_223_372_036_854_775_808n;
 
 // Go strings.TrimSpace.
 const trimSpace = (value: string) =>
-  value.replace(
+  value.replaceAll(
     /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g,
     "",
   );
 // Go strconv.Atoi for page values: anything else is 0.
 function atoi(value: string | null): number {
-  if (!value || !/^[+-]?\d+$/.test(value)) return 0;
+  if (!value || !/^[+-]?\d+$/.test(value)) {
+    return 0;
+  }
   const n = Number(value);
   return Number.isSafeInteger(n) ? n : 0;
 }
 // listmonk getQueryInts: empty values are skipped, other values must be int64.
-function queryInts(params: URLSearchParams, name: string): bigint[] | undefined {
-  const out: bigint[] = [];
+function queryInts(params: URLSearchParams, name: string): Array<bigint> | undefined {
+  const out: Array<bigint> = [];
   for (const value of params.getAll(name)) {
-    if (value === "") continue;
-    if (!/^[+-]?\d+$/.test(value)) return undefined;
+    if (value === "") {
+      continue;
+    }
+    if (!/^[+-]?\d+$/.test(value)) {
+      return undefined;
+    }
     const n = BigInt(value);
-    if (n < min || n > max) return undefined;
+    if (n < min || n > max) {
+      return undefined;
+    }
     out.push(n);
   }
   return out;
@@ -66,22 +74,22 @@ function queryInts(params: URLSearchParams, name: string): bigint[] | undefined 
 interface QueryInput {
   search: string;
   query: string;
-  list_ids: bigint[];
-  target_list_ids: bigint[];
+  list_ids: Array<bigint>;
+  target_list_ids: Array<bigint>;
   action: string;
   status: string;
   subscription_status: string;
   subscriber_status: string;
   all: boolean;
 }
-const stringFields = [
+const stringFields = new Set([
   "search",
   "query",
   "action",
   "status",
   "subscription_status",
   "subscriber_status",
-];
+]);
 const listFields = ["list_ids", "target_list_ids"];
 
 /** listmonk subQueryReq bound from a JSON body; other bodies bind no fields. */
@@ -116,24 +124,38 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
   // encoding/json matches field names case-insensitively.
   for (const [rawKey, value] of Object.entries(document)) {
     const key = rawKey.toLowerCase();
-    if (stringFields.includes(key)) {
-      if (value === null) continue;
-      if (typeof value !== "string") throw new HttpError(400);
+    if (stringFields.has(key)) {
+      if (value === null) {
+        continue;
+      }
+      if (typeof value !== "string") {
+        throw new HttpError(400);
+      }
       record[key] = value.toWellFormed();
     } else if (listFields.includes(key)) {
       if (value === null) {
         record[key] = [];
         continue;
       }
-      if (!Array.isArray(value)) throw new HttpError(400);
+      if (!Array.isArray(value)) {
+        throw new HttpError(400);
+      }
       record[key] = value.map((item) => {
-        if (item === null) return 0n;
-        if (typeof item !== "bigint" || item < min || item > max) throw new HttpError(400);
+        if (item === null) {
+          return 0n;
+        }
+        if (typeof item !== "bigint" || item < min || item > max) {
+          throw new HttpError(400);
+        }
         return item;
       });
     } else if (key === "all") {
-      if (value === null) continue;
-      if (typeof value !== "boolean") throw new HttpError(400);
+      if (value === null) {
+        continue;
+      }
+      if (typeof value !== "boolean") {
+        throw new HttpError(400);
+      }
       out.all = value;
     }
   }
@@ -148,28 +170,42 @@ export function registerSubscriberQueryRoutes(
   auth: Authentication,
 ) {
   const identity = (c: RequestContext) => {
-    if (!c.identity) throw new Error("Identity required");
+    if (!c.identity) {
+      throw new Error("Identity required");
+    }
     return c.identity;
   };
   const listIDs = (i: Identity, permission: "list:get" | "list:manage") =>
     roles.listScope(i.role, i.user.list_role_id, permission);
   // FilterListsByPerm: with both types only per-list get permissions count, as upstream.
-  const filterLists = (i: Identity, types: Types, ids: bigint[]) => {
-    if (types.get && listIDs(i, "list:get").all) return ids;
-    if (types.manage && listIDs(i, "list:manage").all) return ids;
+  const filterLists = (i: Identity, types: Types, ids: Array<bigint>) => {
+    if (types.get && listIDs(i, "list:get").all) {
+      return ids;
+    }
+    if (types.manage && listIDs(i, "list:manage").all) {
+      return ids;
+    }
     const allowed = listIDs(i, types.get ? "list:get" : "list:manage").ids;
     return ids.filter((id) => allowed.includes(id));
   };
   // GetPermittedListIDs: null is every subscriber; [-1] matches none.
-  const permittedLists = (i: Identity, types: Types, requested: bigint[]): bigint[] | null => {
+  const permittedLists = (
+    i: Identity,
+    types: Types,
+    requested: Array<bigint>,
+  ): Array<bigint> | null => {
     if (requested.length) {
       const ids = filterLists(i, types, requested);
       return ids.length ? ids : NONE;
     }
-    if (types.get && roles.can(i.role, "subscribers:get_all")) return null;
+    if (types.get && roles.can(i.role, "subscribers:get_all")) {
+      return null;
+    }
     const get = listIDs(i, "list:get"),
       manage = listIDs(i, "list:manage");
-    if ((types.get && get.all) || (types.manage && manage.all)) return null;
+    if ((types.get && get.all) || (types.manage && manage.all)) {
+      return null;
+    }
     const ids = types.get && get.ids.length ? get.ids : types.manage ? manage.ids : [];
     return ids.length ? ids : NONE;
   };
@@ -180,16 +216,18 @@ export function registerSubscriberQueryRoutes(
   };
   const canRead = (c: RequestContext) => {
     const i = identity(c);
-    if (!roles.can(i.role, "subscribers:get") && !roles.can(i.role, "subscribers:get_all"))
+    if (!roles.can(i.role, "subscribers:get") && !roles.can(i.role, "subscribers:get_all")) {
       throw new HttpError(403, "permission denied: subscribers:get");
+    }
     return i;
   };
   const sqlPermission = (c: RequestContext, fragment: string) => {
-    if (fragment && !roles.can(identity(c).role, "subscribers:sql_query"))
+    if (fragment && !roles.can(identity(c).role, "subscribers:sql_query")) {
       throw new HttpError(
         403,
         c.app.i18n.Ts("globals.messages.permissionDenied", "name", "subscribers:sql_query"),
       );
+    }
   };
   const preparing = (c: RequestContext, error: string) =>
     new HttpError(400, c.app.i18n.Ts("subscribers.errorPreparingQuery", "error", error));
@@ -198,18 +236,26 @@ export function registerSubscriberQueryRoutes(
     for (const [type, value, allowed] of [
       ["subscription_status", filter.subscriptionStatus, [...subscriptionStatuses, "none"]],
       ["subscriber_status", filter.subscriberStatus, subscriberStatuses],
-    ] as const)
+    ] as const) {
       if (value && !allowed.includes(value))
         throw preparing(c, `invalid input value for enum ${type}: "${value}"`);
+    }
     const problem = filter.fragment ? checkFragment(filter.fragment) : undefined;
-    if (problem) throw preparing(c, problem);
+    if (problem) {
+      throw preparing(c, problem);
+    }
   };
   // Upstream returns 400 when preparing a query fails and 500 when running it fails.
   const fetching = (c: RequestContext, error: unknown): never => {
-    if (error instanceof HttpError) throw error;
-    if (error instanceof RunnerError && error.kind === "busy")
+    if (error instanceof HttpError) {
+      throw error;
+    }
+    if (error instanceof RunnerError && error.kind === "busy") {
       throw new HttpError(429, "Too many subscriber queries in progress.");
-    if (error instanceof RunnerError && error.kind === "query") throw preparing(c, error.message);
+    }
+    if (error instanceof RunnerError && error.kind === "query") {
+      throw preparing(c, error.message);
+    }
     throw new HttpError(
       500,
       c.app.i18n.Ts(
@@ -223,10 +269,12 @@ export function registerSubscriberQueryRoutes(
   };
   const readFilter = (c: RequestContext, i: Identity): SubscriberFilter => {
     const params = c.url.searchParams;
-    let lists: bigint[] = [];
+    let lists: Array<bigint> = [];
     if (params.has("list_id")) {
       const ids = queryInts(params, "list_id");
-      if (!ids) throw new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
+      if (!ids) {
+        throw new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
+      }
       lists = ids;
     }
     const filter = {
@@ -241,11 +289,11 @@ export function registerSubscriberQueryRoutes(
 
   const encode = (value: unknown) =>
     JSON.stringify(value)
-      .replaceAll("<", "\\u003c")
-      .replaceAll(">", "\\u003e")
-      .replaceAll("&", "\\u0026")
-      .replaceAll("\u2028", "\\u2028")
-      .replaceAll("\u2029", "\\u2029");
+      .replaceAll("<", String.raw`\u003c`)
+      .replaceAll(">", String.raw`\u003e`)
+      .replaceAll("&", String.raw`\u0026`)
+      .replaceAll("\u2028", String.raw`\u2028`)
+      .replaceAll("\u2029", String.raw`\u2029`);
 
   const list: Handler = async (c) => {
     const i = canRead(c);
@@ -254,12 +302,16 @@ export function registerSubscriberQueryRoutes(
     validate(c, filter);
     const params = c.url.searchParams;
     let perPage = atoi(params.get("per_page"));
-    if (params.get("per_page") === "all") perPage = -1;
+    if (params.get("per_page") === "all") {
+      perPage = -1;
+    }
     perPage = perPage < 0 ? 0 : perPage < 1 ? 20 : perPage;
     const page = Math.max(1, atoi(params.get("page")));
     // per_page=all, negative and oversized pages hold every selected ID until streamed.
     let release = () => {};
-    if (perPage === 0 || perPage > LARGE_PAGE) release = query.admitLarge() ?? throwTooMany();
+    if (perPage === 0 || perPage > LARGE_PAGE) {
+      release = query.admitLarge() ?? throwTooMany();
+    }
     let result: { total: number; ids: IdList };
     try {
       result = await query.page(
@@ -301,10 +353,12 @@ export function registerSubscriberQueryRoutes(
           release();
           return;
         }
-        const parts: string[] = [];
+        const parts: Array<string> = [];
         for (const id of result.ids.slice(next, next + 200)) {
           const row = store.get(id);
-          if (row) parts.push(encode(store.project(row, scope)));
+          if (row) {
+            parts.push(encode(store.project(row, scope)));
+          }
         }
         const prefix = next === 0 ? '{"data":{"results":[' : parts.length ? "," : "";
         next += 200;
@@ -322,7 +376,9 @@ export function registerSubscriberQueryRoutes(
     const i = canRead(c);
     const filter = readFilter(c, i);
     const only = queryInts(c.url.searchParams, "id");
-    if (!only) throw new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
+    if (!only) {
+      throw new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
+    }
     sqlPermission(c, filter.fragment);
     validate(c, filter);
     const admitted = query.admitLarge() ?? throwTooMany();
@@ -338,7 +394,9 @@ export function registerSubscriberQueryRoutes(
       } catch {
         /* already closed */
       }
-      if (output) finish();
+      if (output) {
+        finish();
+      }
     });
     try {
       await batches.next();
@@ -366,7 +424,9 @@ export function registerSubscriberQueryRoutes(
             return;
           }
           const rows = query.exportRows(item.value);
-          if (rows.length) controller.enqueue(text.encode(rows.map(exportRecord).join("")));
+          if (rows.length) {
+            controller.enqueue(text.encode(rows.map(exportRecord).join("")));
+          }
         } catch (error) {
           // Headers are sent: end the stream with an error, as upstream stops writing.
           controller.error(error);
@@ -395,17 +455,19 @@ export function registerSubscriberQueryRoutes(
     );
   };
 
-  type Action = (input: QueryInput, ids: bigint[], targets: bigint[]) => void;
+  type Action = (input: QueryInput, ids: Array<bigint>, targets: Array<bigint>) => void;
   const bulk =
     (kind: "delete" | "blocklist" | "lists"): Handler =>
     async (c) => {
       const input = await queryInput(c);
-      if (kind === "lists" && !input.target_list_ids.length)
+      if (kind === "lists" && !input.target_list_ids.length) {
         throw new HttpError(400, c.app.i18n.T("subscribers.errorNoListsGiven"));
+      }
       const search = trimSpace(input.search),
         fragment = formatSQLExp(input.query);
-      if (!input.all && !search && !fragment)
+      if (!input.all && !search && !fragment) {
         throw new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", "query"));
+      }
       sqlPermission(c, fragment);
       let act: Action;
       let fanOut: BulkAction | null = null;
@@ -416,18 +478,21 @@ export function registerSubscriberQueryRoutes(
         act = (_input, ids) => query.blocklist(ids);
         fanOut = "blocklist";
       } else if (input.action === "add") {
-        if (input.status && !subscriptionStatuses.includes(input.status))
+        if (input.status && !subscriptionStatuses.includes(input.status)) {
           throw new HttpError(
             400,
             c.app.i18n.Ts("globals.messages.invalidFields", "name", "status"),
           );
+        }
         act = (value, ids, targets) => query.addLists(ids, targets, value.status);
-      } else if (input.action === "remove")
+      } else if (input.action === "remove") {
         act = (_input, ids, targets) => query.removeLists(ids, targets);
-      else if (input.action === "unsubscribe") {
+      } else if (input.action === "unsubscribe") {
         act = (_input, ids, targets) => query.unsubscribeLists(ids, targets);
         fanOut = "unsubscribe";
-      } else throw new HttpError(400, c.app.i18n.T("globals.messages.invalidAction"));
+      } else {
+        throw new HttpError(400, c.app.i18n.T("globals.messages.invalidAction"));
+      }
       auth.revalidate(c, "subscribers:manage");
       sqlPermission(c, fragment);
       const select = (i: Identity): SubscriberFilter => ({
@@ -439,9 +504,12 @@ export function registerSubscriberQueryRoutes(
       });
       // As upstream's core: a failed selection or write is the operation's error.
       const failed = (e: unknown): never => {
-        if (e instanceof HttpError) throw e;
-        if (e instanceof RunnerError && e.kind === "busy")
+        if (e instanceof HttpError) {
+          throw e;
+        }
+        if (e instanceof RunnerError && e.kind === "busy") {
           throw new HttpError(429, "Too many subscriber queries in progress.");
+        }
         const error = e instanceof Error ? e.message : "unknown error",
           name = "{globals.terms.subscribers}";
         throw new HttpError(
@@ -461,8 +529,8 @@ export function registerSubscriberQueryRoutes(
         if (fragment) {
           try {
             candidates = await query.stageIds(select(identity(c)));
-          } catch (e) {
-            return failed(e);
+          } catch (error) {
+            return failed(error);
           }
           // The selection awaited a child process: confirm the caller still holds every grant.
           auth.revalidate(c, "subscribers:manage");
@@ -473,11 +541,13 @@ export function registerSubscriberQueryRoutes(
             const i = identity(c);
             const targets = filterLists(i, MANAGE, input.target_list_ids);
             const filter = select(i);
-            if (fanOut) query.admitBulk(fanOut, filter, candidates);
+            if (fanOut) {
+              query.admitBulk(fanOut, filter, candidates);
+            }
             query.apply(filter, candidates, (ids) => act(input, ids, targets));
           });
-        } catch (e) {
-          return failed(e);
+        } catch (error) {
+          return failed(error);
         }
       } finally {
         candidates?.close();

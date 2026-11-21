@@ -59,8 +59,9 @@ export function registerUserRoutes(
       const response = new Response('{"data":true,"redirect_url":null}\n', {
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
-      if (context.identity?.transport === "session")
+      if (context.identity?.transport === "session") {
         for (const value of auth.clearCookies()) response.headers.append("Set-Cookie", value);
+      }
       return response;
     },
     auth.middleware(),

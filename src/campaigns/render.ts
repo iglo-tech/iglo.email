@@ -3,11 +3,8 @@
 // 6fcd95f, on the M1.8 Liquid renderer (docs/design/06-templates.md).
 import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
-import {
-  createMessageBudget,
-  type RenderTracking,
-  type TemplateRenderer,
-} from "@/templates/renderer";
+import { createMessageBudget } from "@/templates/renderer";
+import type { RenderTracking, TemplateRenderer } from "@/templates/renderer";
 
 export const dummyUUID = "00000000-0000-0000-0000-000000000000";
 /**
@@ -50,13 +47,15 @@ export interface CampaignMessage {
   from: string;
   body: string;
   altBody: string | null;
-  headers: Record<string, string>[];
+  headers: Array<Record<string, string>>;
 }
 
 /** listmonk models.Subscriber FirstName/LastName: first/last space chunk over two bytes. */
 export function nameChunk(name: string, last: boolean): string {
   const chunks = name.split(" ");
-  if (last) chunks.reverse();
+  if (last) {
+    chunks.reverse();
+  }
   return chunks.find((chunk) => Buffer.byteLength(chunk) > 2) ?? name;
 }
 const mode = (type: ContentType) =>
@@ -135,7 +134,7 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
             Object.entries(set).map(([k, v]) => [
               k,
               // Rendered values must stay single header lines.
-              plain(headers[i]![k] ?? null, v).replace(/[\r\n\0]+/g, " "),
+              plain(headers[i]![k] ?? null, v).replaceAll(/[\r\n\0]+/g, " "),
             ]),
           ),
         ),

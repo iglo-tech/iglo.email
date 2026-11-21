@@ -24,7 +24,9 @@ export async function runTxContract(target: {
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL tx-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL tx-${label}`);
+    }
   };
   const api = (path: string, method = "GET", body?: unknown) =>
     fetch(`${target.baseUrl}${path}`, {
@@ -43,10 +45,14 @@ export async function runTxContract(target: {
       body: typeof body === "string" ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(70_000),
     });
-  const form = (data: string | undefined, files: File[]) => {
+  const form = (data: string | undefined, files: Array<File>) => {
     const body = new FormData();
-    if (data !== undefined) body.set("data", data);
-    for (const file of files) body.append("file", file);
+    if (data !== undefined) {
+      body.set("data", data);
+    }
+    for (const file of files) {
+      body.append("file", file);
+    }
     return fetch(`${target.baseUrl}/api/tx`, {
       method: "POST",
       headers: { authorization },
@@ -59,7 +65,9 @@ export async function runTxContract(target: {
     const deadline = Date.now() + 10_000;
     for (;;) {
       const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length >= count || Date.now() > deadline) return found;
+      if (found.length >= count || Date.now() > deadline) {
+        return found;
+      }
       await Bun.sleep(25);
     }
   };
@@ -70,13 +78,13 @@ export async function runTxContract(target: {
   };
   const sends = async (response: Response, label: string, status = "sent") => {
     check(response.status === 200, `${label}-status`);
-    const body = (await response.json()) as { data: true | { sends: SendRow[] } };
+    const body = (await response.json()) as { data: true | { sends: Array<SendRow> } };
     if (reference) {
       check(body.data === true, `${label}-reference-body`);
       return [];
     }
     // Declared difference: the native response returns the created sends.
-    const data = body.data as { sends: SendRow[] };
+    const data = body.data as { sends: Array<SendRow> };
     check(Array.isArray(data.sends) && data.sends.length > 0, `${label}-sends`);
     for (const row of data.sends) {
       check(
@@ -96,7 +104,11 @@ export async function runTxContract(target: {
     check(typeof body.message === "string" && body.message.length > 0, `${label}-message`);
   };
 
-  const owned = { templates: [] as number[], subscribers: [] as number[], lists: [] as number[] };
+  const owned = {
+    templates: [] as Array<number>,
+    subscribers: [] as Array<number>,
+    lists: [] as Array<number>,
+  };
   let cleanupFailed = false;
   try {
     if (!reference) {
@@ -162,7 +174,7 @@ export async function runTxContract(target: {
     let found = await received(subjectOf("A1"));
     check(found.length === 1, "external-mail");
     let message = await mailpit.message(found[0]!.ID);
-    let raw = await mailpit.raw(found[0]!.ID);
+    const raw = await mailpit.raw(found[0]!.ID);
     check(message.To.map((t) => t.Address).join() === `ext-${marker}@example.test`, "external-to");
     check(/<p>Hello \[\] A1 <\/p>/.test(message.HTML), "external-body");
     check(header(raw, "X-Tx-Fixture") === marker, "external-header-first-wins");
@@ -173,7 +185,9 @@ export async function runTxContract(target: {
       "plain-alternative-d118",
     );
     check(/sender@example\.test/.test(header(raw, "From")), "external-from");
-    if (!reference) check(header(raw, "Message-ID") === external[0]!.smtp_message_id, "message-id");
+    if (!reference) {
+      check(header(raw, "Message-ID") === external[0]!.smtp_message_id, "message-id");
+    }
 
     // Default mode resolves an existing subscriber by normalized email.
     const ada = await subscriber(`ada-${marker}@example.test`, "Ada Lovelace");
@@ -280,13 +294,13 @@ export async function runTxContract(target: {
       ["external-no-emails", { subscriber_mode: "external" }],
       ["mode", { subscriber_mode: "bogus", subscriber_emails: ["a@example.test"] }],
       ["invalid-email", { subscriber_emails: ["not-an-email"] }],
-      ["missing-template", { subscriber_emails: ["a@example.test"], template_id: 2147483000 }],
+      ["missing-template", { subscriber_emails: ["a@example.test"], template_id: 2_147_483_000 }],
       ["campaign-template", { subscriber_emails: ["a@example.test"], template_id: campaign }],
       ["messenger", { subscriber_emails: ["a@example.test"], messenger: "nope" }],
-      ["unknown-id", { subscriber_ids: [2147483000] }],
+      ["unknown-id", { subscriber_ids: [2_147_483_000] }],
       ["type", { subscriber_emails: ["a@example.test"], template_id: "1" }],
     ];
-    for (const [label, body] of invalid)
+    for (const [label, body] of invalid) {
       await failed(
         await tx({
           template_id: templateId,
@@ -295,6 +309,7 @@ export async function runTxContract(target: {
         }),
         `invalid-${label}`,
       );
+    }
     await failed(await tx("{"), "invalid-json");
     check(await absent(`${marker} invalid`), "invalid-no-mail");
 
@@ -349,8 +364,9 @@ export async function runTxContract(target: {
       });
       const queued = await sends(response, "async", "queued");
       check((await received(subjectOf("J11"))).length === 1, "async-mail");
-      for (let i = 0; i < 200 && (await journal(queued[0]!.id)).status !== "sent"; i++)
+      for (let i = 0; i < 200 && (await journal(queued[0]!.id)).status !== "sent"; i++) {
         await Bun.sleep(25);
+      }
       check((await journal(queued[0]!.id)).status === "sent", "async-journal");
 
       // New field: idempotency, sequential and concurrent.
@@ -368,7 +384,7 @@ export async function runTxContract(target: {
       const parallel = { ...first, data: { order: "K14" }, idempotency_key: `${key}-parallel` };
       const results = await Promise.all([tx(parallel), tx(parallel), tx(parallel)]);
       const rows = await Promise.all(
-        results.map(async (r) => (await r.json()) as { data: { sends: SendRow[] } }),
+        results.map(async (r) => (await r.json()) as { data: { sends: Array<SendRow> } }),
       );
       check(
         results.every((r) => r.status === 200) &&
@@ -436,7 +452,7 @@ export async function runTxContract(target: {
         .total;
       await failed(
         await tx({
-          subscriber_ids: [ada, 2147483000],
+          subscriber_ids: [ada, 2_147_483_000],
           template_id: templateId,
           data: { order: "N17" },
         }),
@@ -456,26 +472,35 @@ export async function runTxContract(target: {
       }
     }
   } finally {
-    for (const id of owned.subscribers)
+    for (const id of owned.subscribers) {
       if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.lists)
+    }
+    for (const id of owned.lists) {
       if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.templates)
+    }
+    for (const id of owned.templates) {
       if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
     await mailpit.removeOwned();
   }
-  if (cleanupFailed) throw new Error("FAIL tx-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL tx-cleanup");
+  }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runTxContract({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS tx reference contract\n");
   } catch (error) {

@@ -10,8 +10,9 @@ import { percentile } from "@/test/perf/runtime-compat/metrics";
 import { processCheck } from "@/test/perf/runtime-compat/process-check";
 
 const args = new Set(process.argv.slice(2));
-for (const arg of args)
+for (const arg of args) {
   if (!["--smoke", "--control-only"].includes(arg)) throw new Error(`Unknown option: ${arg}`);
+}
 const smoke = args.has("--smoke");
 const count = smoke ? 20 : 1000;
 const repetitions = smoke ? 1 : 3;
@@ -40,7 +41,7 @@ console.log(
 async function run(count: number, repetition: string, mode: "non-pooled" | "pooled") {
   const marker = `m08${reference.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
   const mailpit = new Mailpit(reference, marker);
-  const latencies: number[] = [];
+  const latencies: Array<number> = [];
   let sendMs = 0,
     observationMs = 0,
     accepted = 0,
@@ -58,14 +59,17 @@ async function run(count: number, repetition: string, mode: "non-pooled" | "pool
     closedResources = 0,
     notIdle = 0;
   const log = (entry: { component?: string; tnx?: string; action?: string; cid?: number }) => {
-    if (entry.component !== "smtp-pool" || typeof entry.cid !== "number") return;
+    if (entry.component !== "smtp-pool" || typeof entry.cid !== "number") {
+      return;
+    }
     if (entry.tnx === "pool" && entry.action === "conection") {
       resources++;
       live.add(entry.cid);
       peakResources = Math.max(peakResources, live.size);
     }
-    if (entry.tnx === "pool" && entry.action === "assign")
+    if (entry.tnx === "pool" && entry.action === "assign") {
       assignments.set(entry.cid, (assignments.get(entry.cid) ?? 0) + 1);
+    }
     if (entry.tnx === "connection" && entry.action === "closed") {
       live.delete(entry.cid);
       closedResources++;
@@ -80,7 +84,7 @@ async function run(count: number, repetition: string, mode: "non-pooled" | "pool
     disableFileAccess: true,
     disableUrlAccess: true,
     connectionTimeout: 5000,
-    socketTimeout: 10000,
+    socketTimeout: 10_000,
   };
   const pool =
     mode === "pooled"
@@ -109,7 +113,9 @@ async function run(count: number, repetition: string, mode: "non-pooled" | "pool
           active++;
           peakActive = Math.max(peakActive, active);
           const transport = pool ?? nodemailer.createTransport(options);
-          if (pool && !pool.isIdle()) notIdle++;
+          if (pool && !pool.isIdle()) {
+            notIdle++;
+          }
           try {
             const info = await transport.sendMail({
               from: "sender@example.test",
@@ -127,7 +133,9 @@ async function run(count: number, repetition: string, mode: "non-pooled" | "pool
             failures++;
             throw error;
           } finally {
-            if (!pool) transport.close();
+            if (!pool) {
+              transport.close();
+            }
             active--;
             latencies.push(performance.now() - begin);
           }
@@ -136,13 +144,17 @@ async function run(count: number, repetition: string, mode: "non-pooled" | "pool
       const results = await Promise.allSettled(workers);
       sendMs += performance.now() - start;
       const failure = results.find((result) => result.status === "rejected");
-      if (failure?.status === "rejected") throw failure.reason;
+      if (failure?.status === "rejected") {
+        throw failure.reason;
+      }
       const observationStart = performance.now();
       const messages = await mailpit.list();
       assert.equal(messages.length, end - offset);
-      const actual = new Set(messages.map((message) => message.MessageID.replace(/[<>]/g, "")));
+      const actual = new Set(messages.map((message) => message.MessageID.replaceAll(/[<>]/g, "")));
       assert.equal(actual.size, ids.size);
-      for (const id of ids) assert.ok(actual.has(id));
+      for (const id of ids) {
+        assert.ok(actual.has(id));
+      }
       matched += actual.size;
       await mailpit.removeOwned();
       observationMs += performance.now() - observationStart;
@@ -184,14 +196,16 @@ async function run(count: number, repetition: string, mode: "non-pooled" | "pool
 console.log(
   JSON.stringify({ kind: "warmup", ...(await run(smoke ? 10 : 100, "warmup", "non-pooled")) }),
 );
-if (!args.has("--control-only"))
+if (!args.has("--control-only")) {
   console.log(
     JSON.stringify({ kind: "warmup", ...(await run(smoke ? 10 : 100, "warmup", "pooled")) }),
   );
+}
 for (let i = 1; i <= repetitions; i++) {
   console.log(
     JSON.stringify({ kind: "repetition", ...(await run(count, String(i), "non-pooled")) }),
   );
-  if (!args.has("--control-only"))
+  if (!args.has("--control-only")) {
     console.log(JSON.stringify({ kind: "repetition", ...(await run(count, String(i), "pooled")) }));
+  }
 }

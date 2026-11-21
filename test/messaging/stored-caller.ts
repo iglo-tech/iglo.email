@@ -8,8 +8,9 @@ import { createEmailer } from "@/messaging/email";
 
 const directory = process.env.M21_DATA_DIR,
   subject = process.env.M21_SUBJECT;
-if (!directory || !subject || !subject.startsWith("m08"))
+if (!directory || !subject || !subject.startsWith("m08")) {
   throw new Error("Missing synthetic fixture inputs");
+}
 const clock = createRealClock();
 const db = openDatabase(directory);
 const lists = createListReferences(db);
@@ -30,7 +31,9 @@ try {
     contentType: "plain",
     body: Buffer.from("retained settings fixture"),
   }).result;
-  if (outcome.status !== "accepted") throw new Error("Fixture delivery was not accepted");
+  if (outcome.status !== "accepted") {
+    throw new Error("Fixture delivery was not accepted");
+  }
 } finally {
   await emailer.close();
   settings.close();

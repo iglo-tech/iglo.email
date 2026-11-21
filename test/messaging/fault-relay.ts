@@ -1,5 +1,6 @@
 // Invocation-owned loopback relay for SMTP failure boundaries; forwards only to verified Mailpit.
-import { createServer, createConnection, type Socket } from "node:net";
+import { createServer, createConnection } from "node:net";
+import type { Socket } from "node:net";
 import { createHmac } from "node:crypto";
 import type { ReferenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 
@@ -15,14 +16,19 @@ export type Fault =
 export async function faultRelay(
   sink: ReferenceMailpit,
   fault: Fault,
-  credentials?: { user: string; password: string; authMethods?: string[]; loginPrompts?: string[] },
+  credentials?: {
+    user: string;
+    password: string;
+    authMethods?: Array<string>;
+    loginPrompts?: Array<string>;
+  },
   listenHost = "127.0.0.1",
 ) {
   let connections = 0;
   let authenticated = 0;
   let authAttempts = 0;
   let loginReplies = 0;
-  const greetings: string[] = [];
+  const greetings: Array<string> = [];
   let firstReady!: () => void;
   const first = new Promise<void>((resolve) => {
     firstReady = resolve;
@@ -46,8 +52,12 @@ export async function faultRelay(
   const sockets = new Set<Socket>();
   const server = createServer((client) => {
     connections++;
-    if (connections === 1) firstReady();
-    if (connections === 4) heldReady();
+    if (connections === 1) {
+      firstReady();
+    }
+    if (connections === 4) {
+      heldReady();
+    }
     const upstream = createConnection({ host: sink.host, port: sink.port });
     sockets.add(client);
     sockets.add(upstream);
@@ -79,17 +89,23 @@ export async function faultRelay(
       if (user === credentials?.user && password === credentials.password) {
         authenticated++;
         client.write("235 2.7.0 authenticated\r\n");
-      } else client.write("535 5.7.8 rejected\r\n");
+      } else {
+        client.write("535 5.7.8 rejected\r\n");
+      }
       authState = "";
     };
     client.on("data", (chunk: Buffer) => {
       fromClient += chunk.toString("latin1");
       for (;;) {
         const end = fromClient.indexOf("\r\n");
-        if (end < 0) break;
+        if (end < 0) {
+          break;
+        }
         const line = fromClient.slice(0, end);
         fromClient = fromClient.slice(end + 2);
-        if (/^AUTH /i.test(line)) authAttempts++;
+        if (/^AUTH /i.test(line)) {
+          authAttempts++;
+        }
         if (fault === "auth" && authState) {
           if (line === "*") {
             authState = "";
@@ -102,11 +118,18 @@ export async function faultRelay(
             check(parts[1] ?? "", parts[2] ?? "");
           } else if (authState === "login") {
             loginReplies++;
-            if (loginPrompts[loginIndex] === "Username:") authUser = decoded;
-            if (loginPrompts[loginIndex] === "Password:") authPassword = decoded;
+            if (loginPrompts[loginIndex] === "Username:") {
+              authUser = decoded;
+            }
+            if (loginPrompts[loginIndex] === "Password:") {
+              authPassword = decoded;
+            }
             loginIndex++;
-            if (loginIndex < loginPrompts.length) prompt();
-            else check(authUser, authPassword);
+            if (loginIndex < loginPrompts.length) {
+              prompt();
+            } else {
+              check(authUser, authPassword);
+            }
           } else if (authState === "cram") {
             const expected = createHmac("md5", credentials?.password ?? "")
               .update(challenge)
@@ -124,14 +147,18 @@ export async function faultRelay(
             if (initial) {
               const parts = Buffer.from(initial, "base64").toString("utf8").split("\0");
               check(parts[1] ?? "", parts[2] ?? "");
-            } else client.write("334 \r\n");
+            } else {
+              client.write("334 \r\n");
+            }
           } else if (method?.toUpperCase() === "LOGIN") {
             authState = "login";
             prompt();
           } else if (method?.toUpperCase() === "CRAM-MD5") {
             authState = "cram";
             client.write(`334 ${Buffer.from(challenge).toString("base64")}\r\n`);
-          } else client.write("504 5.5.4 unsupported\r\n");
+          } else {
+            client.write("504 5.5.4 unsupported\r\n");
+          }
         } else if (data) {
           if (fault === "during-data") {
             client.destroy();
@@ -154,26 +181,38 @@ export async function faultRelay(
           upstream.destroy();
           return;
         } else {
-          if (/^(EHLO|HELO) /i.test(line)) greetings.push(line);
-          if (/^EHLO /i.test(line)) ehlo = true;
+          if (/^(EHLO|HELO) /i.test(line)) {
+            greetings.push(line);
+          }
+          if (/^EHLO /i.test(line)) {
+            ehlo = true;
+          }
           upstream.write(`${line}\r\n`, "latin1");
-          if (/^DATA$/i.test(line)) data = true;
+          if (/^DATA$/i.test(line)) {
+            data = true;
+          }
         }
       }
     });
     upstream.on("data", async (chunk: Buffer) => {
       if (fault === "hold") {
         await release;
-        if (client.destroyed) return;
+        if (client.destroyed) {
+          return;
+        }
       }
       fromServer += chunk.toString("latin1");
       for (;;) {
         const end = fromServer.indexOf("\r\n");
-        if (end < 0) break;
+        if (end < 0) {
+          break;
+        }
         const line = fromServer.slice(0, end);
         fromServer = fromServer.slice(end + 2);
         // Disable SMTP pipelining so synthetic replies preserve command order.
-        if (/^250[- ]PIPELINING/i.test(line)) continue;
+        if (/^250[- ]PIPELINING/i.test(line)) {
+          continue;
+        }
         if (finalPending && line.startsWith("250 ")) {
           finalPending = false;
           if (fault === "hold-final") {
@@ -190,7 +229,9 @@ export async function faultRelay(
             } finally {
               clearInterval(trickle);
             }
-            if (client.destroyed) return;
+            if (client.destroyed) {
+              return;
+            }
           }
           if (fault === "lost-final") {
             client.destroy();
@@ -213,7 +254,9 @@ export async function faultRelay(
     server.listen(0, listenHost, resolve);
   });
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Relay failed to listen");
+  if (!address || typeof address === "string") {
+    throw new Error("Relay failed to listen");
+  }
   return {
     port: address.port,
     first,
@@ -227,7 +270,9 @@ export async function faultRelay(
     loginReplies: () => loginReplies,
     greetings: () => [...greetings],
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );

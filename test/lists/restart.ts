@@ -24,8 +24,9 @@ test("compiled lists and grants persist across restart", async () => {
         expect(options.status).toBe(204);
         expect(options.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
       }
-      for (const absent of ["not-a-notice", "fast-xml-parser@5.11.2", "@nodable_entities@3.1.0"])
+      for (const absent of ["not-a-notice", "fast-xml-parser@5.11.2", "@nodable_entities@3.1.0"]) {
         expect((await fetch(`${origin}/admin/static/licenses/${absent}.txt`)).status).toBe(404);
+      }
       const credentials = await provisionApiUser(origin, admin);
       const auth = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
       async function req(path: string, method = "GET", body?: unknown, authorization = auth) {

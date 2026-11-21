@@ -49,7 +49,7 @@ try {
     db_mib: statSync(db.filename).size >> 20,
   });
 
-  const peak = async (method: string, args: unknown[]) => {
+  const peak = async (method: string, args: Array<unknown>) => {
     const child = Bun.spawn([compiled, analyticsChildArgument], {
       stdin: "pipe",
       stdout: "pipe",
@@ -58,10 +58,12 @@ try {
     child.stdin.write(JSON.stringify({ path: db.filename, method, args }));
     await child.stdin.end();
     let bytes = 0;
-    for await (const chunk of child.stdout) bytes += chunk.length;
+    for await (const chunk of child.stdout) {
+      bytes += chunk.length;
+    }
     await child.exited;
     return {
-      output_mib: +(bytes / 1048576).toFixed(1),
+      output_mib: +(bytes / 1_048_576).toFixed(1),
       peak_rss_mib: child.resourceUsage()!.maxRSS >> 20,
     };
   };
@@ -94,7 +96,7 @@ try {
     const query = db.query(
       `SELECT template_id, COUNT(*) FROM sends WHERE status = 'sent' AND ${column} >= ? AND ${column} <= ? GROUP BY template_id`,
     );
-    const times: number[] = [];
+    const times: Array<number> = [];
     for (let run = 0; run < 5; run++) {
       const before = performance.now();
       query.all(...narrow);

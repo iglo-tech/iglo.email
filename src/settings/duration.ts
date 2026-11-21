@@ -11,9 +11,9 @@ function duration(input: string, days = false): number {
     μs: 1e-3,
     ms: 1,
     s: 1000,
-    m: 60000,
-    h: 3600000,
-    ...(days ? { d: 86400000 } : {}),
+    m: 60_000,
+    h: 3_600_000,
+    ...(days ? { d: 86_400_000 } : {}),
   };
   let total = 0,
     pos = 0;
@@ -21,8 +21,12 @@ function duration(input: string, days = false): number {
   while (pos < input.length) {
     re.lastIndex = pos;
     const m = re.exec(input);
-    if (!m) return NaN;
-    if (!Object.hasOwn(units, m[2]!)) return NaN;
+    if (!m) {
+      return NaN;
+    }
+    if (!Object.hasOwn(units, m[2]!)) {
+      return NaN;
+    }
     total += Number(m[1]) * units[m[2]!]!;
     pos = re.lastIndex;
   }
@@ -36,19 +40,26 @@ export function sessionDuration(input: string, now: number): number {
     value < 1000 ||
     !Number.isSafeInteger(milliseconds) ||
     !Number.isFinite(now) ||
-    milliseconds > 8640000000000000 - now
-  )
+    milliseconds > 8_640_000_000_000_000 - now
+  ) {
     return fail();
+  }
   return milliseconds;
 }
 
 export function goDuration(input: string): number {
-  if (input === "0" || input === "+0" || input === "-0") return 0;
+  if (input === "0" || input === "+0" || input === "-0") {
+    return 0;
+  }
   const negative = input.startsWith("-");
   const unsigned = input.startsWith("+") || negative ? input.slice(1) : input;
-  if (!unsigned) return NaN;
+  if (!unsigned) {
+    return NaN;
+  }
   const result = duration(unsigned);
-  if (!Number.isFinite(result) || result > 9223372036854.775) return NaN;
+  if (!Number.isFinite(result) || result > 9_223_372_036_854.775) {
+    return NaN;
+  }
   return negative ? -result : result;
 }
 
@@ -59,48 +70,68 @@ export function cronDuration(input: string): { nanos: bigint; error: string | nu
   const fail = (kind: string) => ({ nanos: 0n, error: `time: ${kind} ${quote(input)}` });
   let rest = input;
   const negative = rest.startsWith("-");
-  if (/^[+-]/.test(rest)) rest = rest.slice(1);
-  if (rest === "0") return { nanos: 0n, error: null };
-  if (!rest) return fail("invalid duration");
+  if (/^[+-]/.test(rest)) {
+    rest = rest.slice(1);
+  }
+  if (rest === "0") {
+    return { nanos: 0n, error: null };
+  }
+  if (!rest) {
+    return fail("invalid duration");
+  }
   const units: Record<string, bigint> = {
     ns: 1n,
     us: 1000n,
     µs: 1000n,
     μs: 1000n,
-    ms: 1000000n,
-    s: 1000000000n,
-    m: 60000000000n,
-    h: 3600000000000n,
+    ms: 1_000_000n,
+    s: 1_000_000_000n,
+    m: 60_000_000_000n,
+    h: 3_600_000_000_000n,
   };
-  const limit = 9223372036854775808n;
+  const limit = 9_223_372_036_854_775_808n;
   let total = 0n;
   while (rest) {
     const numeric = /^(\d*)(?:\.(\d*))?/.exec(rest)!;
     const integer = numeric[1]!;
     const fraction = numeric[2] ?? "";
-    if ((!integer && !fraction) || (integer && BigInt(integer) > limit))
+    if ((!integer && !fraction) || (integer && BigInt(integer) > limit)) {
       return fail("invalid duration");
+    }
     rest = rest.slice(numeric[0].length);
     const unit = /^[^\d.]*/u.exec(rest)![0];
-    if (!unit) return fail("missing unit in duration");
-    if (!Object.hasOwn(units, unit)) return fail(`unknown unit ${quote(unit)} in duration`);
+    if (!unit) {
+      return fail("missing unit in duration");
+    }
+    if (!Object.hasOwn(units, unit)) {
+      return fail(`unknown unit ${quote(unit)} in duration`);
+    }
     rest = rest.slice(unit.length);
     const factor = units[unit]!;
     let value = BigInt(integer || "0") * factor;
-    if (value > limit) return fail("invalid duration");
+    if (value > limit) {
+      return fail("invalid duration");
+    }
     // Go's leadingFraction retains digits until its uint64 accumulator would overflow.
     let digits = "";
     for (const digit of fraction) {
       const next = digits + digit;
-      if (BigInt(next) > limit) break;
+      if (BigInt(next) > limit) {
+        break;
+      }
       digits = next;
     }
-    if (digits)
+    if (digits) {
       value += BigInt(Math.trunc(Number(digits) * (Number(factor) / 10 ** digits.length)));
+    }
     total += value;
-    if (value > limit || total > limit) return fail("invalid duration");
+    if (value > limit || total > limit) {
+      return fail("invalid duration");
+    }
   }
-  if (!negative && total === limit) return fail("invalid duration");
+  if (!negative && total === limit) {
+    return fail("invalid duration");
+  }
   return { nanos: negative ? -total : total, error: null };
 }
 
@@ -110,10 +141,14 @@ const iso =
   /^P(?=\d|T\d)(?:(\d{1,4})Y)?(?:(\d{1,5})M)?(?:(\d{1,5})W)?(?:(\d{1,6})D)?(?:T(?=\d)(?:(\d{1,7})H)?(?:(\d{1,9})M)?(?:(\d{1,10})S)?)?$/;
 /** The earliest instant still inside the interval ending at `now`; null when "" disables it. */
 export function intervalStart(input: string, now: Date): Date | null | undefined {
-  if (input === "") return null;
+  if (input === "") {
+    return null;
+  }
   const m = iso.exec(input);
-  if (!m) return undefined;
-  const [y, mo, w, d, h, mi, s] = m.slice(1).map((v) => Number(v ?? 0)) as number[];
+  if (!m) {
+    return undefined;
+  }
+  const [y, mo, w, d, h, mi, s] = m.slice(1).map((v) => Number(v ?? 0)) as Array<number>;
   const at = new Date(now.getTime());
   // Calendar months clamp to the target month's last day (31 March - P1M = 28 February).
   const year = at.getUTCFullYear() - y!,
@@ -124,6 +159,8 @@ export function intervalStart(input: string, now: Date): Date | null | undefined
   at.setUTCDate(at.getUTCDate() - w! * 7 - d!);
   const time = at.getTime() - ((h! * 60 + mi!) * 60 + s!) * 1000;
   // Bound to dates JavaScript and ISO strings represent (year 0 onwards).
-  if (!Number.isFinite(time) || time < -62167219200000) return undefined;
+  if (!Number.isFinite(time) || time < -62_167_219_200_000) {
+    return undefined;
+  }
   return new Date(time);
 }

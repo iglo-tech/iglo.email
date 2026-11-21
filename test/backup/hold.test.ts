@@ -15,9 +15,8 @@ import {
   runBackup,
   startServer,
   temporaryDirectory,
-  type Client,
-  type Server,
 } from "@/test/backup/fixture";
+import type { Client, Server } from "@/test/backup/fixture";
 import { createRealClock } from "@/clock";
 import { createEmailer } from "@/messaging/email";
 import { HttpError } from "@/server/response";
@@ -25,7 +24,7 @@ import { startSink } from "@/test/tx/sink";
 
 setDefaultTimeout(120_000);
 /** Longer than the campaign runner's scan and every sending loop's poll. */
-const QUIET_MS = 6_500;
+const QUIET_MS = 6500;
 const ACKNOWLEDGE = "--consent-reconciled";
 const HOLD_HEADER = "x-iglo-email-hold";
 let executable = "";
@@ -35,7 +34,7 @@ let dataDir = "";
 let server: Server | undefined;
 let sink: Awaited<ReturnType<typeof startSink>> | undefined;
 let receiver: ReturnType<typeof Bun.serve> | undefined;
-let hooks: string[] = [];
+let hooks: Array<string> = [];
 
 beforeAll(async () => {
   build = temporaryDirectory();
@@ -50,7 +49,9 @@ afterEach(async () => {
   await receiver?.stop(true);
   receiver = undefined;
   hooks = [];
-  if (base) removeDirectory(base);
+  if (base) {
+    removeDirectory(base);
+  }
   base = "";
 });
 
@@ -62,7 +63,9 @@ const json = (value: unknown): RequestInit => ({
 const put = (value: unknown): RequestInit => ({ ...json(value), method: "PUT" });
 const data = async (response: Response) => {
   const text = await response.text();
-  if (!response.ok) throw new Error(`${response.url}: ${response.status} ${text}`);
+  if (!response.ok) {
+    throw new Error(`${response.url}: ${response.status} ${text}`);
+  }
   return (JSON.parse(text) as { data: any }).data;
 };
 const subjects = () => sink!.messages.map(({ data }) => /^Subject: (.*)$/m.exec(data)?.[1] ?? "");
@@ -72,8 +75,9 @@ const recipients = (subject: string) =>
     .flatMap(({ to }) => to)
     .sort();
 async function until(condition: () => boolean, what: string, ms = 30_000) {
-  for (const deadline = Date.now() + ms; !condition(); await Bun.sleep(25))
+  for (const deadline = Date.now() + ms; !condition(); await Bun.sleep(25)) {
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
+  }
 }
 async function logIn(username: string, password: string) {
   const page = await fetch(`${server!.origin}/admin/login`);
@@ -86,7 +90,7 @@ async function logIn(username: string, password: string) {
     body: new URLSearchParams({ nonce, username, password, next: "/admin" }).toString(),
   });
 }
-async function resetPassword(stdin: string, ...args: string[]) {
+async function resetPassword(stdin: string, ...args: Array<string>) {
   const child = Bun.spawn([executable, "reset-password", "--data-dir", dataDir, ...args], {
     env: { PATH: "" },
     stdin: Buffer.from(stdin),
@@ -116,7 +120,9 @@ async function stack() {
     port: 0,
     fetch: async (request) => {
       // Only a signed delivery counts: tools on the host probe local ports.
-      if (request.headers.has("x-iglo-email-signature")) hooks.push(await request.text());
+      if (request.headers.has("x-iglo-email-signature")) {
+        hooks.push(await request.text());
+      }
       return new Response("ok");
     },
   });
@@ -152,7 +158,7 @@ async function stack() {
   const list = await data(
     await client("/api/lists", json({ name: "News", type: "public", optin: "single" })),
   );
-  const subscriber = async (name: string, lists: number[] = [list.id]) =>
+  const subscriber = async (name: string, lists: Array<number> = [list.id]) =>
     data(
       await client(
         "/api/subscribers",
@@ -188,7 +194,7 @@ const backupTo = async (output: string) => {
   expect(result.exitCode).toBe(0);
   return result;
 };
-const release = (...args: string[]) =>
+const release = (...args: Array<string>) =>
   runBackup(executable, ["--release-hold", "--data-dir", dataDir, ...args]);
 const restart = async (authorization: string) => {
   server = await startServer(executable, dataDir);
@@ -199,7 +205,7 @@ test("a restored install sends nothing to someone who opted out after the backup
   const { authorization, client, list, subscriber } = await stack();
   const alice = await subscriber("alice");
   await subscriber("bob");
-  const sendAt = new Date(Date.now() + 4_000).toISOString();
+  const sendAt = new Date(Date.now() + 4000).toISOString();
   const scheduled = await campaign(client, list.id, "Once only", sendAt);
   await data(await client(`/api/campaigns/${scheduled.id}/status`, put({ status: "scheduled" })));
   const output = join(base, "backup");

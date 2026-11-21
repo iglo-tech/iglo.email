@@ -2,11 +2,14 @@
 // the pixel names. Every other request gets the same 1x1 image and records nothing. Through HTTP,
 // with the pixels of real delivered mail, and the campaign statistics API (`views`).
 import { afterEach, expect, test } from "bun:test";
-import { runnerFixture, type RunnerFixture } from "@/test/campaigns/runner/fixture";
+import { runnerFixture } from "@/test/campaigns/runner/fixture";
+import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 
-const fixtures: RunnerFixture[] = [];
+const fixtures: Array<RunnerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await runnerFixture({ webhooks: {} });
@@ -32,7 +35,7 @@ const pixel = async (f: RunnerFixture, path: string) => {
   return new Uint8Array(await response.arrayBuffer());
 };
 /** Sends a campaign to the list and waits until the runner has finished it. */
-async function send(f: RunnerFixture, lists: number[]) {
+async function send(f: RunnerFixture, lists: Array<number>) {
   const c = await f.campaign({
     name: "Weekly",
     subject: "Weekly",

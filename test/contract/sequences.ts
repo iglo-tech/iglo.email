@@ -9,7 +9,9 @@ export async function runSequencesContract(target: {
   restart: () => Promise<void>;
 }) {
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL sequences-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL sequences-${label}`);
+    }
   };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
@@ -32,7 +34,7 @@ export async function runSequencesContract(target: {
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
-  const apiUser = async (name: string, permissions: string[]) => {
+  const apiUser = async (name: string, permissions: Array<string>) => {
     const role = await call("/api/roles/users", "POST", { name, permissions });
     const user = await call("/api/users", "POST", {
       username: name,

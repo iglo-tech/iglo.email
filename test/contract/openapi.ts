@@ -3,7 +3,8 @@
 import { Database } from "bun:sqlite";
 import { createHmac, generateKeyPairSync } from "node:crypto";
 import { join } from "node:path";
-import { validate, type Document } from "@/test/openapi/schema";
+import { validate } from "@/test/openapi/schema";
+import type { Document } from "@/test/openapi/schema";
 import type { Credentials } from "@/test/contract/types";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
@@ -58,12 +59,14 @@ async function session(origin: string, admin: { user: string; password: string }
 const totp = (secret: string) => {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = "";
-  for (const char of secret) bits += alphabet.indexOf(char).toString(2).padStart(5, "0");
-  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((part) => parseInt(part, 2)));
+  for (const char of secret) {
+    bits += alphabet.indexOf(char).toString(2).padStart(5, "0");
+  }
+  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((part) => Number.parseInt(part, 2)));
   const counter = Buffer.alloc(8);
   counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
   const mac = createHmac("sha1", key).update(counter).digest();
-  const value = mac.readUInt32BE(mac[19]! & 15) & 0x7fffffff;
+  const value = mac.readUInt32BE(mac[19]! & 15) & 0x7f_ff_ff_ff;
   return String(value % 1_000_000).padStart(6, "0");
 };
 
@@ -83,13 +86,16 @@ export async function runOpenApiContract(target: {
     socket: {
       open: (socket) => void socket.write("220 fixture\r\n"),
       data(socket, chunk) {
-        for (const line of chunk.toString().split("\r\n").filter(Boolean))
+        for (const line of chunk.toString().split("\r\n").filter(Boolean)) {
           socket.write(/^RCPT/i.test(line) ? "550 5.1.1 refused\r\n" : "250 ok\r\n");
+        }
       },
     },
   });
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL openapi-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL openapi-${label}`);
+    }
   };
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
 
@@ -124,7 +130,11 @@ export async function runOpenApiContract(target: {
   };
 
   /** An API user with these permissions and per-list grants. */
-  const credential = async (name: string, permissions: string[], lists: unknown[] = []) => {
+  const credential = async (
+    name: string,
+    permissions: Array<string>,
+    lists: Array<unknown> = [],
+  ) => {
     const role = (await send("POST", "/api/roles/users", { body: { name, permissions } })).body
       .data;
     const listRole = (await send("POST", "/api/roles/lists", { body: { name, lists } })).body.data;
@@ -161,24 +171,28 @@ export async function runOpenApiContract(target: {
   /** One operation by its documented path; its answer has to be what the document says. */
   const op = async (key: string, options: Options = {}): Promise<Reply> => {
     const [method, template] = key.split(" ") as [string, string];
-    const path = template.replace(/\{(\w+)\}/g, (_, name: string) => {
+    const path = template.replaceAll(/\{(\w+)\}/g, (_, name: string) => {
       const value = options.params?.[name];
       check(value !== undefined, `param-${key}-${name}`);
       return encodeURIComponent(String(value));
     });
     const declared = new Set(
-      (operationOf(key).parameters as { in: string; name: string }[])
+      (operationOf(key).parameters as Array<{ in: string; name: string }>)
         .filter((parameter) => parameter.in === "query")
         .map(({ name }) => name),
     );
-    for (const name of new URLSearchParams(options.query).keys())
+    for (const name of new URLSearchParams(options.query).keys()) {
       if (!declared.has(name))
         throw new Error(`FAIL openapi-query ${key}: ${name} is undocumented`);
-    if (options.body !== undefined) accepted(key, options.body);
+    }
+    if (options.body !== undefined) {
+      accepted(key, options.body);
+    }
     const reply = await send(method, path, options);
     const expected = options.expect ?? 200;
-    if (reply.status !== expected)
+    if (reply.status !== expected) {
       throw new Error(`FAIL openapi-${key}: status ${reply.status}: ${reply.text.slice(0, 300)}`);
+    }
     conforms(key, reply);
     return reply;
   };
@@ -186,44 +200,57 @@ export async function runOpenApiContract(target: {
   const operationOf = (key: string) => {
     const [method, template] = key.split(" ") as [string, string];
     const operation = document.paths[template]?.[method.toLowerCase()];
-    if (!operation) throw new Error(`FAIL openapi-undocumented ${key}`);
+    if (!operation) {
+      throw new Error(`FAIL openapi-undocumented ${key}`);
+    }
     return operation;
   };
 
   /** The body an operation is sent has to fit the document too. */
   const accepted = (key: string, body: unknown) => {
     const schema = operationOf(key).requestBody?.content["application/json"]?.schema;
-    if (!schema) throw new Error(`FAIL openapi-request ${key}: no JSON body is documented`);
+    if (!schema) {
+      throw new Error(`FAIL openapi-request ${key}: no JSON body is documented`);
+    }
     const problems = validate(document, schema, body, "$", 0, checked);
-    if (problems.length)
+    if (problems.length) {
       throw new Error(`FAIL openapi-request ${key}: ${problems.slice(0, 8).join("; ")}`);
+    }
   };
 
   const conforms = (key: string, reply: Reply) => {
     const operation = operationOf(key);
     const declared = operation.responses[String(reply.status)] ?? operation.responses.default;
-    if (!declared) throw new Error(`FAIL openapi-status ${key}: ${reply.status} is not documented`);
+    if (!declared) {
+      throw new Error(`FAIL openapi-status ${key}: ${reply.status} is not documented`);
+    }
     const response = declared.$ref
       ? document.components.responses[declared.$ref.split("/").pop()]
       : declared;
     const content = response.content as Record<string, { schema?: object }> | undefined;
     if (!content) {
-      if (reply.text !== "") throw new Error(`FAIL openapi-body ${key}: documented as empty`);
+      if (reply.text !== "") {
+        throw new Error(`FAIL openapi-body ${key}: documented as empty`);
+      }
     } else {
       const media = content[reply.type];
-      if (!media)
+      if (!media) {
         throw new Error(
           `FAIL openapi-type ${key} ${reply.status}: ${reply.type} is not documented`,
         );
+      }
       if (reply.type === "application/json") {
         const problems = validate(document, media.schema ?? {}, reply.body, "$", 0, checked);
-        if (problems.length)
+        if (problems.length) {
           throw new Error(
             `FAIL openapi-schema ${key} ${reply.status}: ${problems.slice(0, 8).join("; ")}`,
           );
+        }
       }
     }
-    if (!seen.has(key)) seen.set(key, new Set());
+    if (!seen.has(key)) {
+      seen.set(key, new Set());
+    }
     seen.get(key)!.add(reply.status);
   };
 
@@ -267,7 +294,9 @@ export async function runOpenApiContract(target: {
 
     await op("GET /api/health");
     // Nothing to show yet: a new installation, and a role that sees no list.
-    for (const key of paged) await op(key);
+    for (const key of paged) {
+      await op(key);
+    }
     await op("GET /api/dashboard/campaigns");
     await op("GET /api/dashboard/charts");
     await op("GET /api/dashboard/counts");
@@ -613,7 +642,9 @@ export async function runOpenApiContract(target: {
     });
     const failedId = failing.body.data.sends[0].id;
     for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
-      if ((await send("GET", `/api/sends/${failedId}`)).body.data.status === "failed") break;
+      if ((await send("GET", `/api/sends/${failedId}`)).body.data.status === "failed") {
+        break;
+      }
       check(Date.now() < deadline, "failed-send-wait");
     }
     await send("PUT", "/api/settings/smtp", smtpAt(sink.port));
@@ -835,7 +866,9 @@ export async function runOpenApiContract(target: {
     ).body.data;
     for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
       const timeline = await send("GET", `/api/enrollments/${running.id}/timeline`);
-      if (timeline.body.data.entries.some(({ type }: { type: string }) => type === "step")) break;
+      if (timeline.body.data.entries.some(({ type }: { type: string }) => type === "step")) {
+        break;
+      }
       check(Date.now() < deadline, "sequence-step-wait");
     }
     await op("GET /api/enrollments/{id}/timeline", {
@@ -1021,8 +1054,9 @@ export async function runOpenApiContract(target: {
     });
     await op("GET /api/campaigns/running/stats");
     for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
-      if ((await send("GET", `/api/campaigns/${campaign.id}`)).body.data.status === "finished")
+      if ((await send("GET", `/api/campaigns/${campaign.id}`)).body.data.status === "finished") {
         break;
+      }
       check(Date.now() < deadline, "campaign-finish-wait");
     }
     // A view and a click, through the real pixel and redirect.
@@ -1042,16 +1076,18 @@ export async function runOpenApiContract(target: {
       auth: null,
     });
     await send("GET", `/link/${link.uuid}/${campaign.uuid}/${subscriber.uuid}`, { auth: null });
-    for (const type of ["views", "clicks", "bounces", "links"])
+    for (const type of ["views", "clicks", "bounces", "links"]) {
       await op("GET /api/campaigns/analytics/{type}", {
         params: { type },
         query: `?id=${campaign.id}&from=2020-01-01&to=2099-01-01`,
       });
-    for (const type of ["views", "clicks", "bounces", "links"])
+    }
+    for (const type of ["views", "clicks", "bounces", "links"]) {
       await op("GET /api/lists/analytics/{type}", {
         params: { type },
         query: `?id=${list.id}&from=2020-01-01&to=2099-01-01`,
       });
+    }
     // A send's view and click have no campaign. Every tracked row is shown, and cleared.
     await send("GET", `/m/${send0.uuid}/px.png`, { auth: null });
     await send("GET", `/m/${send0.uuid}/link/${sendLink.uuid}`, { auth: null });
@@ -1076,10 +1112,11 @@ export async function runOpenApiContract(target: {
     await op("GET /api/subscribers/{id}/activity", {
       params: { id: other.id },
     });
-    for (const type of ["campaign_views", "link_clicks"])
+    for (const type of ["campaign_views", "link_clicks"]) {
       await op("DELETE /api/subscribers/{id}/activity/{type}", {
         params: { id: subscriber.id, type },
       });
+    }
     await op("DELETE /api/subscribers/{id}/activity/{type}", {
       params: { id: subscriber.id, type: "views" },
       expect: 400,
@@ -1151,7 +1188,9 @@ export async function runOpenApiContract(target: {
     );
     await op("POST /api/import/subscribers", { raw: csv });
     for (const deadline = Date.now() + 10_000; ; await Bun.sleep(25)) {
-      if ((await send("GET", "/api/import/subscribers")).body.data.status !== "importing") break;
+      if ((await send("GET", "/api/import/subscribers")).body.data.status !== "importing") {
+        break;
+      }
       check(Date.now() < deadline, "import-wait");
     }
     await op("GET /api/import/subscribers");
@@ -1221,9 +1260,7 @@ export async function runOpenApiContract(target: {
     });
     await op("GET /api/public/captcha/altcha", { auth: null, expect: 404 });
     // With ALTCHA active it answers a challenge; the setting goes back afterwards.
-    const priorCaptcha = ((await send("GET", "/api/settings")).body as any).data[
-      "security.captcha"
-    ];
+    const priorCaptcha = (await send("GET", "/api/settings")).body.data["security.captcha"];
     const captcha = {
       altcha: { enabled: true, complexity: 1000 },
       hcaptcha: { enabled: false, key: "", secret: "" },
@@ -1351,7 +1388,7 @@ export async function runOpenApiContract(target: {
       query: "?before_date=2000-01-01T00:00:00Z",
     });
 
-    for (const external_id of ["ext-4", "ext-5"])
+    for (const external_id of ["ext-4", "ext-5"]) {
       await op("POST /api/subscribers", {
         body: {
           email: `${external_id}@fixture.test`,
@@ -1361,6 +1398,7 @@ export async function runOpenApiContract(target: {
           external_id,
         },
       });
+    }
     await op("DELETE /api/subscribers/external/{external_id}", {
       params: { external_id: "ext-4" },
     });
@@ -1376,21 +1414,25 @@ export async function runOpenApiContract(target: {
     await op("POST /api/mcp", { body: { jsonrpc: "2.0", id: 1, method: "ping" } });
 
     // Past the last page.
-    for (const key of paged) await op(key, { query: "?page=999" });
+    for (const key of paged) {
+      await op(key, { query: "?page=999" });
+    }
     await op("GET /api/public/archive", { auth: null, query: "?page=999" });
-    for (const tab of ["subscriber-events", "enrollments", "sends"])
+    for (const tab of ["subscriber-events", "enrollments", "sends"]) {
       await op(`GET /api/subscribers/{id}/${tab}`, {
         params: { id: shared.id },
         query: "?page=999",
       });
+    }
 
     // Dropped in 07: each is a plain 404, not a hidden route.
-    for (const path of ["/api/config", "/api/lang/en", "/api/about", "/api/events"])
+    for (const path of ["/api/config", "/api/lang/en", "/api/about", "/api/events"]) {
       check((await send("GET", path)).status === 404, `dropped-${path}`);
+    }
 
     // Every protected operation refuses without a credential, in the error envelope.
     const operations = Object.entries(document.paths).flatMap(([template, item]) =>
-      Object.entries(item as Record<string, any>).map(([method, operation]) => ({
+      Object.entries(item).map(([method, operation]) => ({
         key: `${method.toUpperCase()} ${template}`,
         operation,
       })),
@@ -1421,13 +1463,16 @@ export async function runOpenApiContract(target: {
         Object.entries(item as Record<string, any>).flatMap(([method, operation]) => {
           // Path-level keys that are not operations (`parameters`, `summary`, ...).
           if (!httpMethods.has(method)) {
-            if (["parameters", "summary", "description", "servers"].includes(method)) return [];
+            if (["parameters", "summary", "description", "servers"].includes(method)) {
+              return [];
+            }
             return [`${template}: unexpected path key ${method}`];
           }
-          if (!operation || !Array.isArray(operation.parameters))
+          if (!operation || !Array.isArray(operation.parameters)) {
             return [`${method.toUpperCase()} ${template}: no parameter list`];
+          }
           return (
-            operation.parameters as { in: string; name: string; schema?: { type?: string } }[]
+            operation.parameters as Array<{ in: string; name: string; schema?: { type?: string } }>
           )
             .filter((parameter) => parameter.in === "path")
             .filter(({ name, schema }) => (schema?.type === "integer") !== integerParams.has(name))
@@ -1438,14 +1483,17 @@ export async function runOpenApiContract(target: {
         }),
       );
     const problems = pathTypeProblems(document.paths);
-    if (problems.length) throw new Error(`FAIL openapi-path-types: ${problems.join("; ")}`);
+    if (problems.length) {
+      throw new Error(`FAIL openapi-path-types: ${problems.join("; ")}`);
+    }
     // The check itself has to fail on a deliberately wrong type.
     const wrong = structuredClone(document.paths);
-    for (const item of Object.values(wrong))
-      for (const operation of Object.values(item as Record<string, any>))
+    for (const item of Object.values(wrong)) {
+      for (const operation of Object.values(item))
         for (const parameter of operation.parameters)
           if (parameter.in === "path" && parameter.name === "step")
             parameter.schema = { type: "string" };
+    }
     check(pathTypeProblems(wrong).length > 0, "openapi-path-types-detects-wrong-type");
     check(
       pathTypeProblems({ "/x/{id}": { parameters: [], summary: "s" } }).length === 0,
@@ -1460,10 +1508,10 @@ export async function runOpenApiContract(target: {
       "openapi-path-types-names-missing-parameters",
     );
     for (const { key, operation } of operations) {
-      const names = (operation.parameters as { in: string; name: string }[])
+      const names = (operation.parameters as Array<{ in: string; name: string }>)
         .filter((parameter) => parameter.in === "path")
         .map(({ name }) => name);
-      for (const tested of names.filter((name) => integerParams.has(name)))
+      for (const tested of names.filter((name) => integerParams.has(name))) {
         check(
           (
             await send(
@@ -1477,16 +1525,18 @@ export async function runOpenApiContract(target: {
           ).status === 400,
           `openapi-path-type-${key}-${tested}`,
         );
+      }
     }
 
     const secured = operations.filter(({ operation }) => operation.security?.length !== 0);
-    for (const { key, operation } of secured)
+    for (const { key, operation } of secured) {
       await op(key, {
         ...placeholders(key, "999999"),
         auth: null,
         // An operation that documents 401 refuses a missing credential with it (MCP); others 403.
         expect: operation.responses["401"] ? 401 : 403,
       });
+    }
 
     // And names its permission to a caller without one. An operation refused for a permission
     // has to document it: the annotation is not optional.
@@ -1511,11 +1561,11 @@ export async function runOpenApiContract(target: {
     /** The query an operation cannot be reached without. */
     const needed = (operation: any) => {
       const query = (
-        operation.parameters as {
+        operation.parameters as Array<{
           in: string;
           name: string;
           required?: boolean;
-        }[]
+        }>
       )
         .filter(({ in: at, name, required }) => at === "query" && (required || name === "id"))
         .map(({ name }) => `${name}=${name === "id" ? "999999" : "2020-01-01"}`);
@@ -1524,13 +1574,13 @@ export async function runOpenApiContract(target: {
     const filled = (key: string) =>
       key
         .split(" ")[1]!
-        .replace(/\{(\w+)\}/g, (_, name) => (name === "id" || name === "step" ? "999999" : "x"));
+        .replaceAll(/\{(\w+)\}/g, (_, name) => (name === "id" || name === "step" ? "999999" : "x"));
     const reachable = operations.filter(
       ({ operation }) =>
         operation.security?.length !== 0 && !operation.security?.[0]?.SessionCookie,
     );
     for (const { key, operation } of reachable) {
-      const permissions = operation["x-required-permissions"] as string[] | undefined;
+      const permissions = operation["x-required-permissions"] as Array<string> | undefined;
       const query = needed(operation);
       if (permissions) {
         const reply = await op(key, {
@@ -1556,17 +1606,20 @@ export async function runOpenApiContract(target: {
     // What an operation documents is enough, and each conjunction is needed: this is what a
     // least-privilege role is built from. Reads only, so nothing changes.
     const holders = new Map<string, string>();
-    const holding = async (permissions: string[]) => {
+    const holding = async (permissions: Array<string>) => {
       const name = permissions.join(",");
-      if (!holders.has(name))
+      if (!holders.has(name)) {
         holders.set(name, await credential(`holder-${holders.size}`, permissions));
+      }
       return holders.get(name)!;
     };
     for (const { key, operation } of reachable) {
-      const permissions = (operation["x-required-permissions"] ?? []) as string[];
-      const also = (operation["x-also-required-permissions"] ?? []) as string[][];
+      const permissions = (operation["x-required-permissions"] ?? []) as Array<string>;
+      const also = (operation["x-also-required-permissions"] ?? []) as Array<string>[];
       const query = needed(operation);
-      if (!key.startsWith("GET ")) continue;
+      if (!key.startsWith("GET ")) {
+        continue;
+      }
       const grants = permissions.filter((permission) => !permission.startsWith("list:"));
       for (const grant of grants) {
         const reply = await send("GET", filled(key), {
@@ -1575,7 +1628,7 @@ export async function runOpenApiContract(target: {
         });
         check(!refusal(reply), `permission-enough-${key}-${grant}`);
       }
-      if (also.length && grants[0])
+      if (also.length && grants[0]) {
         check(
           refusal(
             await send("GET", filled(key), {
@@ -1585,14 +1638,17 @@ export async function runOpenApiContract(target: {
           ),
           `permission-conjunction-${key}`,
         );
+      }
     }
 
     // A malformed ID, and a well-formed one nothing has.
     for (const { key, operation } of operations) {
-      if (operation.responses["400"] && key.includes("{id}") && !key.includes("twofa"))
+      if (operation.responses["400"] && key.includes("{id}") && !key.includes("twofa")) {
         await op(key, { ...placeholders(key, "not-a-number"), expect: 400 });
-      if (operation.responses["404"] && key.includes("{id}") && !operation.requestBody)
+      }
+      if (operation.responses["404"] && key.includes("{id}") && !operation.requestBody) {
         await op(key, { ...placeholders(key, "999999"), expect: 404 });
+      }
     }
 
     // A campaign's skipped list is empty here: a consent skip races the runner's push, which a
@@ -1616,12 +1672,15 @@ export async function runOpenApiContract(target: {
       "skipped-delivery-shape",
     );
     // Nothing documented went unexercised.
-    for (const name of Object.keys(document.components.schemas))
+    for (const name of Object.keys(document.components.schemas)) {
       check(checked.has(name), `unchecked-schema-${name}`);
+    }
     for (const { key, operation } of operations) {
       const statuses = seen.get(key);
       check(statuses, `unexercised-${key}`);
-      if (operation.responses["200"]) check(statuses!.has(200), `no-success-${key}`);
+      if (operation.responses["200"]) {
+        check(statuses!.has(200), `no-success-${key}`);
+      }
     }
   } finally {
     receiver.close();

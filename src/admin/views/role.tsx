@@ -8,7 +8,8 @@ import { Breadcrumbs, EmptyState } from "@/admin/views/parts";
 import { roleKeys } from "@/admin/views/roles";
 import type { Translation } from "@/i18n/i18n";
 import type { Child } from "@/jsx/render";
-import { permissions, type Roles } from "@/roles/roles";
+import { permissions } from "@/roles/roles";
+import type { Roles } from "@/roles/roles";
 import { validPermissions } from "@/roles/routes";
 import { HttpError } from "@/server/response";
 import { getID } from "@/server/validation";
@@ -25,8 +26,8 @@ const groupOf: Record<string, string> = {
   suppressions: "subscribers",
   roles: "users",
 };
-function permissionGroups(): { group: string; permissions: string[] }[] {
-  const groups = new Map<string, string[]>();
+function permissionGroups(): Array<{ group: string; permissions: string[] }> {
+  const groups = new Map<string, Array<string>>();
   for (const permission of validPermissions) {
     const prefix = permission.split(":", 1)[0]!;
     const group = permission === "webhooks:post_bounce" ? "bounces" : (groupOf[prefix] ?? prefix);
@@ -166,8 +167,9 @@ export const userRoleView =
     const t = request.context.app.i18n;
     const id = isNew ? null : BigInt(getID(request.context));
     const role = id === null ? null : roles.userRole(id);
-    if (id !== null && !role)
+    if (id !== null && !role) {
       throw new HttpError(404, t.Ts("globals.messages.notFound", "name", "{users.userRole}"));
+    }
     const own = role !== null && role.id !== 1n && role.id === request.identity.role.id;
     const groups = permissionGroups();
     const title = role?.name ?? t.T("users.newUserRole");
@@ -245,8 +247,9 @@ export const listRoleView =
     const t = request.context.app.i18n;
     const id = isNew ? null : BigInt(getID(request.context));
     const role = id === null ? null : roles.listRole(id);
-    if (id !== null && !role)
+    if (id !== null && !role) {
       throw new HttpError(404, t.Ts("globals.messages.notFound", "name", "{users.listRole}"));
+    }
     const own = role !== null && role.id === request.identity.user.list_role_id;
     const title = role?.name ?? t.T("users.newListRole");
     return {

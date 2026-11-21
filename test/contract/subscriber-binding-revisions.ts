@@ -7,7 +7,7 @@ export async function runSubscriberBindingRevisions(target: {
   credentials: Credentials;
 }) {
   const suffix = crypto.randomUUID();
-  const owned: { path: string; id: number }[] = [];
+  const owned: Array<{ path: string; id: number }> = [];
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", body?: string, type = "application/json") =>
     fetch(`${target.baseUrl}${path}`, {
@@ -16,13 +16,16 @@ export async function runSubscriberBindingRevisions(target: {
       ...(body === undefined ? {} : { body }),
     });
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL binding-${label}`);
+    if (!value) {
+      throw new Error(`FAIL binding-${label}`);
+    }
   }
   async function create(path: string, body: string, type = "application/json") {
     const response = await request(`/api/${path}`, "POST", body, type);
     const result = await response.json();
-    if (response.status === 200 && typeof result.data?.id === "number")
+    if (response.status === 200 && typeof result.data?.id === "number") {
       owned.push({ path, id: result.data.id });
+    }
     check(response.status === 200 && result.data, "create");
     return result.data;
   }
@@ -68,7 +71,7 @@ export async function runSubscriberBindingRevisions(target: {
       );
       check(JSON.stringify((await get(sub.id)).attribs) === '{"b":2}', "attrib-reset-persisted");
     }
-    const rawAttrs = '{"attribs":{"\\ud800":{"nested":["\\udfff",1,true,null]}}}';
+    const rawAttrs = String.raw`{"attribs":{"\ud800":{"nested":["\udfff",1,true,null]}}}`;
     const attrs = await request(`/api/subscribers/${sub.id}`, "PATCH", rawAttrs);
     check(attrs.status === 200, "attrib-surrogates-status");
     const saved = (await get(sub.id)).attribs;
@@ -82,7 +85,7 @@ export async function runSubscriberBindingRevisions(target: {
     const collision = await request(
       `/api/subscribers/${sub.id}`,
       "PATCH",
-      '{"attribs":{"\\ud800":1,"�":2,"\\ud800":3}}',
+      String.raw`{"attribs":{"\ud800":1,"�":2,"\ud800":3}}`,
     );
     check(
       collision.status === 200 && (await get(sub.id)).attribs["�"] === 3,
@@ -267,7 +270,9 @@ export async function runSubscriberBindingRevisions(target: {
       "application/x-www-form-urlencoded",
     );
     const queryResult = (await queryForm.json()).data;
-    if (queryForm.status === 200) owned.push({ path: "subscribers", id: queryResult.id });
+    if (queryForm.status === 200) {
+      owned.push({ path: "subscribers", id: queryResult.id });
+    }
     check(
       queryForm.status === 200 &&
         queryResult.email === `body-${suffix}@example.test` &&
@@ -410,8 +415,11 @@ export async function runSubscriberBindingRevisions(target: {
       "bulk-owned-fields",
     );
   } finally {
-    for (const { path, id } of owned.reverse())
+    for (const { path, id } of owned.reverse()) {
       if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL binding-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL binding-cleanup");
+  }
 }

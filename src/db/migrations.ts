@@ -38,7 +38,7 @@ export interface Migration {
 }
 
 // Migrations are embedded in the executable; there is no runtime directory discovery.
-export const productionMigrations: readonly Migration[] = [
+export const productionMigrations: ReadonlyArray<Migration> = [
   { version: 1, sql: initial },
   { version: 2, sql: outbox },
   { version: 3, sql: sendAttempts },
@@ -66,7 +66,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 25, sql: campaignDeliveryReason },
 ];
 
-function validateCatalog(catalog: readonly Migration[]): void {
+function validateCatalog(catalog: ReadonlyArray<Migration>): void {
   for (const [index, migration] of catalog.entries()) {
     if (
       !Number.isSafeInteger(migration.version) ||
@@ -76,7 +76,9 @@ function validateCatalog(catalog: readonly Migration[]): void {
       throw new Error("Migration versions must be unique, positive, ordered and contiguous from 1");
     }
     const masked = maskSql(migration.sql);
-    if (!masked.replaceAll(";", "").trim()) throw new Error(`Empty migration ${migration.version}`);
+    if (!masked.replaceAll(";", "").trim()) {
+      throw new Error(`Empty migration ${migration.version}`);
+    }
   }
 }
 
@@ -84,9 +86,13 @@ function executeMigration(db: Database, migration: Migration): void {
   let remaining = migration.sql;
   while (true) {
     const masked = maskSql(remaining);
-    if (!masked.replaceAll(";", "").trim()) return;
+    if (!masked.replaceAll(";", "").trim()) {
+      return;
+    }
     const command = /^[\s;]*([A-Za-z_]+)/.exec(masked)?.[1]?.toUpperCase();
-    if (!command) throw new Error(`Invalid SQL in migration ${migration.version}`);
+    if (!command) {
+      throw new Error(`Invalid SQL in migration ${migration.version}`);
+    }
     if (
       [
         "BEGIN",
@@ -100,24 +106,27 @@ function executeMigration(db: Database, migration: Migration): void {
         "DETACH",
         "EXPLAIN",
       ].includes(command)
-    )
+    ) {
       throw new Error(
         `Migration ${migration.version} may not control transactions or database connections, or use EXPLAIN`,
       );
+    }
     // Some PRAGMAs take effect at preparation time, so reject before prepare.
-    if (command === "PRAGMA")
+    if (command === "PRAGMA") {
       throw new Error(
         `Migration ${migration.version} may not change connection settings or user_version`,
       );
+    }
     const statement = db.prepare(remaining);
     try {
       // SQLite finds the complete statement, including trigger bodies and identifiers.
       // With no parameters, Bun's expanded SQL must be an exact source prefix.
       const parsed = statement.toString();
-      if (statement.paramsCount || !parsed.length || !remaining.startsWith(parsed))
+      if (statement.paramsCount || !parsed.length || !remaining.startsWith(parsed)) {
         throw new Error(
           `Migration ${migration.version} requires static SQL without bound parameters`,
         );
+      }
       statement.run();
       remaining = remaining.slice(parsed.length);
     } finally {
@@ -128,8 +137,9 @@ function executeMigration(db: Database, migration: Migration): void {
 
 function userVersion(db: Database): number {
   const value = db.query<{ user_version: bigint }, []>("PRAGMA user_version").get()?.user_version;
-  if (value === undefined || value < 0n || value > 2_147_483_647n)
+  if (value === undefined || value < 0n || value > 2_147_483_647n) {
     throw new Error("Invalid SQLite user_version");
+  }
   return Number(value);
 }
 
@@ -139,8 +149,12 @@ function holdSnapshot(path: string, clock: Clock, version: number): void {
   try {
     snapshot.run("PRAGMA journal_mode = DELETE");
     // Version 0 is not this application's schema, whatever its tables are called.
-    if (version > 0 && snapshot.query("SELECT 1 FROM sqlite_schema WHERE name = 'settings'").get())
+    if (
+      version > 0 &&
+      snapshot.query("SELECT 1 FROM sqlite_schema WHERE name = 'settings'").get()
+    ) {
       placeRestoreHold(snapshot, clock.now().toISOString());
+    }
   } finally {
     snapshot.close(true);
   }
@@ -164,8 +178,9 @@ function createSnapshot(db: Database, dataDir: string, clock: Clock, version: nu
       const integrity = snapshot
         .query<{ integrity_check: string }, []>("PRAGMA integrity_check")
         .get()?.integrity_check;
-      if (integrity !== "ok" || userVersion(snapshot) !== version)
+      if (integrity !== "ok" || userVersion(snapshot) !== version) {
         throw new Error("Migration snapshot verification failed");
+      }
     } finally {
       snapshot.close(true);
     }
@@ -181,19 +196,24 @@ export function runMigrations(
   db: Database,
   dataDir: string,
   clock: Clock,
-  catalog: readonly Migration[],
+  catalog: ReadonlyArray<Migration>,
 ): void {
   validateCatalog(catalog);
   const version = userVersion(db);
-  if (version > catalog.length)
+  if (version > catalog.length) {
     throw new Error(`Database version ${version} is ahead of this executable`);
-  if (version === catalog.length) return;
+  }
+  if (version === catalog.length) {
+    return;
+  }
   const objects = db
     .query<{ count: bigint }, []>(
       "SELECT count(*) AS count FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'",
     )
     .get()?.count;
-  if (version > 0 || (objects ?? 0n) > 0n) createSnapshot(db, dataDir, clock, version);
+  if (version > 0 || (objects ?? 0n) > 0n) {
+    createSnapshot(db, dataDir, clock, version);
+  }
   for (const migration of catalog.slice(version)) {
     writeTransaction(db, () => {
       executeMigration(db, migration);

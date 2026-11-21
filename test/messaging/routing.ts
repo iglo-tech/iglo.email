@@ -38,7 +38,7 @@ const common = {
   wait_timeout: "2s",
   hello_hostname: "fixture.test",
 };
-const servers: SMTPServer[] = [
+const servers: Array<SMTPServer> = [
   {
     ...common,
     uuid: "review-fallback",
@@ -85,11 +85,13 @@ try {
         subscriber_mode: "external",
         subscriber_emails: ["recipient@example.test"],
         messenger: "email-review-exact",
-        template_id: 2147483647,
+        template_id: 2_147_483_647,
       });
       ready = /template 2147483647/.test(await probe.text());
     } catch {}
-    if (!ready) await Bun.sleep(20);
+    if (!ready) {
+      await Bun.sleep(20);
+    }
   } while (!ready && Date.now() < until);
   assert.equal(ready, true, "reference reload barrier");
   for (const [label, from] of [

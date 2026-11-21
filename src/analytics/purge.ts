@@ -42,16 +42,20 @@ export function createAnalyticsPurge(db: Database, readonly: Database) {
     purge(kind: AnalyticsKind, before: string, position: Position): Position | null {
       return writeTransaction(db, () => {
         const q = purges[kind];
-        const page = q
-          .get("purge-page")
-          .all(before, position.at, position.id, PURGE_PAGE) as (Position & {
-          created_at: string;
-          hit: number;
-        })[];
+        const page = q.get("purge-page").all(before, position.at, position.id, PURGE_PAGE) as Array<
+          Position & {
+            created_at: string;
+            hit: number;
+          }
+        >;
         const last = page.at(-1);
-        if (!last) return null;
+        if (!last) {
+          return null;
+        }
         const ids = page.filter((row) => row.hit).map((row) => row.id);
-        if (ids.length) q.get("purge-delete").run(`[${ids.join(",")}]`);
+        if (ids.length) {
+          q.get("purge-delete").run(`[${ids.join(",")}]`);
+        }
         return { at: last.created_at, id: last.id };
       });
     },
@@ -59,7 +63,7 @@ export function createAnalyticsPurge(db: Database, readonly: Database) {
     exportPage(kind: AnalyticsKind, since: string, position: Position) {
       return exports
         .get(`export-${kind}`)
-        .all(since, position.at, position.id, EXPORT_PAGE) as ExportRow[];
+        .all(since, position.at, position.id, EXPORT_PAGE) as Array<ExportRow>;
     },
     close() {
       purges.views.close();

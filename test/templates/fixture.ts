@@ -34,7 +34,7 @@ export async function startTemplateFixture(
     campaigns = createCampaignTemplateReferences(db);
   const admin = { user: "fixture-admin", password: "fixture-admin-password" };
   const i18n = createTranslation(),
-    errors: unknown[] = [];
+    errors: Array<unknown> = [];
   const logger = {
     error: (error: unknown) => errors.push(error),
     attention: (message: string) => errors.push(new Error(message)),
@@ -80,7 +80,9 @@ export async function startTemplateFixture(
       render(request: Parameters<typeof renderer.render>[0]) {
         if (!saturate) {
           const rendered = renderer.render(request);
-          if (!options.holdPreview) return rendered;
+          if (!options.holdPreview) {
+            return rendered;
+          }
           return (async () => {
             const result = await rendered;
             previewEntered();
@@ -150,7 +152,9 @@ export async function startTemplateFixture(
       });
     });
     router.route("POST", "/fixture/sequence", () => {
-      db.query("UPDATE sqlite_sequence SET seq=? WHERE name='templates'").run(9007199254740992n);
+      db.query("UPDATE sqlite_sequence SET seq=? WHERE name='templates'").run(
+        9_007_199_254_740_992n,
+      );
       return ok(true);
     });
     router.route("POST", "/fixture/clear-default", () => {
@@ -178,8 +182,11 @@ export async function startTemplateFixture(
               async pull(controller) {
                 bodyRead();
                 const result = await reader.read();
-                if (result.done) controller.close();
-                else controller.enqueue(result.value);
+                if (result.done) {
+                  controller.close();
+                } else {
+                  controller.enqueue(result.value);
+                }
               },
               cancel: () => reader.cancel(),
             },

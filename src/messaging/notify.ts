@@ -8,15 +8,12 @@ import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
 import { parseAddress } from "@/settings/mail";
 import { systemTemplates } from "@/templates/builtins";
-import {
-  createMessageBudget,
-  type MessageBudget,
-  type TemplateRenderer,
-} from "@/templates/renderer";
+import { createMessageBudget } from "@/templates/renderer";
+import type { MessageBudget, TemplateRenderer } from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 
 export interface AdminNotifierSettings {
-  notifyEmails: string[];
+  notifyEmails: Array<string>;
   fromEmail: string;
   rootUrl: string;
   logoUrl?: string;
@@ -66,8 +63,11 @@ export function createAdminNotifier(deps: {
   };
   // A misconfigured address needs a person, not a stack: one plain line, and a fixed buffer text.
   const logAttention = (message: string, safe: SafeMessage) => {
-    if (deps.logger) deps.logger.attention(message, safe);
-    else console.error(message);
+    if (deps.logger) {
+      deps.logger.attention(message, safe);
+    } else {
+      console.error(message);
+    }
   };
   /** Each unusable sender is reported once per notifier, not on every notification. */
   const reportedFrom = new Set<string>();
@@ -81,9 +81,11 @@ export function createAdminNotifier(deps: {
           .filter(Boolean),
       ),
     ];
-    if (!rawEmails.length) return;
+    if (!rawEmails.length) {
+      return;
+    }
 
-    const validEmails: string[] = [];
+    const validEmails: Array<string> = [];
     for (const email of rawEmails) {
       if (usableAddress(email)) {
         validEmails.push(email);
@@ -94,7 +96,9 @@ export function createAdminNotifier(deps: {
         );
       }
     }
-    if (!validEmails.length) return;
+    if (!validEmails.length) {
+      return;
+    }
 
     // An unusable sender would only be rejected by SES, so nothing is sent: the notification is
     // skipped and the bad value is logged once.
@@ -137,7 +141,9 @@ export function createAdminNotifier(deps: {
       try {
         const current = deps.settings();
         const emails = current.notifyEmails || [];
-        if (!emails.length) return;
+        if (!emails.length) {
+          return;
+        }
 
         const subject = `${capitalize(campaign.status)}: ${campaign.name}`;
         const data = {
@@ -173,7 +179,9 @@ export function createAdminNotifier(deps: {
       try {
         const current = deps.settings();
         const emails = current.notifyEmails || [];
-        if (!emails.length) return;
+        if (!emails.length) {
+          return;
+        }
 
         const subject = `${capitalize(importData.status)}: ${importData.name} import`;
         const data = {

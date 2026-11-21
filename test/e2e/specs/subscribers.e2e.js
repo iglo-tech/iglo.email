@@ -268,7 +268,9 @@ test.describe("Subscribers: filters & pagination", () => {
   let seed;
   test.beforeEach(async ({ page }) => {
     await signIn(page);
-    if (seed) return;
+    if (seed) {
+      return;
+    }
     seed = await reset(page);
     // 25 on the Default list → 27 total, spanning two pages.
     await seedSubscribers(page, 25, { prefix: "pag", lists: [seed.LIST_DEFAULT] });
@@ -333,7 +335,9 @@ test.describe("Subscribers: bulk actions", () => {
   let seed;
   test.beforeEach(async ({ page }) => {
     await signIn(page);
-    if (seed) return;
+    if (seed) {
+      return;
+    }
     seed = await reset(page);
     // 45 fresh subscribers → 47 total, spanning three pages.
     await seedSubscribers(page, 45, { prefix: "bulk" });

@@ -2,7 +2,8 @@
 // #preview-data, 05-sequences.md#preview-and-test-send, D105). A sample replaces the named parts of
 // the context it previews with; whatever it does not name keeps its value. Bounded as template
 // data is (parseTemplateData). No upstream source.
-import { parseTemplateData, type TemplateData } from "@/templates/data";
+import { parseTemplateData } from "@/templates/data";
+import type { TemplateData } from "@/templates/data";
 
 /** A sample field that is not allowed or not of its type. `field` names it, as the API reports it. */
 export class SampleError extends Error {
@@ -25,18 +26,25 @@ const isObject = (value: unknown): value is Record<string, TemplateData> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** Only the named members, each one an object. */
-function members(value: unknown, field: string, allowed: readonly string[]) {
-  if (!isObject(value)) throw new SampleError(field);
-  for (const key of Object.keys(value))
+function members(value: unknown, field: string, allowed: ReadonlyArray<string>) {
+  if (!isObject(value)) {
+    throw new SampleError(field);
+  }
+  for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) throw new SampleError(`${field}.${key}`);
+  }
   return value;
 }
 function str(value: TemplateData, field: string): string {
-  if (typeof value !== "string") throw new SampleError(field);
+  if (typeof value !== "string") {
+    throw new SampleError(field);
+  }
   return value;
 }
 function obj(value: TemplateData, field: string): Json {
-  if (!isObject(value)) throw new SampleError(field);
+  if (!isObject(value)) {
+    throw new SampleError(field);
+  }
   return value;
 }
 
@@ -66,40 +74,58 @@ export function parseSample(json: string, options: { data: boolean }): Sample {
       "attribs",
     ]);
     const out: NonNullable<Sample["subscriber"]> = {};
-    if (s.name !== undefined) out.name = str(s.name, "sample.subscriber.name");
-    if (s.email !== undefined) out.email = str(s.email, "sample.subscriber.email");
-    if (s.external_id !== undefined)
+    if (s.name !== undefined) {
+      out.name = str(s.name, "sample.subscriber.name");
+    }
+    if (s.email !== undefined) {
+      out.email = str(s.email, "sample.subscriber.email");
+    }
+    if (s.external_id !== undefined) {
       out.external_id = str(s.external_id, "sample.subscriber.external_id");
-    if (s.attribs !== undefined) out.attribs = obj(s.attribs, "sample.subscriber.attribs");
+    }
+    if (s.attribs !== undefined) {
+      out.attribs = obj(s.attribs, "sample.subscriber.attribs");
+    }
     sample.subscriber = out;
   }
   if (top.trigger !== undefined) {
     const t = members(top.trigger, "sample.trigger", ["name", "data", "occurred_at"]);
     const out: NonNullable<Sample["trigger"]> = {};
-    if (t.name !== undefined) out.name = str(t.name, "sample.trigger.name");
-    if (t.data !== undefined) out.data = obj(t.data, "sample.trigger.data");
+    if (t.name !== undefined) {
+      out.name = str(t.name, "sample.trigger.name");
+    }
+    if (t.data !== undefined) {
+      out.data = obj(t.data, "sample.trigger.data");
+    }
     if (t.occurred_at !== undefined) {
       const occurred = str(t.occurred_at, "sample.trigger.occurred_at");
-      if (Number.isNaN(Date.parse(occurred))) throw new SampleError("sample.trigger.occurred_at");
+      if (Number.isNaN(Date.parse(occurred))) {
+        throw new SampleError("sample.trigger.occurred_at");
+      }
       out.occurred_at = occurred;
     }
     sample.trigger = out;
   }
   if (top.aggregates !== undefined) {
     const aggregates = obj(top.aggregates, "sample.aggregates");
-    for (const [name, value] of Object.entries(aggregates))
+    for (const [name, value] of Object.entries(aggregates)) {
       if (typeof value !== "number" || !Number.isFinite(value))
         throw new SampleError(`sample.aggregates.${name}`);
+    }
     sample.aggregates = aggregates as Record<string, number>;
   }
-  if (top.data !== undefined) sample.data = obj(top.data, "sample.data");
+  if (top.data !== undefined) {
+    sample.data = obj(top.data, "sample.data");
+  }
   return sample;
 }
 
 /** listmonk's first and last name: the first and last word over two bytes (tx/routes.ts). */
 function nameChunk(name: string, last: boolean) {
   const chunks = name.split(" ");
-  if (last) chunks.reverse();
+  if (last) {
+    chunks.reverse();
+  }
   return chunks.find((chunk) => Buffer.byteLength(chunk) > 2) ?? name;
 }
 
@@ -116,13 +142,16 @@ const MAX_NODES = 10_000;
  * nothing beyond the limits: the walk stops at the first excess.
  */
 function withinLimits(value: unknown): boolean {
-  const pending: [unknown, number][] = [[value, 0]];
+  const pending: Array<[unknown, number]> = [[value, 0]];
   let nodes = 0;
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     const [item, depth] = next;
-    if (++nodes > MAX_NODES || depth > MAX_DEPTH) return false;
-    if (typeof item === "object" && item !== null)
+    if (++nodes > MAX_NODES || depth > MAX_DEPTH) {
+      return false;
+    }
+    if (typeof item === "object" && item !== null) {
       for (const child of Object.values(item)) pending.push([child, depth + 1]);
+    }
   }
   return true;
 }
@@ -133,7 +162,9 @@ function withinLimits(value: unknown): boolean {
  * over it, and only then serialized for parseSample.
  */
 export function parseSampleValue(value: unknown, options: { data: boolean }): Sample {
-  if (!withinLimits(value)) throw new SampleError("sample");
+  if (!withinLimits(value)) {
+    throw new SampleError("sample");
+  }
   return parseSample(JSON.stringify(value), options);
 }
 

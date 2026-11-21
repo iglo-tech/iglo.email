@@ -37,10 +37,14 @@ export const test = base.extend({
       });
     });
     page.on("console", (message) => {
-      if (message.text().includes("Alpine Expression Error")) seen.push(message.text());
+      if (message.text().includes("Alpine Expression Error")) {
+        seen.push(message.text());
+      }
     });
     await use(page);
-    if (violations === "none") expect(seen).toEqual([]);
+    if (violations === "none") {
+      expect(seen).toEqual([]);
+    }
   },
 });
 
@@ -109,7 +113,9 @@ export async function requestAdmin(request) {
 
 // Log out through the user menu. After `signIn` the page holds no admin screen yet, so open one.
 export async function logout(page) {
-  if (!new URL(page.url()).pathname.startsWith("/admin")) await page.goto("/admin");
+  if (!new URL(page.url()).pathname.startsWith("/admin")) {
+    await page.goto("/admin");
+  }
   await page.locator(".user-trigger").click();
   await Promise.all([
     page.waitForURL("**/admin/login"),
@@ -137,7 +143,9 @@ export async function selectList(scope, name) {
   await input.fill(name);
   await input.evaluate((el, wanted) => {
     const option = [...el.list.options].find((o) => o.value === wanted);
-    if (option) el.closest("ot-taginput").add(option.data);
+    if (option) {
+      el.closest("ot-taginput").add(option.data);
+    }
   }, name);
   await expect(scope.locator("ot-taginput .badge").filter({ hasText: name })).toBeVisible();
 }
@@ -190,8 +198,9 @@ export async function audience(page, count = 1) {
           headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
           body: JSON.stringify({ email, name: `Reader ${i}`, status: "enabled", lists: [listID] }),
         });
-        if (response.status !== 200)
+        if (response.status !== 200) {
           return { status: response.status, body: await response.text() };
+        }
       }
       return null;
     },
@@ -233,7 +242,7 @@ export async function mailFor(address, count = 1) {
     const response = await fetch(`${process.env.E2E_MAIL}?to=${encodeURIComponent(address)}`);
     mails = await response.json();
     expect(mails.length).toBeGreaterThanOrEqual(count);
-  }).toPass({ timeout: 15000 });
+  }).toPass({ timeout: 15_000 });
   return mails;
 }
 
@@ -250,13 +259,14 @@ export async function mailCounts(addresses) {
 // Counts per address once they have held still for `settle` ms of real time. Nothing is
 // signalled when a send finishes, so a quiet window is the only evidence that no more are coming.
 // Bounded by `timeout`, which fails the test rather than waiting for a count that keeps moving.
-export async function settledMail(addresses, { settle = 1500, timeout = 30000 } = {}) {
+export async function settledMail(addresses, { settle = 1500, timeout = 30_000 } = {}) {
   const deadline = Date.now() + timeout;
   let counts = await mailCounts(addresses);
   let stillSince = Date.now();
   while (Date.now() - stillSince < settle) {
-    if (Date.now() > deadline)
+    if (Date.now() > deadline) {
       throw new Error(`mail counts kept changing for ${timeout} ms: ${counts.join(", ")}`);
+    }
     await new Promise((resolve) => setTimeout(resolve, 100));
     const next = await mailCounts(addresses);
     if (next.some((count, i) => count !== counts[i])) {
@@ -304,7 +314,9 @@ export async function receiver({ statuses = [204] } = {}) {
     requests,
     url: `http://127.0.0.1:${server.address().port}`,
     close: async () => {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise((resolve) => server.close(resolve));
     },
   };
@@ -339,6 +351,6 @@ export async function mailAbout(address, subject) {
   await expect(async () => {
     found = (await mailFor(address)).find((mail) => mail.subject === subject);
     expect(found, `a mail with the subject "${subject}"`).toBeTruthy();
-  }).toPass({ timeout: 15000 });
+  }).toPass({ timeout: 15_000 });
   return found;
 }

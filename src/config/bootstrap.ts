@@ -42,7 +42,7 @@ IGLO_EMAIL_API_USER and IGLO_EMAIL_API_TOKEN create an API user with the Super A
 same first start, with that token; set both or neither. Nothing is printed. Remove them afterwards.
 `;
 
-export function parseBootstrap(args: string[], env: Environment): BootstrapResult {
+export function parseBootstrap(args: Array<string>, env: Environment): BootstrapResult {
   const options: Partial<Record<OptionName, string>> = {};
   let sawCommand = false;
   let help = false;
@@ -51,7 +51,9 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (!arg.startsWith("-")) {
-      if (arg !== "serve" || sawCommand) throw new Error(`Unknown command: ${arg}`);
+      if (arg !== "serve" || sawCommand) {
+        throw new Error(`Unknown command: ${arg}`);
+      }
       sawCommand = true;
       continue;
     }
@@ -69,7 +71,9 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
       printVersion = true;
       continue;
     }
-    if (!optionNames.has(name)) throw new Error(`Unknown flag: ${name}`);
+    if (!optionNames.has(name)) {
+      throw new Error(`Unknown flag: ${name}`);
+    }
 
     let value: string;
     if (equals !== -1) {
@@ -85,14 +89,19 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
     options[name as OptionName] = value;
   }
 
-  if (help) return { help: true };
-  if (printVersion) return { help: false, version: true };
+  if (help) {
+    return { help: true };
+  }
+  if (printVersion) {
+    return { help: false, version: true };
+  }
 
   const portValue = options["--port"] ?? env.IGLO_EMAIL_PORT ?? "9000";
-  if (!/^[0-9]+$/.test(portValue))
+  if (!/^[0-9]+$/.test(portValue)) {
     throw new Error("Invalid port: expected an integer from 1 to 65535");
+  }
   const port = Number(portValue);
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
     throw new Error("Invalid port: expected an integer from 1 to 65535");
   }
 
@@ -128,7 +137,9 @@ function parseHost(value: string): string {
       throw new Error("Invalid host: brackets are only valid around an IPv6 address");
     }
   }
-  if (isIP(host)) return host;
+  if (isIP(host)) {
+    return host;
+  }
 
   const labels = host.replace(/\.$/, "").split(".");
   const validName =
@@ -159,13 +170,15 @@ const bareRootUrl = new RegExp(
 
 /** Whether the value starts with a scheme; `news.example.com:8443` is a host and a port. */
 function hasScheme(value: string): boolean {
-  if (!schemeStart.test(value)) return false;
+  if (!schemeStart.test(value)) {
+    return false;
+  }
   return !hostAndPort.test(value) || schemeNames.test(value);
 }
 
 function portInRange(digits: string): boolean {
   const port = Number(digits);
-  return port >= 1 && port <= 65535;
+  return port >= 1 && port <= 65_535;
 }
 
 /**
@@ -174,10 +187,14 @@ function portInRange(digits: string): boolean {
  */
 function suggestionFor(value: string, kind: AbsoluteUrlKind): string | undefined {
   const match = bareRootUrl.exec(value);
-  if (!match) return undefined;
+  if (!match) {
+    return undefined;
+  }
   const host = match[1] ?? "";
   const port = match[2];
-  if (host.length > 253) return undefined;
+  if (host.length > 253) {
+    return undefined;
+  }
 
   const candidate = `https://${value}`;
   let url: URL;
@@ -188,7 +205,9 @@ function suggestionFor(value: string, kind: AbsoluteUrlKind): string | undefined
   }
   // URL drops the default port of https (443), so a port of 443 is read back as "".
   const expectedPort = port === undefined || port === "443" ? "" : port;
-  if (url.hostname !== host.toLowerCase() || url.port !== expectedPort) return undefined;
+  if (url.hostname !== host.toLowerCase() || url.port !== expectedPort) {
+    return undefined;
+  }
   try {
     validateAbsoluteUrl(candidate, kind);
   } catch {
@@ -200,9 +219,13 @@ function suggestionFor(value: string, kind: AbsoluteUrlKind): string | undefined
 /** What is wrong with a value that gets no suggestion. The scheme is never guessed. */
 function missingSchemeReason(value: string): string {
   // `https//host` and `https/host` have the scheme but not its colon.
-  if (schemeSlash.test(value)) return "the scheme must be followed by ://";
+  if (schemeSlash.test(value)) {
+    return "the scheme must be followed by ://";
+  }
   const port = /^[A-Za-z0-9.-]+:([0-9]+)(?:\/|$)/.exec(value)?.[1];
-  if (port !== undefined && !portInRange(port)) return "the port must be from 1 to 65535";
+  if (port !== undefined && !portInRange(port)) {
+    return "the port must be from 1 to 65535";
+  }
   return `${expectedUrl} with a host name; the scheme is not guessed`;
 }
 
@@ -225,17 +248,25 @@ export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void 
     throw new Error(`Invalid ${name} ${shown}: ${reason}`);
   };
 
-  if (/\s|\\/.test(value)) fail("the value contains whitespace or a backslash; remove it");
+  if (/\s|\\/.test(value)) {
+    fail("the value contains whitespace or a backslash; remove it");
+  }
   // oxlint-disable-next-line no-control-regex
-  if (/[\x00-\x1f\x7f]/.test(value)) fail("the value contains a control character; remove it");
+  if (/[\u0000-\u001f\x7f]/.test(value)) {
+    fail("the value contains a control character; remove it");
+  }
   // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,
   // because `https://` in front of it would be wrong too (`https://https://host` is host `https`).
   if (!hasScheme(value)) {
     const suggestion = suggestionFor(value, kind);
-    if (suggestion) fail(`${expectedUrl}, such as ${suggestion}`);
+    if (suggestion) {
+      fail(`${expectedUrl}, such as ${suggestion}`);
+    }
     fail(missingSchemeReason(value));
   }
-  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) fail("the scheme must be followed by //");
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) {
+    fail("the scheme must be followed by //");
+  }
 
   let url: URL | undefined;
   try {
@@ -243,23 +274,29 @@ export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void 
   } catch {
     url = undefined;
   }
-  if (url && !["http:", "https:"].includes(url.protocol))
+  if (url && !["http:", "https:"].includes(url.protocol)) {
     fail("the scheme must be http:// or https://");
-  if (url && (url.username !== "" || url.password !== ""))
+  }
+  if (url && (url.username !== "" || url.password !== "")) {
     fail(`remove the user name and password from the URL; the ${noun} is a public address`);
+  }
   if (site) {
-    if (value.includes("#"))
+    if (value.includes("#")) {
       fail(
         "remove the fragment; the site URL is a scheme, a host and an optional path, with an optional query string",
       );
-  } else if (url && (url.search !== "" || url.hash !== ""))
+    }
+  } else if (url && (url.search !== "" || url.hash !== "")) {
     fail(
       "remove the query string and fragment; the root URL is a scheme, a host and an optional path",
     );
+  }
   // URL refuses a port above 65535 and keeps 0, so the port is read from the text.
   const portText = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*:([0-9]+)(?:[/?#]|$)/.exec(value)?.[1];
   if (portText !== undefined && !portInRange(portText)) {
     fail("the port must be from 1 to 65535");
   }
-  if (!url || url.host === "") fail(`${expectedUrl} with a valid host name`);
+  if (!url || url.host === "") {
+    fail(`${expectedUrl} with a valid host name`);
+  }
 }

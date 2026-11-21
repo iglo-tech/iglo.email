@@ -6,7 +6,7 @@ import { decodePayload, encodePayload } from "@/messaging/payload";
 const peak = () =>
   Number(/VmHWM:\s+(\d+) kB/.exec(readFileSync("/proc/self/status", "utf8"))![1]) * 1024;
 const content = new Uint8Array(4 * 1024 * 1024);
-crypto.getRandomValues(content.subarray(0, 65536));
+crypto.getRandomValues(content.subarray(0, 65_536));
 const payload = encodePayload(
   {
     from: "a@example.test",
@@ -22,6 +22,7 @@ Bun.gc(true);
 writeFileSync("/proc/self/clear_refs", "5");
 const before = peak();
 const decoded = decodePayload(payload);
-if (decoded.message.attachments?.[0]?.content.byteLength !== content.byteLength)
+if (decoded.message.attachments?.[0]?.content.byteLength !== content.byteLength) {
   throw new Error("attachment lost");
+}
 process.stdout.write(String(peak() - before));

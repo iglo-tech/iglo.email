@@ -5,7 +5,8 @@
 // that test/bounces/ses-fixture.ts signs with. Every other destination is refused, so nothing
 // leaves the machine.
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer, type AddressInfo, type Socket } from "node:net";
+import { createServer } from "node:net";
+import type { AddressInfo, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TLSSocket } from "node:tls";
@@ -52,7 +53,9 @@ export async function startSnsTunnel(
       ],
       { stdout: "pipe", stderr: "pipe" },
     );
-    if (issued.exitCode !== 0) throw new Error(issued.stderr.toString());
+    if (issued.exitCode !== 0) {
+      throw new Error(issued.stderr.toString());
+    }
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     throw error;
@@ -78,7 +81,9 @@ export async function startSnsTunnel(
       let answered = false;
       secure.on("data", (chunk: Buffer) => {
         head += chunk.toString("latin1");
-        if (answered || !head.includes("\r\n\r\n")) return;
+        if (answered || !head.includes("\r\n\r\n")) {
+          return;
+        }
         answered = true;
         const found = head.startsWith(`GET ${certPath} HTTP/1.1\r\n`);
         const payload = Buffer.from(found ? good.pem : "no");
@@ -105,7 +110,9 @@ export async function startSnsTunnel(
       NODE_EXTRA_CA_CERTS: certFile,
     },
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((resolve) => server.close(() => resolve()));
       rmSync(dir, { recursive: true, force: true });
     },

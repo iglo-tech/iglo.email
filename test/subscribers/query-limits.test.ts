@@ -2,18 +2,23 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
 const q = (fragment: string) => encodeURIComponent(fragment);
 
 // Child processes of this test process, from /proc.
-function children(): number[] {
-  const out: number[] = [];
+function children(): Array<number> {
+  const out: Array<number> = [];
   for (const entry of readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) continue;
+    if (!/^\d+$/.test(entry)) {
+      continue;
+    }
     try {
       const status = readFileSync(`/proc/${entry}/status`, "utf8");
-      if (new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(status)) out.push(Number(entry));
+      if (new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(status)) {
+        out.push(Number(entry));
+      }
     } catch {
       /* exited meanwhile */
     }
@@ -27,7 +32,9 @@ const within = <T>(promise: Promise<T>, ms: number) =>
 /** Poll a condition for up to `ms`; real child processes are involved, not the test clock. */
 async function until(condition: () => boolean, ms: number) {
   const end = performance.now() + ms;
-  while (!condition() && performance.now() < end) await Bun.sleep(25);
+  while (!condition() && performance.now() < end) {
+    await Bun.sleep(25);
+  }
   return condition();
 }
 
@@ -94,11 +101,12 @@ describe("large selections and unread responses", () => {
   let f: QueryFixture;
   beforeAll(async () => {
     f = await queryFixture();
-    for (const name of ["a", "b", "c"])
+    for (const name of ["a", "b", "c"]) {
       await f.json("/api/subscribers", "POST", {
         email: `${name}-l@example.test`,
         name,
       });
+    }
   });
   afterAll(async () => {
     await f.close();
@@ -156,7 +164,9 @@ describe("large selections and unread responses", () => {
         ).status,
       ).toBe(200);
     } finally {
-      for (const response of held) await response.body?.cancel();
+      for (const response of held) {
+        await response.body?.cancel();
+      }
     }
     expect((await f.json("/api/subscribers?per_page=all")).body.data.results).toHaveLength(3);
     expect(await f.json("/api/subscribers/query/delete", "POST", { query: "1=0" })).toEqual({

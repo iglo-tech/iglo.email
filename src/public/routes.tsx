@@ -11,7 +11,8 @@ import { render } from "@/jsx/render";
 import type { ListReferences } from "@/lists/references";
 import { trimSpace } from "@/lists/store";
 import { publicCors } from "@/public/cors";
-import { parseBool, readFields, type Fields } from "@/public/form";
+import { parseBool, readFields } from "@/public/form";
+import type { Fields } from "@/public/form";
 import { PublicShell } from "@/public/layout";
 import type { SubscriberMail } from "@/public/mail";
 import { publicMessage, publicNotFound } from "@/public/message";
@@ -90,7 +91,9 @@ export function registerPublicRoutes(
   const subscriber = (context: RequestContext, headers: Record<string, string> = {}) => {
     const t = context.app.i18n;
     const uuid = context.params.subUUID ?? "";
-    if (!uuidPattern.test(uuid)) return failed(t, 400, t.T("public.linkNotValid"), headers);
+    if (!uuidPattern.test(uuid)) {
+      return failed(t, 400, t.T("public.linkNotValid"), headers);
+    }
     return (
       deps.subscribers.byUuid(uuid.toLowerCase()) ??
       message(
@@ -106,7 +109,7 @@ export function registerPublicRoutes(
   /** processSubForm. Returns has_optin; the answer never depends on stored subscribers. */
   function subscribe(t: Translation, fields: Fields): boolean {
     const settings = deps.settings();
-    let uuids: string[];
+    let uuids: Array<string>;
     try {
       uuids = fields.list("l", "list_uuids");
     } catch {
@@ -114,27 +117,40 @@ export function registerPublicRoutes(
     }
     const email = fields.get("email") ?? "";
     const rawName = fields.get("name") ?? "";
-    if (typeof email !== "string" || typeof rawName !== "string")
+    if (typeof email !== "string" || typeof rawName !== "string") {
       throw new HttpError(400, t.T("globals.messages.invalidData"));
-    if (!uuids.length) throw new HttpError(400, t.T("public.noListsSelected"));
-    if (Buffer.byteLength(email) > 1000)
+    }
+    if (!uuids.length) {
+      throw new HttpError(400, t.T("public.noListsSelected"));
+    }
+    if (Buffer.byteLength(email) > 1000) {
       throw new HttpError(400, t.T("globals.messages.invalidEmail"));
+    }
     const address = sanitizeEmail(email);
-    if (address === undefined) throw new HttpError(400, t.T("globals.messages.invalidEmail"));
-    if (!allowedDomain(address, settings.domainAllowlist, settings.domainBlocklist))
+    if (address === undefined) {
+      throw new HttpError(400, t.T("globals.messages.invalidEmail"));
+    }
+    if (!allowedDomain(address, settings.domainAllowlist, settings.domainBlocklist)) {
       throw new HttpError(400, t.T("subscribers.domainBlocklisted"));
+    }
     let name = trimSpace(rawName);
-    if (!name) name = address.split("@")[0]!;
-    else if (Buffer.byteLength(name) > stdInputMaxLen || name.includes("\0"))
+    if (!name) {
+      name = address.split("@")[0]!;
+    } else if (Buffer.byteLength(name) > stdInputMaxLen || name.includes("\0")) {
       throw new HttpError(400, t.T("globals.messages.invalidName"));
-    if (uuids.some((uuid) => !uuidPattern.test(uuid)))
+    }
+    if (uuids.some((uuid) => !uuidPattern.test(uuid))) {
       throw new HttpError(400, t.T("globals.messages.invalidUUID"));
+    }
     const lists = deps.lists.byUuids(uuids.map((uuid) => uuid.toLowerCase()));
-    if (lists.some((list) => list.type === "private"))
+    if (lists.some((list) => list.type === "private")) {
       throw new HttpError(400, t.T("globals.messages.invalidUUID"));
+    }
     // D82: the form hides archived lists, so a hand-made post cannot join one either.
     const open = lists.filter((list) => list.status !== "archived");
-    if (lists.length && !open.length) throw new HttpError(400, t.T("public.noListsSelected"));
+    if (lists.length && !open.length) {
+      throw new HttpError(400, t.T("public.noListsSelected"));
+    }
     const row = writeTransaction(deps.db, () =>
       deps.subscribers.publicSubscribe(
         { email: address, name },
@@ -155,8 +171,9 @@ export function registerPublicRoutes(
     Response.json(deps.lists.publicLists().map((list) => ({ uuid: list.uuid, name: list.name }))),
   );
   router.route("GET", "/api/public/captcha/altcha", async (context) => {
-    if (deps.settings().captcha.provider !== "altcha")
+    if (deps.settings().captcha.provider !== "altcha") {
       throw new HttpError(404, "captcha not enabled");
+    }
     let challenge: string;
     try {
       challenge = await deps.captcha.challenge(deps.altchaComplexity());
@@ -173,12 +190,16 @@ export function registerPublicRoutes(
     "/api/public/subscription",
     async (context) => {
       const t = context.app.i18n;
-      if (!deps.settings().subscriptionPage) throw new HttpError(400, t.T("public.invalidFeature"));
+      if (!deps.settings().subscriptionPage) {
+        throw new HttpError(400, t.T("public.invalidFeature"));
+      }
       let fields: Fields;
       try {
         fields = await readFields(context.request);
       } catch (error) {
-        if (error instanceof HttpError) throw error;
+        if (error instanceof HttpError) {
+          throw error;
+        }
         throw new HttpError(400, t.T("globals.messages.invalidData"));
       }
       return ok({ has_optin: subscribe(t, fields) });
@@ -190,12 +211,15 @@ export function registerPublicRoutes(
     const t = context.app.i18n;
     const settings = deps.settings();
     // B126 (D123): a form that is off is a missing page, so it answers the branded "Page not found".
-    if (!settings.subscriptionPage) return publicNotFound(t, context.request.method, settings);
+    if (!settings.subscriptionPage) {
+      return publicNotFound(t, context.request.method, settings);
+    }
     const lists = deps.lists.publicLists();
     // B121 (D119): an empty list set is a configuration state, not a fault: the branded message at
     // 200, under the form's own title (a 200 page is not an error).
-    if (!lists.length)
+    if (!lists.length) {
       return message(t, 200, t.T("globals.buttons.subscribe"), t.T("public.noListsAvailable"));
+    }
     const title = t.T("globals.buttons.subscribe");
     return html(
       t,
@@ -270,12 +294,16 @@ export function registerPublicRoutes(
     async (context) => {
       const t = context.app.i18n;
       const settings = deps.settings();
-      if (!settings.subscriptionPage) return publicNotFound(t, context.request.method, settings);
+      if (!settings.subscriptionPage) {
+        return publicNotFound(t, context.request.method, settings);
+      }
       let fields: Fields;
       try {
         fields = await readFields(context.request);
       } catch (error) {
-        if (error instanceof HttpError) throw error;
+        if (error instanceof HttpError) {
+          throw error;
+        }
         return failed(t, 400, t.T("globals.messages.invalidData"));
       }
       const value = (name: string) => {
@@ -283,24 +311,30 @@ export function registerPublicRoutes(
         return typeof found === "string" ? found : "";
       };
       // If there's a nonce value, a bot could've filled the form.
-      if (value("nonce")) throw new HttpError(502, t.T("public.invalidFeature"));
+      if (value("nonce")) {
+        throw new HttpError(502, t.T("public.invalidFeature"));
+      }
       // Process CAPTCHA, before any transaction: hCaptcha is a network call.
       const provider = settings.captcha.provider;
       if (provider) {
         const solution = value(provider === "altcha" ? "altcha" : "h-captcha-response");
-        if (!solution || !(await deps.captcha.verify(provider, solution)))
+        if (!solution || !(await deps.captcha.verify(provider, solution))) {
           return failed(t, 400, t.T("public.invalidCaptcha"));
+        }
       }
       let hasOptin: boolean;
       try {
         hasOptin = subscribe(t, fields);
       } catch (error) {
-        if (error instanceof HttpError) return failed(t, error.status, error.message);
+        if (error instanceof HttpError) {
+          return failed(t, error.status, error.message);
+        }
         throw error;
       }
       const next = trimSpace(value("next"));
-      if (next && next !== "*" && settings.trustedUrls.includes(next))
+      if (next && next !== "*" && settings.trustedUrls.includes(next)) {
         return new Response(null, { status: 303, headers: { Location: next } });
+      }
       return message(
         t,
         200,
@@ -317,13 +351,17 @@ export function registerPublicRoutes(
     const post = context.request.method === "POST";
     const headers = post ? {} : noIndex;
     // D117: a test send's opt-in link answers the test page and confirms nothing.
-    if (context.params.subUUID?.toLowerCase() === testSendUUID)
+    if (context.params.subUUID?.toLowerCase() === testSendUUID) {
       return message(t, 200, t.T("public.testSendTitle"), t.T("public.testSendOptinInfo"), headers);
+    }
     const sub = subscriber(context, headers);
-    if (sub instanceof Response) return sub;
+    if (sub instanceof Response) {
+      return sub;
+    }
     // D81: a blocklisted subscriber has nothing to confirm.
-    if (sub.status === "blocklisted")
+    if (sub.status === "blocklisted") {
       return message(t, 200, t.T("public.noSubTitle"), t.T("public.noSubInfo"), headers);
+    }
     let confirm = false;
     let uuids = context.url.searchParams.getAll("l");
     if (post) {
@@ -333,18 +371,22 @@ export function registerPublicRoutes(
           parseBool(fields.get("confirm") ?? context.url.searchParams.get("confirm")) === true;
         uuids = fields.list("l", "l");
       } catch (error) {
-        if (error instanceof HttpError) throw error;
+        if (error instanceof HttpError) {
+          throw error;
+        }
         return failed(t, 400, t.T("globals.messages.invalidData"));
       }
     }
-    if (uuids.some((uuid) => !uuidPattern.test(uuid)))
+    if (uuids.some((uuid) => !uuidPattern.test(uuid))) {
       return failed(t, 400, t.T("public.linkNotValid"), headers);
+    }
     const wanted = new Set(uuids.map((uuid) => uuid.toLowerCase()));
     const lists = deps.subscribers
       .unconfirmedLists(sub.id)
       .filter((list) => !wanted.size || wanted.has(list.uuid));
-    if (!lists.length)
+    if (!lists.length) {
       return message(t, 200, t.T("public.noSubTitle"), t.T("public.noSubInfo"), headers);
+    }
     const settings = deps.settings();
     if (post && (confirm || !settings.showOptinPage)) {
       const meta: Record<string, string> = settings.recordOptinIp
@@ -390,10 +432,11 @@ export function registerPublicRoutes(
 
   // B123 (D126): the sub-only export and wipe are retired. A subscriber UUID alone reaches no
   // privacy action; a send's or a campaign's manage page does, through its paired path.
-  for (const action of ["export", "wipe"])
+  for (const action of ["export", "wipe"]) {
     router.route("POST", `/subscription/${action}/:subUUID`, (context) =>
       publicNotFound(context.app.i18n, context.request.method, deps.settings()),
     );
+  }
 
   const appearance = (type: string, value: (settings: PublicSettings) => string) => () =>
     new Response(value(deps.settings()), {

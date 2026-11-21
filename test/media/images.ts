@@ -1,7 +1,7 @@
 // Small valid images, built byte by byte, for media tests.
 import { crc32, deflateSync } from "node:zlib";
 
-const bytes = (hex: string) => Buffer.from(hex.replace(/\s/g, ""), "hex");
+const bytes = (hex: string) => Buffer.from(hex.replaceAll(/\s/g, ""), "hex");
 
 export const imagePngSize = { width: 3, height: 2 };
 export const imagePng = Uint8Array.from(
@@ -30,7 +30,7 @@ export const imagePng = Uint8Array.from(
 /** 2×1. */
 export const imageGif = Uint8Array.from(
   bytes(
-    "474946383961 0200 0100 800000 000000 ffffff 2c00000000 0200 0100 00 0202 0c0a 00 3b".replace(
+    "474946383961 0200 0100 800000 000000 ffffff 2c00000000 0200 0100 00 0202 0c0a 00 3b".replaceAll(
       /\s/g,
       "",
     ),

@@ -10,13 +10,14 @@ const BATCH = 50;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 /** The tracked link paths of one send's message, which is all an old redirect reads. */
-function linksIn(uuid: string, bodies: (string | null)[]) {
+function linksIn(uuid: string, bodies: Array<string | null>) {
   const pattern = new RegExp(linkPath(uuid, UUID), "g");
   const links = new Set<string>();
-  for (const body of bodies)
+  for (const body of bodies) {
     if (typeof body === "string")
       for (const [link] of Buffer.from(body, "base64").toString("latin1").matchAll(pattern))
         links.add(link);
+  }
   return links.size ? [...links].join("\n") : null;
 }
 
@@ -37,11 +38,13 @@ export function createSendCompaction(db: Database) {
              AND created_at < ? ORDER BY created_at LIMIT ?`,
       )
       .all(before.toISOString(), Math.min(limit, BATCH));
-    const compacted: bigint[] = [];
+    const compacted: Array<bigint> = [];
     let bytes = 0;
     for (const row of rows) {
       bytes += Number(row.bytes);
-      if (compacted.length && bytes > PASS_BYTES) break;
+      if (compacted.length && bytes > PASS_BYTES) {
+        break;
+      }
       const { body, alt } = db
         .query<{ body: string | null; alt: string | null }, [bigint]>(
           "SELECT json_extract(payload, '$.message.body') AS body, json_extract(payload, '$.message.altBody') AS alt FROM sends WHERE id = ?",

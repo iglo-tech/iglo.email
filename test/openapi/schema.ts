@@ -52,13 +52,19 @@ const formats: Record<string, (value: string) => boolean> = {
 };
 
 function typeOf(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "array";
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  }
   return typeof value;
 }
 
 function matchesType(value: unknown, type: string): boolean {
-  if (type === "integer") return Number.isInteger(value);
+  if (type === "integer") {
+    return Number.isInteger(value);
+  }
   return typeOf(value) === type;
 }
 
@@ -74,92 +80,123 @@ export function validate(
   path = "$",
   depth = 0,
   visited?: Set<string>,
-): string[] {
-  if (depth > 64) throw new Error(`Schema nests too deeply at ${path}`);
-  if (root === true) return [];
-  if (root === false) return [`${path}: not allowed`];
+): Array<string> {
+  if (depth > 64) {
+    throw new Error(`Schema nests too deeply at ${path}`);
+  }
+  if (root === true) {
+    return [];
+  }
+  if (root === false) {
+    return [`${path}: not allowed`];
+  }
   const schema = root as Record<string, unknown>;
-  for (const key of Object.keys(schema))
+  for (const key of Object.keys(schema)) {
     if (!keywords.has(key) && !annotations.has(key))
       throw new Error(`Unknown schema keyword ${key} at ${path}`);
-  const problems: string[] = [];
+  }
+  const problems: Array<string> = [];
   const next = (inner: Schema, item: unknown, at: string) =>
     validate(document, inner, item, at, depth + 1, visited);
 
   if (typeof schema.$ref === "string") {
     const name = /^#\/components\/schemas\/(.+)$/.exec(schema.$ref)?.[1];
     const target = name === undefined ? undefined : document.components.schemas[name];
-    if (target === undefined) throw new Error(`Unresolved ${schema.$ref} at ${path}`);
+    if (target === undefined) {
+      throw new Error(`Unresolved ${schema.$ref} at ${path}`);
+    }
     visited?.add(name!);
     problems.push(...next(target, value, path));
   }
-  const types = schema.type === undefined ? undefined : [schema.type as string | string[]].flat();
-  if (types && !types.some((type) => matchesType(value, type)))
+  const types =
+    schema.type === undefined ? undefined : [schema.type as string | Array<string>].flat();
+  if (types && !types.some((type) => matchesType(value, type))) {
     return [`${path}: expected ${types.join(" or ")}, got ${typeOf(value)}`];
-  if (schema.enum !== undefined && !(schema.enum as unknown[]).includes(value))
+  }
+  if (schema.enum !== undefined && !(schema.enum as Array<unknown>).includes(value)) {
     problems.push(`${path}: ${JSON.stringify(value)} is not in the enum`);
-  if ("const" in schema && !Bun.deepEquals(schema.const, value))
+  }
+  if ("const" in schema && !Bun.deepEquals(schema.const, value)) {
     problems.push(`${path}: expected ${JSON.stringify(schema.const)}`);
+  }
   if (schema.oneOf !== undefined) {
-    const fits = (schema.oneOf as Schema[]).map((inner) => next(inner, value, path));
-    if (fits.filter((items) => items.length === 0).length !== 1)
+    const fits = (schema.oneOf as Array<Schema>).map((inner) => next(inner, value, path));
+    if (fits.filter((items) => items.length === 0).length !== 1) {
       problems.push(
         `${path}: expected exactly one branch of oneOf: ${fits.map((items) => items[0] ?? "ok").join(" | ")}`,
       );
+    }
   }
   if (schema.anyOf !== undefined) {
-    const fits = (schema.anyOf as Schema[]).map((inner) => next(inner, value, path));
-    if (!fits.some((items) => items.length === 0))
+    const fits = (schema.anyOf as Array<Schema>).map((inner) => next(inner, value, path));
+    if (!fits.some((items) => items.length === 0)) {
       problems.push(`${path}: no branch of anyOf: ${fits.map((items) => items[0]).join(" | ")}`);
+    }
   }
   if (typeof value === "string") {
     const check = schema.format === undefined ? undefined : formats[schema.format as string];
-    if (schema.format !== undefined && !check)
+    if (schema.format !== undefined && !check) {
       throw new Error(`Unknown format ${String(schema.format)} at ${path}`);
-    if (check && !check(value)) problems.push(`${path}: ${value} is not ${schema.format}`);
-    if (schema.pattern !== undefined && !new RegExp(schema.pattern as string).test(value))
+    }
+    if (check && !check(value)) {
+      problems.push(`${path}: ${value} is not ${schema.format}`);
+    }
+    if (schema.pattern !== undefined && !new RegExp(schema.pattern as string).test(value)) {
       problems.push(`${path}: does not match ${schema.pattern}`);
-    if (schema.minLength !== undefined && value.length < (schema.minLength as number))
+    }
+    if (schema.minLength !== undefined && value.length < (schema.minLength as number)) {
       problems.push(`${path}: too short`);
-    if (schema.maxLength !== undefined && value.length > (schema.maxLength as number))
+    }
+    if (schema.maxLength !== undefined && value.length > (schema.maxLength as number)) {
       problems.push(`${path}: too long`);
+    }
   }
   if (typeof value === "number") {
-    if (schema.minimum !== undefined && value < (schema.minimum as number))
+    if (schema.minimum !== undefined && value < (schema.minimum as number)) {
       problems.push(`${path}: below the minimum`);
-    if (schema.maximum !== undefined && value > (schema.maximum as number))
+    }
+    if (schema.maximum !== undefined && value > (schema.maximum as number)) {
       problems.push(`${path}: above the maximum`);
+    }
   }
   if (Array.isArray(value)) {
-    if (schema.minItems !== undefined && value.length < (schema.minItems as number))
+    if (schema.minItems !== undefined && value.length < (schema.minItems as number)) {
       problems.push(`${path}: too few items`);
-    if (schema.maxItems !== undefined && value.length > (schema.maxItems as number))
+    }
+    if (schema.maxItems !== undefined && value.length > (schema.maxItems as number)) {
       problems.push(`${path}: too many items`);
-    if (schema.items !== undefined)
+    }
+    if (schema.items !== undefined) {
       value.forEach((item, index) =>
         problems.push(...next(schema.items as Schema, item, `${path}[${index}]`)),
       );
+    }
   }
   if (typeOf(value) === "object") {
     const object = value as Record<string, unknown>;
     const properties = (schema.properties ?? {}) as Record<string, Schema>;
     const size = Object.keys(object).length;
-    if (schema.minProperties !== undefined && size < (schema.minProperties as number))
+    if (schema.minProperties !== undefined && size < (schema.minProperties as number)) {
       problems.push(`${path}: too few properties`);
-    if (schema.maxProperties !== undefined && size > (schema.maxProperties as number))
+    }
+    if (schema.maxProperties !== undefined && size > (schema.maxProperties as number)) {
       problems.push(`${path}: too many properties`);
-    if (schema.propertyNames !== undefined)
+    }
+    if (schema.propertyNames !== undefined) {
       for (const name of Object.keys(object))
         problems.push(...next(schema.propertyNames as Schema, name, `${path}.${name} (name)`));
-    for (const name of (schema.required ?? []) as string[])
+    }
+    for (const name of (schema.required ?? []) as Array<string>) {
       if (!Object.hasOwn(object, name)) problems.push(`${path}.${name}: required`);
+    }
     for (const [name, item] of Object.entries(object)) {
-      if (Object.hasOwn(properties, name))
+      if (Object.hasOwn(properties, name)) {
         problems.push(...next(properties[name]!, item, `${path}.${name}`));
-      else if (schema.additionalProperties !== undefined)
+      } else if (schema.additionalProperties !== undefined) {
         problems.push(...next(schema.additionalProperties as Schema, item, `${path}.${name}`));
-      else if (schema.$ref === undefined && !schema.oneOf && !schema.anyOf)
+      } else if (schema.$ref === undefined && !schema.oneOf && !schema.anyOf) {
         problems.push(`${path}.${name}: not in the document`);
+      }
     }
   }
   return problems;

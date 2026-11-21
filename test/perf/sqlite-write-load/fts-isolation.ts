@@ -1,7 +1,8 @@
 // New SQLite FTS5 isolation workload; no corresponding upstream FTS5 implementation.
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { SpikeStore, type Mutation } from "@/test/perf/sqlite-write-load/store";
+import { SpikeStore } from "@/test/perf/sqlite-write-load/store";
+import type { Mutation } from "@/test/perf/sqlite-write-load/store";
 
 export function runFtsIsolation(
   root: string,
@@ -15,8 +16,10 @@ export function runFtsIsolation(
   const seedStarted = performance.now();
   store.seed(subscribers);
   const seedMs = performance.now() - seedStarted;
-  if (!triggers) store.disableTriggers();
-  const transactionMs: number[] = [];
+  if (!triggers) {
+    store.disableTriggers();
+  }
+  const transactionMs: Array<number> = [];
   let attemptedOperations = 0;
   store.observer = (_kind, size, ms) => {
     attemptedOperations += size;
@@ -25,7 +28,7 @@ export function runFtsIsolation(
   const started = performance.now();
   let rolledBackCycles = 0;
   for (let first = 0; first < cycles; first += 25) {
-    const operations: Mutation[] = [];
+    const operations: Array<Mutation> = [];
     const count = Math.min(25, cycles - first);
     for (let offset = 0; offset < count; offset++) {
       const id = subscribers + first + offset + 1;

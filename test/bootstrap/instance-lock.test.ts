@@ -21,8 +21,8 @@ import {
   runBackup,
   startServer,
   temporaryDirectory,
-  type Server,
 } from "@/test/backup/fixture";
+import type { Server } from "@/test/backup/fixture";
 
 setDefaultTimeout(60_000);
 
@@ -30,7 +30,7 @@ let build = "";
 let executable = "";
 let base = "";
 let data = "";
-const running: Server[] = [];
+const running: Array<Server> = [];
 
 beforeAll(async () => {
   build = temporaryDirectory();
@@ -53,7 +53,7 @@ const inUse = (dataDir: string) =>
   `${dataDir} is in use by another iglo.email process: stop it first\n`;
 
 /** A run that must end by itself: a second server that kept serving fails here, not by hanging. */
-async function run(args: string[], options: { stdin?: string; cwd?: string } = {}) {
+async function run(args: Array<string>, options: { stdin?: string; cwd?: string } = {}) {
   const child = Bun.spawn([executable, ...args], {
     env: { PATH: "" },
     cwd: options.cwd ?? base,
@@ -61,7 +61,7 @@ async function run(args: string[], options: { stdin?: string; cwd?: string } = {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const watchdog = setTimeout(() => child.kill("SIGKILL"), 5_000);
+  const watchdog = setTimeout(() => child.kill("SIGKILL"), 5000);
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),
@@ -79,7 +79,9 @@ function secondServer(dataDir: string, options?: { cwd?: string }) {
       options,
     );
     // A port taken in the meantime is not the lock's answer: the start is retried on another port.
-    if (result.exitCode !== 0 && isPortInUse(result.stderr)) throw new Error(result.stderr);
+    if (result.exitCode !== 0 && isPortInUse(result.stderr)) {
+      throw new Error(result.stderr);
+    }
     return result;
   });
 }
@@ -193,7 +195,7 @@ test("a stopped server's lock is released", async () => {
 test("a lock file with any content blocks nothing, and still locks", async () => {
   freshDirectories();
   mkdirSync(data);
-  writeFileSync(join(data, "iglo-email.lock"), "damaged ".repeat(2_000));
+  writeFileSync(join(data, "iglo-email.lock"), "damaged ".repeat(2000));
   await serve();
   const second = await secondServer(data);
   expect(second.exitCode).toBe(1);

@@ -10,8 +10,8 @@ import {
   seedSubscribers,
   startServer,
   temporaryDirectory,
-  type Server,
 } from "@/test/backup/fixture";
+import type { Server } from "@/test/backup/fixture";
 
 setDefaultTimeout(60_000);
 const PARTIAL = ".iglo-email-backup-partial-";
@@ -29,13 +29,15 @@ afterAll(() => removeDirectory(build));
 afterEach(async () => {
   await server?.stop();
   server = undefined;
-  if (base) removeDirectory(base);
+  if (base) {
+    removeDirectory(base);
+  }
   base = "";
 });
 
 const names = (directory: string) => readdirSync(directory).sort();
 
-for (const signal of ["SIGKILL", "SIGTERM"] as const)
+for (const signal of ["SIGKILL", "SIGTERM"] as const) {
   test(`${signal} midway leaves nothing that looks complete`, async () => {
     base = temporaryDirectory();
     dataDir = join(base, "data");
@@ -92,3 +94,4 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const)
     expect(next.stderr).toContain(partial!);
     expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
   });
+}

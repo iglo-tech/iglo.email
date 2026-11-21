@@ -21,12 +21,14 @@ export function createSubscriberTracking(db: Database) {
   return {
     /** The subscriber's views by campaign and clicks by link and campaign, newest first. */
     activity: (id: bigint) => ({
-      campaign_views: (q.get("subscriber-activity-views").all(id) as object[]).map(numbers),
-      link_clicks: (q.get("subscriber-activity-clicks").all(id) as object[]).map(numbers),
+      campaign_views: (q.get("subscriber-activity-views").all(id) as Array<object>).map(numbers),
+      link_clicks: (q.get("subscriber-activity-clicks").all(id) as Array<object>).map(numbers),
     }),
     /** False for a type that is not one of the two. */
     clear(id: bigint, type: string) {
-      if (type !== "campaign_views" && type !== "link_clicks") return false;
+      if (type !== "campaign_views" && type !== "link_clicks") {
+        return false;
+      }
       clear[type].run(id);
       return true;
     },

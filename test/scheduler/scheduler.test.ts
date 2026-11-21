@@ -3,17 +3,14 @@
 // sequences, enrollments, sends and unsubscribe HTTP APIs and the SMTP sink, with time
 // advanced on the injected clock.
 import { afterEach, expect, test } from "bun:test";
-import {
-  day,
-  hour,
-  minute,
-  schedulerFixture,
-  type SchedulerFixture,
-} from "@/test/scheduler/fixture";
+import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -23,11 +20,13 @@ async function open() {
 
 function decoded(data: string) {
   const at = data.indexOf("\r\n\r\n");
-  const headers = data.slice(0, at).replace(/\r\n[ \t]+/g, " ");
+  const headers = data.slice(0, at).replaceAll(/\r\n[ \t]+/g, " ");
   const body = data
     .slice(at + 4)
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   const header = (name: string) =>
     new RegExp(`^${name}: (.*)$`, "mi").exec(headers)?.[1]?.trim() ?? null;
   return { headers, body, header };
@@ -220,7 +219,7 @@ test("an archived sequence or a blocklisted subscriber found at run time exits t
 test("a deleted step advances to the next active step without waiting again", async () => {
   const f = await open();
   const template = await f.template();
-  const definition = (steps: object[]) => ({
+  const definition = (steps: Array<object>) => ({
     name: "Onboarding",
     status: "active",
     trigger: { event: "order_paid" },
@@ -234,7 +233,7 @@ test("a deleted step advances to the next active step without waiting again", as
   await delivered(f, 1);
   expect((await f.enrollment(id)).step_id).toBe(seq.steps[1]!.id);
   // Remove the step the enrollment waits for; keep the others by ID.
-  const [one, , three] = seq.steps as { id: number }[];
+  const [one, , three] = seq.steps as Array<{ id: number }>;
   const edited = await f.json(
     `/api/sequences/${seq.id}`,
     "PUT",
@@ -308,11 +307,12 @@ test("marketing without permission on list_id ends the enrollment before the con
   await f.subscriber("pending@example.test", { lists: [double] });
   const pending = (await f.event("pending@example.test", "signup")).enrollments.started[0]!.id;
   await f.pass();
-  for (const id of [strangers, leftEnrollment, pending])
+  for (const id of [strangers, leftEnrollment, pending]) {
     expect(await f.enrollment(id)).toMatchObject({
       status: "exited",
       exit_reason: "unsubscribed",
     });
+  }
   expect(await f.sendLog()).toEqual([]);
   expect(seq.id).not.toBe(doubleSeq.id);
 });
@@ -583,7 +583,7 @@ test("a scheduler loop failure surfaces instead of leaving a dead loop", async (
 // Races with the condition: `f.onCondition` acts while the scheduler awaits the evaluation,
 // as an admin request arriving during a slow query would.
 const always = { not: { event: "never_happens", since: "trigger" } };
-const save = (f: SchedulerFixture, id: number, steps: object[], extra: object = {}) =>
+const save = (f: SchedulerFixture, id: number, steps: Array<object>, extra: object = {}) =>
   f.json(`/api/sequences/${id}`, "PUT", {
     name: "Onboarding",
     status: "active",
@@ -643,7 +643,9 @@ test("a failing decision is logged and released for a later retry, without stopp
   const id = (await f.event("throws@example.test")).enrollments.started[0]!.id;
   let calls = 0;
   f.onCondition = async (_, evaluate) => {
-    if (++calls === 1) throw new Error("evaluator crashed");
+    if (++calls === 1) {
+      throw new Error("evaluator crashed");
+    }
     return evaluate();
   };
   await f.pass(hour);
@@ -716,7 +718,7 @@ test("an edit during the condition discards the stale decision and re-evaluates 
       tx(before, { wait: "PT1H" }),
     ],
   });
-  const [one, two, three] = seq.steps as { id: number }[];
+  const [one, two, three] = seq.steps as Array<{ id: number }>;
   const id = (await f.event("race-edit@example.test")).enrollments.started[0]!.id;
 
   // The step's template changes while its condition runs: the new template is sent.
@@ -756,12 +758,12 @@ test("an enrollment waiting on a deleted step reaches the right next step after 
   const step = (wait: string) => tx(template, { wait });
   type Case = {
     name: string;
-    saves: (ids: number[]) => number[][];
-    expected: number[];
+    saves: (ids: Array<number>) => Array<number>[];
+    expected: Array<number>;
   };
   // Steps A,B,C,D (indexes 0-3); A is sent and the enrollment waits on B. Each save lists the
   // kept steps by index, or -1 for a new step.
-  const cases: Case[] = [
+  const cases: Array<Case> = [
     {
       name: "delete B, then A",
       saves: () => [
@@ -813,7 +815,7 @@ test("an enrollment waiting on a deleted step reaches the right next step after 
       ...definition,
       steps: [step("PT0S"), step("P1D"), step("P1D"), step("P1D")],
     });
-    const ids = (seq.steps as { id: number }[]).map((s) => s.id);
+    const ids = (seq.steps as Array<{ id: number }>).map((s) => s.id);
     const id = (await f.event(`${event}@example.test`, event)).enrollments.started[0]!.id;
     await f.until(async () => (await f.enrollment(id)).step_id === ids[1], `${c.name}: A sent`);
     for (const kept of c.saves(ids)) {
@@ -827,7 +829,9 @@ test("an enrollment waiting on a deleted step reaches the right next step after 
       );
       expect(r.status).toBe(200);
     }
-    for (let i = 0; i < 4 && (await f.enrollment(id)).status === "active"; i++) await f.pass(day);
+    for (let i = 0; i < 4 && (await f.enrollment(id)).status === "active"; i++) {
+      await f.pass(day);
+    }
     const sent = (await sendsOf(f, id)).map((s) => ids.indexOf(s.step_id));
     expect({ name: c.name, sent }).toEqual({ name: c.name, sent: c.expected });
     expect((await f.enrollment(id)).status).toBe("completed");
@@ -845,7 +849,9 @@ test("enrollments whose condition keeps failing do not starve healthy due work",
     steps: [tx(template, { wait: "PT1H", condition: always })],
   });
   const backlog = 1000;
-  for (let i = 0; i < backlog; i++) await f.event(`fail-${i}@example.test`);
+  for (let i = 0; i < backlog; i++) {
+    await f.event(`fail-${i}@example.test`);
+  }
   const healthy = (await f.event("healthy@example.test", "signup")).enrollments.started[0]!.id;
   const first = (await f.json(`/api/enrollments?sequence_id=${failing.id}&per_page=1`)).body.data
     .results[0] as { id: number; due_at: string };

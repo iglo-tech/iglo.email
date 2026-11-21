@@ -11,7 +11,9 @@ const root = resolve(import.meta.dir, "../..");
 const fixture = await readFile(resolve(root, "test/users/fixtures.md"), "utf8");
 const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1];
 const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1];
-if (!user || !password) throw new Error("Missing synthetic fixture");
+if (!user || !password) {
+  throw new Error("Missing synthetic fixture");
+}
 function cookie(response: Response, name: string) {
   return (
     response.headers
@@ -22,7 +24,7 @@ function cookie(response: Response, name: string) {
 }
 await withProduction(
   resolve(root, "dist/iglo.email"),
-  AbortSignal.timeout(30000),
+  AbortSignal.timeout(30_000),
   async (origin) => {
     const page = await fetch(`${origin}/admin/login`);
     const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
@@ -41,11 +43,15 @@ await withProduction(
     const response = await fetch(`${origin}/api/users/${id}/twofa/totp`, {
       headers: { cookie: session },
     });
-    if (response.status !== 200) throw new Error("QR provisioning failed");
+    if (response.status !== 200) {
+      throw new Error("QR provisioning failed");
+    }
     const data = ((await response.json()) as { data: { qr: string; secret: string } }).data;
     const image = PNG.sync.read(Buffer.from(data.qr, "base64"));
     const grayscale = Buffer.alloc(image.width * image.height);
-    for (let i = 0; i < grayscale.length; i++) grayscale[i] = image.data[i * 4]!;
+    for (let i = 0; i < grayscale.length; i++) {
+      grayscale[i] = image.data[i * 4]!;
+    }
     const python = `import base64,ctypes,ctypes.util,json,sys,urllib.parse
 v=json.load(sys.stdin); z=ctypes.CDLL(ctypes.util.find_library('zbar'))
 def decl(n,r,*a):
@@ -73,7 +79,9 @@ decl('zbar_image_destroy',None,p)(image); decl('zbar_image_scanner_destroy',None
       }),
       encoding: "utf8",
     });
-    if (decoded.status !== 0) throw new Error("Independent QR decoding failed");
+    if (decoded.status !== 0) {
+      throw new Error("Independent QR decoding failed");
+    }
     process.stdout.write("Compiled provisioning QR decoded and URI verified\n");
   },
   { user, password },

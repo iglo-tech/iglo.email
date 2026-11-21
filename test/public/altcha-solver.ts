@@ -24,7 +24,9 @@ export function solveAltcha(challenge: AltchaChallenge, limit = 2_000_000) {
     input.writeUInt32BE(counter, input.length - 4);
     const key = new Bun.CryptoHasher("sha256").update(input).digest().subarray(0, keyLength);
     const hex = key.toString("hex");
-    if (hex.startsWith(keyPrefix)) return { counter, derivedKey: hex, time: 1.5 };
+    if (hex.startsWith(keyPrefix)) {
+      return { counter, derivedKey: hex, time: 1.5 };
+    }
   }
   throw new Error("no solution");
 }

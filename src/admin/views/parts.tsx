@@ -7,14 +7,19 @@ import type { Translation } from "@/i18n/i18n";
 import type { Child } from "@/jsx/render";
 
 /** PageProps.Encode: the query without the named keys or empty values. */
-export function encode(params: URLSearchParams, ...exclude: string[]): string {
+export function encode(params: URLSearchParams, ...exclude: Array<string>): string {
   const out = new URLSearchParams();
-  for (const [key, value] of params)
+  for (const [key, value] of params) {
     if (value !== "" && !exclude.includes(key)) out.append(key, value);
+  }
   return out.toString();
 }
 /** PageProps.FilterURL. */
-export function filterURL(base: string, params: URLSearchParams, ...exclude: string[]): string {
+export function filterURL(
+  base: string,
+  params: URLSearchParams,
+  ...exclude: Array<string>
+): string {
   const query = encode(params, "page", ...exclude);
   return query ? `${base}?${query}` : base;
 }
@@ -48,7 +53,7 @@ export function SortLink(props: {
   );
 }
 /** PageProps.FormFields. */
-export function HiddenFields(props: { params: URLSearchParams; exclude: string[] }) {
+export function HiddenFields(props: { params: URLSearchParams; exclude: Array<string> }) {
   return [...props.params]
     .filter(([key, value]) => value !== "" && !props.exclude.includes(key))
     .map(([name, value]) => <input type="hidden" name={name} value={value} />);

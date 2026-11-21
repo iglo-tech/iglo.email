@@ -2,11 +2,14 @@
 // #preview-and-test-send, D105): through the HTTP API, the SMTP sink and the scheduler's own send,
 // with time on the injected clock. Nothing is enrolled, journaled or counted by a preview.
 import { afterEach, expect, test } from "bun:test";
-import { day, hour, schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -38,9 +41,16 @@ async function setup(f: SchedulerFixture, options: { body?: string } = {}) {
 }
 
 /** A request as another caller: a separate API user with exactly these permissions. */
-async function caller(f: SchedulerFixture, name: string, permissions: string[], lists?: object[]) {
+async function caller(
+  f: SchedulerFixture,
+  name: string,
+  permissions: Array<string>,
+  lists?: Array<object>,
+) {
   const role = await f.json("/api/roles/users", "POST", { name, permissions });
-  if (role.status !== 200) throw new Error(JSON.stringify(role.body));
+  if (role.status !== 200) {
+    throw new Error(JSON.stringify(role.body));
+  }
   const listRole = lists && (await f.json("/api/roles/lists", "POST", { name, lists }));
   const user = await f.json("/api/users", "POST", {
     username: name,
@@ -49,7 +59,9 @@ async function caller(f: SchedulerFixture, name: string, permissions: string[], 
     user_role_id: role.body.data.id,
     ...(listRole ? { list_role_id: listRole.body.data.id } : {}),
   });
-  if (user.status !== 200) throw new Error(JSON.stringify(user.body));
+  if (user.status !== 200) {
+    throw new Error(JSON.stringify(user.body));
+  }
   return { authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}` };
 }
 async function as(
@@ -85,7 +97,9 @@ async function eventId(
     ...(occurredAt === undefined ? {} : { occurred_at: occurredAt }),
     ...(data === undefined ? {} : { data }),
   });
-  if (r.status !== 200) throw new Error(JSON.stringify(r.body));
+  if (r.status !== 200) {
+    throw new Error(JSON.stringify(r.body));
+  }
   return r.body.data.event_id as number;
 }
 const enrollmentTotal = async (f: SchedulerFixture) =>
@@ -148,7 +162,7 @@ test("trigger_event_id must be the subscriber's own event under the trigger name
   const adasFeedback = await eventId(f, "ada@example.test", "feedback_given", ISO(now));
   const { sequence, step } = await setup(f);
   const refusal = { status: 400, message: "Invalid fields: trigger_event_id" };
-  const cases: [string, object][] = [
+  const cases: Array<[string, object]> = [
     ["another subscriber's event", { subscriber_id: ada, trigger_event_id: bobsPurchase }],
     ["an event under another name", { subscriber_id: ada, trigger_event_id: adasFeedback }],
     ["an unknown ID", { subscriber_id: ada, trigger_event_id: 999_999 }],
@@ -202,7 +216,7 @@ test("sample values replace each part of the context and are rendered", async ()
         attribs: { plan: "team" },
       },
       trigger: { name: "purchase", data: { items: 7 }, occurred_at: "2026-11-01T10:00:00Z" },
-      aggregates: { downloads: 1234567 },
+      aggregates: { downloads: 1_234_567 },
     },
   });
   expect(r.status).toBe(200);
@@ -216,7 +230,7 @@ test("sample values replace each part of the context and are rendered", async ()
       attribs: { plan: "team" },
     },
     trigger: { name: "purchase", data: { items: 7 }, occurred_at: "2026-11-01T10:00:00Z" },
-    aggregates: { downloads: 1234567 },
+    aggregates: { downloads: 1_234_567 },
   });
 });
 
@@ -238,7 +252,7 @@ test("a sample on a real subscriber replaces only the fields it names", async ()
 test("an invalid sample is refused with nothing rendered", async () => {
   const f = await open();
   const { sequence, step } = await setup(f);
-  const refusals: [object, string][] = [
+  const refusals: Array<[object, string]> = [
     [{ sample: { aggregates: { nope: 1 } } }, "Invalid fields: sample.aggregates.nope"],
     [{ sample: { aggregates: { downloads: "5" } } }, "Invalid fields: sample.aggregates.downloads"],
     [{ sample: { subscriber: { id: 5 } } }, "Invalid fields: sample.subscriber.id"],
@@ -312,8 +326,10 @@ test("a test send reaches each address labelled, with untracked links and no jou
   // The SMTP body is quoted-printable: decode it before reading the links.
   const sent = f.sink.messages[0]!.data;
   const decoded = sent
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   expect(sent).toContain("To: owner@example.test");
   expect(sent).toContain("Subject: [Test] Order update");
   expect(decoded).toContain('href="https://example.test/offer"');
@@ -464,8 +480,8 @@ async function heldPost(
 async function heldCaller(
   f: SchedulerFixture,
   name: string,
-  permissions: string[],
-  lists: object[],
+  permissions: Array<string>,
+  lists: Array<object>,
 ) {
   const role = await f.json("/api/roles/users", "POST", { name, permissions });
   const listRole = await f.json("/api/roles/lists", "POST", { name, lists });
@@ -476,7 +492,9 @@ async function heldCaller(
     user_role_id: role.body.data.id,
     list_role_id: listRole.body.data.id,
   });
-  if (user.status !== 200) throw new Error(JSON.stringify(user.body));
+  if (user.status !== 200) {
+    throw new Error(JSON.stringify(user.body));
+  }
   return {
     userRoleId: role.body.data.id as number,
     listRoleId: listRole.body.data.id as number,
@@ -485,7 +503,7 @@ async function heldCaller(
 }
 
 /** A subscriber in list `a` for the caller who reads through that list, and a step to preview. */
-async function readableBy(f: SchedulerFixture, name: string, permissions: string[]) {
+async function readableBy(f: SchedulerFixture, name: string, permissions: Array<string>) {
   const a = (
     await f.json("/api/lists", "POST", { name: `${name}-a`, type: "public", optin: "single" })
   ).body.data.id as number;
@@ -653,7 +671,7 @@ test("a marketing step's test send links to a test page, and clicking it changes
   expect(r.status).toBe(200);
   await f.until(() => f.sink.messages.length === 1, "the test message");
   // The SMTP body is quoted-printable: decode it before reading the link.
-  const sent = f.sink.messages[0]!.data.replace(/=\r\n/g, "").replace(
+  const sent = f.sink.messages[0]!.data.replaceAll("=\r\n", "").replaceAll(
     /=([0-9A-F]{2})/g,
     (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)),
   );
@@ -699,8 +717,10 @@ test("a step test names no real subscriber UUID in its message, its headers or i
   // a UUID across lines, so both forms are checked.
   const raw = f.sink.messages[0]!.data;
   const decoded = raw
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   expect(raw).not.toContain(uuid);
   expect(decoded).not.toContain(uuid);
   // The placeholder stands where the subscriber's UUID would be: in the links and the body.

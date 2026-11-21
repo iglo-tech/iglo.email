@@ -4,15 +4,17 @@ import { defaultAuthPolicy } from "@/users/auth";
 import { createConnection } from "node:net";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
-type Session = { cookie: string; csrf: string; headers: string[] };
-const fixtures: Fixture[] = [];
+type Session = { cookie: string; csrf: string; headers: Array<string> };
+const fixtures: Array<Fixture> = [];
 async function fixture(policy = defaultAuthPolicy) {
   const value = await startUserFixture(policy);
   fixtures.push(value);
   return value;
 }
 afterEach(async () => {
-  for (const value of fixtures.splice(0)) await value.close();
+  for (const value of fixtures.splice(0)) {
+    await value.close();
+  }
 });
 
 async function login(
@@ -62,8 +64,12 @@ async function call(
     headers.set("cookie", options.session.cookie);
     headers.set("x-csrf-token", options.session.csrf);
   }
-  if (options.auth) headers.set("authorization", options.auth);
-  if (options.body !== undefined) headers.set("content-type", "application/json");
+  if (options.auth) {
+    headers.set("authorization", options.auth);
+  }
+  if (options.body !== undefined) {
+    headers.set("content-type", "application/json");
+  }
   return fetch(`${fixture.origin}${path}`, {
     method: options.method ?? "GET",
     headers,
@@ -120,18 +126,22 @@ test("settings capture new session lifetimes without reviving retained sessions"
     });
   expect((await change("2s")).status).toBe(200);
   const short = await login(f, f.admin.user, f.admin.password);
-  for (const header of short.headers) expect(header).toContain("Max-Age=2");
+  for (const header of short.headers) {
+    expect(header).toContain("Max-Age=2");
+  }
   await call(f, "/fixture/clock", { method: "POST", body: 2000 });
   expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
   expect((await call(f, "/api/profile", { session: old })).status).toBe(200);
   expect((await change("8d")).status).toBe(200);
   const longer = await login(f, f.admin.user, f.admin.password);
-  for (const header of longer.headers) expect(header).toContain("Max-Age=691200");
+  for (const header of longer.headers) {
+    expect(header).toContain("Max-Age=691200");
+  }
   expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
   for (const value of ["0s", "1ms", "invalid", "999999999999999999d"]) {
     expect((await change(value)).status).toBe(400);
     expect(
-      ((await (await call(f, "/api/settings", { session: old })).json()) as any).data[
+      (await (await call(f, "/api/settings", { session: old })).json()).data[
         "security.session_duration"
       ],
     ).toBe("8d");
@@ -210,14 +220,15 @@ test("fixture owner reopen preserves expired and legacy session boundaries throu
     ).status,
   ).toBe(200);
   expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
-  const snapshot = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
-    .data;
+  const snapshot = (await (await call(f, "/api/settings", { session: admin })).json()).data;
   snapshot["security.session_duration"] = "9d";
   expect(
     (await call(f, "/api/settings", { method: "PUT", session: admin, body: snapshot })).status,
   ).toBe(200);
   const fresh = await login(f, f.admin.user, f.admin.password);
-  for (const header of fresh.headers) expect(header).toContain("Max-Age=777600");
+  for (const header of fresh.headers) {
+    expect(header).toContain("Max-Age=777600");
+  }
   await call(f, "/fixture/clock", {
     method: "POST",
     body: defaultAuthPolicy.sessionDurationMs - 2001,
@@ -243,7 +254,7 @@ test("settings body held across session expiry rejects after another principal e
     ).status,
   ).toBe(200);
   const short = await login(f, f.admin.user, f.admin.password);
-  const before = ((await (await call(f, "/api/settings", { session: admin })).json()) as any).data;
+  const before = (await (await call(f, "/api/settings", { session: admin })).json()).data;
   const candidate = {
     ...before,
     "app.site_name": "should not persist",
@@ -279,12 +290,11 @@ test("settings body held across session expiry rejects after another principal e
       })
     ).status,
   ).toBe(200);
-  const authorized = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
-    .data;
+  const authorized = (await (await call(f, "/api/settings", { session: admin })).json()).data;
   socket.end(payload.slice(split));
   expect(await output).toContain(" 403 ");
   expect((await call(f, "/api/profile", { session: short })).status).toBe(403);
-  expect(((await (await call(f, "/api/settings", { session: admin })).json()) as any).data).toEqual(
+  expect((await (await call(f, "/api/settings", { session: admin })).json()).data).toEqual(
     authorized,
   );
 });
@@ -331,8 +341,7 @@ for (const [kind, revoked, full] of [
         })
       ).status,
     ).toBe(200);
-    const before = ((await (await call(f, "/api/settings", { session: admin })).json()) as any)
-      .data;
+    const before = (await (await call(f, "/api/settings", { session: admin })).json()).data;
     const payload = full
       ? JSON.stringify({
           ...before,
@@ -383,9 +392,9 @@ for (const [kind, revoked, full] of [
     }
     socket.end(payload.slice(split));
     expect(await response).toContain(" 403 ");
-    expect(
-      ((await (await call(f, "/api/settings", { session: admin })).json()) as any).data,
-    ).toEqual(before);
+    expect((await (await call(f, "/api/settings", { session: admin })).json()).data).toEqual(
+      before,
+    );
   });
 }
 
@@ -407,7 +416,9 @@ test("an in-flight login captures the duration in force at session creation", as
   ).toBe(200);
   await call(f, "/fixture/login-release", { method: "POST" });
   const created = await pending;
-  for (const header of created.headers) expect(header).toContain("Max-Age=3");
+  for (const header of created.headers) {
+    expect(header).toContain("Max-Age=3");
+  }
   await call(f, "/fixture/clock", { method: "POST", body: 3000 });
   expect((await call(f, "/api/profile", { session: created })).status).toBe(403);
   expect((await call(f, "/api/profile", { session: admin })).status).toBe(200);
@@ -668,7 +679,7 @@ test("user detail and user list preserve the reference's distinct empty list-rol
     created.list_role,
   );
   const list = await call(f, "/api/users", { session: admin });
-  const users = ((await list.json()) as { data: { id: number; list_role: unknown }[] }).data;
+  const users = ((await list.json()) as { data: Array<{ id: number; list_role: unknown }> }).data;
   expect(users.find((entry) => entry.id === created.id)?.list_role).toEqual({
     id: roleId,
     name: "Fixture list role",
@@ -707,7 +718,9 @@ test("the default policy permits 20 login posts per peer in a minute", async () 
         "content-type": "application/x-www-form-urlencoded",
       },
     });
-  for (let i = 0; i < 20; i++) expect((await attempt()).status).toBe(403);
+  for (let i = 0; i < 20; i++) {
+    expect((await attempt()).status).toBe(403);
+  }
   expect((await attempt()).status).toBe(429);
   await call(f, "/fixture/clock", { method: "POST", body: 60_000 });
   expect((await attempt()).status).toBe(403);
@@ -811,7 +824,9 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
   }
   async function verify(location: string, code: string) {
     const page = await fetch(`${f.origin}${location}`, { redirect: "manual" });
-    if (page.status !== 200) return page;
+    if (page.status !== 200) {
+      return page;
+    }
     const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
     const nonceCookie =
       page.headers
@@ -852,8 +867,9 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
     403,
   );
   expect((await guardedPost("nonce-peer", "wrong")).status).toBe(403);
-  for (let i = 0; i < 100; i++)
+  for (let i = 0; i < 100; i++) {
     expect((await guardedPost("limited-peer", "wrong")).status).toBe(403);
+  }
   expect((await guardedPost("limited-peer", guardNonce)).status).toBe(429);
   expect(
     (await guardedPost("valid-peer", guardNonce)).headers
@@ -886,7 +902,9 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
   expect(verified.status).toBe(302);
   expect(verified.headers.get("location")).toBe("/api/profile");
   expect(verified.headers.getSetCookie().some((v) => v.startsWith("session="))).toBe(true);
-  for (const header of verified.headers.getSetCookie()) expect(header).toContain("Max-Age=3");
+  for (const header of verified.headers.getSetCookie()) {
+    expect(header).toContain("Max-Age=3");
+  }
   const factorCookie = verified.headers
     .getSetCookie()
     .filter((v) => v.startsWith("session=") || v.startsWith("csrf="))
@@ -896,7 +914,9 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
   expect((await call(f, "/api/profile", { session: factorSession })).status).toBe(200);
   expect((await verify(valid, "652348")).status).toBe(302);
   const attempts = await challenge();
-  for (let i = 0; i < 5; i++) expect((await verify(attempts, "bad")).status).toBe(200);
+  for (let i = 0; i < 5; i++) {
+    expect((await verify(attempts, "bad")).status).toBe(200);
+  }
   expect((await verify(attempts, "652348")).status).toBe(302);
   const expired = await challenge();
   await call(f, "/fixture/clock", { method: "POST", body: 300_000 });
@@ -1177,7 +1197,7 @@ test("list roles project child permissions and roll back invalid replacement and
       data: Array<{
         id: number;
         name: string;
-        lists: Array<{ id: number; name: string; permissions: string[] }>;
+        lists: Array<{ id: number; name: string; permissions: Array<string> }>;
       }>;
     }
   ).data;
@@ -1222,7 +1242,7 @@ test("list roles project child permissions and roll back invalid replacement and
     expect(cleared.status).toBe(200);
     const entries = (
       (await (await call(f, "/api/roles/lists", { session: admin })).json()) as {
-        data: { id: number; lists: unknown[] }[];
+        data: Array<{ id: number; lists: unknown[] }>;
       }
     ).data;
     expect(entries.find((entry) => entry.id === role)?.lists).toEqual([]);
@@ -1656,7 +1676,7 @@ for (const scenario of ["status", "password", "type", "delete", "factor"] as con
       ).toBe(200);
       expect((await createHuman(f, admin, input.username)).user.id).toBeGreaterThan(user.id);
     } else if (scenario === "status") {
-      for (const status of ["disabled", "enabled"])
+      for (const status of ["disabled", "enabled"]) {
         expect(
           (
             await call(f, `/api/users/${user.id}`, {
@@ -1666,6 +1686,7 @@ for (const scenario of ["status", "password", "type", "delete", "factor"] as con
             })
           ).status,
         ).toBe(200);
+      }
     } else if (scenario === "type") {
       expect(
         (

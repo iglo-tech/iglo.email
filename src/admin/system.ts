@@ -24,12 +24,18 @@ function procFile(path: string): string {
 
 function niceDuration(seconds: number): string {
   const total = Math.round(seconds);
-  const days = Math.floor(total / 86400);
+  const days = Math.floor(total / 86_400);
   const hours = Math.floor(total / 3600) % 24;
   const minutes = Math.floor(total / 60) % 60;
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${total % 60}s`;
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${total % 60}s`;
+  }
   return `${total}s`;
 }
 
@@ -40,7 +46,9 @@ function memory(): SystemStats["memory"] {
   };
   const total = value("MemTotal");
   const available = value("MemAvailable");
-  if (!total || available === undefined) return undefined;
+  if (!total || available === undefined) {
+    return undefined;
+  }
   const used = total - available;
   return {
     usedMb: Math.floor(used / mib),
@@ -51,8 +59,12 @@ function memory(): SystemStats["memory"] {
 
 function load(cores: number): SystemStats["load"] {
   const [one, five, fifteen] = procFile("/proc/loadavg").split(/\s+/).map(Number);
-  if (one === undefined || five === undefined || fifteen === undefined) return undefined;
-  if (![one, five, fifteen].every(Number.isFinite)) return undefined;
+  if (one === undefined || five === undefined || fifteen === undefined) {
+    return undefined;
+  }
+  if (![one, five, fifteen].every(Number.isFinite)) {
+    return undefined;
+  }
   return {
     one: one.toFixed(2),
     five: five.toFixed(2),

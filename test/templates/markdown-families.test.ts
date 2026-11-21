@@ -20,7 +20,9 @@ test.each(Object.keys(families))(
       refused = (error as Error).message;
     }
     expect(performance.now() - started).toBeLessThan(1000);
-    if (refused !== null) expect(refused).toBe("Markdown output limit");
+    if (refused !== null) {
+      expect(refused).toBe("Markdown output limit");
+    }
     const actual = Buffer.byteLength(Bun.markdown.html(body));
     expect(markdownOutputBound(body, Number.MAX_SAFE_INTEGER)).toBeGreaterThanOrEqual(actual);
   },
@@ -31,8 +33,8 @@ test.each(Object.keys(families))(
 const reviewerShapes: Record<string, string> = {
   "apostrophe reference URL used 2,800 times": `[r]: ${"'".repeat(100)}\n\n${"![][r] ".repeat(2800)}`,
   "ampersand reference URL used 2,000 times": `[r]: ${"&".repeat(100)}\n\n${"[a][r] ".repeat(2000)}`,
-  "CRLF hard breaks": "a  \r\n".repeat(26000),
-  "lone CR hard breaks": "a  \r".repeat(26000),
+  "CRLF hard breaks": "a  \r\n".repeat(26_000),
+  "lone CR hard breaks": "a  \r".repeat(26_000),
   NUL: "\u0000".repeat(128 * 1024),
 };
 test.each(Object.keys(reviewerShapes))("the bound holds for the %s shape", (shape) => {

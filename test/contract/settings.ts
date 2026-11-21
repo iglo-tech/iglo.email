@@ -29,7 +29,9 @@ export async function runSettingsContract(target: {
       target.mode === "reference",
     );
   function check(condition: unknown, label: string): asserts condition {
-    if (!condition) throw new Error(`FAIL settings-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL settings-${label}`);
+    }
   }
   check((await request("/api/settings", "GET", undefined, "")).status === 403, "unauthenticated");
   const response = await request("/api/settings");
@@ -158,11 +160,11 @@ export async function runSettingsContract(target: {
   check(typeof updated.smtp[0].uuid === "string" && updated.smtp[0].uuid.length > 0, "smtp-uuid");
   // A nonempty messenger list through its whole life: add, mask, keep a blank password by uuid,
   // refuse bad names, rename and remove.
-  const messengerPut = async (messengers: unknown[]) =>
+  const messengerPut = async (messengers: Array<unknown>) =>
     request("/api/settings", "PUT", JSON.stringify({ ...updated, messengers }));
   const messengerGet = async () =>
     ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data
-      .messengers as Record<string, any>[];
+      .messengers as Array<Record<string, any>>;
   const postback = {
     uuid: "",
     enabled: true,
@@ -206,11 +208,12 @@ export async function runSettingsContract(target: {
     ["reserved", ["email"]],
     ["empty", ["  "]],
     ["empty-after-cleaning", ["___"]],
-  ] as const)
+  ] as const) {
     check(
       (await messengerPut(names.map((name) => ({ ...postback, name })))).status === 400,
       `messenger-name-${label}`,
     );
+  }
   check(
     (await messengerGet()).length === 1 && (await messengerGet())[0]!.uuid === kept.uuid,
     "messenger-refusal-atomic",
@@ -434,13 +437,17 @@ export async function runSettingsContract(target: {
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runSettingsContract({ mode: "reference", baseUrl, credentials: { user, token } });
   } catch (error) {
     process.stderr.write(

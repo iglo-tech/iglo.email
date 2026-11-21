@@ -9,8 +9,9 @@ import { referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 assert.equal(process.cwd(), "/work");
 assert.ok(!existsSync("/node_modules") && !existsSync("/work/node_modules"));
 const mode = process.argv[2];
-if (mode === "liquid") console.log(JSON.stringify(await probeLiquid()));
-else if (mode === "smtp") {
+if (mode === "liquid") {
+  console.log(JSON.stringify(await probeLiquid()));
+} else if (mode === "smtp") {
   const reference = referenceMailpit(process.env);
   const result = await control(reference, true);
   const transport = nodemailer.createTransport({
@@ -37,4 +38,6 @@ else if (mode === "smtp") {
     transport.close();
   }
   console.log(JSON.stringify({ ...result, expectedFailure: "closed after rejection" }));
-} else throw new Error("Unknown compiled fixture mode");
+} else {
+  throw new Error("Unknown compiled fixture mode");
+}

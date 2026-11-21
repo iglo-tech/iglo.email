@@ -14,8 +14,8 @@ export interface TxAttachment {
 }
 export interface TxMessage {
   subscriberMode: string;
-  subscriberEmails: string[];
-  subscriberIds: bigint[];
+  subscriberEmails: Array<string>;
+  subscriberIds: Array<bigint>;
   subscriberEmail: string;
   subscriberId: bigint;
   subscriberExternalId: string;
@@ -32,7 +32,7 @@ export interface TxMessage {
   listId: bigint;
   idempotencyKey: string;
   async: boolean;
-  attachments: TxAttachment[];
+  attachments: Array<TxAttachment>;
 }
 /** Invalid input with an upstream-style `Invalid fields` name. */
 export class TxInputError extends Error {
@@ -42,11 +42,13 @@ export class TxInputError extends Error {
 }
 
 async function readBounded(request: Request): Promise<Buffer<ArrayBuffer>> {
-  if (Number(request.headers.get("content-length")) > BODY_LIMIT) throw new HttpError(413);
-  const chunks: Uint8Array[] = [];
+  if (Number(request.headers.get("content-length")) > BODY_LIMIT) {
+    throw new HttpError(413);
+  }
+  const chunks: Array<Uint8Array> = [];
   let size = 0;
   const reader = request.body?.getReader();
-  if (reader)
+  if (reader) {
     try {
       while (true) {
         const part = await reader.read();
@@ -61,6 +63,7 @@ async function readBounded(request: Request): Promise<Buffer<ArrayBuffer>> {
     } finally {
       reader.releaseLock();
     }
+  }
   return Buffer.concat(chunks, size);
 }
 
@@ -92,23 +95,43 @@ const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 type Sources = WeakMap<object, Map<string, string>>;
 function int(value: unknown, holder: object, key: string, sources: Sources): bigint {
-  if (value === null) return 0n;
-  if (typeof value !== "number") throw new TxInputError(key);
+  if (value === null) {
+    return 0n;
+  }
+  if (typeof value !== "number") {
+    throw new TxInputError(key);
+  }
   // Go decodes an int only from integer syntax, exactly and within int64.
   const source = sources.get(holder)?.get(key);
-  if (source === undefined || !/^-?(?:0|[1-9]\d*)$/.test(source)) throw new TxInputError(key);
+  if (source === undefined || !/^-?(?:0|[1-9]\d*)$/.test(source)) {
+    throw new TxInputError(key);
+  }
   const result = BigInt(source);
-  if (result < INT64_MIN || result > INT64_MAX) throw new TxInputError(key);
+  if (result < INT64_MIN || result > INT64_MAX) {
+    throw new TxInputError(key);
+  }
   return result;
 }
 const str = (value: unknown, key: string): string => {
-  if (value === null) return "";
-  if (typeof value !== "string") throw new TxInputError(key);
+  if (value === null) {
+    return "";
+  }
+  if (typeof value !== "string") {
+    throw new TxInputError(key);
+  }
   return value;
 };
-function list<T>(value: unknown, key: string, item: (value: unknown, index: number) => T): T[] {
-  if (value === null) return [];
-  if (!Array.isArray(value)) throw new TxInputError(key);
+function list<T>(
+  value: unknown,
+  key: string,
+  item: (value: unknown, index: number) => T,
+): Array<T> {
+  if (value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new TxInputError(key);
+  }
   return value.map(item);
 }
 
@@ -120,7 +143,9 @@ function bindJSON(text: string, out: TxMessage) {
     parsed = JSON.parse(text, function (this: object, key, value, context?: { source?: string }) {
       if (typeof value === "number" && context?.source !== undefined) {
         let entries = sources.get(this);
-        if (!entries) sources.set(this, (entries = new Map()));
+        if (!entries) {
+          sources.set(this, (entries = new Map()));
+        }
         entries.set(key, context.source);
       }
       return value;
@@ -128,8 +153,12 @@ function bindJSON(text: string, out: TxMessage) {
   } catch {
     throw new TxInputError("body");
   }
-  if (parsed === null) return;
-  if (typeof parsed !== "object" || Array.isArray(parsed)) throw new TxInputError("body");
+  if (parsed === null) {
+    return;
+  }
+  if (typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new TxInputError("body");
+  }
   for (const [rawKey, value] of Object.entries(parsed)) {
     const key = rawKey.toLowerCase().replaceAll("ſ", "s");
     switch (key) {
@@ -155,19 +184,29 @@ function bindJSON(text: string, out: TxMessage) {
         out.templateId = int(value, parsed, rawKey, sources);
         break;
       case "data":
-        if (value === null) out.data = null;
-        else if (typeof value !== "object" || Array.isArray(value)) throw new TxInputError(key);
-        else out.data = JSON.stringify(value);
+        if (value === null) {
+          out.data = null;
+        } else if (typeof value !== "object" || Array.isArray(value)) {
+          throw new TxInputError(key);
+        } else {
+          out.data = JSON.stringify(value);
+        }
         break;
       case "from_email":
         out.fromEmail = str(value, key);
         break;
       case "headers":
         out.headers = list(value, key, (set) => {
-          if (set === null) return {};
-          if (typeof set !== "object" || Array.isArray(set)) throw new TxInputError(key);
+          if (set === null) {
+            return {};
+          }
+          if (typeof set !== "object" || Array.isArray(set)) {
+            throw new TxInputError(key);
+          }
           const result: Record<string, string> = Object.create(null);
-          for (const [name, v] of Object.entries(set)) result[name] = str(v, key);
+          for (const [name, v] of Object.entries(set)) {
+            result[name] = str(v, key);
+          }
           return result;
         });
         break;
@@ -193,7 +232,9 @@ function bindJSON(text: string, out: TxMessage) {
         out.idempotencyKey = str(value, key);
         break;
       case "async":
-        if (value !== null && typeof value !== "boolean") throw new TxInputError(key);
+        if (value !== null && typeof value !== "boolean") {
+          throw new TxInputError(key);
+        }
         out.async = value === true;
         break;
     }
@@ -203,7 +244,9 @@ function bindJSON(text: string, out: TxMessage) {
 /** Go's multipart FileName applies filepath.Base. */
 function baseName(name: string): string {
   const trimmed = name.replace(/\/+$/, "");
-  if (!trimmed) return name ? "/" : "";
+  if (!trimmed) {
+    return name ? "/" : "";
+  }
   return trimmed.slice(trimmed.lastIndexOf("/") + 1);
 }
 
@@ -219,15 +262,23 @@ export async function readTxMessage(request: Request): Promise<TxMessage> {
       throw new TxInputError("form");
     }
     const data = form.getAll("data").filter((v) => typeof v === "string");
-    if (data.length !== 1) throw new TxInputError("data");
+    if (data.length !== 1) {
+      throw new TxInputError("data");
+    }
     bindJSON(data[0]!, out);
     let total = 0;
     for (const file of form.getAll("file")) {
       // Go's form.File contains only parts with a file name.
-      if (typeof file === "string" || !file.name) continue;
-      if (out.attachments.length >= MAX_FILES) throw new TxInputError("file");
+      if (typeof file === "string" || !file.name) {
+        continue;
+      }
+      if (out.attachments.length >= MAX_FILES) {
+        throw new TxInputError("file");
+      }
       total += file.size;
-      if (total > MAX_ATTACHMENT_BYTES) throw new HttpError(413);
+      if (total > MAX_ATTACHMENT_BYTES) {
+        throw new HttpError(413);
+      }
       out.attachments.push({
         name: baseName(file.name),
         contentType: file.type || "application/octet-stream",
@@ -237,7 +288,9 @@ export async function readTxMessage(request: Request): Promise<TxMessage> {
     return out;
   }
   // Echo leaves fields at their defaults when there is no body to bind.
-  if (!body.length) return out;
+  if (!body.length) {
+    return out;
+  }
   const type = header.split(";", 1)[0]!.trim().toLowerCase();
   if (type === "application/json") {
     let text: string;
@@ -250,7 +303,11 @@ export async function readTxMessage(request: Request): Promise<TxMessage> {
     return out;
   }
   // TxMessage has no form tags; Echo's form binder leaves its fields unset.
-  if (type === "application/x-www-form-urlencoded") return out;
-  if (type === "application/xml" || type === "text/xml") throw new TxInputError("body");
+  if (type === "application/x-www-form-urlencoded") {
+    return out;
+  }
+  if (type === "application/xml" || type === "text/xml") {
+    throw new TxInputError("body");
+  }
   throw new HttpError(415);
 }

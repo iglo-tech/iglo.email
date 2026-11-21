@@ -25,7 +25,9 @@ export async function buildPublishEntry(directory: string): Promise<string> {
     [process.execPath, "build", "--compile", "test/backup/publish-entry.ts", "--outfile", entry],
     { cwd: repository, env: { PATH: process.env.PATH ?? "" }, stdout: "pipe", stderr: "pipe" },
   );
-  if ((await build.exited) !== 0) throw new Error(await new Response(build.stderr).text());
+  if ((await build.exited) !== 0) {
+    throw new Error(await new Response(build.stderr).text());
+  }
   return entry;
 }
 
@@ -38,7 +40,7 @@ export function removeDirectory(directory: string): void {
 }
 
 /** One `backup` run: exit code and both streams. */
-export async function runBackup(executable: string, args: string[]) {
+export async function runBackup(executable: string, args: Array<string>) {
   const child = Bun.spawn([executable, "backup", ...args], {
     env: { PATH: "" },
     stdout: "pipe",
@@ -74,11 +76,15 @@ async function launchServer(executable: string, dataDir: string, port: number) {
   );
   const origin = `http://127.0.0.1:${port}`;
   for (const deadline = Date.now() + 30_000; ; await Bun.sleep(25)) {
-    if (child.exitCode !== null) throw new Error(await new Response(child.stderr).text());
-    const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1_000) }).catch(
+    if (child.exitCode !== null) {
+      throw new Error(await new Response(child.stderr).text());
+    }
+    const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) }).catch(
       () => null,
     );
-    if (up?.ok && listensOn(child.pid, port)) break;
+    if (up?.ok && listensOn(child.pid, port)) {
+      break;
+    }
     if (Date.now() > deadline) {
       child.kill("SIGKILL");
       // Reaped before the failure is reported: the process must not outlive its start.
@@ -148,8 +154,9 @@ export function seedSubscribers(dataDir: string, count: number): void {
   );
   const now = new Date().toISOString();
   db.transaction(() => {
-    for (let i = 0; i < count; i++)
+    for (let i = 0; i < count; i++) {
       insert.run(crypto.randomUUID(), `seed-${i}@example.test`, `Seed ${i}`, now, now);
+    }
   })();
   db.close();
 }

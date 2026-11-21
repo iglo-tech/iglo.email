@@ -28,11 +28,11 @@ import { createUserStore } from "@/users/store";
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
 export async function queryFixture(
-  options: { timeoutMs?: number; admissionMs?: number; command?: string[] } = {},
+  options: { timeoutMs?: number; admissionMs?: number; command?: Array<string> } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "iglo-query-"));
   const clock = new TestClock();
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
   const app = createApp({
@@ -98,7 +98,9 @@ export async function queryFixture(
   );
   registerSubscriberQueryRoutes(router, query, subscribers, roles, auth);
   const session = await auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("fixture login failed");
+  }
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
   const request = (path: string, init: RequestInit = {}) =>
     router.handle(app, new Request(`http://fixture.test${path}`, init));
@@ -124,18 +126,22 @@ export async function queryFixture(
   /** An API user with exactly these user permissions and optional per-list permissions. */
   const apiUser = async (
     name: string,
-    permissions: string[],
-    listPermissions?: { id: number; permissions: string[] }[],
+    permissions: Array<string>,
+    listPermissions?: Array<{ id: number; permissions: string[] }>,
   ) => {
     const role = await json("/api/roles/users", "POST", { name, permissions });
-    if (role.status !== 200) throw new Error(`role ${role.status}`);
+    if (role.status !== 200) {
+      throw new Error(`role ${role.status}`);
+    }
     let listRole: number | undefined;
     if (listPermissions) {
       const created = await json("/api/roles/lists", "POST", {
         name: `${name}-lists`,
         lists: listPermissions,
       });
-      if (created.status !== 200) throw new Error(`list role ${created.status}`);
+      if (created.status !== 200) {
+        throw new Error(`list role ${created.status}`);
+      }
       listRole = created.body.data.id;
     }
     const user = await json("/api/users", "POST", {
@@ -145,7 +151,9 @@ export async function queryFixture(
       user_role_id: role.body.data.id,
       ...(listRole === undefined ? {} : { list_role_id: listRole }),
     });
-    if (user.status !== 200) throw new Error(`user ${user.status}`);
+    if (user.status !== 200) {
+      throw new Error(`user ${user.status}`);
+    }
     return { authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}` };
   };
   return {

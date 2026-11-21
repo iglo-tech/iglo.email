@@ -62,7 +62,9 @@ function truncate(value: string, bytes: number): string {
   let used = 0;
   for (const char of value) {
     used += Buffer.byteLength(char);
-    if (used > bytes) break;
+    if (used > bytes) {
+      break;
+    }
     out += char;
   }
   return out;
@@ -75,11 +77,20 @@ function truncate(value: string, bytes: number): string {
  */
 export function makeFilename(raw: string): string {
   const base =
-    raw.trim().replace(/\s+/g, "-").replaceAll("\\", "/").replace(/\/+$/, "").split("/").at(-1) ??
-    "";
-  const name = base.replace(/[\p{Cc}\p{Cf}]/gu, "").replace(/^\.+/, "");
-  if (!name) return randomString(10);
-  if (Buffer.byteLength(name) <= MAX_NAME_BYTES) return name;
+    raw
+      .trim()
+      .replaceAll(/\s+/g, "-")
+      .replaceAll("\\", "/")
+      .replace(/\/+$/, "")
+      .split("/")
+      .at(-1) ?? "";
+  const name = base.replaceAll(/[\p{Cc}\p{Cf}]/gu, "").replace(/^\.+/, "");
+  if (!name) {
+    return randomString(10);
+  }
+  if (Buffer.byteLength(name) <= MAX_NAME_BYTES) {
+    return name;
+  }
   const ext = truncate(extname(name), 32);
   return truncate(name.slice(0, name.length - extname(name).length), MAX_NAME_BYTES - 32) + ext;
 }
@@ -104,13 +115,19 @@ function canonical(path: string): string {
   try {
     return realpathSync(path);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
   }
   // realpath also says ENOENT for a broken link, and writing through one leaves this path.
   const entry = lstatSync(path, { throwIfNoEntry: false });
   // Another request may have created the directory since realpath looked, which is not a link.
-  if (entry && !entry.isSymbolicLink()) return realpathSync(path);
-  if (entry) throw new Error("Broken link");
+  if (entry && !entry.isSymbolicLink()) {
+    return realpathSync(path);
+  }
+  if (entry) {
+    throw new Error("Broken link");
+  }
   const parent = dirname(path);
   return parent === path ? path : join(canonical(parent), basename(path));
 }
@@ -133,11 +150,15 @@ export function uploadRoot(dataDir: string, uploadPath: string): string {
     const data = realpathSync(resolve(dataDir));
     inside = data.endsWith(sep) ? data : data + sep;
     dir = canonical(resolve(data, uploadPath.trim() || "uploads"));
-    if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() === false) throw refused;
+    if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() === false) {
+      throw refused;
+    }
   } catch {
     throw refused;
   }
-  if (!dir.startsWith(inside)) throw refused;
+  if (!dir.startsWith(inside)) {
+    throw refused;
+  }
   return dir;
 }
 
@@ -147,15 +168,16 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
   function uri(): string | null {
     const clean = settings()
       .uploadUri.trim()
-      .replace(/\/{2,}/g, "/")
+      .replaceAll(/\/{2,}/g, "/")
       .replace(/\/+$/, "");
-    if (!clean.startsWith("/") || /[?#\\]/.test(clean) || clean.split("/").includes(".."))
+    if (!clean.startsWith("/") || /[?#\\]/.test(clean) || clean.split("/").includes("..")) {
       return null;
+    }
     return reserved(clean) ? null : clean;
   }
   /** Characters with a meaning in a URL are escaped, so that it names the file. */
   const escapeName = (name: string) =>
-    name.replace(/[%#?"<>]/g, (char) => encodeURIComponent(char));
+    name.replaceAll(/[%#?"<>]/g, (char) => encodeURIComponent(char));
 
   return {
     /** The path of a stored name, beginning at `rootUrl`, as `GetURL`. */
@@ -164,11 +186,17 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
     },
     /** The stored name a request path can name, if it is one single component of the URI. */
     nameOf(pathname: string): string | undefined {
-      if (reserved(pathname)) return undefined;
+      if (reserved(pathname)) {
+        return undefined;
+      }
       const prefix = uri();
-      if (prefix === null) return undefined;
+      if (prefix === null) {
+        return undefined;
+      }
       const base = `${encodeURI(prefix)}/`;
-      if (!pathname.startsWith(base)) return undefined;
+      if (!pathname.startsWith(base)) {
+        return undefined;
+      }
       try {
         const name = decodeURIComponent(pathname.slice(base.length));
         return singleComponent(name) ? name : undefined;
@@ -195,7 +223,9 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
     ): Promise<string> {
       const temporary = join(dir, TEMPORARY);
       await mkdir(temporary, { recursive: true });
-      if (!(await lstat(temporary)).isDirectory()) throw new Error("Unusable temporary directory");
+      if (!(await lstat(temporary)).isDirectory()) {
+        throw new Error("Unusable temporary directory");
+      }
       const path = join(temporary, crypto.randomUUID());
       let stored: string | undefined;
       try {
@@ -210,15 +240,21 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
         // another upload, and not a symlink someone left in the directory.
         for (let i = 0; i < uniqueTries && stored === undefined; i++) {
           const candidate = i === 0 && !taken(name) ? name : appendSuffix(name);
-          if (taken(candidate)) continue;
+          if (taken(candidate)) {
+            continue;
+          }
           try {
             closeSync(openSync(join(dir, candidate), "wx", 0o644));
             stored = candidate;
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+              throw error;
+            }
           }
         }
-        if (stored === undefined) throw new Error("No unique filename");
+        if (stored === undefined) {
+          throw new Error("No unique filename");
+        }
         renameSync(path, join(dir, stored));
         const entry = await open(dir, constants.O_RDONLY | constants.O_DIRECTORY);
         try {
@@ -228,7 +264,9 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
         }
         return stored;
       } catch (error) {
-        if (stored !== undefined) await rm(join(dir, stored), { force: true });
+        if (stored !== undefined) {
+          await rm(join(dir, stored), { force: true });
+        }
         throw error;
       } finally {
         await rm(path, { force: true });
@@ -236,7 +274,9 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
     },
     /** A stored regular file, or null: a symlink is never followed out of the directory. */
     async stat(name: string) {
-      if (!singleComponent(name)) return null;
+      if (!singleComponent(name)) {
+        return null;
+      }
       const path = join(directory(), name);
       const stats = await lstat(path).catch(() => null);
       return stats?.isFile() ? { path, size: stats.size, modified: stats.mtimeMs } : null;
@@ -246,7 +286,9 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
     },
     /** Delete. A file already gone is what was asked for. */
     async remove(name: string, dir = directory()): Promise<void> {
-      if (singleComponent(name)) await rm(join(dir, name), { force: true });
+      if (singleComponent(name)) {
+        await rm(join(dir, name), { force: true });
+      }
     },
     /**
      * Temporary files of an upload cut off by a crash; no upload runs yet at startup. Only this
@@ -254,10 +296,13 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
      */
     async sweep(): Promise<void> {
       const temporary = join(directory(), TEMPORARY);
-      if (!(await lstat(temporary).catch(() => null))?.isDirectory()) return;
-      for (const entry of await readdir(temporary, { withFileTypes: true }))
+      if (!(await lstat(temporary).catch(() => null))?.isDirectory()) {
+        return;
+      }
+      for (const entry of await readdir(temporary, { withFileTypes: true })) {
         if (entry.isFile() && temporaryFile.test(entry.name))
           await rm(join(temporary, entry.name), { force: true });
+      }
     },
   };
 }

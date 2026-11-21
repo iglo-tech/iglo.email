@@ -7,7 +7,8 @@ import type { Translation } from "@/i18n/i18n";
 import { raw, render } from "@/jsx/render";
 import { trimSpace } from "@/lists/store";
 import type { PreferenceForm } from "@/public/form";
-import { PublicShell, siteText, type PageSite } from "@/public/layout";
+import { PublicShell, siteText } from "@/public/layout";
+import type { PageSite } from "@/public/layout";
 import { backLink, publicMessage } from "@/public/message";
 import { assetVersion } from "@/server/asset-manifest";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -41,12 +42,12 @@ export type PageMode =
       base: string;
       blocklist: boolean;
       privacy: boolean;
-      lists: bigint[];
+      lists: Array<bigint>;
     }
   | { kind: "transactional"; base: string }
   | { kind: "pending" };
 
-const script = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
+const script = (value: string) => JSON.stringify(value).replaceAll("<", String.raw`\u003c`);
 
 /**
  * The public lists a revisited link covers, when every membership it covers is unsubscribed; `null`
@@ -57,11 +58,12 @@ const script = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c
 function alreadyUnsubscribed(
   subscribers: SubscriberStore,
   id: bigint,
-  lists: bigint[],
-): string[] | null {
+  lists: Array<bigint>,
+): Array<string> | null {
   const covered = subscribers.allSubscriptions(id).filter((list) => lists.includes(list.listId));
-  if (!covered.length || covered.some((list) => list.subscriptionStatus !== "unsubscribed"))
+  if (!covered.length || covered.some((list) => list.subscriptionStatus !== "unsubscribed")) {
     return null;
+  }
   return covered.filter((list) => list.type === "public").map((list) => list.name);
 }
 
@@ -385,17 +387,24 @@ export function savePreferences(
       message,
       site: options,
     });
-  if (!options.allowPreferences) return failed(t.T("public.invalidFeature"));
+  if (!options.allowPreferences) {
+    return failed(t.T("public.invalidFeature"));
+  }
   const name = trimSpace(form.name);
-  if (!name || Buffer.byteLength(name) > 256 || name.includes("\0"))
+  if (!name || Buffer.byteLength(name) > 256 || name.includes("\0")) {
     return failed(t.T("globals.messages.invalidName"));
+  }
   const kept = new Set(form.lists.map((uuid) => uuid.toLowerCase()));
   const saved = writeTransaction(deps.db, () => {
     const subscriber = current();
-    if (!subscriber) return false;
+    if (!subscriber) {
+      return false;
+    }
     deps.subscribers.rename(subscriber.id, name);
     for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
-      if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") continue;
+      if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") {
+        continue;
+      }
       const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId, false);
       deps.effects.unsubscribed({
         subscriberId: subscriber.id,
@@ -406,7 +415,9 @@ export function savePreferences(
     }
     return true;
   });
-  if (!saved) return null;
+  if (!saved) {
+    return null;
+  }
   return publicMessage(t, {
     status: 200,
     title: t.T("globals.messages.done"),
@@ -466,19 +477,24 @@ export function savePendingLists(
   form: PreferenceForm,
   current: () => { id: bigint } | null,
 ): Response | null {
-  if (!options.allowPreferences)
+  if (!options.allowPreferences) {
     return publicMessage(t, {
       status: 400,
       title: t.T("globals.terms.error"),
       message: t.T("public.invalidFeature"),
       site: options,
     });
+  }
   const kept = new Set(form.lists.map((uuid) => uuid.toLowerCase()));
   const saved = writeTransaction(deps.db, () => {
     const subscriber = current();
-    if (!subscriber) return false;
+    if (!subscriber) {
+      return false;
+    }
     for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
-      if (list.subscriptionStatus !== "unconfirmed" || kept.has(list.uuid)) continue;
+      if (list.subscriptionStatus !== "unconfirmed" || kept.has(list.uuid)) {
+        continue;
+      }
       const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId, false);
       deps.effects.unsubscribed({
         subscriberId: subscriber.id,
@@ -489,7 +505,9 @@ export function savePendingLists(
     }
     return true;
   });
-  if (!saved) return null;
+  if (!saved) {
+    return null;
+  }
   return publicMessage(t, {
     status: 200,
     title: t.T("globals.messages.done"),

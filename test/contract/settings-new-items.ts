@@ -10,7 +10,9 @@ export async function runSettingsNewItems(target: {
   baseUrl: string;
   credentials: Credentials;
 }) {
-  if (target.mode !== "normal") return;
+  if (target.mode !== "normal") {
+    return;
+  }
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", value?: unknown) =>
     settingsFetch(
@@ -23,7 +25,9 @@ export async function runSettingsNewItems(target: {
       false,
     );
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL settings-new-items-${label}`);
+    if (!value) {
+      throw new Error(`FAIL settings-new-items-${label}`);
+    }
   }
   async function read() {
     const response = await request("/api/settings");

@@ -58,17 +58,19 @@ const PIECES = [
 function seeded(seed: number): () => number {
   let state = seed;
   return () => {
-    state = (state * 1103515245 + 12345) & 0x7fffffff;
-    return state / 0x80000000;
+    state = (state * 1_103_515_245 + 12_345) & 0x7f_ff_ff_ff;
+    return state / 0x80_00_00_00;
   };
 }
 
 test("the text part is never longer than its HTML, in bytes or code units, over a seeded corpus", async () => {
-  const random = seeded(20261120);
+  const random = seeded(20_261_120);
   for (let trial = 0; trial < 500; trial++) {
     const count = 1 + Math.floor(random() * 300);
     let html = "";
-    for (let i = 0; i < count; i++) html += PIECES[Math.floor(random() * PIECES.length)];
+    for (let i = 0; i < count; i++) {
+      html += PIECES[Math.floor(random() * PIECES.length)];
+    }
     const text = await plainText(html, createMessageBudget());
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(Buffer.byteLength(html));
     expect(text.length).toBeLessThanOrEqual(html.length);

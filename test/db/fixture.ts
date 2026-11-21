@@ -124,36 +124,37 @@ export function startDbFixture(dataDir: string) {
         const insert = () =>
           db.run("INSERT INTO fixture_records (id, value) VALUES (1, 'changed')");
         try {
-          if (input.mode === "nested")
+          if (input.mode === "nested") {
             writeTransaction(db, () => {
               insert();
               writeTransaction(db, () => undefined);
             });
-          else if (input.mode === "async")
+          } else if (input.mode === "async") {
             writeTransaction(db, (async () => {
               insert();
             }) as never);
-          else if (input.mode === "thenable")
+          } else if (input.mode === "thenable") {
             writeTransaction(db, (() => {
               insert();
               return Promise.resolve(1);
             }) as never);
-          else if (input.mode === "thenable-object")
+          } else if (input.mode === "thenable-object") {
             writeTransaction(db, (() => {
               insert();
               // This deliberately malformed callback exercises runtime protection.
               return { then() {} };
             }) as never);
-          else if (input.mode === "rejected")
+          } else if (input.mode === "rejected") {
             writeTransaction(db, (() => {
               insert();
               return Promise.reject(new Error("rejected promise"));
             }) as never);
-          else
+          } else {
             writeTransaction(db, () => {
               insert();
               if (input.mode === "failure") throw new Error("original error");
             });
+          }
           return { error: null, active: db.inTransaction };
         } catch (error) {
           return { error: String(error), active: db.inTransaction };

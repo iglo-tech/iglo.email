@@ -634,7 +634,7 @@ async function activityTab(page) {
 
   // The tracked address is the one the delivered mail carries.
   const [mail] = await mailFor(person.email);
-  const body = mail.body.replace(/=\r?\n/g, "").replace(/=3D/g, "=");
+  const body = mail.body.replaceAll(/=\r?\n/g, "").replaceAll("=3D", "=");
   const link = /\/link\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36}/.exec(body)?.[0];
   expect(link).toBeTruthy();
   for (let i = 0; i < 2; i++) {

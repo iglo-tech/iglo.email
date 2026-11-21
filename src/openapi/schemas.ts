@@ -17,16 +17,19 @@ export const nullable = (schema: Schema): Schema =>
   schema.$ref !== undefined || schema.oneOf !== undefined
     ? { anyOf: [schema, { type: "null" }] }
     : { ...schema, type: [schema.type, "null"] };
-const choice = (...values: string[]): Schema => ({ type: "string", enum: values });
+const choice = (...values: Array<string>): Schema => ({ type: "string", enum: values });
 /** Every property is required unless it is named in `optional`. */
-export const object = (properties: Record<string, Schema>, optional: string[] = []): Schema => ({
+export const object = (
+  properties: Record<string, Schema>,
+  optional: Array<string> = [],
+): Schema => ({
   type: "object",
   properties,
   required: Object.keys(properties).filter((name) => !optional.includes(name)),
 });
 const map = (value: Schema): Schema => ({ type: "object", additionalProperties: value });
 /** A write body: nothing is required unless it is named. */
-const input = (properties: Record<string, Schema>, required: string[] = []): Schema => ({
+const input = (properties: Record<string, Schema>, required: Array<string> = []): Schema => ({
   type: "object",
   properties,
   ...(required.length ? { required } : {}),

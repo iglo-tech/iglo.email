@@ -14,9 +14,11 @@ export interface Clocked {
 export const OTHER_CERT =
   "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-def456.pem";
 
-function openssl(cwd: string, ...args: string[]) {
+function openssl(cwd: string, ...args: Array<string>) {
   const run = Bun.spawnSync(["openssl", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  if (run.exitCode !== 0) throw new Error(run.stderr.toString());
+  if (run.exitCode !== 0) {
+    throw new Error(run.stderr.toString());
+  }
 }
 
 /** A leaf certificate issued by a fresh CA, and the key that signs for it. */
@@ -100,18 +102,22 @@ export const good = issue();
 
 export interface Network {
   fetch: SnsFetch;
-  requests: string[];
+  requests: Array<string>;
 }
 
 export function network(pems: Record<string, string> = { [CERT]: good.pem }): Network {
-  const requests: string[] = [];
+  const requests: Array<string> = [];
   return {
     requests,
     fetch: async (url) => {
       requests.push(url);
       const pem = pems[url];
-      if (pem) return new Response(pem);
-      if (url.includes("?Action=ConfirmSubscription")) return new Response("<ok/>");
+      if (pem) {
+        return new Response(pem);
+      }
+      if (url.includes("?Action=ConfirmSubscription")) {
+        return new Response("<ok/>");
+      }
       return new Response("no", { status: 404 });
     },
   };
@@ -170,9 +176,9 @@ export const post = (f: TxFixture, body: unknown, type = "Notification", raw?: s
 
 export const bounceMessage = (
   f: Clocked,
-  recipients: string[],
+  recipients: Array<string>,
   extra: object = {},
-  headers: object[] = [],
+  headers: Array<object> = [],
 ) =>
   JSON.stringify({
     notificationType: "Bounce",

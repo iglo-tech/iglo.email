@@ -2,10 +2,12 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { createRealClock } from "@/clock";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
-import { faultRelay, type Fault } from "@/test/messaging/fault-relay";
+import { faultRelay } from "@/test/messaging/fault-relay";
+import type { Fault } from "@/test/messaging/fault-relay";
 
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
@@ -18,7 +20,7 @@ try {
     "before-data",
     "during-data",
     "lost-final",
-  ] as Fault[]) {
+  ] as Array<Fault>) {
     const relay = await faultRelay(sink, fault);
     const server: SMTPServer = {
       name: "",
@@ -60,15 +62,18 @@ try {
           "accepted@example.test",
           "rejected@example.test",
         ]);
-      } else assert.equal(outcome.status, "ambiguous");
+      } else {
+        assert.equal(outcome.status, "ambiguous");
+      }
       assert.equal(relay.connections(), 1);
       const received = (await mailpit.list()).filter((m) => m.Subject === `${marker} ${fault}`);
       assert.equal(received.length, fault === "partial-rcpt" || fault === "lost-final" ? 1 : 0);
-      if (received.length)
+      if (received.length) {
         assert.equal(
           received[0]!.MessageID.replace(/[<>]/g, ""),
           send.messageId.replace(/[<>]/g, ""),
         );
+      }
     } finally {
       await emailer.close();
       await relay.close();

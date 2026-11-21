@@ -50,19 +50,25 @@ export function createByteGate(options: {
         return held;
       },
       grow(more) {
-        if (released || bytes + more > options.maxBytes) return false;
+        if (released || bytes + more > options.maxBytes) {
+          return false;
+        }
         held += more;
         bytes += more;
         return true;
       },
       shrink(to) {
-        if (released || to >= held) return;
+        if (released || to >= held) {
+          return;
+        }
         bytes -= held - to;
         held = to;
         drain();
       },
       release() {
-        if (released) return;
+        if (released) {
+          return;
+        }
         released = true;
         bytes -= held;
         holders--;
@@ -78,7 +84,9 @@ export function createByteGate(options: {
   }
 
   function queue(cost: number): Promise<Reservation | null> {
-    if (waiting.length >= (options.maxWaiters ?? 16)) return Promise.resolve(null);
+    if (waiting.length >= (options.maxWaiters ?? 16)) {
+      return Promise.resolve(null);
+    }
     return new Promise<Reservation | null>((resolve) => {
       const timeout = new AbortController();
       const entry = {
@@ -92,7 +100,9 @@ export function createByteGate(options: {
       options.clock.sleep(options.waitMs, timeout.signal).then(
         () => {
           const at = waiting.indexOf(entry);
-          if (at < 0) return;
+          if (at < 0) {
+            return;
+          }
           waiting.splice(at, 1);
           resolve(null);
           drain();
@@ -106,8 +116,12 @@ export function createByteGate(options: {
   return {
     /** Null when `cost` can never fit or the wait ran out. Strictly in arrival order. */
     async acquire(cost: number): Promise<Reservation | null> {
-      if (cost > options.maxBytes) return null;
-      if (!waiting.length && fits(cost)) return open(cost);
+      if (cost > options.maxBytes) {
+        return null;
+      }
+      if (!waiting.length && fits(cost)) {
+        return open(cost);
+      }
       return queue(cost);
     },
     /**
@@ -119,10 +133,14 @@ export function createByteGate(options: {
      * waiter and bounds what can pass it to the holders it already had plus that many.
      */
     admit(cost: number): Reservation | null {
-      if (cost > options.maxBytes || !fits(cost)) return null;
+      if (cost > options.maxBytes || !fits(cost)) {
+        return null;
+      }
       const head = waiting[0];
       if (head) {
-        if (head.overtaken >= (options.maxOvertakes ?? 8)) return null;
+        if (head.overtaken >= (options.maxOvertakes ?? 8)) {
+          return null;
+        }
         head.overtaken++;
       }
       return open(cost);

@@ -1,6 +1,7 @@
 // Read-only event SQL for sequence conditions (docs/design/05-sequences.md#conditions);
 // no upstream source. The events module owns `events`; the condition compiler takes this part.
-import { compareSQL, type SQLPart } from "@/conditions/json";
+import { compareSQL } from "@/conditions/json";
+import type { SQLPart } from "@/conditions/json";
 import type { EventCount, Scalar } from "@/conditions/types";
 
 /**
@@ -26,7 +27,9 @@ export function whereSQL(where?: Record<string, Scalar>): SQLPart {
   const parts = Object.entries(where ?? {}).map(([key, value]) =>
     compareSQL("events.data", key.slice("data.".length), "eq", value),
   );
-  if (!parts.length) return { sql: "1", args: [] };
+  if (!parts.length) {
+    return { sql: "1", args: [] };
+  }
   return {
     sql: parts.map((part) => part.sql).join(" AND "),
     args: parts.flatMap((part) => part.args),
@@ -52,17 +55,18 @@ export function eventCountSQL<P>(input: {
   const filter = `${window.sql} AND ${where.sql}`;
   const args: SQLPart<P>["args"] = [...window.args, ...where.args];
   const { gte, lte, eq } = input.count;
-  const tests: string[] = [];
-  const bounds: number[] = [];
+  const tests: Array<string> = [];
+  const bounds: Array<number> = [];
   for (const [operator, n] of [
     [">=", gte],
     ["<=", lte],
     ["=", eq],
-  ] as const)
+  ] as const) {
     if (n !== undefined) {
       tests.push(`n ${operator} ?`);
       bounds.push(n);
     }
+  }
   // Parameters bind in text order: the comparands come before the filter.
   return {
     sql: `(SELECT ${tests.join(" AND ")} FROM (SELECT count(*) AS n FROM (SELECT 1 FROM events WHERE ${filter} LIMIT ?)))`,

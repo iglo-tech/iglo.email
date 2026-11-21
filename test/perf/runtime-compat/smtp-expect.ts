@@ -22,7 +22,7 @@ export interface CapturedMessage {
 export function headers(raw: string) {
   const header = raw.split("\r\n\r\n", 1)[0];
   assert.ok(header, "missing RFC 5322 header block");
-  return header.replace(/\r\n[ \t]+/g, " ").split("\r\n");
+  return header.replaceAll(/\r\n[ \t]+/g, " ").split("\r\n");
 }
 export function header(raw: string, name: string) {
   const matches = headers(raw).filter((line) =>
@@ -37,7 +37,7 @@ export function expectMessageId(raw: string, expected: string) {
 export function expectPlain(message: CapturedMessage, raw: string, id: string, marker: string) {
   expectMessageId(raw, id);
   assert.equal(message.Subject, `${marker} plain`);
-  assert.equal(message.Text.replace(/\r?\n/g, "\r\n"), plainBody);
+  assert.equal(message.Text.replaceAll(/\r?\n/g, "\r\n"), plainBody);
   assert.equal(header(raw, "X-Fixture"), marker);
   assert.match(header(raw, "Content-Type"), /^text\/plain/i);
 }
@@ -52,7 +52,7 @@ export async function expectHtml(
   assert.equal(message.Subject, `${marker} html`);
   assert.equal(message.Text.trim(), alternateBody);
   assert.equal(message.HTML.trim(), htmlBody);
-  assert.equal(message.ReturnPath.replace(/[<>]/g, ""), "bounce@example.test");
+  assert.equal(message.ReturnPath.replaceAll(/[<>]/g, ""), "bounce@example.test");
   assert.deepEqual(
     message.To.map((x) => x.Address),
     ["visible@example.test"],
@@ -69,7 +69,7 @@ export async function expectHtml(
   const inline = message.Inline.find((item) => item.FileName === "inline.bin");
   assert.ok(attachment, "binary attachment missing");
   assert.ok(inline, "inline attachment missing");
-  assert.equal(inline.ContentID.replace(/[<>]/g, ""), "fixture-image");
+  assert.equal(inline.ContentID.replaceAll(/[<>]/g, ""), "fixture-image");
   assert.deepEqual(await readPart(attachment.PartID), binaryBytes);
   assert.deepEqual(await readPart(inline.PartID), inlineBytes);
 }

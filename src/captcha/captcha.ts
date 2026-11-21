@@ -16,8 +16,12 @@ export interface CaptchaOptions {
 
 /** captcha.New: ALTCHA wins when both are enabled. */
 export function captchaProvider(options: CaptchaOptions): Provider {
-  if (options.altcha.enabled) return "altcha";
-  if (options.hcaptcha.enabled) return "hcaptcha";
+  if (options.altcha.enabled) {
+    return "altcha";
+  }
+  if (options.hcaptcha.enabled) {
+    return "hcaptcha";
+  }
   return "";
 }
 
@@ -39,7 +43,7 @@ export interface CaptchaDeps {
 
 export const hcaptchaUrl = "https://hcaptcha.com/siteverify";
 const challengeTtlMs = 5 * 60_000;
-const hcaptchaTimeoutMs = 5_000;
+const hcaptchaTimeoutMs = 5000;
 const hcaptchaMaxBody = 64 * 1024;
 /** A genuine payload is under 1 KiB; this bounds decoding and parsing. */
 const maxPayload = 4096;
@@ -89,33 +93,46 @@ const isUint = (value: unknown, max: number): value is number =>
 
 /** Go's base64.StdEncoding.DecodeString, which also skips CR and LF. */
 function decodeBase64(text: string): string | undefined {
-  const compact = text.replace(/[\r\n]/g, "");
-  if (compact.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) return undefined;
+  const compact = text.replaceAll(/[\r\n]/g, "");
+  if (compact.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) {
+    return undefined;
+  }
   return Buffer.from(compact, "base64").toString("utf8");
 }
 
 /** The challenge and solution of a payload, or undefined for any shape altcha-lib would not sign. */
 function parsePayload(value: string) {
-  if (value.length > maxPayload) return undefined;
+  if (value.length > maxPayload) {
+    return undefined;
+  }
   const json = decodeBase64(value);
-  if (json === undefined) return undefined;
+  if (json === undefined) {
+    return undefined;
+  }
   let payload: unknown;
   try {
     payload = JSON.parse(json);
   } catch {
     return undefined;
   }
-  if (!isObject(payload) || !isObject(payload.challenge) || !isObject(payload.solution))
+  if (!isObject(payload) || !isObject(payload.challenge) || !isObject(payload.solution)) {
     return undefined;
+  }
   const { parameters: p, signature } = payload.challenge;
   const { counter, derivedKey } = payload.solution;
-  if (!isObject(p) || typeof signature !== "string" || typeof derivedKey !== "string")
+  if (!isObject(p) || typeof signature !== "string" || typeof derivedKey !== "string") {
     return undefined;
-  if (!isUint(counter, 0xffff_ffff)) return undefined;
+  }
+  if (!isUint(counter, 0xff_ff_ff_ff)) {
+    return undefined;
+  }
   // Keys altcha-lib would add to the signed text are never issued here, so they cannot verify.
-  for (const key of ["keySignature", "memoryCost", "parallelism"])
+  for (const key of ["keySignature", "memoryCost", "parallelism"]) {
     if (p[key] !== undefined && p[key] !== null && p[key] !== "" && p[key] !== 0) return undefined;
-  if (p.data !== undefined && p.data !== null) return undefined;
+  }
+  if (p.data !== undefined && p.data !== null) {
+    return undefined;
+  }
   const parameters = {
     algorithm: p.algorithm,
     nonce: p.nonce,
@@ -138,20 +155,25 @@ function parsePayload(value: string) {
     !parameters.keyPrefix ||
     !Number.isSafeInteger(parameters.expiresAt) ||
     !/^[0-9a-f]{64}$/.test(signature)
-  )
+  ) {
     return undefined;
+  }
   return { parameters: parameters as Parameters, signature, counter, derivedKey };
 }
 
 /** A body of at most `limit` bytes, or undefined past it. */
 async function boundedText(response: Response, limit: number): Promise<string | undefined> {
-  if (!response.body) return "";
+  if (!response.body) {
+    return "";
+  }
   const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const chunks: Array<Uint8Array> = [];
   let size = 0;
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      break;
+    }
     size += value.byteLength;
     if (size > limit) {
       await reader.cancel().catch(() => {});
@@ -178,13 +200,17 @@ export async function createCaptcha(deps: CaptchaDeps): Promise<Captcha> {
   const used = new Map<string, number>();
   let lastSweep = 0;
   const sweep = (now: number) => {
-    if (now - lastSweep < 1000) return;
+    if (now - lastSweep < 1000) {
+      return;
+    }
     lastSweep = now;
-    for (const [signature, expires] of used) if (expires < now) used.delete(signature);
+    for (const [signature, expires] of used) {
+      if (expires < now) used.delete(signature);
+    }
   };
 
   async function challenge(complexity: number): Promise<string> {
-    const limit = Math.min(complexity < 0 ? 30_000 : complexity, 0xffff_ffff);
+    const limit = Math.min(complexity < 0 ? 30_000 : complexity, 0xff_ff_ff_ff);
     const counter = randomInt(0, limit + 1);
     const salt = random(saltLength);
     const nonce = random(nonceLength);
@@ -207,28 +233,38 @@ export async function createCaptcha(deps: CaptchaDeps): Promise<Captcha> {
 
   async function verifyAltcha(value: string): Promise<boolean> {
     const payload = parsePayload(value);
-    if (!payload) return false;
+    if (!payload) {
+      return false;
+    }
     const { parameters, signature } = payload;
     // isExpired: expiresAt < now in seconds, with sub-second precision.
-    if (parameters.expiresAt * 1000 < deps.clock.now().getTime()) return false;
+    if (parameters.expiresAt * 1000 < deps.clock.now().getTime()) {
+      return false;
+    }
     const valid = await crypto.subtle.verify(
       "HMAC",
       key,
       Buffer.from(signature, "hex"),
       encoder.encode(canonical(parameters)),
     );
-    if (!valid) return false;
+    if (!valid) {
+      return false;
+    }
     const derived = await deriveKey(
       Buffer.from(parameters.salt, "hex"),
       Buffer.from(parameters.nonce, "hex"),
       payload.counter,
     );
     const expected = toHex(derived);
-    if (payload.derivedKey !== expected || !expected.startsWith(parameters.keyPrefix)) return false;
+    if (payload.derivedKey !== expected || !expected.startsWith(parameters.keyPrefix)) {
+      return false;
+    }
     // Disallow token reuse. The check and the mark run without an await between them.
     const now = deps.clock.now().getTime();
     sweep(now);
-    if (used.has(signature) || used.size >= maxUsed) return false;
+    if (used.has(signature) || used.size >= maxUsed) {
+      return false;
+    }
     used.set(signature, parameters.expiresAt * 1000);
     return true;
   }
@@ -242,7 +278,9 @@ export async function createCaptcha(deps: CaptchaDeps): Promise<Captcha> {
         signal: AbortSignal.timeout(hcaptchaTimeoutMs),
       });
       const text = await boundedText(response, hcaptchaMaxBody);
-      if (!response.ok || text === undefined) return false;
+      if (!response.ok || text === undefined) {
+        return false;
+      }
       const body = JSON.parse(text) as unknown;
       return isObject(body) && body.success === true;
     } catch {
@@ -253,10 +291,16 @@ export async function createCaptcha(deps: CaptchaDeps): Promise<Captcha> {
   return {
     challenge,
     async verify(provider, value) {
-      if (!value) return false;
+      if (!value) {
+        return false;
+      }
       try {
-        if (provider === "altcha") return await verifyAltcha(value);
-        if (provider === "hcaptcha") return await verifyHCaptcha(value);
+        if (provider === "altcha") {
+          return await verifyAltcha(value);
+        }
+        if (provider === "hcaptcha") {
+          return await verifyHCaptcha(value);
+        }
       } catch {
         /* Refused below. */
       }

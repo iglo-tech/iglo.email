@@ -38,13 +38,15 @@ test.beforeEach(async ({ page }) => {
   await signIn(page);
   const settings = await ok(page, "/api/settings");
   original = Object.fromEntries(Object.keys(SLOW).map((key) => [key, settings[key]]));
-  for (const [key, value] of Object.entries(SLOW))
+  for (const [key, value] of Object.entries(SLOW)) {
     await ok(page, `/api/settings/${key}`, "PUT", value);
+  }
 });
 
 test.afterEach(async ({ page }) => {
-  for (const [key, value] of Object.entries(original))
+  for (const [key, value] of Object.entries(original)) {
     await ok(page, `/api/settings/${key}`, "PUT", value);
+  }
 });
 
 const address = (prefix) => `${unique(prefix)}@example.com`;
@@ -66,7 +68,9 @@ const status = async (page, id) => (await ok(page, `/api/campaigns/${id}`)).stat
 async function menu(page, name, action) {
   const item = row(page, name).getByRole("menuitem", { name: action, exact: true });
   await expect(async () => {
-    if (!(await item.isVisible())) await openMenu(row(page, name));
+    if (!(await item.isVisible())) {
+      await openMenu(row(page, name));
+    }
     await item.click({ timeout: 3000 });
   }).toPass({ timeout: 20_000 });
 }
@@ -205,7 +209,9 @@ test("a scheduled campaign fires within one scan of its send_at", async ({ page 
   let at = new Date(Math.ceil((Date.now() + 8000) / 1000) * 1000);
   // Chrome drops a zero seconds field from a datetime-local value, so Playwright's check after fill
   // fails on a whole minute. Move such a time one second later; every assertion below derives from it.
-  if (at.getSeconds() === 0) at = new Date(at.getTime() + 1000);
+  if (at.getSeconds() === 0) {
+    at = new Date(at.getTime() + 1000);
+  }
   await page.goto(`${CAMPAIGNS}/${c.id}`);
   // The form is hidden until campaign.js has loaded the campaign (x-show="ready"), and the status
   // badge shows Draft only then. Wait for that, not for the switch, which is enabled before load
@@ -282,7 +288,9 @@ test("POST /api/tx delivers its template with the attachment intact, and refuses
   });
   // 3000 bytes encode to base64 with no padding, which the mail reader in helpers.js would mangle.
   const bytes = Buffer.alloc(3000);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 37 + 11) & 255;
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = (i * 37 + 11) & 255;
+  }
   const sent = await page.evaluate(
     async ([data, base64]) => {
       const csrf =
@@ -311,11 +319,11 @@ test("POST /api/tx delivers its template with the attachment intact, and refuses
   expect(mail.subject).toBe(subject);
   expect(mail.body).toContain("Thanks for the order.");
   expect(mail.body).toContain("report.bin");
-  expect(mail.body.replace(/\s+/g, "")).toContain(bytes.toString("base64"));
+  expect(mail.body.replaceAll(/\s+/g, "")).toContain(bytes.toString("base64"));
 
   const missing = await api(page, "/api/tx", "POST", {
     subscriber_emails: [refused],
-    template_id: 987654321,
+    template_id: 987_654_321,
   });
   expect(missing.status).toBe(400);
   expect(JSON.stringify(missing.body)).toContain("template");

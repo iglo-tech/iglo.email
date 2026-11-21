@@ -1,11 +1,14 @@
 // Sequence definitions API from docs/design/05-sequences.md#sequence-definition and
 // 07-api-and-ui.md, through /api/sequences and the permission model.
 import { afterEach, expect, test } from "bun:test";
-import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
+import { sequencesFixture } from "@/test/sequences/fixture";
+import type { SequencesFixture } from "@/test/sequences/fixture";
 
-const fixtures: SequencesFixture[] = [];
+const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await sequencesFixture();
@@ -245,7 +248,9 @@ test("every definition field is validated and a rejection writes nothing", async
   ];
   for (const [label, body] of cases) {
     const r = await f.json("/api/sequences", "POST", body);
-    if (r.status !== 400) throw new Error(`${label}: ${r.status} ${JSON.stringify(r.body)}`);
+    if (r.status !== 400) {
+      throw new Error(`${label}: ${r.status} ${JSON.stringify(r.body)}`);
+    }
     expect(typeof r.body.message).toBe("string");
   }
   // Duplicate step IDs on update.
@@ -383,8 +388,9 @@ test("status changes, activation checks, archive and delete rules", async () => 
   const { definition } = await base(f);
   const seq = (await f.json("/api/sequences", "POST", definition)).body.data;
   const status = (value: unknown) => f.json(`/api/sequences/${seq.id}/status`, "PUT", value);
-  for (const bad of [{ status: "running" }, { status: 1 }, {}, "x"])
+  for (const bad of [{ status: "running" }, { status: 1 }, {}, "x"]) {
     expect((await status(bad)).status).toBe(400);
+  }
   for (const next of ["active", "paused", "active", "archived", "draft"]) {
     const r = await status({ status: next });
     expect(r.status).toBe(200);
@@ -476,7 +482,9 @@ test("aggregates are validated on save like conditions, and a rejection writes n
   ];
   for (const [label, aggregates, field] of cases) {
     const r = await f.json(`/api/sequences`, "POST", withAggregates(aggregates));
-    if (r.status !== 400) throw new Error(`${label}: ${r.status} ${JSON.stringify(r.body)}`);
+    if (r.status !== 400) {
+      throw new Error(`${label}: ${r.status} ${JSON.stringify(r.body)}`);
+    }
     expect(r.body.message).toContain(field);
   }
   expect(f.count("sequences")).toBe(0);

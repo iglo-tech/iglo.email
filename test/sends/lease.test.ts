@@ -17,7 +17,9 @@ import { TestClock } from "@/test/server/fixture";
 
 const open: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
-  for (const close of open.splice(0).reverse()) await close();
+  for (const close of open.splice(0).reverse()) {
+    await close();
+  }
 });
 
 const accepted: Outcome = {
@@ -54,7 +56,7 @@ function fixture() {
   const lists = createListReferences(db);
   const subscribers = createSubscriberStore(db, clock, lists);
   const ended: Array<{ uuid: string; status: string; error: string | null }> = [];
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const journal = createSends({
     db,
     clock,
@@ -112,7 +114,9 @@ function fixture() {
       emailer: emailer as never,
     });
     open.push(async () => {
-      for (const p of pushes) p.resolve(accepted);
+      for (const p of pushes) {
+        p.resolve(accepted);
+      }
       await running.stop().catch(() => {});
     });
     return running;
@@ -186,7 +190,9 @@ test("a rejected loop push settles its rows before the loop fails", async () => 
   const a = f.enqueue();
   const b = f.enqueue({ message: message("other@example.test") });
   const outbox = f.outbox();
-  while (f.pushes.length < 2) await tick();
+  while (f.pushes.length < 2) {
+    await tick();
+  }
   f.pushes[0]!.resolve(accepted);
   f.pushes[1]!.reject(new Error("socket reset"));
   await expect(outbox.done).rejects.toThrow("socket reset");

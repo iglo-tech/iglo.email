@@ -20,7 +20,9 @@ export async function runSettingsCouncilParser(target: {
       target.mode === "reference",
     );
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL settings-council-parser-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL settings-council-parser-${label}`);
+    }
   };
   const read = async () => {
     const response = await request();
@@ -36,7 +38,9 @@ export async function runSettingsCouncilParser(target: {
     const before = await read();
     const next = candidate(before);
     next[key] = value;
-    if (key === "app.cache_slow_queries_interval") next["app.cache_slow_queries"] = true;
+    if (key === "app.cache_slow_queries_interval") {
+      next["app.cache_slow_queries"] = true;
+    }
     const response = await request(next);
     const result = await response.json();
     check(response.status === 200 && JSON.stringify(result) === '{"data":true}', `${label}-status`);
@@ -53,7 +57,9 @@ export async function runSettingsCouncilParser(target: {
     const before = await read();
     const next = candidate(before);
     next[key] = value;
-    if (enabled) next["app.cache_slow_queries"] = true;
+    if (enabled) {
+      next["app.cache_slow_queries"] = true;
+    }
     next["app.site_name"] = "parser rollback sentinel";
     const response = await request(next);
     check(response.status === 400, `${label}-status`);
@@ -63,19 +69,20 @@ export async function runSettingsCouncilParser(target: {
   }
   for (const [label, url] of [
     ["url-no-authority", "http:example.invalid"],
-    ["url-backslash", "http://example.invalid\\evil"],
+    ["url-backslash", String.raw`http://example.invalid\evil`],
     ["url-bad-port", "http://example.invalid:bad"],
     ["url-bad-path-escape", "https://example.invalid/%zz"],
     ["url-escaped-host-ascii", "https://%65xample.invalid"],
     ["url-fragment-escape", "https://example.invalid/#%xx"],
     ["url-invalid-brackets", "http://[127.0.0.1]"],
-  ])
+  ]) {
     await rejected(
       "security.trusted_urls",
       [url],
       `Invalid data: invalid trusted URL: ${url}`,
       label!,
     );
+  }
   for (const [label, url] of [
     ["url-normal", "https://example.invalid:443/a%20b?q=%zz"],
     ["url-user", "http://user:pass@example.invalid/path#fragment"],
@@ -84,8 +91,9 @@ export async function runSettingsCouncilParser(target: {
     ["url-uppercase-scheme", "HTTP://example.invalid"],
     ["url-ipv6", "http://[::1]:8080/"],
     ["url-wildcard", "*"],
-  ])
+  ]) {
     await accepted("security.trusted_urls", [url], label!);
+  }
   for (const [label, address] of [
     ["mapped-loopback", "a@[::ffff:127.0.0.1]"],
     ["mapped-testnet", "a@[::ffff:192.0.2.1]"],
@@ -94,18 +102,20 @@ export async function runSettingsCouncilParser(target: {
     ["prefixed-ipv6", "a@[IPv6:::1]"],
     ["malformed-q-unicode", "=?x-bad?q?ż?= <a@example.invalid>"],
     ["empty-then-valid-phrase", "=?utf-8?b??= Good <a@example.invalid>"],
-    ["comment-supported-escaped", "a@example.invalid (=?utf-8?b?YQ\\==?=)"],
-  ])
+    ["comment-supported-escaped", String.raw`a@example.invalid (=?utf-8?b?YQ\==?=)`],
+  ]) {
     await accepted("app.from_email", [address], label!);
+  }
   for (const [label, address] of [
     ["raw-ipv6", "a@[::1]"],
     ["ipv4-compatible", "a@[::192.0.2.1]"],
     ["unknown-first-word", "=?x-bad?b?YQ==?= <a@example.invalid>"],
     ["empty-before-unknown", "=?utf-8?b??= =?x-bad?b?YQ==?= <a@example.invalid>"],
-    ["comment-escaped-base64", "a@example.invalid (=?x-bad?b?YQ\\==?=)"],
-    ["comment-escaped-ending", "a@example.invalid (=?x-bad?b?YQ==?\\=)"],
-  ])
+    ["comment-escaped-base64", String.raw`a@example.invalid (=?x-bad?b?YQ\==?=)`],
+    ["comment-escaped-ending", String.raw`a@example.invalid (=?x-bad?b?YQ==?\=)`],
+  ]) {
     await rejected("app.from_email", [address], `invalid from email address: ${address}`, label!);
+  }
   for (const [label, cron] of [
     ["cron-local", "TZ=Local 0 0 * * *"],
     ["cron-utc", "TZ=UTC 0 0 * * *"],
@@ -123,8 +133,9 @@ export async function runSettingsCouncilParser(target: {
     ["cron-nearest-weekday-valid", "0 0 31W * *"],
     ["cron-last-weekday-valid", "0 0 * * MONL"],
     ["cron-duration-valid", "@every 1s"],
-  ])
+  ]) {
     await accepted("app.cache_slow_queries_interval", cron, label!);
+  }
   for (const [label, cron, error] of [
     ...["utc", "gmt", "europe/warsaw", "us/eastern", "+01:00", "Europe/Warsaw\nEurope/Zagreb"].map(
       (zone, index) => [
@@ -183,7 +194,7 @@ export async function runSettingsCouncilParser(target: {
       "*/9223372036854775808 0 * * *",
       'failed to parse int from 9223372036854775808: strconv.Atoi: parsing "9223372036854775808": value out of range',
     ],
-  ])
+  ]) {
     await rejected(
       "app.cache_slow_queries_interval",
       cron,
@@ -191,6 +202,7 @@ export async function runSettingsCouncilParser(target: {
       label!,
       true,
     );
+  }
   const disabled = candidate(await read());
   disabled["app.cache_slow_queries"] = false;
   disabled["app.cache_slow_queries_interval"] = "\ufeffnot a cron";

@@ -10,7 +10,7 @@ import { createRenderer } from "@/templates/renderer";
 const renderer = () => createRenderer(createRealClock(), createTranslation());
 const LIMIT = 64 * 1024;
 
-const markers: [string, string][] = [
+const markers: Array<[string, string]> = [
   ["backtick", "`"],
   ["tilde", "~"],
   ["dash", "-"],
@@ -25,7 +25,7 @@ const markers: [string, string][] = [
   ["ordered dot", "1."],
   ["ordered paren", "1)"],
 ];
-const contexts: [string, string][] = [
+const contexts: Array<[string, string]> = [
   ["paragraph", "x\n"],
   ["list item", "- a\n- "],
   ["blockquote", "> a\n> "],

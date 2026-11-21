@@ -10,7 +10,7 @@ const executable = join(repository, "dist/iglo.email");
 setDefaultTimeout(30_000);
 let temporaryDirectory = "";
 
-async function run(command: string[], env: Record<string, string> = {}, cwd = repository) {
+async function run(command: Array<string>, env: Record<string, string> = {}, cwd = repository) {
   const child = Bun.spawn(command, {
     cwd,
     env: { PATH: process.env.PATH ?? "", ...env },
@@ -26,7 +26,7 @@ async function run(command: string[], env: Record<string, string> = {}, cwd = re
 }
 
 const name = `iglo.email-linux-${process.arch}`;
-const script = (...args: string[]) => [process.execPath, "scripts/release.ts", ...args];
+const script = (...args: Array<string>) => [process.execPath, "scripts/release.ts", ...args];
 
 beforeAll(async () => {
   await ensureProductionBuild();
@@ -34,7 +34,9 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+  if (temporaryDirectory) {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 describe("--version", () => {

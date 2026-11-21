@@ -1,11 +1,14 @@
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
+import { spawnGroup, stopGroup } from "@/test/reference/command";
+import type { GroupChild } from "@/test/reference/command";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
-  if (child.exitCode === null && child.signalCode === null) stopGroup(child);
+  if (child.exitCode === null && child.signalCode === null) {
+    stopGroup(child);
+  }
   const force = setTimeout(() => stopGroup(child, "SIGKILL"), 8000);
   try {
     return await closed;
@@ -104,20 +107,25 @@ export async function withProduction<T>(
         }
         await Bun.sleep(25);
       }
-      if (!ready) throw new Error("Compiled production process readiness timed out");
+      if (!ready) {
+        throw new Error("Compiled production process readiness timed out");
+      }
     };
     // A start that fails leaves no process running: the child it spawned is stopped first.
     const launch = async (listenPort: number) => {
       try {
         await start(listenPort);
       } catch (error) {
-        if (child && closed) await stop(child, closed).catch(() => 0);
+        if (child && closed) {
+          await stop(child, closed).catch(() => 0);
+        }
         throw error;
       }
     };
     const restart = async () => {
-      if (!child || !closed || (await stop(child, closed)) !== 0)
+      if (!child || !closed || (await stop(child, closed)) !== 0) {
         throw new Error("Compiled production restart shutdown failed");
+      }
       await restartOnPort(port, launch);
     };
     await startOnFreePort(async (free) => {
@@ -139,22 +147,26 @@ export async function withProduction<T>(
     } finally {
       lifetime.removeEventListener("abort", abort);
     }
-    if (!child || child.exitCode !== null || child.signalCode !== null)
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
       throw new Error("Compiled production process exited during the contract run");
+    }
     completed = true;
   } finally {
     try {
       if (child && closed) {
         const code = await stop(child, closed);
-        if (completed && code !== 0)
+        if (completed && code !== 0) {
           shutdownFailure = new Error(`Compiled production process shutdown failed (exit ${code})`);
+        }
       }
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   }
-  if (shutdownFailure) throw shutdownFailure;
-  return result as T;
+  if (shutdownFailure) {
+    throw shutdownFailure;
+  }
+  return result;
 }
 
 /**
@@ -169,8 +181,9 @@ export async function adminLogin(origin: string, admin: { user: string; password
     .getSetCookie()
     .find((item) => item.startsWith("nonce="))
     ?.split(";", 1)[0];
-  if (page.status !== 200 || !nonce || !nonceCookie)
+  if (page.status !== 200 || !nonce || !nonceCookie) {
     throw new Error("Unable to obtain production login form");
+  }
   const login = await fetch(`${origin}/admin/login`, {
     method: "POST",
     redirect: "manual",
@@ -190,8 +203,9 @@ export async function adminLogin(origin: string, admin: { user: string; password
     .getSetCookie()
     .find((item) => item.startsWith("csrf="))
     ?.split(";", 1)[0];
-  if (login.status !== 302 || !session || !csrf)
+  if (login.status !== 302 || !session || !csrf) {
     throw new Error("Unable to log into production bootstrap account");
+  }
   return { cookie: `${session}; ${csrf}`, token: csrf.slice("csrf=".length) };
 }
 
@@ -208,8 +222,9 @@ export async function provisionApiUser(origin: string, admin: { user: string; pa
     },
     body: JSON.stringify({ username: user, type: "api", status: "enabled", user_role_id: 1 }),
   });
-  if (response.status !== 200)
+  if (response.status !== 200) {
     throw new Error("Unable to create production contract API credential");
+  }
   let data: { data?: { username?: unknown; password?: unknown } };
   try {
     data = (await response.json()) as { data?: { username?: unknown; password?: unknown } };
@@ -220,7 +235,8 @@ export async function provisionApiUser(origin: string, admin: { user: string; pa
     data.data?.username !== user ||
     typeof data.data.password !== "string" ||
     !/^[A-Za-z0-9]{48}$/.test(data.data.password)
-  )
+  ) {
     throw new Error("Invalid production contract API credential");
+  }
   return { user, token: data.data.password };
 }

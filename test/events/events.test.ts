@@ -3,11 +3,14 @@
 import { afterEach, expect, test } from "bun:test";
 import type { RecordedEvent } from "@/events/store";
 import { MAX_SINGLES_IN_FLIGHT } from "@/events/routes";
-import { eventsFixture, type EventsFixture } from "@/test/events/fixture";
+import { eventsFixture } from "@/test/events/fixture";
+import type { EventsFixture } from "@/test/events/fixture";
 
-const fixtures: EventsFixture[] = [];
+const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
-  for (const f of fixtures.splice(0)) f.close();
+  for (const f of fixtures.splice(0)) {
+    f.close();
+  }
 });
 async function open(options: Parameters<typeof eventsFixture>[0] = {}) {
   const f = await eventsFixture(options);
@@ -187,7 +190,9 @@ test("idempotency holds under concurrent requests and after a restart", async ()
   const f = await open();
   const body = event({ email: "race@example.com", attribs: { n: 1 } }, { idempotency_key: "k" });
   const results = await Promise.all(Array.from({ length: 20 }, () => f.post(body)));
-  for (const r of results) expect(r).toEqual(results[0]!);
+  for (const r of results) {
+    expect(r).toEqual(results[0]!);
+  }
   expect(f.count("events")).toBe(1);
   expect(f.count("subscribers")).toBe(1);
   await f.restart();
@@ -200,7 +205,7 @@ test("idempotency holds under concurrent requests and after a restart", async ()
 });
 
 test("occurred_at is normalized UTC; events older than 7 days are stored but not trigger-eligible", async () => {
-  const seen: RecordedEvent[] = [];
+  const seen: Array<RecordedEvent> = [];
   const f = await open({
     exitThenTrigger: (e) => {
       seen.push(e);
@@ -223,7 +228,9 @@ test("occurred_at is normalized UTC; events older than 7 days are stored but not
     ["2025-12-01T10:00:00.000Z", false],
     ["2026-01-02T03:04:05.123Z", true],
   ]);
-  for (const e of seen) expect(e.receivedAt).toBe(at(0));
+  for (const e of seen) {
+    expect(e.receivedAt).toBe(at(0));
+  }
   const stored = f.events.list(seen[0]!.subscriberId);
   expect(stored.map((row) => row.occurred_at)).toEqual(seen.map((e) => e.occurredAt));
   for (const bad of [
@@ -236,7 +243,7 @@ test("occurred_at is normalized UTC; events older than 7 days are stored but not
     "2026-01-02T03:04:05",
     "2026-01-02T03:04:05+24:00",
     "+275760-09-13T00:00:00Z",
-    1735689600,
+    1_735_689_600,
   ]) {
     const r = await f.post(event({ email: "w@example.com" }, { occurred_at: bad }));
     expect(r.status).toBe(400);
@@ -249,7 +256,9 @@ test("exit-then-trigger runs inside the event transaction; its failure rolls bac
   let fail = false;
   const f = await open({
     exitThenTrigger: () => {
-      if (fail) throw new Error("sequence failure");
+      if (fail) {
+        throw new Error("sequence failure");
+      }
       expect(f.db.inTransaction).toBe(true);
       return { started: [7], ended: [3], skipped: [] };
     },
@@ -302,7 +311,7 @@ test("malformed and hostile input fails safely without writes", async () => {
       })
     ).status,
   ).toBe(400);
-  const cases: [unknown, string][] = [
+  const cases: Array<[unknown, string]> = [
     [event({ email: "a@example.com" }, { extra: 1 }), "extra"],
     [event({ email: "a@example.com", status: "blocklisted" }), "subscriber.status"],
     [event({ email: "a@example.com", lists: [1] }), "subscriber.lists"],
@@ -338,7 +347,7 @@ test("malformed and hostile input fails safely without writes", async () => {
   expect(f.count("events")).toBe(0);
   // `__proto__` is an ordinary key, and lone surrogates in values are made well-formed.
   const proto = await raw(
-    '{"subscriber":{"email":"p@example.com","attribs":{"__proto__":{"admin":true},"s":"\\ud800"}},"name":"x","data":{"__proto__":1}}',
+    String.raw`{"subscriber":{"email":"p@example.com","attribs":{"__proto__":{"admin":true},"s":"\ud800"}},"name":"x","data":{"__proto__":1}}`,
   );
   expect(proto.status).toBe(200);
   const id = ((await proto.json()) as { data: { subscriber_id: number } }).data.subscriber_id;
@@ -438,7 +447,9 @@ test("an unexpected failure rolls back the whole batch", async () => {
   let calls = 0;
   const f = await open({
     exitThenTrigger: () => {
-      if (++calls === 2) throw new Error("boom");
+      if (++calls === 2) {
+        throw new Error("boom");
+      }
       return { started: [], ended: [], skipped: [] };
     },
   });
@@ -453,14 +464,16 @@ test("an unexpected failure rolls back the whole batch", async () => {
 test("retention purges events received more than 400 days ago in bounded batches", async () => {
   const f = await open();
   const id = (await f.post(event({ email: "old@example.com" }))).body.data.subscriber_id;
-  for (let i = 0; i < 4; i++) await f.post(event({ email: "old@example.com" }));
+  for (let i = 0; i < 4; i++) {
+    await f.post(event({ email: "old@example.com" }));
+  }
   f.clock.advance(10 * day);
   // A backfill received now is retained from its receipt, not its occurred_at.
   await f.post(
     event({ email: "old@example.com" }, { occurred_at: "2020-01-01T00:00:00Z", name: "backfill" }),
   );
   f.clock.advance(390 * day + 1);
-  const transactions: number[] = [];
+  const transactions: Array<number> = [];
   const purge = f.events.purge.bind(f.events);
   (f.events as { purge: typeof purge }).purge = (before, window) => {
     const deleted = purge(before, window);
@@ -488,7 +501,9 @@ test("retention purges events received more than 400 days ago in bounded batches
 test("concurrent single events share commits but keep independent results", async () => {
   const f = await open({
     exitThenTrigger: (e) => {
-      if (e.name === "explode") throw new Error("sequence failure");
+      if (e.name === "explode") {
+        throw new Error("sequence failure");
+      }
       return { started: [], ended: [], skipped: [] };
     },
   });
@@ -549,7 +564,9 @@ test("single-event admission is bounded and recovers after saturation", async ()
       }),
     ),
   );
-  for (let i = 0; i < 200 && held.length < MAX_SINGLES_IN_FLIGHT; i++) await Bun.sleep(5);
+  for (let i = 0; i < 200 && held.length < MAX_SINGLES_IN_FLIGHT; i++) {
+    await Bun.sleep(5);
+  }
   await Bun.sleep(50);
   const shed = await f.post(event({ email: "over@example.com" }));
   expect(shed.status).toBe(429);
@@ -583,7 +600,9 @@ test("a lost transaction or failed savepoint cleanup aborts the whole group", as
     mode = current;
     f.db.run("CREATE TEMP TABLE IF NOT EXISTS lose_mode (x)");
     f.db.run("DELETE FROM temp.lose_mode");
-    if (current === "rollback") f.db.run("INSERT INTO temp.lose_mode VALUES (1)");
+    if (current === "rollback") {
+      f.db.run("INSERT INTO temp.lose_mode VALUES (1)");
+    }
     const results = await Promise.all([
       f.post(event({ email: `${current}1@example.com` })),
       f.post(event({ email: `${current}2@example.com` }, { name: "lose" })),

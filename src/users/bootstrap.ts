@@ -22,40 +22,52 @@ export async function bootstrapAdmin(
   input: BootstrapConfig["initialAdmin"],
   api: BootstrapConfig["initialApi"] = { user: undefined, token: undefined },
 ): Promise<void> {
-  if (store.count() !== 0n) return;
+  if (store.count() !== 0n) {
+    return;
+  }
   const adminSet = input.user !== undefined || input.password !== undefined;
   const apiSet = api.user !== undefined || api.token !== undefined;
-  if (!adminSet && !apiSet) return;
+  if (!adminSet && !apiSet) {
+    return;
+  }
 
   const username = input.user?.trim() ?? "";
   const password = input.password ?? "";
   const apiUsername = api.user?.trim() ?? "";
   const token = api.token ?? "";
   if (adminSet) {
-    if (!username || !password)
+    if (!username || !password) {
       throw new Error(
         "Initial administrator requires both IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD",
       );
-    if (!strHasLen(username, 3, 2000) || !usernameFormat.test(username))
+    }
+    if (!strHasLen(username, 3, 2000) || !usernameFormat.test(username)) {
       throw new Error("Invalid initial administrator username");
-    if (!validPassword(password)) throw new Error("Invalid initial administrator password");
+    }
+    if (!validPassword(password)) {
+      throw new Error("Invalid initial administrator password");
+    }
   }
   if (apiSet) {
-    if (!apiUsername || !token)
+    if (!apiUsername || !token) {
       throw new Error("API user requires both IGLO_EMAIL_API_USER and IGLO_EMAIL_API_TOKEN");
-    if (!strHasLen(apiUsername, 3, 2000) || !usernameFormat.test(apiUsername))
+    }
+    if (!strHasLen(apiUsername, 3, 2000) || !usernameFormat.test(apiUsername)) {
       throw new Error(
         "Invalid IGLO_EMAIL_API_USER: expected 3 to 2000 letters, digits, _ - . or @",
       );
-    if (adminSet && apiUsername === username)
+    }
+    if (adminSet && apiUsername === username) {
       throw new Error("IGLO_EMAIL_API_USER must differ from IGLO_EMAIL_ADMIN_USER");
-    if (!apiTokenFormat.test(token))
+    }
+    if (!apiTokenFormat.test(token)) {
       throw new Error(
         "Invalid IGLO_EMAIL_API_TOKEN: expected 48 letters and digits (A-Z, a-z, 0-9)",
       );
+    }
   }
 
-  const users: BootstrapUser[] = [];
+  const users: Array<BootstrapUser> = [];
   if (adminSet) {
     users.push({
       username,

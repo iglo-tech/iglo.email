@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRealClock } from "@/clock";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 import { mailpitBinaryPath } from "@/test/reference/prepare";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 
@@ -21,7 +22,9 @@ async function port() {
     server.listen(0, "127.0.0.1", resolvePort);
   });
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Missing local port");
+  if (!address || typeof address === "string") {
+    throw new Error("Missing local port");
+  }
   await new Promise<void>((resolvePort, reject) =>
     server.close((error) => (error ? reject(error) : resolvePort())),
   );
@@ -30,7 +33,9 @@ async function port() {
 try {
   const fixture = await readFile(resolve("test/messaging/tls-fixture.md"), "utf8");
   const blocks = [...fixture.matchAll(/```pem\n([\s\S]*?)```/g)].map((match) => match[1]!);
-  if (blocks.length !== 2) throw new Error("Invalid TLS fixture");
+  if (blocks.length !== 2) {
+    throw new Error("Invalid TLS fixture");
+  }
   const cert = join(directory, "cert.pem"),
     key = join(directory, "key.pem");
   await writeFile(cert, blocks[0]!);
@@ -75,12 +80,14 @@ try {
       let ready = false;
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline && !ready) {
-        if (spawnFailure.error)
+        if (spawnFailure.error) {
           throw new Error(
             `Mailpit cannot start from ${binary}: ${spawnFailure.error.message}. Run bun run reference:prepare for this host.`,
           );
-        if (child.exitCode !== null || child.signalCode !== null)
+        }
+        if (child.exitCode !== null || child.signalCode !== null) {
           throw new Error(`Mailpit (${mode}) exited before it was ready`);
+        }
         try {
           await assertOwnedMailpit(sink);
           ready = true;
@@ -88,7 +95,9 @@ try {
           await Bun.sleep(25);
         }
       }
-      if (!ready) throw new Error(`Mailpit (${mode}) was not ready within 5 s`);
+      if (!ready) {
+        throw new Error(`Mailpit (${mode}) was not ready within 5 s`);
+      }
       const server: SMTPServer = {
         name: "",
         enabled: true,
@@ -133,8 +142,9 @@ try {
         });
         await new Promise<void>((done) => proxy.listen(0, "127.0.0.2", done));
         const proxyAddress = proxy.address();
-        if (!proxyAddress || typeof proxyAddress === "string")
+        if (!proxyAddress || typeof proxyAddress === "string") {
           throw new Error("Missing proxy port");
+        }
         try {
           for (const [host, testPort, expected] of [
             ["127.0.0.1", smtpPort, "accept"],
@@ -169,7 +179,9 @@ try {
         await emailer.close();
       }
     } finally {
-      if (!spawnFailure.error) child.kill("SIGTERM");
+      if (!spawnFailure.error) {
+        child.kill("SIGTERM");
+      }
       let forceTimer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         exited,

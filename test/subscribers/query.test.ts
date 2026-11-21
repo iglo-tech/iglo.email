@@ -4,25 +4,30 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { openReadOnly } from "@/subscribers/query-runner";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
 let f: QueryFixture;
 let listA: number, listB: number;
 const ids: Record<string, number> = {};
 const q = (fragment: string) => encodeURIComponent(fragment);
-const emails = (body: { data: { results: { email: string }[] | null } }) =>
+const emails = (body: { data: { results: Array<{ email: string }> | null } }) =>
   (body.data.results ?? []).map((row) => row.email.split("-")[0]);
 const spin =
   "(WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c) > 0";
 
 // Child processes of this test process, from /proc.
-function children(): number[] {
-  const out: number[] = [];
+function children(): Array<number> {
+  const out: Array<number> = [];
   for (const entry of readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) continue;
+    if (!/^\d+$/.test(entry)) {
+      continue;
+    }
     try {
       const status = readFileSync(`/proc/${entry}/status`, "utf8");
-      if (new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(status)) out.push(Number(entry));
+      if (new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(status)) {
+        out.push(Number(entry));
+      }
     } catch {
       /* exited meanwhile */
     }
@@ -202,8 +207,9 @@ describe("GET /api/subscribers", () => {
         "PRAGMA user_version = 99",
         "PRAGMA journal_mode = DELETE",
         "CREATE TABLE stolen (x)",
-      ])
+      ]) {
         expect(() => db.run(sql)).toThrow();
+      }
       db.run("ATTACH ':memory:' AS other");
       expect(() => db.run("CREATE TABLE other.t (x)")).toThrow();
     } finally {
@@ -219,8 +225,9 @@ describe("GET /api/subscribers", () => {
       "PRAGMA user_version = 99",
       "SELECT id FROM users",
       "SELECT id FROM subscribers WHERE id = ?",
-    ])
+    ]) {
       await expect(f.runner.all([{ sql, args: [] }])).rejects.toThrow();
+    }
     expect(
       (await f.runner.all([{ sql: "SELECT count(*) FROM subscribers", args: [] }]))[0],
     ).toEqual([4n]);
@@ -380,7 +387,7 @@ describe("query-selected actions", () => {
     const response = await f.json("/api/subscribers/query/lists", "PUT", {
       search: "qx",
       action: "add",
-      target_list_ids: [listB, 999999],
+      target_list_ids: [listB, 999_999],
     });
     expect(response.status).toBe(500);
     expect(response.body.message).toStartWith("Error updating Subscribers:");

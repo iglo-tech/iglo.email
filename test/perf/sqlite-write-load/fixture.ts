@@ -1,11 +1,9 @@
 // Public HTTP boundary for this synthetic fixture only; never registered in production.
 import { TestClock } from "@/test/server/fixture";
-import {
-  SpikeStore,
-  type Mutation,
-  type SyntheticEvent,
-} from "@/test/perf/sqlite-write-load/store";
-import { Workload, type Mode } from "@/test/perf/sqlite-write-load/workload";
+import { SpikeStore } from "@/test/perf/sqlite-write-load/store";
+import type { Mutation, SyntheticEvent } from "@/test/perf/sqlite-write-load/store";
+import { Workload } from "@/test/perf/sqlite-write-load/workload";
+import type { Mode } from "@/test/perf/sqlite-write-load/workload";
 
 export function startSpikeFixture(directory: string) {
   const store = new SpikeStore(directory);
@@ -25,7 +23,7 @@ export function startSpikeFixture(directory: string) {
       case "process":
         return store.process(input.count);
       case "events":
-        store.events(input.events as SyntheticEvent[]);
+        store.events(input.events as Array<SyntheticEvent>);
         return true;
       case "subscriber":
         store.mutate([input as Mutation], input.rollback);
@@ -56,8 +54,9 @@ export function startSpikeFixture(directory: string) {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      if (new URL(request.url).pathname !== "/synthetic/write-load")
+      if (new URL(request.url).pathname !== "/synthetic/write-load") {
         return new Response("Not found", { status: 404 });
+      }
       try {
         return Response.json({ result: action((await request.json()) as Record<string, any>) });
       } catch (error) {

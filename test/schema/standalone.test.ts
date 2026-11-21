@@ -13,7 +13,9 @@ test("compiled schema fixture installs embedded production SQL with an empty PAT
       { cwd: resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" },
     );
     const [code, stderr] = await Promise.all([build.exited, new Response(build.stderr).text()]);
-    if (code) throw new Error(`Fixture build failed: ${stderr}`);
+    if (code) {
+      throw new Error(`Fixture build failed: ${stderr}`);
+    }
     const started = Bun.spawn([binary, join(directory, "data")], {
       cwd: directory,
       env: { PATH: "" },
@@ -36,7 +38,7 @@ test("compiled schema fixture installs embedded production SQL with an empty PAT
       signal: AbortSignal.timeout(3000),
     });
     const { result } = (await response.json()) as {
-      result: { version: string; integrity: string; shapes: Record<string, string[]> };
+      result: { version: string; integrity: string; shapes: Record<string, Array<string>> };
     };
     expect(response.status).toBe(200);
     expect(result.version).toBe("25");

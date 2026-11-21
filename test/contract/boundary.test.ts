@@ -20,7 +20,9 @@ beforeAll(async () => {
     { cwd: repository, stdout: "pipe", stderr: "pipe" },
   );
   const [code, stderr] = await Promise.all([build.exited, new Response(build.stderr).text()]);
-  if (code !== 0) throw new Error(`Compiled test setup failed: ${stderr}`);
+  if (code !== 0) {
+    throw new Error(`Compiled test setup failed: ${stderr}`);
+  }
   badShutdownExecutable = join(directory, "bad-shutdown");
   const fixtureBuild = Bun.spawn(
     [
@@ -37,16 +39,20 @@ beforeAll(async () => {
     fixtureBuild.exited,
     new Response(fixtureBuild.stderr).text(),
   ]);
-  if (fixtureCode !== 0) throw new Error(`Shutdown test setup failed: ${fixtureError}`);
+  if (fixtureCode !== 0) {
+    throw new Error(`Shutdown test setup failed: ${fixtureError}`);
+  }
 }, 30_000);
 afterAll(async () => {
-  if (directory) await rm(directory, { recursive: true, force: true });
+  if (directory) {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 function get(origin: string, path = "/health") {
   return fetch(`${origin}${path}`, {
     headers: { Connection: "close" },
-    signal: AbortSignal.timeout(1_000),
+    signal: AbortSignal.timeout(1000),
   });
 }
 
@@ -231,7 +237,7 @@ describe("difference metadata and strict transport", () => {
         reference: endpoint,
         fixture: endpoint,
       };
-      const bad: ContractCase[][] = [
+      const bad: Array<ContractCase>[] = [
         [{ ...base, difference: "D99" as Difference }],
         [{ ...base, difference: "D17" }],
         [{ ...base, id: "positive-id-overflow" }],
@@ -240,7 +246,9 @@ describe("difference metadata and strict transport", () => {
         [{ ...base, fixture: { ...endpoint, path: "http://example.com/" } }],
         [{ ...base, fixture: { ...endpoint, path: "//example.com/" } }],
       ];
-      for (const cases of bad) await expect(runContract(target, { cases })).rejects.toThrow();
+      for (const cases of bad) {
+        await expect(runContract(target, { cases })).rejects.toThrow();
+      }
       expect(requests).toBe(0);
     } finally {
       await server.stop(true);
@@ -391,7 +399,9 @@ describe("difference metadata and strict transport", () => {
       expect(output).toContain("interrupted");
     } finally {
       clearTimeout(timeout);
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+      }
       await server.stop(true);
     }
   });

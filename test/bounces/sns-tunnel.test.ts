@@ -4,7 +4,8 @@
 // certificate to the same client, so the refusal is not a broken tunnel.
 import { expect, test } from "bun:test";
 import { CERT } from "@/test/bounces/ses-fixture";
-import { startSnsTunnel, type SnsTunnel } from "@/test/bounces/sns-tunnel";
+import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
+import type { SnsTunnel } from "@/test/bounces/sns-tunnel";
 
 /** Fetches the certificate in a child process, with the tunnel's environment as the executable has. */
 async function fetchThroughTunnel(tunnel: SnsTunnel) {

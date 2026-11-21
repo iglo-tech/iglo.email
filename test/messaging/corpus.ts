@@ -46,7 +46,9 @@ async function getOne(subject: string) {
   const deadline = Date.now() + 5000;
   do {
     const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-    if (found.length === 1) return found[0]!;
+    if (found.length === 1) {
+      return found[0]!;
+    }
     assert.equal(found.length, 0);
     await Bun.sleep(20);
   } while (Date.now() < deadline);
@@ -60,7 +62,7 @@ async function snapshot(id: string) {
     subject: message.Subject,
     text: message.Text?.trim() ?? "",
     html: message.HTML?.trim() ?? "",
-    sender: message.ReturnPath.replace(/[<>]/g, ""),
+    sender: message.ReturnPath.replaceAll(/[<>]/g, ""),
     to: message.To.map((a) => a.Address),
     cc: (message.Cc ?? []).map((a) => a.Address),
     bcc: header(raw, "Bcc"),
@@ -71,7 +73,7 @@ async function snapshot(id: string) {
     inline: await Promise.all(
       (message.Inline ?? []).map(async (part) => ({
         name: part.FileName,
-        cid: part.ContentID.replace(/[<>]/g, ""),
+        cid: part.ContentID.replaceAll(/[<>]/g, ""),
         bytes: (await mailpit.part(id, part.PartID)).toString("hex"),
       })),
     ),
@@ -172,7 +174,9 @@ try {
     const native = await getOne(subject);
     const actual = await snapshot(native.ID);
     assert.deepEqual(actual, expected, item.name);
-    if (item.binary) assert.equal(actual.attachment, binary.toString("hex"));
+    if (item.binary) {
+      assert.equal(actual.attachment, binary.toString("hex"));
+    }
     if (item.name === "inline") {
       assert.equal(actual.inline.length, 1);
       assert.equal(actual.inline[0]!.bytes, inline.toString("hex"));
@@ -187,7 +191,7 @@ try {
       ).status,
       200,
     );
-    if (media)
+    if (media) {
       assert.equal(
         (
           await fetch(`${base}/api/media/${media.id}`, {
@@ -197,6 +201,7 @@ try {
         ).status,
         200,
       );
+    }
     console.log(`paired ${item.name} passed`);
   }
 } finally {

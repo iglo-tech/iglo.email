@@ -1,7 +1,9 @@
 // Real production process with fixture-seeded disposable databases and owned SMTP peers.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createServer, createConnection, type Socket } from "node:net";
+import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { createServer, createConnection } from "node:net";
+import type { Socket } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -56,7 +58,9 @@ async function fixture(dataDir: string, smtpPort: number, clockOffset = 0) {
     let out = "";
     child.stdout.on("data", (chunk) => {
       out += chunk.toString();
-      if (out.includes("\n")) ok(out.split("\n")[0]!);
+      if (out.includes("\n")) {
+        ok(out.split("\n")[0]!);
+      }
     });
     child.once("exit", () => fail(new Error("Fixture exited before readiness")));
   });
@@ -76,7 +80,7 @@ async function fixture(dataDir: string, smtpPort: number, clockOffset = 0) {
       ...(value === undefined
         ? {}
         : { body: typeof value === "string" ? value : JSON.stringify(value) }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(10_000),
     });
     assert.equal(response.status, 200, path);
     return ((await response.json()) as { data: any }).data;
@@ -91,7 +95,7 @@ async function fixture(dataDir: string, smtpPort: number, clockOffset = 0) {
 // A second invocation-owned sink observes its own intake without forwarding.
 async function localSink() {
   const sockets = new Set<Socket>();
-  const messages: string[] = [];
+  const messages: Array<string> = [];
   const server = createServer((socket) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
@@ -104,7 +108,9 @@ async function localSink() {
       input += chunk.toString("latin1");
       for (;;) {
         const end = input.indexOf("\r\n");
-        if (end < 0) return;
+        if (end < 0) {
+          return;
+        }
         const line = input.slice(0, end);
         input = input.slice(end + 2);
         if (data) {
@@ -113,25 +119,36 @@ async function localSink() {
             messages.push(mail);
             mail = "";
             socket.write("250 2.0.0 accepted\r\n");
-          } else mail += `${line}\r\n`;
-        } else if (/^EHLO |^HELO /i.test(line)) socket.write("250 fixture.test\r\n");
-        else if (/^MAIL FROM:|^RCPT TO:|^RSET/i.test(line)) socket.write("250 2.1.0 ok\r\n");
-        else if (line === "DATA") {
+          } else {
+            mail += `${line}\r\n`;
+          }
+        } else if (/^EHLO |^HELO /i.test(line)) {
+          socket.write("250 fixture.test\r\n");
+        } else if (/^MAIL FROM:|^RCPT TO:|^RSET/i.test(line)) {
+          socket.write("250 2.1.0 ok\r\n");
+        } else if (line === "DATA") {
           data = true;
           socket.write("354 send data\r\n");
-        } else if (line === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (line === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   });
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("No sink port");
+  if (!address || typeof address === "string") {
+    throw new Error("No sink port");
+  }
   return {
     port: address.port,
     messages,
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((ok, fail) => server.close((error) => (error ? fail(error) : ok())));
     },
   };
@@ -167,8 +184,9 @@ async function launchProduction(dataDir: string, port: number) {
     try {
       const healthy = (await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }))
         .status;
-      if (healthy === 200 && child.pid !== undefined && listensOn(child.pid, port))
+      if (healthy === 200 && child.pid !== undefined && listensOn(child.pid, port)) {
         return { child, origin };
+      }
     } catch {
       /* startup */
     }
@@ -185,10 +203,12 @@ async function api(origin: string, credentials: { user: string; token: string },
   return ((await response.json()) as { data: any }).data;
 }
 async function terminal(origin: string, credentials: { user: string; token: string }, id: number) {
-  const deadline = Date.now() + 10000;
+  const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     const row = await api(origin, credentials, `/api/sends/${id}`);
-    if (!["queued", "sending"].includes(row.status)) return row;
+    if (!["queued", "sending"].includes(row.status)) {
+      return row;
+    }
   }
   throw new Error("Timed out awaiting terminal journal projection");
 }
@@ -314,7 +334,7 @@ try {
     await Promise.race([
       relay.atFinal,
       new Promise<never>((_, fail) =>
-        setTimeout(() => fail(new Error("No held SMTP boundary")), 10000),
+        setTimeout(() => fail(new Error("No held SMTP boundary")), 10_000),
       ),
     ]);
     // Hold a real authenticated HTTP body open while shutdown starts. Its
@@ -333,7 +353,9 @@ try {
       let response = "";
       httpSocket.on("data", (chunk) => {
         response += chunk.toString();
-        if (response.includes("100 Continue")) ok();
+        if (response.includes("100 Continue")) {
+          ok();
+        }
       });
       httpSocket.once("error", fail);
     });
@@ -370,11 +392,12 @@ try {
       "unknown",
     );
     assert.equal((await stop(app.child, "SIGTERM")).code, 0);
-    for (const subject of ["held", "remainder"])
+    for (const subject of ["held", "remainder"]) {
       assert.equal(
         (await mailpit.list()).filter((m) => m.Subject === `${marker} ${subject}`).length,
         1,
       );
+    }
     globalThis.process.stdout.write(
       `PASS actual production shutdown, socket cancel, queued remainder and reopen (${Math.round(elapsed)}ms)\n`,
     );
@@ -465,9 +488,10 @@ try {
     await secondSink.close();
   }
 } finally {
-  for (const child of active)
+  for (const child of active) {
     if (child.exitCode === null && child.signalCode === null)
       await stop(child, "SIGKILL").catch(() => {});
+  }
   await mailpit.removeOwned();
   await rm(dir, { recursive: true, force: true });
 }

@@ -12,8 +12,9 @@ await mkdir(admin, { recursive: true });
 await mkdir(pub, { recursive: true });
 await cp(join(root, "assets/admin/static"), admin, { recursive: true });
 await cp(join(root, "assets/public/static"), pub, { recursive: true });
-for (const name of ["style.css", "richtext.css"])
+for (const name of ["style.css", "richtext.css"]) {
   await cp(join(root, "assets/admin/css", name), join(admin, name));
+}
 await cp(join(root, "node_modules/@knadh/oat/oat.min.css"), join(admin, "oat.min.css"));
 
 const jsRoot = join(root, "assets/admin/js");
@@ -33,7 +34,9 @@ const built = await Bun.build({
   minify: true,
   naming: { entry: "[dir]/[name].[ext]", chunk: "chunks/[name]-[hash].[ext]" },
 });
-if (!built.success) throw new AggregateError(built.logs, "Browser asset build failed");
+if (!built.success) {
+  throw new AggregateError(built.logs, "Browser asset build failed");
+}
 
 // Bundle project, vendored-source and npm licenses alongside executable assets.
 const packages = [
@@ -75,7 +78,9 @@ await cp(
 );
 for (let index = 0; index < packages.length; index++) {
   const name = packages[index]!;
-  if (seen.has(name)) continue;
+  if (seen.has(name)) {
+    continue;
+  }
   seen.add(name);
   const directory = join(root, "node_modules", name);
   const info = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
@@ -94,17 +99,23 @@ for (let index = 0; index < packages.length; index++) {
         : files[0]
           ? join(directory, files[0])
           : undefined;
-  if (!license) throw new Error(`Missing license file for ${name}@${info.version}`);
+  if (!license) {
+    throw new Error(`Missing license file for ${name}@${info.version}`);
+  }
   await cp(license, join(licenseDir, `${name.replaceAll("/", "_")}@${info.version}.txt`));
 }
 
-async function files(directory: string): Promise<string[]> {
-  const result: string[] = [];
+async function files(directory: string): Promise<Array<string>> {
+  const result: Array<string> = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) result.push(...(await files(path)));
-    else if (entry.isFile()) result.push(path);
-    else throw new Error(`Unexpected asset entry: ${path}`);
+    if (entry.isDirectory()) {
+      result.push(...(await files(path)));
+    } else if (entry.isFile()) {
+      result.push(path);
+    } else {
+      throw new Error(`Unexpected asset entry: ${path}`);
+    }
   }
   return result.sort();
 }
@@ -118,13 +129,15 @@ const mime: Record<string, string> = {
 };
 const paths = await files(destination);
 const version = createHash("sha256");
-const imports: string[] = [];
-const entries: string[] = [];
+const imports: Array<string> = [];
+const entries: Array<string> = [];
 for (let index = 0; index < paths.length; index++) {
   const path = paths[index]!;
   const name = relative(destination, path).replaceAll("\\", "/");
   const type = mime[extname(name)];
-  if (!type) throw new Error(`Unsupported asset type: ${name}`);
+  if (!type) {
+    throw new Error(`Unsupported asset type: ${name}`);
+  }
   version
     .update(name)
     .update("\0")

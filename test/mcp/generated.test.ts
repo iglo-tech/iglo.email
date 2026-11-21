@@ -1,13 +1,8 @@
 // B78 / D98: every authenticated API operation is an MCP tool, except the explicit exclusions.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import {
-  startProduction,
-  startMailbox,
-  admin,
-  type Production,
-  type Mailbox,
-} from "@/test/worked-example/harness";
+import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
+import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { EXCLUDED_OPERATIONS, HANDWRITTEN_COVERAGE } from "@/mcp/coverage";
 import { GENERATED } from "@/mcp/generated";
@@ -41,10 +36,10 @@ const HANDWRITTEN_TOOLS = [
  * operation id in snake_case, with and without its `_by_id` suffix. Every excluded id must be an
  * operation of the API document, so a stale exclusion fails here.
  */
-function excludedToolNames(operationIds: string[]): string[] {
+function excludedToolNames(operationIds: Array<string>): Array<string> {
   return Object.keys(EXCLUDED_OPERATIONS).flatMap((id) => {
     expect(operationIds).toContain(id);
-    const full = id.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+    const full = id.replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
     return [full, full.replace(/_by_id$/, "")];
   });
 }
@@ -92,7 +87,9 @@ describe("B78 MCP covers every operation (D98)", () => {
       await production.stop().catch(() => {});
       await production.close().catch(() => {});
     }
-    if (mailbox) await mailbox.close().catch(() => {});
+    if (mailbox) {
+      await mailbox.close().catch(() => {});
+    }
   });
 
   /** A JSON-RPC call to POST /api/mcp, as the caller `auth`. */
@@ -110,15 +107,17 @@ describe("B78 MCP covers every operation (D98)", () => {
 
   async function callTool(name: string, args: Record<string, unknown> = {}, auth = adminAuth) {
     const reply = await rpc("tools/call", { name, arguments: args }, auth);
-    if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
+    if (reply.error) {
+      throw new Error(`${name}: ${reply.error.message}`);
+    }
     return reply.result as {
       isError?: boolean;
-      content: { type: string; text: string }[];
+      content: Array<{ type: string; text: string }>;
       structuredContent?: any;
     };
   }
 
-  async function listTools(): Promise<any[]> {
+  async function listTools(): Promise<Array<any>> {
     return (await rpc("tools/list")).result.tools;
   }
 
@@ -127,7 +126,7 @@ describe("B78 MCP covers every operation (D98)", () => {
   }
 
   /** The operation ids of the API document, as the public document lists them. */
-  async function documentOperationIds(): Promise<string[]> {
+  async function documentOperationIds(): Promise<Array<string>> {
     const document = await apiGet("/api/openapi.json");
     return Object.values<any>(document.paths).flatMap((item) =>
       Object.values<any>(item).map((operation) => operation.operationId),
@@ -153,7 +152,9 @@ describe("B78 MCP covers every operation (D98)", () => {
     expect(new Set(names).size).toBe(names.length);
     const expected = [...HANDWRITTEN_TOOLS, ...GENERATED.map((entry) => entry.name)];
     expect([...names].sort()).toEqual([...expected].sort());
-    for (const hand of Object.values(HANDWRITTEN_COVERAGE)) expect(names).toContain(hand);
+    for (const hand of Object.values(HANDWRITTEN_COVERAGE)) {
+      expect(names).toContain(hand);
+    }
   });
 
   test("an excluded operation is not a tool, and calling it is an unknown-tool error even for an admin", async () => {
@@ -161,7 +162,7 @@ describe("B78 MCP covers every operation (D98)", () => {
     for (const name of excludedToolNames(await documentOperationIds())) {
       expect(names).not.toContain(name);
       const reply = await rpc("tools/call", { name, arguments: {} });
-      expect(reply.error?.code).toBe(-32602);
+      expect(reply.error?.code).toBe(-32_602);
       expect(reply.error?.message).toBe(`Unknown tool: ${name}`);
     }
   });
@@ -241,7 +242,7 @@ describe("B78 MCP covers every operation (D98)", () => {
     expect(notBase64.isError).toBe(true);
     expect(notBase64.content[0]!.text).toBe("content_base64 is not valid base64.");
 
-    const media = (await apiGet("/api/media")).data.results as { filename: string }[];
+    const media = (await apiGet("/api/media")).data.results as Array<{ filename: string }>;
     expect(media.some((item) => item.filename.startsWith("too-big"))).toBe(false);
     expect(media.some((item) => item.filename.startsWith("bad"))).toBe(false);
   });
@@ -325,7 +326,7 @@ describe("B78 MCP covers every operation (D98)", () => {
       .structuredContent.data;
     // 210 subscribers with 6 kB of attributes each: their JSON page with per_page=all is more than
     // 1 MiB within the first 200-row batch, so the stream is cut off partway through that first batch.
-    const blob = "x".repeat(6_000);
+    const blob = "x".repeat(6000);
     for (let i = 0; i < 210; i++) {
       const created = await callTool("create_subscriber", {
         body: {
@@ -489,7 +490,9 @@ describe("B78 MCP covers every operation (D98)", () => {
     for (let attempt = 0; attempt < 100 && total < 3; attempt++) {
       const listed = await callTool("get_subscribers", { list_id: [list.id] });
       total = listed.structuredContent.data.total;
-      if (total < 3) await new Promise((resolve) => setTimeout(resolve, 100));
+      if (total < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
     }
     expect(total).toBe(3);
 

@@ -62,9 +62,11 @@ const stamp = (at: Date) => {
 };
 
 export function createLogBuffer(clock: Clock, maxLines = MAX_LOG_LINES) {
-  let lines: string[] = [];
+  let lines: Array<string> = [];
   const push = (text: string) => {
-    if (lines.length >= maxLines * 2) lines = lines.slice(-maxLines + 1);
+    if (lines.length >= maxLines * 2) {
+      lines = lines.slice(-maxLines + 1);
+    }
     lines.push(`${stamp(clock.now())} *: ${text}`);
   };
   return {

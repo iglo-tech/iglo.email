@@ -42,7 +42,9 @@ const server = Bun.serve({
     const key = new URL(request.url).pathname.slice(1);
     try {
       const result = key === "document" ? <Document /> : invalid[key]?.();
-      if (result === undefined) return new Response("missing", { status: 404 });
+      if (result === undefined) {
+        return new Response("missing", { status: 404 });
+      }
       return new Response(render(result), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
@@ -52,7 +54,8 @@ const server = Bun.serve({
   },
 });
 process.stdout.write(`http://127.0.0.1:${server.port}\n`);
-for (const signal of ["SIGTERM", "SIGINT"] as const)
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     void server.stop(true);
   });
+}

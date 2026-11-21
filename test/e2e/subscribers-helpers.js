@@ -29,8 +29,9 @@ export async function data(result) {
 }
 
 export async function reset(page) {
-  for (const uri of ["/api/lists?all=true", "/api/lists?all=true&status=archived"])
+  for (const uri of ["/api/lists?all=true", "/api/lists?all=true&status=archived"]) {
     await data(await api(page, uri, "DELETE"));
+  }
   await data(await api(page, "/api/subscribers/query/delete", "POST", { all: true }));
   const list = (name, type, optin) =>
     api(page, "/api/lists", "POST", { name, type, optin, tags: ["test"] }).then(data);
@@ -80,8 +81,9 @@ export async function seedSubscribers(
             attribs: { city: "Bengaluru", age: 20 + (i % 40) },
           }),
         });
-        if (response.status !== 200)
+        if (response.status !== 200) {
           return { status: response.status, body: await response.text() };
+        }
       }
       return null;
     },
@@ -212,15 +214,17 @@ export function filteredBulkActions(scopes) {
                 r.url().endsWith(`/api/subscribers/query/${action}`) &&
                 r.request().method() === (action === "delete" ? "POST" : "PUT"),
             });
-            if (action === "delete" || scope === "status")
+            if (action === "delete" || scope === "status") {
               await expect(page.locator(".empty-state")).toBeVisible();
+            }
           } else if (action === "export") {
             await openBulkMenu(page, { selectAll: true });
             const download = await exportSelection(page);
             const csv = await readFile(await download.path(), "utf8");
             expect(csv.trim().split("\n")).toHaveLength(23);
-            for (const sub of before)
+            for (const sub of before) {
               expect(csv.includes(sub.email)).toBe(sub.email.startsWith("target"));
+            }
           } else {
             await bulkManageLists(page, {
               action,
@@ -239,7 +243,9 @@ export function filteredBulkActions(scopes) {
           const targets = after.filter((s) => s.email.startsWith("target"));
           expect(targets).toHaveLength(action === "delete" ? 0 : 22);
           for (const sub of targets) {
-            if (action === "blocklist") expect(sub.status).toBe("blocklisted");
+            if (action === "blocklist") {
+              expect(sub.status).toBe("blocklisted");
+            }
             if (action === "add") {
               expect(sub.lists.find((l) => l.id === targetList)?.subscription_status).toBe(
                 targetList === LIST_OPTIN ? "confirmed" : "unconfirmed",

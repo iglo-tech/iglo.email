@@ -62,7 +62,9 @@ export async function runCampaignsContract(target: {
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL campaigns-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL campaigns-${label}`);
+    }
   };
   const call = async (
     path: string,
@@ -85,8 +87,9 @@ export async function runCampaignsContract(target: {
     });
     const text = await response.text();
     let parsed: any = text;
-    if (response.headers.get("content-type")?.startsWith("application/json"))
+    if (response.headers.get("content-type")?.startsWith("application/json")) {
       parsed = JSON.parse(text);
+    }
     return { status: response.status, headers: response.headers, body: parsed };
   };
   const message = (response: { body: any }) => response.body?.message as string | undefined;
@@ -102,7 +105,9 @@ export async function runCampaignsContract(target: {
     const deadline = Date.now() + 10_000;
     for (;;) {
       const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length >= count || Date.now() > deadline) return found;
+      if (found.length >= count || Date.now() > deadline) {
+        return found;
+      }
       await Bun.sleep(25);
     }
   };
@@ -120,12 +125,12 @@ export async function runCampaignsContract(target: {
   };
 
   const owned = {
-    campaigns: [] as number[],
-    subscribers: [] as number[],
-    lists: [] as number[],
-    users: [] as number[],
-    roles: [] as number[],
-    templates: [] as number[],
+    campaigns: [] as Array<number>,
+    subscribers: [] as Array<number>,
+    lists: [] as Array<number>,
+    users: [] as Array<number>,
+    roles: [] as Array<number>,
+    templates: [] as Array<number>,
   };
   let cleanupFailed = false;
   const create = async (input: object, label: string, auth = authorization) => {
@@ -159,7 +164,7 @@ export async function runCampaignsContract(target: {
       ];
       check((await call("/api/settings/smtp", "PUT", smtp)).status === 200, "smtp-settings");
     }
-    const templates = (await call("/api/templates?no_body=true")).body.data as any[];
+    const templates = (await call("/api/templates?no_body=true")).body.data as Array<any>;
     const defaultTemplate = templates.find((t) => t.is_default).id as number;
     const archiveTemplate = templates.find((t) => t.name === "Default archive template")
       .id as number;
@@ -170,7 +175,7 @@ export async function runCampaignsContract(target: {
       owned.lists.push(response.body.data.id);
       return response.body.data as { id: number; uuid: string; name: string };
     };
-    const subscriber = async (name: string, lists: number[]) => {
+    const subscriber = async (name: string, lists: Array<number>) => {
       const response = await call("/api/subscribers", "POST", {
         email: `${name.split(" ")[0]!.toLowerCase()}-${marker}@example.test`,
         name,
@@ -276,7 +281,9 @@ export async function runCampaignsContract(target: {
 
     const invalid = async (input: object, expected: string, label: string) => {
       const response = await call("/api/campaigns", "POST", input);
-      if (response.status === 200) owned.campaigns.push(response.body.data.id);
+      if (response.status === 200) {
+        owned.campaigns.push(response.body.data.id);
+      }
       check(response.status === 400 && message(response) === expected, label);
     };
     const base = { name: `${marker} invalid`, subject: "s", lists: [news.id] };
@@ -327,13 +334,13 @@ export async function runCampaignsContract(target: {
     // Collection search, filters, ordering and paging.
     const collection = async (query: string) =>
       (await call(`/api/campaigns?${query}`)).body.data as {
-        results: Campaign[];
+        results: Array<Campaign>;
         query: string;
         total: number;
         per_page: number;
         page: number;
       };
-    const ownedNames = (rows: Campaign[]) =>
+    const ownedNames = (rows: Array<Campaign>) =>
       rows.map((row) => row.name.slice(marker.length + 1)).join(",");
     const searched = await collection(`query=${marker}&order_by=name&order=asc&per_page=all`);
     check(
@@ -404,15 +411,16 @@ export async function runCampaignsContract(target: {
         },
         `rank-${name}`,
       );
-      if (status)
+      if (status) {
         check(
           (await call(`/api/campaigns/${c.id}/status`, "PUT", { status })).status === 200,
           `rank-${name}-status`,
         );
+      }
     }
     const statusPages = async (order: string) => {
-      const out: string[] = [];
-      for (const page of [1, 2, 3])
+      const out: Array<string> = [];
+      for (const page of [1, 2, 3]) {
         out.push(
           ...(
             await collection(
@@ -420,6 +428,7 @@ export async function runCampaignsContract(target: {
             )
           ).results.map((row) => row.status as string),
         );
+      }
       return out.join(",");
     };
     check((await statusPages("asc")) === "draft,scheduled,finished", "collection-status-asc");
@@ -609,7 +618,9 @@ export async function runCampaignsContract(target: {
       ...base,
       archive_slug: `${marker} Hello World!`,
     });
-    if (duplicateSlug.status === 200) owned.campaigns.push(duplicateSlug.body.data.id);
+    if (duplicateSlug.status === 200) {
+      owned.campaigns.push(duplicateSlug.body.data.id);
+    }
     // D-campaign-slug: a duplicate slug is a safe 409 instead of a database error 500.
     check(duplicateSlug.status === (reference ? 500 : 409), "archive-slug-duplicate");
 
@@ -748,7 +759,7 @@ export async function runCampaignsContract(target: {
     // renders the test untracked: its links are plain, and every link answers the test page.
     if (reference) {
       const tracked = new RegExp(
-        `href="(${rootUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/link/[0-9a-f-]{36}/${testCampaign.uuid}/[0-9a-f-]{36})"`,
+        `href="(${rootUrl.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)}/link/[0-9a-f-]{36}/${testCampaign.uuid}/[0-9a-f-]{36})"`,
       ).exec(mail.HTML)?.[1];
       check(tracked, "test-tracked-link");
       const redirect = await fetch(tracked!, { redirect: "manual" });
@@ -780,7 +791,7 @@ export async function runCampaignsContract(target: {
       oneClick.status === 200 && (reference || (await oneClick.text()).includes(testSendText)),
       "unsubscribe-one-click",
     );
-    const memberships = (await call(`/api/subscribers/${ada.id}`)).body.data.lists as any[];
+    const memberships = (await call(`/api/subscribers/${ada.id}`)).body.data.lists as Array<any>;
     check(
       reference
         ? memberships.find((l) => l.id === news.id)?.subscription_status === "unsubscribed" &&
@@ -862,7 +873,7 @@ export async function runCampaignsContract(target: {
     );
 
     // List-scoped permissions.
-    const apiUser = async (name: string, permissions: string[], lists: object[]) => {
+    const apiUser = async (name: string, permissions: Array<string>, lists: Array<object>) => {
       const role = await call("/api/roles/users", "POST", {
         name: `${marker}-${name}`,
         permissions,
@@ -945,7 +956,9 @@ export async function runCampaignsContract(target: {
         txSubject = (await mailpit.list()).find((m) =>
           m.Subject.startsWith(`${marker} tx `),
         )?.Subject;
-        if (!txSubject) await Bun.sleep(25);
+        if (!txSubject) {
+          await Bun.sleep(25);
+        }
       }
       const txLink = /\/link\/([0-9a-f-]{36})/.exec(txSubject ?? "")?.[1];
       check(txLink, "tx-link-registered");
@@ -970,7 +983,7 @@ export async function runCampaignsContract(target: {
     );
     const visible = (
       await call(`/api/campaigns?query=${marker}%20scope&per_page=all`, "GET", undefined, reader)
-    ).body.data.results as Campaign[];
+    ).body.data.results as Array<Campaign>;
     check(visible.length === 1 && visible[0]!.id === scopeNews.id, "perm-collection-scope");
     const stats = await call("/api/campaigns/running/stats");
     check(
@@ -1009,10 +1022,10 @@ export async function runCampaignsContract(target: {
     await expectStatus(mine.id, "running", "running", "running-stats-start");
     await expectStatus(theirs.id, "running", "running", "running-stats-start-other");
     const scoped = (await call("/api/campaigns/running/stats", "GET", undefined, statsReader)).body
-      .data as Record<string, unknown>[];
-    const everything = (await call("/api/campaigns/running/stats")).body.data as {
+      .data as Array<Record<string, unknown>>;
+    const everything = (await call("/api/campaigns/running/stats")).body.data as Array<{
       id: number;
-    }[];
+    }>;
     await expectStatus(mine.id, "paused", "paused", "running-stats-pause");
     await expectStatus(theirs.id, "paused", "paused", "running-stats-pause-other");
     check(
@@ -1084,7 +1097,9 @@ export async function runCampaignsContract(target: {
       { name: `${marker} x`, subject: "s", lists: [other.id] },
       manager,
     );
-    if (unmanaged.status === 200) owned.campaigns.push(unmanaged.body.data.id);
+    if (unmanaged.status === 200) {
+      owned.campaigns.push(unmanaged.body.data.id);
+    }
     check(
       unmanaged.status === 400 && message(unmanaged) === "Invalid list IDs.",
       "perm-create-filters-lists",
@@ -1178,32 +1193,45 @@ export async function runCampaignsContract(target: {
   } finally {
     for (const id of owned.campaigns) {
       const response = await call(`/api/campaigns/${id}`, "DELETE");
-      if (response.status !== 200 && response.status !== 400) cleanupFailed = true;
+      if (response.status !== 200 && response.status !== 400) {
+        cleanupFailed = true;
+      }
     }
-    for (const id of owned.users)
+    for (const id of owned.users) {
       if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.roles.reverse())
+    }
+    for (const id of owned.roles.reverse()) {
       if ((await call(`/api/roles/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.templates)
+    }
+    for (const id of owned.templates) {
       if ((await call(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.subscribers)
+    }
+    for (const id of owned.subscribers) {
       if ((await call(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of owned.lists)
+    }
+    for (const id of owned.lists) {
       if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
     await mailpit.removeOwned();
   }
-  if (cleanupFailed) throw new Error("FAIL campaigns-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL campaigns-cleanup");
+  }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runCampaignsContract({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS campaigns reference contract\n");
   } catch (error) {

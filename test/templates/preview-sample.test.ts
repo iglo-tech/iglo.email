@@ -2,11 +2,14 @@
 // D105), through POST /api/templates/preview. Without it the preview is the dummy context, exactly
 // as before; with it, the sample's named parts replace the dummy ones and nothing else changes.
 import { afterEach, expect, test } from "bun:test";
-import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
+import { sequencesFixture } from "@/test/sequences/fixture";
+import type { SequencesFixture } from "@/test/sequences/fixture";
 
-const fixtures: SequencesFixture[] = [];
+const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await sequencesFixture();
@@ -17,7 +20,9 @@ async function open() {
 /** A preview of `body` as a template of `type`, with an optional sample (a JSON string). */
 async function preview(f: SequencesFixture, body: string, type = "tx", sample?: string) {
   const form = new URLSearchParams({ template_type: type, body });
-  if (sample !== undefined) form.set("sample", sample);
+  if (sample !== undefined) {
+    form.set("sample", sample);
+  }
   const response = await f.request("/api/templates/preview", {
     method: "POST",
     headers: { ...f.sessionHeaders, "content-type": "application/x-www-form-urlencoded" },
@@ -44,7 +49,7 @@ test("a sample replaces the named parts of the dummy context", async () => {
     JSON.stringify({
       subscriber: { name: "Grace Hopper" },
       trigger: { data: { items: 7 } },
-      aggregates: { x: 1234567 },
+      aggregates: { x: 1_234_567 },
       data: { order_id: "9" },
     }),
   );

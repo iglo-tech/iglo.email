@@ -13,10 +13,10 @@ export interface SubscriberInput {
   // Transient binding state, never populated from a request field.
   attribsReset?: boolean;
   external_id?: string | null;
-  lists?: bigint[] | null;
+  lists?: Array<bigint> | null;
   preconfirm_subscriptions?: boolean;
-  ids?: bigint[] | null;
-  target_list_ids?: bigint[] | null;
+  ids?: Array<bigint> | null;
+  target_list_ids?: Array<bigint> | null;
   action?: string;
 }
 const arrays = new Set(["lists", "ids", "target_list_ids"]);
@@ -30,11 +30,15 @@ const fields = new Set([
 ]);
 /** SQLite's JSON_MAX_DEPTH. */
 const MAX_ATTRIBS_DEPTH = 1000;
-const max = 9223372036854775807n,
-  min = -9223372036854775808n;
+const max = 9_223_372_036_854_775_807n,
+  min = -9_223_372_036_854_775_808n;
 function id(value: unknown): bigint {
-  if (value === null) return 0n;
-  if (typeof value !== "bigint" || value < min || value > max) throw new Error("invalid id");
+  if (value === null) {
+    return 0n;
+  }
+  if (typeof value !== "bigint" || value < min || value > max) {
+    throw new Error("invalid id");
+  }
   return value;
 }
 type Operation = "crud" | "blocklist" | "membership" | "single-membership";
@@ -53,40 +57,56 @@ const operationFields: Record<Operation, ReadonlySet<string>> = {
   "single-membership": new Set(["target_list_ids", "action", "status"]),
 };
 function set(out: SubscriberInput, key: string, value: unknown) {
-  if (!fields.has(key)) return;
+  if (!fields.has(key)) {
+    return;
+  }
   const record = out as Record<string, unknown>;
   if (arrays.has(key)) {
-    if (value === null) record[key] = null;
-    else if (Array.isArray(value)) record[key] = value.map(id);
-    else throw new Error("invalid list");
+    if (value === null) {
+      record[key] = null;
+    } else if (Array.isArray(value)) {
+      record[key] = value.map(id);
+    } else {
+      throw new Error("invalid list");
+    }
   } else if (strings.has(key)) {
     if (value !== null) {
-      if (typeof value !== "string") throw new Error("invalid string");
+      if (typeof value !== "string") {
+        throw new Error("invalid string");
+      }
       record[key] = value.toWellFormed();
     }
   } else if (key === "external_id") {
-    if (value !== null && (typeof value !== "string" || !validExternal(value)))
+    if (value !== null && (typeof value !== "string" || !validExternal(value))) {
       throw new Error("invalid external ID");
+    }
     record[key] = value;
   } else if (key === "attribs") {
-    if (value !== null && (typeof value !== "object" || Array.isArray(value)))
+    if (value !== null && (typeof value !== "object" || Array.isArray(value))) {
       throw new Error("invalid attributes");
+    }
     record[key] = value;
   } else if (value !== null) {
-    if (typeof value !== "boolean") throw new Error("invalid boolean");
+    if (typeof value !== "boolean") {
+      throw new Error("invalid boolean");
+    }
     record[key] = value;
   }
 }
 // Check final operation-owned attributes after duplicate/null binding has settled.
 export function validAttributes(value: SubscriberInput["attribs"]): boolean {
-  const pending: unknown[] = [value];
+  const pending: Array<unknown> = [value];
   while (pending.length) {
     const item = pending.pop();
     if (typeof item === "string") {
-      if (item.includes("\0")) return false;
+      if (item.includes("\0")) {
+        return false;
+      }
     } else if (item && typeof item === "object") {
       for (const [key, child] of Object.entries(item)) {
-        if (key.includes("\0")) return false;
+        if (key.includes("\0")) {
+          return false;
+        }
         pending.push(child);
       }
     }
@@ -109,13 +129,20 @@ function finiteNumbers(raw: string) {
   for (let i = 0; i < raw.length; i++) {
     const c = raw[i]!;
     if (quoted) {
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === '"') quoted = false;
-    } else if (c === '"') quoted = true;
-    else if (c === "-" || (c >= "0" && c <= "9")) {
+      if (escaped) {
+        escaped = false;
+      } else if (c === "\\") {
+        escaped = true;
+      } else if (c === '"') {
+        quoted = false;
+      }
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === "-" || (c >= "0" && c <= "9")) {
       const token = raw.slice(i).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)?.[0];
-      if (!token || !Number.isFinite(Number(token))) throw new Error("invalid number");
+      if (!token || !Number.isFinite(Number(token))) {
+        throw new Error("invalid number");
+      }
       i += token.length - 1;
     }
   }
@@ -126,14 +153,20 @@ function normalizeStrings(raw: string): string {
   let result = "",
     start = 0;
   for (let i = 0; i < raw.length; i++) {
-    if (raw[i] !== '"') continue;
+    if (raw[i] !== '"') {
+      continue;
+    }
     const begin = i;
     let escaped = false;
     while (++i < raw.length) {
       const c = raw[i]!;
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === '"') break;
+      if (escaped) {
+        escaped = false;
+      } else if (c === "\\") {
+        escaped = true;
+      } else if (c === '"') {
+        break;
+      }
     }
     result +=
       raw.slice(start, begin) +
@@ -149,16 +182,25 @@ function normalizeStrings(raw: string): string {
 export function parseAttributes(raw: string): Record<string, unknown> | null {
   finiteNumbers(raw);
   const value: unknown = JSON.parse(normalizeStrings(raw));
-  if (value === null) return null;
-  if (typeof value !== "object" || Array.isArray(value)) throw new Error("not an object");
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("not an object");
+  }
   const attribs = value as Record<string, unknown>;
-  if (!validAttributes(attribs)) throw new Error("NUL character");
-  const pending: [unknown, number][] = [[attribs, 1]];
+  if (!validAttributes(attribs)) {
+    throw new Error("NUL character");
+  }
+  const pending: Array<[unknown, number]> = [[attribs, 1]];
   while (pending.length) {
     const [item, depth] = pending.pop()!;
-    if (depth > MAX_ATTRIBS_DEPTH) throw new Error("nested too deeply");
-    if (item && typeof item === "object")
+    if (depth > MAX_ATTRIBS_DEPTH) {
+      throw new Error("nested too deeply");
+    }
+    if (item && typeof item === "object") {
       for (const child of Object.values(item)) pending.push([child, depth + 1]);
+    }
   }
   return attribs;
 }
@@ -168,11 +210,15 @@ function jsonInput(
   operation: Operation,
 ): SubscriberInput {
   const document: unknown = JSON.parse(body);
-  if (document === null) return {};
-  if (typeof document !== "object" || Array.isArray(document)) throw new Error("object required");
+  if (document === null) {
+    return {};
+  }
+  if (typeof document !== "object" || Array.isArray(document)) {
+    throw new Error("object required");
+  }
   const out: SubscriberInput = {};
-  const backing = new Map<string, bigint[]>();
-  const actionStatuses: string[] = [];
+  const backing = new Map<string, Array<bigint>>();
+  const actionStatuses: Array<string> = [];
   function append(member: string) {
     const colon = (() => {
       let quoted = false,
@@ -180,34 +226,52 @@ function jsonInput(
       for (let i = 0; i < member.length; i++) {
         const c = member[i]!;
         if (quoted) {
-          if (escaped) escaped = false;
-          else if (c === "\\") escaped = true;
-          else if (c === '"') quoted = false;
-        } else if (c === '"') quoted = true;
-        else if (c === ":") return i;
+          if (escaped) {
+            escaped = false;
+          } else if (c === "\\") {
+            escaped = true;
+          } else if (c === '"') {
+            quoted = false;
+          }
+        } else if (c === '"') {
+          quoted = true;
+        } else if (c === ":") {
+          return i;
+        }
       }
       return -1;
     })();
     const key = (JSON.parse(member.slice(0, colon)) as string).toLowerCase().replaceAll("ſ", "s");
     const raw = member.slice(colon + 1);
-    if (!allowed.has(key)) return;
+    if (!allowed.has(key)) {
+      return;
+    }
     if (key === "status" && (operation === "membership" || operation === "single-membership")) {
       actionStatuses.push(raw);
       return;
     }
-    if (key === "attribs") finiteNumbers(raw);
+    if (key === "attribs") {
+      finiteNumbers(raw);
+    }
     let value: unknown = arrays.has(key)
       ? JSON.parse(raw, (_key: string, val: unknown, context?: { source?: string }) => {
-          if (typeof val !== "number") return val;
+          if (typeof val !== "number") {
+            return val;
+          }
           const source = context?.source ?? "";
-          if (!/^-?(?:0|[1-9]\d*)$/.test(source)) throw new Error("invalid integer");
+          if (!/^-?(?:0|[1-9]\d*)$/.test(source)) {
+            throw new Error("invalid integer");
+          }
           return BigInt(source);
         })
       : JSON.parse(key === "attribs" ? normalizeStrings(raw) : raw);
     if (arrays.has(key)) {
-      if (value === null) backing.delete(key);
-      else if (Array.isArray(value)) {
-        if (!value.length) backing.delete(key);
+      if (value === null) {
+        backing.delete(key);
+      } else if (Array.isArray(value)) {
+        if (!value.length) {
+          backing.delete(key);
+        }
         const cells = backing.get(key) ?? [];
         const mapped = value.map((item, index) => {
           const n = item === null ? (cells[index] ?? 0n) : id(item);
@@ -215,11 +279,15 @@ function jsonInput(
           return n;
         });
         value = mapped;
-        if (mapped.length) backing.set(key, cells);
+        if (mapped.length) {
+          backing.set(key, cells);
+        }
       }
     }
     if (key === "attribs") {
-      if (value === null) out.attribsReset = true;
+      if (value === null) {
+        out.attribsReset = true;
+      }
     }
     if (
       key === "attribs" &&
@@ -227,9 +295,11 @@ function jsonInput(
       typeof value === "object" &&
       !Array.isArray(value) &&
       out.attribs
-    )
+    ) {
       set(out, key, { ...out.attribs, ...value });
-    else set(out, key, value);
+    } else {
+      set(out, key, value);
+    }
   }
   let start = body.indexOf("{") + 1,
     depth = 0,
@@ -238,16 +308,25 @@ function jsonInput(
   for (let i = start; i < body.length; i++) {
     const c = body[i]!;
     if (quoted) {
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === '"') quoted = false;
-    } else if (c === '"') quoted = true;
-    else if (c === "{" || c === "[") depth++;
-    else if (c === "}" || c === "]") {
-      if (depth) depth--;
-      else if (c === "}") {
+      if (escaped) {
+        escaped = false;
+      } else if (c === "\\") {
+        escaped = true;
+      } else if (c === '"') {
+        quoted = false;
+      }
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === "{" || c === "[") {
+      depth++;
+    } else if (c === "}" || c === "]") {
+      if (depth) {
+        depth--;
+      } else if (c === "}") {
         const member = body.slice(start, i).trim();
-        if (member) append(member);
+        if (member) {
+          append(member);
+        }
         break;
       }
     } else if (c === "," && depth === 0) {
@@ -255,7 +334,9 @@ function jsonInput(
       start = i + 1;
     }
   }
-  if (out.action === "add") for (const raw of actionStatuses) set(out, "status", JSON.parse(raw));
+  if (out.action === "add") {
+    for (const raw of actionStatuses) set(out, "status", JSON.parse(raw));
+  }
   return out;
 }
 function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
@@ -280,27 +361,36 @@ function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
     throw error;
   });
   parser.on("xmldecl", (d) => {
-    if (d.version !== "1.0" || (d.encoding && d.encoding.toLowerCase() !== "utf-8"))
+    if (d.version !== "1.0" || (d.encoding && d.encoding.toLowerCase() !== "utf8")) {
       throw new Error("declaration");
+    }
   });
   parser.on("doctype", () => {
     throw new Error("doctype");
   });
   parser.on("opentagstart", () => {
-    if (depth >= 64) throw new Error("depth");
+    if (depth >= 64) {
+      throw new Error("depth");
+    }
   });
   parser.on("opentag", (tag) => {
     depth++;
     if (depth === 2) {
       const local = tag.name.slice(tag.name.indexOf(":") + 1);
-      if (local === "Attribs" && allowed.has("attribs")) throw new Error("unsupported XML map");
+      if (local === "Attribs" && allowed.has("attribs")) {
+        throw new Error("unsupported XML map");
+      }
       field = names[local];
-      if (field && !allowed.has(field)) field = undefined;
+      if (field && !allowed.has(field)) {
+        field = undefined;
+      }
       text = "";
     }
   });
   const characters = (v: string) => {
-    if (depth === 2 && field) text += v;
+    if (depth === 2 && field) {
+      text += v;
+    }
   };
   parser.on("text", characters);
   parser.on("cdata", characters);
@@ -308,10 +398,12 @@ function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
     if (depth === 2 && field) {
       if (arrays.has(field)) {
         const scalar = text.length ? trimSpace(text) : "0";
-        if (!/^[+-]?\d+$/.test(scalar)) throw new Error("invalid integer");
+        if (!/^[+-]?\d+$/.test(scalar)) {
+          throw new Error("invalid integer");
+        }
         const n = id(BigInt(scalar));
         const rec = out as Record<string, unknown>;
-        rec[field] = [...((rec[field] as bigint[] | undefined) ?? []), n];
+        rec[field] = [...((rec[field] as Array<bigint> | undefined) ?? []), n];
       } else if (field === "preconfirm_subscriptions") {
         const scalar = text.length ? trimSpace(text) : "false";
         if (
@@ -329,25 +421,33 @@ function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
             "false",
             "False",
           ].includes(scalar)
-        )
+        ) {
           throw new Error("invalid boolean");
+        }
         set(out, field, ["1", "t", "T", "TRUE", "true", "True"].includes(scalar));
-      } else set(out, field, text);
+      } else {
+        set(out, field, text);
+      }
       field = undefined;
     }
-    if (--depth === 0) complete = true;
+    if (--depth === 0) {
+      complete = true;
+    }
   });
   const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   let start = 0;
-  for (let i = 0; i < body.length; i++)
+  for (let i = 0; i < body.length; i++) {
     if (body[i] === 62) {
       parser.write(decoder.decode(body.subarray(start, i + 1), { stream: true }));
       if (complete) return out;
       start = i + 1;
     }
+  }
   parser.write(decoder.decode(body.subarray(start)));
   parser.close();
-  if (!complete) throw new Error("root required");
+  if (!complete) {
+    throw new Error("root required");
+  }
   return out;
 }
 export async function subscriberInput(
@@ -358,38 +458,52 @@ export async function subscriberInput(
   const body = await readBodyBytes(context.request);
   const type = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
   try {
-    if (!body.length) return {};
-    if (type === "application/json") return jsonInput(body.toString("utf8"), allowed, operation);
-    if (type === "application/xml" || type === "text/xml") return xmlInput(body, allowed);
+    if (!body.length) {
+      return {};
+    }
+    if (type === "application/json") {
+      return jsonInput(body.toString("utf8"), allowed, operation);
+    }
+    if (type === "application/xml" || type === "text/xml") {
+      return xmlInput(body, allowed);
+    }
     if (type === "application/x-www-form-urlencoded" || type === "multipart/form-data") {
       const out: SubscriberInput = {};
-      const values: [string, string][] = [];
+      const values: Array<[string, string]> = [];
       if (type === "application/x-www-form-urlencoded") {
         const encoded = body.toString("utf8"),
           query = context.url.search.slice(1);
-        for (const part of [encoded, query])
+        for (const part of [encoded, query]) {
           if (/%(?![a-fA-F0-9]{2})/.test(part) || part.includes(";"))
             throw new Error("invalid form");
-        values.push(...new URLSearchParams(encoded));
-        values.push(...new URLSearchParams(query));
+        }
+        values.push(...new URLSearchParams(encoded), ...new URLSearchParams(query));
       } else {
         const form = await new Response(Uint8Array.from(body), {
           headers: { "Content-Type": context.request.headers.get("content-type")! },
         }).formData();
-        for (const [key, value] of form) if (typeof value === "string") values.push([key, value]);
+        for (const [key, value] of form) {
+          if (typeof value === "string") values.push([key, value]);
+        }
       }
-      if (operation !== "crud") return out;
+      if (operation !== "crud") {
+        return out;
+      }
       for (const field of ["email", "name"]) {
         const entry =
           values.find(([key]) => key === field) ??
           values.find(([key]) => key.toLowerCase() === field);
-        if (entry) set(out, field, entry[1]);
+        if (entry) {
+          set(out, field, entry[1]);
+        }
       }
       return out;
     }
     throw new HttpError(415);
   } catch (error) {
-    if (error instanceof HttpError) throw error;
+    if (error instanceof HttpError) {
+      throw error;
+    }
     throw new HttpError(400);
   }
 }

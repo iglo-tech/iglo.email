@@ -3,19 +3,27 @@
 // test/contract/public.ts.
 import { afterEach, expect, test } from "bun:test";
 import type { CaptchaOptions } from "@/captcha/captcha";
-import { altchaPayload, solveAltcha, type AltchaChallenge } from "@/test/public/altcha-solver";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { altchaPayload, solveAltcha } from "@/test/public/altcha-solver";
+import type { AltchaChallenge } from "@/test/public/altcha-solver";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
-const fixtures: PublicFixture[] = [];
-const servers: { stop(force?: boolean): unknown }[] = [];
+const fixtures: Array<PublicFixture> = [];
+const servers: Array<{ stop(force?: boolean): unknown }> = [];
 afterEach(async () => {
-  for (const server of servers.splice(0)) server.stop(true);
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const server of servers.splice(0)) {
+    server.stop(true);
+  }
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open(captcha?: Partial<CaptchaOptions>) {
   const f = await publicFixture();
   fixtures.push(f);
-  if (captcha) setCaptcha(f, captcha);
+  if (captcha) {
+    setCaptcha(f, captcha);
+  }
   return f;
 }
 function setCaptcha(f: PublicFixture, captcha: Partial<CaptchaOptions>) {
@@ -77,8 +85,9 @@ test("an ALTCHA challenge has altcha-lib's v2 shape and a 5 minute expiry", asyn
   expect(c.signature).toMatch(/^[0-9a-f]{64}$/);
   expect(c.parameters.expiresAt).toBe(f.clock.now().getTime() / 1000 + 300);
   // The counter is drawn from 0 to the complexity, inclusive.
-  for (let i = 0; i < 20; i++)
+  for (let i = 0; i < 20; i++) {
     expect(solveAltcha(await challenge(f)).counter).toBeLessThanOrEqual(300);
+  }
   setCaptcha(f, { altcha: { enabled: true, complexity: 0 } });
   expect(solveAltcha(await challenge(f)).counter).toBe(0);
 });
@@ -134,7 +143,7 @@ test("a tampered or malformed ALTCHA payload is refused", async () => {
   const solution = solveAltcha(c);
   const other = await challenge(f);
   const flip = (hex: string) => (hex[0] === "0" ? "1" : "0") + hex.slice(1);
-  const cases: string[] = [
+  const cases: Array<string> = [
     altchaPayload(c, { ...solution, counter: solution.counter + 1 }),
     altchaPayload(c, { ...solution, derivedKey: flip(solution.derivedKey) }),
     altchaPayload(c, { ...solution, derivedKey: solution.derivedKey.toUpperCase() }),
@@ -159,8 +168,9 @@ test("a tampered or malformed ALTCHA payload is refused", async () => {
     altchaPayload(c, solution).slice(0, -2),
     "A".repeat(8192),
   ];
-  for (const altcha of cases)
+  for (const altcha of cases) {
     await refused(await submit(f, "x@example.test", list.uuid, { altcha }));
+  }
   // The untampered payload still verifies: nothing above consumed it.
   const ok = await submit(f, "ok@example.test", list.uuid, { altcha: altchaPayload(c, solution) });
   expect(ok.status).toBe(200);
@@ -211,7 +221,7 @@ test("the JSON subscription API takes no captcha, as upstream", async () => {
 });
 
 function fakeSiteverify(answer: (request: Request) => Response | Promise<Response>) {
-  const seen: { secret: string | null; response: string | null }[] = [];
+  const seen: Array<{ secret: string | null; response: string | null }> = [];
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -250,7 +260,7 @@ test("hCaptcha: the form embeds the site key and siteverify decides", async () =
 test("hCaptcha fails closed on an unusable siteverify answer", async () => {
   const f = await open({ hcaptcha: { enabled: true, key: "site-key", secret: "hc-secret" } });
   const list = await f.list("News");
-  const answers: (() => Response)[] = [
+  const answers: Array<() => Response> = [
     () => new Response("not json"),
     () => Response.json({ success: "true" }),
     () => Response.json({ success: true }, { status: 500 }),
@@ -260,8 +270,9 @@ test("hCaptcha fails closed on an unusable siteverify answer", async () => {
   let next = 0;
   const fake = fakeSiteverify(() => answers[next]!());
   f.hcaptcha.url = fake.url;
-  for (; next < answers.length; next++)
+  for (; next < answers.length; next++) {
     await refused(await submit(f, "x@example.test", list.uuid, { "h-captcha-response": "t" }));
+  }
   // An unreachable siteverify fails closed too.
   f.hcaptcha.url = "http://127.0.0.1:1/siteverify";
   await refused(await submit(f, "y@example.test", list.uuid, { "h-captcha-response": "t" }));

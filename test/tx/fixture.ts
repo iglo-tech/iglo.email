@@ -8,11 +8,13 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { personalPageHeaders } from "@/public/headers";
-import { createSubscriberMail, type SubscriberMail } from "@/public/mail";
+import { createSubscriberMail } from "@/public/mail";
+import type { SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings as toPublicSettings } from "@/public/settings";
-import { createSettings, type SettingsStore } from "@/settings/store";
+import { createSettings } from "@/settings/store";
+import type { SettingsStore } from "@/settings/store";
 import { registerSettingsRoutes } from "@/settings/routes";
 import type { Middleware } from "@/server/context";
 import { createListReferences } from "@/lists/references";
@@ -21,11 +23,8 @@ import { registerListRoutes } from "@/lists/routes";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
-import {
-  createSubscriberStore,
-  noSubscriberEffects,
-  type SubscriberEffects,
-} from "@/subscribers/store";
+import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
+import type { SubscriberEffects } from "@/subscribers/store";
 import { createSubscriberQuery } from "@/subscribers/query";
 import { registerSubscriberQueryRoutes } from "@/subscribers/query-routes";
 import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
@@ -45,7 +44,8 @@ import { createTemplateStore } from "@/templates/store";
 import type { PageOptions } from "@/public/preferences";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
-import { registerTxRoutes, type TxPolicy } from "@/tx/routes";
+import { registerTxRoutes } from "@/tx/routes";
+import type { TxPolicy } from "@/tx/routes";
 import { createAttachments } from "@/media/attachments";
 import { createEmbeds } from "@/media/embed";
 import { createFilesystem } from "@/media/filesystem";
@@ -54,16 +54,21 @@ import { createMediaStore } from "@/media/store";
 import type { Clock } from "@/clock";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
-import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
-import { registerUnsubscribeRoutes, type UnsubscribeEffects } from "@/unsubscribe/routes";
+import { createMarketingPolicy } from "@/unsubscribe/policy";
+import type { MarketingSettings } from "@/unsubscribe/policy";
+import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
+import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 import { registerBounceRoutes } from "@/bounces/routes";
 import { createTestSends } from "@/messaging/test-sends";
-import { createSnsClient, type SnsFetch } from "@/bounces/ses";
+import { createSnsClient } from "@/bounces/ses";
+import type { SnsFetch } from "@/bounces/ses";
 
 const refuseNetwork: SnsFetch = () => Promise.reject(new Error("no network in tests"));
-import { createBounceStore, type BounceAction } from "@/bounces/store";
-import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery";
+import { createBounceStore } from "@/bounces/store";
+import type { BounceAction } from "@/bounces/store";
+import { startWebhookDelivery } from "@/webhooks/delivery";
+import type { WebhookTransport } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
@@ -81,7 +86,7 @@ export async function txFixture(
     reject?: () => boolean;
     policy?: Partial<TxPolicy>;
     clock?: Clock;
-    emailHeaders?: Record<string, string>[];
+    emailHeaders?: Array<Record<string, string>>;
     marketing?: Partial<MarketingSettings>;
     effects?: UnsubscribeEffects;
     page?: () => PageOptions;
@@ -118,7 +123,7 @@ export async function txFixture(
   const clock = options.clock ?? testClock;
   const db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const app = createApp({
     bootstrap: {
       host: "127.0.0.1",
@@ -178,7 +183,9 @@ export async function txFixture(
   );
   await bootstrapAdmin(users, auth, admin);
   const session = await auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("fixture login failed");
+  }
   const renderer = createRenderer(clock, app.i18n);
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences);
@@ -237,11 +244,14 @@ export async function txFixture(
   registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
-  if (subscriberQuery)
+  if (subscriberQuery) {
     registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
+  }
   registerTemplateRoutes(router, templates, renderer, auth);
   registerSendRoutes(router, sends, auth);
-  if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
+  if (webhooks) {
+    registerWebhookRoutes(router, { webhooks, auth });
+  }
   // The one settings source, as in src/main.ts: the bounce routes read the store, so a `bounce.*`
   // write through the API or `setBounce` reaches them at once.
   if (webhooks) {
@@ -313,7 +323,7 @@ export async function txFixture(
     auth,
     sends,
     outbox: {
-      dispatch: (ids: bigint[]) =>
+      dispatch: (ids: Array<bigint>) =>
         options.beforeDispatch
           ? options.beforeDispatch().then(() => outbox.dispatch(ids))
           : outbox.dispatch(ids),
@@ -443,12 +453,16 @@ export async function txFixture(
     json("/api/tx", "POST", body, headers);
   const template = async (body: string, subject = "Subject {{ data.order }}", type = "tx") => {
     const created = await json("/api/templates", "POST", { name: "fixture", type, subject, body });
-    if (created.status !== 200) throw new Error(`template ${created.status}`);
+    if (created.status !== 200) {
+      throw new Error(`template ${created.status}`);
+    }
     return created.body.data.id as number;
   };
   const subscriber = async (email: string, name = "Fixture Person", extra: object = {}) => {
     const created = await json("/api/subscribers", "POST", { email, name, ...extra });
-    if (created.status !== 200) throw new Error(`subscriber ${created.status}`);
+    if (created.status !== 200) {
+      throw new Error(`subscriber ${created.status}`);
+    }
     return created.body.data.id as number;
   };
   /**
@@ -461,14 +475,18 @@ export async function txFixture(
       type: "public",
       optin: "single",
     });
-    if (list.status !== 200) throw new Error(`list ${list.status}`);
+    if (list.status !== 200) {
+      throw new Error(`list ${list.status}`);
+    }
     const sent = await json("/api/tx", "POST", {
       subscriber_id: subscriberId,
       template_id: await template("<p>Paired</p>", "Paired"),
       kind: "marketing",
       list_id: list.body.data.id,
     });
-    if (sent.status !== 200) throw new Error(`send ${sent.status}`);
+    if (sent.status !== 200) {
+      throw new Error(`send ${sent.status}`);
+    }
     const send = (await json(`/api/sends/${sent.body.data.sends[0].id}`)).body.data.uuid as string;
     const who = (await json(`/api/subscribers/${subscriberId}`)).body.data.uuid as string;
     // B126 (D123): a wipe deletes only when confirmed; the bare POST answers its confirmation page.

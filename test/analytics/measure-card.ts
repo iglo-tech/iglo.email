@@ -12,7 +12,7 @@ import { seed } from "@/test/analytics/seed";
 const directory = resolve(process.env.ANALYTICS_MEASURE_DIR ?? "dist/analytics-card");
 const runs = Number(process.env.ANALYTICS_RUNS ?? 5);
 const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
-const stats = (times: number[]) => {
+const stats = (times: Array<number>) => {
   const sorted = [...times].sort((a, b) => a - b);
   return {
     median_ms: +sorted[sorted.length >> 1]!.toFixed(1),
@@ -41,18 +41,18 @@ try {
   });
   const scope = { all: true, ids: [] };
   const filter = { query: "", tags: [], type: "" };
-  const newest = (statuses: string[]) =>
+  const newest = (statuses: Array<string>) =>
     store.query({ ...filter, statuses }, scope, "created_at", "desc", 0, 6).rows;
   const card = () => {
     newest(["scheduled"]);
     return newest(["draft", "running", "paused", "finished", "cancelled"]);
   };
-  const times: number[] = [];
+  const times: Array<number> = [];
   for (let run = 0; run < runs; run++) {
     const before = performance.now();
     const rows = card();
     times.push(performance.now() - before);
-    if (run === 0)
+    if (run === 0) {
       report({
         rows: rows.map((row) => ({
           id: Number(row.id),
@@ -61,6 +61,7 @@ try {
           clicks: Number(row.clicks),
         })),
       });
+    }
   }
   report({ name: "dashboard/campaigns in process", ...stats(times) });
 
@@ -70,7 +71,7 @@ try {
     ...(existsSync(compiled) ? { command: [compiled, analyticsChildArgument] } : {}),
   });
   const read = () => reader.read("dashboardCampaigns", [true, []]);
-  const children: number[] = [];
+  const children: Array<number> = [];
   for (let run = 0; run < runs; run++) {
     const before = performance.now();
     await read();
@@ -87,7 +88,7 @@ try {
     "INSERT INTO campaign_views (campaign_id, subscriber_id, created_at) VALUES (100, 1, ?)",
   );
   const lagDuring = async (load: () => Promise<unknown> | unknown) => {
-    const gaps: number[] = [];
+    const gaps: Array<number> = [];
     let done = false;
     const work = (async () => {
       for (let run = 0; run < runs; run++) {
@@ -130,5 +131,7 @@ try {
   store.close();
 } finally {
   db.close();
-  if (process.env.ANALYTICS_KEEP !== "1") rmSync(directory, { recursive: true, force: true });
+  if (process.env.ANALYTICS_KEEP !== "1") {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }

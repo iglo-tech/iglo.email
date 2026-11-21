@@ -2,17 +2,14 @@
 // carries a machine-readable reason, visible through the events, sends and subscriber APIs.
 // Observed over HTTP with the injected clock; no table is read.
 import { afterEach, expect, test } from "bun:test";
-import {
-  day,
-  hour,
-  minute,
-  schedulerFixture,
-  type SchedulerFixture,
-} from "@/test/scheduler/fixture";
+import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -67,7 +64,7 @@ test("a blocklisted person's event names each sequence it would start, marketing
 
   // The subscriber's own event list shows the same outcome for that event.
   const timeline = (await f.json(`/api/subscribers/${subscriber}/subscriber-events`)).body.data
-    .results as { name: string; skipped: unknown[] }[];
+    .results as Array<{ name: string; skipped: unknown[] }>;
   expect(timeline.find((e) => e.name === "order_paid")?.skipped).toEqual([
     { sequence_id: marketing.id, reason: "subscriber_blocklisted" },
     { sequence_id: receipt.id, reason: "subscriber_blocklisted" },

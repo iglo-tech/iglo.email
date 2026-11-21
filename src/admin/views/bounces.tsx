@@ -264,7 +264,7 @@ export const bouncesView: AdminView = ({ context, can }) => {
                     t={t}
                     class="enum"
                     label={
-                      (bounceTypes as readonly string[]).includes(type)
+                      (bounceTypes as ReadonlyArray<string>).includes(type)
                         ? t.T(`bounces.${type}`)
                         : type
                     }

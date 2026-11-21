@@ -14,10 +14,11 @@ const base = resolve(
 );
 mkdirSync(base, { recursive: true });
 const filesystemType = Number(statfsSync(base).type);
-if ([0x01021994, 0x858458f6].includes(filesystemType))
+if ([0x01_02_19_94, 0x85_84_58_f6].includes(filesystemType)) {
   throw new Error(
     "Storage measurements cannot use tmpfs/ramfs; set IGLO_EMAIL_PERF_DIR to disk-backed storage",
   );
+}
 console.log(
   JSON.stringify({
     kind: "environment",
@@ -42,10 +43,11 @@ try {
         mode === "native"
           ? new Database(file, { safeIntegers: true, strict: true })
           : openDatabase(directory);
-      if (mode === "native")
+      if (mode === "native") {
         db.run(
           "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000",
         );
+      }
       db.run("CREATE TABLE measurement (id INTEGER PRIMARY KEY, value TEXT NOT NULL)");
       const named =
         mode === "helper"
@@ -65,10 +67,13 @@ try {
       const started = performance.now();
       for (let first = 1; first <= rows; first += batch) {
         const work = () => {
-          for (let id = first; id < first + batch; id++) insert.run(id, `value-${id}`);
+          for (let id = first; id < first + batch; id++) {
+            insert.run(id, `value-${id}`);
+          }
         };
-        if (mode === "helper") writeTransaction(db, work);
-        else {
+        if (mode === "helper") {
+          writeTransaction(db, work);
+        } else {
           db.run("BEGIN IMMEDIATE");
           work();
           db.run("COMMIT");
@@ -76,8 +81,9 @@ try {
       }
       const written = performance.now();
       for (let id = 1; id <= rows; id++) {
-        if ((lookup.get(id) as { value: string } | null)?.value !== `value-${id}`)
+        if ((lookup.get(id) as { value: string } | null)?.value !== `value-${id}`) {
           throw new Error("Incorrect lookup");
+        }
       }
       const read = performance.now();
       let snapshot: string;
@@ -97,8 +103,9 @@ try {
           "SELECT count(*) AS count, sum(id) AS sum FROM measurement",
         )
         .get();
-      if (count?.count !== 10_000n || count.sum !== 50_005_000n)
+      if (count?.count !== 10_000n || count.sum !== 50_005_000n) {
         throw new Error("Incorrect snapshot");
+      }
       const sqlite = db
         .query<{ version: string }, []>("SELECT sqlite_version() AS version")
         .get()?.version;
@@ -121,8 +128,9 @@ try {
         }),
       );
       backup.close(true);
-      if (named) named.close();
-      else {
+      if (named) {
+        named.close();
+      } else {
         lookup.finalize();
         insert.finalize();
       }

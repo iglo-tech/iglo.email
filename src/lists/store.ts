@@ -25,7 +25,7 @@ export interface ListInput {
   type: string;
   optin: string;
   status: string;
-  tags: string[];
+  tags: Array<string>;
   description: string | null;
 }
 export interface ListFilter {
@@ -33,21 +33,21 @@ export interface ListFilter {
   type: string;
   optin: string;
   status: string;
-  tags: string[];
+  tags: Array<string>;
 }
 export interface ListScope {
   all: boolean;
-  ids: bigint[];
+  ids: Array<bigint>;
 }
 // bytes.TrimSpace uses Go Unicode whitespace (including NEL, excluding BOM).
 export const trimSpace = (tag: string) =>
-  tag.replace(
+  tag.replaceAll(
     /^[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g,
     "",
   );
-const normalize = (s: string) => trimSpace(s).replace(/[\t\n\f\r ]+/g, " ");
-export const normalizeTags = (tags: string[]) =>
-  tags.map((tag) => trimSpace(tag).replace(/[\t\n\f\r ]+/g, "-")).filter(Boolean);
+const normalize = (s: string) => trimSpace(s).replaceAll(/[\t\n\f\r ]+/g, " ");
+export const normalizeTags = (tags: Array<string>) =>
+  tags.map((tag) => trimSpace(tag).replaceAll(/[\t\n\f\r ]+/g, "-")).filter(Boolean);
 
 export function createListStore(
   db: Database,
@@ -57,10 +57,10 @@ export function createListStore(
 ) {
   const queries = prepareNamedQueries(db, [{ name: "lists/store", sql }]);
   const byId = (id: bigint) => queries.get("list-by-id").get(id) as Row | null;
-  const rows = () => queries.get("all-lists").all() as Row[];
+  const rows = () => queries.get("all-lists").all() as Array<Row>;
   const visible = (row: Row, scope: ListScope) => scope.all || scope.ids.includes(row.id);
   const matches = (row: Row, filter: ListFilter, scope: ListScope) => {
-    const tags: string[] = row.tags ? JSON.parse(row.tags) : [];
+    const tags: Array<string> = row.tags ? JSON.parse(row.tags) : [];
     return (
       visible(row, scope) &&
       row.name.toLowerCase().includes(normalize(filter.query).toLowerCase()) &&
@@ -110,8 +110,9 @@ export function createListStore(
           : matches(row, filter, scope),
       );
       const aggregates = minimal ? new Map<bigint, Record<string, number>>() : counts.all();
-      if (minimal) matched.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      else {
+      if (minimal) {
+        matched.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      } else {
         const field = ["name", "status", "created_at", "updated_at", "subscriber_count"].includes(
           orderBy,
         )
@@ -130,7 +131,9 @@ export function createListStore(
         });
       }
       const total = matched.length;
-      if (!minimal && perPage > 0) matched = matched.slice((page - 1) * perPage, page * perPage);
+      if (!minimal && perPage > 0) {
+        matched = matched.slice((page - 1) * perPage, page * perPage);
+      }
       // Upstream's window total is unavailable if an out-of-range page returns no rows.
       const actualTotal = matched.length === 0 ? 0 : total;
       return {
@@ -160,13 +163,16 @@ export function createListStore(
     update(id: bigint, input: ListInput) {
       return writeTransaction(db, () => {
         const old = byId(id);
-        if (!old) return null;
+        if (!old) {
+          return null;
+        }
         // D82: double to single would start mailing people who never confirmed.
-        if (input.optin === "single" && old.optin === "double" && counts.unconfirmed(id) > 0)
+        if (input.optin === "single" && old.optin === "double" && counts.unconfirmed(id) > 0) {
           throw new HttpError(
             400,
             "Cannot change a double opt-in list to single while it has unconfirmed subscribers.",
           );
+        }
         queries
           .get("update-list")
           .run(
@@ -183,16 +189,18 @@ export function createListStore(
         return get(id);
       });
     },
-    remove(ids: bigint[], filter: ListFilter, scope: ListScope) {
+    remove(ids: Array<bigint>, filter: ListFilter, scope: ListScope) {
       return writeTransaction(db, () => {
         const selected = ids.length
           ? rows().filter((row) => ids.includes(row.id))
           : rows().filter((row) => matches(row, filter, scope));
-        for (const row of selected) queries.get("delete-list").run(row.id);
+        for (const row of selected) {
+          queries.get("delete-list").run(row.id);
+        }
       });
     },
     /** update-lists-date. */
-    touch(ids: bigint[]) {
+    touch(ids: Array<bigint>) {
       queries.get("lists-touch").run(clock.now().toISOString(), `[${ids.join(",")}]`);
     },
     close: () => queries.close(),

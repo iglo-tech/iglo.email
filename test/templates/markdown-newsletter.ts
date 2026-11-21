@@ -11,11 +11,15 @@ function story(n: number): string {
     `![Chart ${n}](https://img.example.test/charts/${n}.png "Chart ${n} title")\n\n` +
     `In this story we look at **the result** of the work (see [the source](https://example.test/news/${n}?ref=digest&utm=weekly), and *more* details in \`config.${n}\`). It matters because the numbers changed & the team said so. Read more at <https://example.test/more/${n}>.\n\n` +
     `- First point with a [link ${n}](https://example.test/point/${n}) and _emphasis_ words\n- Second point, plain text with an apostrophe's and quotes "like this"\n- Third point [more][r${n % 5}]\n\n`;
-  if (n % 4 === 0)
+  if (n % 4 === 0) {
     text += `| Metric | Value |\n|---|:-:|\n| Opens | ${n * 3} |\n| Clicks | [${n}](https://example.test/c/${n}) |\n\n`;
-  if (n % 5 === 0) text += "```\nconst x = 1 && y < 2;\n```\n\n";
-  if (n % 6 === 0)
+  }
+  if (n % 5 === 0) {
+    text += "```\nconst x = 1 && y < 2;\n```\n\n";
+  }
+  if (n % 6 === 0) {
     text += `> A quoted remark from number ${n} with [a link](https://example.test/quote/${n}).\n\n`;
+  }
   text += `Closing paragraph of story ${n}. Footnote-like markers [1] and snake_case_names appear here, plus a bare https://example.test/bare/${n} URL.\n\n`;
   return text;
 }

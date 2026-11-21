@@ -48,11 +48,12 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
       ["confirmed", "enabled"],
       ["unconfirmed", "blocklisted"],
       ["unsubscribed", "disabled"],
-    ])
+    ]) {
       expect(
         (await request("/fixture/membership", "POST", { list: first, status, subscriberStatus }))
           .status,
       ).toBe(200);
+    }
     expect(
       (
         await request("/fixture/membership", "POST", {
@@ -72,7 +73,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
     ).json()) as {
       data: {
         total: number;
-        results: { id: number; subscriber_count: number; subscriber_statuses: unknown }[];
+        results: Array<{ id: number; subscriber_count: number; subscriber_statuses: unknown }>;
       };
     };
     expect(page.data.total).toBe(2);
@@ -82,7 +83,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
       subscriber_statuses: { confirmed: 1, unconfirmed: 1, unsubscribed: 1 },
     });
     const minimal = (await (await request("/api/lists?minimal=true")).json()) as {
-      data: { results: { id: number; subscriber_statuses: unknown }[] };
+      data: { results: Array<{ id: number; subscriber_statuses: unknown }> };
     };
     expect(minimal.data.results.find((item) => item.id === first)?.subscriber_statuses).toBeNull();
     const beforeRejected = ((await (await request(`/api/lists/${first}`)).json()) as { data: any })
@@ -117,7 +118,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
       ).toEqual([{ list_id: first, list_name: "fixture-count-a" }]);
       const grants = (
         (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
-          data: { id: number; lists: { id: number }[] }[];
+          data: Array<{ id: number; lists: { id: number }[] }>;
         }
       ).data.find((x) => x.id === role.id);
       expect(grants?.lists.map((x) => x.id)).toEqual([first, second]);
@@ -127,7 +128,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
       200,
     );
     let projection = (await (await request("/fixture/references")).json()) as {
-      data: { campaigns: unknown[]; subscribers: number; memberships: number };
+      data: { campaigns: Array<unknown>; subscribers: number; memberships: number };
     };
     expect(projection.data).toEqual({
       campaigns: [{ list_id: first, list_name: "renamed fixture" }],
@@ -144,7 +145,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
     expect((await request(`/api/users/${user.id}`)).status).toBe(200);
     const roleProjection = (
       (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
-        data: { id: number; lists: { id: number }[] }[];
+        data: Array<{ id: number; lists: { id: number }[] }>;
       }
     ).data.find((item) => item.id === role.id);
     expect(roleProjection?.lists.map((item) => item.id)).toEqual([second]);
@@ -169,7 +170,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
     expect(grant.status).toBe(400);
     const afterGrant = (
       (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
-        data: { id: number; lists: { id: number }[] }[];
+        data: Array<{ id: number; lists: { id: number }[] }>;
       }
     ).data.find((item) => item.id === role.id);
     expect(afterGrant).toEqual(roleProjection);

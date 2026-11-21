@@ -4,19 +4,25 @@
 import { afterEach, expect, test } from "bun:test";
 import { createAnalyticsPurge } from "@/analytics/purge";
 import { createErrorLogger } from "@/app";
-import { createLogBuffer, type LogBuffer } from "@/maintenance/log-buffer";
+import { createLogBuffer } from "@/maintenance/log-buffer";
+import type { LogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
 
 const REFUSED = "refused@example.test";
 const DELIVERED = "delivered@example.test";
 const FIXED = "Test send not delivered: the server error output names the recipient and stage";
 
-const fixtures: CampaignsFixture[] = [];
+const fixtures: Array<CampaignsFixture> = [];
 const purges: Array<{ close(): void }> = [];
 afterEach(async () => {
-  for (const purge of purges.splice(0)) purge.close();
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const purge of purges.splice(0)) {
+    purge.close();
+  }
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 
 /** Campaign test sends through HTTP, with the app's own error logger and log buffer. */
@@ -46,9 +52,9 @@ async function open() {
 
 /** The error output this process writes while `run` runs, as the messages it logs. */
 async function captureStderr(run: () => Promise<void>) {
-  const written: string[] = [];
+  const written: Array<string> = [];
   const original = console.error;
-  console.error = (...parts: unknown[]) => {
+  console.error = (...parts: Array<unknown>) => {
     written.push(String((parts[1] as Error | undefined)?.message ?? parts[0]));
   };
   try {
@@ -62,7 +68,7 @@ async function captureStderr(run: () => Promise<void>) {
 const logLines = async (f: CampaignsFixture) => {
   const response = await f.json("/api/logs");
   expect(response.status).toBe(200);
-  return response.body.data as string[];
+  return response.body.data as Array<string>;
 };
 
 async function testCampaign(f: CampaignsFixture, to: string) {
@@ -89,7 +95,9 @@ test("a refused test send answers true, then one attention line in the log", asy
   const stderr = await captureStderr(async () => {
     campaign = await testCampaign(f, REFUSED);
     // The send is queued; its refusal is logged once the emailer settles it.
-    for (let i = 0; i < 400 && (await logLines(f)).length === 0; i++) await Bun.sleep(5);
+    for (let i = 0; i < 400 && (await logLines(f)).length === 0; i++) {
+      await Bun.sleep(5);
+    }
   });
   const lines = await logLines(f);
   expect(lines.filter((line) => line.includes(FIXED))).toHaveLength(1);
@@ -105,7 +113,9 @@ test("a refused test send answers true, then one attention line in the log", asy
 test("a delivered test send logs nothing", async () => {
   const f = await open();
   await testCampaign(f, DELIVERED);
-  for (let i = 0; i < 400 && (await f.mail(1)).length === 0; i++) await Bun.sleep(5);
+  for (let i = 0; i < 400 && (await f.mail(1)).length === 0; i++) {
+    await Bun.sleep(5);
+  }
   expect(f.sink.messages).toHaveLength(1);
   // The outcome is settled once the message is in the sink; nothing is logged for it.
   await Bun.sleep(20);

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, api, get, login, userWith, type Fixture } from "@/test/admin/support";
+import { admin, api, get, login, userWith } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;
@@ -72,8 +73,9 @@ test("an ID the page cannot use answers as upstream does", async () => {
 test("every permission the API takes has a box", async () => {
   const html = await (await get(f, "/admin/users/roles/new", cookie)).text();
   const boxes = [...html.matchAll(/type="checkbox" value="([a-z_]+:[a-z_]+)"/g)].map((m) => m[1]!);
-  for (const value of ["subscriber_events:create", "sends:manage", "webhooks:manage", "tx:send"])
+  for (const value of ["subscriber_events:create", "sends:manage", "webhooks:manage", "tx:send"]) {
     expect(boxes).toContain(value);
+  }
   const response = await api(f, cookie, "/api/roles/users", "POST", {
     name: "every box",
     permissions: boxes,

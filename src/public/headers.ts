@@ -16,7 +16,9 @@ const frameAncestors = /(^|;)\s*frame-ancestors\s/i;
 
 /** The router's error answer, here so a thrown error keeps these headers (as publicCors does). */
 function failure(context: RequestContext, error: unknown): Response {
-  if (error instanceof HttpError) return errorResponse(error, context.request.method);
+  if (error instanceof HttpError) {
+    return errorResponse(error, context.request.method);
+  }
   context.app.logger.error(error);
   return errorResponse(new HttpError(500), context.request.method);
 }
@@ -24,15 +26,23 @@ function failure(context: RequestContext, error: unknown): Response {
 export const personalPageHeaders: Middleware = async (context, next) => {
   const response = await next().catch((error: unknown) => failure(context, error));
   const { pathname } = context.url;
-  if (!personalPaths.some((prefix) => pathname.startsWith(prefix))) return response;
-  if (!response.headers.get("Content-Type")?.startsWith("text/html")) return response;
+  if (!personalPaths.some((prefix) => pathname.startsWith(prefix))) {
+    return response;
+  }
+  if (!response.headers.get("Content-Type")?.startsWith("text/html")) {
+    return response;
+  }
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Referrer-Policy", "no-referrer");
-  if (frameable.has(pathname)) return response;
+  if (frameable.has(pathname)) {
+    return response;
+  }
   response.headers.set("X-Frame-Options", "DENY");
   const policy = response.headers.get("Content-Security-Policy");
-  if (!policy) response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
-  else if (!frameAncestors.test(policy))
+  if (!policy) {
+    response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+  } else if (!frameAncestors.test(policy)) {
     response.headers.set("Content-Security-Policy", `${policy}; frame-ancestors 'none'`);
+  }
   return response;
 };

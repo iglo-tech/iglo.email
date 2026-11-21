@@ -17,11 +17,13 @@ export function measurementBase() {
   );
   mkdirSync(base, { recursive: true });
   const fsType = Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.toString().trim();
-  if (/tmpfs|ramfs/.test(fsType)) throw new Error(`Refusing ${fsType} measurement directory`);
+  if (/tmpfs|ramfs/.test(fsType)) {
+    throw new Error(`Refusing ${fsType} measurement directory`);
+  }
   return base;
 }
 
-const git = (...args: string[]) =>
+const git = (...args: Array<string>) =>
   Bun.spawnSync(["git", ...args], { cwd: repository })
     .stdout.toString()
     .trim();
@@ -36,7 +38,9 @@ export function sourceHash() {
   return hash.digest("hex").slice(0, 16);
 }
 export function executableHash(path = join(repository, "dist/iglo.email")) {
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) {
+    return null;
+  }
   return createHash("sha256").update(readFileSync(path)).digest("hex").slice(0, 16);
 }
 export const provenance = (compiled: boolean) => ({
@@ -52,11 +56,13 @@ export const memAvailable = () =>
   Number(
     /Mem:\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+(\d+)/.exec(
       Bun.spawnSync(["free", "-m"]).stdout.toString(),
-    )?.[1] ?? NaN,
+    )?.[1] ?? Number.NaN,
   );
 /** Resident set of a process in MiB, or null when it is gone. */
 export function rssOf(pid: number | undefined): number | null {
-  if (!pid) return null;
+  if (!pid) {
+    return null;
+  }
   try {
     const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
     return kb ? Math.round(Number(kb) / 1024) : null;
@@ -65,8 +71,10 @@ export function rssOf(pid: number | undefined): number | null {
   }
 }
 
-export function stats(values: number[]) {
-  if (!values.length) return null;
+export function stats(values: Array<number>) {
+  if (!values.length) {
+    return null;
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
   const round = (n: number) => +n.toFixed(3);

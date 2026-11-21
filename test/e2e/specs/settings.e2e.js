@@ -36,7 +36,9 @@ async function save(page, status = 200) {
   );
   await page.getByRole("button", { name: "Save", exact: true }).click();
   expect((await response).status()).toBe(status);
-  if (status === 200) await expect(page.getByText('"Settings" updated').first()).toBeVisible();
+  if (status === 200) {
+    await expect(page.getByText('"Settings" updated').first()).toBeVisible();
+  }
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 }
 
@@ -58,7 +60,9 @@ test.afterEach(async ({ page }) => {
   await page.goto("/admin");
   const now = await settings(page);
   for (const [key, value] of Object.entries(before)) {
-    if (key === "app.root_url" || JSON.stringify(now[key]) === JSON.stringify(value)) continue;
+    if (key === "app.root_url" || JSON.stringify(now[key]) === JSON.stringify(value)) {
+      continue;
+    }
     const res = await api(page, `/api/settings/${key}`, "PUT", value);
     expect(res.status, key).toBe(200);
   }
@@ -268,7 +272,9 @@ test("a provider template on a saved server asks for its password before a save"
   // The save is refused on the page: nothing is sent, so the old password goes nowhere.
   const sent = [];
   page.on("request", (r) => {
-    if (r.method() === "PUT" && new URL(r.url()).pathname === "/api/settings") sent.push(r);
+    if (r.method() === "PUT" && new URL(r.url()).pathname === "/api/settings") {
+      sent.push(r);
+    }
   });
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(/Enter the password again/)).toBeVisible();
@@ -361,7 +367,9 @@ test("the settings page never sends two servers with one uuid", async ({ page })
   // stands in for such a stored state; the API now refuses to store it again.
   const stored = (await settings(page)).smtp.length;
   await page.route("**/api/settings", async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
+    if (route.request().method() !== "GET") {
+      return route.continue();
+    }
     const response = await route.fetch();
     const body = await response.json();
     body.data.smtp.push({
@@ -727,7 +735,7 @@ test("a save without edits leaves unshown values and untouched secrets alone", a
   await put("bounce.forwardemail", { enabled: false, key: "fe-secret" });
   await put("bounce.lettermint", { enabled: false, key: "lm-secret" });
   await put("security.captcha", {
-    altcha: { enabled: false, complexity: 123456 },
+    altcha: { enabled: false, complexity: 123_456 },
     hcaptcha: { enabled: false, key: "site", secret: "hc-secret" },
   });
   await put("security.oidc", {

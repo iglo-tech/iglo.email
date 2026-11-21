@@ -2,7 +2,8 @@
 import type { RequestContext } from "@/server/context";
 import { HttpError, errorResponse } from "@/server/response";
 import type { Router } from "@/server/router";
-import { cookie, type Authentication } from "@/users/auth";
+import { cookie } from "@/users/auth";
+import type { Authentication } from "@/users/auth";
 import { TOOLS, executeTool } from "@/mcp/tools";
 import { version } from "@/../package.json";
 
@@ -54,14 +55,14 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
     const protocolVersionHeader = context.request.headers.get("mcp-protocol-version");
     if (
       protocolVersionHeader !== null &&
-      !(SUPPORTED_VERSIONS as readonly string[]).includes(protocolVersionHeader)
+      !(SUPPORTED_VERSIONS as ReadonlyArray<string>).includes(protocolVersionHeader)
     ) {
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
           id: null,
           error: {
-            code: -32000,
+            code: -32_000,
             message: `Bad Request: Unsupported protocol version: ${protocolVersionHeader} (supported versions: ${SUPPORTED_VERSIONS.join(", ")})`,
           },
         }),
@@ -93,7 +94,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         JSON.stringify({
           jsonrpc: "2.0",
           id: null,
-          error: { code: -32700, message: "Parse error" },
+          error: { code: -32_700, message: "Parse error" },
         }),
         {
           status: 200,
@@ -108,7 +109,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         JSON.stringify({
           jsonrpc: "2.0",
           id: null,
-          error: { code: -32600, message: "Batch requests are not supported" },
+          error: { code: -32_600, message: "Batch requests are not supported" },
         }),
         {
           status: 200,
@@ -128,7 +129,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         JSON.stringify({
           jsonrpc: "2.0",
           id: null,
-          error: { code: -32600, message: "Invalid Request" },
+          error: { code: -32_600, message: "Invalid Request" },
         }),
         {
           status: 200,
@@ -150,7 +151,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         JSON.stringify({
           jsonrpc: "2.0",
           id: null,
-          error: { code: -32600, message: "Invalid Request: invalid id" },
+          error: { code: -32_600, message: "Invalid Request: invalid id" },
         }),
         {
           status: 200,
@@ -180,7 +181,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
       let negotiated: string = LATEST_PROTOCOL_VERSION;
       if (
         typeof requested === "string" &&
-        (SUPPORTED_VERSIONS as readonly string[]).includes(requested)
+        (SUPPORTED_VERSIONS as ReadonlyArray<string>).includes(requested)
       ) {
         negotiated = requested;
       }
@@ -234,7 +235,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
           JSON.stringify({
             jsonrpc: "2.0",
             id,
-            error: { code: -32602, message: "Invalid params" },
+            error: { code: -32_602, message: "Invalid params" },
           }),
           {
             status: 200,
@@ -249,7 +250,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
           JSON.stringify({
             jsonrpc: "2.0",
             id,
-            error: { code: -32602, message: `Unknown tool: ${params.name}` },
+            error: { code: -32_602, message: `Unknown tool: ${params.name}` },
           }),
           {
             status: 200,
@@ -298,7 +299,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
       JSON.stringify({
         jsonrpc: "2.0",
         id,
-        error: { code: -32601, message: "Method not found" },
+        error: { code: -32_601, message: "Method not found" },
       }),
       {
         status: 200,

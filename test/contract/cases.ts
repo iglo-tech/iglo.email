@@ -16,7 +16,7 @@ const html404 = (
   heading: string,
   logoAlt: string,
   footerText: string,
-  footerLinks: readonly { readonly text: string; readonly href: string }[],
+  footerLinks: ReadonlyArray<{ readonly text: string; readonly href: string }>,
   customScript: boolean,
   archiveTitle: string | null,
 ): Expectation => ({
@@ -86,7 +86,7 @@ const helper = (
   fixture: endpoint(fixturePath, expected),
   auth: "basic",
 });
-const volatile: readonly VolatileField[] = [
+const volatile: ReadonlyArray<VolatileField> = [
   { path: ["data", "id"], kind: "id", bind: "entity" },
   { path: ["data", "owner_id"], kind: "id", bind: "entity" },
   { path: ["data", "other_id"], kind: "id", bind: "other" },
@@ -99,13 +99,15 @@ const volatile: readonly VolatileField[] = [
 // do not pretend that their corresponding production domain routes exist.
 function freeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value)) freeze(child);
+    for (const child of Object.values(value)) {
+      freeze(child);
+    }
     Object.freeze(value);
   }
   return value;
 }
 
-export const cases: readonly ContractCase[] = freeze([
+export const cases: ReadonlyArray<ContractCase> = freeze([
   { id: "health", group: "core", ...same("/health", ok) },
   {
     id: "users-no-session",
@@ -188,7 +190,7 @@ export const cases: readonly ContractCase[] = freeze([
       "/api/users/9223372036854775808",
       json(
         500,
-        '{"message":"Error fetching Users: pq: value \\"9223372036854775807\\" is out of range for type integer (22003)"}',
+        String.raw`{"message":"Error fetching Users: pq: value \"9223372036854775807\" is out of range for type integer (22003)"}`,
       ),
     ),
     production: endpoint("/api/users/9223372036854775808", invalidID),
@@ -368,9 +370,9 @@ export const cases: readonly ContractCase[] = freeze([
     fixtureGroup: "staged",
     auth: "basic",
     difference: "D18",
-    reference: endpoint("/api/lists\\1", notFound),
-    production: endpoint("/api/lists\\1", json(400, '{"message":"List not found"}')),
-    fixture: endpoint("/fixture/id\\12", json(200, '{"data":12}')),
+    reference: endpoint(String.raw`/api/lists\1`, notFound),
+    production: endpoint(String.raw`/api/lists\1`, json(400, '{"message":"List not found"}')),
+    fixture: endpoint(String.raw`/fixture/id\12`, json(200, '{"data":12}')),
   },
   ...["%zz", "1%", "%2"].map((id, index) =>
     helper(`malformed-path-${index + 1}`, `/api/lists/${id}`, `/fixture/id/${id}`, badEscape),

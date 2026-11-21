@@ -39,7 +39,7 @@ const peer = () => `203.0.113.${1 + Math.floor(Math.random() * 254)}`;
 // Settings this file changed, as the server had them, and the instances and sinks it started.
 // `afterEach` closes the started ones and puts the settings back, even after a timeout.
 let changed = {};
-let started = [];
+const started = [];
 // What a sending path answers while the restore hold stands: the hold's own reason, as `hold.ts`
 // words it, so another 503 with a different message cannot pass for it.
 const HOLD_MESSAGE =
@@ -59,7 +59,9 @@ test.afterEach(async ({ request }) => {
     }
   };
   // Instances and sinks first: an instance holds its data directory while it runs.
-  for (const item of started.splice(0)) await step("closing", () => item.close());
+  for (const item of started.splice(0)) {
+    await step("closing", () => item.close());
+  }
   // An instance whose test timed out never reached its `close` above; this sweep reaches it.
   await step("closing the instances this file started", stopOwnedInstances);
   const pending = changed;
@@ -68,16 +70,22 @@ test.afterEach(async ({ request }) => {
     const call = await requestAdmin(request);
     for (const [key, value] of Object.entries(pending)) {
       const response = await call(`/api/settings/${key}`, "PUT", value);
-      if (response.status !== 200) throw new Error(`${key} answered ${response.status}`);
+      if (response.status !== 200) {
+        throw new Error(`${key} answered ${response.status}`);
+      }
     }
     await call("/api/import/subscribers", "DELETE");
   });
-  if (failures.length) throw new Error(failures.join("\n"));
+  if (failures.length) {
+    throw new Error(failures.join("\n"));
+  }
 });
 
 // Keeps what the server had for a setting, so `afterEach` puts it back. The first value kept wins.
 function remember(settings, key) {
-  if (!(key in changed)) changed[key] = settings[key];
+  if (!(key in changed)) {
+    changed[key] = settings[key];
+  }
 }
 
 // Changes a setting, remembering what the server had so `afterEach` puts it back.
@@ -159,7 +167,9 @@ function onOrigin(url, origin) {
 async function unsubscribeInBrowser(page, url, { blocklist = false } = {}) {
   await page.goto(url);
   await expect(page.locator("#btn-unsub")).toBeVisible();
-  if (blocklist) await page.locator("#privacy-blocklist").check();
+  if (blocklist) {
+    await page.locator("#privacy-blocklist").check();
+  }
   await page.locator("#btn-unsub").click();
   await expect(page.locator("body")).toContainText(/unsubscribed/i);
 }
@@ -314,7 +324,9 @@ test("an import that finishes and one that fails each mail the admin list", asyn
   const list = await makeList(page);
   const domain = `${unique("import")}.example.com`;
   const rows = ["email,name,attributes"];
-  for (let i = 0; i < 3; i += 1) rows.push(`reader${i}@${domain},"Reader ${i}","{}"`);
+  for (let i = 0; i < 3; i += 1) {
+    rows.push(`reader${i}@${domain},"Reader ${i}","{}"`);
+  }
 
   expect(await startImport(page, { lists: [list.id], delim: ",", text: rows.join("\n") })).toBe(
     200,
@@ -447,7 +459,7 @@ function attachedJSON(mail, name) {
   const rest = mail.body.slice(start);
   const body = rest.slice(rest.search(/\r?\n\r?\n/)).replace(/^\r?\n\r?\n/, "");
   const encoded = /^[A-Za-z0-9+/=\s]*/.exec(body)[0];
-  return JSON.parse(Buffer.from(encoded.replace(/\s+/g, ""), "base64").toString("utf8"));
+  return JSON.parse(Buffer.from(encoded.replaceAll(/\s+/g, ""), "base64").toString("utf8"));
 }
 
 test("the privacy page e-mails a person's data and wipes it, after which no campaign reaches them", async ({

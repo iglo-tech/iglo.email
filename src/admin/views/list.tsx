@@ -92,7 +92,7 @@ function Stat(props: { title: unknown; value: string; href: string }) {
   return (
     <div class="col-3">
       <article class="card float stat-card">
-        <h4 class="title">{props.title as never}</h4>
+        <h4 class="title">{props.title}</h4>
         <div class="stat-value">
           <a x-bind:href={props.href} class="unstyled" x-text={props.value}></a>
         </div>
@@ -228,8 +228,9 @@ export function listView(tab: "list" | "edit"): AdminView {
       const scope = listScope(permission);
       return scope.all || scope.ids.includes(id);
     };
-    if (!allowed("list:get"))
+    if (!allowed("list:get")) {
       throw new HttpError(403, t.Ts("globals.messages.permissionDenied", "name", "lists"));
+    }
     const base = `/admin/lists/${id}`;
     const selected = (name: string) => (tab === name ? { "aria-selected": "true" } : {});
     return {

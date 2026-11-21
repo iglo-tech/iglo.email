@@ -16,7 +16,7 @@ export function startLoopFixture(dataDir: string) {
   const clock = new TestClock();
   const running = new Map<string, Running>();
   const started: Array<{ loop: string; id: string; inTransaction: boolean }> = [];
-  const failures: string[] = [];
+  const failures: Array<string> = [];
   const waiters: Array<() => void> = [];
   async function action(input: Record<string, any>): Promise<unknown> {
     switch (input.action) {
@@ -38,8 +38,12 @@ export function startLoopFixture(dataDir: string) {
             id: String(id),
             inTransaction: connection.inTransaction,
           });
-          for (const notify of waiters.splice(0)) notify();
-          if (input.fail) throw new Error("fixture processing failed");
+          for (const notify of waiters.splice(0)) {
+            notify();
+          }
+          if (input.fail) {
+            throw new Error("fixture processing failed");
+          }
         };
         const loop = startLoop<number>({
           db: connection,
@@ -61,10 +65,11 @@ export function startLoopFixture(dataDir: string) {
             ? observe
             : async (id) => {
                 observe(id);
-                if (input.hold)
+                if (input.hold) {
                   await new Promise<void>((resolve) => {
                     entry.release = resolve;
                   });
+                }
               },
         });
         entry.loop = loop;
@@ -74,8 +79,9 @@ export function startLoopFixture(dataDir: string) {
         return true;
       }
       case "wait-started":
-        if (started.length < input.count)
+        if (started.length < input.count) {
           await new Promise<void>((resolve) => waiters.push(resolve));
+        }
         return started;
       case "sleeping":
         await clock.whenSleeping(input.count ?? 1);
@@ -128,7 +134,9 @@ export function startLoopFixture(dataDir: string) {
       }
       await Promise.allSettled([...running.values()].map((entry) => entry.loop.done));
       await server.stop(true);
-      for (const connection of databases) connection.close(true);
+      for (const connection of databases) {
+        connection.close(true);
+      }
     },
   };
 }

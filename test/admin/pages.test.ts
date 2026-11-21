@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, api, get, login, userWith, type Fixture } from "@/test/admin/support";
+import { admin, api, get, login, userWith } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;
@@ -37,14 +38,17 @@ test("the dashboard renders the upstream shell without caching", async () => {
   expect(html).toContain('href="/admin/user/profile"');
   expect(html).toContain('<a href="/admin" aria-current="page">');
   expect(html).toContain('data-testid="system"');
-  for (const key of ["Uptime", "App memory", "CPU cores"]) expect(html).toContain(key);
+  for (const key of ["Uptime", "App memory", "CPU cores"]) {
+    expect(html).toContain(key);
+  }
   expect(html).toContain('"globals.terms.draft":"Draft"');
 });
 
 test("navigation is filtered by permission and a denied view says why", async () => {
   const everything = await (await get(f, "/admin", cookie)).text();
-  for (const path of ["/admin/subscribers", "/admin/users", "/admin/settings/maintenance"])
+  for (const path of ["/admin/subscribers", "/admin/users", "/admin/settings/maintenance"]) {
     expect(everything).toContain(`href="${path}"`);
+  }
   const limited = await userWith(f, cookie, "limited-nav", ["campaigns:get"]);
   const page = await (await get(f, "/admin", limited)).text();
   const html = page.slice(page.indexOf("<nav>"), page.indexOf("</nav>"));

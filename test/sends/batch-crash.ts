@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { Database } from "bun:sqlite";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type Socket } from "node:net";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -14,9 +15,9 @@ const COUNT = 25;
 interface Sink {
   port: number;
   /** Recipient of every message whose final dot the sink received. */
-  data: string[];
+  data: Array<string>;
   /** Recipients the sink answered 250 for. */
-  accepted: string[];
+  accepted: Array<string>;
   connected: Promise<void>;
   held: Promise<void>;
   release(): void;
@@ -28,8 +29,8 @@ interface Sink {
  * ones is never answered.
  */
 async function startSink(options: { greet: boolean; holdAfter?: number }): Promise<Sink> {
-  const data: string[] = [];
-  const accepted: string[] = [];
+  const data: Array<string> = [];
+  const accepted: Array<string> = [];
   const sockets = new Set<Socket>();
   let connect!: () => void;
   const connected = new Promise<void>((r) => (connect = r));
@@ -45,8 +46,10 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
     socket.setEncoding("latin1");
     let buffer = "";
     let to = "";
-    let body: string[] | null = null;
-    if (greet) socket.write("220 sink.test ESMTP\r\n");
+    let body: Array<string> | null = null;
+    if (greet) {
+      socket.write("220 sink.test ESMTP\r\n");
+    }
     socket.on("data", (chunk: string) => {
       buffer += chunk;
       let at: number;
@@ -54,32 +57,41 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 2);
         if (body) {
-          if (line !== ".") continue;
+          if (line !== ".") {
+            continue;
+          }
           body = null;
           data.push(to);
-          if (holdAfter !== undefined && accepted.length >= holdAfter) announce();
-          else {
+          if (holdAfter !== undefined && accepted.length >= holdAfter) {
+            announce();
+          } else {
             accepted.push(to);
             socket.write("250 queued\r\n");
           }
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === "EHLO") socket.write("250-sink.test\r\n250 8BITMIME\r\n");
-        else if (verb === "RCPT") {
+        if (verb === "EHLO") {
+          socket.write("250-sink.test\r\n250 8BITMIME\r\n");
+        } else if (verb === "RCPT") {
           to = /<([^>]*)>/.exec(line)?.[1] ?? "";
           socket.write("250 ok\r\n");
         } else if (verb === "DATA") {
           body = [];
           socket.write("354 go\r\n");
-        } else if (verb === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (verb === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("sink address");
+  if (!address || typeof address === "string") {
+    throw new Error("sink address");
+  }
   return {
     port: address.port,
     data,
@@ -89,10 +101,14 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
     release() {
       greet = true;
       holdAfter = undefined;
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
     },
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((r) => server.close(() => r()));
     },
   };
@@ -138,14 +154,14 @@ function rows(dir: string) {
     db.close();
   }
 }
-const count = (list: string[], value: string) => list.filter((v) => v === value).length;
+const count = (list: Array<string>, value: string) => list.filter((v) => v === value).length;
 
 for (const point of ["claimed", "mid-batch"] as const) {
   const dir = await mkdtemp(join(tmpdir(), "iglo-batch-crash-"));
   const sink = await startSink(
     point === "claimed" ? { greet: false } : { greet: true, holdAfter: 3 },
   );
-  const children: ReturnType<typeof launch>[] = [];
+  const children: Array<ReturnType<typeof launch>> = [];
   try {
     const seeded = launch(dir, sink.port, "seed");
     children.push(seeded);
@@ -156,8 +172,11 @@ for (const point of ["claimed", "mid-batch"] as const) {
     children.push(first);
     // `claimed`: the outbox connected, but no SMTP command was exchanged.
     // `mid-batch`: three messages were accepted and the next final dot is held.
-    if (point === "claimed") await within(sink.connected, 30_000, "first connection");
-    else await within(sink.held, 30_000, "held data");
+    if (point === "claimed") {
+      await within(sink.connected, 30_000, "first connection");
+    } else {
+      await within(sink.held, 30_000, "held data");
+    }
     first.child.kill("SIGKILL");
     assert.equal((await within(first.exited, 20_000, "kill")).signal, "SIGKILL");
     const before = rows(dir);
@@ -166,8 +185,11 @@ for (const point of ["claimed", "mid-batch"] as const) {
     assert.ok(before.every((r) => r.status === "queued" || r.status === "sending"));
     const acceptedBefore = [...sink.accepted];
     const dataBefore = [...sink.data];
-    if (point === "claimed") assert.equal(sink.data.length, 0);
-    else assert.equal(acceptedBefore.length, 3);
+    if (point === "claimed") {
+      assert.equal(sink.data.length, 0);
+    } else {
+      assert.equal(acceptedBefore.length, 3);
+    }
 
     sink.release();
     const second = launch(dir, sink.port, "run");
@@ -175,7 +197,9 @@ for (const point of ["claimed", "mid-batch"] as const) {
     const deadline = Date.now() + 30_000;
     let after = rows(dir);
     while (after.some((r) => r.status === "queued" || r.status === "sending")) {
-      if (Date.now() > deadline) throw new Error(`${point}: restart did not finish`);
+      if (Date.now() > deadline) {
+        throw new Error(`${point}: restart did not finish`);
+      }
       await Bun.sleep(50);
       after = rows(dir);
     }
@@ -202,8 +226,9 @@ for (const point of ["claimed", "mid-batch"] as const) {
       `${point}: killed with ${claimed.length} claimed of ${COUNT} queued, ${acceptedBefore.length} accepted and ${dataBefore.length - acceptedBefore.length} held at DATA; after restart ${after.filter((r) => r.status === "unknown").length} unknown, ${after.filter((r) => r.status === "sent").length} sent, SMTP data ${sink.data.length}`,
     );
   } finally {
-    for (const { child } of children)
+    for (const { child } of children) {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }
     await Promise.all(children.map((c) => c.exited));
     await sink.close();
     await rm(dir, { recursive: true, force: true });

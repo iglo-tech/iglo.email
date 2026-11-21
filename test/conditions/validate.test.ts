@@ -5,12 +5,16 @@ import { validate } from "@/conditions/validate";
 
 const ok = (condition: unknown, canUseSql = false) => {
   const result = validate(condition, { canUseSql });
-  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  if (!result.ok) {
+    throw new Error(JSON.stringify(result.errors));
+  }
   return result.condition;
 };
 const errors = (condition: unknown, canUseSql = false, field?: string) => {
   const result = validate(condition, { canUseSql, ...(field ? { field } : {}) });
-  if (result.ok) throw new Error("expected errors");
+  if (result.ok) {
+    throw new Error("expected errors");
+  }
   return result.errors;
 };
 const fields = (condition: unknown, canUseSql = false) =>
@@ -52,8 +56,9 @@ describe("accepted shapes", () => {
     ok({ attr: "status", op: "eq", value: "enabled" });
     ok({ attr: "status", op: "ne", value: "blocklisted" });
     ok({ attr: "status", op: "in", value: ["enabled", "disabled"] });
-    for (const since of ["trigger", "enrollment", "last_step", "P30D", "PT0S", "P1W", "PT1H30M"])
+    for (const since of ["trigger", "enrollment", "last_step", "P30D", "PT0S", "P1W", "PT1H30M"]) {
       ok({ event: "e", since });
+    }
     ok({ event: "e", count: { gte: 0 } });
     ok({ event: "e", count: { lte: 3 } });
     ok({ event: "e", count: { eq: 2 } });
@@ -68,8 +73,9 @@ describe("accepted shapes", () => {
 
 describe("rejected shapes", () => {
   test("non-objects and unknown or missing discriminators", () => {
-    for (const value of [null, 1, "x", [], true, undefined])
+    for (const value of [null, 1, "x", [], true, undefined]) {
       expect(fields(value)).toEqual(["condition"]);
+    }
     expect(fields({})).toEqual(["condition"]);
     expect(fields({ attr: "a", op: "exists", event: "e" })).toEqual(["condition"]);
     expect(fields({ attr: "a", op: "exists", extra: 1 })).toEqual(["condition.extra"]);
@@ -134,8 +140,9 @@ describe("rejected shapes", () => {
     ];
     for (const path of paths) {
       expect(fields({ attr: path, op: "exists" })).toEqual(["condition.attr"]);
-      if (typeof path === "string")
+      if (typeof path === "string") {
         expect(fields({ event: "e", where: { [`data.${path}`]: 1 } })).toEqual(["condition.where"]);
+      }
     }
     expect(fields({ event: "e", where: { product: "x" } })).toEqual(["condition.where"]);
     expect(fields({ event: "e", where: { data: "x" } })).toEqual(["condition.where"]);
@@ -150,8 +157,9 @@ describe("rejected shapes", () => {
   });
 
   test("events: name, since and count", () => {
-    for (const name of ["", 1, null, "a\u0001", "x".repeat(limits.eventNameBytes + 1), "\udc00"])
+    for (const name of ["", 1, null, "a\u0001", "x".repeat(limits.eventNameBytes + 1), "\udc00"]) {
       expect(fields({ event: name })).toEqual(["condition.event"]);
+    }
     for (const since of [
       "",
       "now",
@@ -170,10 +178,12 @@ describe("rejected shapes", () => {
       "P9999999999D",
       1,
       null,
-    ])
+    ]) {
       expect(fields({ event: "e", since })).toEqual(["condition.since"]);
-    for (const count of [{}, [], 1, { gt: 1 }, { gte: -1 }, { gte: 1.5 }, { eq: "1" }])
+    }
+    for (const count of [{}, [], 1, { gt: 1 }, { gte: -1 }, { gte: 1.5 }, { eq: "1" }]) {
       expect(fields({ event: "e", count }).length).toBeGreaterThan(0);
+    }
     expect(fields({ event: "e", count: { gte: limits.count + 1 } })).toEqual([
       "condition.count.gte",
     ]);
@@ -181,8 +191,9 @@ describe("rejected shapes", () => {
   });
 
   test("lists", () => {
-    for (const list of [0, -1, 1.5, "1", null, Number.MAX_SAFE_INTEGER + 2])
+    for (const list of [0, -1, 1.5, "1", null, Number.MAX_SAFE_INTEGER + 2]) {
       expect(fields({ list })).toEqual(["condition.list"]);
+    }
     expect(fields({ list: 1, status: [] })).toEqual(["condition.status"]);
     expect(fields({ list: 1, status: "confirmed" })).toEqual(["condition.status"]);
     expect(fields({ list: 1, status: ["confirmed", "maybe"] })).toEqual(["condition.status.1"]);
@@ -210,8 +221,9 @@ describe("rejected shapes", () => {
       "a\u0000",
       1,
       "x".repeat(limits.sqlLength + 1),
-    ])
+    ]) {
       expect(fields({ sql }, true)).toEqual(["condition.sql"]);
+    }
     ok({ sql: "subscribers.name = 'x';" }, true);
     const many = Array.from({ length: limits.sqlPredicates + 1 }, () => ({ sql: "1 = 1" }));
     expect(fields({ all: many }, true)).toEqual([`condition.all.${limits.sqlPredicates}.sql`]);
@@ -219,7 +231,7 @@ describe("rejected shapes", () => {
 });
 
 describe("numbers are exactly comparable", () => {
-  const unsafe = 1000000000000000100;
+  const unsafe = 1_000_000_000_000_000_100;
   const message = "number must be a safe integer (within ±9007199254740991) or a finite fraction";
   const refused = (condition: unknown, field: string) =>
     expect(validate(condition, { canUseSql: false })).toEqual({
@@ -228,8 +240,9 @@ describe("numbers are exactly comparable", () => {
     });
 
   test("integers beyond the safe range are refused in every comparison", () => {
-    for (const op of ["eq", "ne", "lt", "lte", "gt", "gte"])
+    for (const op of ["eq", "ne", "lt", "lte", "gt", "gte"]) {
       refused({ attr: "invoice_id", op, value: unsafe }, "condition.value");
+    }
     refused({ attr: "n", op: "eq", value: -unsafe }, "condition.value");
     refused({ attr: "n", op: "eq", value: 2 ** 53 }, "condition.value");
     refused({ attr: "n", op: "gt", value: 1e300 }, "condition.value");
@@ -251,8 +264,8 @@ describe("numbers are exactly comparable", () => {
       0.1,
       -1.5,
       1e-300,
-      123456789.125,
-      4503599627370495.5,
+      123_456_789.125,
+      4_503_599_627_370_495.5,
     ]) {
       ok({ attr: "n", op: "eq", value });
       ok({ attr: "n", op: "in", value: [value] });
@@ -264,14 +277,18 @@ describe("numbers are exactly comparable", () => {
 describe("hostile input stays bounded", () => {
   test("deep nesting is refused at the depth limit without recursing further", () => {
     let deep: unknown = { attr: "a", op: "exists" };
-    for (let i = 0; i < 100_000; i++) deep = { not: deep };
+    for (let i = 0; i < 100_000; i++) {
+      deep = { not: deep };
+    }
     const result = errors(deep);
     expect(result).toHaveLength(1);
     expect(result[0]!.message).toBe("nesting is too deep");
     expect(result[0]!.field.split(".").length).toBe(limits.depth + 1);
 
     let ok9: unknown = { attr: "a", op: "exists" };
-    for (let i = 1; i < limits.depth; i++) ok9 = { not: ok9 };
+    for (let i = 1; i < limits.depth; i++) {
+      ok9 = { not: ok9 };
+    }
     ok(ok9);
     expect(fields({ not: ok9 })[0]!.split(".").length).toBe(limits.depth + 1);
   });
@@ -310,7 +327,9 @@ describe("hostile input stays bounded", () => {
     // ask about every one of its 100,000 keys.
     const wide = (base: Record<string, unknown>, prefix: string) => {
       const values = new Map<string | symbol, unknown>(Object.entries(base));
-      for (let i = 0; i < 100_000; i++) values.set(`${prefix}${i}`, 1);
+      for (let i = 0; i < 100_000; i++) {
+        values.set(`${prefix}${i}`, 1);
+      }
       const keys = [...values.keys()];
       const seen = { count: 0 };
       const proxy = new Proxy(base, {
@@ -344,7 +363,9 @@ describe("hostile input stays bounded", () => {
     const bad = { any: Array.from({ length: 60 }, () => ({ attr: "a", op: "<script>" })) };
     const result = errors(bad);
     expect(result).toHaveLength(limits.errors);
-    for (const e of result) expect(JSON.stringify(e)).not.toContain("<script>");
+    for (const e of result) {
+      expect(JSON.stringify(e)).not.toContain("<script>");
+    }
   });
 
   test("prototype keys and accessors are plain data", () => {

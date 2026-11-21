@@ -5,7 +5,8 @@ import { HttpError, ok } from "@/server/response";
 import { readBodyBytes } from "@/users/input";
 import type { Authentication } from "@/users/auth";
 import type { SettingsStore } from "@/settings/store";
-import { bindFull, bindKey, hasField, masked, shapes, type Settings } from "@/settings/validate";
+import { bindFull, bindKey, hasField, masked, shapes } from "@/settings/validate";
+import type { Settings } from "@/settings/validate";
 import { decodeJsonBytes, orderedJson } from "@/settings/json";
 import { xmlSettings, xmlValue } from "@/settings/xml";
 
@@ -32,13 +33,17 @@ export function registerSettingsRoutes(
       const media = contentType.split(";", 1)[0]?.trim();
       let body: unknown;
       try {
-        if (!bytes.length) body = {};
-        else if (media === "application/json") body = orderedJson(decodeJsonBytes(bytes));
-        else if (media === "application/xml" || media === "text/xml")
+        if (!bytes.length) {
+          body = {};
+        } else if (media === "application/json") {
+          body = orderedJson(decodeJsonBytes(bytes));
+        } else if (media === "application/xml" || media === "text/xml") {
           body = xmlSettings(bytes, shapes);
-        else if (media === "application/x-www-form-urlencoded") {
+        } else if (media === "application/x-www-form-urlencoded") {
           const form = bytes.toString("utf8");
-          if (/%(?![0-9a-fA-F]{2})/.test(form) || form.includes(";")) throw new Error("form");
+          if (/%(?![0-9a-fA-F]{2})/.test(form) || form.includes(";")) {
+            throw new Error("form");
+          }
           body = {};
         } else if (media === "multipart/form-data") {
           await new Request("http://fixture.invalid", {
@@ -47,7 +52,9 @@ export function registerSettingsRoutes(
             body: Uint8Array.from(bytes),
           }).formData();
           body = {};
-        } else throw new HttpError(415);
+        } else {
+          throw new HttpError(415);
+        }
       } catch {
         if (
           bytes.length &&
@@ -58,8 +65,9 @@ export function registerSettingsRoutes(
             "application/x-www-form-urlencoded",
             "multipart/form-data",
           ].includes(media ?? "")
-        )
+        ) {
           throw new HttpError(415);
+        }
         throw new HttpError(400);
       }
       auth.revalidate(context, "settings:manage");
@@ -73,8 +81,9 @@ export function registerSettingsRoutes(
           "webhooks.block_private_addresses",
           "security.trusted_proxies",
           "security.public_rate_limit",
-        ])
+        ]) {
           if (!hasField(body, native)) next[native] = current[native];
+        }
         check(next, current);
         return next;
       });
@@ -97,14 +106,18 @@ export function registerSettingsRoutes(
           "application/x-www-form-urlencoded",
           "multipart/form-data",
         ].includes(media ?? "")
-      )
+      ) {
         throw new HttpError(415);
+      }
       let body: unknown;
       try {
-        if (media === "application/xml" || media === "text/xml")
+        if (media === "application/xml" || media === "text/xml") {
           body = orderedJson(xmlValue(bytes));
-        else if (media === "application/json") body = orderedJson(decodeJsonBytes(bytes));
-        else throw new Error("invalid raw value");
+        } else if (media === "application/json") {
+          body = orderedJson(decodeJsonBytes(bytes));
+        } else {
+          throw new Error("invalid raw value");
+        }
       } catch {
         throw new HttpError(400);
       }
@@ -130,7 +143,9 @@ export function registerSettingsRoutes(
         throw new HttpError(400, "Invalid data.");
       }
       auth.revalidate(context, "settings:manage");
-      if (!smtpTest) throw new HttpError(501, "SMTP test is unavailable");
+      if (!smtpTest) {
+        throw new HttpError(501, "SMTP test is unavailable");
+      }
       refuseWhileHeld(context.app.db);
       await smtpTest(body, () => auth.revalidate(context, "settings:manage"));
       return ok([]);

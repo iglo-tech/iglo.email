@@ -2,7 +2,8 @@
 // same `id`, correctly signed, a duplicate allowed and a loss not. Then a SIGTERM with a hung
 // receiver still exits cleanly. Part of `bun run contract:webhooks`.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -47,26 +48,32 @@ async function start(listenPort: number) {
   );
   const attempt = child;
   attempt.stderr!.on("data", (chunk: Buffer) => {
-    if (child === attempt) errors = (errors + chunk.toString()).slice(-4000);
+    if (child === attempt) {
+      errors = (errors + chunk.toString()).slice(-4000);
+    }
   });
   const deadline = Date.now() + 10_000;
   for (;;) {
     // An exit here is a failed start (the port in use, for one); /health alone could be another server's.
     if (child.exitCode !== null) {
-      await stderrDrained(child!);
+      await stderrDrained(child);
       throw new Error(`not ready: ${errors}`);
     }
     const response = await fetch(`${origin}/health`).catch(() => null);
-    if (response?.status === 200 && child.pid !== undefined && listensOn(child.pid, listenPort))
+    if (response?.status === 200 && child.pid !== undefined && listensOn(child.pid, listenPort)) {
       return;
+    }
     assert(Date.now() < deadline, `not ready: ${errors}`);
     await Bun.sleep(20);
   }
 }
 const exit = (process: ChildProcess) =>
   new Promise<number | null>((done) => {
-    if (process.exitCode !== null || process.signalCode !== null) done(process.exitCode);
-    else process.once("exit", (code) => done(code));
+    if (process.exitCode !== null || process.signalCode !== null) {
+      done(process.exitCode);
+    } else {
+      process.once("exit", (code) => done(code));
+    }
   });
 
 let release = () => {};

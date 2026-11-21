@@ -35,14 +35,14 @@ export interface RecordedEvent {
   suppressed(): boolean;
 }
 export interface Enrollments {
-  started: unknown[];
-  ended: unknown[];
+  started: Array<unknown>;
+  ended: Array<unknown>;
   /**
    * Sequences the event would have started but cannot, with the reason (B116, D131): a
    * blocklisted subscriber's start (`subscriber_blocklisted`), a suppressed person's marketing
    * start (`suppressed`). Stored with the event, so the subscriber's timeline shows it.
    */
-  skipped: unknown[];
+  skipped: Array<unknown>;
 }
 /**
  * The subscriber an event names, as the grant check (D99) sees it before the event writes: the
@@ -50,7 +50,7 @@ export interface Enrollments {
  * creates the subscriber, or it grants nothing.
  */
 export interface ExistingSubscriber {
-  lists: bigint[];
+  lists: Array<bigint>;
 }
 /**
  * The authorization of one event: called once the subscriber it names is known, inside the
@@ -95,7 +95,7 @@ export type EventResult =
       event_id: number | object;
       subscriber_id: number | object;
       enrollments: Enrollments;
-      grants: Grant[];
+      grants: Array<Grant>;
     }
   | { status: number; message: string };
 
@@ -108,14 +108,16 @@ const numberID = (id: bigint) =>
  * `{started, ended, grants, skipped}`. A row written before grants existed has no `grants`, and
  * one written before B116 has no `skipped`.
  */
-function storedOutcome(text: string | null): { enrollments: Enrollments; grants: Grant[] } {
-  if (text === null) return { enrollments: { started: [], ended: [], skipped: [] }, grants: [] };
+function storedOutcome(text: string | null): { enrollments: Enrollments; grants: Array<Grant> } {
+  if (text === null) {
+    return { enrollments: { started: [], ended: [], skipped: [] }, grants: [] };
+  }
   // Integers beyond 2^53 in enrollments stay exact.
   const stored = JSON.parse(text, (_key, value, context?: { source?: string }) =>
     typeof value === "number" && !Number.isSafeInteger(value) && context?.source
       ? rawJSON(context.source)
       : value,
-  ) as Partial<Enrollments> & { grants?: Grant[] };
+  ) as Partial<Enrollments> & { grants?: Array<Grant> };
   return {
     enrollments: {
       started: stored.started ?? [],
@@ -148,7 +150,7 @@ export function createEventStore(
   const result = (
     id: bigint,
     subscriberId: bigint,
-    outcome: { enrollments: Enrollments; grants: Grant[] },
+    outcome: { enrollments: Enrollments; grants: Array<Grant> },
   ): EventResult => ({
     status: 200,
     event_id: numberID(id),
@@ -162,8 +164,12 @@ export function createEventStore(
    */
   function grant(subscriber: Subscriber, list: bigint, suppressed: boolean): Grant {
     const listId = Number(list);
-    if (subscriber.status === "blocklisted") return { list_id: listId, result: "blocklisted" };
-    if (suppressed) return { list_id: listId, result: "suppressed" };
+    if (subscriber.status === "blocklisted") {
+      return { list_id: listId, result: "blocklisted" };
+    }
+    if (suppressed) {
+      return { list_id: listId, result: "suppressed" };
+    }
     const previous = subscribers.membership(subscriber.id, list);
     if (!previous) {
       subscribers.insertConfirmedIfAbsent(subscriber.id, list);
@@ -188,16 +194,18 @@ export function createEventStore(
           })
         | null;
       // Replay what the first request started, ended and granted; never recompute it.
-      if (previous)
+      if (previous) {
         return result(previous.id, previous.subscriber_id, storedOutcome(previous.enrollments));
+      }
     }
     // Refused before any write: the grant is checked against the lists as they are now.
-    for (const list of input.grantLists)
+    for (const list of input.grantLists) {
       if (!subscribers.grantable(list))
         throw new HttpError(
           400,
           options.i18n.Ts("globals.messages.invalidFields", "name", "subscriber.grant_lists"),
         );
+    }
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
     // B124 (D125): read once, after the upsert, so the address and ID the event leaves are the ones checked.
     const suppressed = input.grantLists.length > 0 && subscribers.suppressed(subscriber);
@@ -230,8 +238,9 @@ export function createEventStore(
       enrollments.skipped.length ||
       (input.idempotencyKey !== undefined &&
         (enrollments.started.length || enrollments.ended.length || grants.length))
-    )
+    ) {
       q.get("event-enrollments").run(JSON.stringify({ ...enrollments, grants }), inserted.id);
+    }
     return result(inserted.id, subscriber.id, { enrollments, grants });
   }
   /** One item in its own savepoint: a rejection rolls back only this item's writes. */
@@ -247,12 +256,14 @@ export function createEventStore(
       try {
         db.run("ROLLBACK TO event_item");
         db.run("RELEASE event_item");
-      } catch (cleanup) {
+      } catch (error_) {
         // The savepoint or the transaction itself is gone, so this item's writes cannot be
         // isolated. Abort the whole transaction rather than report a partial outcome.
-        throw new TransactionLost(cleanup);
+        throw new TransactionLost(error_);
       }
-      if (error instanceof HttpError) return { status: error.status, message: error.message };
+      if (error instanceof HttpError) {
+        return { status: error.status, message: error.message };
+      }
       throw error;
     }
   }
@@ -263,14 +274,16 @@ export function createEventStore(
     resolve: (result: EventResult) => void;
     reject: (error: unknown) => void;
   }
-  const queue: Pending[] = [];
+  const queue: Array<Pending> = [];
   let scheduled = false;
   type Outcome = { result: EventResult } | { failure: unknown };
   function flush() {
     scheduled = false;
     const entries = queue.splice(0, MAX_GROUP);
-    if (queue.length) schedule();
-    let outcomes: Outcome[];
+    if (queue.length) {
+      schedule();
+    }
+    let outcomes: Array<Outcome>;
     try {
       // item() has already rolled back its own savepoint when it throws, so an unexpected
       // error fails only that member and the others still commit.
@@ -278,26 +291,33 @@ export function createEventStore(
         entries.map((e): Outcome => {
           try {
             return { result: item(e.input, e.at, e.authorize) };
-          } catch (failure) {
-            if (failure instanceof TransactionLost || !db.inTransaction) throw failure;
-            return { failure };
+          } catch (error) {
+            if (error instanceof TransactionLost || !db.inTransaction) throw error;
+            return { failure: error };
           }
         }),
       );
     } catch (error) {
       // A shared BEGIN/COMMIT failure: nothing committed. Fail every member once and
       // leave any retry to the caller; never replay their callbacks (D19).
-      for (const entry of entries) entry.reject(error);
+      for (const entry of entries) {
+        entry.reject(error);
+      }
       return;
     }
     entries.forEach((entry, i) => {
       const outcome = outcomes[i]!;
-      if ("result" in outcome) entry.resolve(outcome.result);
-      else entry.reject(outcome.failure);
+      if ("result" in outcome) {
+        entry.resolve(outcome.result);
+      } else {
+        entry.reject(outcome.failure);
+      }
     });
   }
   function schedule() {
-    if (scheduled) return;
+    if (scheduled) {
+      return;
+    }
     scheduled = true;
     setImmediate(flush);
   }
@@ -333,7 +353,7 @@ export function createEventStore(
       receivedAt: Date,
       authorize: () => void,
       authorizeItem: (input: EventInput, existing: ExistingSubscriber | null) => void,
-    ): EventResult[] {
+    ): Array<EventResult> {
       const at = receivedAt.toISOString();
       return writeTransaction(db, () => {
         authorize();
@@ -358,16 +378,16 @@ export function createEventStore(
       return q.get("event-latest-named").get(subscriberId, name) as EventRow | null;
     },
     /** A subscriber's events in ID order, at most `limit`. */
-    list(subscriberId: bigint, limit = 1000): EventRow[] {
-      return q.get("events-by-subscriber").all(subscriberId, limit) as EventRow[];
+    list(subscriberId: bigint, limit = 1000): Array<EventRow> {
+      return q.get("events-by-subscriber").all(subscriberId, limit) as Array<EventRow>;
     },
     /** One page of a subscriber's events, newest first, for the admin screens. */
     page(subscriberId: bigint, page: number, perPage: number) {
-      const rows = q
-        .get("events-page")
-        .all(subscriberId, perPage, (page - 1) * perPage) as (EventRow & {
-        enrollments: string | null;
-      })[];
+      const rows = q.get("events-page").all(subscriberId, perPage, (page - 1) * perPage) as Array<
+        EventRow & {
+          enrollments: string | null;
+        }
+      >;
       const total = (q.get("events-count").get(subscriberId) as { n: bigint }).n;
       return {
         results: rows.map((row) => ({
@@ -388,11 +408,11 @@ export function createEventStore(
      * Delete expired events among the `window` oldest IDs. The caller holds the write
      * transaction. Returns the deleted IDs; none means the oldest window is current.
      */
-    purge(receivedBefore: Date, window: number): bigint[] {
+    purge(receivedBefore: Date, window: number): Array<bigint> {
       return (
-        q.get("events-purge").all(window, receivedBefore.toISOString()) as {
+        q.get("events-purge").all(window, receivedBefore.toISOString()) as Array<{
           id: bigint;
-        }[]
+        }>
       ).map((row) => row.id);
     },
     close: () => {

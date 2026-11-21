@@ -1,13 +1,8 @@
 // B79 / D98: a hand-written tool takes every field of the operations it covers.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import {
-  startProduction,
-  startMailbox,
-  admin,
-  type Production,
-  type Mailbox,
-} from "@/test/worked-example/harness";
+import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
+import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { HANDWRITTEN_COVERAGE } from "@/mcp/coverage";
 
@@ -27,9 +22,9 @@ const NOT_TAKEN: Record<string, Record<string, string>> = {
 type Schema = {
   $ref?: string;
   properties?: Record<string, unknown>;
-  allOf?: Schema[];
-  oneOf?: Schema[];
-  anyOf?: Schema[];
+  allOf?: Array<Schema>;
+  oneOf?: Array<Schema>;
+  anyOf?: Array<Schema>;
 };
 type Document = {
   paths: Record<string, Record<string, any>>;
@@ -40,10 +35,13 @@ type Document = {
  * The property names of a schema, following a $ref and every allOf, oneOf and anyOf part, so none is
  * missed: a branch of a composed body names fields the tool must take as well.
  */
-function propertiesOf(document: Document, schema: Schema | undefined): string[] {
-  if (!schema) return [];
-  if (schema.$ref)
+function propertiesOf(document: Document, schema: Schema | undefined): Array<string> {
+  if (!schema) {
+    return [];
+  }
+  if (schema.$ref) {
     return propertiesOf(document, document.components.schemas[schema.$ref.split("/").pop()!]);
+  }
   return [
     ...Object.keys(schema.properties ?? {}),
     ...(schema.allOf ?? []).flatMap((part) => propertiesOf(document, part)),
@@ -61,10 +59,12 @@ function propertiesOf(document: Document, schema: Schema | undefined): string[] 
 function fieldsOf(
   document: Document,
   operationId: string,
-): { query: string[]; body: string[]; declared: boolean } {
+): { query: Array<string>; body: Array<string>; declared: boolean } {
   for (const item of Object.values(document.paths)) {
     for (const operation of Object.values<any>(item)) {
-      if (operation.operationId !== operationId) continue;
+      if (operation.operationId !== operationId) {
+        continue;
+      }
       const query = (operation.parameters ?? [])
         .filter((parameter: any) => parameter.in === "query")
         .map((parameter: any) => parameter.name as string);
@@ -130,7 +130,9 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       await production.stop().catch(() => {});
       await production.close().catch(() => {});
     }
-    if (mailbox) await mailbox.close().catch(() => {});
+    if (mailbox) {
+      await mailbox.close().catch(() => {});
+    }
   });
 
   /** A JSON-RPC call to POST /api/mcp as the admin. */
@@ -148,10 +150,12 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
 
   async function callTool(name: string, args: Record<string, unknown> = {}) {
     const reply = await rpc("tools/call", { name, arguments: args });
-    if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
+    if (reply.error) {
+      throw new Error(`${name}: ${reply.error.message}`);
+    }
     return reply.result as {
       isError?: boolean;
-      content: { type: string; text: string }[];
+      content: Array<{ type: string; text: string }>;
       structuredContent?: any;
     };
   }
@@ -162,7 +166,7 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       headers: adminHeaders,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    return { status: response.status, json: (await response.json()) as any };
+    return { status: response.status, json: await response.json() };
   }
 
   async function createList(name: string, type: string, optin: string): Promise<number> {
@@ -175,15 +179,15 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
     const document = (await (
       await fetch(`${production.origin}/api/openapi.json`, { headers: adminHeaders })
     ).json()) as Document;
-    const tools = (await rpc("tools/list")).result.tools as {
+    const tools = (await rpc("tools/list")).result.tools as Array<{
       name: string;
       inputSchema: { properties?: Record<string, unknown> };
-    }[];
+    }>;
     const argumentNames = new Map(
       tools.map((tool) => [tool.name, Object.keys(tool.inputSchema.properties ?? {})]),
     );
 
-    const missing: string[] = [];
+    const missing: Array<string> = [];
     // A schema that yields no fields would pass this test empty, so each operation that declares
     // fields must yield some, and the count must cover every covered operation.
     let checked = 0;
@@ -195,7 +199,9 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       }
       const { query, body, declared } = fieldsOf(document, operationId);
       const fields = [...query, ...body];
-      if (declared) expect(fields.length, `${operationId} declares fields`).toBeGreaterThan(0);
+      if (declared) {
+        expect(fields.length, `${operationId} declares fields`).toBeGreaterThan(0);
+      }
       checked += fields.length;
       for (const field of fields) {
         if (NOT_TAKEN[toolName]?.[field]) {
@@ -203,8 +209,9 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
           continue;
         }
         const argument = ARGUMENT_FOR[toolName]?.[field] ?? field;
-        if (!names.includes(argument))
+        if (!names.includes(argument)) {
           missing.push(`${toolName} lacks ${argument} (${operationId})`);
+        }
       }
     }
     expect(missing).toEqual([]);
@@ -252,8 +259,9 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
   });
 
   test("list_lists takes order_by, order and type: the same answer as GET /api/lists with those parameters", async () => {
-    for (const name of ["B79 Lists Zeta", "B79 Lists Alpha", "B79 Lists Mid"])
+    for (const name of ["B79 Lists Zeta", "B79 Lists Alpha", "B79 Lists Mid"]) {
       await createList(name, "public", "single");
+    }
     await createList("B79 Lists Private", "private", "single");
 
     const ascending = await callTool("list_lists", {
@@ -263,7 +271,7 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       type: "public",
     });
     expect(ascending.isError).toBeFalsy();
-    const names = (ascending.structuredContent.data.results as { name: string }[]).map(
+    const names = (ascending.structuredContent.data.results as Array<{ name: string }>).map(
       (list) => list.name,
     );
     expect(names).toEqual(["B79 Lists Alpha", "B79 Lists Mid", "B79 Lists Zeta"]);
@@ -275,7 +283,9 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       type: "public",
     });
     expect(
-      (descending.structuredContent.data.results as { name: string }[]).map((list) => list.name),
+      (descending.structuredContent.data.results as Array<{ name: string }>).map(
+        (list) => list.name,
+      ),
     ).toEqual(["B79 Lists Zeta", "B79 Lists Mid", "B79 Lists Alpha"]);
 
     const rest = await api(
@@ -311,7 +321,7 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
             tag: ["b79-sort"],
             type: "regular",
           })
-        ).structuredContent.data.results as { name: string }[]
+        ).structuredContent.data.results as Array<{ name: string }>
       ).map((campaign) => campaign.name);
     expect(await names("ASC")).toEqual(["B79 Sort Alpha", "B79 Sort Zulu"]);
     expect(await names("DESC")).toEqual(["B79 Sort Zulu", "B79 Sort Alpha"]);

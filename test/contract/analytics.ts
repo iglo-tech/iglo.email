@@ -50,7 +50,9 @@ export async function runAnalyticsContract(target: {
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL analytics-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL analytics-${label}`);
+    }
   };
   const call = async (path: string, method = "GET", body?: unknown, auth = authorization) => {
     const response = await fetch(`${target.baseUrl}${path}`, {
@@ -65,21 +67,26 @@ export async function runAnalyticsContract(target: {
     });
     const text = await response.text();
     let parsed: any = text;
-    if (response.headers.get("content-type")?.startsWith("application/json"))
+    if (response.headers.get("content-type")?.startsWith("application/json")) {
       parsed = JSON.parse(text);
+    }
     return { status: response.status, body: parsed };
   };
   /** The reference restarts itself on a settings change; production applies it live. */
   const setting = async (key: string, value: unknown) => {
     check((await call(`/api/settings/${key}`, "PUT", value)).status === 200, `setting-${key}`);
-    if (!reference) return;
+    if (!reference) {
+      return;
+    }
     await Bun.sleep(1500);
     const deadline = Date.now() + 20_000;
     for (;;) {
       const up = await fetch(`${target.baseUrl}/health`, {
         signal: AbortSignal.timeout(2000),
       }).catch(() => null);
-      if (up?.ok) return;
+      if (up?.ok) {
+        return;
+      }
       check(Date.now() < deadline, "restart-wait");
       await Bun.sleep(100);
     }
@@ -88,7 +95,9 @@ export async function runAnalyticsContract(target: {
     const deadline = Date.now() + 10_000;
     for (;;) {
       const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length || Date.now() > deadline) return found;
+      if (found.length || Date.now() > deadline) {
+        return found;
+      }
       await Bun.sleep(25);
     }
   };
@@ -97,7 +106,7 @@ export async function runAnalyticsContract(target: {
   const analytics = async (
     resource: string,
     type: string,
-    ids: number[],
+    ids: Array<number>,
     query = "",
     auth = authorization,
   ) => {
@@ -113,25 +122,27 @@ export async function runAnalyticsContract(target: {
   const summed = (response: { status: number; body: any }, key: "campaign_id" | "list_id") => {
     check(response.status === 200, `summed-status-${response.status}`);
     const out: Record<number, number> = {};
-    for (const row of response.body.data as CountRow[])
+    for (const row of response.body.data as Array<CountRow>) {
       out[row[key]!] = (out[row[key]!] ?? 0) + row.count;
+    }
     return out;
   };
   const same = (actual: unknown, expected: unknown, label: string) => {
-    if (JSON.stringify(actual) !== JSON.stringify(expected))
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       process.stdout.write(
         `ACTUAL ${label} ${JSON.stringify(actual)} EXPECTED ${JSON.stringify(expected)}\n`,
       );
+    }
     check(JSON.stringify(actual) === JSON.stringify(expected), label);
   };
 
   const owned = {
-    campaigns: [] as number[],
-    templates: [] as number[],
-    subscribers: [] as number[],
-    lists: [] as number[],
-    users: [] as number[],
-    roles: [] as number[],
+    campaigns: [] as Array<number>,
+    templates: [] as Array<number>,
+    subscribers: [] as Array<number>,
+    lists: [] as Array<number>,
+    users: [] as Array<number>,
+    roles: [] as Array<number>,
   };
   try {
     // Fresh instance, before anything here exists. Absent aggregates stay JSON null.
@@ -173,7 +184,7 @@ export async function runAnalyticsContract(target: {
       ];
       check((await call("/api/settings/smtp", "PUT", smtp)).status === 200, "smtp-settings");
     }
-    const templates = (await call("/api/templates?no_body=true")).body.data as any[];
+    const templates = (await call("/api/templates?no_body=true")).body.data as Array<any>;
     const defaultTemplate = templates.find((t) => t.is_default).id as number;
 
     const list = async (name: string, type: string, optin: string) => {
@@ -182,7 +193,7 @@ export async function runAnalyticsContract(target: {
       owned.lists.push(response.body.data.id);
       return response.body.data.id as number;
     };
-    const subscriber = async (name: string, lists: number[]) => {
+    const subscriber = async (name: string, lists: Array<number>) => {
       const response = await call("/api/subscribers", "POST", {
         email: `${name}-${marker}@example.test`,
         name,
@@ -193,7 +204,7 @@ export async function runAnalyticsContract(target: {
       owned.subscribers.push(response.body.data.id);
       return response.body.data as { id: number; uuid: string; email: string };
     };
-    const campaign = async (name: string, lists: number[]) => {
+    const campaign = async (name: string, lists: Array<number>) => {
       const response = await call("/api/campaigns", "POST", {
         name: `${marker} ${name}`,
         subject: "s",
@@ -237,7 +248,10 @@ export async function runAnalyticsContract(target: {
 
     // Register two tracked links for a campaign. Upstream's test send is tracked; a production test
     // send is not (D117), so production takes the links from a real send of the campaign.
-    const linksOf = async (camp: { id: number; name: string; uuid: string }, lists: number[]) => {
+    const linksOf = async (
+      camp: { id: number; name: string; uuid: string },
+      lists: Array<number>,
+    ) => {
       const subject = `${marker} links ${camp.id}`;
       const track = (url: string) =>
         reference ? `{{ TrackLink "${url}" }}` : `{{ "${url}" | track_link }}`;
@@ -276,17 +290,22 @@ export async function runAnalyticsContract(target: {
           const deadline = Date.now() + 20_000;
           (await call(`/api/campaigns/${camp.id}`)).body.data.status !== "finished";
           await Bun.sleep(25)
-        )
+        ) {
           check(Date.now() < deadline, "links-finished");
+        }
         // The send's mail names the campaign in every link, so it is found by that campaign's UUID.
         const deadline = Date.now() + 10_000;
         while (html === undefined) {
           for (const mail of await received(subject)) {
             const text = (await mailpit.message(mail.ID)).HTML;
-            if (text.includes(`/${camp.uuid}/`)) html = text;
+            if (text.includes(`/${camp.uuid}/`)) {
+              html = text;
+            }
           }
           check(html !== undefined || Date.now() < deadline, "links-received");
-          if (html === undefined) await Bun.sleep(25);
+          if (html === undefined) {
+            await Bun.sleep(25);
+          }
         }
       }
       const found = [...html.matchAll(/\/link\/([0-9a-f-]{36})\//g)].map((m) => m[1]!);
@@ -309,8 +328,12 @@ export async function runAnalyticsContract(target: {
     // Unattributed rows, the default: individual tracking is off.
     const startedAt = new Date();
     // Individual tracking is off here, so mail names the dummy subscriber (D126, r2).
-    for (let i = 0; i < 3; i++) await view(camp1.uuid, dummy);
-    for (let i = 0; i < 2; i++) await view(camp2.uuid, dummy);
+    for (let i = 0; i < 3; i++) {
+      await view(camp1.uuid, dummy);
+    }
+    for (let i = 0; i < 2; i++) {
+      await view(camp2.uuid, dummy);
+    }
     await click(links1.a, camp1.uuid, ada.uuid);
     await click(links1.a, camp1.uuid, ada.uuid);
     await click(links1.b, camp1.uuid, ada.uuid);
@@ -338,7 +361,7 @@ export async function runAnalyticsContract(target: {
       { [camp1.id]: 3, [camp2.id]: 2 },
       "total-views",
     );
-    const linkRows = (await analytics("campaigns", "links", ids)).body.data as object[];
+    const linkRows = (await analytics("campaigns", "links", ids)).body.data as Array<object>;
     same(
       linkRows,
       [
@@ -366,13 +389,13 @@ export async function runAnalyticsContract(target: {
     // Row shapes and every interval.
     const finishedAt = new Date();
     for (const interval of ["hour", "day", "week", "month"]) {
-      const allowed = [truncated(startedAt, interval), truncated(finishedAt, interval)];
+      const allowed = new Set([truncated(startedAt, interval), truncated(finishedAt, interval)]);
       const rows = (await analytics("campaigns", "views", ids, `&interval=${interval}`)).body
         .data as CountRow[];
       check(rows.length >= 2, `interval-${interval}-rows`);
       for (const row of rows) {
         same(Object.keys(row).sort(), ["campaign_id", "count", "timestamp"], "campaign-row-keys");
-        check(allowed.includes(row.timestamp), `interval-${interval}-${row.timestamp}`);
+        check(allowed.has(row.timestamp), `interval-${interval}-${row.timestamp}`);
       }
       const listRows = (await analytics("lists", "views", [news], `&interval=${interval}`)).body
         .data as CountRow[];
@@ -383,10 +406,10 @@ export async function runAnalyticsContract(target: {
           "list-row-keys",
         );
         check(row.campaign_id === 0 && row.list_id === news, "list-row-values");
-        check(allowed.includes(row.timestamp), `list-interval-${interval}`);
+        check(allowed.has(row.timestamp), `list-interval-${interval}`);
       }
     }
-    const defaulted = (await analytics("campaigns", "views", ids)).body.data as CountRow[];
+    const defaulted = (await analytics("campaigns", "views", ids)).body.data as Array<CountRow>;
     check(
       defaulted.every((row) => row.timestamp === truncated(finishedAt, "day")),
       "interval-default-day",
@@ -406,12 +429,13 @@ export async function runAnalyticsContract(target: {
       ["2000-01-01T00:00:00+02:00", "2099-01-01T00:00:00-02:00"],
       ["2000-01-01T00:00", "2099-01-01T23:59"],
       [iso(-hour), iso(hour)],
-    ] as const)
+    ] as const) {
       same(
         summed(await dated("views", from, to), "campaign_id"),
         { [camp1.id]: 3 },
         `dates-${from}`,
       );
+    }
     same((await dated("views", iso(hour), iso(2 * hour))).body, { data: [] }, "dates-after");
     same((await dated("views", iso(hour), iso(-hour))).body, { data: [] }, "dates-reversed");
     same((await dated("links", iso(hour), iso(2 * hour))).body, { data: [] }, "links-empty");
@@ -499,8 +523,9 @@ export async function runAnalyticsContract(target: {
     while (
       summed(await analytics("campaigns", "bounces", ids), "campaign_id")[camp2.id] !== 1 &&
       Date.now() < deadline
-    )
+    ) {
       await Bun.sleep(50);
+    }
     same(
       summed(await analytics("campaigns", "bounces", ids), "campaign_id"),
       { [camp1.id]: 2, [camp2.id]: 1 },
@@ -539,7 +564,8 @@ export async function runAnalyticsContract(target: {
       ).status === 200,
       "unsubscribe",
     );
-    const left = (await analytics("lists", "unsubscriptions", [other])).body.data as CountRow[];
+    const left = (await analytics("lists", "unsubscriptions", [other])).body
+      .data as Array<CountRow>;
     same(
       left.map((row) => [row.list_id, row.campaign_id, row.count]),
       [[other, 0, 1]],
@@ -547,7 +573,7 @@ export async function runAnalyticsContract(target: {
     );
 
     // Campaign metrics, list metrics and the dashboard under narrower permissions.
-    const apiUser = async (name: string, permissions: string[], lists: object[]) => {
+    const apiUser = async (name: string, permissions: Array<string>, lists: Array<object>) => {
       const role = await call("/api/roles/users", "POST", {
         name: `${marker}-${name}`,
         permissions,
@@ -584,7 +610,7 @@ export async function runAnalyticsContract(target: {
     const allowed = async (
       resource: string,
       type: string,
-      id: number[],
+      id: Array<number>,
       auth: string,
       status: number,
       label: string,
@@ -641,10 +667,10 @@ export async function runAnalyticsContract(target: {
 
     const board = await call("/api/dashboard/campaigns");
     check(board.status === 200 && board.body.data.length === 6, "board-size");
-    const rows = board.body.data as any[];
+    const rows = board.body.data as Array<any>;
     check(rows[0].id === planned.id && rows[0].status === "scheduled", "board-scheduled-first");
     const listed = (await call("/api/campaigns?no_body=true&per_page=7&order_by=created_at")).body
-      .data.results as any[];
+      .data.results as Array<any>;
     same(
       rows.slice(1).map((row) => row.id),
       listed
@@ -663,7 +689,7 @@ export async function runAnalyticsContract(target: {
       "board-no-bodies",
     );
     const narrowed = (await call("/api/dashboard/campaigns", "GET", undefined, scoped)).body
-      .data as any[];
+      .data as Array<any>;
     check(
       narrowed.length && narrowed.every((row) => [camp1.id, camp2.id, planned.id].includes(row.id)),
       "board-scoped",
@@ -680,7 +706,9 @@ export async function runAnalyticsContract(target: {
 
     // Individual tracking on: rows name subscribers, and unique counts become available.
     await setting("privacy.individual_tracking", true);
-    for (let i = 0; i < 2; i++) await view(camp1.uuid, ada.uuid);
+    for (let i = 0; i < 2; i++) {
+      await view(camp1.uuid, ada.uuid);
+    }
     await view(camp1.uuid, bob.uuid);
     await view(camp2.uuid, ada.uuid);
     await click(links1.a, camp1.uuid, ada.uuid);
@@ -715,10 +743,10 @@ export async function runAnalyticsContract(target: {
       "tracked-list-unique",
     );
     // With individual tracking links always count distinct known subscribers.
-    const distinct = (await analytics("campaigns", "links", [camp1.id])).body.data as {
+    const distinct = (await analytics("campaigns", "links", [camp1.id])).body.data as Array<{
       url: string;
       count: number;
-    }[];
+    }>;
     same(
       distinct.sort((a, b) => a.url.localeCompare(b.url)),
       [
@@ -768,7 +796,7 @@ export async function runAnalyticsContract(target: {
       check((await call(sendPath, "GET", undefined, scoped)).status === 403, "sends-permission");
       check((await call(`/api/sends/analytics?from=2000`)).status === 400, "sends-dates");
       check((await call(`${sendPath}&group_by=nope`)).status === 400, "sends-group");
-      const grouped = (await call(sendPath)).body.data as any[];
+      const grouped = (await call(sendPath)).body.data as Array<any>;
       same(
         grouped.find((row) => row.template_id === template),
         {
@@ -789,10 +817,10 @@ export async function runAnalyticsContract(target: {
     // The collection is what refreshes the view when caching is off.
     const members = async () =>
       (
-        (await call("/api/lists?per_page=all")).body.data.results as {
+        (await call("/api/lists?per_page=all")).body.data.results as Array<{
           id: number;
           subscriber_count: number;
-        }[]
+        }>
       ).find((row) => row.id === hidden)!.subscriber_count;
     const membersBefore = await members();
     await setting("app.cache_slow_queries", true);
@@ -814,27 +842,44 @@ export async function runAnalyticsContract(target: {
     }
   } finally {
     let failed = false;
-    for (const id of owned.campaigns) await call(`/api/campaigns/${id}`, "DELETE");
-    for (const id of owned.users)
+    for (const id of owned.campaigns) {
+      await call(`/api/campaigns/${id}`, "DELETE");
+    }
+    for (const id of owned.users) {
       if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) failed = true;
-    for (const id of owned.roles.reverse()) await call(`/api/roles/${id}`, "DELETE");
-    for (const id of owned.templates) await call(`/api/templates/${id}`, "DELETE");
-    for (const id of owned.subscribers) await call(`/api/subscribers/${id}`, "DELETE");
-    for (const id of owned.lists) await call(`/api/lists/${id}`, "DELETE");
+    }
+    for (const id of owned.roles.reverse()) {
+      await call(`/api/roles/${id}`, "DELETE");
+    }
+    for (const id of owned.templates) {
+      await call(`/api/templates/${id}`, "DELETE");
+    }
+    for (const id of owned.subscribers) {
+      await call(`/api/subscribers/${id}`, "DELETE");
+    }
+    for (const id of owned.lists) {
+      await call(`/api/lists/${id}`, "DELETE");
+    }
     await mailpit.removeOwned();
-    if (failed) process.stderr.write("analytics cleanup incomplete\n");
+    if (failed) {
+      process.stderr.write("analytics cleanup incomplete\n");
+    }
   }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runAnalyticsContract({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS analytics reference contract\n");
   } catch (error) {

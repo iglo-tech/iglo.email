@@ -13,7 +13,7 @@ const copies = (row: { kind: string }) => ({ copies: row.kind !== "marketing" })
  * A claim's lease (D80). A push is cut off 60 s after it starts (`dispatch` in email.ts), so a
  * healthy push settles well inside this; only a row that outlives it is moved to `unknown`.
  */
-const leaseMs = 120000;
+const leaseMs = 120_000;
 /** Rows claimed per commit; their SMTP calls run in parallel on the pool. */
 const batchSize = 10;
 
@@ -55,7 +55,9 @@ export function createOutbox(options: OutboxOptions) {
     deadline?.abort();
     deadline = undefined;
     const due = options.sends.nextDue();
-    if (!due || stopped || sendingHeld(options.db)) return;
+    if (!due || stopped || sendingHeld(options.db)) {
+      return;
+    }
     const delay = Math.max(0, Date.parse(due) - options.clock.now().getTime());
     const controller = new AbortController();
     deadline = controller;
@@ -90,7 +92,9 @@ export function createOutbox(options: OutboxOptions) {
     claim: (now, lease) => {
       options.sends.expireLeases(now, [...live]);
       // Held (D67) or closed: nothing is claimed, so refused rows are not claimed again at once.
-      if (sendingHeld(options.db) || options.emailer.closed) return [];
+      if (sendingHeld(options.db) || options.emailer.closed) {
+        return [];
+      }
       const batch = options.sends.claimBatch(now, lease, batchSize);
       return batch.length ? [batch] : [];
     },
@@ -104,11 +108,13 @@ export function createOutbox(options: OutboxOptions) {
    * A push that rejects is journaled `unknown`/`uncertain`, as the campaign runner does (the
    * message may have left; never retried), and then fails the caller.
    */
-  async function deliver(batch: Claimed[]) {
+  async function deliver(batch: Array<Claimed>) {
     type Settled = { row: Claimed["row"]; refused?: unknown; result?: Promise<Outcome> };
-    const pending = batch.flatMap((claimed): Settled[] => {
+    const pending = batch.flatMap((claimed): Array<Settled> => {
       const { row, message } = claimed;
-      if (!message) return [];
+      if (!message) {
+        return [];
+      }
       // The emailer owns the message from here; the batch must not keep it alive (B28).
       claimed.message = null;
       try {
@@ -124,12 +130,16 @@ export function createOutbox(options: OutboxOptions) {
       }
     });
     const ids = pending.map((p) => p.row.id);
-    for (const id of ids) live.add(id);
-    let settled: PromiseSettledResult<Outcome | undefined>[];
+    for (const id of ids) {
+      live.add(id);
+    }
+    let settled: Array<PromiseSettledResult<Outcome | undefined>>;
     try {
       settled = await Promise.allSettled(pending.map((p) => p.result));
     } finally {
-      for (const id of ids) live.delete(id);
+      for (const id of ids) {
+        live.delete(id);
+      }
     }
     const held = sendingHeld(options.db);
     let failure: { reason: unknown } | undefined;
@@ -137,10 +147,14 @@ export function createOutbox(options: OutboxOptions) {
       pending.map((p, i) => {
         const s = settled[i]!;
         if (!p.result) {
-          if (!held) failure ??= { reason: p.refused };
+          if (!held) {
+            failure ??= { reason: p.refused };
+          }
           return { row: p.row, unsent: held ? "held" : "failed" } as const;
         }
-        if (s.status === "rejected") failure ??= { reason: s.reason };
+        if (s.status === "rejected") {
+          failure ??= { reason: s.reason };
+        }
         if (s.status === "fulfilled" && s.value?.stage === "not-started") {
           return { row: p.row, unsent: "held" } as const;
         }
@@ -150,7 +164,9 @@ export function createOutbox(options: OutboxOptions) {
         };
       }),
     );
-    if (failure) throw failure.reason;
+    if (failure) {
+      throw failure.reason;
+    }
   }
   const inflight = new Set<Promise<void>>();
   const done = Promise.race([loop.done, timerFailure]);
@@ -176,8 +192,10 @@ export function createOutbox(options: OutboxOptions) {
      * claim them first; a row it did claim is left to the loop. Retry deadlines and
      * unclaimed rows stay with the loop.
      */
-    dispatch(ids: bigint[]): Promise<void> {
-      if (stopped || sendingHeld(options.db)) return Promise.resolve();
+    dispatch(ids: Array<bigint>): Promise<void> {
+      if (stopped || sendingHeld(options.db)) {
+        return Promise.resolve();
+      }
       const now = options.clock.now();
       const lease = new Date(now.getTime() + leaseMs);
       const batch = options.sends.claimQueued(ids, now, lease);

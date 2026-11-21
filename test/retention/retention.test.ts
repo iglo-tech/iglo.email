@@ -3,15 +3,19 @@ import { afterEach, expect, test } from "bun:test";
 import { createAnalyticsStore } from "@/analytics/store";
 import type { Clock } from "@/clock";
 import { permissions } from "@/roles/roles";
-import { PURGE_INTERVAL_MS, startPurge, type Purge } from "@/loops/purge";
+import { PURGE_INTERVAL_MS, startPurge } from "@/loops/purge";
+import type { Purge } from "@/loops/purge";
 import { createSendCompaction } from "@/messaging/retention";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 
 const day = 86_400_000;
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 
 /** Default credentials become an API user, so advancing the clock past a session keeps working. */
@@ -29,7 +33,9 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
     user_role_id: role.body.data.id,
   });
   const headers = f.sessionHeaders as Record<string, string>;
-  for (const key of Object.keys(headers)) delete headers[key];
+  for (const key of Object.keys(headers)) {
+    delete headers[key];
+  }
   headers.authorization = `Basic ${btoa(`retention-api:${user.body.data.password}`)}`;
   return f;
 }
@@ -40,7 +46,7 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
  * can be told from the next.
  */
 function paced(f: TxFixture, left: () => number, holdAfter = Infinity) {
-  const yields: number[] = [];
+  const yields: Array<number> = [];
   const pauses = new Set<number>();
   let idle = Promise.withResolvers<void>();
   let resume = () => {};
@@ -49,7 +55,9 @@ function paced(f: TxFixture, left: () => number, holdAfter = Infinity) {
     sleep(milliseconds, signal) {
       yields.push(left());
       pauses.add(milliseconds);
-      if (milliseconds < PURGE_INTERVAL_MS && yields.length < holdAfter) return Promise.resolve();
+      if (milliseconds < PURGE_INTERVAL_MS && yields.length < holdAfter) {
+        return Promise.resolve();
+      }
       return new Promise<void>((resolve, reject) => {
         resume = resolve;
         signal?.addEventListener("abort", () => reject(signal.reason), {
@@ -71,7 +79,7 @@ function paced(f: TxFixture, left: () => number, holdAfter = Infinity) {
     },
   };
 }
-const purging = (f: TxFixture, clock: Clock, purges: Purge[], batchSize?: number) =>
+const purging = (f: TxFixture, clock: Clock, purges: Array<Purge>, batchSize?: number) =>
   startPurge({
     db: f.db,
     clock,
@@ -103,7 +111,9 @@ function addSession(f: TxFixture, id: string, data: object, createdAt = f.clock.
   ]);
 }
 const sessionIds = (f: TxFixture) =>
-  (f.db.query("SELECT id FROM sessions ORDER BY id").all() as { id: string }[]).map((r) => r.id);
+  (f.db.query("SELECT id FROM sessions ORDER BY id").all() as Array<{ id: string }>).map(
+    (r) => r.id,
+  );
 
 test("expired sessions go and valid ones stay", async () => {
   const f = await open();
@@ -153,12 +163,13 @@ test("expired sessions go and valid ones stay", async () => {
 test("a pass honors its batch size, and a restart resumes the backlog", async () => {
   const f = await open();
   const at = f.clock.now().getTime();
-  for (let i = 0; i < 7; i++)
+  for (let i = 0; i < 7; i++) {
     addSession(f, `s${i}`, {
       user_id: "1",
       csrf: "c".repeat(43),
       expires_at: at - 1,
     });
+  }
   // Only these rows count here; the fixture's own login stays valid.
   const left = () => sessionIds(f).filter((id) => /^s\d$/.test(id)).length;
   const start = (clock: Clock) => purging(f, clock, [f.owners.users.purgeSessions], 3);
@@ -180,13 +191,15 @@ test("a pass honors its batch size, and a restart resumes the backlog", async ()
 test("owners take turns, one per pass, and an owner with nothing costs no pause", async () => {
   const f = await open();
   const left = [2, 0, 3];
-  const taken: number[] = [];
+  const taken: Array<number> = [];
   const owner =
     (index: number): Purge =>
     (_now, limit) => {
       const rows = Math.min(limit, left[index]!);
       left[index]! -= rows;
-      if (rows) taken.push(index);
+      if (rows) {
+        taken.push(index);
+      }
       return Array.from({ length: rows });
     };
   const pace = paced(f, () => left.reduce((a, b) => a + b));
@@ -216,10 +229,12 @@ test("finished deliveries go after 30 days, pending ones never, and the API stay
       })),
     )();
   const list = async () => (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data;
-  const until = async (check: (rows: any[]) => boolean) => {
+  const until = async (check: (rows: Array<any>) => boolean) => {
     const deadline = Date.now() + 10_000;
     while (!check((await list()).results)) {
-      if (Date.now() > deadline) throw new Error("Condition not reached");
+      if (Date.now() > deadline) {
+        throw new Error("Condition not reached");
+      }
       await Bun.sleep(2);
     }
   };
@@ -291,7 +306,7 @@ test("an old email keeps working after its body is dropped, and only finished ro
   });
   const send = first.body.data.sends[0];
   expect(send.status).toBe("sent");
-  const mail = f.sink.messages[0]!.data.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+  const mail = f.sink.messages[0]!.data.replaceAll("=\r\n", "").replaceAll("=3D", "=");
   const path = new RegExp(`/m/${send.uuid}/link/[0-9a-f-]{36}`).exec(mail)![0];
   const unsubscribe = new RegExp(`/m/${send.uuid}/unsubscribe/[0-9a-f-]{36}`).exec(mail)![0];
   expect((await f.request(path)).status).toBe(307);
@@ -371,8 +386,8 @@ test("an old email keeps working after its body is dropped, and only finished ro
 test("analytics totals match before and after a compaction", async () => {
   const f = await open();
   const template = await f.template(`<a href="{{ 'https://example.test/a' | track_link }}">a</a>`);
-  const sent: { uuid: string }[] = [];
-  for (let i = 0; i < 3; i++)
+  const sent: Array<{ uuid: string }> = [];
+  for (let i = 0; i < 3; i++) {
     sent.push(
       (
         await f.tx({
@@ -383,8 +398,9 @@ test("analytics totals match before and after a compaction", async () => {
         })
       ).body.data.sends[0],
     );
+  }
   const failing = f.sink.messages.length;
-  const mail = f.sink.messages[failing - 1]!.data.replace(/=\r\n/g, "");
+  const mail = f.sink.messages[failing - 1]!.data.replaceAll("=\r\n", "");
   const path = new RegExp(`/m/${sent[2]!.uuid}/link/[0-9a-f-]{36}`).exec(mail)![0];
   await f.request(path);
   await f.request(path);
@@ -417,7 +433,7 @@ test("deleting a subscriber still stops an old tracked link", async () => {
   const ada = await f.subscriber("ada@example.test");
   const send = (await f.tx({ subscriber_id: ada, template_id: template, data: {} })).body.data
     .sends[0];
-  const mail = f.sink.messages[0]!.data.replace(/=\r\n/g, "");
+  const mail = f.sink.messages[0]!.data.replaceAll("=\r\n", "");
   const path = new RegExp(`/m/${send.uuid}/link/[0-9a-f-]{36}`).exec(mail)![0];
   f.clock.advance(31 * day);
   await compactAll(f);
@@ -450,7 +466,7 @@ test("a failed send can be resent until retention, and a resent one stays tracea
     await Bun.sleep(2);
   }
   // The copy carries its parent's links, so the parent's row answers for them.
-  const mail = f.sink.messages[0]!.data.replace(/=\r\n/g, "");
+  const mail = f.sink.messages[0]!.data.replaceAll("=\r\n", "");
   const path = new RegExp(`/m/${kept.uuid}/link/[0-9a-f-]{36}`).exec(mail)![0];
   f.clock.advance(31 * day);
   await compactAll(f);
@@ -466,12 +482,13 @@ test("a failed send can be resent until retention, and a resent one stays tracea
 test("a pass reads a bounded number of payload bytes", async () => {
   const f = await open();
   const big = "x".repeat(1536 * 1024);
-  for (let i = 0; i < 4; i++)
+  for (let i = 0; i < 4; i++) {
     f.db.run(
       `INSERT INTO sends(uuid, source, kind, status, to_email, smtp_message_id, payload, created_at)
        VALUES (?, 'tx', 'transactional', 'sent', 'q@example.test', ?, json_object('pad', ?), '2000-01-01T00:00:00.000Z')`,
       [`row-${i}`, `id-${i}`, big],
     );
+  }
   const compact = createSendCompaction(f.db);
   const now = f.clock.now();
   expect(compact(now, 100)).toHaveLength(2);

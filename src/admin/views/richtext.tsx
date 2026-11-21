@@ -290,7 +290,7 @@ function Dialogs({ t }: { t: Translation }) {
       </div>
     </dialog>
   );
-  const shortcuts: [string, string][] = [
+  const shortcuts: Array<[string, string]> = [
     ["Ctrl / ⌘ + B", t.T("editor.bold")],
     ["Ctrl / ⌘ + I", t.T("editor.italic")],
     ["Ctrl / ⌘ + U", t.T("editor.underline")],

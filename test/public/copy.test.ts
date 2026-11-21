@@ -4,16 +4,19 @@
 // the disabled form's 404, the label of the manage name field and the `$` patterns in names. Through
 // HTTP and the SMTP sink, on the public fixture that mounts the /m/ and /subscription/ routes.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
 const placeholder = "00000000-0000-0000-0000-000000000000";
 const form = { "content-type": "application/x-www-form-urlencoded" };
 const brandUrl = "https://brand.example.test/";
 const logo = "https://brand.example.test/logo.png";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open(overrides: Partial<Record<string, unknown>> = {}) {
   const f = await publicFixture();
@@ -46,11 +49,13 @@ async function sendTo(
 /** Decoded message text: unfolded headers plus a quoted-printable-decoded body. */
 function decoded(data: string) {
   const at = data.indexOf("\r\n\r\n");
-  const headers = data.slice(0, at).replace(/\r\n[ \t]+/g, " ");
+  const headers = data.slice(0, at).replaceAll(/\r\n[ \t]+/g, " ");
   const body = data
     .slice(at + 4)
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   const header = (name: string) =>
     new RegExp(`^${name}: (.*)$`, "mi").exec(headers)?.[1]?.trim() ?? null;
   return { headers, body, header };
@@ -85,8 +90,9 @@ test("the error, expired, not-found and rate-limit pages say what happened", asy
 
   // The optin limit is 5 a minute per peer in the public fixture; the sixth answers 429.
   let last: Response | undefined;
-  for (let i = 0; i < 6; i++)
+  for (let i = 0; i < 6; i++) {
     last = await f.peer(`/subscription/optin/${placeholder}`, "192.0.2.77");
+  }
   expect(last!.status).toBe(429);
   expect(await last!.text()).toContain("Too many requests. Please try again in a minute.");
 });

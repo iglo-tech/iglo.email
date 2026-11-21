@@ -7,9 +7,11 @@ import { TestClock } from "@/test/server/fixture";
 import { startUserFixture } from "@/test/users/fixture";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
-const fixtures: Fixture[] = [];
+const fixtures: Array<Fixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function fixture() {
   const f = await startUserFixture();
@@ -63,7 +65,7 @@ const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 test("an operator clears a user's TOTP from the CLI and their sessions end", async () => {
   const f = await fixture();
   const s = await admin(f);
-  const id = ((await (await call(f, s, "/api/profile")).json()) as any).data.id;
+  const id = (await (await call(f, s, "/api/profile")).json()).data.id;
   expect(
     (
       await call(f, s, `/api/users/${id}/twofa`, "PUT", {
@@ -96,7 +98,7 @@ test("TOTP does not revive after password login is turned off and on, or after a
   const f = await fixture();
   const s = await admin(f);
   await call(f, s, "/fixture/totp-user", "POST");
-  const totp = ((await (await call(f, s, "/api/users")).json()) as any).data.find(
+  const totp = (await (await call(f, s, "/api/users")).json()).data.find(
     (u: any) => u.username === "fixture-totp",
   );
   expect(totp.twofa_type).toBe("totp");
@@ -116,7 +118,7 @@ test("TOTP does not revive after password login is turned off and on, or after a
   expect((await update({ password_login: true, password: "fixture-user-password" })).status).toBe(
     200,
   );
-  const after = ((await (await call(f, s, "/api/users")).json()) as any).data.find(
+  const after = (await (await call(f, s, "/api/users")).json()).data.find(
     (u: any) => u.username === "fixture-totp",
   );
   expect(after.twofa_type).toBe("none");
@@ -125,17 +127,13 @@ test("TOTP does not revive after password login is turned off and on, or after a
 test("bounce.actions refuses a zero count and an unknown action", async () => {
   const f = await fixture();
   const s = await admin(f);
-  const current = ((await (await call(f, s, "/api/settings")).json()) as any).data[
-    "bounce.actions"
-  ];
+  const current = (await (await call(f, s, "/api/settings")).json()).data["bounce.actions"];
   const put = (value: unknown) => call(f, s, "/api/settings/bounce.actions", "PUT", value);
   expect((await put({ ...current, soft: { count: 0, action: "none" } })).status).toBe(400);
   expect((await put({ ...current, soft: { count: 1001, action: "none" } })).status).toBe(400);
   expect((await put({ ...current, soft: { count: 2, action: "explode" } })).status).toBe(400);
   expect((await put({ ...current, soft: { count: 2, action: "unsubscribe" } })).status).toBe(200);
-  expect(
-    ((await (await call(f, s, "/api/settings")).json()) as any).data["bounce.actions"].soft,
-  ).toEqual({
+  expect((await (await call(f, s, "/api/settings")).json()).data["bounce.actions"].soft).toEqual({
     count: 2,
     action: "unsubscribe",
   });
@@ -163,7 +161,7 @@ test("a stored out-of-range bounce rule does not block saving other settings", a
   const one = await call(f, s, "/api/settings/app.site_name", "PUT", "New name");
   expect(one.status).toBe(200);
 
-  const body = ((await (await call(f, s, "/api/settings")).json()) as any).data;
+  const body = (await (await call(f, s, "/api/settings")).json()).data;
   expect(body["bounce.actions"].soft.count).toBe(0);
   body["app.site_name"] = "Another name";
   expect((await call(f, s, "/api/settings", "PUT", body)).status).toBe(200);

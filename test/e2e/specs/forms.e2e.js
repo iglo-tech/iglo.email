@@ -206,7 +206,7 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
   });
   await ok(page, `/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" });
   await expect
-    .poll(async () => (await ok(page, `/api/campaigns/${campaign.id}`)).status, { timeout: 60000 })
+    .poll(async () => (await ok(page, `/api/campaigns/${campaign.id}`)).status, { timeout: 60_000 })
     .toBe("finished");
   // Unsubscribe from the campaign's list only, following the link in the mail it delivered.
   const delivered = await mailAbout(first.email, campaign.subject);

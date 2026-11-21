@@ -3,13 +3,16 @@
 import { afterEach, expect, test } from "bun:test";
 import { createImporter } from "@/subscribers/import/importer";
 import { registerImportRoutes } from "@/subscribers/import/routes";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 const ROWS = 3000;
 const consent = ["subscriber.unsubscribed", "subscriber.blocklisted"];
@@ -35,7 +38,7 @@ async function open() {
     clearInterval(turning);
   });
   registerImportRoutes(f.owners.router, { importer, roles: f.owners.roles, auth: f.auth });
-  const hook = async (events: string[], enabled: boolean) => {
+  const hook = async (events: Array<string>, enabled: boolean) => {
     const url = receiver.url();
     const created = await f.json("/api/webhooks", "POST", { url, events, enabled });
     expect(created.status).toBe(200);
@@ -75,8 +78,9 @@ const status = async (f: TxFixture) => (await f.json("/api/import/subscribers"))
 async function release(f: TxFixture, imported = Infinity) {
   for (const deadline = Date.now() + 20_000; Date.now() < deadline; await Bun.sleep(1)) {
     const current = await status(f);
-    if (current.imported >= imported || !["importing", "stopping"].includes(current.status))
+    if (current.imported >= imported || !["importing", "stopping"].includes(current.status)) {
       return current;
+    }
     f.clock.advance(1);
   }
   throw new Error("Import did not reach the row");
@@ -89,7 +93,9 @@ const logs = async (f: TxFixture) =>
 
 test("a membership change during an import cannot carry it over the budget", async () => {
   const { f, hook, list } = await open();
-  for (let i = 0; i < 20; i++) await hook(["subscriber.unsubscribed"], true);
+  for (let i = 0; i < 20; i++) {
+    await hook(["subscriber.unsubscribed"], true);
+  }
   await f.crashWebhooks();
   seed(f, list, 100);
   await post(f, {
@@ -102,7 +108,9 @@ test("a membership change during an import cannot carry it over the budget", asy
   expect((await release(f, 100)).imported).toBe(100);
   expect(deliveries(f)).toBe(2000);
   // The file was admitted at 2,000 deliveries. Now every other row would really queue them.
-  const ids = f.db.query("SELECT id FROM subscribers WHERE id > 100").all() as { id: bigint }[];
+  const ids = f.db.query("SELECT id FROM subscribers WHERE id > 100").all() as Array<{
+    id: bigint;
+  }>;
   const added = await f.json("/api/subscribers/lists", "PUT", {
     ids: ids.map(({ id }) => Number(id)),
     action: "add",
@@ -124,15 +132,18 @@ test("a membership change during an import cannot carry it over the budget", asy
 test("webhooks enabled during a blocklist import cannot carry it over the budget", async () => {
   const { f, hook, list } = await open();
   await hook(consent, true);
-  const disabled: number[] = [];
-  for (let i = 0; i < 19; i++) disabled.push(await hook(consent, false));
+  const disabled: Array<number> = [];
+  for (let i = 0; i < 19; i++) {
+    disabled.push(await hook(consent, false));
+  }
   await f.crashWebhooks();
   seed(f, list, ROWS);
   await post(f, { mode: "blocklist", delim: ",", lists: [] });
   expect((await release(f, 100)).imported).toBe(100);
   expect(deliveries(f)).toBe(200);
-  for (const id of disabled)
+  for (const id of disabled) {
     expect((await f.json(`/api/webhooks/${id}`, "PUT", { enabled: true })).status).toBe(200);
+  }
 
   // 200 for the first batch and 4,000 for each next one: a fourteenth would pass 50,000.
   const done = await release(f);

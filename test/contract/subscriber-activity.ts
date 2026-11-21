@@ -11,10 +11,12 @@ export async function runSubscriberActivity(target: {
   const suffix = crypto.randomUUID();
   const reference = target.mode === "reference";
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const resources: { path: string; id: number }[] = [];
+  const resources: Array<{ path: string; id: number }> = [];
   let cleanupFailed = false;
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL ${label}`);
+    if (!value) {
+      throw new Error(`FAIL ${label}`);
+    }
   }
   const request = (path: string, method = "GET", body?: unknown, authorization = basic) =>
     fetch(`${target.baseUrl}${path}`, {
@@ -28,7 +30,9 @@ export async function runSubscriberActivity(target: {
     });
   const setting = async (key: string, value: unknown) => {
     check((await request(`/api/settings/${key}`, "PUT", value)).status === 200, `setting-${key}`);
-    if (!reference) return;
+    if (!reference) {
+      return;
+    }
     // The pinned reference restarts itself to apply a setting.
     await Bun.sleep(1500);
     const deadline = Date.now() + 20_000;
@@ -36,7 +40,9 @@ export async function runSubscriberActivity(target: {
       const up = await fetch(`${target.baseUrl}/health`, {
         signal: AbortSignal.timeout(2000),
       }).catch(() => null);
-      if (up?.ok) return;
+      if (up?.ok) {
+        return;
+      }
       check(Date.now() < deadline, "subscriber-activity-restart-wait");
       await Bun.sleep(100);
     }
@@ -53,7 +59,7 @@ export async function runSubscriberActivity(target: {
     check((await response.json()).message === message, `${label}-message`);
   };
   /** An API user, by the permissions and per-list grants of a role made for it. */
-  const caller = async (name: string, permissions: string[], lists: unknown[] = []) => {
+  const caller = async (name: string, permissions: Array<string>, lists: Array<unknown> = []) => {
     const role = await create("/api/roles/users", { name: `${name}-${suffix}`, permissions });
     const listRole = await create("/api/roles/lists", { name: `${name}-l-${suffix}`, lists });
     const user = await create("/api/users", {
@@ -68,10 +74,11 @@ export async function runSubscriberActivity(target: {
 
   /** A tracked link as a real send registers it. The reference's preview already does. */
   const trackedLink = async (campaign: Record<string, unknown>) => {
-    if (reference)
+    if (reference) {
       return /\/link\/([0-9a-f-]{36})\//.exec(
         await (await request(`/api/campaigns/${campaign.id}/preview`)).text(),
       )?.[1];
+    }
     // The first message is kept; the campaign's other recipients are answered and dropped. One
     // connection can carry a message per recipient, so each DATA gets its own reply.
     let mail = "";
@@ -86,9 +93,13 @@ export async function runSubscriberActivity(target: {
           const text = chunk.toString();
           if (inData) {
             body += text;
-            if (!body.endsWith("\r\n.\r\n")) return;
+            if (!body.endsWith("\r\n.\r\n")) {
+              return;
+            }
             inData = false;
-            if (!mail) mail = body;
+            if (!mail) {
+              mail = body;
+            }
             body = "";
             return void socket.write("250 ok\r\n");
           }
@@ -122,16 +133,19 @@ export async function runSubscriberActivity(target: {
       const started = await request(`/api/campaigns/${campaign.id}/status`, "PUT", {
         status: "running",
       });
-      if (started.status !== 200)
+      if (started.status !== 200) {
         throw new Error(`FAIL subscriber-activity-send ${await started.text()}`);
+      }
       for (
         const deadline = Date.now() + 10_000;
         (await (await request(`/api/campaigns/${campaign.id}`)).json()).data.status !== "finished";
         await Bun.sleep(25)
-      )
+      ) {
         check(Date.now() < deadline, "subscriber-activity-finished");
-      for (const deadline = Date.now() + 10_000; !mail.endsWith("\r\n.\r\n"); await Bun.sleep(25))
+      }
+      for (const deadline = Date.now() + 10_000; !mail.endsWith("\r\n.\r\n"); await Bun.sleep(25)) {
         check(Date.now() < deadline, "subscriber-activity-mail");
+      }
       return /\/link\/([0-9a-f-]{36})\//.exec(mail.replaceAll("=\r\n", ""))?.[1];
     } finally {
       sink.stop(true);
@@ -300,11 +314,12 @@ export async function runSubscriberActivity(target: {
       JSON.stringify(file.link_clicks) === JSON.stringify([{ url, clicks: 3 }]),
       "subscriber-export-clicks",
     );
-    if (!reference)
+    if (!reference) {
       check(
         ["sends", "events", "bounces"].every((name) => Array.isArray(file[name])),
         "subscriber-export-native-sections",
       );
+    }
 
     // Only the configured sections, and the keys of the others are absent.
     await setting("privacy.exportable", ["profile", "link_clicks"]);
@@ -463,21 +478,29 @@ export async function runSubscriberActivity(target: {
     );
     for (const { path, id } of resources.reverse()) {
       const owner = path.startsWith("/api/roles/") ? "/api/roles" : path;
-      if ((await request(`${owner}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`${owner}/${id}`, "DELETE")).status !== 200) {
+        cleanupFailed = true;
+      }
     }
   }
-  if (cleanupFailed) throw new Error("FAIL subscriber-activity-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL subscriber-activity-cleanup");
+  }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runSubscriberActivity({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS subscriber activity reference contract\n");
   } catch (error) {

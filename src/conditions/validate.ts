@@ -3,17 +3,12 @@
 // nesting and huge arrays cost no more than the limits allow.
 import { parseDuration } from "@/conditions/duration";
 import { validPath } from "@/conditions/json";
-import {
-  limits,
-  type Condition,
-  type FieldError,
-  type Scalar,
-  type ValidationResult,
-} from "@/conditions/types";
+import { limits } from "@/conditions/types";
+import type { Condition, FieldError, Scalar, ValidationResult } from "@/conditions/types";
 import { checkFragment, formatSQLExp } from "@/subscribers/query-filter";
 
 const kinds = ["all", "any", "not", "event", "attr", "list", "sql"] as const;
-const fieldsOf: Record<(typeof kinds)[number], readonly string[]> = {
+const fieldsOf: Record<(typeof kinds)[number], ReadonlyArray<string>> = {
   all: ["all"],
   any: ["any"],
   not: ["not"],
@@ -22,7 +17,7 @@ const fieldsOf: Record<(typeof kinds)[number], readonly string[]> = {
   list: ["list", "status"],
   sql: ["sql"],
 };
-const ops = ["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"];
+const ops = new Set(["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"]);
 const subscriberStatuses = ["enabled", "disabled", "blocklisted"];
 const listStatuses = ["unconfirmed", "confirmed", "unsubscribed"];
 // Control characters are refused on purpose: the range is the check.
@@ -154,33 +149,45 @@ export function validate(
       op = value.op;
     if (typeof path !== "string" || (path !== "status" && !validPath(path)))
       return void fail(`${field}.attr`, "must be an attribute name or dotted path");
-    if (typeof op !== "string" || !ops.includes(op))
+    if (typeof op !== "string" || !ops.has(op)) {
       return void fail(`${field}.op`, "unknown operator");
+    }
     const status = path === "status";
-    if (status && !["eq", "ne", "in"].includes(op))
+    if (status && !["eq", "ne", "in"].includes(op)) {
       return void fail(`${field}.op`, "status supports eq, ne and in");
+    }
     const checkStatus = (v: Scalar | undefined, f: string) => {
-      if (v === undefined) return undefined;
-      if (status && (typeof v !== "string" || !subscriberStatuses.includes(v)))
+      if (v === undefined) {
+        return undefined;
+      }
+      if (status && (typeof v !== "string" || !subscriberStatuses.includes(v))) {
         return void fail(f, "unknown subscriber status");
+      }
       return v;
     };
     if (op === "exists") {
-      if (value.value !== undefined) return void fail(`${field}.value`, "exists takes no value");
+      if (value.value !== undefined) {
+        return void fail(`${field}.value`, "exists takes no value");
+      }
       return { attr: path, op };
     }
     if (op === "in") {
       const list = value.value;
-      if (!Array.isArray(list) || !list.length || list.length > limits.inValues)
+      if (!Array.isArray(list) || !list.length || list.length > limits.inValues) {
         return void fail(`${field}.value`, `must be an array of 1 to ${limits.inValues} values`);
-      const out: Scalar[] = [];
+      }
+      const out: Array<Scalar> = [];
       for (const [i, item] of list.entries()) {
         const v = checkStatus(scalar(item, `${field}.value.${i}`), `${field}.value.${i}`);
-        if (v !== undefined) out.push(v);
+        if (v !== undefined) {
+          out.push(v);
+        }
       }
       return out.length === list.length ? { attr: path, op, value: out } : undefined;
     }
-    if (value.value === undefined) return void fail(`${field}.value`, "is required");
+    if (value.value === undefined) {
+      return void fail(`${field}.value`, "is required");
+    }
     const ordered = op !== "eq" && op !== "ne";
     const v = checkStatus(scalar(value.value, `${field}.value`, ordered), `${field}.value`);
     return v === undefined ? undefined : { attr: path, op: op as "eq", value: v };
@@ -194,8 +201,9 @@ export function validate(
       name !== name.toWellFormed() ||
       controls.test(name) ||
       bytes(name) > limits.eventNameBytes
-    )
+    ) {
       return void fail(`${field}.event`, "must be an event name");
+    }
     const out: Condition & { event: string } = { event: name };
     let valid = true;
     const since = value.since;
@@ -207,7 +215,9 @@ export function validate(
       ) {
         fail(`${field}.since`, "must be trigger, enrollment, last_step or an ISO 8601 duration");
         valid = false;
-      } else out.since = since;
+      } else {
+        out.since = since;
+      }
     }
     const where = value.where;
     if (where !== undefined) {
@@ -225,8 +235,11 @@ export function validate(
             continue;
           }
           const s = scalar(v, `${field}.where.${key}`);
-          if (s === undefined) valid = false;
-          else copy[key] = s;
+          if (s === undefined) {
+            valid = false;
+          } else {
+            copy[key] = s;
+          }
         }
         out.where = copy;
       }
@@ -250,7 +263,9 @@ export function validate(
           } else if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > limits.count) {
             fail(`${field}.count.${key}`, `must be an integer from 0 to ${limits.count}`);
             valid = false;
-          } else copy[key] = n;
+          } else {
+            copy[key] = n;
+          }
         }
         out.count = copy;
       }
@@ -262,7 +277,9 @@ export function validate(
   try {
     result = walk(condition, options.field ?? "condition", 1);
   } catch (error) {
-    if (!(error instanceof Stop)) throw error;
+    if (!(error instanceof Stop)) {
+      throw error;
+    }
   }
   return errors.length || !result ? { ok: false, errors } : { ok: true, condition: result };
 }

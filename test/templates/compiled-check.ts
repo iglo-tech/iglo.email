@@ -20,10 +20,13 @@ try {
     ],
     { cwd: root, env: { ...process.env, TMPDIR: directory }, timeout: 60_000 },
   );
-  if (build.code !== 0) throw new Error("Template fixture compilation failed");
+  if (build.code !== 0) {
+    throw new Error("Template fixture compilation failed");
+  }
   const bwrap = Bun.which("bwrap");
-  if (process.platform !== "linux" || !bwrap)
+  if (process.platform !== "linux" || !bwrap) {
     throw new Error("Template isolation requires Linux bwrap");
+  }
   const result = await command(
     [
       bwrap,
@@ -53,7 +56,9 @@ try {
       timeout: 30_000,
     },
   );
-  if (result.code !== 0) throw new Error(`Template fixture failed: ${result.stderr}`);
+  if (result.code !== 0) {
+    throw new Error(`Template fixture failed: ${result.stderr}`);
+  }
   process.stdout.write(result.stdout);
 } finally {
   await rm(directory, { recursive: true, force: true });

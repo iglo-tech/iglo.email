@@ -24,8 +24,8 @@ export interface SendRateLimiter {
 
 export function createSendRateLimiter(options: SendRateLimiterOptions): SendRateLimiter {
   const { clock } = options;
-  const outboxWaiters: Waiter[] = [];
-  const campaignWaiters: Waiter[] = [];
+  const outboxWaiters: Array<Waiter> = [];
+  const campaignWaiters: Array<Waiter> = [];
   let stopped = false;
   let sleepController: AbortController | null = null;
   let nextAvailableAt = 0;
@@ -33,7 +33,9 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
   let pumping = false;
 
   function scheduleNextWake(delay: number): void {
-    if (stopped || sleepController) return;
+    if (stopped || sleepController) {
+      return;
+    }
     const controller = new AbortController();
     sleepController = controller;
 
@@ -53,11 +55,15 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
   }
 
   function pump(): void {
-    if (stopped || pumping) return;
+    if (stopped || pumping) {
+      return;
+    }
     pumping = true;
     try {
       while (outboxWaiters.length > 0 || campaignWaiters.length > 0) {
-        if (stopped) break;
+        if (stopped) {
+          break;
+        }
         const currentRate = options.rate();
         const now = clock.now().getTime();
 
@@ -125,10 +131,14 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
       const abortHandler = () => {
         if (priority === "outbox") {
           const idx = outboxWaiters.indexOf(waiter);
-          if (idx >= 0) outboxWaiters.splice(idx, 1);
+          if (idx >= 0) {
+            outboxWaiters.splice(idx, 1);
+          }
         } else {
           const idx = campaignWaiters.indexOf(waiter);
-          if (idx >= 0) campaignWaiters.splice(idx, 1);
+          if (idx >= 0) {
+            campaignWaiters.splice(idx, 1);
+          }
         }
         waiter.cleanup?.();
         reject(signal?.reason ?? new Error("Aborted"));
@@ -161,7 +171,9 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
   }
 
   function stop(): void {
-    if (stopped) return;
+    if (stopped) {
+      return;
+    }
     stopped = true;
 
     if (sleepController) {

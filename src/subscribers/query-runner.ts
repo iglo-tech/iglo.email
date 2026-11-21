@@ -14,38 +14,33 @@ import {
   readIds,
   stagePrefix,
   STAGE_CHUNK,
-  type IdList,
 } from "@/subscribers/id-stage";
-import {
-  prepareChecked,
-  prepareCondition,
-  QueryError,
-  type Arg,
-  type ConditionArg,
-} from "@/subscribers/query-filter";
+import type { IdList } from "@/subscribers/id-stage";
+import { prepareChecked, prepareCondition, QueryError } from "@/subscribers/query-filter";
+import type { Arg, ConditionArg } from "@/subscribers/query-filter";
 
 export interface Statement {
   sql: string;
-  args: Arg[];
+  args: Array<Arg>;
 }
 /** A generated condition statement with checked fragments at its slots (prepareCondition). */
 export interface ConditionStatement {
   sql: string;
-  args: ConditionArg[];
-  fragments: string[];
+  args: Array<ConditionArg>;
+  fragments: Array<string>;
 }
 type WireArg = string | { int: string } | { num: number };
 interface WireStatement {
   sql: string;
-  args: WireArg[];
+  args: Array<WireArg>;
   /** Present only for a condition statement. */
-  fragments?: string[];
+  fragments?: Array<string>;
 }
 interface Request {
   path: string;
   /** File name prefix: statement N writes its IDs to `${spool}${N}` instead of stdout. */
   spool: string;
-  statements: WireStatement[];
+  statements: Array<WireStatement>;
 }
 const toWire = (arg: ConditionArg): WireArg =>
   typeof arg === "bigint" ? { int: arg.toString() } : typeof arg === "number" ? { num: arg } : arg;
@@ -70,12 +65,16 @@ export function openReadOnly(path: string): Database {
 export async function runQueryChild(): Promise<void> {
   let out = "";
   const flush = () => {
-    if (out) writeSync(1, out);
+    if (out) {
+      writeSync(1, out);
+    }
     out = "";
   };
   const emit = (line: string) => {
     out += `${line}\n`;
-    if (out.length >= 65536) flush();
+    if (out.length >= 65_536) {
+      flush();
+    }
   };
   let db: Database | undefined;
   try {
@@ -87,7 +86,7 @@ export async function runQueryChild(): Promise<void> {
       const args = statement.args.map(fromWire);
       const stmt = statement.fragments
         ? prepareCondition(db, statement.sql, statement.fragments, args)
-        : prepareChecked(db, statement.sql, args as Arg[]);
+        : prepareChecked(db, statement.sql, args as Array<Arg>);
       const writer = createIdWriter(`${request.spool}${index}`);
       try {
         emit(`R${index}`);
@@ -149,10 +148,10 @@ export interface RunnerOptions {
    * run are removed when the runner is created, which the data directory lock makes safe.
    */
   stageDir?: string;
-  command?: string[];
+  command?: Array<string>;
 }
 
-function defaultCommand(): string[] {
+function defaultCommand(): Array<string> {
   // A compiled executable re-runs itself; a source checkout runs this module directly.
   return import.meta.path.startsWith("/$bunfs/")
     ? [process.execPath, childArgument]
@@ -165,17 +164,21 @@ export function createQueryRunner(options: RunnerOptions) {
   const stageDir = options.stageDir ?? join(dirname(options.path), "stage");
   prepareStageDir(stageDir);
   let active = 0;
-  const waiting: (() => void)[] = [];
+  const waiting: Array<() => void> = [];
   const children = new Set<Bun.Subprocess>();
   const release = () => {
     const next = waiting.shift();
-    if (next) next();
-    else active--;
+    if (next) {
+      next();
+    } else {
+      active--;
+    }
   };
   /** Take a child slot, waiting at most admissionMs; returns its idempotent release. */
   const acquire = async (): Promise<() => void> => {
-    if (active < options.concurrency) active++;
-    else {
+    if (active < options.concurrency) {
+      active++;
+    } else {
       let timer: Timer | undefined;
       const admitted = await new Promise<boolean>((resolve) => {
         const wake = () => {
@@ -188,11 +191,15 @@ export function createQueryRunner(options: RunnerOptions) {
           resolve(false);
         }, admissionMs);
       });
-      if (!admitted) throw new RunnerError("busy", "too many queries in progress");
+      if (!admitted) {
+        throw new RunnerError("busy", "too many queries in progress");
+      }
     }
     let held = true;
     return () => {
-      if (held) release();
+      if (held) {
+        release();
+      }
       held = false;
     };
   };
@@ -205,9 +212,9 @@ export function createQueryRunner(options: RunnerOptions) {
    * at the limit and when the consumer stops early.
    */
   async function* run(
-    statements: Statement[],
+    statements: Array<Statement>,
     onError?: (error: RunnerError) => void,
-  ): AsyncGenerator<[number, bigint[]]> {
+  ): AsyncGenerator<[number, Array<bigint>]> {
     const files = new Map<number, number>();
     try {
       yield* spawn(
@@ -216,7 +223,9 @@ export function createQueryRunner(options: RunnerOptions) {
         onError,
       );
     } finally {
-      for (const fd of files.values()) closeSync(fd);
+      for (const fd of files.values()) {
+        closeSync(fd);
+      }
     }
   }
   /**
@@ -225,12 +234,12 @@ export function createQueryRunner(options: RunnerOptions) {
    * Each statement's file is opened (and unlinked) into `files`, which the caller closes.
    */
   async function* spawn(
-    statements: WireStatement[],
+    statements: Array<WireStatement>,
     files: Map<number, number>,
     onError?: (error: RunnerError) => void,
     /** False when the caller only wants the files: batches are then not decoded. */
     decode = true,
-  ): AsyncGenerator<[number, bigint[]]> {
+  ): AsyncGenerator<[number, Array<bigint>]> {
     const prefix = stagePrefix(stageDir);
     const releaseSlot = await acquire();
     let child: Bun.Subprocess<"pipe", "pipe", "ignore">;
@@ -247,7 +256,7 @@ export function createQueryRunner(options: RunnerOptions) {
     }
     children.add(child);
     /** Index, then the range of that statement's file to read; an empty range marks its start. */
-    const ready: [number, number, number][] = [];
+    const ready: Array<[number, number, number]> = [];
     const reported = new Map<number, number>();
     let failure: RunnerError | undefined,
       finished = false,
@@ -259,10 +268,14 @@ export function createQueryRunner(options: RunnerOptions) {
       wake = undefined;
     };
     const fail = (error: RunnerError) => {
-      if (failure || finished) return;
+      if (failure || finished) {
+        return;
+      }
       failure = error;
       child.kill("SIGKILL");
-      if (!closed) onError?.(error);
+      if (!closed) {
+        onError?.(error);
+      }
       notify();
     };
     const deadline = setTimeout(
@@ -346,11 +359,17 @@ export function createQueryRunner(options: RunnerOptions) {
     );
     try {
       while (true) {
-        if (failure) throw failure;
+        if (failure) {
+          throw failure;
+        }
         const item = ready.shift();
-        if (item) yield [item[0], decode ? readIds(files.get(item[0])!, item[1], item[2]) : []];
-        else if (finished) return;
-        else await new Promise<void>((resolve) => (wake = resolve));
+        if (item) {
+          yield [item[0], decode ? readIds(files.get(item[0])!, item[1], item[2]) : []];
+        } else if (finished) {
+          return;
+        } else {
+          await new Promise<void>((resolve) => (wake = resolve));
+        }
       }
     } finally {
       closed = true;
@@ -359,7 +378,9 @@ export function createQueryRunner(options: RunnerOptions) {
       // A file the child made but the parent was never told about (a timeout or a kill between
       // the child's create and its "R" line) is not open here and would stay until restart.
       for (let i = 0; i < statements.length; i++) {
-        if (files.has(i)) continue;
+        if (files.has(i)) {
+          continue;
+        }
         try {
           unlinkSync(`${prefix}${i}`);
         } catch {
@@ -373,23 +394,29 @@ export function createQueryRunner(options: RunnerOptions) {
     /** Where staged IDs live; built-in filters stage their large pages here too. */
     stageDir,
     /** Collect each statement's values; for statements known to return few rows. */
-    async all(statements: Statement[]): Promise<bigint[][]> {
-      const results: bigint[][] = statements.map(() => []);
-      for await (const [index, values] of run(statements)) results[index]!.push(...values);
+    async all(statements: Array<Statement>): Promise<Array<bigint>[]> {
+      const results: Array<bigint>[] = statements.map(() => []);
+      for await (const [index, values] of run(statements)) {
+        results[index]!.push(...values);
+      }
       return results;
     },
     /**
      * Run statements to completion in one snapshot and leave each result on disk. The caller
      * closes every list, which frees its file.
      */
-    async stage(statements: Statement[]): Promise<IdList[]> {
+    async stage(statements: Array<Statement>): Promise<Array<IdList>> {
       const files = new Map<number, number>();
       try {
         const wire = statements.map((s) => ({ sql: s.sql, args: s.args.map(toWire) }));
-        for await (const _ of spawn(wire, files, undefined, false)) void _;
+        for await (const _ of spawn(wire, files, undefined, false)) {
+          void _;
+        }
         return statements.map((_, index) => fileIds(files.get(index)!));
       } catch (error) {
-        for (const fd of files.values()) closeSync(fd);
+        for (const fd of files.values()) {
+          closeSync(fd);
+        }
         throw error;
       }
     },
@@ -397,8 +424,8 @@ export function createQueryRunner(options: RunnerOptions) {
      * Run one generated sequence condition, with its checked fragments, in one read-only
      * snapshot under the same limits; yields the first column of each row.
      */
-    async condition(statement: ConditionStatement): Promise<bigint[]> {
-      const values: bigint[] = [];
+    async condition(statement: ConditionStatement): Promise<Array<bigint>> {
+      const values: Array<bigint> = [];
       const files = new Map<number, number>();
       try {
         for await (const [, batch] of spawn(
@@ -410,16 +437,21 @@ export function createQueryRunner(options: RunnerOptions) {
             },
           ],
           files,
-        ))
+        )) {
           values.push(...batch);
+        }
       } finally {
-        for (const fd of files.values()) closeSync(fd);
+        for (const fd of files.values()) {
+          closeSync(fd);
+        }
       }
       return values;
     },
     /** Kill running children, as at shutdown. */
     async close() {
-      for (const child of children) child.kill("SIGKILL");
+      for (const child of children) {
+        child.kill("SIGKILL");
+      }
       await Promise.all([...children].map((child) => child.exited));
     },
   };

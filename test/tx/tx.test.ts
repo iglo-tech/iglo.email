@@ -3,11 +3,14 @@ import { afterEach, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { imagePng } from "@/test/media/images";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 
-const fixtures: TxFixture[] = [];
+const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open(options: Parameters<typeof txFixture>[0] = {}) {
   const f = await txFixture(options);
@@ -18,12 +21,14 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
 async function until(condition: () => boolean, f?: TxFixture) {
   const deadline = performance.now() + 20_000;
   while (!condition()) {
-    if (performance.now() > deadline) throw new Error("condition not reached");
+    if (performance.now() > deadline) {
+      throw new Error("condition not reached");
+    }
     f?.clock.advance(0);
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 }
-async function apiUser(f: TxFixture, permissions: string[]) {
+async function apiUser(f: TxFixture, permissions: Array<string>) {
   const role = await f.json("/api/roles/users", "POST", {
     name: `role-${crypto.randomUUID()}`,
     permissions,
@@ -141,7 +146,7 @@ test("render, recipient and validation failures are atomic", async () => {
   const f = await open();
   const template = await f.template("<p>{{ data.a }}</p>");
   const known = await f.subscriber("k@example.test");
-  const cases: unknown[] = [
+  const cases: Array<unknown> = [
     { subscriber_ids: [known, 999], template_id: template },
     { subscriber_ids: [known], template_id: template, data: { a: "x".repeat(300 * 1024) } },
     { subscriber_ids: [known], template_id: template, subject: "{% if %}" },
@@ -261,12 +266,14 @@ test("multipart attachments, limits and content types", async () => {
   const post = (body: BodyInit, headers: Record<string, string> = {}) =>
     f.request("/api/tx", { method: "POST", headers: { ...f.sessionHeaders, ...headers }, body });
   const form = (
-    files: File[],
+    files: Array<File>,
     data = JSON.stringify({ subscriber_emails: ["a@example.test"], template_id: template }),
   ) => {
     const body = new FormData();
     body.set("data", data);
-    for (const file of files) body.append("file", file);
+    for (const file of files) {
+      body.append("file", file);
+    }
     return body;
   };
   let response = await post(form([new File([new Uint8Array([0, 255, 10])], "dir/report.bin")]));
@@ -320,7 +327,7 @@ test("a tx template embeds a stored image as an inline part, read for each reque
       template_id: template,
     });
   expect((await send()).status).toBe(200);
-  const text = f.sink.messages.at(-1)!.data.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+  const text = f.sink.messages.at(-1)!.data.replaceAll("=\r\n", "").replaceAll("=3D", "=");
   const [cid] = [...text.matchAll(/^Content-ID: <([^>]+)>/gim)].map((m) => m[1]!);
   expect(text).toContain(`src="cid:${cid}"`);
   expect(text).toContain(`src="https://cdn.example.test/x.png"`);
@@ -329,7 +336,7 @@ test("a tx template embeds a stored image as an inline part, read for each reque
   // Nothing about a template is cached, so a deleted image stops being embedded at once.
   expect((await f.json(`/api/media/${logo.id}`, "DELETE")).status).toBe(200);
   expect((await send()).status).toBe(200);
-  const after = f.sink.messages.at(-1)!.data.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+  const after = f.sink.messages.at(-1)!.data.replaceAll("=\r\n", "").replaceAll("=3D", "=");
   expect(after).toContain(`src="logo.png"`);
   expect(after).not.toMatch(/^Content-ID:/im);
 
@@ -532,7 +539,9 @@ test("blocklisted Cc and Bcc addresses are removed from the envelope and headers
     ["ok2@example.test"],
   ]);
   expect(f.sink.messages[0]!.data).toMatch(/^Cc: copy@example\.test$/m);
-  for (const m of f.sink.messages) expect(m.data.toLowerCase()).not.toContain("blocked@");
+  for (const m of f.sink.messages) {
+    expect(m.data.toLowerCase()).not.toContain("blocked@");
+  }
   for (const response of [cc, bcc]) {
     const row = (await f.json(`/api/sends/${response.body.data.sends[0].id}`)).body.data;
     // A safe count, never the removed address.
@@ -566,10 +575,11 @@ test("queued unlinked recipients and copies blocklisted later are skipped after 
     "queued",
     "queued",
   ]);
-  for (const id of [later, copy])
+  for (const id of [later, copy]) {
     expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT", {})).status).toBe(200);
+  }
   f.restartOutbox();
-  const [first, second] = response.body.data.sends as { id: number }[];
+  const [first, second] = response.body.data.sends as Array<{ id: number }>;
   const status = async (id: number) => (await f.json(`/api/sends/${id}`)).body.data;
   const queued = () =>
     (
@@ -884,10 +894,12 @@ test("a steady stream of small embedded-image sends cannot keep a waiting upload
       template_id: withImage,
     });
   // Eight go ahead of the waiting upload; the other four are refused at once, not queued.
-  const refused: Awaited<ReturnType<typeof small>>[] = [];
+  const refused: Array<Awaited<ReturnType<typeof small>>> = [];
   const smalls = Array.from({ length: 12 }, (_, i) =>
     small(i).then((r) => {
-      if (r.status === 429) refused.push(r);
+      if (r.status === 429) {
+        refused.push(r);
+      }
       return r;
     }),
   );

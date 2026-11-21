@@ -10,8 +10,8 @@ import { listensOn, startOnFreePort } from "@/test/serve-port";
 const repository = resolve(import.meta.dir, "../..");
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const TEMPORARY = ".iglo-email-import";
-const directories: string[] = [];
-const children: ReturnType<typeof Bun.spawn>[] = [];
+const directories: Array<string> = [];
+const children: Array<ReturnType<typeof Bun.spawn>> = [];
 
 function temporary() {
   const directory = mkdtempSync(join(tmpdir(), "iglo-import-"));
@@ -49,11 +49,15 @@ async function launch(dataDir: string, port: number) {
   const origin = `http://127.0.0.1:${port}`;
   for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(25)) {
     // A start that failed (the port in use, for one) reports why on stderr, and is retried.
-    if (child.exitCode !== null) throw new Error(await new Response(child.stderr).text());
+    if (child.exitCode !== null) {
+      throw new Error(await new Response(child.stderr).text());
+    }
     const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
       () => null,
     );
-    if (up?.ok && listensOn(child.pid, port)) return { child, origin };
+    if (up?.ok && listensOn(child.pid, port)) {
+      return { child, origin };
+    }
   }
   throw new Error("Server did not start");
 }
@@ -68,7 +72,7 @@ async function client(origin: string, credentials?: { user: string; token: strin
         authorization,
         ...(body === undefined || form ? {} : { "content-type": "application/json" }),
       },
-      ...(body === undefined ? {} : { body: form ? (body as FormData) : JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: form ? body : JSON.stringify(body) }),
     });
     const text = await response.text();
     return { status: response.status, text, body: text ? JSON.parse(text) : null };
@@ -82,14 +86,17 @@ async function client(origin: string, credentials?: { user: string; token: strin
   const status = async () => {
     const response = await call("/api/import/subscribers");
     // A reply without the data envelope is a failure of its own; name it instead of reading `undefined`.
-    if (response.body?.data === undefined)
+    if (response.body?.data === undefined) {
       throw new Error(`import status answered ${response.status}: ${response.text.slice(0, 300)}`);
+    }
     return response.body.data;
   };
   const settled = async () => {
     for (const deadline = Date.now() + 30_000; Date.now() < deadline; await Bun.sleep(10)) {
       const current = await status();
-      if (current.status === "finished" || current.status === "failed") return current;
+      if (current.status === "finished" || current.status === "failed") {
+        return current;
+      }
     }
     throw new Error("Import did not settle");
   };
@@ -124,8 +131,9 @@ afterAll(async () => {
     child.kill("SIGKILL");
     await child.exited;
   }
-  for (const directory of directories.splice(0))
+  for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 describe("one server", () => {
@@ -186,7 +194,10 @@ describe("one server", () => {
   });
 
   test("a record over the limit fails the file instead of filling memory", async () => {
-    const failed = await c.run(subscribe(), `email,name\nbig@example.test,"${"x".repeat(1100000)}`);
+    const failed = await c.run(
+      subscribe(),
+      `email,name\nbig@example.test,"${"x".repeat(1_100_000)}`,
+    );
     expect(failed.status).toBe("failed");
     expect(failed.log).toContain("record over");
   });
@@ -229,8 +240,9 @@ describe("one server", () => {
     );
     expect(done).toMatchObject({ status: "finished", imported: 6 });
     expect(done.log.match(/skipping invalid attributes JSON/g)).toHaveLength(4);
-    for (const label of ["big", "inf", "nul", "deep", "null"])
+    for (const label of ["big", "inf", "nul", "deep", "null"]) {
       expect((await c.subscriber(`${label}-attr@example.test`)).attribs).toEqual({});
+    }
     expect((await c.subscriber("fine-attr@example.test")).attribs).toEqual({ n: { m: [1, 2] } });
   });
 
@@ -326,7 +338,8 @@ describe("one server", () => {
   });
 
   test("the domain settings apply to each row", async () => {
-    const set = (value: string[]) => c.call("/api/settings/privacy.domain_blocklist", "PUT", value);
+    const set = (value: Array<string>) =>
+      c.call("/api/settings/privacy.domain_blocklist", "PUT", value);
     expect((await set(["blocked.test"])).status).toBe(200);
     try {
       const done = await c.run(subscribe(), "email\nno@blocked.test\nyes@allowed.test\n");
@@ -425,7 +438,9 @@ describe("one server", () => {
       },
       body: new ReadableStream({
         async pull(controller) {
-          if (at >= bytes.length) return controller.close();
+          if (at >= bytes.length) {
+            return controller.close();
+          }
           controller.enqueue(bytes.subarray(at, at + 7));
           at += 7;
           await Bun.sleep(0);
@@ -462,8 +477,9 @@ describe("one server", () => {
     expect(second.body.message).toContain("already running");
     abort.abort();
     await first;
-    for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20))
+    for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {
       if (!leftovers().length) break;
+    }
     expect(leftovers()).toEqual([]);
     expect((await c.run(subscribe(), "email\nafter-abort@example.test\n")).imported).toBe(1);
   });
@@ -471,7 +487,9 @@ describe("one server", () => {
   test("the temporary file goes on finish, stop and failure", async () => {
     // The status is published just before the file goes.
     const gone = async () => {
-      for (let i = 0; i < 400 && leftovers().length; i++) await Bun.sleep(5);
+      for (let i = 0; i < 400 && leftovers().length; i++) {
+        await Bun.sleep(5);
+      }
       expect(leftovers()).toEqual([]);
     };
     await c.run(subscribe(), "email\ntemp1@example.test\n");
@@ -488,8 +506,9 @@ describe("one server", () => {
   test("a stop lands between batches: the count and the rows agree", async () => {
     const before = await c.subscribers();
     expect((await c.post(subscribe(), rows("between", 20_000))).status).toBe(200);
-    for (let current = await c.status(); current.imported < 300; current = await c.status())
+    for (let current = await c.status(); current.imported < 300; current = await c.status()) {
       await Bun.sleep(1);
+    }
     await c.call("/api/import/subscribers", "DELETE");
     const done = await c.settled();
     expect(done.status).toBe("finished");
@@ -507,8 +526,9 @@ describe("process lifecycle", () => {
     const c = await client(origin);
     const lists = await c.list("lifecycle");
     expect((await c.post(subscribe(lists), rows("life", 30_000))).status).toBe(200);
-    for (let current = await c.status(); current.imported < 100; current = await c.status())
+    for (let current = await c.status(); current.imported < 100; current = await c.status()) {
       await Bun.sleep(1);
+    }
     return { child, c };
   };
 

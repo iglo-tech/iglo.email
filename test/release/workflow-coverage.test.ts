@@ -19,9 +19,13 @@ async function workflowRuns(): Promise<Map<string, Set<string>>> {
   for (const file of workflows) {
     const text = await Bun.file(resolve(repository, ".github/workflows", file)).text();
     for (const line of text.split("\n")) {
-      if (line.trimStart().startsWith("#")) continue;
+      if (line.trimStart().startsWith("#")) {
+        continue;
+      }
       for (const [, name] of line.matchAll(/bun run ([\w:.-]+)/g)) {
-        if (!runs.has(name!)) runs.set(name!, new Set());
+        if (!runs.has(name!)) {
+          runs.set(name!, new Set());
+        }
         runs.get(name!)!.add(file);
       }
     }

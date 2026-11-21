@@ -25,7 +25,9 @@ export async function runMaintenanceContract(target: {
   const marker = `m08${randomBytes(10).toString("hex")}`;
   const mailpit = new Mailpit(sink, marker);
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL maintenance-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL maintenance-${label}`);
+    }
   };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (path: string, method = "GET", body?: unknown, auth = authorization) => {
@@ -43,31 +45,35 @@ export async function runMaintenanceContract(target: {
     const json = response.headers.get("content-type")?.startsWith("application/json");
     return {
       status: response.status,
-      body: (json ? JSON.parse(text) : null) as any,
+      body: json ? JSON.parse(text) : null,
       text,
       headers: response.headers,
     };
   };
   const setting = async (key: string, value: unknown) => {
     check((await call(`/api/settings/${key}`, "PUT", value)).status === 200, `setting-${key}`);
-    if (!reference) return;
+    if (!reference) {
+      return;
+    }
     await Bun.sleep(1500);
     const deadline = Date.now() + 20_000;
     for (;;) {
       const up = await fetch(`${target.baseUrl}/health`, {
         signal: AbortSignal.timeout(2000),
       }).catch(() => null);
-      if (up?.ok) return;
+      if (up?.ok) {
+        return;
+      }
       check(Date.now() < deadline, "restart-wait");
       await Bun.sleep(100);
     }
   };
   const owned = {
-    campaigns: [] as number[],
-    subscribers: [] as number[],
-    lists: [] as number[],
-    users: [] as number[],
-    roles: [] as number[],
+    campaigns: [] as Array<number>,
+    subscribers: [] as Array<number>,
+    lists: [] as Array<number>,
+    users: [] as Array<number>,
+    roles: [] as Array<number>,
   };
   const list = async (name: string, optin: string) => {
     const created = await call("/api/lists", "POST", {
@@ -79,7 +85,7 @@ export async function runMaintenanceContract(target: {
     owned.lists.push(created.body.data.id);
     return created.body.data.id as number;
   };
-  const subscriber = async (name: string, lists: number[], status = "enabled") => {
+  const subscriber = async (name: string, lists: Array<number>, status = "enabled") => {
     const created = await call("/api/subscribers", "POST", {
       email: `${name}-${marker}@example.test`,
       name,
@@ -93,7 +99,7 @@ export async function runMaintenanceContract(target: {
   const exists = async (id: number) => (await call(`/api/subscribers/${id}`)).status === 200;
   const memberships = async (id: number) =>
     (await call(`/api/subscribers/${id}`)).body.data.lists.map((l: { id: number }) => l.id);
-  const apiUser = async (name: string, permissions: string[]) => {
+  const apiUser = async (name: string, permissions: Array<string>) => {
     const role = await call("/api/roles/users", "POST", {
       name: `${name}-${marker}`,
       permissions,
@@ -240,11 +246,18 @@ export async function runMaintenanceContract(target: {
 
     // Validation: the date comes before the type, as upstream parses it first.
     invalid(await del("/api/maintenance/subscribers/nope"), "subscriber-type");
-    for (const bad of ["", "invalid", "2026-01-01", "2026-02-30T00:00:00Z", "2026-01-01 00:00:00Z"])
+    for (const bad of [
+      "",
+      "invalid",
+      "2026-01-01",
+      "2026-02-30T00:00:00Z",
+      "2026-01-01 00:00:00Z",
+    ]) {
       invalid(
         await del(`/api/maintenance/analytics/all?before_date=${when(bad)}`),
         `analytics-date-${bad}`,
       );
+    }
     invalid(await del(`/api/maintenance/analytics/nope?before_date=${past}`), "analytics-type");
     invalid(await del("/api/maintenance/analytics/nope"), "analytics-type-no-date");
     // Upstream's types are all, views and clicks: there is no `subscribers`.
@@ -353,7 +366,9 @@ export async function runMaintenanceContract(target: {
     let mails = await mailpit.list();
     for (const deadline = Date.now() + 10_000; Date.now() < deadline; await Bun.sleep(25)) {
       mails = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (mails.length) break;
+      if (mails.length) {
+        break;
+      }
     }
     check(mails.length === 1, "test-received");
     const link = /\/link\/([0-9a-f-]{36})\//.exec((await mailpit.message(mails[0]!.ID)).HTML)?.[1];
@@ -418,8 +433,9 @@ export async function runMaintenanceContract(target: {
     await setting("privacy.individual_tracking", false);
     const anonymous = await exported("views");
     check(anonymous.length === 3, "anonymous-rows");
-    if (reference) check(anonymous[1]!.startsWith(prefix + person), "reference-keeps-subscriber");
-    else {
+    if (reference) {
+      check(anonymous[1]!.startsWith(prefix + person), "reference-keeps-subscriber");
+    } else {
       check(anonymous[1]!.startsWith(`${prefix}0,,,,`), "anonymous-row");
       check(!anonymous.join().includes(member.email), "anonymous-no-address");
       const clicked = await exported("clicks");
@@ -443,27 +459,43 @@ export async function runMaintenanceContract(target: {
     check((await exported("views")).length === 0, "analytics-all-views");
     check((await exported("clicks")).length === 0, "analytics-all-clicks");
 
-    if (!reference) await production(single);
+    if (!reference) {
+      await production(single);
+    }
   } finally {
     await call("/api/settings/privacy.individual_tracking", "PUT", false).catch(() => {});
-    for (const id of owned.campaigns) await call(`/api/campaigns/${id}`, "DELETE");
-    for (const id of owned.users) await call(`/api/users/${id}`, "DELETE");
-    for (const id of owned.roles) await call(`/api/roles/${id}`, "DELETE");
-    for (const id of owned.subscribers) await call(`/api/subscribers/${id}`, "DELETE");
-    for (const id of owned.lists) await call(`/api/lists/${id}`, "DELETE");
+    for (const id of owned.campaigns) {
+      await call(`/api/campaigns/${id}`, "DELETE");
+    }
+    for (const id of owned.users) {
+      await call(`/api/users/${id}`, "DELETE");
+    }
+    for (const id of owned.roles) {
+      await call(`/api/roles/${id}`, "DELETE");
+    }
+    for (const id of owned.subscribers) {
+      await call(`/api/subscribers/${id}`, "DELETE");
+    }
+    for (const id of owned.lists) {
+      await call(`/api/lists/${id}`, "DELETE");
+    }
     await mailpit.removeOwned();
   }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runMaintenanceContract({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS maintenance reference contract\n");
   } catch (error) {

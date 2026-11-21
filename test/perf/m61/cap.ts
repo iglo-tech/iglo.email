@@ -17,8 +17,8 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { createMarketingPolicy } from "@/unsubscribe/policy";
 import { measurementBase, memAvailable, record, stats } from "@/test/perf/m61/record";
 
-const iterations = Number(process.argv[2] ?? 2_000);
-const lengths = [0, 100, 1_000, 10_000];
+const iterations = Number(process.argv[2] ?? 2000);
+const lengths = [0, 100, 1000, 10_000];
 const clock = createRealClock();
 const dir = mkdtempSync(join(measurementBase(), "m61-cap-"));
 try {
@@ -73,9 +73,10 @@ try {
     const delivery = db.query(
       "INSERT INTO campaign_deliveries(campaign_id, subscriber_id, status, at) VALUES (?, ?, ?, ?)",
     );
-    const campaigns: bigint[] = [];
-    for (let i = 0; i < Math.max(...lengths); i++)
+    const campaigns: Array<bigint> = [];
+    for (let i = 0; i < Math.max(...lengths); i++) {
       campaigns.push(campaign.get(crypto.randomUUID(), `c${i}`)!.id);
+    }
     const ids = new Map<number, bigint>();
     for (const n of lengths) {
       const email = `cap${n}@cap.test`;
@@ -104,8 +105,10 @@ try {
   db.run("ANALYZE");
 
   const time = (fn: () => unknown) => {
-    for (let i = 0; i < 50; i++) fn();
-    const ms: number[] = [];
+    for (let i = 0; i < 50; i++) {
+      fn();
+    }
+    const ms: Array<number> = [];
     for (let i = 0; i < iterations; i++) {
       const t = performance.now();
       fn();
@@ -116,7 +119,9 @@ try {
   const results = lengths.map((n) => {
     const id = ids.get(n)!;
     const admission = sends.marketingReason(id, list);
-    if (admission !== null) throw new Error(`unexpected admission ${admission} at ${n}`);
+    if (admission !== null) {
+      throw new Error(`unexpected admission ${admission} at ${n}`);
+    }
     return {
       history: n,
       admission,
@@ -139,7 +144,7 @@ try {
       iterations,
       results,
       memAvailableMiB: memAvailable(),
-      peakRssMiB: Math.round(process.memoryUsage().rss / 1048576),
+      peakRssMiB: Math.round(process.memoryUsage().rss / 1_048_576),
     },
     false,
   );

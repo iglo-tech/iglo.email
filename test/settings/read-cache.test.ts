@@ -12,9 +12,11 @@ import { writeStoredValue } from "@/settings/stored";
 import { createSettings } from "@/settings/store";
 import { TestClock } from "@/test/server/fixture";
 
-const directories: string[] = [];
+const directories: Array<string> = [];
 afterEach(() => {
-  while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true });
+  while (directories.length) {
+    rmSync(directories.pop()!, { recursive: true, force: true });
+  }
 });
 
 function open() {

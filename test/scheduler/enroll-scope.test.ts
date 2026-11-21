@@ -2,11 +2,14 @@
 // scheduler sends no mail for it, while the same caller's enrollment of a readable subscriber is
 // delivered. Through the HTTP API, the real scheduler and the SMTP sink, on the injected clock.
 import { afterEach, expect, test } from "bun:test";
-import { minute, schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -32,7 +35,9 @@ async function scopedCaller(f: SchedulerFixture, list: number) {
     user_role_id: role.body.data.id,
     list_role_id: listRole.body.data.id,
   });
-  if (user.status !== 200) throw new Error(JSON.stringify(user.body));
+  if (user.status !== 200) {
+    throw new Error(JSON.stringify(user.body));
+  }
   const authorization = `Basic ${btoa(`enroll-scope:${user.body.data.password}`)}`;
   return async (path: string, body: unknown) => {
     const response = await f.request(path, {
@@ -69,8 +74,9 @@ test("D103: a refused enrollment sends no mail; the same caller's allowed one is
     { subscriber_id: onB },
     { subscriber_id: onB, test: true, trigger_event_id: paid.body.data.event_id },
   ];
-  for (const body of refused)
+  for (const body of refused) {
     expect(await caller("/api/enrollments", { ...base, ...body })).toEqual(absent);
+  }
 
   // The scheduler is driven past every wait and due time; none of the refusals left a send.
   await f.pass(0);

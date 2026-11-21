@@ -12,7 +12,7 @@ import { measurementBase, memAvailable, record, stats } from "@/test/perf/m61/re
 
 const backlog = Number(process.argv[2] ?? 10_000);
 const repetitions = Number(process.argv[3] ?? 2);
-const txCount = 1_000;
+const txCount = 1000;
 const base = measurementBase();
 const clock = createRealClock();
 const sink = await startSink({});
@@ -22,11 +22,13 @@ const count = (db: { query: Function }, sql: string) =>
 async function until(check: () => boolean, label: string, ms = 900_000) {
   const deadline = Date.now() + ms;
   while (!check()) {
-    if (Date.now() > deadline) throw new Error(`timed out: ${label}`);
+    if (Date.now() > deadline) {
+      throw new Error(`timed out: ${label}`);
+    }
     await Bun.sleep(5);
   }
 }
-const rss = () => Math.round(process.memoryUsage().rss / 1048576);
+const rss = () => Math.round(process.memoryUsage().rss / 1_048_576);
 
 /**
  * Queue `sequence` sequence sends (half transactional, half marketing steps) and `txCount`
@@ -62,7 +64,7 @@ async function run(sequence: number) {
       outbox: false,
       scheduler: false,
     });
-    for (let i = 0; i < txCount; i++)
+    for (let i = 0; i < txCount; i++) {
       producer.sends.enqueue({
         source: "tx",
         kind: "transactional",
@@ -74,16 +76,19 @@ async function run(sequence: number) {
           body: new TextEncoder().encode(`Receipt number ${i}`),
         },
       });
+    }
     // The production claim on this queue, rolled back so the drain still starts from it.
-    const claimMs: number[] = [];
-    const batchClaimMs: number[] = [];
+    const claimMs: Array<number> = [];
+    const batchClaimMs: Array<number> = [];
     for (let i = 0; i < 200; i++) {
       producer.db.run("BEGIN IMMEDIATE");
       const t = performance.now();
       const [row] = producer.sends.claim(clock.now(), new Date(Date.now() + 60_000));
       claimMs.push(performance.now() - t);
       producer.db.run("ROLLBACK");
-      if (!row) throw new Error("nothing to claim");
+      if (!row) {
+        throw new Error("nothing to claim");
+      }
     }
     // The outbox's batched claim: ten claims and their admissions, as one commit holds them.
     for (let i = 0; i < 200; i++) {
@@ -92,17 +97,19 @@ async function run(sequence: number) {
       const batch = producer.sends.claimBatch(clock.now(), new Date(Date.now() + 60_000), 10);
       batchClaimMs.push(performance.now() - t);
       producer.db.run("ROLLBACK");
-      if (batch.length !== 10) throw new Error("short batch");
+      if (batch.length !== 10) {
+        throw new Error("short batch");
+      }
     }
     await producer.close();
 
     const total = sequence + txCount;
     sink.messages.length = 0;
     let peak = rss();
-    const samples: { t: number; delivered: number }[] = [];
-    let firstTx = NaN;
+    const samples: Array<{ t: number; delivered: number }> = [];
+    let firstTx = Number.NaN;
     const started = performance.now();
-    let at2000 = NaN;
+    let at2000 = Number.NaN;
     const r = startRuntime({ dataDir: dir, smtpPort: sink.port, clock, scheduler: false });
     let nextSample = started + 1000;
     await until(() => {
@@ -113,12 +120,15 @@ async function run(sequence: number) {
         samples.push({ t: Math.round(now - started), delivered });
         nextSample += 1000;
       }
-      if (Number.isNaN(at2000) && delivered >= 2000) at2000 = now;
+      if (Number.isNaN(at2000) && delivered >= 2000) {
+        at2000 = now;
+      }
       if (
         Number.isNaN(firstTx) &&
         sink.messages.some((m, i) => i >= delivered - 50 && m.to[0]!.startsWith("tx"))
-      )
+      ) {
         firstTx = now;
+      }
       return delivered >= total;
     }, "drain");
     const seconds = (performance.now() - started) / 1000;

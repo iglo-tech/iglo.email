@@ -6,22 +6,30 @@ import { trimSpace } from "@/lists/store";
 import { simpleLower } from "@/subscribers/unicode-lower";
 
 function atom(value: string): boolean {
-  if (!value || value.startsWith(".") || value.endsWith(".") || value.includes("..")) return false;
+  if (!value || value.startsWith(".") || value.endsWith(".") || value.includes("..")) {
+    return false;
+  }
   for (const char of value) {
     const code = char.codePointAt(0)!;
-    if (code < 128 && (code < 33 || code > 126 || '()<>[]:;@\\,"'.includes(char))) return false;
+    if (code < 128 && (code < 33 || code > 126 || String.raw`()<>[]:;@\,"`.includes(char))) {
+      return false;
+    }
   }
   return true;
 }
 
 // Go net.ParseIP(...).To4() also accepts IPv4-mapped IPv6 literals.
 function mappedIPv4(value: string): boolean {
-  if (isIP(value) !== 6) return false;
+  if (isIP(value) !== 6) {
+    return false;
+  }
   const [left, right] = value.split("::");
   const parse = (part: string) =>
     part
       ? part.split(":").flatMap((x) => {
-          if (!x.includes(".")) return [parseInt(x, 16)];
+          if (!x.includes(".")) {
+            return [parseInt(x, 16)];
+          }
           const bytes = x.split(".").map(Number);
           return [bytes[0]! * 256 + bytes[1]!, bytes[2]! * 256 + bytes[3]!];
         })
@@ -29,35 +37,52 @@ function mappedIPv4(value: string): boolean {
   const a = parse(left ?? ""),
     b = parse(right ?? "");
   const words = right === undefined ? a : [...a, ...Array(8 - a.length - b.length).fill(0), ...b];
-  return words.length === 8 && words.slice(0, 5).every((x) => x === 0) && words[5] === 0xffff;
+  return words.length === 8 && words.slice(0, 5).every((x) => x === 0) && words[5] === 0xff_ff;
 }
 
 export function sanitizeEmail(value: string): string | undefined {
   const address = simpleLower(trimSpace(value));
   const at = address.indexOf("@");
-  if (at < 0 || address.indexOf("@", at + 1) >= 0 || !atom(address.slice(0, at))) return;
+  if (at < 0 || address.indexOf("@", at + 1) >= 0 || !atom(address.slice(0, at))) {
+    return;
+  }
   const domain = address.slice(at + 1);
   if (domain.startsWith("[")) {
-    if (!domain.endsWith("]")) return;
+    if (!domain.endsWith("]")) {
+      return;
+    }
     const literal = domain.slice(1, -1);
-    if (isIP(literal) !== 4 && !mappedIPv4(literal)) return;
-  } else if (!atom(domain)) return;
+    if (isIP(literal) !== 4 && !mappedIPv4(literal)) {
+      return;
+    }
+  } else if (!atom(domain)) {
+    return;
+  }
   return address;
 }
 
 // Domain matching adapted from listmonk internal/subimporter/importer.go at 6fcd95f.
-export function allowedDomain(address: string, allow: string[], block: string[]): boolean {
+export function allowedDomain(
+  address: string,
+  allow: Array<string>,
+  block: Array<string>,
+): boolean {
   const domain = address.split("@")[1];
-  if (domain === undefined) return true;
-  const inList = (items: string[]) => {
+  if (domain === undefined) {
+    return true;
+  }
+  const inList = (items: Array<string>) => {
     const values = new Set(items);
     let wildcards = false;
-    for (const item of items)
+    for (const item of items) {
       if (item.includes("*.")) {
         wildcards = true;
         values.add(item.startsWith("*.") ? item.slice(2) : item);
       }
-    if (values.has(domain)) return true;
+    }
+    if (values.has(domain)) {
+      return true;
+    }
     const parts = domain.split(".");
     if (wildcards && parts.length > 2) {
       parts[0] = "*";

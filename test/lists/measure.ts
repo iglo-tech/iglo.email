@@ -6,7 +6,7 @@ import { startListFixture } from "@/test/lists/fixture";
 const admin = { user: "m15-measure-admin", password: "m15-measure-password" };
 const executable = resolve(process.argv[2] ?? "dist/iglo.email");
 const candidate = process.argv[3] === "candidate";
-const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+const mean = (values: Array<number>) => values.reduce((a, b) => a + b, 0) / values.length;
 for (let repetition = 1; repetition <= 3; repetition++) {
   await withProduction(
     executable,
@@ -25,13 +25,18 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
         const data = (await response.json()) as { data: any };
-        if (response.status !== 200)
+        if (response.status !== 200) {
           throw new Error(`Unexpected status ${response.status} for ${path}`);
+        }
         return { data: data.data, ms: performance.now() - start };
       };
-      for (let i = 0; i < 10; i++) await request("/api/health");
-      const health: number[] = [];
-      for (let i = 0; i < 100; i++) health.push((await request("/api/health")).ms);
+      for (let i = 0; i < 10; i++) {
+        await request("/api/health");
+      }
+      const health: Array<number> = [];
+      for (let i = 0; i < 100; i++) {
+        health.push((await request("/api/health")).ms);
+      }
       const result: Record<string, unknown> = {
         repetition,
         kind: candidate ? "candidate" : "control",
@@ -41,9 +46,9 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         healthWarmup: 10,
       };
       if (candidate) {
-        const crud: number[] = [],
-          query: number[] = [],
-          bulk: number[] = [];
+        const crud: Array<number> = [],
+          query: Array<number> = [],
+          bulk: Array<number> = [];
         for (let i = 0; i < 25; i++) {
           const start = performance.now();
           const created = await request("/api/lists", "POST", {
@@ -55,19 +60,28 @@ for (let repetition = 1; repetition <= 3; repetition++) {
             tags: ["sample"],
           });
           await request(`/api/lists/${created.data.id}`, "DELETE");
-          if (i >= 5) crud.push(performance.now() - start);
+          if (i >= 5) {
+            crud.push(performance.now() - start);
+          }
         }
-        for (let i = 0; i < 40; i++)
+        for (let i = 0; i < 40; i++) {
           await request("/api/lists", "POST", { name: `filter-${i}`, tags: ["sample"] });
+        }
         for (let i = 0; i < 55; i++) {
           const sample = await request("/api/lists?query=filter&tag=sample&per_page=20");
-          if (i >= 5) query.push(sample.ms);
+          if (i >= 5) {
+            query.push(sample.ms);
+          }
         }
         for (let i = 0; i < 15; i++) {
           const name = `bulk-${i}`;
-          for (let j = 0; j < 3; j++) await request("/api/lists", "POST", { name, tags: [name] });
+          for (let j = 0; j < 3; j++) {
+            await request("/api/lists", "POST", { name, tags: [name] });
+          }
           const sample = await request(`/api/lists?query=${name}&tag=${name}`, "DELETE");
-          if (i >= 5) bulk.push(sample.ms);
+          if (i >= 5) {
+            bulk.push(sample.ms);
+          }
         }
         Object.assign(result, {
           crudCycleMeanMs: mean(crud),
@@ -102,7 +116,9 @@ if (candidate) {
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
         const data = (await response.json()) as { data: any };
-        if (response.status !== 200) throw new Error("Fixture request failed");
+        if (response.status !== 200) {
+          throw new Error("Fixture request failed");
+        }
         return { data: data.data, ms: performance.now() - start };
       }
       for (let i = 0; i < 20; i++) {
@@ -110,20 +126,25 @@ if (candidate) {
           name: `fixture-filter-${i}`,
           tags: ["sample"],
         });
-        for (let j = 0; j < 5; j++)
+        for (let j = 0; j < 5; j++) {
           await request("/fixture/membership", "POST", {
             list: list.data.id,
             status: ["confirmed", "unconfirmed", "unsubscribed"][j % 3],
             subscriberStatus: j % 2 ? "disabled" : "enabled",
           });
+        }
       }
-      const samples: number[] = [];
+      const samples: Array<number> = [];
       for (let i = 0; i < 55; i++) {
         const result = await request(
           "/api/lists?query=fixture-filter&tag=sample&order_by=subscriber_count&per_page=10",
         );
-        if (result.data.total !== 20) throw new Error("Fixture count mismatch");
-        if (i >= 5) samples.push(result.ms);
+        if (result.data.total !== 20) {
+          throw new Error("Fixture count mismatch");
+        }
+        if (i >= 5) {
+          samples.push(result.ms);
+        }
       }
       process.stdout.write(
         `${JSON.stringify({ repetition, kind: "synthetic-count-fixture", lists: 20, memberships: 100, warmup: 5, samples: 50, queryMeanMs: mean(samples) })}\n`,

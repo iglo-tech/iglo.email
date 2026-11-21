@@ -5,17 +5,16 @@ import type { AddressInfo } from "node:net";
 import { writeTransaction } from "@/db/transaction";
 import { blockedAddress } from "@/webhooks/address";
 import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
-import {
-  signatureTime,
-  signatureValid,
-  startReceiver,
-  type Receiver,
-} from "@/test/webhooks/receiver";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
+import { signatureTime, signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import type { Receiver } from "@/test/webhooks/receiver";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 type Options = Parameters<typeof txFixture>[0];
 async function open(options: Options = {}) {
@@ -41,12 +40,14 @@ const hook = async (f: TxFixture, r: Receiver, events = all, extra: object = {})
   return created.body.data as { id: number; secret: string };
 };
 const deliveries = async (f: TxFixture, id: number) =>
-  (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results as any[];
+  (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results as Array<any>;
 /** Network I/O is real, so settling is awaited in real time; delays use the injected clock. */
 async function until(check: () => unknown | Promise<unknown>) {
   const deadline = Date.now() + 10_000;
   while (!(await check())) {
-    if (Date.now() > deadline) throw new Error("Condition not reached");
+    if (Date.now() > deadline) {
+      throw new Error("Condition not reached");
+    }
     await Bun.sleep(2);
   }
 }
@@ -67,11 +68,11 @@ const queued = (f: TxFixture, id: number, attempts: number) =>
 const blocklist = (f: TxFixture, id: number) =>
   f.json(`/api/subscribers/${id}/blocklist`, "PUT", {});
 const stored = (f: TxFixture) =>
-  f.db.query("SELECT event, status, payload FROM webhook_deliveries ORDER BY id").all() as {
+  f.db.query("SELECT event, status, payload FROM webhook_deliveries ORDER BY id").all() as Array<{
     event: string;
     status: string;
     payload: string;
-  }[];
+  }>;
 
 test("configuration needs webhooks:manage and the usual auth and CSRF", async () => {
   const f = await open();
@@ -94,8 +95,9 @@ test("configuration needs webhooks:manage and the usual auth and CSRF", async ()
     ["/api/webhooks/1", "PUT", { enabled: false }],
     ["/api/webhooks/1", "DELETE"],
     ["/api/webhooks/1/deliveries", "GET"],
-  ] as const)
+  ] as const) {
     expect((await f.json(path, method, body, basic)).status).toBe(403);
+  }
   const { "x-csrf-token": _csrf, ...noCsrf } = f.sessionHeaders as Record<string, string>;
   const forged = await f.json(
     "/api/webhooks",
@@ -145,8 +147,9 @@ test("URLs, events and secrets are validated and a rejected write stores nothing
     { url, events: all, secret: "short" },
     { url, events: all, secret: "s".repeat(257) },
     { url, events: all, secret: 12 },
-  ])
+  ]) {
     expect((await f.json("/api/webhooks", "POST", body)).status).toBe(400);
+  }
   expect((await f.json("/api/webhooks")).body.data.total).toBe(0);
   const made = await f.json("/api/webhooks", "POST", { url, events: all });
   expect(
@@ -164,7 +167,9 @@ test("URLs, events and secrets are validated and a rejected write stores nothing
 test("configured webhooks are bounded, which bounds fan-out per event", async () => {
   const f = await open();
   const r = receiver();
-  for (let i = 0; i < 20; i++) await hook(f, r, ["send.failed"]);
+  for (let i = 0; i < 20; i++) {
+    await hook(f, r, ["send.failed"]);
+  }
   const over = await f.json("/api/webhooks", "POST", { url: r.url(), events: all });
   expect(over.status).toBe(400);
 });
@@ -284,7 +289,9 @@ test("list_ids is a JSON array in every delivered body that carries it, with or 
   for (const event of carrying) {
     const bodies = r.received.filter((x) => x.body.event === event);
     expect(bodies.length).toBeGreaterThan(0);
-    for (const received of bodies) expect(Array.isArray(received.body.data.list_ids)).toBe(true);
+    for (const received of bodies) {
+      expect(Array.isArray(received.body.data.list_ids)).toBe(true);
+    }
   }
   const deletedBodies = r.received.filter((x) => x.body.event === "subscriber.deleted");
   const bareBody = deletedBodies.find((x) => x.body.data.subscriber.id === bare);
@@ -419,7 +426,7 @@ test("retries follow the injected clock with the same id and bytes and a fresh t
   f.advanceWebhooks(29_000);
   await Bun.sleep(20);
   expect(r.received.length).toBe(1);
-  f.advanceWebhooks(1_000);
+  f.advanceWebhooks(1000);
   await r.waitFor(2);
   await queued(f, id, 2);
   const [second] = await deliveries(f, id);
@@ -431,7 +438,9 @@ test("retries follow the injected clock with the same id and bytes and a fresh t
   const [a, b, c] = r.received;
   expect(new Set([a!.text, b!.text, c!.text]).size).toBe(1);
   expect(a!.body.id).toBe(first.uuid);
-  for (const x of r.received) expect(signatureValid(x, secret)).toBe(true);
+  for (const x of r.received) {
+    expect(signatureValid(x, secret)).toBe(true);
+  }
   expect(signatureTime(b!) - signatureTime(a!)).toBe(30);
   expect(signatureTime(c!) - signatureTime(b!)).toBe(60);
   const [done] = await deliveries(f, id);
@@ -453,7 +462,9 @@ test("a delivery fails safely 24 hours after queueing and stops retrying", async
       [row] = await deliveries(f, id);
       return row.attempts === n && !row.claimed_until;
     });
-    if (row.status === "failed") break;
+    if (row.status === "failed") {
+      break;
+    }
     expect(Date.parse(row.next_attempt_at)).toBeLessThanOrEqual(start + 86_400_000);
     f.advanceWebhooks(Date.parse(row.next_attempt_at) - f.clock.now().getTime());
   }
@@ -498,7 +509,9 @@ test("a hung receiver times out on the injected clock and starves no other recei
   const healthy = receiver();
   const stuck = await hook(f, hung, ["subscriber.blocklisted"]);
   await hook(f, healthy, ["subscriber.blocklisted"]);
-  for (let i = 0; i < 12; i++) await blocklist(f, await f.subscriber(`a${i}@example.test`));
+  for (let i = 0; i < 12; i++) {
+    await blocklist(f, await f.subscriber(`a${i}@example.test`));
+  }
   // The healthy receiver gets everything while the hung one holds its slots.
   await healthy.waitFor(12);
   await hung.waitFor(4);
@@ -518,7 +531,9 @@ test("a large response body is not read to its end", async () => {
           pull(controller) {
             sent += 65_536;
             controller.enqueue(new Uint8Array(65_536));
-            if (sent > 512 * 1048576) controller.close();
+            if (sent > 512 * 1_048_576) {
+              controller.close();
+            }
           },
         }),
       ),
@@ -527,7 +542,7 @@ test("a large response body is not read to its end", async () => {
   await blocklist(f, await f.subscriber("a@example.test"));
   await r.waitFor(1);
   await settled(f, id, r.received[0]!.body.id, "delivered", 1);
-  expect(sent).toBeLessThan(256 * 1048576);
+  expect(sent).toBeLessThan(256 * 1_048_576);
 });
 
 test("a disabled webhook holds its deliveries, resumes when enabled, and fails after 24 hours", async () => {
@@ -681,7 +696,7 @@ test("a retry of a pending subscriber.deleted keeps its bytes until the delivery
 });
 
 test("block_private_addresses refuses private targets after resolution, without a request", async () => {
-  const names: Record<string, string[]> = { "rebind.test": ["93.184.216.34", "10.0.0.8"] };
+  const names: Record<string, Array<string>> = { "rebind.test": ["93.184.216.34", "10.0.0.8"] };
   const f = await open({
     webhooks: {
       lookup: async (host: string) => names[host] ?? ["127.0.0.1"],
@@ -690,15 +705,20 @@ test("block_private_addresses refuses private targets after resolution, without 
   const r = receiver();
   f.blockPrivate.value = true;
   const targets = [r.url(), `http://localhost:${r.port}/`, "http://rebind.test/", "http://[::1]/"];
-  const ids: number[] = [];
-  for (const url of targets)
+  const ids: Array<number> = [];
+  for (const url of targets) {
     ids.push(
       (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
         .id,
     );
+  }
   await blocklist(f, await f.subscriber("a@example.test"));
-  for (const id of ids) await queued(f, id, 1);
-  for (const id of ids) expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
+  for (const id of ids) {
+    await queued(f, id, 1);
+  }
+  for (const id of ids) {
+    expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
+  }
   expect(r.received.length).toBe(0);
   // Off (an operator's stored choice), a self-hosted receiver on a private address works.
   f.blockPrivate.value = false;
@@ -729,8 +749,8 @@ test("with blocking on, every private, loopback, link-local and unique-local fam
     "ff02::1",
   ];
   const publicAddresses = ["93.184.216.34", "2606:4700:4700::1111"];
-  const resolved: Record<string, string[]> = {};
-  const sent: string[] = [];
+  const resolved: Record<string, Array<string>> = {};
+  const sent: Array<string> = [];
   const f = await open({
     webhooks: {
       lookup: async (host: string) => resolved[host] ?? [],
@@ -741,7 +761,7 @@ test("with blocking on, every private, loopback, link-local and unique-local fam
     },
   });
   f.blockPrivate.value = true;
-  const refused: number[] = [];
+  const refused: Array<number> = [];
   for (const [index, address] of privateAddresses.entries()) {
     resolved[`private${index}.test`] = [address];
     refused.push(
@@ -753,7 +773,7 @@ test("with blocking on, every private, loopback, link-local and unique-local fam
       ).body.data.id,
     );
   }
-  const allowed: number[] = [];
+  const allowed: Array<number> = [];
   for (const [index, address] of publicAddresses.entries()) {
     resolved[`public${index}.test`] = [address];
     allowed.push(
@@ -770,8 +790,9 @@ test("with blocking on, every private, loopback, link-local and unique-local fam
     await queued(f, id, 1);
     expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
   }
-  for (const id of allowed)
+  for (const id of allowed) {
     await until(async () => (await deliveries(f, id))[0]?.status === "delivered");
+  }
   // Only the public targets were requested, each at the address that was checked.
   expect(sent.sort()).toEqual(["http://93.184.216.34/path", "http://[2606:4700:4700::1111]/path"]);
 });
@@ -861,10 +882,11 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
     "subscriber.deleted",
     "subscriber.unsubscribed",
   ]);
-  for (const received of afterWipe)
+  for (const received of afterWipe) {
     expect(received.body.data).toEqual(
       received.body.event === "subscriber.deleted" ? deleted : cleared,
     );
+  }
   expect(body()).not.toContain(address);
   // While the wipe's deleted event is still queued it keeps the external ID and the lists, so the
   // receiver can still be told. Once it goes out, both leave storage.
@@ -886,7 +908,9 @@ test("a delivery held at DNS goes out cleared when its subscriber is deleted mea
   const f = await open({
     webhooks: {
       lookup: async () => {
-        if (held) await new Promise<void>((resolve) => (release = resolve));
+        if (held) {
+          await new Promise<void>((resolve) => (release = resolve));
+        }
         return ["127.0.0.1"];
       },
       blocked: () => false,
@@ -953,11 +977,12 @@ function seed(f: TxFixture, count: number, list?: number) {
      SELECT lower(hex(randomblob(16))), 'seed' || n || '@example.test', 'Seed' FROM i`,
     [count],
   );
-  if (list)
+  if (list) {
     f.db.run(
       "INSERT INTO subscriber_lists (subscriber_id, list_id, status) SELECT id, ?, 'confirmed' FROM subscribers",
       [list],
     );
+  }
 }
 const deliveryCount = (f: TxFixture) =>
   Number((f.db.query("SELECT count(*) AS n FROM webhook_deliveries").get() as { n: bigint }).n);
@@ -1024,11 +1049,13 @@ test("bulk actions queue the bytes a single action would, each with its own id",
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
   }
-  const rows = f.db.query("SELECT uuid, payload, subscriber_id FROM webhook_deliveries").all() as {
+  const rows = f.db
+    .query("SELECT uuid, payload, subscriber_id FROM webhook_deliveries")
+    .all() as Array<{
     uuid: string;
     payload: string;
     subscriber_id: bigint;
-  }[];
+  }>;
   expect(new Set(rows.map((row) => row.uuid)).size).toBe(4);
   for (const row of rows) {
     const body = JSON.parse(row.payload);
@@ -1081,7 +1108,9 @@ test("bulk unsubscribing queues only memberships that really ended", async () =>
 test("a bulk action within the delivery budget queues every row", async () => {
   const f = await open();
   const r = receiver();
-  for (let i = 0; i < 20; i++) await hook(f, r, ["subscriber.deleted"]);
+  for (let i = 0; i < 20; i++) {
+    await hook(f, r, ["subscriber.deleted"]);
+  }
   await f.crashWebhooks();
   seed(f, MAX_BULK_DELIVERIES / 20);
   const done = await f.json("/api/subscribers/query/delete", "POST", { all: true });
@@ -1095,15 +1124,17 @@ test("a bulk action over the delivery budget is refused before any write", async
   const r = receiver();
   // A subscriber costs one row per subscribed event per enabled webhook.
   const consent = ["subscriber.blocklisted", "subscriber.unsubscribed", "subscriber.deleted"];
-  for (let i = 0; i < 19; i++) await hook(f, r, consent);
+  for (let i = 0; i < 19; i++) {
+    await hook(f, r, consent);
+  }
   await hook(f, r, all, { enabled: false });
   await f.crashWebhooks();
   const list = await newList(f);
   const selection = Math.ceil(MAX_BULK_DELIVERIES / 19);
   seed(f, selection, list);
-  const ids = (f.db.query("SELECT id FROM subscribers ORDER BY id").all() as { id: bigint }[]).map(
-    ({ id }) => Number(id),
-  );
+  const ids = (
+    f.db.query("SELECT id FROM subscribers ORDER BY id").all() as Array<{ id: bigint }>
+  ).map(({ id }) => Number(id));
   const refused = async (result: Promise<{ status: number; body: any }>) => {
     const response = await result;
     expect(response.status).toBe(400);
@@ -1154,7 +1185,7 @@ test("the delivery budget does not touch bulk actions no webhook wants", async (
 test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad certificate", async () => {
   const fixture = await Bun.file("test/messaging/tls-fixture.md").text();
   const [cert, key] = [...fixture.matchAll(/```pem\n([\s\S]*?)```/g)].map((match) => match[1]!);
-  const seen: { sni: unknown; host: string | undefined }[] = [];
+  const seen: Array<{ sni: unknown; host: string | undefined }> = [];
   const server = createServer({ cert, key }, (request, response) => {
     seen.push({
       sni: (request.socket as unknown as { servername?: unknown }).servername,
@@ -1233,8 +1264,9 @@ test("non-public addresses are classified as blocked", () => {
     "ff02::1",
     "100::1",
     "not-an-address",
-  ])
+  ]) {
     expect([address, blockedAddress(address)]).toEqual([address, true]);
+  }
   for (const address of [
     "8.8.8.8",
     "93.184.216.34",
@@ -1245,12 +1277,13 @@ test("non-public addresses are classified as blocked", () => {
     "::ffff:8.8.8.8",
     "64:ff9b::808:808",
     "2002:808:808::",
-  ])
+  ]) {
     expect([address, blockedAddress(address)]).toEqual([address, false]);
+  }
 });
 
 test("every start names each enabled webhook the block refuses, one line each, and a lookup gets the delivery deadline (B125 r2, D122)", async () => {
-  const resolved: Record<string, string[]> = {
+  const resolved: Record<string, Array<string>> = {
     "private.test": ["10.0.0.5"],
     "public.test": ["93.184.216.34"],
   };
@@ -1259,7 +1292,7 @@ test("every start names each enabled webhook the block refuses, one line each, a
       // The hanging name never answers, so only the injected clock can end its check.
       lookup: (host: string) =>
         host === "hang.test"
-          ? new Promise<string[]>(() => {})
+          ? new Promise<Array<string>>(() => {})
           : Promise.resolve(resolved[host] ?? []),
     },
   });

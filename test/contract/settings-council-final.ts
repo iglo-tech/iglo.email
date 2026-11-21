@@ -20,7 +20,9 @@ export async function runSettingsCouncilFinal(target: {
       target.mode === "reference",
     );
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL settings-council-final-${label}`);
+    if (!value) {
+      throw new Error(`FAIL settings-council-final-${label}`);
+    }
   }
   async function read() {
     const response = await request();
@@ -114,9 +116,11 @@ export async function runSettingsCouncilFinal(target: {
       `${label}-key-status`,
     );
     const afterKey = await read();
-    if (referenceRawFailure)
+    if (referenceRawFailure) {
       check(JSON.stringify(afterKey) === JSON.stringify(beforeKey), `${label}-D44-key-no-write`);
-    else check(afterKey["app.site_name"] === expected, `${label}-key-stored`);
+    } else {
+      check(afterKey["app.site_name"] === expected, `${label}-key-stored`);
+    }
   }
 
   for (const firstEnabled of [false, true]) {

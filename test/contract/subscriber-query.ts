@@ -12,10 +12,12 @@ export async function runSubscriberQuery(target: {
   const normal = target.mode === "normal";
   const tag = `q${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const resources: { kind: string; id: number }[] = [];
+  const resources: Array<{ kind: string; id: number }> = [];
   let cleanupFailed = false;
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL ${label}`);
+    if (!value) {
+      throw new Error(`FAIL ${label}`);
+    }
   }
   const request = (
     path: string,
@@ -38,18 +40,19 @@ export async function runSubscriberQuery(target: {
     headers?: Record<string, string>,
   ) => {
     const response = await request(path, method, body, headers);
-    return { status: response.status, body: (await response.json()) as any };
+    return { status: response.status, body: await response.json() };
   };
   async function create(path: string, kind: string, data: unknown) {
     const response = await json(path, "POST", data);
-    if (response.status === 200 && typeof response.body.data?.id === "number")
+    if (response.status === 200 && typeof response.body.data?.id === "number") {
       resources.push({ kind, id: response.body.data.id });
+    }
     check(response.status === 200, `subscriber-query-setup-${kind}`);
     return response.body.data;
   }
   const q = encodeURIComponent;
   const names = (body: any) =>
-    ((body.data?.results ?? []) as { email: string }[]).map((row) => row.email.split("-")[0]);
+    ((body.data?.results ?? []) as Array<{ email: string }>).map((row) => row.email.split("-")[0]);
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   try {
     const listA = (await create("/api/lists", "lists", { name: `qa-${tag}`, optin: "single" })).id;
@@ -351,7 +354,7 @@ export async function runSubscriberQuery(target: {
     r = await json("/api/subscribers/query/lists", "PUT", {
       search: tag,
       action: "add",
-      target_list_ids: [listB, 2147483000],
+      target_list_ids: [listB, 2_147_483_000],
     });
     check(
       r.status === 500 && r.body.message.startsWith("Error updating Subscribers: "),
@@ -397,11 +400,12 @@ export async function runSubscriberQuery(target: {
     check(same(r.body, { data: true }), "subscriber-bulk-scoped-delete");
     r = await json(`/api/subscribers?search=${tag}`);
     check(same(names(r.body), ["carol"]), "subscriber-bulk-scoped-delete-scope");
-    for (const sub of [alice, bob])
+    for (const sub of [alice, bob]) {
       resources.splice(
         resources.findIndex((x) => x.kind === "subscribers" && x.id === sub.id),
         1,
       );
+    }
     r = await json("/api/subscribers/query/delete", "POST", {
       query: `subscribers.email = '${carol.email}'`,
     });
@@ -486,11 +490,12 @@ export async function runSubscriberQuery(target: {
 
     r = await json("/api/subscribers/query/delete", "POST", { search: multi });
     check(same(r.body, { data: true }), "subscriber-bulk-delete-lists");
-    for (const sub of [m1, m2, m3])
+    for (const sub of [m1, m2, m3]) {
       resources.splice(
         resources.findIndex((x) => x.kind === "subscribers" && x.id === sub.id),
         1,
       );
+    }
 
     // Accented search: case folds, accents do not (upstream `~*`), for listing and deletion.
     const accent = await create("/api/subscribers", "subscribers", {
@@ -538,8 +543,11 @@ export async function runSubscriberQuery(target: {
       );
     }
   } finally {
-    for (const { kind, id } of resources.reverse())
+    for (const { kind, id } of resources.reverse()) {
       if ((await request(`/api/${kind}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL subscriber-query-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL subscriber-query-cleanup");
+  }
 }

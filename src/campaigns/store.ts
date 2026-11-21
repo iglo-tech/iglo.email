@@ -15,7 +15,7 @@ export type CampaignStatus =
   | "cancelled"
   | "finished";
 export type ContentType = "richtext" | "html" | "markdown" | "plain" | "visual";
-export const contentTypes: readonly ContentType[] = [
+export const contentTypes: ReadonlyArray<ContentType> = [
   "richtext",
   "html",
   "markdown",
@@ -68,9 +68,9 @@ export interface WritableCampaign {
   altbody: string | null;
   content_type: ContentType;
   send_at: string | null;
-  headers: Record<string, string>[];
+  headers: Array<Record<string, string>>;
   attribs: Record<string, unknown>;
-  tags: string[];
+  tags: Array<string>;
   messenger: string;
   template_id: bigint | null;
   archive: boolean;
@@ -80,12 +80,12 @@ export interface WritableCampaign {
 }
 export interface Scope {
   all: boolean;
-  ids: bigint[];
+  ids: Array<bigint>;
 }
 export interface CampaignFilter {
   query: string;
-  statuses: string[];
-  tags: string[];
+  statuses: Array<string>;
+  tags: Array<string>;
   type: string;
 }
 export class CampaignError extends Error {
@@ -93,7 +93,7 @@ export class CampaignError extends Error {
     super(reason);
   }
 }
-const sortFields = ["name", "status", "created_at", "updated_at", "started_at", "send_at"];
+const sortFields = new Set(["name", "status", "created_at", "updated_at", "started_at", "send_at"]);
 const ids = (values: bigint[]) => JSON.stringify(values.map(String)).replaceAll('"', "");
 
 /** listmonk normalizeTags: trim and replace whitespace runs with a dash; drop empties. */
@@ -194,7 +194,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       offset: number,
       limit: number,
     ): { rows: CampaignRow[]; total: number } {
-      const field = sortFields.includes(orderBy) ? orderBy : "created_at";
+      const field = sortFields.has(orderBy) ? orderBy : "created_at";
       // B80: order takes any case; anything but asc sorts descending, as before.
       const direction = order.toLowerCase() === "asc" ? "ASC" : "DESC";
       const found = q
@@ -210,19 +210,23 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
           direction,
           limit < 1 ? -1 : limit,
           offset,
-        ) as { id: bigint; total: bigint }[];
+        ) as Array<{ id: bigint; total: bigint }>;
       return {
         rows: found.map((r) => get(r.id)).filter((r): r is CampaignRow => r !== null),
         total: Number(found[0]?.total ?? 0),
       };
     },
     /** create-campaign: the given or default template; the campaign is always a draft. */
-    create(input: WritableCampaign, listIds: bigint[], mediaIds: bigint[]): CampaignRow {
+    create(input: WritableCampaign, listIds: Array<bigint>, mediaIds: Array<bigint>): CampaignRow {
       return writeTransaction(db, () => {
-        if (slugOwner(input.archive_slug) !== null) throw new CampaignError("slug");
+        if (slugOwner(input.archive_slug) !== null) {
+          throw new CampaignError("slug");
+        }
         let template: bigint | null = null;
         if (input.template_id !== null) {
-          if (templateExists(input.template_id)) template = input.template_id;
+          if (templateExists(input.template_id)) {
+            template = input.template_id;
+          }
         } else if (input.content_type !== "visual") {
           template = refs.defaultTemplate();
         }
@@ -267,18 +271,23 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       id: bigint,
       merge: (row: CampaignRow) => {
         value: WritableCampaign;
-        listIds: bigint[];
-        mediaIds: bigint[];
+        listIds: Array<bigint>;
+        mediaIds: Array<bigint>;
       },
     ): CampaignRow {
       return writeTransaction(db, () => {
         const row = get(id);
-        if (!row) throw new CampaignError("missing");
+        if (!row) {
+          throw new CampaignError("missing");
+        }
         const { value, listIds, mediaIds } = merge(row);
         const owner = slugOwner(value.archive_slug);
-        if (owner !== null && owner !== id) throw new CampaignError("slug");
-        if (!templateExists(value.template_id) || !templateExists(value.archive_template_id))
+        if (owner !== null && owner !== id) {
+          throw new CampaignError("slug");
+        }
+        if (!templateExists(value.template_id) || !templateExists(value.archive_template_id)) {
           throw new CampaignError("template");
+        }
         const v = values(value);
         q.get("update-campaign").run(
           id,
@@ -310,32 +319,48 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
     updateStatus(id: bigint, status: string): CampaignRow {
       return writeTransaction(db, () => {
         const row = get(id);
-        if (!row) throw new CampaignError("missing");
+        if (!row) {
+          throw new CampaignError("missing");
+        }
         const from = row.status;
         let refused = "";
         switch (status) {
           case "draft":
-            if (from !== "scheduled") refused = "onlyScheduledAsDraft";
+            if (from !== "scheduled") {
+              refused = "onlyScheduledAsDraft";
+            }
             break;
           case "scheduled":
-            if (from !== "draft" && from !== "paused") refused = "onlyDraftAsScheduled";
-            if (row.send_at === null) refused = "needsSendAt";
+            if (from !== "draft" && from !== "paused") {
+              refused = "onlyDraftAsScheduled";
+            }
+            if (row.send_at === null) {
+              refused = "needsSendAt";
+            }
             break;
           case "running":
-            if (from !== "paused" && from !== "draft") refused = "onlyPausedDraft";
+            if (from !== "paused" && from !== "draft") {
+              refused = "onlyPausedDraft";
+            }
             break;
           case "paused":
-            if (from !== "running") refused = "onlyActivePause";
+            if (from !== "running") {
+              refused = "onlyActivePause";
+            }
             break;
           case "cancelled":
-            if (from !== "running" && from !== "paused") refused = "onlyActiveCancel";
+            if (from !== "running" && from !== "paused") {
+              refused = "onlyActiveCancel";
+            }
             break;
           case "finished":
             break;
           default:
             refused = "invalid";
         }
-        if (refused) throw new CampaignError(`status:${refused}`);
+        if (refused) {
+          throw new CampaignError(`status:${refused}`);
+        }
         q.get("update-campaign-status").run(id, status, now());
         // listmonk returns the campaign read before the write with the requested status.
         return { ...row, status: status as CampaignStatus };
@@ -349,10 +374,16 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       slug: string,
     ): void {
       writeTransaction(db, () => {
-        if (!get(id)) return;
+        if (!get(id)) {
+          return;
+        }
         const owner = slugOwner(slug || null);
-        if (owner !== null && owner !== id) throw new CampaignError("slug");
-        if (templateId > 0n && !templateExists(templateId)) throw new CampaignError("template");
+        if (owner !== null && owner !== id) {
+          throw new CampaignError("slug");
+        }
+        if (templateId > 0n && !templateExists(templateId)) {
+          throw new CampaignError("template");
+        }
         q.get("update-campaign-archive").run(
           id,
           archive ? 1 : 0,
@@ -366,7 +397,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
     remove(id: bigint): boolean {
       return q.get("delete-campaign").run(id).changes > 0;
     },
-    removeMany(selection: bigint[], filter: CampaignFilter, scope: Scope): void {
+    removeMany(selection: Array<bigint>, filter: CampaignFilter, scope: Scope): void {
       writeTransaction(db, () => {
         const found = q
           .get("delete-campaign-ids")
@@ -378,17 +409,19 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
             filter.type,
             scope.all ? 1 : 0,
             ids(scope.ids),
-          ) as { id: bigint }[];
-        for (const row of found) q.get("delete-campaign").run(row.id);
+          ) as Array<{ id: bigint }>;
+        for (const row of found) {
+          q.get("delete-campaign").run(row.id);
+        }
       });
     },
     /** One page of a campaign's skipped deliveries (B116, D131): subscriber, reason and time. */
     skippedDeliveries(id: bigint, page: number, perPage: number) {
-      const rows = q.get("skipped-deliveries").all(id, perPage, (page - 1) * perPage) as {
+      const rows = q.get("skipped-deliveries").all(id, perPage, (page - 1) * perPage) as Array<{
         subscriber_id: bigint;
         reason: string | null;
         at: string;
-      }[];
+      }>;
       const total = (q.get("skipped-deliveries-count").get(id) as { total: bigint }).total;
       return { rows, total };
     },

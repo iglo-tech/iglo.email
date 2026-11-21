@@ -2,7 +2,8 @@
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
-import { createLoop, type PendingLoop } from "@/loops/loop";
+import { createLoop } from "@/loops/loop";
+import type { PendingLoop } from "@/loops/loop";
 
 export const PURGE_INTERVAL_MS = 3_600_000;
 const BATCH = 100;
@@ -10,7 +11,7 @@ const BATCH = 100;
 const PAUSE_MS = 250;
 
 /** One short pass of a module over its own rows; at most `limit`, and `[]` when none are due. */
-export type Purge = (now: Date, limit: number) => readonly unknown[];
+export type Purge = (now: Date, limit: number) => ReadonlyArray<unknown>;
 
 /**
  * Run the owners' purges in turn, one write transaction and one owner per pass, so a backlog
@@ -29,7 +30,7 @@ export interface PurgeOptions {
   db: Database;
   clock: Clock;
   logger: ErrorLogger;
-  purges: readonly Purge[];
+  purges: ReadonlyArray<Purge>;
   batchSize?: number;
 }
 
@@ -51,7 +52,9 @@ export function createPurge(options: PurgeOptions): PendingLoop {
         const purge = purges[next]!;
         next = (next + 1) % purges.length;
         const taken = purge(now, batchSize);
-        if (taken.length) return taken;
+        if (taken.length) {
+          return taken;
+        }
       }
       return [];
     },

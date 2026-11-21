@@ -8,7 +8,9 @@ import { txFixture } from "@/test/tx/fixture";
 
 const fixtures: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function tx() {
   const f = await txFixture();
@@ -199,8 +201,9 @@ test("references decode once, invisible characters go, lists and cells keep thei
     "no two",
     "no three",
     "no four",
-  ])
+  ]) {
     expect(textPart(data)).not.toContain(hidden);
+  }
 });
 
 test("a large realistic newsletter converts to a text part no longer than its HTML", async () => {

@@ -10,10 +10,12 @@ function code() {
   counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
   const digest = createHmac("sha1", Buffer.from("12345678901234567890")).update(counter).digest();
   const offset = digest[19]! & 15;
-  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+  return String((digest.readUInt32BE(offset) & 0x7f_ff_ff_ff) % 1_000_000).padStart(6, "0");
 }
 function check(value: unknown, name: string): asserts value {
-  if (!value) throw new Error(`FAIL ${name}`);
+  if (!value) {
+    throw new Error(`FAIL ${name}`);
+  }
   process.stdout.write(`PASS ${name}\n`);
 }
 function cookie(response: Response, name: string) {
@@ -93,7 +95,9 @@ await withProduction(
     }
     async function finish(location: string) {
       const page = await fetch(`${origin}${location}`, { redirect: "manual" });
-      if (page.status !== 200) return page;
+      if (page.status !== 200) {
+        return page;
+      }
       const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
       return fetch(`${origin}/admin/login/twofa`, {
         method: "POST",

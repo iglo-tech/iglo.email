@@ -22,7 +22,9 @@ const attempts = 5;
  */
 export async function stderrDrained(child: ChildProcess): Promise<void> {
   const stream = child.stderr;
-  if (!stream || stream.readableEnded || stream.destroyed) return;
+  if (!stream || stream.readableEnded || stream.destroyed) {
+    return;
+  }
   await Promise.race([new Promise((done) => stream.once("end", done)), Bun.sleep(1000)]);
 }
 
@@ -33,7 +35,9 @@ async function freeLoopbackPort(): Promise<number> {
     socket.listen(0, "127.0.0.1", resolve);
   });
   const address = socket.address();
-  if (!address || typeof address === "string") throw new Error("Unable to reserve a loopback port");
+  if (!address || typeof address === "string") {
+    throw new Error("Unable to reserve a loopback port");
+  }
   await new Promise<void>((resolve, reject) =>
     socket.close((error) => (error ? reject(error) : resolve())),
   );
@@ -59,7 +63,9 @@ export async function startOnFreePort<T>(start: (port: number) => Promise<T>): P
     try {
       return await start(port);
     } catch (error) {
-      if (attempt >= attempts || !isPortInUse(error)) throw error;
+      if (attempt >= attempts || !isPortInUse(error)) {
+        throw error;
+      }
     }
   }
 }
@@ -79,7 +85,9 @@ export async function restartOnPort<T>(
     try {
       return await start(port);
     } catch (error) {
-      if (attempt >= attempts || !isPortInUse(error)) throw error;
+      if (attempt >= attempts || !isPortInUse(error)) {
+        throw error;
+      }
       await Bun.sleep(50 * attempt);
     }
   }
@@ -97,14 +105,20 @@ export function listensOn(pid: number, port: number): boolean {
       } catch {}
       for (const line of text.split("\n").slice(1)) {
         const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
-        if (state === "0A" && local?.endsWith(`:${hex}`) && inode) inodes.add(inode);
+        if (state === "0A" && local?.endsWith(`:${hex}`) && inode) {
+          inodes.add(inode);
+        }
       }
     }
-    if (inodes.size === 0) return false;
+    if (inodes.size === 0) {
+      return false;
+    }
     for (const fd of readdirSync(`/proc/${pid}/fd`)) {
       try {
         const match = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/${fd}`));
-        if (match && inodes.has(match[1]!)) return true;
+        if (match && inodes.has(match[1]!)) {
+          return true;
+        }
       } catch {}
     }
   } catch {}
@@ -127,9 +141,11 @@ export interface Child {
 export async function stopChild(
   child: Child,
   signal: NodeJS.Signals = "SIGTERM",
-  graceMs = 5_000,
+  graceMs = 5000,
 ): Promise<number> {
-  if (child.exitCode === null) child.kill(signal);
+  if (child.exitCode === null) {
+    child.kill(signal);
+  }
   const timer = setTimeout(() => child.kill("SIGKILL"), graceMs);
   try {
     return await child.exited;
@@ -145,7 +161,7 @@ export async function stopChild(
 export async function healthWhenReady(
   child: Child,
   port: number,
-  timeoutMs = 5_000,
+  timeoutMs = 5000,
 ): Promise<Response> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -160,7 +176,9 @@ export async function healthWhenReady(
         signal: AbortSignal.timeout(500),
       });
       // Another server can hold the port and answer first: ready only when this child listens on it.
-      if (child.pid !== undefined && listensOn(child.pid, port)) return response;
+      if (child.pid !== undefined && listensOn(child.pid, port)) {
+        return response;
+      }
     } catch {
       // This delay is only for bounded process readiness, not application time.
     }

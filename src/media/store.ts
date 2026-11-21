@@ -43,9 +43,11 @@ export function createMediaStore(db: Database, clock: Clock) {
     query(provider: string, search: string, offset: number, limit: number) {
       const rows = q
         .get("query-media")
-        .all(provider, lowercaseGlob(search), limit || -1, offset) as (MediaRow & {
-        total: bigint;
-      })[];
+        .all(provider, lowercaseGlob(search), limit || -1, offset) as Array<
+        MediaRow & {
+          total: bigint;
+        }
+      >;
       return { results: rows, total: Number(rows[0]?.total ?? 0) };
     },
     get(id: bigint | number): MediaRow | null {

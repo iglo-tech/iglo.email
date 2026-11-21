@@ -25,13 +25,19 @@ export class Translation {
   }
 
   T(key: string): string {
-    if (!Object.hasOwn(this.values, key)) return key;
+    if (!Object.hasOwn(this.values, key)) {
+      return key;
+    }
     return singular(this.values[key]!);
   }
 
-  Ts(key: string, ...params: string[]): string {
-    if (params.length % 2 !== 0) return `${key}: Invalid arguments`;
-    if (!Object.hasOwn(this.values, key)) return key;
+  Ts(key: string, ...params: Array<string>): string {
+    if (params.length % 2 !== 0) {
+      return `${key}: Invalid arguments`;
+    }
+    if (!Object.hasOwn(this.values, key)) {
+      return key;
+    }
     let value = this.T(key);
     const budget = { remaining: 256 };
     for (let index = 0; index < params.length; index += 2) {
@@ -42,18 +48,26 @@ export class Translation {
   }
 
   Tc(key: string, count: number): string {
-    if (!Object.hasOwn(this.values, key)) return key;
+    if (!Object.hasOwn(this.values, key)) {
+      return key;
+    }
     const value = this.values[key]!;
-    if (count <= 1 || !value.includes("|")) return singular(value);
+    if (count <= 1 || !value.includes("|")) {
+      return singular(value);
+    }
     const parts = value.split("|");
     return (parts.length === 2 ? parts[1]! : parts[0]!).trim();
   }
 
   private resolve(value: string, active: Set<string>, budget: { remaining: number }): string {
-    return value.replace(/\{([a-z0-9-.]+)\}/gi, (match, key: string) => {
-      if (budget.remaining <= 0 || active.has(key)) return match;
+    return value.replaceAll(/\{([a-z0-9-.]+)\}/gi, (match, key: string) => {
+      if (budget.remaining <= 0 || active.has(key)) {
+        return match;
+      }
       budget.remaining--;
-      if (!Object.hasOwn(this.values, key)) return key;
+      if (!Object.hasOwn(this.values, key)) {
+        return key;
+      }
       const next = new Set(active);
       next.add(key);
       return this.resolve(this.T(key), next, budget);
@@ -67,6 +81,8 @@ function singular(value: string): string {
 
 export function createTranslation(code = "en"): Translation {
   const english = languagePack("en");
-  if (!english) throw new Error("English language data is missing");
+  if (!english) {
+    throw new Error("English language data is missing");
+  }
   return new Translation(english, languagePack(code));
 }

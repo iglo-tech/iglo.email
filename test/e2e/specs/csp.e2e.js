@@ -19,10 +19,13 @@ function directives() {
   const found = [];
   const walk = (root) => {
     for (const el of root.querySelectorAll("*")) {
-      for (const { name, value } of el.attributes)
+      for (const { name, value } of el.attributes) {
         if (/^(x-[a-z]|@|:)/.test(name) && !/^x-(cloak|ignore|transition)/.test(name))
           found.push([name, value]);
-      if (el instanceof HTMLTemplateElement) walk(el.content);
+      }
+      if (el instanceof HTMLTemplateElement) {
+        walk(el.content);
+      }
     }
   };
   walk(document);
@@ -106,7 +109,9 @@ test("every screen works under the policy", async ({ page }) => {
     await page.waitForFunction(() => window.Alpine && document.body._x_dataStack);
     await page.waitForLoadState("networkidle");
     for (const [name, value] of await page.evaluate(directives)) {
-      if (name === "x-ref" || !value) continue;
+      if (name === "x-ref" || !value) {
+        continue;
+      }
       const expression = name === "x-for" ? value.replace(/^.*?\s(?:in|of)\s/, "") : value;
       expect(() => generateRuntimeFunction(expression), `${path} ${name}="${value}"`).not.toThrow();
     }
@@ -124,7 +129,7 @@ test.describe("responses that hold authored text", () => {
   const asScript = (page, paths) =>
     page.evaluate(async (list) => {
       const outcomes = {};
-      for (const path of list)
+      for (const path of list) {
         outcomes[path] = await new Promise((resolve) => {
           const script = document.createElement("script");
           script.onload = () => resolve("ran");
@@ -132,6 +137,7 @@ test.describe("responses that hold authored text", () => {
           script.src = path;
           document.head.append(script);
         });
+      }
       return { outcomes, ran: window.__authored ?? null };
     }, paths);
 
@@ -334,8 +340,9 @@ test.describe("script that reached the page", () => {
       "frame-src",
       "base-uri",
       "form-action",
-    ])
+    ]) {
       expect(outcome.refused).toContain(directive);
+    }
     await page.waitForTimeout(200);
     expect(requests).toEqual([]);
   });

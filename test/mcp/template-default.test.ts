@@ -2,7 +2,8 @@
 // default once the save succeeded, and the answer is the template read back (one is_default).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import { startProduction, admin, type Production } from "@/test/worked-example/harness";
+import { startProduction, admin } from "@/test/worked-example/harness";
+import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 
 describe("create_template and update_template take is_default (B80)", () => {
@@ -37,10 +38,12 @@ describe("create_template and update_template take is_default (B80)", () => {
 
   async function callTool(name: string, args: Record<string, unknown> = {}) {
     const reply = await rpc("tools/call", { name, arguments: args });
-    if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
+    if (reply.error) {
+      throw new Error(`${name}: ${reply.error.message}`);
+    }
     return reply.result as {
       isError?: boolean;
-      content: { type: string; text: string }[];
+      content: Array<{ type: string; text: string }>;
       structuredContent?: any;
     };
   }
@@ -51,15 +54,15 @@ describe("create_template and update_template take is_default (B80)", () => {
       headers: adminHeaders,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    return { status: response.status, json: (await response.json()) as any };
+    return { status: response.status, json: await response.json() };
   }
 
   /** The ID of the template that is the default, as the API lists it. */
-  async function defaultId(): Promise<number[]> {
-    const listed = (await api("GET", "/api/templates")).json.data as {
+  async function defaultId(): Promise<Array<number>> {
+    const listed = (await api("GET", "/api/templates")).json.data as Array<{
       id: number;
       is_default: boolean;
-    }[];
+    }>;
     return listed.filter((template) => template.is_default).map((template) => template.id);
   }
 

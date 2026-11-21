@@ -6,13 +6,14 @@ import { admin } from "@/test/worked-example/harness";
 
 const session = `m42-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
-function browser(...args: string[]): string {
+function browser(...args: Array<string>): string {
   const run = Bun.spawnSync(
     ["agent-browser", "--session", session, "--allowed-domains", "127.0.0.1", ...args],
     { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
   );
-  if (run.exitCode !== 0)
+  if (run.exitCode !== 0) {
     throw new Error(`agent-browser ${args[0]}: ${run.stdout} ${run.stderr.toString()}`);
+  }
   return run.stdout.toString().trim();
 }
 const value = (expression: string) => JSON.parse(browser("eval", expression));
@@ -26,7 +27,9 @@ process.exitCode = await withStack(async ({ origin }) => {
   const visit = (path: string, name: string) => {
     browser("open", `${origin}${path}`);
     settle();
-    if (shots) browser("screenshot", `${shots}/${name}.png`);
+    if (shots) {
+      browser("screenshot", `${shots}/${name}.png`);
+    }
   };
   try {
     browser("open", `${origin}/admin/login`);

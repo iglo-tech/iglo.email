@@ -3,11 +3,14 @@
 // person's own confirmation clears the suppression. Through HTTP, on the public fixture with the
 // SMTP sink, the paired wipe (D126) and the subscribers API.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();
@@ -16,7 +19,7 @@ async function open() {
 }
 
 const address = "wiped@example.test";
-const form = (values: [string, string][]) => new URLSearchParams(values).toString();
+const form = (values: Array<[string, string]>) => new URLSearchParams(values).toString();
 
 test("a public signup after a wipe grants nothing on single opt-in, and its own double opt-in confirmation clears the suppression", async () => {
   const f = await open();

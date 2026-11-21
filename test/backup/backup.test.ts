@@ -32,9 +32,8 @@ import {
   startServer,
   temporaryDirectory,
   uploadFile,
-  type Client,
-  type Server,
 } from "@/test/backup/fixture";
+import type { Client, Server } from "@/test/backup/fixture";
 
 setDefaultTimeout(60_000);
 const HOLD_HEADER = "x-iglo-email-hold";
@@ -56,7 +55,9 @@ afterAll(() => removeDirectory(build));
 afterEach(async () => {
   await server?.stop();
   server = undefined;
-  if (base) removeDirectory(base);
+  if (base) {
+    removeDirectory(base);
+  }
   base = "";
 });
 
@@ -83,31 +84,41 @@ test("a backup under write load restores, opens and holds what was committed", a
   const client = await live();
   const uploaded = await uploadFile(client, "kept.txt", "kept bytes");
   expect(uploaded.status).toBe(200);
-  for (let i = 0; i < 20; i++)
+  for (let i = 0; i < 20; i++) {
     expect((await createSubscriber(client, `before-${i}`)).status).toBe(200);
+  }
 
   let writing = true;
   let written = 0;
-  const failures: number[] = [];
+  const failures: Array<number> = [];
   const writers = [0, 1, 2, 3].map(async (writer) => {
     for (let i = 0; writing; i++) {
       const { status } = await createSubscriber(client, `load-${writer}-${i}`);
-      if (status === 200) written++;
-      else failures.push(status);
+      if (status === 200) {
+        written++;
+      } else {
+        failures.push(status);
+      }
     }
   });
   const uploader = (async () => {
     for (let i = 0; writing; i++) {
       const { status } = await uploadFile(client, `load-${i}.txt`, `bytes of ${i}`);
-      if (status !== 200) failures.push(status);
+      if (status !== 200) {
+        failures.push(status);
+      }
     }
   })();
-  while (written < 50) await Bun.sleep(5);
+  while (written < 50) {
+    await Bun.sleep(5);
+  }
   const acknowledged = written;
   const output = join(base, "backup");
   const backup = await runBackup(executable, ["--data-dir", dataDir, "--output", output]);
   const during = written - acknowledged;
-  while (written < acknowledged + during + 20) await Bun.sleep(5);
+  while (written < acknowledged + during + 20) {
+    await Bun.sleep(5);
+  }
   writing = false;
   await Promise.all([...writers, uploader]);
   expect(failures).toEqual([]);
@@ -224,7 +235,8 @@ test("a file with no row is harmless, and a row with no file is reported and sta
   expect(await (await fetch(`${server.origin}/uploads/kept.txt`)).text()).toBe("kept");
   const restored = apiClient(server.origin, authorization);
   const media = await restored("/api/media");
-  const rows = ((await media.json()) as { data: { results: { filename: string }[] } }).data.results;
+  const rows = ((await media.json()) as { data: { results: Array<{ filename: string }> } }).data
+    .results;
   expect(rows.map(({ filename }) => filename).sort()).toEqual(["gone.txt", "kept.txt"]);
 });
 
@@ -364,7 +376,7 @@ test("a path taken while the backup runs is not replaced, and --force still chec
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
 });
 
-const publishing = async (action: string, path: string, ...args: string[]) => {
+const publishing = async (action: string, path: string, ...args: Array<string>) => {
   const child = Bun.spawn([publishEntry, action, path, ...args], {
     env: { PATH: "" },
     stdout: "pipe",
@@ -865,8 +877,9 @@ test("a successful backup into new nested folders creates each one 0700", async 
     join(base, "n1", "n2"),
     join(base, "n1", "n2", "n3"),
     output,
-  ])
+  ]) {
     expect(statSync(folder).mode & 0o777).toBe(0o700);
+  }
   expect(statSync(join(output, "iglo-email.db")).mode & 0o777).toBe(0o600);
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.exitCode).toBe(0);
@@ -911,7 +924,7 @@ test("a parent renamed away after the partial exists is refused as changed meanw
   await live();
   const parent = join(base, "x", "a");
   mkdirSync(join(base, "x"), { recursive: true });
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   // The parent moves once the partial backup is made, so the partial is no longer where it was made.
   const message = refusal(() =>
     createBackup({
@@ -935,8 +948,8 @@ test("a parent renamed away after the partial exists is refused as changed meanw
 test("two backups into one parent that the first one made both succeed", async () => {
   await live();
   const shared = join(base, "shared");
-  const secondWarnings: string[] = [];
-  const firstWarnings: string[] = [];
+  const secondWarnings: Array<string> = [];
+  const firstWarnings: Array<string> = [];
   let nested = false;
   // The first backup's clock is read once its partial is in the new parent. The second backup then
   // finds that parent with the first one's partial in it, and writes its own backup beside it.
@@ -974,7 +987,7 @@ test("two backups into one parent that the first one made both succeed", async (
 test("a parent that another backup creates after this one checked it is used, and both succeed", async () => {
   await live();
   const shared = join(base, "shared");
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   // The other backup runs inside this one's free-space check, so the parent appears after the check
   // that found it missing, and before this backup makes its folders.
   const otherBackup = () => {
@@ -1003,7 +1016,7 @@ test("a parent that another backup creates after this one checked it is used, an
 test("a folder another process starts using is kept, and no warning is given", async () => {
   await live();
   const parent = join(base, "new");
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   const message = refusal(() =>
     createBackup({
       dataDir,
@@ -1030,10 +1043,11 @@ test("a forced backup whose replaced copy cannot be removed is published, warned
   // A file in the old backup's upload folder, which the folder's read-only mode keeps from being removed.
   writeFileSync(join(output, "uploads", "held.txt"), "held");
   const restore = () => {
-    for (const name of entriesStarting(base, REPLACED_PREFIX))
+    for (const name of entriesStarting(base, REPLACED_PREFIX)) {
       chmodSync(join(base, name, "uploads"), 0o700);
+    }
   };
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   try {
     const result = createBackup({
       dataDir,
@@ -1058,7 +1072,7 @@ test("a forced backup whose replaced copy cannot be removed is published, warned
 test("a folder that took the name of one this backup made is left alone", async () => {
   await live();
   const made = join(base, "n");
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   // The folder this backup made is moved away with its partial, and an empty folder takes its name.
   const message = refusal(() =>
     createBackup({
@@ -1087,7 +1101,7 @@ test("a failed sync of the folder after publication is an error, names the repla
   expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
     0,
   );
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   let message = "";
   try {
     // Without read permission the folder cannot be opened for its sync, but the rename still works.
@@ -1118,12 +1132,14 @@ test("a failed sync of the folder after publication is an error, names the repla
 test("a parent renamed away during the copy is refused as changed meanwhile, and the partial is named", async () => {
   await live();
   mkdirSync(join(base, "x"));
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   // The clock is read once the partial's database file is in place, before the database is copied.
   const clock = {
     ...createRealClock(),
     now() {
-      if (existsSync(join(base, "x"))) renameSync(join(base, "x"), join(base, "x-moved"));
+      if (existsSync(join(base, "x"))) {
+        renameSync(join(base, "x"), join(base, "x-moved"));
+      }
       return new Date();
     },
   };
@@ -1145,7 +1161,7 @@ test("a parent renamed away during the copy is refused as changed meanwhile, and
 test("an error while the partial is inspected keeps the original failure, and is not named as a change", async () => {
   await live();
   mkdirSync(join(base, "x"));
-  const warnings: string[] = [];
+  const warnings: Array<string> = [];
   // Once the partial is in place, its parent loses search permission: the copy fails, and so does
   // the look at the partial that follows it.
   const clock = {

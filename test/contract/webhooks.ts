@@ -22,7 +22,9 @@ export async function runWebhooksContract(target: {
   dataDir: string;
 }) {
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL webhooks-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL webhooks-${label}`);
+    }
   };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
@@ -102,29 +104,33 @@ export async function runWebhooksContract(target: {
         lists: [probeList],
       })
     ).body.data.id as number;
-    const probes: number[] = [];
+    const probes: Array<number> = [];
     for (const url of [
       receiver.url(),
       `http://localhost:${receiver.port}/`,
       "http://169.254.169.254/latest/meta-data/",
-    ])
+    ]) {
       probes.push(
         (await call("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
           .id as number,
       );
+    }
     await call(`/api/subscribers/${probe}/blocklist`, "PUT", {});
     for (const id of probes) {
       const deadline = Date.now() + 10_000;
       for (;;) {
         const [row] = (await call(`/api/webhooks/${id}/deliveries`)).body.data.results;
-        if (row?.last_error === "blocked_address") break;
+        if (row?.last_error === "blocked_address") {
+          break;
+        }
         check(Date.now() < deadline, "default-refused");
         await Bun.sleep(5);
       }
     }
     check(receiver.received.length === 0, "default-refused-no-request");
-    for (const id of probes)
+    for (const id of probes) {
       check((await call(`/api/webhooks/${id}`, "DELETE")).status === 200, "probe-delete");
+    }
     // The receivers below are on loopback, so the operator turns the block off; the stored false is
     // checked again after a restart.
     check(
@@ -261,7 +267,9 @@ export async function runWebhooksContract(target: {
       "wipe-pairing-start",
     );
     for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
-      if ((await call(`/api/campaigns/${paired.id}`)).body.data.status === "finished") break;
+      if ((await call(`/api/campaigns/${paired.id}`)).body.data.status === "finished") {
+        break;
+      }
       check(Date.now() < deadline, "wipe-pairing-finish");
     }
     await call(`/api/subscribers/${wiped.id}/blocklist`, "PUT", {});
@@ -302,7 +310,9 @@ export async function runWebhooksContract(target: {
       const deadline = Date.now() + 10_000;
       for (;;) {
         const rows = (await call(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results;
-        if (rows.every((row: { status: string }) => row.status === "delivered")) return rows;
+        if (rows.every((row: { status: string }) => row.status === "delivered")) {
+          return rows;
+        }
         check(Date.now() < deadline, "deliveries-settle");
         await Bun.sleep(5);
       }
@@ -311,8 +321,9 @@ export async function runWebhooksContract(target: {
     check(rows.length === receiver.received.length, "one-delivery-each");
     check(new Set(receiver.received.map((r) => r.body.id)).size === rows.length, "ids-unique");
     const bytes = stored();
-    for (const value of ["wiped@example.test", "bulk-a@example.test", "app-bulk"])
+    for (const value of ["wiped@example.test", "bulk-a@example.test", "app-bulk"]) {
       check(!bytes.includes(value), `cleared-${value}`);
+    }
     check(bytes.includes("clicked@example.test"), "others-kept");
 
     // A public-address policy refuses the loopback receiver at delivery time.
@@ -326,7 +337,9 @@ export async function runWebhooksContract(target: {
     const deadline = Date.now() + 10_000;
     for (;;) {
       const [row] = (await call(`/api/webhooks/${id}/deliveries`)).body.data.results;
-      if (row.last_error === "blocked_address") break;
+      if (row.last_error === "blocked_address") {
+        break;
+      }
       check(Date.now() < deadline, "blocked-address");
       await Bun.sleep(5);
     }

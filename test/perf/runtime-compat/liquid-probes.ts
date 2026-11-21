@@ -35,7 +35,7 @@ export async function probeLiquid() {
   const blockedMs = performance.now() - start;
   assert.ok(finishedFilter, "render limit unexpectedly interrupted the running filter");
 
-  const array: string[] = [];
+  const array: Array<string> = [];
   array.length = 1;
   Object.setPrototypeOf(
     array,
@@ -100,4 +100,6 @@ export async function probeLiquid() {
     await rm(canary, { force: true });
   }
 }
-if (import.meta.main) console.log(JSON.stringify(await probeLiquid()));
+if (import.meta.main) {
+  console.log(JSON.stringify(await probeLiquid()));
+}

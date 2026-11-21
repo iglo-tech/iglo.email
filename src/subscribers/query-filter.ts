@@ -14,7 +14,7 @@ export type ConditionArg = Arg | number;
  * `lists` null means no list restriction; upstream's permission sentinel -1 matches nothing.
  */
 export interface SubscriberFilter {
-  lists: bigint[] | null;
+  lists: Array<bigint> | null;
   /** Subscription status: "", unconfirmed, confirmed, unsubscribed or "none" (no lists). */
   subscriptionStatus: string;
   search: string;
@@ -49,24 +49,32 @@ export function checkFragment(sql: string): string | undefined {
       let closed = false;
       for (i++; i < sql.length; i++) {
         if (sql[i] === end) {
-          if (end !== "]" && sql[i + 1] === end) i++;
-          else {
+          if (end !== "]" && sql[i + 1] === end) {
+            i++;
+          } else {
             closed = true;
             break;
           }
         }
       }
-      if (!closed) return "unterminated quoted text";
-    } else if (ch === ";") return "multiple statements are not allowed";
-    else if (
+      if (!closed) {
+        return "unterminated quoted text";
+      }
+    } else if (ch === ";") {
+      return "multiple statements are not allowed";
+    } else if (
       (ch === "-" && next === "-") ||
       (ch === "/" && next === "*") ||
       (ch === "*" && next === "/")
-    )
+    ) {
       return "comments are not allowed";
-    else if (ch === "(") depth++;
-    else if (ch === ")" && --depth < 0) return "unbalanced parentheses";
-    else if (ch === "\0") return "invalid character";
+    } else if (ch === "(") {
+      depth++;
+    } else if (ch === ")" && --depth < 0) {
+      return "unbalanced parentheses";
+    } else if (ch === "\0") {
+      return "invalid character";
+    }
   }
   return depth ? "unbalanced parentheses" : undefined;
 }
@@ -87,12 +95,15 @@ let singleUpperTable: Map<string, string> | undefined;
 function singleUpper(char: string): string | undefined {
   if (!singleUpperTable) {
     singleUpperTable = new Map();
-    for (let code = 0x80; code <= 0x1ffff; code++) {
-      if (code >= 0xd800 && code <= 0xdfff) continue;
+    for (let code = 0x80; code <= 0x1_ff_ff; code++) {
+      if (code >= 0xd8_00 && code <= 0xdf_ff) {
+        continue;
+      }
       const candidate = String.fromCodePoint(code);
       const lower = candidate.toLowerCase();
-      if (lower !== candidate && [...lower].length === 1 && [...lower.toUpperCase()].length > 1)
+      if (lower !== candidate && [...lower].length === 1 && [...lower.toUpperCase()].length > 1) {
         singleUpperTable.set(lower, candidate);
+      }
     }
   }
   return singleUpperTable.get(char);
@@ -103,9 +114,14 @@ export function caseInsensitiveGlob(search: string): string {
   for (const char of search) {
     const variants = new Set([char, simpleLower(char)]);
     const upper = singleUpper(char) ?? char.toUpperCase();
-    if ([...upper].length === 1) variants.add(upper);
-    if (variants.size > 1) pattern += `[${[...variants].join("")}]`;
-    else pattern += "*?[".includes(char) ? `[${char}]` : char;
+    if ([...upper].length === 1) {
+      variants.add(upper);
+    }
+    if (variants.size > 1) {
+      pattern += `[${[...variants].join("")}]`;
+    } else {
+      pattern += "*?[".includes(char) ? `[${char}]` : char;
+    }
   }
   return `${pattern}*`;
 }
@@ -114,7 +130,7 @@ export function caseInsensitiveGlob(search: string): string {
  * The substring condition upstream's search applies. SQLite's lower() folds only ASCII, which
  * is exact for ASCII input; other input uses the case-variant GLOB above.
  */
-function substringSQL(search: string): { sql: string; args: Arg[] } {
+function substringSQL(search: string): { sql: string; args: Array<Arg> } {
   if (ascii(search)) {
     const lower = search.toLowerCase();
     return {
@@ -138,10 +154,10 @@ function substringSQL(search: string): { sql: string; args: Arg[] } {
  * accents) and a substring check keeps exactly the rows upstream's `~* ('***=' || search)`
  * returns.
  */
-export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args: Arg[] }) {
-  const args: Arg[] = [];
+export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args: Array<Arg> }) {
+  const args: Array<Arg> = [];
   let status = filter.subscriptionStatus;
-  const where: string[] = [];
+  const where: Array<string> = [];
   if (status === "none") {
     status = "";
     where.push("NOT EXISTS (SELECT 1 FROM subscriber_lists WHERE subscriber_id = subscribers.id)");
@@ -151,7 +167,9 @@ export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args:
   // subscription status filter is given, so fragments may reference its columns.
   // list_id is NOT NULL, so the unfiltered join matches nothing while still using the index.
   let join = " LEFT JOIN subscriber_lists ON (subscriber_lists.subscriber_id = subscribers.id";
-  if (!lists.length && !status) join += " AND subscriber_lists.list_id IS NULL";
+  if (!lists.length && !status) {
+    join += " AND subscriber_lists.list_id IS NULL";
+  }
   if (status) {
     join += " AND subscriber_lists.status = ?";
     args.push(status);
@@ -161,7 +179,9 @@ export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args:
     where.push(`subscriber_lists.list_id IN (SELECT value FROM json_each(?))`);
     args.push(`[${lists.join(",")}]`);
   }
-  if (status) where.push("subscriber_lists.subscriber_id IS NOT NULL");
+  if (status) {
+    where.push("subscriber_lists.subscriber_id IS NOT NULL");
+  }
   const search = filter.search;
   if (search) {
     if (hasToken(search)) {
@@ -183,7 +203,9 @@ export function filterSQL(filter: SubscriberFilter, extra?: { sql: string; args:
     args.push(...extra.args);
   }
   // The newline keeps any trailing text of the fragment inside its own parentheses.
-  if (filter.fragment) where.push(`(\n${filter.fragment}\n)`);
+  if (filter.fragment) {
+    where.push(`(\n${filter.fragment}\n)`);
+  }
   return {
     from: `FROM subscribers${join}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`,
     args,
@@ -215,10 +237,10 @@ export function pageSQL(
 /** Matching IDs in ascending order, optionally among `only`, after a cursor and in batches. */
 export function idsSQL(
   filter: SubscriberFilter,
-  options: { only?: bigint[]; after?: bigint; limit?: number } = {},
+  options: { only?: Array<bigint>; after?: bigint; limit?: number } = {},
 ) {
-  const conditions: string[] = [],
-    extra: Arg[] = [];
+  const conditions: Array<string> = [],
+    extra: Array<Arg> = [];
   if (options.only?.length) {
     conditions.push("subscribers.id IN (SELECT value FROM json_each(?))");
     extra.push(`[${options.only.join(",")}]`);
@@ -264,8 +286,9 @@ function allowedVirtualTableObjects(db: Database): Set<string> {
   const out = new Set<string>();
   for (const sql of allowedVirtualTables) {
     const explain = db.prepare(`EXPLAIN ${sql}`);
-    for (const op of explain.all() as { opcode: string; p4: unknown }[])
+    for (const op of explain.all() as Array<{ opcode: string; p4: unknown }>) {
       if (op.opcode === "VOpen") out.add(String(op.p4));
+    }
     explain.finalize();
   }
   return out;
@@ -278,17 +301,19 @@ export class QueryError extends Error {}
  * compiled program may only open allowed tables; it must also be read-only, take exactly the
  * arguments supplied, and not touch temporary or attached schemas.
  */
-export function prepareChecked(db: Database, sql: string, args: Arg[]): Statement {
+export function prepareChecked(db: Database, sql: string, args: Array<Arg>): Statement {
   // sqlite3_stmt_readonly also reports ATTACH/DETACH as read-only; only SELECTs run here.
-  if (!/^SELECT\s/.test(sql)) throw new QueryError("only SELECT statements are allowed");
+  if (!/^SELECT\s/.test(sql)) {
+    throw new QueryError("only SELECT statements are allowed");
+  }
   let stmt: Statement;
-  let plan: {
+  let plan: Array<{
     opcode: string;
     p2: number | bigint;
     p3: number | bigint;
     p4: unknown;
     p5: number | bigint;
-  }[];
+  }>;
   try {
     stmt = db.prepare(sql);
   } catch (error) {
@@ -309,8 +334,9 @@ export function prepareChecked(db: Database, sql: string, args: Arg[]): Statemen
   }
   const roots = new Map<number, string>([[1, "sqlite_schema"]]);
   const schema = db.prepare("SELECT tbl_name, rootpage FROM sqlite_schema WHERE rootpage > 0");
-  for (const row of schema.all() as { tbl_name: string; rootpage: number | bigint }[])
+  for (const row of schema.all() as Array<{ tbl_name: string; rootpage: number | bigint }>) {
     roots.set(Number(row.rootpage), row.tbl_name);
+  }
   schema.finalize();
   // The statement is still prepared, so every virtual table it opens is alive and its
   // address cannot be shared with an allowed one.
@@ -322,7 +348,9 @@ export function prepareChecked(db: Database, sql: string, args: Arg[]): Statemen
       stmt.finalize();
       throw new QueryError("table is not allowed");
     }
-    if (!["OpenRead", "OpenWrite", "ReopenIdx"].includes(op.opcode)) continue;
+    if (!["OpenRead", "OpenWrite", "ReopenIdx"].includes(op.opcode)) {
+      continue;
+    }
     const name = roots.get(Number(op.p2));
     if (
       op.opcode === "OpenWrite" ||
@@ -368,15 +396,18 @@ export const fragmentConditionSQL = `EXISTS (SELECT 1 ${fragmentScope} WHERE sub
 export function prepareCondition(
   db: Database,
   sql: string,
-  fragments: string[],
-  args: ConditionArg[],
+  fragments: Array<string>,
+  args: Array<ConditionArg>,
 ): Statement {
   const parts = sql.split(fragmentSlot);
-  if (parts.length !== fragments.length + 1 || !/^SELECT\s/.test(sql))
+  if (parts.length !== fragments.length + 1 || !/^SELECT\s/.test(sql)) {
     throw new QueryError("invalid condition statement");
+  }
   for (const fragment of fragments) {
     const problem = checkFragment(fragment);
-    if (problem || !fragment.trim()) throw new QueryError(problem ?? "empty fragment");
+    if (problem || !fragment.trim()) {
+      throw new QueryError(problem ?? "empty fragment");
+    }
     prepareChecked(
       db,
       `SELECT subscribers.id ${fragmentScope} WHERE (\n${fragment}\n)`,

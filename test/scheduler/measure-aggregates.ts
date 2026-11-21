@@ -12,10 +12,11 @@ import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
-import { AGGREGATE_LIMIT, createEventAggregates, type Aggregate } from "@/events/aggregate";
+import { AGGREGATE_LIMIT, createEventAggregates } from "@/events/aggregate";
+import type { Aggregate } from "@/events/aggregate";
 
 const repetitions = Number(process.argv[2] ?? 5);
-const sizes = [1_000, AGGREGATE_LIMIT, 100_000];
+const sizes = [1000, AGGREGATE_LIMIT, 100_000];
 const clock = createRealClock();
 const now = Date.parse("2026-11-16T00:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -23,7 +24,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
 /** One evaluation's median milliseconds over `repetitions` runs, after one warm-up. */
 function median(run: () => void): number {
   run();
-  const times: number[] = [];
+  const times: Array<number> = [];
   for (let i = 0; i < repetitions; i++) {
     const started = performance.now();
     run();
@@ -95,7 +96,7 @@ const ten: Record<string, Aggregate> = {
 const worst: Record<string, Aggregate> = Object.fromEntries([
   ...Array.from({ length: 9 }, (_, i) => [
     `within_${i}`,
-    { event: "download_finished", since: "PT10001S", fn: "sum", field: "data.items" } as Aggregate,
+    { event: "download_finished", since: "PT10001S", fn: "sum", field: "data.items" },
   ]),
   ["over", { event: "download_finished", since: "P30D", fn: "count" } as Aggregate],
 ]);
@@ -113,11 +114,11 @@ const whereMiss: Record<string, Aggregate> = Object.fromEntries(
       since: "P30D",
       fn: "count",
       where: { "data.kind": `none${i}` },
-    } as Aggregate,
+    },
   ]),
 );
 
-const results: Record<string, unknown>[] = [];
+const results: Array<Record<string, unknown>> = [];
 for (const size of sizes) {
   const dir = mkdtempSync(join(tmpdir(), "iglo-aggregates-measure-"));
   try {
@@ -146,7 +147,9 @@ for (const size of sizes) {
         const kind = i % 2 ? "bulk" : "single";
         const source = `s${i % 50}`;
         expectedSum += items;
-        if (kind === "bulk") expectedBulkSum += items;
+        if (kind === "bulk") {
+          expectedBulkSum += items;
+        }
         sources.add(source);
         insert.run(
           target,
@@ -162,8 +165,9 @@ for (const size of sizes) {
           iso(now - (size - i) * 1000),
           iso(now),
         );
-        if (i % 10 === 0)
+        if (i % 10 === 0) {
           insert.run(target, "assistant_action", "{}", iso(now - (size - i) * 1000), iso(now));
+        }
       }
     })();
     const reader = createEventAggregates(db);
@@ -179,34 +183,43 @@ for (const size of sizes) {
     if (size <= AGGREGATE_LIMIT) {
       // Totals must match the data generated above, or the timings measure a wrong answer.
       const out = check({ ...single, ...ten });
-      if (!out.ok) throw new Error(`aggregate failed at ${size}`);
+      if (!out.ok) {
+        throw new Error(`aggregate failed at ${size}`);
+      }
       Object.assign(values, out.values);
-      if (values.count !== size || values.sum !== expectedSum || values.distinct !== sources.size)
+      if (values.count !== size || values.sum !== expectedSum || values.distinct !== sources.size) {
         throw new Error(`unexpected totals at ${size}: ${JSON.stringify(values)}`);
-      if (values.where !== size / 2 || values.sum_bulk !== expectedBulkSum)
+      }
+      if (values.where !== size / 2 || values.sum_bulk !== expectedBulkSum) {
         throw new Error(`unexpected filtered totals at ${size}`);
+      }
       const missed = check(whereMiss);
-      if (!missed.ok || Object.values(missed.values).some((n) => n !== 0))
+      if (!missed.ok || Object.values(missed.values).some((n) => n !== 0)) {
         throw new Error(`unexpected where misses at ${size}`);
+      }
     } else {
       const refused = check(whereMiss);
-      if (refused.ok || !("limit" in refused))
+      if (refused.ok || !("limit" in refused)) {
         throw new Error(`expected the where misses to hit the limit at ${size}`);
+      }
       // Every download_finished aggregate matches all 100,000 events and is refused with no total,
       // whatever its function. count_actions matches one in ten, exactly the limit: it is complete.
       for (const [name, spec] of Object.entries({ ...single, ...ten })) {
         const out = check({ [name]: spec });
         if (spec.event === "download_finished") {
-          if (out.ok || !("limit" in out))
+          if (out.ok || !("limit" in out)) {
             throw new Error(`expected the limit at ${size}: ${name}`);
-        } else if (!out.ok || out.values[name] !== size / 10)
+          }
+        } else if (!out.ok || out.values[name] !== size / 10) {
           throw new Error(`unexpected ${name} at ${size}`);
+        }
       }
     }
 
     const perFunction: Record<string, number> = {};
-    for (const [name, spec] of Object.entries(single))
+    for (const [name, spec] of Object.entries(single)) {
       perFunction[name] = median(() => check({ [name]: spec }));
+    }
     const tenMs = median(() => check(ten));
     const whereMissMs = median(() => check(whereMiss));
     const result: Record<string, unknown> = {
@@ -219,7 +232,9 @@ for (const size of sizes) {
     };
     if (size > AGGREGATE_LIMIT) {
       const out = check(worst);
-      if (out.ok || !("limit" in out)) throw new Error(`expected the worst case to hit the limit`);
+      if (out.ok || !("limit" in out)) {
+        throw new Error(`expected the worst case to hit the limit`);
+      }
       result.worstCaseMs = median(() => check(worst));
     }
     results.push(result);

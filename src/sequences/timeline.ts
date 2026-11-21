@@ -6,15 +6,16 @@
 // read the subscriber.
 import type { EventRow } from "@/events/store";
 import type { EnrollmentSend } from "@/messaging/sends";
-import { numberID, type EnrollmentRow, type Enrollments } from "@/sequences/enrollments";
+import { numberID } from "@/sequences/enrollments";
+import type { EnrollmentRow, Enrollments } from "@/sequences/enrollments";
 
 type Step = ReturnType<Enrollments["steps"]>[number];
 
 export function timeline(
   row: EnrollmentRow,
   event: EventRow | null,
-  steps: Step[],
-  sends: EnrollmentSend[],
+  steps: Array<Step>,
+  sends: Array<EnrollmentSend>,
 ) {
   const byId = new Map(steps.map((step) => [step.id, step]));
   const current = row.step_id === null ? undefined : byId.get(row.step_id);

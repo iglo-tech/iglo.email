@@ -12,9 +12,11 @@ import { createRoles } from "@/roles/roles";
 import { createSettings } from "@/settings/store";
 import { TestClock } from "@/test/server/fixture";
 
-const directories: string[] = [];
+const directories: Array<string> = [];
 afterEach(() => {
-  while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true });
+  while (directories.length) {
+    rmSync(directories.pop()!, { recursive: true, force: true });
+  }
 });
 
 const key = "webhooks.block_private_addresses";

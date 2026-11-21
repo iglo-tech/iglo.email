@@ -1,17 +1,20 @@
 // B19 consent invariants through the HTTP API and the public pages (D81, D82).
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();
   fixtures.push(f);
   return f;
 }
-const form = (fields: Record<string, string | string[]>) =>
+const form = (fields: Record<string, string | Array<string>>) =>
   Object.entries(fields)
     .flatMap(([key, value]) => [value].flat().map((v) => `${key}=${encodeURIComponent(v)}`))
     .join("&");
@@ -21,9 +24,9 @@ const membership = async (f: PublicFixture, id: number, list: number) =>
   ) as { subscription_status: string; subscription_updated_at: string } | undefined;
 const statuses = async (f: PublicFixture, id: number) =>
   (
-    (await f.json(`/api/subscribers/${id}`)).body.data.lists as {
+    (await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<{
       subscription_status: string;
-    }[]
+    }>
   )
     .map((l) => l.subscription_status)
     .sort();
@@ -46,7 +49,10 @@ async function member(f: PublicFixture, email = "m@example.test") {
 
 test("D81: every path into blocklisted leaves only unsubscribed memberships", async () => {
   const f = await open();
-  const put = async (label: string, run: (id: number, lists: number[]) => Promise<unknown>) => {
+  const put = async (
+    label: string,
+    run: (id: number, lists: Array<number>) => Promise<unknown>,
+  ) => {
     const m = await member(f, `${label}@example.test`);
     f.clock.advance(60_000);
     await run(m.id, [m.a.id, m.b.id]);
@@ -84,13 +90,14 @@ test("D81: adding or confirming never gives a blocklisted subscriber a live memb
   });
   expect(await statuses(f, m.id)).toEqual(["unsubscribed", "unsubscribed"]);
   // Add by IDs, with and without a status.
-  for (const status of ["", "confirmed", "unconfirmed"])
+  for (const status of ["", "confirmed", "unconfirmed"]) {
     await f.json("/api/subscribers/lists", "PUT", {
       ids: [m.id],
       action: "add",
       target_list_ids: [m.b.id, extra.id],
       status,
     });
+  }
   expect(await statuses(f, m.id)).toEqual(["unsubscribed", "unsubscribed", "unsubscribed"]);
   // The opt-in page.
   const sub = await subscriberOf(f, m.id);
@@ -164,7 +171,7 @@ test("the public form ignores an archived list", async () => {
     .query(
       "SELECT list_id FROM subscriber_lists m JOIN subscribers s ON s.id = m.subscriber_id WHERE s.email = ?",
     )
-    .all("new@example.test") as { list_id: number }[];
+    .all("new@example.test") as Array<{ list_id: number }>;
   expect(rows.map((r) => Number(r.list_id))).toEqual([live.id]);
   const only = await f.fresh(
     "/subscription/form",

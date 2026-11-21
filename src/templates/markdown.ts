@@ -24,7 +24,9 @@ const SPECIAL_EXTRA: Readonly<Record<string, number>> = { "&": 4, "<": 3, ">": 3
 /** Upper bound on the bytes of `value` once written as escaped HTML text. */
 function escapedBound(value: string): number {
   let total = bytes(value);
-  for (let i = 0; i < value.length; i++) total += SPECIAL_EXTRA[value[i]!] ?? 0;
+  for (let i = 0; i < value.length; i++) {
+    total += SPECIAL_EXTRA[value[i]!] ?? 0;
+  }
   return total;
 }
 
@@ -76,7 +78,9 @@ export function markdownOutputBound(source: string, limit: number = OUTPUT_LIMIT
   let bound = 0;
   const add = (units: number) => {
     bound += units;
-    if (!Number.isSafeInteger(bound) || bound > limit) throw new Error("Markdown output limit");
+    if (!Number.isSafeInteger(bound) || bound > limit) {
+      throw new Error("Markdown output limit");
+    }
   };
   // Raw inline HTML is copied from the source, and no callback sees it.
   add(bytes(source));
@@ -85,14 +89,22 @@ export function markdownOutputBound(source: string, limit: number = OUTPUT_LIMIT
   let breaks = 0;
   for (let at = 0; at < source.length; at++) {
     const char = source[at];
-    if (char !== "\n" && char !== "\r") continue;
-    if (char === "\n" && at > 0 && source[at - 1] === "\r") continue;
-    if (at > 0 && (source[at - 1] === " " || source[at - 1] === "\\")) breaks++;
+    if (char !== "\n" && char !== "\r") {
+      continue;
+    }
+    if (char === "\n" && at > 0 && source[at - 1] === "\r") {
+      continue;
+    }
+    if (at > 0 && (source[at - 1] === " " || source[at - 1] === "\\")) {
+      breaks++;
+    }
   }
   add(HARD_BREAK_BOUND * breaks);
   // A NUL is one byte in the source and U+FFFD (three bytes) in the output.
   let nuls = 0;
-  for (let at = source.indexOf("\u0000"); at !== -1; at = source.indexOf("\u0000", at + 1)) nuls++;
+  for (let at = source.indexOf("\u0000"); at !== -1; at = source.indexOf("\u0000", at + 1)) {
+    nuls++;
+  }
   add(2 * nuls);
 
   // The dry run: every callback returns nothing, so no output string is built.
@@ -199,10 +211,14 @@ export function markdownOutputBound(source: string, limit: number = OUTPUT_LIMIT
 /** Renders Markdown to HTML, charging `budget` with the output bound (D112) before the output is built. */
 export function renderMarkdown(source: string, budget: MarkdownBudget): string {
   // Checked before the parser sees the source: an expansion above the cap is refused at once (D112).
-  if (bytes(source) > MARKDOWN_SOURCE_LIMIT) throw new MarkdownSourceError();
+  if (bytes(source) > MARKDOWN_SOURCE_LIMIT) {
+    throw new MarkdownSourceError();
+  }
   budget.charge(markdownOutputBound(source));
   const output = Bun.markdown.html(source, OPTIONS);
   // The bound above is an upper bound on this output; the check is a guard, not a second limit.
-  if (bytes(output) > OUTPUT_LIMIT) throw new Error("Markdown output limit");
+  if (bytes(output) > OUTPUT_LIMIT) {
+    throw new Error("Markdown output limit");
+  }
   return output;
 }

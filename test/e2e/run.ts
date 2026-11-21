@@ -5,7 +5,8 @@
 // `bun run e2e test/e2e/specs/login.e2e.js`, and then one stack runs them in order.
 import { readdir, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { root, withStacks, type Stack } from "@/test/e2e/stack";
+import { root, withStacks } from "@/test/e2e/stack";
+import type { Stack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 
 const results = resolve(root, "dist/e2e-results");
@@ -57,7 +58,7 @@ interface Outcome {
   spec: string;
   code: number;
   seconds: number;
-  tests: { title: string; seconds: number; status: string }[];
+  tests: Array<{ title: string; seconds: number; status: string }>;
 }
 
 /** Serves the mail one stack's sink received to the specs, which run in another process. */
@@ -89,18 +90,22 @@ async function relay(stream: ReadableStream<Uint8Array>, label: string) {
     pending += decoder.decode(chunk, { stream: true });
     const lines = pending.split("\n");
     pending = lines.pop() ?? "";
-    for (const line of lines) console.log(label ? `[${label}] ${line}` : line);
+    for (const line of lines) {
+      console.log(label ? `[${label}] ${line}` : line);
+    }
   }
-  if (pending) console.log(label ? `[${label}] ${pending}` : pending);
+  if (pending) {
+    console.log(label ? `[${label}] ${pending}` : pending);
+  }
 }
 
 interface JsonSuite {
   title: string;
-  specs?: { title: string; tests: { results: { duration: number; status: string }[] }[] }[];
-  suites?: JsonSuite[];
+  specs?: Array<{ title: string; tests: { results: { duration: number; status: string }[] }[] }>;
+  suites?: Array<JsonSuite>;
 }
 
-function collect(suite: JsonSuite, path: string[], into: Outcome["tests"]) {
+function collect(suite: JsonSuite, path: Array<string>, into: Outcome["tests"]) {
   const here = suite.title.endsWith(".js") || !suite.title ? path : [...path, suite.title];
   for (const spec of suite.specs ?? []) {
     const run = spec.tests.flatMap((test) => test.results);
@@ -110,13 +115,15 @@ function collect(suite: JsonSuite, path: string[], into: Outcome["tests"]) {
       status: run.at(-1)?.status ?? "unknown",
     });
   }
-  for (const child of suite.suites ?? []) collect(child, here, into);
+  for (const child of suite.suites ?? []) {
+    collect(child, here, into);
+  }
 }
 
 async function playwright(
   stack: Stack,
   mailPort: number,
-  args: string[],
+  args: Array<string>,
   name: string,
   label: string,
 ): Promise<Outcome> {
@@ -155,15 +162,17 @@ async function playwright(
   ]);
   const tests: Outcome["tests"] = [];
   try {
-    const parsed = JSON.parse(await readFile(report, "utf8")) as { suites: JsonSuite[] };
-    for (const suite of parsed.suites) collect(suite, [], tests);
+    const parsed = JSON.parse(await readFile(report, "utf8")) as { suites: Array<JsonSuite> };
+    for (const suite of parsed.suites) {
+      collect(suite, [], tests);
+    }
   } catch {
     // A run that never started a test (a bad argument) has no report; its exit code says enough.
   }
   return { spec: name, code, seconds: (performance.now() - started) / 1000, tests };
 }
 
-async function summarise(outcomes: Outcome[], seconds: number, stacks: number) {
+async function summarise(outcomes: Array<Outcome>, seconds: number, stacks: number) {
   const files = [...outcomes].sort((a, b) => b.seconds - a.seconds);
   const tests = outcomes
     .flatMap((o) => o.tests.map((t) => ({ spec: o.spec, ...t })))
@@ -189,7 +198,7 @@ await mkdir(results, { recursive: true });
 process.exitCode = await withStacks(extra.length > 0 ? 1 : workers, async (stacks) => {
   const mails = stacks.map((stack) => serveMail(stack.mailbox));
   try {
-    const outcomes: Outcome[] = [];
+    const outcomes: Array<Outcome> = [];
     if (extra.length > 0) {
       outcomes.push(await playwright(stacks[0]!, mails[0]!.port!, extra, "run", ""));
     } else {
@@ -214,9 +223,13 @@ process.exitCode = await withStacks(extra.length > 0 ? 1 : workers, async (stack
     }
     await summarise(outcomes, (performance.now() - begin) / 1000, stacks.length);
     const failed = outcomes.filter((o) => o.code !== 0);
-    for (const item of failed) console.log(`FAILED ${item.spec} (exit ${item.code})`);
+    for (const item of failed) {
+      console.log(`FAILED ${item.spec} (exit ${item.code})`);
+    }
     return failed.length > 0 ? 1 : 0;
   } finally {
-    for (const mail of mails) await mail.stop(true);
+    for (const mail of mails) {
+      await mail.stop(true);
+    }
   }
 });

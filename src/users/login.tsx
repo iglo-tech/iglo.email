@@ -1,7 +1,8 @@
 // Adapted from listmonk cmd/auth.go, internal/utils/utils.go and static/public/templates/login.html at 6fcd95f.
 import { posix } from "node:path";
 import { render } from "@/jsx/render";
-import { PublicShell, type PageSite } from "@/public/layout";
+import { PublicShell } from "@/public/layout";
+import type { PageSite } from "@/public/layout";
 import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
@@ -19,7 +20,9 @@ function unsafeCharacters(value: string): boolean {
 
 function sanitizeNext(value: string): string {
   const text = value.trim();
-  if (!text || unsafeCharacters(text)) return "/";
+  if (!text || unsafeCharacters(text)) {
+    return "/";
+  }
   try {
     // Reject against the original decoded path: WHATWG URL parsing resolves
     // dot segments. Discard only scheme, authority, query and fragment here;
@@ -30,10 +33,14 @@ function sanitizeNext(value: string): string {
         .replace(/^\/\/[^/?#]*/, "")
         .split(/[?#]/, 1)[0] ?? "";
     const original = decodeURIComponent(rawPath);
-    if (original.includes("..") || unsafeCharacters(original)) return "/";
+    if (original.includes("..") || unsafeCharacters(original)) {
+      return "/";
+    }
     const url = new URL(text, "http://login.invalid/");
     const decoded = decodeURIComponent(url.pathname);
-    if (decoded.includes("..") || unsafeCharacters(decoded)) return "/";
+    if (decoded.includes("..") || unsafeCharacters(decoded)) {
+      return "/";
+    }
     const path = posix.normalize(decoded).replace(/\/+$/, "") || "/";
     // Clean the decoded path as upstream does, then preserve path delimiters
     // while escaping segment contents for a single, safe Location interpretation.
@@ -111,15 +118,17 @@ export function createLoginHandlers(auth: Authentication, site: () => PageSite) 
     if (
       context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !==
       "application/x-www-form-urlencoded"
-    )
+    ) {
       throw new HttpError(415);
+    }
     const fields = new URLSearchParams(await readBody(context.request));
-    if (!auth.nonceValid(context.request, fields.get("nonce") ?? ""))
+    if (!auth.nonceValid(context.request, fields.get("nonce") ?? "")) {
       throw new HttpError(403, "invalid nonce");
+    }
     const username = (fields.get("username") ?? "").trim();
     const password = fields.get("password") ?? "";
     const next = sanitizeNext(fields.get("next") ?? "");
-    if (!strHasLen(username, 3, 2000))
+    if (!strHasLen(username, 3, 2000)) {
       return page(
         context,
         auth,
@@ -127,7 +136,8 @@ export function createLoginHandlers(auth: Authentication, site: () => PageSite) 
         next,
         context.app.i18n.Ts("globals.messages.invalidFields", "name", "username"),
       );
-    if (!validPassword(password))
+    }
+    if (!validPassword(password)) {
       return page(
         context,
         auth,
@@ -135,9 +145,11 @@ export function createLoginHandlers(auth: Authentication, site: () => PageSite) 
         next,
         context.app.i18n.Ts("globals.messages.invalidFields", "name", "password"),
       );
+    }
     const session = await auth.login(username, password);
-    if (!session)
+    if (!session) {
       return page(context, auth, site(), next, context.app.i18n.T("users.invalidLogin"));
+    }
     if ("token" in session) {
       const params = new URLSearchParams({ token: session.token, next });
       return new Response(null, {
@@ -147,8 +159,9 @@ export function createLoginHandlers(auth: Authentication, site: () => PageSite) 
     }
     auth.replaceSession(context.request);
     const headers = new Headers({ Location: next, "Cache-Control": "no-store" });
-    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration))
+    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration)) {
       headers.append("Set-Cookie", value);
+    }
     return new Response(null, { status: 302, headers });
   };
   function twofaPage(context: RequestContext, token: string, next: string, message = ""): Response {
@@ -203,8 +216,9 @@ export function createLoginHandlers(auth: Authentication, site: () => PageSite) 
   }
   const getTwofa: Handler = (context) => {
     const token = context.url.searchParams.get("token") ?? "";
-    if (!auth.challengeExists(token))
+    if (!auth.challengeExists(token)) {
       return Response.redirect(new URL("/admin", context.request.url), 302);
+    }
     const next = sanitizeNext(context.url.searchParams.get("next") ?? "");
     return twofaPage(context, token, next === "/" ? "/admin" : next);
   };
@@ -214,23 +228,28 @@ export function createLoginHandlers(auth: Authentication, site: () => PageSite) 
     if (
       context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !==
       "application/x-www-form-urlencoded"
-    )
+    ) {
       throw new HttpError(415);
+    }
     const fields = new URLSearchParams(await readBody(context.request));
-    if (!auth.nonceValid(context.request, fields.get("nonce") ?? ""))
+    if (!auth.nonceValid(context.request, fields.get("nonce") ?? "")) {
       throw new HttpError(403, "invalid nonce");
+    }
     const token = fields.get("token") ?? "";
-    if (!auth.challengeExists(token))
+    if (!auth.challengeExists(token)) {
       return Response.redirect(new URL("/admin", context.request.url), 302);
+    }
     const nextValue = sanitizeNext(fields.get("next") ?? "");
     const next = nextValue === "/" ? "/admin" : nextValue;
     const session = auth.verifyChallenge(token, (fields.get("totp_code") ?? "").trim());
-    if (!session)
+    if (!session) {
       return twofaPage(context, token, next, context.app.i18n.T("globals.messages.invalidValue"));
+    }
     auth.replaceSession(context.request);
     const headers = new Headers({ Location: next, "Cache-Control": "no-store" });
-    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration))
+    for (const value of auth.sessionCookies(session.id, session.csrf, session.duration)) {
       headers.append("Set-Cookie", value);
+    }
     return new Response(null, { status: 302, headers });
   };
   return { getLogin, postLogin, getTwofa, postTwofa };

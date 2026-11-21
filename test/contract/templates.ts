@@ -28,7 +28,7 @@ export async function runTemplatesContract(target: {
   const reference = target.mode === "reference";
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const suffix = crypto.randomUUID();
-  const owned: number[] = [];
+  const owned: Array<number> = [];
   let originalDefault = 0;
   let cleanupFailed = false;
   const request = (path: string, method = "GET", body?: unknown, auth = authorization) =>
@@ -41,7 +41,9 @@ export async function runTemplatesContract(target: {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL templates-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL templates-${label}`);
+    }
   };
   const campaignBody = reference
     ? '<div>{{ template "content" . }}</div>'
@@ -50,13 +52,15 @@ export async function runTemplatesContract(target: {
     ? "<p>Hello {{ .Subscriber.Name }}</p>"
     : "<p>Hello {{ subscriber.name }}</p>";
   const list = async (query = "") =>
-    ((await (await request(`/api/templates${query}`)).json()) as { data: Row[] }).data;
+    ((await (await request(`/api/templates${query}`)).json()) as { data: Array<Row> }).data;
   const get = async (id: number) =>
     ((await (await request(`/api/templates/${id}`)).json()) as { data: Row }).data;
   const create = async (input: object) => {
     const response = await request("/api/templates", "POST", input);
     const item = ((await response.json()) as { data: Row }).data;
-    if (response.status === 200 && item?.id) owned.push(item.id);
+    if (response.status === 200 && item?.id) {
+      owned.push(item.id);
+    }
     check(response.status === 200 && item?.id > 0, "create");
     return item;
   };
@@ -68,7 +72,7 @@ export async function runTemplatesContract(target: {
     );
     const initial = await request("/api/templates");
     check(initial.status === 200, "list");
-    const rows = ((await initial.json()) as { data: Row[] }).data;
+    const rows = ((await initial.json()) as { data: Array<Row> }).data;
     check(
       Array.isArray(rows) && rows.some((row) => row.type === "campaign" && row.is_default),
       "default",
@@ -383,7 +387,9 @@ export async function runTemplatesContract(target: {
       "application/json",
     );
     const duplicateRow = ((await duplicate.json()) as { data?: Row }).data;
-    if (duplicate.status === 200 && duplicateRow) owned.push(duplicateRow.id);
+    if (duplicate.status === 200 && duplicateRow) {
+      owned.push(duplicateRow.id);
+    }
     check(
       duplicate.status === 200 && duplicateRow?.name === `paired-${suffix}-é`,
       "json-duplicate-case-null",
@@ -393,13 +399,15 @@ export async function runTemplatesContract(target: {
       "application/xml",
     );
     const xmlRow = ((await xml.json()) as { data?: Row }).data;
-    if (xml.status === 200 && xmlRow) owned.push(xmlRow.id);
+    if (xml.status === 200 && xmlRow) {
+      owned.push(xmlRow.id);
+    }
     check(xml.status === 200 && xmlRow?.name === `xml-${suffix}`, "xml-create");
 
     if (!reference) {
       const tooLarge = await raw("x".repeat(512 * 1024 + 1), "application/json");
       check(tooLarge.status === 413, "D54-request-limit");
-      for (const body of ["x".repeat(65537), "😀".repeat(16385)]) {
+      for (const body of ["x".repeat(65_537), "😀".repeat(16_385)]) {
         check(
           (
             await request("/api/templates", "POST", {
@@ -419,7 +427,9 @@ export async function runTemplatesContract(target: {
         body: "",
       });
       const subjectRow = ((await subjectExact.json()) as { data?: Row }).data;
-      if (subjectExact.status === 200 && subjectRow) owned.push(subjectRow.id);
+      if (subjectExact.status === 200 && subjectRow) {
+        owned.push(subjectRow.id);
+      }
       check(subjectExact.status === 200 && subjectRow, "D54-subject-exact");
       check(
         (
@@ -433,14 +443,14 @@ export async function runTemplatesContract(target: {
         "D54-subject-one-past",
       );
       check(
-        (await request(`/api/templates/${item.id}`, "PUT", { body_source: "é".repeat(32768) }))
+        (await request(`/api/templates/${item.id}`, "PUT", { body_source: "é".repeat(32_768) }))
           .status === 200,
         "D54-body-source-exact",
       );
       check(
         (
           await request(`/api/templates/${item.id}`, "PUT", {
-            body_source: "é".repeat(32768) + "x",
+            body_source: "é".repeat(32_768) + "x",
           })
         ).status === 400,
         "D54-body-source-one-past",
@@ -510,7 +520,7 @@ export async function runTemplatesContract(target: {
     const setDefault = await request(`/api/templates/${item.id}/default`, "PUT");
     check(
       setDefault.status === 200 &&
-        ((await setDefault.json()) as { data: Row[] }).data.some(
+        ((await setDefault.json()) as { data: Array<Row> }).data.some(
           (row) => row.id === item.id && row.is_default,
         ),
       "set-default",
@@ -536,23 +546,31 @@ export async function runTemplatesContract(target: {
     if (
       originalDefault &&
       (await request(`/api/templates/${originalDefault}/default`, "PUT")).status !== 200
-    )
+    ) {
       cleanupFailed = true;
-    for (const id of owned)
+    }
+    for (const id of owned) {
       if ((await request(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL templates-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL templates-cleanup");
+  }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runTemplatesContract({ mode: "reference", baseUrl, credentials: { user, token } });
   } catch (error) {
     process.stderr.write(

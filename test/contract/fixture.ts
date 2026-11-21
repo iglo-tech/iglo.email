@@ -51,8 +51,12 @@ export function startContractFixture(credentials: Credentials) {
     const auth: Middleware = (context, next) => {
       const pair = `${credentials.user}:${credentials.token}`;
       const header = context.request.headers.get("authorization");
-      if (header !== `Basic ${Buffer.from(pair).toString("base64")}` && header !== `token ${pair}`)
+      if (
+        header !== `Basic ${Buffer.from(pair).toString("base64")}` &&
+        header !== `token ${pair}`
+      ) {
         throw new HttpError(403, "invalid API credentials");
+      }
       return next();
     };
     router.route("GET", "/api/health", () => ok(true), auth);
@@ -73,18 +77,20 @@ export function startContractFixture(credentials: Credentials) {
         const value = await bindJSON(context.request);
         const input =
           typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
-        if (typeof input.name !== "string" || !strHasLen(input.name, 1, 2000))
+        if (typeof input.name !== "string" || !strHasLen(input.name, 1, 2000)) {
           throw new HttpError(400, context.app.i18n.T("globals.messages.invalidName"));
+        }
         if (
           input.type !== undefined &&
           input.type !== "" &&
           input.type !== "public" &&
           input.type !== "private"
-        )
+        ) {
           throw new HttpError(
             400,
             context.app.i18n.Ts("globals.messages.invalidFields", "name", "type"),
           );
+        }
         return ok(true);
       },
       auth,

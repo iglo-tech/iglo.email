@@ -32,7 +32,7 @@ import type { ContractTarget, Credentials, Mode, Profile, TargetName } from "@/t
 
 const repository = resolve(import.meta.dir, "../..");
 
-function argumentsForRun(args: string[]): Record<string, string> {
+function argumentsForRun(args: Array<string>): Record<string, string> {
   const accepted = new Set(["--mode", "--target", "--profile", "--base-url", "--case"]);
   const values: Record<string, string> = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -44,8 +44,9 @@ function argumentsForRun(args: string[]): Record<string, string> {
       !value ||
       value.startsWith("--") ||
       values[name] !== undefined
-    )
+    ) {
       throw new Error("Invalid contract CLI arguments");
+    }
     values[name] = value;
   }
   return values;
@@ -56,9 +57,12 @@ function environmentCredentials(env: NodeJS.ProcessEnv): Credentials | undefined
     env.CONTRACT_API_USER !== undefined || env.CONTRACT_API_TOKEN !== undefined;
   const user = contractProvided ? env.CONTRACT_API_USER : env.REFERENCE_API_USER;
   const token = contractProvided ? env.CONTRACT_API_TOKEN : env.REFERENCE_API_TOKEN;
-  if (user === undefined && token === undefined) return undefined;
-  if (user === undefined || token === undefined)
+  if (user === undefined && token === undefined) {
+    return undefined;
+  }
+  if (user === undefined || token === undefined) {
     throw new Error("Both synthetic credential values are required");
+  }
   return { user, token };
 }
 
@@ -66,7 +70,9 @@ async function fixtureCredentials(): Promise<Credentials> {
   const text = await readFile(resolve(repository, "test/contract/fixtures.md"), "utf8");
   const user = /^CONTRACT_API_USER=(.+)$/m.exec(text)?.[1];
   const token = /^CONTRACT_API_TOKEN=(.+)$/m.exec(text)?.[1];
-  if (!user || !token) throw new Error("Synthetic fixture credentials are missing");
+  if (!user || !token) {
+    throw new Error("Synthetic fixture credentials are missing");
+  }
   return { user, token };
 }
 
@@ -74,17 +80,21 @@ async function productionAdmin(): Promise<{ user: string; password: string }> {
   const text = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
   const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(text)?.[1];
   const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(text)?.[1];
-  if (!user || !password) throw new Error("Synthetic production bootstrap credentials are missing");
+  if (!user || !password) {
+    throw new Error("Synthetic production bootstrap credentials are missing");
+  }
   return { user, password };
 }
 
 async function report(target: ContractTarget, caseId?: string): Promise<boolean> {
   const result = await runContract(target, caseId === undefined ? {} : { caseId });
-  for (const line of result.lines) process.stdout.write(`${line}\n`);
+  for (const line of result.lines) {
+    process.stdout.write(`${line}\n`);
+  }
   return result.passed;
 }
 
-async function main(args: string[], signal: AbortSignal): Promise<void> {
+async function main(args: Array<string>, signal: AbortSignal): Promise<void> {
   const operation = args[0];
   if (operation === "run") {
     const values = argumentsForRun(args.slice(1));
@@ -100,7 +110,9 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       ...(credentials ? { credentials } : {}),
       signal,
     };
-    if (!(await report(target, values["--case"]))) process.exitCode = 1;
+    if (!(await report(target, values["--case"]))) {
+      process.exitCode = 1;
+    }
     return;
   }
   if (
@@ -128,8 +140,9 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "campaigns")
   ) {
     const values = argumentsForRun(args.slice(2));
-    if (Object.keys(values).some((key) => key !== "--case"))
+    if (Object.keys(values).some((key) => key !== "--case")) {
       throw new Error("Invalid owned production arguments");
+    }
     if (
       (args[1] === "auth" ||
         args[1] === "roles" ||
@@ -152,8 +165,9 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
         args[1] === "openapi" ||
         args[1] === "campaigns") &&
       Object.keys(values).length
-    )
+    ) {
       throw new Error("Invalid owned auth arguments");
+    }
     const admin = await productionAdmin();
     // The bounces contract signs SES messages; the process fetches their certificate from AWS, so
     // it reaches a loopback stand-in instead (test/bounces/sns-tunnel.ts). Those modules generate
@@ -271,6 +285,7 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
               error instanceof Error && /^FAIL [a-zA-Z0-9-]+( \([ -~]*\))?$/.test(error.message)
                 ? error.message
                 : "Auth contract failed",
+              { cause: error },
             );
           }
           return true;
@@ -292,7 +307,9 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       args[1] === "bounces" ? 120_000 : undefined,
       tunnel?.environment,
     ).finally(() => tunnel?.close());
-    if (!passed) process.exitCode = 1;
+    if (!passed) {
+      process.exitCode = 1;
+    }
     return;
   }
   if (operation === "owned" && args[1] === "fixture" && args.length === 2) {
@@ -308,7 +325,9 @@ async function main(args: string[], signal: AbortSignal): Promise<void> {
       } as const;
       const staged = await report({ ...base, profile: "staged" });
       const probe = await report({ ...base, profile: "probe" });
-      if (!staged || !probe) process.exitCode = 1;
+      if (!staged || !probe) {
+        process.exitCode = 1;
+      }
     } finally {
       await fixture.close();
     }

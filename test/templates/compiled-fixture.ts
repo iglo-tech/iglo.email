@@ -96,7 +96,9 @@ try {
     },
   );
   const hidden: Record<PropertyKey, unknown> = {};
-  for (let i = 0; i < 1100; i++) Object.defineProperty(hidden, `hidden${i}`, { value: i });
+  for (let i = 0; i < 1100; i++) {
+    Object.defineProperty(hidden, `hidden${i}`, { value: i });
+  }
   Object.defineProperty(hidden, "getter", {
     enumerable: true,
     get() {
@@ -148,7 +150,7 @@ try {
     await assert.rejects(compiled.render(data));
   }
   assert.equal(touched, 0);
-  const chunk = "é".repeat(32768);
+  const chunk = "é".repeat(32_768);
   const wire = { a: chunk, b: chunk, c: chunk, d: "" };
   wire.d = "é".repeat(Math.floor((256 * 1024 - Buffer.byteLength(JSON.stringify(wire))) / 2)) + "x";
   const exact = JSON.stringify(wire);
@@ -163,8 +165,9 @@ try {
     '{"x":1e400}',
     '{"x":{"constructor":0}}',
     JSON.stringify({ a: Array(1025).fill(0) }),
-  ])
+  ]) {
     assert.throws(() => compiled.renderSync(invalid));
+  }
   const markdown = renderer.compile({
     body: "# Hello {{ name }}\n\n[link][ref]\n\n[ref]: https://example.invalid/path",
     layout: "<main>{{ content | raw }}</main>",
@@ -174,7 +177,7 @@ try {
     markdown.renderSync(JSON.stringify({ name: "A & B" })).body,
     '<main><h1>Hello A &amp; B</h1>\n<p><a href="https://example.invalid/path">link</a></p>\n</main>',
   );
-  const longReference = `[ref]: https://example.invalid/${"x".repeat(40000)}\n\n`;
+  const longReference = `[ref]: https://example.invalid/${"x".repeat(40_000)}\n\n`;
   for (const prefix of ["[x][ref] ", "![x][ref] "]) {
     assert.throws(() =>
       renderer.renderSync({
@@ -186,13 +189,13 @@ try {
   }
   // B105 (D112): these two shapes render. render.test.ts pins them to 200 on the source renderer, and this
   // compiled renderer must give the same bytes: SHA-256 and byte length of the HTML, measured from source.
-  const wideTable = "|" + "h|".repeat(10001) + "\n|" + "- |".repeat(10001) + "\n";
-  const blockquote = "> x\n".repeat(10001);
+  const wideTable = "|" + "h|".repeat(10_001) + "\n|" + "- |".repeat(10_001) + "\n";
+  const blockquote = "> x\n".repeat(10_001);
   for (const [body, sha, length] of [
     // B106 (D113): Bun's Markdown API renders at most 128 columns as a table, so this 10,001-column table is a
     // paragraph (listed in 07 as a deliberate difference). Marked rendered it as a 110,056-byte table.
-    [wideTable, "e938085f6e0c20215bf08f51b0d74d2e7b3b638e783052d2a56b6c8386bcc573", 50016],
-    [blockquote, "d22c394328a6b768324b11408b177246bb828a325e4077ed1a94dd59c5e37888", 20036],
+    [wideTable, "e938085f6e0c20215bf08f51b0d74d2e7b3b638e783052d2a56b6c8386bcc573", 50_016],
+    [blockquote, "d22c394328a6b768324b11408b177246bb828a325e4077ed1a94dd59c5e37888", 20_036],
   ] as const) {
     const { body: html } = renderer.renderSync({ body, data: "{}", mode: "markdown" });
     assert.equal(Buffer.byteLength(html), length);
@@ -207,7 +210,7 @@ try {
     mode: "markdown",
   });
   const capped = cappedMarkdown.renderSync(cappedData).body;
-  assert.equal(Buffer.byteLength(capped), 131080);
+  assert.equal(Buffer.byteLength(capped), 131_080);
   assert.equal(
     createHash("sha256").update(capped).digest("hex"),
     "e88ee2e08a55dfb7b45e7459d86aaf465323fe94ee637d416c133c5f224c81ae",
@@ -264,7 +267,7 @@ try {
   );
   const capture =
     "{% capture x %}{% for n in (1..16) %}{{ value | raw }}{% endfor %}{% endcapture %}";
-  const captureData = JSON.stringify({ value: "x".repeat(65536) });
+  const captureData = JSON.stringify({ value: "x".repeat(65_536) });
   assert.equal(
     renderer.renderSync({ body: capture.repeat(4), data: captureData, mode: "plain" }).body,
     "",
@@ -283,7 +286,9 @@ try {
   snapshotInput.body = "changed";
   assert.equal(immutable.renderSync(JSON.stringify({ value: "A & B" })).body, "<p>A &amp; B</p>");
   let deep: unknown = null;
-  for (let i = 0; i < 17; i++) deep = [deep];
+  for (let i = 0; i < 17; i++) {
+    deep = [deep];
+  }
   assert.throws(() => plain.renderSync(JSON.stringify({ value: deep })));
   assert.throws(() =>
     plain.renderSync(
@@ -294,7 +299,7 @@ try {
     renderer.renderSync({
       body: "{% for i in (1..65) %}{% assign x = value | upcase %}{% endfor %}",
       mode: "plain",
-      data: JSON.stringify({ value: "x".repeat(65536) }),
+      data: JSON.stringify({ value: "x".repeat(65_536) }),
     }),
   );
   const builtInData = JSON.stringify({
@@ -350,7 +355,9 @@ try {
             transactional: true,
           });
     assert.ok(result.body.includes(item.type === "campaign" ? "<p>Hi</p>" : "1234"));
-    if (item.type === "tx") assert.equal(result.subject, "Welcome A & B");
+    if (item.type === "tx") {
+      assert.equal(result.subject, "Welcome A & B");
+    }
   }
   const first = createRenderer(
     { now: () => new Date("2026-01-02T00:00:00Z"), sleep: async () => {} },
@@ -391,7 +398,7 @@ try {
     ).text(),
     "<main><p>A &amp; B</p></main>",
   );
-  for (const tag of ["include", "render", "layout"])
+  for (const tag of ["include", "render", "layout"]) {
     for (const name of [
       canary,
       `http://127.0.0.1:${trap.port}/`,
@@ -406,6 +413,7 @@ try {
         !body.includes("synthetic-file-canary") && !body.includes("synthetic-network-canary"),
       );
     }
+  }
   assert.equal(
     (await send("{% include path %}", { path: `http://127.0.0.1:${trap.port}/` })).status,
     400,
@@ -415,14 +423,16 @@ try {
   assert.equal(
     (
       await send("{% for n in (1..500) %}{% if hay contains 'z' %}{% endif %}{% endfor %}", {
-        hay: "a".repeat(65536),
+        hay: "a".repeat(65_536),
       })
     ).status,
     400,
   );
 
   const values: Record<string, number> = {};
-  for (let i = 0; i < 1024; i++) values[`k${i}`] = i;
+  for (let i = 0; i < 1024; i++) {
+    values[`k${i}`] = i;
+  }
   assert.equal(
     (
       await send(
@@ -434,7 +444,7 @@ try {
   );
 
   assert.equal(
-    (await send(`{% if ${"x or ".repeat(10001)}x %}never{% endif %}`, { x: false })).status,
+    (await send(`{% if ${"x or ".repeat(10_001)}x %}never{% endif %}`, { x: false })).status,
     400,
   );
   assert.equal((await send("{% for x in (1..1025) %}x{% endfor %}")).status, 400);

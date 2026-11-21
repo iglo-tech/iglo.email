@@ -7,7 +7,7 @@ export async function runSubscriberCouncilRevisions(target: {
   credentials: Credentials;
 }) {
   const suffix = crypto.randomUUID();
-  const owned: { path: string; id: number }[] = [];
+  const owned: Array<{ path: string; id: number }> = [];
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", body?: unknown, raw = false) =>
     fetch(target.baseUrl + path, {
@@ -16,13 +16,16 @@ export async function runSubscriberCouncilRevisions(target: {
       ...(body === undefined ? {} : { body: raw ? String(body) : JSON.stringify(body) }),
     });
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL council-${label}`);
+    if (!value) {
+      throw new Error(`FAIL council-${label}`);
+    }
   }
   async function create(path: string, body: unknown, raw = false) {
     const response = await request(`/api/${path}`, "POST", body, raw);
     const result = await response.json();
-    if (response.status === 200 && typeof result.data?.id === "number")
+    if (response.status === 200 && typeof result.data?.id === "number") {
       owned.push({ path, id: result.data.id });
+    }
     check(response.status === 200 && result.data, "create");
     return result.data;
   }
@@ -98,14 +101,16 @@ export async function runSubscriberCouncilRevisions(target: {
         ...fields,
       });
       const result = await response.json();
-      if (response.status === 200 && typeof result.data?.id === "number")
+      if (response.status === 200 && typeof result.data?.id === "number") {
         owned.push({ path: "subscribers", id: result.data.id });
+      }
       check(response.status === (target.mode === "normal" ? 400 : 500), `D43-create-${i}`);
-      if (target.mode === "normal")
+      if (target.mode === "normal") {
         check(
           result.message === ("name" in fields ? "Invalid name" : "Invalid attributes."),
           "D43-safe-message",
         );
+      }
       check(
         (await get(`/api/lists/${list.id}`)).subscriber_count === countBefore.subscriber_count,
         "D43-create-memberships-unchanged",
@@ -156,9 +161,12 @@ export async function runSubscriberCouncilRevisions(target: {
     );
     check(JSON.stringify(reset.attribs) === '{"safe":1}', "D43-bound-reset");
   } finally {
-    for (const item of owned.reverse())
+    for (const item of owned.reverse()) {
       if ((await request(`/api/${item.path}/${item.id}`, "DELETE")).status !== 200)
         cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL council-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL council-cleanup");
+  }
 }

@@ -25,7 +25,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
     subscribers,
     rootUrl: () => "http://measure.test",
   });
-  for (let i = 0; i < rows; i++)
+  for (let i = 0; i < rows; i++) {
     sends.enqueue({
       source: "tx",
       kind: "transactional",
@@ -38,6 +38,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         headers: {},
       },
     });
+  }
   const emailer = {
     push: () => ({
       messageId: "<m@example.test>",
@@ -60,7 +61,9 @@ for (let repetition = 1; repetition <= 3; repetition++) {
   });
   const count = () =>
     db.query<{ n: number }, []>("SELECT count(*) AS n FROM sends WHERE status='sent'").get()!.n;
-  while (count() < rows) await new Promise((resolve) => setTimeout(resolve, 5));
+  while (count() < rows) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
   const ms = performance.now() - start;
   await outbox.stop();
   console.log(

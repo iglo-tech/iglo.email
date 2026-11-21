@@ -7,9 +7,9 @@ export async function runTemplateAuthorization(
   admin: { user: string; password: string },
 ) {
   const authorization = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
-  const ownedRoles: number[] = [],
-    ownedUsers: number[] = [],
-    ownedTemplates: number[] = [];
+  const ownedRoles: Array<number> = [],
+    ownedUsers: Array<number> = [],
+    ownedTemplates: Array<number> = [];
   const request = (
     path: string,
     method = "GET",
@@ -26,9 +26,11 @@ export async function runTemplateAuthorization(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   const check = (value: unknown, label: string) => {
-    if (!value) throw new Error(`FAIL template-auth-${label}`);
+    if (!value) {
+      throw new Error(`FAIL template-auth-${label}`);
+    }
   };
-  async function token(permissions: string[]) {
+  async function token(permissions: Array<string>) {
     const name = `m18-${crypto.randomUUID()}`;
     const roleResponse = await request("/api/roles/users", "POST", { name, permissions });
     check(roleResponse.status === 200, "role-create");
@@ -134,8 +136,14 @@ export async function runTemplateAuthorization(
     });
     check(postPreview.status === 403, "preview-csrf");
   } finally {
-    for (const id of ownedTemplates) await request(`/api/templates/${id}`, "DELETE");
-    for (const id of ownedUsers) await request(`/api/users/${id}`, "DELETE");
-    for (const id of ownedRoles) await request(`/api/roles/users/${id}`, "DELETE");
+    for (const id of ownedTemplates) {
+      await request(`/api/templates/${id}`, "DELETE");
+    }
+    for (const id of ownedUsers) {
+      await request(`/api/users/${id}`, "DELETE");
+    }
+    for (const id of ownedRoles) {
+      await request(`/api/roles/users/${id}`, "DELETE");
+    }
   }
 }

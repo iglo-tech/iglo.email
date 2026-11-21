@@ -3,8 +3,8 @@
 // into a checkout of another commit to compare; it uses only the shared fixture surface.
 import { publicFixture } from "@/test/public/fixture";
 
-const median = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1]!;
-const p95 = (values: number[]) =>
+const median = (values: Array<number>) => [...values].sort((a, b) => a - b)[values.length >> 1]!;
+const p95 = (values: Array<number>) =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length * 0.95)]!;
 const round = (value: number) => Math.round(value * 100) / 100;
 const report = (name: string, values: object) =>
@@ -22,7 +22,9 @@ try {
   const blocked = await f.subscriber("blocked@measure.test");
   await f.json(`/api/subscribers/${blocked}/blocklist`, "PUT");
   await f.subscriber("pending@measure.test", "Pending", { lists: [list.id] });
-  if (!known) throw new Error("Invalid measurement setup");
+  if (!known) {
+    throw new Error("Invalid measurement setup");
+  }
 
   // Signup answers by state, interleaved so drift lands on every state alike.
   const signup = async (email: string, peer: string) => {
@@ -33,10 +35,17 @@ try {
       body: JSON.stringify({ email, list_uuids: [list.uuid] }),
     });
     const elapsed = (Bun.nanoseconds() - start) / 1e6;
-    if (response.status !== 200) throw new Error(`signup ${response.status}`);
+    if (response.status !== 200) {
+      throw new Error(`signup ${response.status}`);
+    }
     return elapsed;
   };
-  const states: Record<string, number[]> = { fresh: [], pending: [], confirmed: [], blocked: [] };
+  const states: Record<string, Array<number>> = {
+    fresh: [],
+    pending: [],
+    confirmed: [],
+    blocked: [],
+  };
   let peer = 0;
   const address = () => `192.0.${(++peer >> 8) & 255}.${peer & 255}`;
   for (let i = 0; i < rounds; i++) {
@@ -45,8 +54,9 @@ try {
     states.confirmed!.push(await signup("confirmed@measure.test", address()));
     states.blocked!.push(await signup("blocked@measure.test", address()));
   }
-  for (const [state, values] of Object.entries(states))
+  for (const [state, values] of Object.entries(states)) {
     report("signup", { state, medianMs: round(median(values)), p95Ms: round(p95(values)) });
+  }
 
   // Journal commit rate for sends without a subscriber, which the partial index covers.
   const message = {
@@ -57,7 +67,7 @@ try {
   };
   const commits = 2000;
   let start = Bun.nanoseconds();
-  for (let i = 0; i < commits; i++)
+  for (let i = 0; i < commits; i++) {
     f.sends.enqueueRequest({
       sends: [
         {
@@ -70,6 +80,7 @@ try {
         },
       ],
     });
+  }
   report("enqueue-unlinked", {
     commits,
     perSecond: Math.round(commits / ((Bun.nanoseconds() - start) / 1e9)),
@@ -96,7 +107,7 @@ try {
     bytesPerRow: Math.round((size() - emptyBytes) / rows),
     databaseMiB: round(size() / 1024 / 1024),
   });
-  const wipes: number[] = [];
+  const wipes: Array<number> = [];
   for (let i = 0; i < 40; i++) {
     const email = `wipe-${i}@measure.test`;
     const id = await f.subscriber(email);
@@ -117,7 +128,9 @@ try {
       },
     );
     wipes.push((Bun.nanoseconds() - start) / 1e6);
-    if (response.status !== 200) throw new Error(`wipe ${response.status}`);
+    if (response.status !== 200) {
+      throw new Error(`wipe ${response.status}`);
+    }
   }
   report("wipe", {
     linkedSends: 100,

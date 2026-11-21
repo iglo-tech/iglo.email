@@ -4,7 +4,8 @@
 // loopback SMTP sink. Campaigns do not exist until M3, so no campaign runner is exercised.
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
-import { createServer, type Socket } from "node:net";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { variantIdentity } from "@/test/perf/variant";
@@ -24,7 +25,9 @@ const scenario = process.argv[2] ?? "all";
 const base = resolve(process.env.IGLO_EMAIL_PERF_DIR ?? join(repository, "upstream/measurements"));
 mkdirSync(base, { recursive: true });
 const fsType = Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.toString().trim();
-if (/tmpfs|ramfs/.test(fsType)) throw new Error(`Refusing ${fsType} measurement directory`);
+if (/tmpfs|ramfs/.test(fsType)) {
+  throw new Error(`Refusing ${fsType} measurement directory`);
+}
 process.env.TMPDIR = base;
 // `free` is Linux-only; on other hosts the memory snapshot is recorded as unavailable.
 const free = () => {
@@ -35,8 +38,10 @@ const free = () => {
   }
 };
 
-function stats(values: number[]) {
-  if (!values.length) return null;
+function stats(values: Array<number>) {
+  if (!values.length) {
+    return null;
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
   const round = (n: number) => +n.toFixed(2);
@@ -73,28 +78,38 @@ async function sink() {
             received.set(subject, performance.now());
             subject = "";
             socket.write("250 queued\r\n");
-          } else if (!subject && line.startsWith("Subject: ")) subject = line.slice(9);
+          } else if (!subject && line.startsWith("Subject: ")) {
+            subject = line.slice(9);
+          }
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === "EHLO") socket.write("250-sink.test\r\n250 8BITMIME\r\n");
-        else if (verb === "DATA") {
+        if (verb === "EHLO") {
+          socket.write("250-sink.test\r\n250 8BITMIME\r\n");
+        } else if (verb === "DATA") {
           data = true;
           socket.write("354 go\r\n");
-        } else if (verb === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (verb === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
     socket.on("error", () => {});
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("sink address");
+  if (!address || typeof address === "string") {
+    throw new Error("sink address");
+  }
   return {
     port: address.port,
     received,
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((done) => server.close(() => done()));
     },
   };
@@ -107,15 +122,20 @@ function serverRss(executable: string): number | null {
     const listing = Bun.spawnSync(["ps", "-axo", "rss=,command="]).stdout.toString();
     for (const line of listing.split("\n")) {
       const found = /^\s*(\d+)\s+(.*)$/.exec(line);
-      if (found && (found[2] === executable || found[2]!.startsWith(`${executable} `)))
+      if (found && (found[2] === executable || found[2]!.startsWith(`${executable} `))) {
         return Math.round(Number(found[1]) / 1024);
+      }
     }
     return null;
   }
   for (const pid of readdirSync("/proc")) {
-    if (!/^\d+$/.test(pid)) continue;
+    if (!/^\d+$/.test(pid)) {
+      continue;
+    }
     try {
-      if (readlinkSync(`/proc/${pid}/exe`) !== executable) continue;
+      if (readlinkSync(`/proc/${pid}/exe`) !== executable) {
+        continue;
+      }
       const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
       return kb ? Math.round(Number(kb) / 1024) : null;
     } catch {
@@ -151,7 +171,7 @@ async function run(name: string, events: boolean, sends: boolean) {
           return { status: response.status, body: text ? JSON.parse(text) : null };
         };
         const settings = await fetch(`${baseUrl}/api/settings`, { headers: { authorization } });
-        const current = (await settings.json()) as { data: { smtp: object[] } };
+        const current = (await settings.json()) as { data: { smtp: Array<object> } };
         const configured = await api("/api/settings/smtp", "PUT", [
           {
             ...current.data.smtp[0],
@@ -165,7 +185,9 @@ async function run(name: string, events: boolean, sends: boolean) {
             email_headers: [],
           },
         ]);
-        if (configured.status !== 200) throw new Error("smtp settings");
+        if (configured.status !== 200) {
+          throw new Error("smtp settings");
+        }
         const template = (
           await api("/api/templates", "POST", {
             name: "measure",
@@ -186,12 +208,12 @@ async function run(name: string, events: boolean, sends: boolean) {
           : null;
         const marketingCount = Math.ceil(WINDOW_MS / MARKETING_MS);
         let list = 0;
-        const recipients: number[] = [];
+        const recipients: Array<number> = [];
         if (sends) {
           list = (await api("/api/lists", "POST", { name: "measure", type: "public" })).body.data
             .id as number;
           // The 7-day frequency cap admits one marketing send per subscriber.
-          for (let i = 0; i < marketingCount; i++)
+          for (let i = 0; i < marketingCount; i++) {
             recipients.push(
               (
                 await api("/api/subscribers", "POST", {
@@ -202,21 +224,25 @@ async function run(name: string, events: boolean, sends: boolean) {
                 })
               ).body.data.id as number,
             );
+          }
         }
         // Warm the connection pool and code paths outside the window.
-        for (let i = 0; i < 20; i++)
+        for (let i = 0; i < 20; i++) {
           await api("/api/subscriber-events", "POST", {
             subscriber: { email: `warm${i}@example.test` },
             name: "warmup",
           });
+        }
         const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
         const sample = () => {
           const statuses = Object.fromEntries(
             (
-              reader.query("SELECT status, count(*) AS n FROM sends GROUP BY status").all() as {
+              reader
+                .query("SELECT status, count(*) AS n FROM sends GROUP BY status")
+                .all() as Array<{
                 status: string;
                 n: number;
-              }[]
+              }>
             ).map((row) => [row.status, row.n]),
           );
           const stored = (reader.query("SELECT count(*) AS n FROM events").get() as { n: number })
@@ -224,14 +250,19 @@ async function run(name: string, events: boolean, sends: boolean) {
           return { statuses, stored };
         };
 
-        const eventResults: { deadline: number; sent: number; done: number; status: number }[] = [];
-        const txResults: {
+        const eventResults: Array<{
+          deadline: number;
+          sent: number;
+          done: number;
+          status: number;
+        }> = [];
+        const txResults: Array<{
           subject: string;
           deadline: number;
           sent: number;
           done: number;
           status: number;
-        }[] = [];
+        }> = [];
         let inFlight = 0,
           inFlightPeak = 0,
           shed = 0;
@@ -258,23 +289,26 @@ async function run(name: string, events: boolean, sends: boolean) {
           await response.arrayBuffer();
           return response.status;
         };
-        const samples: object[] = [];
+        const samples: Array<object> = [];
         const rssStart = serverRss(executable);
         const start = performance.now() + 50;
         const end = start + WINDOW_MS;
-        const plan: { at: number; kind: "event" | "tx" | "marketing"; i: number }[] = [];
-        if (events)
+        const plan: Array<{ at: number; kind: "event" | "tx" | "marketing"; i: number }> = [];
+        if (events) {
           for (let i = 0; i * EVENT_MS < WINDOW_MS; i++)
             plan.push({ at: start + i * EVENT_MS, kind: "event", i });
+        }
         if (sends) {
-          for (let i = 0; i * TX_MS < WINDOW_MS; i++)
+          for (let i = 0; i * TX_MS < WINDOW_MS; i++) {
             plan.push({ at: start + i * TX_MS, kind: "tx", i });
-          for (let i = 0; i < marketingCount; i++)
+          }
+          for (let i = 0; i < marketingCount; i++) {
             plan.push({ at: start + i * MARKETING_MS + 5, kind: "marketing", i });
+          }
         }
         plan.sort((a, b) => a.at - b.at);
         let nextSample = start;
-        const wakeDelays: number[] = [];
+        const wakeDelays: Array<number> = [];
         let cursor = 0;
         while (cursor < plan.length || performance.now() < end) {
           const now = performance.now();
@@ -290,7 +324,7 @@ async function run(name: string, events: boolean, sends: boolean) {
           while (cursor < plan.length && plan[cursor]!.at <= now) {
             const item = plan[cursor++]!;
             const deadline = item.at;
-            if (item.kind === "event")
+            if (item.kind === "event") {
               fire(async () => {
                 const sent = performance.now();
                 const status = await post("/api/subscriber-events", {
@@ -306,7 +340,7 @@ async function run(name: string, events: boolean, sends: boolean) {
                 });
                 eventResults.push({ deadline, sent, done: performance.now(), status });
               });
-            else
+            } else {
               fire(async () => {
                 const subject = `${item.kind}-${item.i}`;
                 const sent = performance.now();
@@ -331,13 +365,16 @@ async function run(name: string, events: boolean, sends: boolean) {
                 );
                 txResults.push({ subject, deadline, sent, done: performance.now(), status });
               });
+            }
           }
           const next = Math.min(plan[cursor]?.at ?? end, nextSample, end);
           // Whole milliseconds, so the driver never spins on sub-millisecond timers.
           const wait = Math.ceil(Math.max(0, next - performance.now()));
           const before = performance.now();
           await Bun.sleep(wait);
-          if (wait > 0) wakeDelays.push(performance.now() - before - wait);
+          if (wait > 0) {
+            wakeDelays.push(performance.now() - before - wait);
+          }
         }
         const windowEnd = sample();
         const atWindow = {
@@ -351,8 +388,9 @@ async function run(name: string, events: boolean, sends: boolean) {
         const drainedRequests = performance.now();
         const expectedSends = txResults.filter((r) => r.status === 200).length;
         const deadline = performance.now() + 60_000;
-        while (smtp.received.size < expectedSends && performance.now() < deadline)
+        while (smtp.received.size < expectedSends && performance.now() < deadline) {
           await Bun.sleep(10);
+        }
         const finished = performance.now();
         const final = sample();
         reader.close();
@@ -417,9 +455,14 @@ const results: Record<string, unknown> = {
   dataFs: fsType,
   freeBefore: free(),
 };
-if (scenario === "all" || scenario === "sends") results.sendsOnly = await run("sends", false, true);
-if (scenario === "all" || scenario === "events")
+if (scenario === "all" || scenario === "sends") {
+  results.sendsOnly = await run("sends", false, true);
+}
+if (scenario === "all" || scenario === "events") {
   results.eventsOnly = await run("events", true, false);
-if (scenario === "all" || scenario === "mixed") results.mixed = await run("mixed", true, true);
+}
+if (scenario === "all" || scenario === "mixed") {
+  results.mixed = await run("mixed", true, true);
+}
 results.freeAfter = free();
 process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);

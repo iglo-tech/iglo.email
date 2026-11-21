@@ -1,7 +1,8 @@
 // B40 (D89): the admin settings page has no control for a key nothing reads, and saving the page
 // keeps those values. Public boundaries only: the rendered page and the settings API.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, api, get, login, type Fixture } from "@/test/admin/support";
+import { admin, api, get, login } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;
@@ -20,10 +21,15 @@ async function settings(): Promise<Record<string, any>> {
 
 // The page sends each masked secret back empty, which the API reads as "keep" (settings.js onSubmit).
 function unmasked(value: unknown): unknown {
-  if (typeof value === "string") return /^•+$/.test(value) ? "" : value;
-  if (Array.isArray(value)) return value.map(unmasked);
-  if (value && typeof value === "object")
+  if (typeof value === "string") {
+    return /^•+$/.test(value) ? "" : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(unmasked);
+  }
+  if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unmasked(item)]));
+  }
   return value;
 }
 
@@ -56,7 +62,7 @@ test("2. a save from the settings page keeps the values of the keys that have no
     { name: "postback", root_url: "http://messenger.test", enabled: true, password: "m-secret" },
   ]);
   expect(messengers.status).toBe(200);
-  const smtp = (await settings())["smtp"] as Record<string, unknown>[];
+  const smtp = (await settings())["smtp"] as Array<Record<string, unknown>>;
   expect(smtp.length).toBeGreaterThan(0);
   smtp[0]!["max_msg_retries"] = 7;
   smtp[0]!["msg_retry_delay"] = "3s";
@@ -105,8 +111,9 @@ test("2. a save from the settings page keeps the values of the keys that have no
     "app.lang",
     "app.check_updates",
     "messengers",
-  ])
+  ]) {
     expect({ key, value: after[key] }).toEqual({ key, value: before[key] });
+  }
   expect(after["app.check_updates"]).toBe(false);
   expect(after["smtp"]).toEqual(before["smtp"]);
   expect(after["smtp"][0].max_msg_retries).toBe(7);

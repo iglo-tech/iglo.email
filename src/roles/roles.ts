@@ -50,7 +50,7 @@ interface RoleRow {
 export interface UserRole {
   id: bigint;
   name: string;
-  permissions: string[];
+  permissions: Array<string>;
 }
 
 export class RoleChildError extends Error {}
@@ -60,15 +60,20 @@ export function createRoles(db: Database, lists: ListReferences) {
   const raw = (id: bigint): RoleRow | null => queries.get("get-role").get(id) as RoleRow | null;
   function role(id: bigint, type: "user" | "list"): RoleRow | null {
     const value = raw(id);
-    if (!value || value.type !== type || value.parent_id !== null) return null;
-    if (id === 1n && !isPrimordial(value)) return null;
+    if (!value || value.type !== type || value.parent_id !== null) {
+      return null;
+    }
+    if (id === 1n && !isPrimordial(value)) {
+      return null;
+    }
     return value;
   }
-  function decoded(value: RoleRow): string[] {
+  function decoded(value: RoleRow): Array<string> {
     const result: unknown = JSON.parse(value.permissions);
-    if (!Array.isArray(result) || result.some((entry) => typeof entry !== "string"))
+    if (!Array.isArray(result) || result.some((entry) => typeof entry !== "string")) {
       throw new Error("Invalid role permissions");
-    return result as string[];
+    }
+    return result as Array<string>;
   }
   function isPrimordial(value: RoleRow): boolean {
     const actual = decoded(value);
@@ -85,24 +90,28 @@ export function createRoles(db: Database, lists: ListReferences) {
     primordial(now: string): bigint {
       const existing = raw(1n);
       if (existing) {
-        if (!isPrimordial(existing))
+        if (!isPrimordial(existing)) {
           throw new Error("Cannot bootstrap: primordial role has unexpected contents");
+        }
         return 1n;
       }
       const count = (queries.get("role-count").get() as { count: bigint }).count;
-      if (count !== 0n) throw new Error("Cannot bootstrap: unexpected existing roles");
+      if (count !== 0n) {
+        throw new Error("Cannot bootstrap: unexpected existing roles");
+      }
       const inserted = queries
         .get("create-primordial-role")
         .get(JSON.stringify(permissions), now, now) as { id: bigint };
-      if (inserted.id !== 1n)
+      if (inserted.id !== 1n) {
         throw new Error("Cannot bootstrap: primordial role identity is unavailable");
+      }
       return inserted.id;
     },
     userRole(id: bigint): UserRole | null {
       const value = role(id, "user");
       return value ? { id: value.id, name: value.name ?? "", permissions: decoded(value) } : null;
     },
-    createUserRole(name: string, granted: readonly string[], now: string): bigint {
+    createUserRole(name: string, granted: ReadonlyArray<string>, now: string): bigint {
       const row = queries.get("create-user-role").get(name, JSON.stringify(granted), now, now) as {
         id: bigint;
       };
@@ -120,8 +129,10 @@ export function createRoles(db: Database, lists: ListReferences) {
     },
     listRole(id: bigint, forList = false) {
       const value = role(id, "list");
-      if (!value) return null;
-      const children = queries.get("list-role-children").all(id) as RoleRow[];
+      if (!value) {
+        return null;
+      }
+      const children = queries.get("list-role-children").all(id) as Array<RoleRow>;
       const entries = children.map((item) => ({
         id: item.list_id ?? 0n,
         name: item.list_id === null ? "" : (lists.name(item.list_id) ?? ""),
@@ -141,10 +152,10 @@ export function createRoles(db: Database, lists: ListReferences) {
       };
     },
     all(type: "user" | "list", search: string, orderBy: string, order: string) {
-      const rows = queries.get("all-top-roles").all(type) as RoleRow[];
+      const rows = queries.get("all-top-roles").all(type) as Array<RoleRow>;
       const needle = search
         .trim()
-        .replace(/[\t\n\v\f\r ]+/g, " ")
+        .replaceAll(/[\t\n\v\f\r ]+/g, " ")
         .toLowerCase();
       const field = ["name", "created_at", "updated_at"].includes(orderBy)
         ? (orderBy as "name" | "created_at" | "updated_at")
@@ -170,11 +181,13 @@ export function createRoles(db: Database, lists: ListReferences) {
             ? { type: r.type, name: r.name, permissions: decoded(r), lists: null }
             : {
                 name: r.name,
-                lists: (queries.get("list-role-children").all(r.id) as RoleRow[]).map((child) => ({
-                  id: Number(child.list_id),
-                  name: child.list_id === null ? "" : lists.name(child.list_id),
-                  permissions: decoded(child),
-                })),
+                lists: (queries.get("list-role-children").all(r.id) as Array<RoleRow>).map(
+                  (child) => ({
+                    id: Number(child.list_id),
+                    name: child.list_id === null ? "" : lists.name(child.list_id),
+                    permissions: decoded(child),
+                  }),
+                ),
               }),
         }));
     },
@@ -182,12 +195,14 @@ export function createRoles(db: Database, lists: ListReferences) {
       type: "user" | "list",
       id: bigint | null,
       name: string,
-      granted: string[],
-      children: { id: bigint; permissions: string[] }[],
+      granted: Array<string>,
+      children: Array<{ id: bigint; permissions: string[] }>,
       now: string,
     ) {
       return writeTransaction(db, () => {
-        if (id !== null && (id === 1n || !role(id, type))) return null;
+        if (id !== null && (id === 1n || !role(id, type))) {
+          return null;
+        }
         const result =
           id === null
             ? (queries
@@ -203,13 +218,14 @@ export function createRoles(db: Database, lists: ListReferences) {
         if (type === "list") {
           queries.get("delete-children").run(result.id);
           try {
-            for (const child of children)
+            for (const child of children) {
               if (child.permissions.length) {
                 if (!lists.name(child.id)) throw new Error("Invalid list reference");
                 queries
                   .get("insert-child")
                   .run(result.id, child.id, JSON.stringify(child.permissions));
               }
+            }
           } catch {
             throw new RoleChildError();
           }
@@ -219,8 +235,12 @@ export function createRoles(db: Database, lists: ListReferences) {
     },
     remove(id: bigint, assigned: (id: bigint) => boolean): "invalid" | "assigned" | "ok" {
       return writeTransaction(db, () => {
-        if (id === 1n) return "invalid";
-        if (assigned(id)) return "assigned";
+        if (id === 1n) {
+          return "invalid";
+        }
+        if (assigned(id)) {
+          return "assigned";
+        }
         queries.get("delete-role").run(id);
         return "ok";
       });
@@ -229,8 +249,9 @@ export function createRoles(db: Database, lists: ListReferences) {
       if (
         role.id === 1n ||
         role.permissions.includes(permission === "list:get" ? "lists:get_all" : "lists:manage_all")
-      )
+      ) {
         return { all: true, ids: [] as bigint[] };
+      }
       const entries = listRoleId === null ? null : this.listRole(listRoleId);
       return {
         all: false,
@@ -243,13 +264,14 @@ export function createRoles(db: Database, lists: ListReferences) {
       role: UserRole,
       listRoleId: bigint | null,
       permission: "list:get" | "list:manage",
-      ids: bigint[],
+      ids: Array<bigint>,
     ): boolean {
       if (
         role.id === 1n ||
         role.permissions.includes(permission === "list:get" ? "lists:get_all" : "lists:manage_all")
-      )
+      ) {
         return true;
+      }
       const entries = listRoleId === null ? null : this.listRole(listRoleId);
       return ids.every(
         (id) =>

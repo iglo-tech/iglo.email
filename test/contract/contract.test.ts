@@ -6,7 +6,7 @@ const repository = resolve(import.meta.dir, "../..");
 const fixtureUser = "contract-fixture-user";
 const fixtureToken = "contract-fixture-token";
 
-async function cli(args: string[], env: Record<string, string> = {}) {
+async function cli(args: Array<string>, env: Record<string, string> = {}) {
   const child = Bun.spawn([process.execPath, "test/contract/cli.ts", "run", ...args], {
     cwd: repository,
     env: {
@@ -62,9 +62,11 @@ describe("contract runner public boundary", () => {
     ["encoded-dot-dot", "GET /fixture/id/%2E%2E"],
     ["api-method-mismatch", "POST /api/health"],
   ])("fixture case %s detects a nonconforming route response", async (id, expectedTarget) => {
-    const seen: string[] = [];
+    const seen: Array<string> = [];
     const target = createServer((request, response) => {
-      if (probe(request.headers.host)) return void response.writeHead(404).end();
+      if (probe(request.headers.host)) {
+        return void response.writeHead(404).end();
+      }
       seen.push(`${request.method} ${request.url}`);
       const preservedDot = /^\/fixture\/id\/%2E(?:%2E)?$/.test(request.url ?? "");
       const wrongMethod = request.method === "POST" && request.url === "/api/health";
@@ -82,7 +84,9 @@ describe("contract runner public boundary", () => {
     await new Promise<void>((ready) => target.listen(0, "127.0.0.1", ready));
     try {
       const address = target.address();
-      if (!address || typeof address === "string") throw new Error("missing address");
+      if (!address || typeof address === "string") {
+        throw new Error("missing address");
+      }
       const result = await cli([...options(`http://127.0.0.1:${address.port}`), "--case", id]);
       expect(result.code).not.toBe(0);
       expect(result.output).toContain(`FAIL ${id}`);
@@ -93,7 +97,7 @@ describe("contract runner public boundary", () => {
   });
 
   test("selects cases explicitly and sends Basic and token credentials", async () => {
-    const sent: string[] = [];
+    const sent: Array<string> = [];
     const target = server((request) => {
       sent.push(request.headers.get("authorization") ?? "none");
       return json({ data: true });
@@ -198,8 +202,9 @@ describe("contract runner public boundary", () => {
       const result = await cli([...options(target.origin), "--case", "protected-health-basic"]);
       expect(result.code).not.toBe(0);
       expect(result.output).toContain("FAIL protected-health-basic");
-      for (const secret of [fixtureUser, fixtureToken, auth, auth.slice(6)])
+      for (const secret of [fixtureUser, fixtureToken, auth, auth.slice(6)]) {
         expect(result.output).not.toContain(secret);
+      }
     } finally {
       await target.close();
     }
@@ -220,9 +225,11 @@ describe("contract runner public boundary", () => {
   });
 
   test("sends an exact dot-segment target without client URL normalization", async () => {
-    const seen: string[] = [];
+    const seen: Array<string> = [];
     const target = createServer((request, response) => {
-      if (probe(request.headers.host)) return void response.writeHead(404).end();
+      if (probe(request.headers.host)) {
+        return void response.writeHead(404).end();
+      }
       seen.push(request.url ?? "");
       response.writeHead(400, { "content-type": "application/json" });
       response.end('{"message":"invalid ID"}\n');
@@ -230,7 +237,9 @@ describe("contract runner public boundary", () => {
     await new Promise<void>((resolveListen) => target.listen(0, "127.0.0.1", resolveListen));
     try {
       const address = target.address();
-      if (!address || typeof address === "string") throw new Error("missing address");
+      if (!address || typeof address === "string") {
+        throw new Error("missing address");
+      }
       const result = await cli([
         "--mode",
         "reference",
@@ -327,9 +336,9 @@ describe("normalization at the HTTP boundary", () => {
     expect(result.output).toContain("requires an existing binding");
   });
   test("rejects wrong types, missing/extra fields, unsafe IDs, inconsistent references and ordinary changes", async () => {
-    const invalid: unknown[] = [
+    const invalid: Array<unknown> = [
       { data: { ...good().data, id: "101" } },
-      { data: { ...good().data, id: 9007199254740992 } },
+      { data: { ...good().data, id: 9_007_199_254_740_992 } },
       { data: { ...good().data, owner_id: 102 } },
       { data: { ...good().data, other_id: 101 } },
       { data: { ...good().data, created_at: "invalid" } },
@@ -340,7 +349,9 @@ describe("normalization at the HTTP boundary", () => {
       { data: { ...good().data, extra: true } },
       { data: { ...good().data, created_at: undefined } },
     ];
-    for (const value of invalid) expect((await run(value)).code).not.toBe(0);
+    for (const value of invalid) {
+      expect((await run(value)).code).not.toBe(0);
+    }
     expect((await run(good(), 999)).code).not.toBe(0);
   });
 });

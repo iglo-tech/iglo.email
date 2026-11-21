@@ -9,7 +9,7 @@ export async function runExternalContract(target: {
 }) {
   const suffix = crypto.randomUUID();
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const owned: number[] = [];
+  const owned: Array<number> = [];
   let cleanupFailed = false;
   const request = (path: string, method = "GET", body?: unknown) =>
     fetch(`${target.baseUrl}${path}`, {
@@ -21,7 +21,9 @@ export async function runExternalContract(target: {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   function check(condition: unknown, label: string): asserts condition {
-    if (!condition) throw new Error(`FAIL ${label}`);
+    if (!condition) {
+      throw new Error(`FAIL ${label}`);
+    }
   }
   try {
     const goNotice = await fetch(`${target.baseUrl}/admin/static/licenses/go-1.27.2-BSD.txt`);
@@ -35,14 +37,16 @@ export async function runExternalContract(target: {
     );
     // D39 preserves dot IDs through the canonical query selector. Bun normalizes
     // the raw path before routing; it must not accidentally modify either row.
-    const dotStatuses: number[] = [];
+    const dotStatuses: Array<number> = [];
     for (const dot of [".", ".."]) {
       const created = await request("/api/subscribers", "POST", {
         email: `dot-${dot.length}-${suffix}@example.test`,
         external_id: dot,
       });
       const dotData = (await created.json()).data;
-      if (created.status === 200 && typeof dotData?.id === "number") owned.push(dotData.id);
+      if (created.status === 200 && typeof dotData?.id === "number") {
+        owned.push(dotData.id);
+      }
       check(created.status === 200, "D38-dot-create");
       const url = new URL(target.baseUrl);
       const socket = createConnection({ host: "127.0.0.1", port: Number(url.port) });
@@ -100,7 +104,9 @@ export async function runExternalContract(target: {
         external_id: value,
       });
       const row = (await created.json()).data;
-      if (created.status === 200 && typeof row?.id === "number") owned.push(row.id);
+      if (created.status === 200 && typeof row?.id === "number") {
+        owned.push(row.id);
+      }
       check(created.status === 200, "D39-selector-create");
       const query = `/api/subscribers/external?external_id=${encodeURIComponent(value)}`;
       const response = await request(query);
@@ -139,7 +145,9 @@ export async function runExternalContract(target: {
       attribs: { persisted: true },
     });
     let data = (await response.json()).data;
-    if (response.status === 200 && typeof data?.id === "number") owned.push(data.id);
+    if (response.status === 200 && typeof data?.id === "number") {
+      owned.push(data.id);
+    }
     check(response.status === 200 && data.external_id === external, "D38-external-create");
     const id = data.id;
     const uuid = data.uuid;
@@ -160,8 +168,9 @@ export async function runExternalContract(target: {
       external_id: external,
     });
     const collision = await response.json();
-    if (response.status === 200 && typeof collision.data?.id === "number")
+    if (response.status === 200 && typeof collision.data?.id === "number") {
       owned.push(collision.data.id);
+    }
     check(
       response.status === 409 && collision.message === "External ID already exists",
       "D38-external-collision",
@@ -182,8 +191,9 @@ export async function runExternalContract(target: {
       email: `contender-${suffix}@example.test`,
     });
     const contenderData = (await contender.json()).data;
-    if (contender.status === 200 && typeof contenderData?.id === "number")
+    if (contender.status === 200 && typeof contenderData?.id === "number") {
       owned.push(contenderData.id);
+    }
     check(contender.status === 200, "D38-contender-create");
     response = await request(`/api/subscribers/${contenderData.id}`, "PATCH", {
       external_id: external,
@@ -217,9 +227,10 @@ export async function runExternalContract(target: {
     const outcomes = await Promise.all(
       claims.map(async (r) => ({ status: r.status, body: await r.json() })),
     );
-    for (const outcome of outcomes)
+    for (const outcome of outcomes) {
       if (outcome.status === 200 && typeof outcome.body.data?.id === "number")
         owned.push(outcome.body.data.id);
+    }
     check(
       outcomes
         .map((o) => o.status)
@@ -347,8 +358,12 @@ export async function runExternalContract(target: {
     );
   } finally {
     for (const id of owned.reverse()) {
-      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) {
+        cleanupFailed = true;
+      }
     }
   }
-  if (cleanupFailed) throw new Error("FAIL external-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL external-cleanup");
+  }
 }

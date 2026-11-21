@@ -4,12 +4,14 @@
 // Usage: bun test/retention/measure.ts [rowsPerTable] [sends] [idleSeconds] [purgeSeconds]
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createRealClock, type Clock } from "@/clock";
+import { createRealClock } from "@/clock";
+import type { Clock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { writeTransaction } from "@/db/transaction";
 import { createListReferences } from "@/lists/references";
-import { PURGE_INTERVAL_MS, startPurge, type Purge } from "@/loops/purge";
+import { PURGE_INTERVAL_MS, startPurge } from "@/loops/purge";
+import type { Purge } from "@/loops/purge";
 import { encodePayload } from "@/messaging/payload";
 import { createSendCompaction } from "@/messaging/retention";
 import { createSends } from "@/messaging/sends";
@@ -39,7 +41,7 @@ const record = (entry: object) => {
   console.log(line);
   appendFileSync(output, `${line}\n`);
 };
-const stats = (values: number[]) => {
+const stats = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
   return {
@@ -100,10 +102,11 @@ function seed() {
     pad: "x".repeat(400),
   });
   const batches = (count: number, size: number, one: (i: number) => void) => {
-    for (let i = 0; i < count; i += size)
+    for (let i = 0; i < count; i += size) {
       writeTransaction(db, () => {
         for (let j = i; j < Math.min(count, i + size); j++) one(j);
       });
+    }
   };
   batches(rows, 20_000, (i) => {
     const old = age(i);
@@ -118,7 +121,7 @@ function seed() {
     );
     inserts.deliveries.run(crypto.randomUUID(), body, i % 10 ? "delivered" : "failed", old, old);
   });
-  batches(sendRows, 5_000, (i) => {
+  batches(sendRows, 5000, (i) => {
     const uuid = crypto.randomUUID();
     const old = age(i);
     inserts.sends.run(uuid, `<${uuid}@x>`, payload(uuid), old, old);
@@ -135,7 +138,9 @@ function seed() {
       iso(started),
     );
   });
-  for (const insert of Object.values(inserts)) insert.finalize();
+  for (const insert of Object.values(inserts)) {
+    insert.finalize();
+  }
   return (Date.now() - at) / 1000;
 }
 
@@ -196,8 +201,8 @@ const message = () => ({
 
 /** One message every 20 ms: journal it, claim it, record the outcome, three short commits. */
 async function writer(until: () => boolean) {
-  const whole: number[] = [];
-  const lateness: number[] = [];
+  const whole: Array<number> = [];
+  const lateness: Array<number> = [];
   let next = performance.now();
   while (!until()) {
     const due = (next += 20);
@@ -225,14 +230,16 @@ async function writer(until: () => boolean) {
 }
 /** Every pass of one loop: the time from a yield's end to the next yield, and the count left. */
 function timed(now: () => Date) {
-  const passes: number[] = [];
+  const passes: Array<number> = [];
   let begin = performance.now();
   let idle = false;
   const clock: Clock = {
     now,
     sleep(milliseconds, signal) {
       passes.push(performance.now() - begin);
-      if (milliseconds >= PURGE_INTERVAL_MS) idle = true;
+      if (milliseconds >= PURGE_INTERVAL_MS) {
+        idle = true;
+      }
       return real.sleep(milliseconds, signal).then(() => {
         begin = performance.now();
       });
@@ -264,7 +271,7 @@ const count = {
       )
       .get() as { n: bigint },
 };
-async function drain(step: string, names: (keyof typeof count)[]) {
+async function drain(step: string, names: Array<keyof typeof count>) {
   const before = names.map((name) => Number(count[name]().n));
   const at = performance.now();
   const time = timed(() => new Date());
@@ -302,10 +309,14 @@ await quiet("idle with new indexes");
 await real.sleep(500);
 const saved = db
   .query(`SELECT sql FROM sqlite_master WHERE name IN (${indexes.map(() => "?").join()})`)
-  .all(...indexes) as { sql: string }[];
-for (const name of indexes) db.run(`DROP INDEX ${name}`);
+  .all(...indexes) as Array<{ sql: string }>;
+for (const name of indexes) {
+  db.run(`DROP INDEX ${name}`);
+}
 await quiet("idle before (no new indexes)");
-for (const { sql } of saved) db.run(sql);
+for (const { sql } of saved) {
+  db.run(sql);
+}
 await quiet("idle with new indexes, again");
 
 // Each owner alone for a fixed time over its backlog, then all three at once, as the first start

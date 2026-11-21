@@ -1,4 +1,4 @@
-export function percentile(values: number[]) {
+export function percentile(values: Array<number>) {
   const sorted = [...values].sort((a, b) => a - b);
   const pick = (p: number) =>
     Number((sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)] ?? 0).toFixed(3));

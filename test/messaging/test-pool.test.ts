@@ -3,8 +3,10 @@
 // each held recipient's reply to DATA until the test releases it, so real sends are still in flight
 // when the cut fires. Time is the injected clock; nothing sleeps.
 import { afterEach, expect, test } from "bun:test";
-import { createServer, type Socket } from "node:net";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 import { TestClock } from "@/test/server/fixture";
 
 const STALLED = "stalled@example.test";
@@ -21,7 +23,7 @@ const message = {
  * A loopback SMTP sink that replies to DATA at once, except for the recipients it holds: their
  * reply waits until `release`. A held recipient that is never released stalls until its socket closes.
  */
-async function holdingSink(holds: string[]) {
+async function holdingSink(holds: Array<string>) {
   const held = new Map<string, Socket>();
   const sockets = new Set<Socket>();
   const dataWaiters = new Map<string, Promise<void>>();
@@ -46,31 +48,43 @@ async function holdingSink(holds: string[]) {
         const line = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
         if (inData) {
-          if (line !== ".") continue;
+          if (line !== ".") {
+            continue;
+          }
           inData = false;
-          if (holds.includes(recipient)) held.set(recipient, socket);
-          else socket.write("250 queued\r\n");
+          if (holds.includes(recipient)) {
+            held.set(recipient, socket);
+          } else {
+            socket.write("250 queued\r\n");
+          }
           dataDone(recipient);
           dataResolvers.get(recipient)?.();
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === "EHLO") socket.write("250 holding.test\r\n");
-        else if (verb === "MAIL" || verb === "RSET" || verb === "NOOP") socket.write("250 ok\r\n");
-        else if (verb === "RCPT") {
+        if (verb === "EHLO") {
+          socket.write("250 holding.test\r\n");
+        } else if (verb === "MAIL" || verb === "RSET" || verb === "NOOP") {
+          socket.write("250 ok\r\n");
+        } else if (verb === "RCPT") {
           recipient = /<([^>]*)>/.exec(line)?.[1] ?? "";
           socket.write("250 ok\r\n");
         } else if (verb === "DATA") {
           inData = true;
           socket.write("354 go\r\n");
-        } else if (verb === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("502 unsupported\r\n");
+        } else if (verb === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("502 unsupported\r\n");
+        }
       }
     });
   });
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   const address = listener.address();
-  if (!address || typeof address === "string") throw new Error("missing address");
+  if (!address || typeof address === "string") {
+    throw new Error("missing address");
+  }
   const server: SMTPServer = {
     name: "holding",
     enabled: true,
@@ -96,10 +110,14 @@ async function holdingSink(holds: string[]) {
     release(address: string) {
       const socket = held.get(address);
       held.delete(address);
-      if (socket && !socket.destroyed) socket.write("250 queued\r\n");
+      if (socket && !socket.destroyed) {
+        socket.write("250 queued\r\n");
+      }
     },
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((resolve, reject) =>
         listener.close((e) => (e ? reject(e) : resolve())),
       );
@@ -109,7 +127,9 @@ async function holdingSink(holds: string[]) {
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const close of cleanup.splice(0)) await close();
+  for (const close of cleanup.splice(0)) {
+    await close();
+  }
 });
 
 test("a stalled test send does not cut real sends on the same server at its 60 s cut-off", async () => {
@@ -128,7 +148,7 @@ test("a stalled test send does not cut real sends on the same server at its 60 s
   await sink.dataSeen(REAL);
   // Each kind of send has its own connection.
   expect(sink.connections()).toBe(2);
-  clock.advance(59000);
+  clock.advance(59_000);
   expect(await stalled.result).toMatchObject({ status: "ambiguous", stage: "unknown" });
   // The real send is still in DATA: it settles on its reply, not on the test's cut.
   sink.release(REAL);

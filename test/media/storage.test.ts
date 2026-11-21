@@ -15,9 +15,11 @@ import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import { waitWall } from "@/test/wait";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 async function open() {
   const f = await campaignsFixture();
@@ -83,8 +85,9 @@ test("a broken link and a file are not roots", async () => {
   const f = await open();
   symlinkSync(join(f.directory, "not-there"), join(f.directory, "broken"));
   await Bun.write(join(f.directory, "plain"), "x");
-  for (const path of ["broken", "broken/deeper", "plain", "plain/deeper"])
+  for (const path of ["broken", "broken/deeper", "plain", "plain/deeper"]) {
     expect({ path, status: (await setRoot(f, path)).status }).toEqual({ path, status: 400 });
+  }
 });
 
 test("a file in the root without a media row is not served", async () => {
