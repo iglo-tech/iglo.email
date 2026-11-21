@@ -260,7 +260,7 @@ export function validateCampaign(c: WritableCampaign, listIds: Array<bigint>, p:
   if (JSON.stringify(value.archive_meta).length > 64 * 1024) {
     invalid(t, "archive_meta");
   }
-  if (value.tags.some((tag) => tag.includes("\0") || [...tag].length > 100)) {
+  if (value.tags.some((tag) => tag.includes("\0") || Array.from(tag).length > 100)) {
     invalid(t, "tags");
   }
   if (value.archive_slug !== null && value.archive_slug !== "") {

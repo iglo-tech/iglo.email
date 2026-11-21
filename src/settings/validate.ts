@@ -337,7 +337,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     if (!value) {
       continue;
     }
-    if ([...value].length > 2000) {
+    if (Array.from(value).length > 2000) {
       return fail("`from` address cannot exceed 2000 characters");
     }
     const opening = value.indexOf("{{");
@@ -588,7 +588,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
 }
 export function masked(settings: Settings): Settings {
   const out = cloneJson(settings);
-  const mask = (value: string | undefined) => "•".repeat([...(value ?? "")].length);
+  const mask = (value: string | undefined) => "•".repeat(Array.from(value ?? "").length);
   for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
     for (const item of out[key]) {
       if (item.password) {

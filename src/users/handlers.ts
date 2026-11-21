@@ -124,7 +124,7 @@ function validEmail(value: string): boolean {
     !part.startsWith(".") &&
     !part.endsWith(".") &&
     !part.includes("..") &&
-    ![...part].some((character) => {
+    !Array.from(part).some((character) => {
       const code = character.codePointAt(0)!;
       return (
         code <= 32 ||
