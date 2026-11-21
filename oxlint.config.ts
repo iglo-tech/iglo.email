@@ -68,6 +68,22 @@ export default defineConfig({
       ],
       rules: { "@nkzw/no-instanceof": "off" },
     },
+    // Exception, for the lead to decide at review: the JSX runtime types a component's props by the component, so its
+    // props type cannot be unknown (typing it so gives 479 type errors across the admin and public pages), and the
+    // settings store is a record keyed by setting name, one value type per key (unknown gives 128 errors across the
+    // settings code; a per-key schema is a separate design).
+    {
+      files: [
+        "src/jsx/jsx-runtime.ts",
+        "src/jsx/render.ts",
+        "src/media/routes.ts",
+        "src/public/settings.ts",
+        "src/settings/validate.ts",
+        "src/settings/xml.ts",
+        "src/unsubscribe/policy.ts",
+      ],
+      rules: { "typescript/no-explicit-any": "off" },
+    },
     // Exception, for the lead to decide at review: the Nodemailer envelope in messaging/email.ts carries address
     // objects that @types/nodemailer 8 omits, so its SDK boundary cast can only be a chained one, never a checked type.
     { files: ["src/messaging/email.ts"], rules: { "quality/no-chained-type-assertions": "off" } },
@@ -135,7 +151,6 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134b: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed.
-    "typescript/no-explicit-any": "off", // B134b
     "typescript/no-non-null-assertion": "off", // B134b
     "typescript/no-unsafe-argument": "off", // B134b
     "typescript/no-unsafe-assignment": "off", // B134b

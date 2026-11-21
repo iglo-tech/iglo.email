@@ -1,5 +1,5 @@
 // Native send journal. listmonk has no equivalent outbox or send-log API.
-import type { Database } from "bun:sqlite";
+import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import type { Message, Outcome } from "@/messaging/email";
@@ -468,7 +468,7 @@ export function createSends(options: {
     const uuid = crypto.randomUUID();
     const id = writeTransaction(db, () => {
       const row = db
-        .query<{ id: bigint }, Array<any>>(
+        .query<{ id: bigint }, Array<SQLQueryBindings>>(
           `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?) RETURNING id`,
         )
         .get(
@@ -516,7 +516,7 @@ export function createSends(options: {
       }
       const uuid = crypto.randomUUID();
       const inserted = db
-        .query<{ id: bigint }, Array<any>>(
+        .query<{ id: bigint }, Array<SQLQueryBindings>>(
           `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, list_id, status, smtp_message_id, payload, retry_of, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?) RETURNING id`,
         )
         .get(
@@ -663,7 +663,7 @@ export function createSends(options: {
         }
         const uuid = send.uuid ?? crypto.randomUUID();
         const row = db
-          .query<{ id: bigint }, Array<any>>(
+          .query<{ id: bigint }, Array<SQLQueryBindings>>(
             `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
           )
           .get(
@@ -834,7 +834,7 @@ export function createSends(options: {
       throw new Error("Invalid prepared send");
     }
     return db
-      .query<{ id: bigint }, Array<any>>(
+      .query<{ id: bigint }, Array<SQLQueryBindings>>(
         `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, 'sequence', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
       .get(
@@ -1017,10 +1017,12 @@ export function createSends(options: {
       }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
       const total = db
-        .query<{ total: bigint }, Array<any>>(`SELECT count(*) AS total FROM sends${where}`)
+        .query<{ total: bigint }, Array<SQLQueryBindings>>(
+          `SELECT count(*) AS total FROM sends${where}`,
+        )
         .get(...values)!.total;
       const rows = db
-        .query<PublicRow, Array<any>>(
+        .query<PublicRow, Array<SQLQueryBindings>>(
           `SELECT ${publicColumns} FROM sends${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         )
         .all(...values, filter.perPage, (filter.page - 1) * filter.perPage);
