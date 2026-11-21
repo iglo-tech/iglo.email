@@ -10,7 +10,12 @@ SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key F
 -- name: events-by-subscriber
 SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? ORDER BY id LIMIT ?;
 -- name: events-page
-SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? ORDER BY id DESC LIMIT ? OFFSET ?;
+-- The page's IDs are sorted alone and its rows are read by ID (B116, D131): a row's outcome is
+-- wide, and the sort would carry it for every event the subscriber has (perf/B116-skip-reasons.md).
+SELECT e.id, e.subscriber_id, e.name, e.data, e.occurred_at, e.created_at, e.idempotency_key, e.enrollments
+  FROM events e JOIN (SELECT id FROM events WHERE subscriber_id = ? ORDER BY id DESC LIMIT ? OFFSET ?) p
+    ON p.id = e.id
+  ORDER BY e.id DESC;
 -- name: event-latest-named
 -- The newest event of one name for a subscriber: the step preview's trigger (D105).
 SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? AND name = ? ORDER BY occurred_at DESC, id DESC LIMIT 1;

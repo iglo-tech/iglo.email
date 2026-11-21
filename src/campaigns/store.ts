@@ -382,6 +382,16 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
         for (const row of found) q.get("delete-campaign").run(row.id);
       });
     },
+    /** One page of a campaign's skipped deliveries (B116, D131): subscriber, reason and time. */
+    skippedDeliveries(id: bigint, page: number, perPage: number) {
+      const rows = q.get("skipped-deliveries").all(id, perPage, (page - 1) * perPage) as {
+        subscriber_id: bigint;
+        reason: string | null;
+        at: string;
+      }[];
+      const total = (q.get("skipped-deliveries-count").get(id) as { total: bigint }).total;
+      return { rows, total };
+    },
     registerView(id: bigint, subscriberId: bigint | null) {
       q.get("register-campaign-view").run(id, subscriberId, now());
     },

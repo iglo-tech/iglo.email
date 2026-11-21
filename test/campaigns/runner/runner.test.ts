@@ -411,7 +411,21 @@ test("an unsubscribe or blocklist during a batch stops that subscriber's message
   await f.until(c.id, "finished");
   expect(recipientsOf()).toEqual(["a@x.test", "d@x.test"]);
   expect(f.runnerStore.lastDelivery(BigInt(b.id))).toBeNull();
+  // B116 (D131): an unsubscribe and a blocklist at push are skips with their own reasons.
+  expect(await skippedOf(c.id)).toEqual([
+    [b.id, "unsubscribed"],
+    [c2.id, "subscriber_blocklisted"],
+  ]);
 });
+
+/** The campaign's skipped deliveries as [subscriber id, reason], by subscriber ID. */
+async function skippedOf(campaign: number): Promise<[number, string][]> {
+  const r = await f.json(`/api/campaigns/${campaign}/skipped`);
+  expect(r.status).toBe(200);
+  return (r.body.data.results as { subscriber_id: number; reason: string }[])
+    .map((row): [number, string] => [row.subscriber_id, row.reason])
+    .sort((x, y) => x[0] - y[0]);
+}
 
 test("pause, list edit and resume while a message is outstanding reaches the new audience", async () => {
   f = await runnerFixture({ hold: true });
@@ -475,6 +489,8 @@ test("a subscriber whose email changed after the claim is not sent the old addre
   // Resolved as not sent, and logged for a manual resend; never sent again.
   expect(f.runnerStore.lastDelivery(BigInt(b.id))).toBeNull();
   expect(f.errors.map(String).some((e) => e.includes(`subscriber ${b.id} changed`))).toBe(true);
+  // B116 (D131): the skip names its reason, the same one a send skipped for identity carries.
+  expect(await skippedOf(c.id)).toEqual([[b.id, "subscriber_unavailable"]]);
 });
 
 function capSends(minInterval: string) {

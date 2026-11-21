@@ -37,6 +37,12 @@ export interface RecordedEvent {
 export interface Enrollments {
   started: unknown[];
   ended: unknown[];
+  /**
+   * Sequences the event would have started but cannot, with the reason (B116, D131): a
+   * blocklisted subscriber's start (`subscriber_blocklisted`), a suppressed person's marketing
+   * start (`suppressed`). Stored with the event, so the subscriber's timeline shows it.
+   */
+  skipped: unknown[];
 }
 /**
  * The subscriber an event names, as the grant check (D99) sees it before the event writes: the
@@ -69,7 +75,7 @@ export interface Grant {
  */
 export type ExitThenTrigger = (event: RecordedEvent) => Enrollments;
 /** No sequences: no event starts or ends an enrollment. */
-export const noSequences: ExitThenTrigger = () => ({ started: [], ended: [] });
+export const noSequences: ExitThenTrigger = () => ({ started: [], ended: [], skipped: [] });
 
 export const triggerEligible = (occurredAt: string, receivedAt: string) =>
   Date.parse(occurredAt) >= Date.parse(receivedAt) - TRIGGER_WINDOW_MS;
@@ -99,10 +105,11 @@ const numberID = (id: bigint) =>
 
 /**
  * What the first request under an idempotency key did, as stored in `events.enrollments`:
- * `{started, ended, grants}`. A row written before grants existed has no `grants`.
+ * `{started, ended, grants, skipped}`. A row written before grants existed has no `grants`, and
+ * one written before B116 has no `skipped`.
  */
 function storedOutcome(text: string | null): { enrollments: Enrollments; grants: Grant[] } {
-  if (text === null) return { enrollments: { started: [], ended: [] }, grants: [] };
+  if (text === null) return { enrollments: { started: [], ended: [], skipped: [] }, grants: [] };
   // Integers beyond 2^53 in enrollments stay exact.
   const stored = JSON.parse(text, (_key, value, context?: { source?: string }) =>
     typeof value === "number" && !Number.isSafeInteger(value) && context?.source
@@ -110,7 +117,11 @@ function storedOutcome(text: string | null): { enrollments: Enrollments; grants:
       : value,
   ) as Partial<Enrollments> & { grants?: Grant[] };
   return {
-    enrollments: { started: stored.started ?? [], ended: stored.ended ?? [] },
+    enrollments: {
+      started: stored.started ?? [],
+      ended: stored.ended ?? [],
+      skipped: stored.skipped ?? [],
+    },
     grants: stored.grants ?? [],
   };
 }
@@ -213,9 +224,12 @@ export function createEventStore(
       triggerEligible: triggerEligible(occurredAt, receivedAt),
       suppressed: () => subscribers.suppressed(subscriber),
     });
+    // An event's outcome is stored when a replay needs it (an idempotency key), and whenever a
+    // sequence start was skipped, so the subscriber's timeline can name the reason (B116, D131).
     if (
-      input.idempotencyKey !== undefined &&
-      (enrollments.started.length || enrollments.ended.length || grants.length)
+      enrollments.skipped.length ||
+      (input.idempotencyKey !== undefined &&
+        (enrollments.started.length || enrollments.ended.length || grants.length))
     )
       q.get("event-enrollments").run(JSON.stringify({ ...enrollments, grants }), inserted.id);
     return result(inserted.id, subscriber.id, { enrollments, grants });
@@ -351,7 +365,9 @@ export function createEventStore(
     page(subscriberId: bigint, page: number, perPage: number) {
       const rows = q
         .get("events-page")
-        .all(subscriberId, perPage, (page - 1) * perPage) as EventRow[];
+        .all(subscriberId, perPage, (page - 1) * perPage) as (EventRow & {
+        enrollments: string | null;
+      })[];
       const total = (q.get("events-count").get(subscriberId) as { n: bigint }).n;
       return {
         results: rows.map((row) => ({
@@ -360,6 +376,8 @@ export function createEventStore(
           data: JSON.parse(row.data) as unknown,
           occurred_at: row.occurred_at,
           created_at: row.created_at,
+          // B116 (D131): the sequence starts this event was refused, with the reason for each.
+          skipped: storedOutcome(row.enrollments).enrollments.skipped,
         })),
         total: numberID(total),
         page,

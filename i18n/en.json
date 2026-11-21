@@ -729,6 +729,7 @@
     "subscribers.errorPreparingQuery": "Error preparing subscriber query: {error}",
     "subscribers.errorSendingOptin": "Error sending opt-in e-mail.",
     "subscribers.eventData": "Data",
+    "subscribers.notStarted": "Sequences not started",
     "subscribers.events": "Events",
     "subscribers.invalidJSON": "Invalid JSON in attributes.",
     "subscribers.listChangeApplied": "List change applied.",

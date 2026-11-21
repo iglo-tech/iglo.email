@@ -20,7 +20,7 @@ const event = (subscriber: object, extra: object = {}) => ({
   name: "order_paid",
   ...extra,
 });
-const ok = { started: [], ended: [] };
+const ok = { started: [], ended: [], skipped: [] };
 
 test("an unknown email creates an enabled subscriber without lists and records the event", async () => {
   const f = await open();
@@ -204,7 +204,7 @@ test("occurred_at is normalized UTC; events older than 7 days are stored but not
   const f = await open({
     exitThenTrigger: (e) => {
       seen.push(e);
-      return { started: [], ended: [] };
+      return { started: [], ended: [], skipped: [] };
     },
   });
   const now = f.clock.now().getTime();
@@ -251,11 +251,11 @@ test("exit-then-trigger runs inside the event transaction; its failure rolls bac
     exitThenTrigger: () => {
       if (fail) throw new Error("sequence failure");
       expect(f.db.inTransaction).toBe(true);
-      return { started: [7], ended: [3] };
+      return { started: [7], ended: [3], skipped: [] };
     },
   });
   const r = await f.post(event({ email: "seam@example.com" }));
-  expect(r.body.data.enrollments).toEqual({ started: [7], ended: [3] });
+  expect(r.body.data.enrollments).toEqual({ started: [7], ended: [3], skipped: [] });
   fail = true;
   const failed = await f.post(event({ email: "seam2@example.com" }));
   expect(failed.status).toBe(500);
@@ -439,7 +439,7 @@ test("an unexpected failure rolls back the whole batch", async () => {
   const f = await open({
     exitThenTrigger: () => {
       if (++calls === 2) throw new Error("boom");
-      return { started: [], ended: [] };
+      return { started: [], ended: [], skipped: [] };
     },
   });
   const r = await f.batch({
@@ -489,7 +489,7 @@ test("concurrent single events share commits but keep independent results", asyn
   const f = await open({
     exitThenTrigger: (e) => {
       if (e.name === "explode") throw new Error("sequence failure");
-      return { started: [], ended: [] };
+      return { started: [], ended: [], skipped: [] };
     },
   });
   await f.post(event({ external_id: "x", email: "x@example.com" }));
@@ -521,7 +521,7 @@ test("a shared COMMIT failure fails every grouped request once, without replay",
           [e.occurredAt, e.receivedAt],
         );
       }
-      return { started: [], ended: [] };
+      return { started: [], ended: [], skipped: [] };
     },
   });
   const results = await Promise.all([
@@ -572,7 +572,7 @@ test("a lost transaction or failed savepoint cleanup aborts the whole group", as
         f.db.run("RELEASE event_item");
         throw new Error("sequence failure");
       }
-      return { started: [], ended: [] };
+      return { started: [], ended: [], skipped: [] };
     },
   });
   // SQLite may roll back the whole transaction after an error inside it.

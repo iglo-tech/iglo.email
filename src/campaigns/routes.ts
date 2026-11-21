@@ -414,6 +414,32 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     checkCampaign(context, false, id);
     return ok(projectCampaign(row(context, id), truthy(context.url.searchParams.get("no_body"))));
   };
+  // B116 (D131): the deliveries the runner skipped, each with the reason it was skipped. A native
+  // view: upstream records no skipped delivery. The page holds subscriber IDs only, no address.
+  const skipped: Handler = (context) => {
+    const id = BigInt(getID(context));
+    checkCampaign(context, false, id);
+    row(context, id);
+    const number = (key: string, fallback: number, limit: number) => {
+      const value = context.url.searchParams.get(key) ?? String(fallback);
+      if (!/^[1-9]\d{0,6}$/.test(value) || Number(value) > limit) throw new HttpError(400);
+      return Number(value);
+    };
+    const page = number("page", 1, 1_000_000);
+    const perPage = number("per_page", 20, 100);
+    const found = store.skippedDeliveries(id, page, perPage);
+    return ok({
+      results: found.rows.map((delivery) => ({
+        subscriber_id: idValue(delivery.subscriber_id),
+        status: "skipped",
+        reason: delivery.reason,
+        at: delivery.at,
+      })),
+      total: idValue(found.total),
+      page,
+      per_page: perPage,
+    });
+  };
   const preview: Handler = async (context) => {
     const id = BigInt(getID(context));
     checkCampaign(context, false, id);
@@ -898,6 +924,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   router.route("GET", "/api/campaigns", collection, auth.middleware(), get);
   router.route("GET", "/api/campaigns/running/stats", running, auth.middleware(), get);
   router.route("GET", "/api/campaigns/:id", one, auth.middleware(), get, hasID);
+  router.route("GET", "/api/campaigns/:id/skipped", skipped, auth.middleware(), get, hasID);
   router.route("GET", "/api/campaigns/:id/preview", preview, auth.middleware(), get, hasID);
   router.route("POST", "/api/campaigns/:id/preview", preview, auth.middleware(), get, hasID);
   router.route(

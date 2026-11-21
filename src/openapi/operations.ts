@@ -1118,6 +1118,16 @@ const campaigns: Operation[] = [
     data: ref("Campaign"),
   },
   {
+    route: "GET /api/campaigns/{id}/skipped",
+    id: "getCampaignSkipped",
+    tag: "Campaigns",
+    summary: "A campaign's skipped deliveries, each with the reason it was skipped.",
+    native: true,
+    permissions: ["campaigns:get", "campaigns:get_all"],
+    query: nativePaging,
+    data: page(ref("CampaignSkippedDelivery")),
+  },
+  {
     route: "PUT /api/campaigns/{id}",
     id: "updateCampaignById",
     tag: "Campaigns",

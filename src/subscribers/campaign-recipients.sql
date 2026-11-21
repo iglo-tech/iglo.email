@@ -37,7 +37,8 @@ LIMIT ?5;
 -- Whether subscriber ?3 still qualifies, rechecked just before its message is pushed, and
 -- its current UUID and email, which must still be the ones the message was rendered for.
 SELECT (SELECT uuid FROM subscribers WHERE id = ?3) AS uuid,
-  (SELECT email FROM subscribers WHERE id = ?3) AS email, EXISTS (
+  (SELECT email FROM subscribers WHERE id = ?3) AS email,
+  (SELECT status FROM subscribers WHERE id = ?3) AS status, EXISTS (
   SELECT 1 FROM subscriber_lists sl
   CROSS JOIN json_each(?1) l ON json_extract(l.value, '$.id') = sl.list_id
   CROSS JOIN subscribers s ON s.id = sl.subscriber_id AND s.status != 'blocklisted'
