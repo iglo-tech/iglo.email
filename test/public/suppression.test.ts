@@ -109,3 +109,37 @@ test("an import row of a suppressed address is imported with no list, and other 
   const kept = f.owners.subscribers.byEmail(other)!;
   expect(await f.status(Number(kept.id), news.id)).toBe("confirmed");
 });
+
+test("an unsubscribing import ends the membership of a suppressed address, since unsubscribing needs no consent", async () => {
+  const f = await open();
+  const news = await f.list("News");
+  const ada = await f.subscriber(address, "Ada", { lists: [news.id] });
+  const camp = f.deliveredCampaign([ada], [news.id]);
+  const uuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}`)).status).toBe(200);
+
+  // An operator puts the address back on the list by hand (the override is not gated), so the
+  // suppressed person now has a confirmed membership for the unsubscribing import to end.
+  const again = await f.json("/api/subscribers", "POST", { email: address, name: "Ada" });
+  const id = again.body.data.id as number;
+  const added = await f.json("/api/subscribers/lists", "PUT", {
+    ids: [id],
+    action: "add",
+    target_list_ids: [news.id],
+    status: "confirmed",
+  });
+  expect(added.status).toBe(200);
+  expect(await f.status(id, news.id)).toBe("confirmed");
+
+  f.owners.subscribers.importSubscribe(
+    [{ email: address, name: "Ada", attribs: "{}" }],
+    {
+      listIds: [BigInt(news.id)],
+      status: "unsubscribed",
+      overwriteUserInfo: false,
+      overwriteStatus: true,
+    },
+    { deliveries: 0 },
+  );
+  expect(await f.status(id, news.id)).toBe("unsubscribed");
+});
