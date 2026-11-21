@@ -814,6 +814,36 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Public page copy (B126, D123)",
+    summary:
+      "The public pages say what happened: an invalid link reads 'This link is not valid.', an old link after a wipe reads 'This link has expired or the data was removed.', an unknown page is 'Page not found' with no footer, and the Done, Unsubscribed and Data removed pages link back to app.site_url when it is set. The header logo links to app.site_url, else the subscription page, else nowhere. The API's messages are unchanged. Upstream names a missing record and links a logo to an empty href.",
+    applies: [],
+  },
+  {
+    area: "Wipe confirmation (B126, D123)",
+    summary:
+      "A wipe takes two POSTs: the first answers a confirmation page that deletes nothing, and the page's button posts confirm=true to the same path, which deletes. A wipe POST without confirm=true changes nothing. No browser dialog. Upstream deletes on the first POST behind a confirm() dialog.",
+    applies: [],
+  },
+  {
+    area: "Already unsubscribed links (B126, D123)",
+    summary:
+      "A marketing link revisited after the person unsubscribed from its list says so, with no form, and names the list. The manage view still lists what remains. Upstream shows the unsubscribe form again.",
+    applies: [],
+  },
+  {
+    area: "Mail branding (B126, D123)",
+    summary:
+      "The data mail's subject is 'Your data from <site>', with a generated text part, the site's logo or name and the wording 'the data this mailing service holds about you'. The opt-in mail is branded the same way, and the admin's system mails name the site. No mail or public page carries a product credit. Upstream uses listmonk's default look and the subject 'Your data'.",
+    applies: [],
+  },
+  {
+    area: "Site URL setting (B126, D123)",
+    summary:
+      "app.site_url is a native setting for the operator's own site, empty by default, validated under the D107 root URL rules. The logo and back links point to it. The root URL is iglo.email's own address and cannot serve. Upstream has no such setting.",
+    applies: [],
+  },
+  {
     area: "Dropped features",
     summary:
       "Their endpoints return 404: `/api/admin/reload`, OIDC routes, update checks, and anything listed as dropped in Scope.",

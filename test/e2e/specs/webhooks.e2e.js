@@ -259,12 +259,12 @@ test("a deletion names the person by ID and never by address, and a wipe names t
   const manage = linksIn(mail).find((url) => new URL(url).searchParams.get("manage") === "true");
   expect(manage, "the mail links to the manage page").toBeTruthy();
   await page.goto(manage);
+  // B126 (D123): a wipe asks on its own page first, and deletes only on that page's button.
   await page.locator("#privacy-wipe").check();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#data-form input[type=submit]").click();
-  await expect(page.locator("body")).toContainText(
-    "Your subscriptions and all associated data have been removed.",
-  );
+  await expect(page.locator("h2")).toContainText("Delete your email data?");
+  await page.locator("#btn-wipe").click();
+  await expect(page.locator("body")).toContainText("Your email data has been deleted.");
 
   await expect
     .poll(() => bodies(target).some((body) => body.data.subscriber?.id === wiped.id), WAIT)

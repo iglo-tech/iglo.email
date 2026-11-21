@@ -75,7 +75,6 @@ export function registerPublicRoutes(
       <PublicShell
         title={title}
         assetVersion={assetVersion}
-        poweredBy={t.T("public.poweredBy")}
         archiveTitle={t.T("public.archiveTitle")}
         site={settings}
       >
@@ -91,8 +90,7 @@ export function registerPublicRoutes(
   const subscriber = (context: RequestContext, headers: Record<string, string> = {}) => {
     const t = context.app.i18n;
     const uuid = context.params.subUUID ?? "";
-    if (!uuidPattern.test(uuid))
-      return failed(t, 400, t.T("globals.messages.invalidUUID"), headers);
+    if (!uuidPattern.test(uuid)) return failed(t, 400, t.T("public.linkNotValid"), headers);
     return (
       deps.subscribers.byUuid(uuid.toLowerCase()) ??
       message(
@@ -339,7 +337,7 @@ export function registerPublicRoutes(
       }
     }
     if (uuids.some((uuid) => !uuidPattern.test(uuid)))
-      return failed(t, 400, t.T("globals.messages.invalidUUID"), headers);
+      return failed(t, 400, t.T("public.linkNotValid"), headers);
     const wanted = new Set(uuids.map((uuid) => uuid.toLowerCase()));
     const lists = deps.subscribers
       .unconfirmedLists(sub.id)

@@ -1,4 +1,4 @@
-{% comment %}Adapted from listmonk static/email-templates/subscriber-optin.html and base.html at 6fcd95f.{% endcomment %}
+{% comment %}Adapted from listmonk static/email-templates/subscriber-optin.html at 6fcd95f. B126 (D123): branded from the site's settings (logo or name, the site's own link) with no product credit.{% endcomment %}
 
 
 <!doctype html>
@@ -10,40 +10,52 @@
 
         <style>
             body {
-                background-color: #F0F1F3;
-                font-family: 'Helvetica Neue', 'Segoe UI', Helvetica, sans-serif;
+                background-color: #f4f4f5;
+                font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
                 font-size: 15px;
-                line-height: 26px;
+                line-height: 24px;
                 margin: 0;
-                color: #444;
+                color: #333;
             }
 
             .wrap {
                 background-color: #fff;
-                padding: 30px;
-                max-width: 525px;
-                margin: 0 auto;
-                border-radius: 5px;
+                padding: 24px 28px;
+                max-width: 560px;
+                margin: 24px auto;
             }
 
             .header {
-                border-bottom: 1px solid #eee;
-                padding-bottom: 15px;
-                margin-bottom: 15px;
+                border-bottom: 1px solid #e5e5e5;
+                padding-bottom: 12px;
+                margin-bottom: 16px;
+            }
+
+            .header img {
+                max-height: 48px;
+                max-width: 100%;
+            }
+
+            .site-name {
+                font-size: 18px;
+                font-weight: 600;
+                color: #111;
+                margin: 0;
             }
 
             .footer {
-                text-align: center;
+                max-width: 560px;
+                margin: 0 auto 24px;
+                padding: 0 28px;
                 font-size: 12px;
-                color: #888;
+                color: #777;
             }
-                .footer a {
-                    color: #888;
-                }
 
-            .gutter {
-                padding: 30px;
+            .footer a,
+            a {
+                color: #0055d4;
             }
+
             .button {
                 background: #0055d4;
                 color: #fff !important;
@@ -54,36 +66,26 @@
                 text-decoration: none;
                 font-weight: bold;
             }
-            .button:hover {
-                background: #222;
-                color: #fff;
-            }
-            img {
-                max-width: 100%;
-            }
 
-            a {
-                color: #0055d4;
-            }
-                a:hover {
-                    color: #111;
-                }
             @media screen and (max-width: 600px) {
                 .wrap {
-                    max-width: auto;
+                    margin: 0;
+                    padding: 16px;
                 }
-                .gutter {
-                    padding: 10px;
+
+                .footer {
+                    padding: 0 16px;
                 }
             }
         </style>
     </head>
-<body style="background-color: #F0F1F3;">
-    <div class="gutter">&nbsp;</div>
+<body style="background-color: #f4f4f5;">
     <div class="wrap">
         <div class="header">
             {% if logo_url != "" %}
-                <img src="{{ logo_url }}" alt="listmonk" />
+                <img src="{{ logo_url }}" alt="{{ site_name }}" />
+            {% else %}
+                <p class="site-name">{{ site_name }}</p>
             {% endif %}
         </div>
 
@@ -105,12 +107,10 @@
 </p>
 <a href="{{ manage_url }}">{{ "globals.buttons.unsubscribe" | t }}</a>
 
-
     </div>
 
     <div class="footer">
-        <p>{{ "public.poweredBy" | t }} <a href="https://listmonk.app" target="_blank" rel="noreferrer">listmonk</a></p>
+        <p>{{ site_name }}{% if site_url != "" %} - <a href="{{ site_url }}">{{ site_url }}</a>{% endif %}</p>
     </div>
-    <div class="gutter">&nbsp;</div>
 </body>
 </html>

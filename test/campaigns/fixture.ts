@@ -209,6 +209,7 @@ export async function campaignsFixture(
       faviconUrl: "",
       subscriptionPage: false,
       archive: false,
+      siteUrl: "",
       allowBlocklist: settings.allowBlocklist,
       allowPreferences: false,
       allowExport: false,

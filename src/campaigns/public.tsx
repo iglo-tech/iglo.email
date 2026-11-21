@@ -95,7 +95,7 @@ export function registerCampaignPublicRoutes(
           context.app.i18n,
           400,
           context.app.i18n.T("globals.terms.error"),
-          context.app.i18n.T("globals.messages.invalidUUID"),
+          context.app.i18n.T("public.linkNotValid"),
           noIndex,
         )
       : null;

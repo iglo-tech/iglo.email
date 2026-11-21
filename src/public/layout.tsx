@@ -1,4 +1,5 @@
-// Adapted from listmonk static/public/templates/index.html at 6fcd95f.
+// Adapted from listmonk static/public/templates/index.html at 6fcd95f. B126 (D123): the shell
+// carries no product credit, and its logo links to the operator's own site when one is set.
 import type { Child } from "@/jsx/render";
 
 /** The site settings the shell links to. */
@@ -8,6 +9,8 @@ export interface ShellSite {
   readonly faviconUrl: string;
   readonly subscriptionPage: boolean;
   readonly archive: boolean;
+  /** The operator's own site (`app.site_url`, B126), or empty. */
+  readonly siteUrl: string;
 }
 /**
  * What every page shows of the site: its name and the shell settings above. Public, sign-in and
@@ -19,21 +22,41 @@ export interface PublicShellProps {
   readonly description?: string;
   readonly site: PageSite;
   readonly assetVersion: string;
-  readonly poweredBy: string;
   readonly archiveTitle?: string;
   readonly children?: Child;
 }
+
+/**
+ * A line of copy with the site's name in place of `{site}` (B126). The copy is trusted text, and the
+ * name is not resolved as a translation key, so a name cannot pull in other copy.
+ */
+export function siteText(text: string, siteName: string): string {
+  return text.replaceAll("{site}", siteName);
+}
+
+/**
+ * Where the header logo links: the operator's site when one is set, else the subscription page when
+ * it is on, else nowhere. An empty href is never written (B126).
+ */
+export function logoHref(site: ShellSite): string {
+  if (site.siteUrl) return site.siteUrl;
+  return site.subscriptionPage ? `${site.rootUrl}/subscription/form` : "";
+}
+
 export function PublicShell({
   title,
   description = "",
   site,
   assetVersion,
-  poweredBy,
   archiveTitle,
   children,
 }: PublicShellProps) {
   if (!/^[a-f0-9]{10}$/.test(assetVersion)) throw new TypeError("Invalid asset version");
   const siteName = site.siteName;
+  const logo = (
+    <img src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />
+  );
+  const href = logoHref(site);
   return (
     <html>
       <head>
@@ -67,28 +90,10 @@ export function PublicShell({
       <body>
         <div class="container wrap">
           <header class="header">
-            <div class="logo">
-              <a href={site.subscriptionPage ? `${site.rootUrl}/subscription/form` : ""}>
-                <img
-                  src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`}
-                  alt={siteName}
-                />
-              </a>
-            </div>
+            <div class="logo">{href ? <a href={href}>{logo}</a> : logo}</div>
           </header>
           {children}
         </div>
-        <footer class="container">
-          {poweredBy}{" "}
-          <a target="_blank" rel="noreferrer" href="https://iglo.email">
-            iglo.email
-          </a>
-          . Based on{" "}
-          <a target="_blank" rel="noreferrer" href="https://listmonk.app">
-            listmonk
-          </a>
-          .
-        </footer>
       </body>
     </html>
   );

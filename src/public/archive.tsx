@@ -138,13 +138,7 @@ export function registerArchiveRoutes(
         noIndex,
       );
     if (!uuidPattern.test(campUUID) || !uuidPattern.test(subUUID))
-      return message(
-        t,
-        400,
-        t.T("globals.terms.error"),
-        t.T("globals.messages.invalidUUID"),
-        noIndex,
-      );
+      return message(t, 400, t.T("globals.terms.error"), t.T("public.linkNotValid"), noIndex);
     const found = deps.store.byUuid(campUUID.toLowerCase());
     const row = found && deps.store.get(found.id);
     const sub = row && deps.subscribers.byUuid(subUUID.toLowerCase());
@@ -251,7 +245,6 @@ ${items}  </channel>
         title={title}
         description={title}
         assetVersion={assetVersion}
-        poweredBy={t.T("public.poweredBy")}
         archiveTitle={title}
         site={settings}
       >

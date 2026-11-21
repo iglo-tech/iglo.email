@@ -63,6 +63,7 @@ export function wireNotices(
       faviconUrl: "",
       subscriptionPage: false,
       archive: false,
+      siteUrl: "",
     }),
     limit: (_context, next) => next(),
     sns: createSnsClient({ clock, fetch: deps.snsFetch }),

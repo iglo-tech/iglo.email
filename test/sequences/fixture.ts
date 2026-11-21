@@ -215,6 +215,7 @@ export async function sequencesFixture(
       faviconUrl: "",
       subscriptionPage: false,
       archive: false,
+      siteUrl: "",
       allowBlocklist: marketing.allowBlocklist,
       allowPreferences: false,
       allowExport: false,

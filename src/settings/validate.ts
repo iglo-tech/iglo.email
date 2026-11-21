@@ -1,3 +1,4 @@
+import { validateAbsoluteUrl } from "@/config/bootstrap";
 import { validateDKIM } from "@/settings/dkim";
 import { validTrustedURL } from "@/settings/url";
 // Settings model and transformations adapted from listmonk models/settings.go and cmd/settings.go at 6fcd95f.
@@ -281,6 +282,15 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   }
   if (!addresses.length) return fail("at least one `from` address is required");
   next["app.from_email"] = addresses;
+  // B126 (D123): the operator's own site, an absolute http(s) URL under the root URL rules (D107).
+  next["app.site_url"] = trimSpace(next["app.site_url"] ?? "");
+  if (next["app.site_url"]) {
+    try {
+      validateAbsoluteUrl(next["app.site_url"], "site-url");
+    } catch (error) {
+      return fail(`Invalid data: ${(error as Error).message}`);
+    }
+  }
   const names = new Set(["email"]);
   let hasDefault = false;
   for (const server of next.smtp) {

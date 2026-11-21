@@ -23,8 +23,11 @@ export type ExpectedBody =
   | {
       readonly kind: "public-404";
       readonly siteName: string;
+      /** The 404's heading, which is also the first part of its title (B126: "Page not found"). */
+      readonly heading: string;
       /** The logo's alt text: upstream's 404 uses its title; the production shell uses the site name. */
       readonly logoAlt: string;
+      /** Empty when the page has no footer (B126: production's shell has none). */
       readonly footerText: string;
       readonly footerLinks: readonly { readonly text: string; readonly href: string }[];
       readonly customScript: boolean;

@@ -106,7 +106,7 @@ export function registerUnsubscribeRoutes(
           context.app.i18n,
           400,
           context.app.i18n.T("globals.terms.error"),
-          context.app.i18n.T("globals.messages.invalidUUID"),
+          context.app.i18n.T("public.linkNotValid"),
         )
       : null;
   /**
@@ -151,11 +151,13 @@ export function registerUnsubscribeRoutes(
     // B123 (D126): the page's forms post to this send's paired routes. A transactional send's page
     // manages confirmed lists and the name only: no blocklist and no privacy form (r1).
     const base = `/m/${context.params.sendUUID!.toLowerCase()}`;
+    // B126 (D123): a marketing link covers its send's list; a transactional link covers none.
     const mode: PageMode = {
       kind: "paired",
       base,
       blocklist: found.marketing,
       privacy: found.marketing,
+      ...(found.marketing ? { lists: [found.list] } : {}),
     };
     return subscriptionPage(
       t,
@@ -227,7 +229,13 @@ export function registerUnsubscribeRoutes(
         return true;
       });
       if (!done) return notFound(t);
-      return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
+      return publicMessage(t, {
+        status: 200,
+        title: t.T("globals.terms.unsubscribed"),
+        message: t.T("public.unsubbedInfo"),
+        site: options(),
+        back: true,
+      });
     },
     ...limit,
   );

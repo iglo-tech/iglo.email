@@ -6,7 +6,7 @@ import type { Database } from "bun:sqlite";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { publicMessage } from "@/public/message";
-import type { PageOptions } from "@/public/preferences";
+import { wipeConfirmation, type PageOptions } from "@/public/preferences";
 import type { SubscriberMail } from "@/public/mail";
 import type { RequestContext } from "@/server/context";
 import { sendingHeld } from "@/settings/hold";
@@ -28,8 +28,8 @@ export function createPrivacy(deps: {
   /** The site's branding and the privacy options, read for each answer. */
   page: () => PageOptions;
 }): Privacy {
-  const message = (t: Translation, status: number, title: string, text: string) =>
-    publicMessage(t, { status, title, message: text, site: deps.page() });
+  const message = (t: Translation, status: number, title: string, text: string, back = false) =>
+    publicMessage(t, { status, title, message: text, site: deps.page(), back });
   const failed = (t: Translation, status: number, text: string) =>
     message(t, status, t.T("globals.terms.error"), text);
   return {
@@ -51,6 +51,9 @@ export function createPrivacy(deps: {
       const t = context.app.i18n;
       if (!current()) return null;
       if (!deps.page().allowWipe) return failed(t, 400, t.T("public.invalidFeature"));
+      // B126 (D123): the first POST asks on its own page. Only the confirmed POST deletes anything.
+      if (context.url.searchParams.get("confirm") !== "true")
+        return wipeConfirmation(t, context.url.pathname, deps.page());
       // The pairing is read again inside the write, so a change since the check writes nothing.
       const removed = writeTransaction(deps.db, () => {
         const sub = current();
@@ -59,7 +62,7 @@ export function createPrivacy(deps: {
         return true;
       });
       if (!removed) return null;
-      return message(t, 200, t.T("public.dataRemovedTitle"), t.T("public.dataRemoved"));
+      return message(t, 200, t.T("public.dataRemovedTitle"), t.T("public.dataRemoved"), true);
     },
   };
 }

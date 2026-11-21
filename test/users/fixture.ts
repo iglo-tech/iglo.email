@@ -143,6 +143,7 @@ export async function startUserFixture(
         faviconUrl: "",
         subscriptionPage: false,
         archive: false,
+        siteUrl: "",
       }),
     });
     router.route("GET", "/fixture/mail", () =>

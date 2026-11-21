@@ -104,7 +104,7 @@ export function parseBootstrap(args: string[], env: Environment): BootstrapResul
 
   const urlHost = isIP(host) === 6 ? `[${host}]` : host;
   const rootUrl = options["--root-url"] ?? env.IGLO_EMAIL_ROOT_URL ?? `http://${urlHost}:${port}`;
-  validateRootUrl(rootUrl);
+  validateAbsoluteUrl(rootUrl, "root-url");
 
   return {
     help: false,
@@ -172,7 +172,7 @@ function portInRange(digits: string): boolean {
  * `https://<value>` for a bare host, when the value matches the host allow-list and the URL built
  * from it has the same host and port and passes the validator. Otherwise nothing.
  */
-function suggestionFor(value: string): string | undefined {
+function suggestionFor(value: string, label: string): string | undefined {
   const match = bareRootUrl.exec(value);
   if (!match) return undefined;
   const host = match[1] ?? "";
@@ -190,7 +190,7 @@ function suggestionFor(value: string): string | undefined {
   const expectedPort = port === undefined || port === "443" ? "" : port;
   if (url.hostname !== host.toLowerCase() || url.port !== expectedPort) return undefined;
   try {
-    validateRootUrl(candidate);
+    validateAbsoluteUrl(candidate, label);
   } catch {
     return undefined;
   }
@@ -206,19 +206,23 @@ function missingSchemeReason(value: string): string {
   return `${expectedUrl} with a host name; the scheme is not guessed`;
 }
 
-function validateRootUrl(value: string): void {
+/**
+ * The D107 rules for an absolute http(s) URL: the root URL, and the operator's site (`app.site_url`,
+ * B126). `label` names the value in the message.
+ */
+export function validateAbsoluteUrl(value: string, label: string): void {
   // A value with credentials, a query or a fragment may hold a secret, so the message leaves it out.
   const withheld = /[@?#]/.test(value);
   const shown = withheld ? "(value not shown)" : JSON.stringify(value);
   const fail = (reason: string): never => {
-    throw new Error(`Invalid root-url ${shown}: ${reason}`);
+    throw new Error(`Invalid ${label} ${shown}: ${reason}`);
   };
 
   if (/\s|\\/.test(value)) fail("the value contains whitespace or a backslash; remove it");
   // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,
   // because `https://` in front of it would be wrong too (`https://https://host` is host `https`).
   if (!hasScheme(value)) {
-    const suggestion = suggestionFor(value);
+    const suggestion = suggestionFor(value, label);
     if (suggestion) fail(`${expectedUrl}, such as ${suggestion}`);
     fail(missingSchemeReason(value));
   }

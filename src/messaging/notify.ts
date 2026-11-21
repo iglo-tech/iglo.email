@@ -20,6 +20,8 @@ export interface AdminNotifierSettings {
   fromEmail: string;
   rootUrl: string;
   logoUrl?: string;
+  /** The site name the notification's logo and footer show (B126, D123). */
+  siteName: string;
 }
 
 export interface CampaignNotificationData {
@@ -140,6 +142,7 @@ export function createAdminNotifier(deps: {
         const subject = `${capitalize(campaign.status)}: ${campaign.name}`;
         const data = {
           logo_url: safeLogo(current.logoUrl ?? ""),
+          site_name: current.siteName,
           root_url: current.rootUrl.replace(/\/+$/, ""),
           id: String(campaign.id),
           name: campaign.name,
@@ -175,6 +178,7 @@ export function createAdminNotifier(deps: {
         const subject = `${capitalize(importData.status)}: ${importData.name} import`;
         const data = {
           logo_url: safeLogo(current.logoUrl ?? ""),
+          site_name: current.siteName,
           root_url: current.rootUrl.replace(/\/+$/, ""),
           name: importData.name,
           status: importData.status,
