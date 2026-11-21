@@ -64,6 +64,7 @@ export default defineConfig({
         "typescript/require-array-sort-compare": "off",
         "unicorn/prefer-top-level-await": "off",
         "typescript/await-thenable": "off",
+        "typescript/no-misused-promises": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -106,7 +107,6 @@ export default defineConfig({
     "preserve-caught-error": "off", // B134b
     "typescript/no-explicit-any": "off", // B134b
     "typescript/no-floating-promises": "off", // B134b
-    "typescript/no-misused-promises": "off", // B134b
     "typescript/no-misused-spread": "off", // B134b
     "typescript/no-non-null-assertion": "off", // B134b
     "typescript/no-unnecessary-type-assertion": "off", // B134b

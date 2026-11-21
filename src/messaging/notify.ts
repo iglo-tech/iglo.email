@@ -136,79 +136,87 @@ export function createAdminNotifier(deps: {
     });
   };
 
+  // Each notification is fire and forget: the public methods start it and never reject.
+  const sendCampaignStatus = async (campaign: CampaignNotificationData, reason: string) => {
+    try {
+      const current = deps.settings();
+      const emails = current.notifyEmails || [];
+      if (!emails.length) {
+        return;
+      }
+
+      const subject = `${capitalize(campaign.status)}: ${campaign.name}`;
+      const data = {
+        logo_url: safeLogo(current.logoUrl ?? ""),
+        site_name: current.siteName,
+        root_url: current.rootUrl.replace(/\/+$/, ""),
+        id: String(campaign.id),
+        name: campaign.name,
+        status: campaign.status,
+        sent: campaign.sent,
+        to_send: campaign.to_send,
+        reason,
+      };
+
+      // One budget for the render and the generated text part (D118).
+      const budget = createMessageBudget();
+      const html = deps.renderer.renderSync(
+        {
+          body: systemTemplates.campaignStatus,
+          mode: "html",
+          data: JSON.stringify(data),
+        },
+        budget,
+      ).body;
+
+      await enqueue(subject, html, budget);
+    } catch (error) {
+      logError(error);
+    }
+  };
+
+  const sendImportStatus = async (importData: ImportNotificationData) => {
+    try {
+      const current = deps.settings();
+      const emails = current.notifyEmails || [];
+      if (!emails.length) {
+        return;
+      }
+
+      const subject = `${capitalize(importData.status)}: ${importData.name} import`;
+      const data = {
+        logo_url: safeLogo(current.logoUrl ?? ""),
+        site_name: current.siteName,
+        root_url: current.rootUrl.replace(/\/+$/, ""),
+        name: importData.name,
+        status: importData.status,
+        imported: importData.imported,
+        total: importData.total,
+      };
+
+      // One budget for the render and the generated text part (D118).
+      const budget = createMessageBudget();
+      const html = deps.renderer.renderSync(
+        {
+          body: systemTemplates.importStatus,
+          mode: "html",
+          data: JSON.stringify(data),
+        },
+        budget,
+      ).body;
+
+      await enqueue(subject, html, budget);
+    } catch (error) {
+      logError(error);
+    }
+  };
+
   return {
-    async campaignStatus(campaign, reason = "") {
-      try {
-        const current = deps.settings();
-        const emails = current.notifyEmails || [];
-        if (!emails.length) {
-          return;
-        }
-
-        const subject = `${capitalize(campaign.status)}: ${campaign.name}`;
-        const data = {
-          logo_url: safeLogo(current.logoUrl ?? ""),
-          site_name: current.siteName,
-          root_url: current.rootUrl.replace(/\/+$/, ""),
-          id: String(campaign.id),
-          name: campaign.name,
-          status: campaign.status,
-          sent: campaign.sent,
-          to_send: campaign.to_send,
-          reason,
-        };
-
-        // One budget for the render and the generated text part (D118).
-        const budget = createMessageBudget();
-        const html = deps.renderer.renderSync(
-          {
-            body: systemTemplates.campaignStatus,
-            mode: "html",
-            data: JSON.stringify(data),
-          },
-          budget,
-        ).body;
-
-        await enqueue(subject, html, budget);
-      } catch (error) {
-        logError(error);
-      }
+    campaignStatus(campaign, reason = "") {
+      void sendCampaignStatus(campaign, reason);
     },
-
-    async importStatus(importData) {
-      try {
-        const current = deps.settings();
-        const emails = current.notifyEmails || [];
-        if (!emails.length) {
-          return;
-        }
-
-        const subject = `${capitalize(importData.status)}: ${importData.name} import`;
-        const data = {
-          logo_url: safeLogo(current.logoUrl ?? ""),
-          site_name: current.siteName,
-          root_url: current.rootUrl.replace(/\/+$/, ""),
-          name: importData.name,
-          status: importData.status,
-          imported: importData.imported,
-          total: importData.total,
-        };
-
-        // One budget for the render and the generated text part (D118).
-        const budget = createMessageBudget();
-        const html = deps.renderer.renderSync(
-          {
-            body: systemTemplates.importStatus,
-            mode: "html",
-            data: JSON.stringify(data),
-          },
-          budget,
-        ).body;
-
-        await enqueue(subject, html, budget);
-      } catch (error) {
-        logError(error);
-      }
+    importStatus(importData) {
+      void sendImportStatus(importData);
     },
   };
 }
