@@ -1248,3 +1248,66 @@ test("non-public addresses are classified as blocked", () => {
   ])
     expect([address, blockedAddress(address)]).toEqual([address, false]);
 });
+
+test("every start names each enabled webhook the block refuses, one line each, and a lookup gets the delivery deadline (B125 r2, D122)", async () => {
+  const resolved: Record<string, string[]> = {
+    "private.test": ["10.0.0.5"],
+    "public.test": ["93.184.216.34"],
+  };
+  const f = await open({
+    webhooks: {
+      // The hanging name never answers, so only the injected clock can end its check.
+      lookup: (host: string) =>
+        host === "hang.test"
+          ? new Promise<string[]>(() => {})
+          : Promise.resolve(resolved[host] ?? []),
+    },
+  });
+  const created = async (url: string) =>
+    (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
+      .id as number;
+  const privateHook = await created("http://private.test/hook");
+  const hanging = await created("http://hang.test/hook");
+  await created("http://public.test/hook");
+  const notices = () =>
+    f.errors.map((error) => (error as Error).message).filter((line) => line.startsWith("Webhook "));
+  const line = (id: number, host: string) =>
+    `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`;
+  // The check's promise is returned inside an object: an async function would adopt it, and wait.
+  const restart = async () => {
+    await f.crashWebhooks();
+    return { checked: f.startWebhooks() };
+  };
+
+  f.blockPrivate.value = true;
+  // The first start: the refused target is named while the hanging lookup is still pending.
+  let { checked } = await restart();
+  await until(() => notices().length === 1);
+  expect(notices()).toEqual([line(privateHook, "private.test")]);
+  let finished = false;
+  void checked!.then(() => (finished = true));
+  await Bun.sleep(20);
+  expect(finished).toBe(false);
+  f.advanceWebhooks(10_000);
+  await checked;
+  expect(notices()).toHaveLength(1);
+  await f.json(`/api/webhooks/${hanging}`, "DELETE");
+
+  // Every start, while the block is on: a second restart names it again.
+  checked = (await restart()).checked;
+  await checked;
+  expect(notices()).toEqual([line(privateHook, "private.test"), line(privateHook, "private.test")]);
+
+  // Fixing the target stops it.
+  await f.json(`/api/webhooks/${privateHook}`, "PUT", { url: "http://public.test/hook" });
+  checked = (await restart()).checked;
+  await checked;
+  expect(notices()).toHaveLength(2);
+
+  // Setting the block off stops it, for a target that is refused while it is on.
+  await f.json(`/api/webhooks/${privateHook}`, "PUT", { url: "http://private.test/hook" });
+  f.blockPrivate.value = false;
+  checked = (await restart()).checked;
+  await checked;
+  expect(notices()).toHaveLength(2);
+});

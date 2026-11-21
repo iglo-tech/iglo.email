@@ -1,5 +1,7 @@
 // B125 (D122, lead decisions): the upgrade turns a stored false on, once. Through the migrations and
-// the settings store on a real SQLite file, reopened as a restart does, on the injected clock.
+// the settings store on a real SQLite file, reopened as a restart does, on the injected clock. The
+// notice at each start is tested in test/bootstrap/private-target-upgrade.test.ts and
+// test/webhooks/webhooks.test.ts.
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +11,6 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { createSettings } from "@/settings/store";
-import { migrationTurnsOn } from "@/webhooks/upgrade";
 import { TestClock } from "@/test/server/fixture";
 
 const key = "webhooks.block_private_addresses";
@@ -44,10 +45,12 @@ function earlierRelease() {
 
 test("an upgrade from an earlier release turns a stored false on, once", () => {
   const { path, clock, connect, db } = earlierRelease();
-  expect(migrationTurnsOn(db)).toBe(true);
   runMigrations(db, path, clock, productionMigrations);
-  expect(migrationTurnsOn(db)).toBe(false);
+  db.close();
   const again = connect();
+  expect(again.reopen().read()[key]).toBe(true);
+  // A later start runs the migrations again, and changes nothing.
+  runMigrations(again.db, path, clock, productionMigrations);
   expect(again.reopen().read()[key]).toBe(true);
 });
 
@@ -64,18 +67,16 @@ test("a later operator's false survives a restart, and the migration does not ru
   expect(restarted.reopen().read()[key]).toBe(false);
 });
 
-test("an earlier release's stored true is not an upgrade change", () => {
+test("an earlier release's stored true is not changed by the upgrade", () => {
   const { path, clock, connect, db } = earlierRelease();
   db.run("UPDATE settings SET value = 'true' WHERE key = ?", [key]);
-  expect(migrationTurnsOn(db)).toBe(false);
   runMigrations(db, path, clock, productionMigrations);
   expect(connect().reopen().read()[key]).toBe(true);
 });
 
-test("a fresh install has no upgrade to notice and stores true", () => {
+test("a fresh install stores true", () => {
   const { path, clock, connect } = directory();
   const first = connect();
-  expect(migrationTurnsOn(first.db)).toBe(false);
   runMigrations(first.db, path, clock, productionMigrations);
   expect(first.reopen().read()[key]).toBe(true);
 });

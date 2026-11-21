@@ -876,8 +876,8 @@ upgrade turns it on once, when it stored `false`: an earlier release stored `fal
 so the upgrade cannot tell a value nobody chose from one somebody did. An operator who chose `false`
 for a receiver on a private network sets it back to `false` after the upgrade, under Settings →
 Security, or with `PUT /api/settings/webhooks.block_private_addresses` and the body `false`. A later
-`false` is kept, and the upgrade does not run again. On the first start after the upgrade, the log
-and stderr name each enabled webhook whose target the block now refuses, as
+`false` is kept, and the upgrade does not run again. At every start while the block is on, the log
+and stderr name each enabled webhook whose target the block refuses, as
 `Webhook <id> target <host> is refused by webhooks.block_private_addresses`: the ID and the host
 only, never the path, the query or the secret. A refused webhook gets no request until you turn the
 block off or point the webhook at a public address. The personal pages (the `/subscription/`, `/m/`

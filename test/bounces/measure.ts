@@ -62,6 +62,8 @@ try {
       });
       await api("/api/settings/bounce.webhooks_enabled", "PUT", true);
       await api("/api/settings/bounce.enabled", "PUT", true);
+      // The receiver is on loopback, which the default refuses (D122).
+      await api("/api/settings/webhooks.block_private_addresses", "PUT", false);
       for (let i = 0; i < hooks; i++)
         await api("/api/webhooks", "POST", {
           url: `http://127.0.0.1:${receiver.port}/h/${i}`,

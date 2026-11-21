@@ -245,6 +245,12 @@ try {
       hostname: "127.0.0.1",
       fetch: () => new Response("ok"),
     });
+    // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
+    await fetch(`${origin}/api/settings/webhooks.block_private_addresses`, {
+      method: "PUT",
+      headers: { authorization, "content-type": "application/json" },
+      body: "false",
+    });
     const hook = await fetch(`${origin}/api/webhooks`, {
       method: "POST",
       headers: { authorization, "content-type": "application/json" },

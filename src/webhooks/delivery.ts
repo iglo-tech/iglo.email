@@ -26,6 +26,16 @@ const FAILURE_LOG_MS = 3_600_000;
 const FAILURE_LOG_ATTEMPTS = 5;
 /** Nothing was sent and the row is not this attempt's to settle. */
 const CLAIM_GONE = "claim_gone";
+/** The log buffer's fixed text for a refused target; each stderr line names the webhook (B125, D122). */
+export const REFUSED_NOTICE = "A webhook target is refused by the private-address block";
+
+function hostOf(url: string): string | undefined {
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface WebhookTransport {
   /** Addresses of a hostname. */
@@ -200,6 +210,43 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
     );
   }
 
+  /** The start's check, in the background (B125 r2): see `refusedTargets`. */
+  let targetCheck: Promise<void> = Promise.resolve();
+  /**
+   * A lookup gets the delivery's deadline. Past it the check gives no answer, so no line; the
+   * delivery itself would report a timeout.
+   */
+  const withinDeadline = async (work: Promise<boolean>): Promise<boolean | undefined> => {
+    const controller = new AbortController();
+    const expired = clock.sleep(REQUEST_TIMEOUT_MS, controller.signal).then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      return await Promise.race([work, expired]);
+    } finally {
+      controller.abort();
+    }
+  };
+  /**
+   * Each enabled target the block refuses, named once per start, while the block is on (B125 r2,
+   * D122). The same check as a delivery's; the lookups run together, each within the deadline.
+   */
+  async function refusedTargets(): Promise<void> {
+    if (!options.blockPrivate()) return;
+    await Promise.all(
+      webhooks.enabledTargets().map(async ({ id, url }) => {
+        const host = hostOf(url);
+        if (host === undefined) return;
+        if ((await withinDeadline(refusesTarget(url, transport))) !== true) return;
+        options.logger.attention(
+          `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`,
+          REFUSED_NOTICE,
+        );
+      }),
+    );
+  }
+
   const loop = createLoop<ClaimedDelivery>({
     db: options.db,
     clock,
@@ -240,6 +287,12 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
       writeTransaction(options.db, () => webhooks.recover());
       webhooks.onWake(() => loop.wake());
       loop.start();
+      // Every start names the targets the block refuses now (B125 r2). The start does not wait for it.
+      targetCheck = refusedTargets().catch((error) => options.logger.error(error));
+    },
+    /** Resolves when this start's check of refused targets has ended (B125 r2). */
+    get checked() {
+      return targetCheck;
     },
     /** Stop claiming and abandon attempts in flight, whose rows keep only their lease. */
     async halt() {

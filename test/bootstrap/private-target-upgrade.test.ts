@@ -1,8 +1,8 @@
 // B125 (D122, lead decisions): an upgrade from an earlier release turns a stored
-// `webhooks.block_private_addresses = false` on, once, and names each enabled webhook whose target
-// is now refused, by ID and host, on stderr and in the log buffer. Through the compiled executable,
-// with the data directory seeded as an earlier release left it. No receiver and no DNS: the
-// targets are IP literals, and the notice only checks them.
+// `webhooks.block_private_addresses = false` on, once. Then, at every start while the block is on,
+// each enabled webhook whose target it refuses is named once on stderr and in the log buffer, by ID
+// and host. Through the compiled executable, with the data directory seeded as an earlier release
+// left it. No receiver and no DNS: the targets are IP literals, and the check only tests them.
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
@@ -14,8 +14,9 @@ import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(60_000);
 const key = "webhooks.block_private_addresses";
-/** The buffer's fixed text for the notice (src/webhooks/upgrade.ts). */
+/** The buffer's fixed text for the notice (src/webhooks/delivery.ts REFUSED_NOTICE). */
 const fixed = "A webhook target is refused by the private-address block";
+const refusedLine = `Webhook 1 target 127.0.0.1:9 is refused by ${key} (D122)`;
 const tokenAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const apiUser = "upgrade-api";
 const token = Array.from(
@@ -91,6 +92,28 @@ async function api(port: number, method: string, path: string, body?: unknown) {
 const logLines = async (port: number, text: string) =>
   ((await api(port, "GET", "/api/logs")).data as string[]).filter((line) => line.includes(text));
 
+/** Waits until this process has named a refused webhook in its log buffer. */
+async function noticed(port: number) {
+  const deadline = Date.now() + 20_000;
+  while (!(await logLines(port, fixed)).length) {
+    expect(Date.now()).toBeLessThan(deadline);
+    await Bun.sleep(50);
+  }
+}
+
+/**
+ * The check has no answer to wait for when nothing is refused, so a start that should name nothing
+ * waits this long for its background check to run (the injected clock is not in this process).
+ */
+const settle = () => Bun.sleep(1000);
+
+/** Stops the process and returns its stderr lines that name a webhook. */
+async function stopped(child: ReturnType<typeof start>) {
+  await stopChild(child);
+  const stderr = await new Response(child.stderr).text();
+  return stderr.split("\n").filter((line) => line.includes("Webhook "));
+}
+
 /** An earlier release's data directory: one first start, then schema 23 with this key false. */
 async function earlierRelease(): Promise<string> {
   const dataDir = join(temporaryDirectory, crypto.randomUUID());
@@ -123,38 +146,47 @@ function userVersion(dataDir: string): number {
   }
 }
 
-test("an upgrade turns a stored false on, names the refused webhook on stderr and in the log, then keeps an operator's false across a restart", async () => {
+test("an upgrade turns the stored false on, and every restart names the refused webhook while it is refused", async () => {
   const dataDir = await earlierRelease();
 
-  // The first start after the upgrade: the migration runs, the notice follows the bind.
   const upgraded = await up(dataDir);
-  const deadline = Date.now() + 20_000;
-  while (!(await logLines(upgraded.port, fixed)).length) {
-    expect(Date.now()).toBeLessThan(deadline);
-    await Bun.sleep(50);
-  }
+  await noticed(upgraded.port);
   expect((await api(upgraded.port, "GET", "/api/settings")).data[key]).toBe(true);
-  expect(await logLines(upgraded.port, fixed)).toHaveLength(1);
-  await stopChild(upgraded.child);
-  const stderr = await new Response(upgraded.child.stderr).text();
-  const named = stderr.split("\n").filter((line) => line.includes("Webhook "));
-  expect(named).toEqual([
-    `Webhook 1 target 127.0.0.1:9 is refused by webhooks.block_private_addresses (D122)`,
-  ]);
-  expect(stderr).not.toContain("/hook");
+  // The public webhook, id 2, is never named.
+  expect(await stopped(upgraded.child)).toEqual([refusedLine]);
   expect(userVersion(dataDir)).toBe(24);
 
-  // An operator turns it off after the upgrade; a restart keeps that, and the notice is not repeated.
-  const operator = await up(dataDir);
-  expect((await api(operator.port, "PUT", `/api/settings/${key}`, false)).status).toBe(200);
-  await stopChild(operator.child);
-
+  // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);
-  expect((await api(restarted.port, "GET", "/api/settings")).data[key]).toBe(false);
-  await Bun.sleep(1000);
-  expect(await logLines(restarted.port, fixed)).toHaveLength(0);
-  await stopChild(restarted.child);
-  const again = await new Response(restarted.child.stderr).text();
-  expect(again).not.toContain("Webhook 1 target");
-  expect(userVersion(dataDir)).toBe(24);
+  await noticed(restarted.port);
+  expect(await stopped(restarted.child)).toEqual([refusedLine]);
+});
+
+test("fixing the refused target stops the line", async () => {
+  const dataDir = await earlierRelease();
+  const first = await up(dataDir);
+  await noticed(first.port);
+  expect(
+    (await api(first.port, "PUT", "/api/webhooks/1", { url: "http://93.184.216.34/hook" })).status,
+  ).toBe(200);
+  expect(await stopped(first.child)).toEqual([refusedLine]);
+
+  const fixed_ = await up(dataDir);
+  await settle();
+  expect(await logLines(fixed_.port, fixed)).toHaveLength(0);
+  expect(await stopped(fixed_.child)).toEqual([]);
+});
+
+test("setting the block off stops the line, and a later restart keeps it off", async () => {
+  const dataDir = await earlierRelease();
+  const first = await up(dataDir);
+  await noticed(first.port);
+  expect((await api(first.port, "PUT", `/api/settings/${key}`, false)).status).toBe(200);
+  expect(await stopped(first.child)).toEqual([refusedLine]);
+
+  const off = await up(dataDir);
+  await settle();
+  expect((await api(off.port, "GET", "/api/settings")).data[key]).toBe(false);
+  expect(await logLines(off.port, fixed)).toHaveLength(0);
+  expect(await stopped(off.child)).toEqual([]);
 });

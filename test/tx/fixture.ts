@@ -536,8 +536,10 @@ export async function txFixture(
       await delivery?.halt();
     },
     /** A fresh loop over the same rows, as after a process restart. */
+    /** Resolves when this start's check of refused targets has ended (B125 r2). */
     startWebhooks() {
       delivery = startDelivery();
+      return delivery?.checked;
     },
     count: () => Number((db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n),
     settings: settingsStore,

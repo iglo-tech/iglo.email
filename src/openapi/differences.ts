@@ -804,7 +804,7 @@ export const differences: Difference[] = [
   {
     area: "Private webhook targets (D122, B125)",
     summary:
-      "webhooks.block_private_addresses is on by default, refusing private, loopback, link-local and unique-local targets at delivery, with no redirects. An upgrade turns a stored false on once and logs each enabled webhook it now refuses. Outbound webhooks are native.",
+      "webhooks.block_private_addresses is on by default, refusing private, loopback, link-local and unique-local targets at delivery, with no redirects. An upgrade turns a stored false on once, and at every start while the block is on the log names each enabled webhook it refuses. Outbound webhooks are native.",
     applies: [],
   },
   {

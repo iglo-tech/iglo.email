@@ -93,7 +93,6 @@ import { createWebhookDelivery } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
-import { migrationTurnsOn, noticeRefusedTargets } from "@/webhooks/upgrade";
 import {
   analyticsChildArgument,
   createAnalyticsReader,
@@ -183,8 +182,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
   let importer: ReturnType<typeof createImporter> | undefined;
   let notifier: ReturnType<typeof createAdminNotifier> | undefined;
   try {
-    // B125 (D122): read before the migrations, which turn a stored false on once (src/webhooks/upgrade.ts).
-    const privateTargetsTurnOn = migrationTurnsOn(db);
     runMigrations(db, bootstrap.config.dataDir, clock, productionMigrations);
     lists = createListReferences(db);
     roles = createRoles(db, lists);
@@ -881,12 +878,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         scheduler!.start();
         deliveries!.start();
         summaryRefresh!.start();
-        // B125 (D122): the first start after the upgrade names each webhook the block now refuses. The
-        // lookups run in the background, so they never hold the start.
-        if (privateTargetsTurnOn)
-          void noticeRefusedTargets(webhooks!, app.logger).catch((error) =>
-            app.logger.error(error),
-          );
       } catch (error) {
         shutdown(error);
       }
