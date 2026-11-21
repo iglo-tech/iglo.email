@@ -148,7 +148,7 @@ export function intervalStart(input: string, now: Date): Date | null | undefined
   if (!m) {
     return undefined;
   }
-  const [y, mo, w, d, h, mi, s] = m.slice(1).map((v) => Number(v ?? 0)) as Array<number>;
+  const [y, mo, w, d, h, mi, s] = m.slice(1).map((v) => Number(v ?? 0));
   const at = new Date(now.getTime());
   // Calendar months clamp to the target month's last day (31 March - P1M = 28 February).
   const year = at.getUTCFullYear() - y!,

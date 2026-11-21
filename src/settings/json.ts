@@ -30,7 +30,7 @@ export function decodeJsonBytes(bytes: Uint8Array): string {
 }
 const raw = JSON as typeof JSON & {
   rawJSON(value: string): unknown;
-  isRawJSON(value: unknown): boolean;
+  isRawJSON(value: unknown): value is { rawJSON: string };
 };
 export function parseStoredJson(text: string): unknown {
   return JSON.parse(text, (_key: string, value: unknown, context?: { source?: string }) => {
@@ -54,7 +54,7 @@ export function int64(value: unknown): number | object | null {
   if (!raw.isRawJSON(value)) {
     return null;
   }
-  const source = (value as { rawJSON: string }).rawJSON;
+  const source = value.rawJSON;
   if (!/^-?(?:0|[1-9]\d*)$/.test(source)) {
     return null;
   }
@@ -62,7 +62,7 @@ export function int64(value: unknown): number | object | null {
   if (n < -9_223_372_036_854_775_808n || n > 9_223_372_036_854_775_807n) {
     return null;
   }
-  return value as object;
+  return value;
 }
 export function orderedJson(text: string): unknown {
   // Validate the whole document before retaining its ordered members.

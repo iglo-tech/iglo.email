@@ -77,6 +77,7 @@ export default defineConfig({
         "quality/no-chained-type-assertions": "off",
         "quality/no-object-parameters": "off",
         "typescript/no-misused-spread": "off",
+        "typescript/no-unnecessary-type-assertion": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -115,7 +116,6 @@ export default defineConfig({
     // B134b: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed.
     "typescript/no-explicit-any": "off", // B134b
     "typescript/no-non-null-assertion": "off", // B134b
-    "typescript/no-unnecessary-type-assertion": "off", // B134b
     "typescript/no-unsafe-argument": "off", // B134b
     "typescript/no-unsafe-assignment": "off", // B134b
     "typescript/no-unsafe-call": "off", // B134b

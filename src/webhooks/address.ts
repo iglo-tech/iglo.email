@@ -1,7 +1,7 @@
 // Native: which resolved addresses `webhooks.block_private_addresses` refuses.
 import { isIPv4, isIPv6 } from "node:net";
 
-const octets = (address: string) => address.split(".").map(Number) as Array<number>;
+const octets = (address: string) => address.split(".").map(Number);
 const inRange = (bytes: Array<number>, prefix: Array<number>, bits: number) =>
   prefix.every((value, index) => {
     const mask = Math.max(0, Math.min(8, bits - index * 8));

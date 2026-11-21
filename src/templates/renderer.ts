@@ -439,7 +439,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       if (
         "children" in tpl &&
         tpl.children &&
-        hasContent(toValueSync(tpl.children(false, true)) as Array<Template>)
+        hasContent(toValueSync<Array<Template>>(tpl.children(false, true)))
       ) {
         return true;
       }

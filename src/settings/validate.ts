@@ -446,9 +446,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
   // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
   const storedRules = (current["bounce.actions"] ?? {}) as Settings;
-  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as Array<
-    [string, Settings]
-  >) {
+  for (const [name, rule] of Object.entries<Settings>(next["bounce.actions"] ?? {})) {
     if (
       Object.hasOwn(storedRules, name) &&
       JSON.stringify(storedRules[name]) === JSON.stringify(rule)
