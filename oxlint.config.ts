@@ -127,7 +127,6 @@ export default defineConfig({
     "quality/no-unknown-returns": "off", // B134b
     "quality/no-unsafe-dictionary-type": "off", // B134b
     "unicorn/consistent-function-scoping": "off", // B134b
-    "unicorn/prefer-at": "off", // B134b
     "unicorn/prefer-set-has": "off", // B134b
 
     // B134c: findings remain only in test/.

@@ -132,7 +132,7 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
         }
       }
       if (chunk.length) {
-        last = chunk[chunk.length - 1]!;
+        last = chunk.at(-1)!;
       }
     },
     end() {
