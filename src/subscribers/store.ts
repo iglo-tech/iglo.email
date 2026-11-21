@@ -711,9 +711,11 @@ export function createSubscriberStore(
                 ) as { id: bigint }
             ).id;
           const target = existing?.status === "blocklisted" ? "unsubscribed" : options.status;
-          // B124 (D125): a suppressed address takes no list from an import; its row is still imported.
+          // B124 (D125): a suppressed address takes no consent from an import; its row is still imported.
+          // Unsubscribing needs no consent, so an import that unsubscribes applies to it as to anyone.
           const listIds =
             options.listIds.length &&
+            target !== "unsubscribed" &&
             suppressedBy({ email: row.email, external_id: existing?.external_id ?? null })
               ? []
               : options.listIds;
