@@ -1320,7 +1320,8 @@ describe("B37: send rate cap", () => {
         .get(campId)!.count;
       expect(Number(failedDeliveries)).toBe(0);
 
-      // Restart
+      // Restart. The receipts before it are counted first, for the rolling check after the wait.
+      const sentBeforeRestart = h.sink.messages.length;
       h.restart();
       h.runner.wake();
 
@@ -1342,11 +1343,16 @@ describe("B37: send rate cap", () => {
         return h.sink.messages.length === 3 && Number(sent) === 2 && tx?.status === "sent";
       };
       await h.drive(finished, 10);
-      // This test does not assert the rolling cap at the sink. The cap is enforced at each grant and
-      // hand-off, which are exactly one interval apart in every trace. Sink receipts also carry each
-      // send's own latency, and a fresh pool connection after the restart has a different one, so two
-      // receipts one interval apart can fall in one second (in one trace, 50 ms and 1030 ms, at a cap
-      // of one per second). Test 1 asserts the sink-side rolling cap with a warm pool.
+      // The rolling cap is asserted at the sink only for the receipts before the restart. After it the
+      // limiter starts a fresh schedule, so a send can follow the last one from before at once, and
+      // sink receipts also carry each send's own latency: in one trace the two receipts were 50 ms
+      // and 1030 ms apart at a cap of one per second, straddling the restart's injected time. That
+      // boundary belongs to the restart, which is queued in B118. Before the restart only one receipt
+      // exists in this scenario (the cap holds the rest), so this check is brief here; test 1 asserts
+      // the rolling cap across a full run with a warm pool.
+      const beforeRestart = h.sink.messages.slice(0, sentBeforeRestart).map((m) => m.at!);
+      for (const t of beforeRestart)
+        expect(beforeRestart.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(1);
 
       const txRowAfter = h.db
         .query<{ status: string; attempts: number }, any>(
