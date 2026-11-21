@@ -240,3 +240,60 @@ test("a URL's > and whitespace are percent-encoded in the text part", async () =
     "Click <https://evil.x/a%3E%20see%20%3Chttps://bank.x>",
   );
 });
+
+// r3 B1: implied end tags leave the rewriter's end-tag handlers pending, so the cost grows with the
+// number of implied ends, not with the stack. Each shape repeats a unit with an omitted end tag. The
+// conversion gives up once it holds more handlers than its cap (D118), so the bound is on time, and
+// past the cap the message has no text part.
+const implied: Record<string, { unit: string; bytes: number }> = {
+  "unclosed p": { unit: "<p>x<b>y</b>", bytes: 12 },
+  "unclosed li": { unit: "<li>x<b>y</b>", bytes: 13 },
+  "unclosed td": { unit: "<td>x<b>y</b>", bytes: 13 },
+  "unclosed tr cell": { unit: "<tr><td>x<b>y</b>", bytes: 17 },
+  "unclosed dd": { unit: "<dd>x<b>y</b>", bytes: 13 },
+  "unclosed option": { unit: "<option>x<b>y</b>", bytes: 17 },
+};
+const prefix: Record<string, string> = {
+  "unclosed p": "",
+  "unclosed li": "<ul>",
+  "unclosed td": "<table><tr>",
+  "unclosed tr cell": "<table>",
+  "unclosed dd": "<dl>",
+  "unclosed option": "<select>",
+};
+for (const kind of Object.keys(implied)) {
+  test(`${kind} at 256 KiB and 1 MiB: 4x the input costs at most 5x the time, and 1 MiB is under 1 s`, async () => {
+    const { unit, bytes } = implied[kind]!;
+    const build = (size: number) => prefix[kind]! + unit.repeat(Math.floor(size / bytes));
+    const time = async (size: number) => {
+      const samples: number[] = [];
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        await text(build(size));
+        samples.push(performance.now() - started);
+      }
+      return samples.sort((a, b) => a - b)[1]!;
+    };
+    const small = await time(256 * 1024);
+    const large = await time(MIB);
+    expect(large / Math.max(small, 5)).toBeLessThanOrEqual(5);
+    expect(large).toBeLessThan(1_000);
+  });
+}
+
+test("a message past the implied-end cap gives no text part, and its HTML is still converted by the caller", async () => {
+  expect(await text("<p>x".repeat(4000))).toBe("");
+});
+
+// r3 leftovers: an entity-encoded scheme separator is a scheme separator (the rewriter returns the
+// attribute as written, so the decoder must know the name), and a select keeps its options apart.
+test("an entity-encoded scheme separator is dropped like javascript:", async () => {
+  expect(await text('<a href="javascript&colon;alert(1)">Go</a>')).toBe("Go");
+  expect(await text('<a href="javascript&Tab;:alert(1)">Go</a>')).toBe("Go");
+});
+
+test("an option list stays apart from the text after it: a, b and after are separate words", async () => {
+  const out = await text("<select><option>a<option>b</select>after");
+  expect(out).toMatch(/a\s+b\s+after/);
+  expect(out).not.toContain("abafter");
+});

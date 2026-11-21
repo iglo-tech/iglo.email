@@ -274,6 +274,44 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
   }
 });
 
+// r3 B1: the reviewer's 12 KB template of unclosed <p> elements, which renders to about 1 MB. The
+// conversion gives up at its handler cap, so /health must not wait for it, and the message still
+// sends its HTML with no text part.
+test("a 12 KB template of unclosed <p> elements does not delay /health by more than 200 ms, and sends its HTML", async () => {
+  const s = await stack();
+  try {
+    const body =
+      "{% for i in (1..85) %}" + "<p>x<b>y</b>".repeat(1000) + "{% endfor %}";
+    const template = await s.call("/api/templates", "POST", {
+      name: "unclosed-p",
+      type: "tx",
+      subject: "Unclosed",
+      body,
+    });
+    expect(template.status).toBe(200);
+    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const sending = s.call("/api/tx", "POST", {
+      subscriber_mode: "external",
+      subscriber_emails: ["unclosed@example.test"],
+      template_id: id,
+    });
+    await Bun.sleep(300);
+    const asked = performance.now();
+    const health = await s.call("/health");
+    expect(health.status).toBe(200);
+    expect(performance.now() - asked).toBeLessThan(200);
+    expect((await sending).status).toBe(200);
+    const mail = await waitFor(
+      async () => s.sink.messages.find((m) => m.to.includes("unclosed@example.test")),
+      "the unclosed-p mail",
+    );
+    expect(mail.data).toContain("text/html");
+    expect(mail.data).not.toContain("text/plain");
+  } finally {
+    await s.close();
+  }
+});
+
 test("a fragment with self-closing SVG and MathML sends, with or without a text part", async () => {
   const s = await stack();
   try {
