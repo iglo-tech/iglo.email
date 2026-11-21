@@ -56,9 +56,11 @@ export function SortLink(props: {
 }
 /** PageProps.FormFields. */
 export function HiddenFields(props: { params: URLSearchParams; exclude: Array<string> }) {
-  return [...props.params]
-    .filter(([key, value]) => value !== "" && !props.exclude.includes(key))
-    .map(([name, value]) => <input type="hidden" name={name} value={value} />);
+  return [...props.params].flatMap(([name, value]) =>
+    value !== "" && !props.exclude.includes(name)
+      ? [<input type="hidden" name={name} value={value} />]
+      : [],
+  );
 }
 export function Alert({ name }: { name: string }) {
   return (

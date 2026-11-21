@@ -70,6 +70,7 @@ export default defineConfig({
         "no-empty": "off",
         "preserve-caught-error": "off",
         "no-promise-executor-return": "off",
+        "quality/no-array-filter-map": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -119,7 +120,6 @@ export default defineConfig({
     "typescript/no-unsafe-type-assertion": "off", // B134b
     "typescript/unbound-method": "off", // B134b
     "@nkzw/no-instanceof": "off", // B134b
-    "quality/no-array-filter-map": "off", // B134b
     "quality/no-chained-type-assertions": "off", // B134b
     "quality/no-conditional-empty-object-spread": "off", // B134b
     "quality/no-known-value-widening": "off", // B134b

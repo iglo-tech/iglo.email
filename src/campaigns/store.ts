@@ -98,7 +98,10 @@ const ids = (values: Array<bigint>) => JSON.stringify(values.map(String)).replac
 
 /** listmonk normalizeTags: trim and replace whitespace runs with a dash; drop empties. */
 export function normalizeTags(tags: Array<string>): Array<string> {
-  return tags.map((t) => t.trim().replaceAll(/\s+/g, "-")).filter(Boolean);
+  return tags.flatMap((t) => {
+    const slug = t.trim().replaceAll(/\s+/g, "-");
+    return slug ? [slug] : [];
+  });
 }
 
 /** Owner lookups for the tables a campaign references (templates, lists). */
