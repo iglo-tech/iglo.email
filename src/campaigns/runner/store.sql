@@ -60,9 +60,10 @@ INSERT INTO campaign_deliveries (campaign_id, subscriber_id, status, at)
 VALUES (?1, ?2, 'claimed', ?3) ON CONFLICT DO NOTHING;
 
 -- name: set-delivery
-UPDATE campaign_deliveries SET status = ?3, at = ?4
+-- The reason is set for a skipped delivery only (B116, D131); other outcomes store NULL.
+UPDATE campaign_deliveries SET status = ?3, at = ?4, reason = ?5
 WHERE campaign_id = ?1 AND subscriber_id = ?2 AND status = 'claimed'
-  AND EXISTS (SELECT 1 FROM campaigns WHERE id = ?1 AND runner_lease = ?5);
+  AND EXISTS (SELECT 1 FROM campaigns WHERE id = ?1 AND runner_lease = ?6);
 
 -- name: unclaim-delivery
 DELETE FROM campaign_deliveries

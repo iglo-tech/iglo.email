@@ -37,6 +37,8 @@ function setupAlpine() {
     round: (value) => Math.round(value),
     asParam: (value) => encodeURIComponent(value),
     pretty: (value) => JSON.stringify(value, null, 2),
+    // An event's refused sequence starts, as `sequence: reason` (B116, D131).
+    skippedText: (skipped) => (skipped || []).map((s) => `${s.sequence_id}: ${s.reason}`).join(', '),
 
     theme: localStorage.getItem('theme') || 'auto',
 

@@ -86,8 +86,9 @@ export function createRunnerStore(db: Database) {
       subscriberId: bigint,
       status: DeliveryStatus,
       at: string,
+      reason: string | null = null,
     ): boolean {
-      return q.get("set-delivery").run(id, subscriberId, status, at, token).changes > 0;
+      return q.get("set-delivery").run(id, subscriberId, status, at, reason, token).changes > 0;
     },
     /** Releases a claim whose message was never handed to the emailer. */
     unclaim(id: bigint, token: string, subscriberId: bigint): boolean {

@@ -510,6 +510,7 @@ function Events({ t }: { t: Translation }) {
               <th>{t.T("globals.fields.name")}</th>
               <th>{data}</th>
               <th>{t.T("subscribers.occurredAt")}</th>
+              <th>{t.T("subscribers.notStarted")}</th>
             </tr>
           </thead>
           <tbody>
@@ -523,9 +524,16 @@ function Events({ t }: { t: Translation }) {
                   data-label={t.T("subscribers.occurredAt")}
                   x-text="niceDate(row.occurred_at, true)"
                 ></td>
+                <td data-label={t.T("subscribers.notStarted")}>
+                  <span
+                    class="text-light"
+                    data-testid="event-skipped"
+                    x-text="skippedText(row.skipped)"
+                  ></span>
+                </td>
               </tr>
             </template>
-            <EmptyRow when="!activity.length" colspan={3} t={t} />
+            <EmptyRow when="!activity.length" colspan={4} t={t} />
           </tbody>
         </table>
         <Pages />

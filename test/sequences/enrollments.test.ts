@@ -57,6 +57,7 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
   expect(r.body.data.enrollments).toEqual({
     started: [{ id: enrollment!.id, sequence_id: seq.id }],
     ended: [],
+    skipped: [],
   });
   const now = f.clock.now().toISOString();
   expect(structuredClone(enrollment)).toEqual({
@@ -80,11 +81,11 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
   // Other event names and events older than 7 days start nothing.
   expect(
     (await f.event({ ...paid("bo@example.test"), name: "other" })).body.data.enrollments,
-  ).toEqual({ started: [], ended: [] });
+  ).toEqual({ started: [], ended: [], skipped: [] });
   const old = new Date(f.clock.now().getTime() - 7 * day - 1).toISOString();
   expect(
     (await f.event(paid("cy@example.test", { occurred_at: old }))).body.data.enrollments,
-  ).toEqual({ started: [], ended: [] });
+  ).toEqual({ started: [], ended: [], skipped: [] });
   // Batch events trigger the same way.
   const batch = await f.json("/api/subscriber-events/batch", "POST", {
     events: [paid("d1@example.test"), paid("d2@example.test")],
@@ -175,6 +176,7 @@ test("exit_on events end active enrollments before triggers, which can restart t
         exit_reason: "event:subscription_created",
       },
     ],
+    skipped: [],
   });
   const ended = (await f.json(`/api/enrollments/${exitedId}`)).body.data;
   expect(ended).toMatchObject({
@@ -199,6 +201,7 @@ test("exit_on events end active enrollments before triggers, which can restart t
         exit_reason: "event:subscription_created",
       },
     ],
+    skipped: [],
   });
   const active = await enrollments(f, `?subscriber_id=${subscriber}&status=active`);
   expect(active.map((e) => e.sequence_id)).toEqual([restart.id]);
@@ -377,10 +380,12 @@ test("a repeated idempotency key replays the first {started, ended} and changes 
   expect((await f.event(quiet)).body.data.enrollments).toEqual({
     started: [],
     ended: [],
+    skipped: [],
   });
   expect((await f.event(quiet)).body.data.enrollments).toEqual({
     started: [],
     ended: [],
+    skipped: [],
   });
 });
 

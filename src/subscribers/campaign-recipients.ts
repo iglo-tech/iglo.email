@@ -46,23 +46,26 @@ export function createCampaignRecipients(db: Database) {
       return ids.map(({ id }) => recipient.get(id) as CampaignRecipient);
     },
     /**
-     * Whether the subscriber still qualifies (not unsubscribed or blocklisted since), and
-     * still has the UUID and email its message was rendered for (`changed` otherwise).
+     * Whether the subscriber still qualifies, rechecked at the push. `unavailable`: no subscriber
+     * now. `changed`: it has not the UUID and email its message was rendered for. `blocklisted`
+     * and `unsubscribed` say why it no longer qualifies (B116, D131).
      */
     eligible(
       audience: CampaignAudience,
       recipient: Pick<CampaignRecipient, "id" | "uuid" | "email">,
-    ): "eligible" | "ineligible" | "changed" {
+    ): "eligible" | "unavailable" | "changed" | "blocklisted" | "unsubscribed" {
       const row = q
         .get("campaign-recipient-eligible")
         .get(lists(audience), audience.type, recipient.id) as {
         uuid: string | null;
         email: string | null;
+        status: string | null;
         eligible: bigint;
       };
-      if (row.uuid === null) return "ineligible";
+      if (row.uuid === null) return "unavailable";
       if (row.uuid !== recipient.uuid || row.email !== recipient.email) return "changed";
-      return row.eligible === 1n ? "eligible" : "ineligible";
+      if (row.eligible === 1n) return "eligible";
+      return row.status === "blocklisted" ? "blocklisted" : "unsubscribed";
     },
     close: () => q.close(),
   };

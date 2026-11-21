@@ -30,6 +30,7 @@ import enrollmentWaitOrigin from "@/migrations/0021_enrollment_wait_origin.sql" 
 import testSends from "@/migrations/0022_test_sends.sql" with { type: "text" };
 import suppressions from "@/migrations/0023_suppressions.sql" with { type: "text" };
 import privateTargetsDefault from "@/migrations/0024_private_targets_default.sql" with { type: "text" };
+import campaignDeliveryReason from "@/migrations/0025_campaign_delivery_reason.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -62,6 +63,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 22, sql: testSends },
   { version: 23, sql: suppressions },
   { version: 24, sql: privateTargetsDefault },
+  { version: 25, sql: campaignDeliveryReason },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

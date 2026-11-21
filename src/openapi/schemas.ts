@@ -642,6 +642,20 @@ export const schemas: Record<string, Schema> = {
   EventEnrollments: object({
     started: array(object({ id: integer, sequence_id: integer })),
     ended: array(object({ id: integer, sequence_id: integer, exit_reason: string })),
+    skipped: {
+      ...array(ref("SequenceSkip")),
+      description:
+        "One entry per sequence the event would have started or replaced but cannot (B116, D131), in sequence ID order; empty when none. Nothing is enrolled for it.",
+    },
+  }),
+  SequenceSkip: object({
+    sequence_id: integer,
+    reason: {
+      type: "string",
+      enum: ["subscriber_blocklisted", "suppressed"],
+      description:
+        "subscriber_blocklisted: the subscriber is blocklisted, so no sequence starts. suppressed: the person wiped their data and has not confirmed again (D125), so no marketing sequence starts; a transactional one still does.",
+    },
   }),
   EventGrants: {
     ...array(
@@ -676,6 +690,21 @@ export const schemas: Record<string, Schema> = {
     data: free,
     occurred_at: time,
     created_at: time,
+    skipped: {
+      ...array(ref("SequenceSkip")),
+      description:
+        "The sequence starts this event was refused, with the reason for each (B116, D131), in sequence ID order; empty when none. An event recorded before schema 25 shows none, since its refusals were not kept.",
+    },
+  }),
+  CampaignSkippedDelivery: object({
+    subscriber_id: integer,
+    status: { type: "string", const: "skipped" },
+    reason: {
+      ...nullable(string),
+      description:
+        "unsubscribed: the subscriber left the campaign's list between the batch's claim and its push. subscriber_blocklisted: the subscriber was blocklisted then. subscriber_unavailable: the subscriber's UUID or address changed after the claim, or it no longer exists. Null for a delivery skipped before schema 25, when the reason was not kept.",
+    },
+    at: time,
   }),
   Condition: {
     ...free,

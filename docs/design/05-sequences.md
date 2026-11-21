@@ -52,13 +52,14 @@ A sequence is a list of steps that starts when a subscriber does something (an e
   - A list that does not exist, a double opt-in list, or a malformed field (`[]`, duplicates, non-integers, more than 20) is `400 Invalid fields: subscriber.grant_lists` and writes nothing. In a batch only that item fails.
   - The grant needs `subscribers:manage` and manage scope on every listed list, the rule of `PUT /api/subscribers/lists`; for an existing subscriber it also needs manage scope on at least one list the subscriber already has a membership on, of any status (PUT's check), while a subscriber the event creates needs only the listed lists. Otherwise `403` and nothing is written (a batch item fails alone).
   - `null` or absent grants nothing and `grants` is `[]`.
-- Response: the event ID, the subscriber ID, the enrollments it started (`{id, sequence_id}`) or ended (`{id, sequence_id, exit_reason}`), and `grants`. A repeated key replays the first request's enrollments and grants and changes nothing.
+- Response: the event ID, the subscriber ID, the enrollments it started (`{id, sequence_id}`) or ended (`{id, sequence_id, exit_reason}`), `skipped`, and `grants`. A repeated key replays the first request's enrollments, skips and grants and changes nothing.
+- `skipped` ([B116, D131](09-decisions.md#d131-a-refused-sequence-start-is-named-with-its-reason-and-campaign-skips-keep-one-lead-2026-11-21)): one `{sequence_id, reason}` for each sequence the event would have started, or would have replaced its running enrollment, that it cannot because the subscriber is blocklisted (`subscriber_blocklisted`, every sequence) or, for a marketing sequence, suppressed (`suppressed`, [D125](09-decisions.md#d125-a-self-wiped-person-is-not-silently-re-opted-into-marketing-lead-2026-11-20)). A transactional sequence of a suppressed person still starts. Nothing is enrolled for a skip. An event older than 7 days names no skip. The subscriber's event list (`GET /api/subscribers/{id}/subscriber-events`) returns each event's `skipped`, and the admin's Events tab shows it as "Sequences not started".
 
 Processing, in one transaction:
 
 1. Upsert the subscriber, grant the listed consent (the table above, before any exit or trigger), insert the event.
 2. For each sequence, whatever its status, with `exit_on` containing this event name (a paused or draft sequence keeps its parked enrollments, but an exit event still ends them), end the subscriber's active enrollment (`exited`, `exit_reason = 'event:<name>'`).
-3. For each `active` sequence whose trigger matches, create an enrollment if `reentry` allows it, with `step_id` = first step and `due_at = occurred_at + wait`.
+3. For each `active` sequence whose trigger matches, create an enrollment if `reentry` allows it, with `step_id` = first step and `due_at = occurred_at + wait`. A start that a blocklist or suppression refuses is not made, and is named in `skipped` instead; a running enrollment that such an event would replace is kept.
 
 Steps 2 and 3 run in that order, so an event that both exits and triggers the same sequence restarts it. Step 1's grant comes before both, so a sequence whose first step is a `PT0S` marketing step is checked against the granted membership, not the one before the event. Granting afterwards would end that enrollment `unsubscribed`.
 

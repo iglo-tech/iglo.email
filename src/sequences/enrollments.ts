@@ -264,9 +264,9 @@ export function createEnrollments(db: Database, clock: Clock) {
       exit_reason: reason,
     }));
     const started: { id: number | object; sequence_id: number | object }[] = [];
-    // Old events and blocklisted subscribers never start sequences.
-    if (!event.triggerEligible || event.subscriberStatus === "blocklisted")
-      return { started, ended };
+    const skipped: { sequence_id: number | object; reason: string }[] = [];
+    // Old events never start sequences, and name no skip: that is a window, not the subscriber.
+    if (!event.triggerEligible) return { started, ended, skipped };
     const sequences = q.get("sequences-triggered-by").all(event.name) as {
       id: bigint;
       trigger: string;
@@ -279,8 +279,6 @@ export function createEnrollments(db: Database, clock: Clock) {
         wait: string;
       } | null;
       if (!first) continue;
-      // B124 (D125): a suppressed person starts no marketing sequence. A transactional one still starts.
-      if (q.get("sequence-marketing").get(sequence.id) !== null && event.suppressed()) continue;
       if (
         sequence.reentry === "never" &&
         q.get("any-enrollment").get(event.subscriberId, sequence.id)
@@ -289,8 +287,16 @@ export function createEnrollments(db: Database, clock: Clock) {
       const active = q.get("active-enrollment").get(event.subscriberId, sequence.id) as {
         id: bigint;
       } | null;
+      if (active && sequence.reentry !== "always") continue;
+      // The event would start this sequence (or replace its running enrollment). A blocklisted
+      // subscriber starts none; a suppressed person (B124, D125) starts no marketing sequence. A
+      // transactional sequence still starts for a suppressed person. Each refusal is named (B116, D131).
+      const refused = blockedStart(event, sequence.id);
+      if (refused) {
+        skipped.push({ sequence_id: numberID(sequence.id), reason: refused });
+        continue;
+      }
       if (active) {
-        if (sequence.reentry !== "always") continue;
         // `always`: the running enrollment is replaced by this event.
         end(active.id, "exited", reason, now);
         ended.push({
@@ -311,8 +317,19 @@ export function createEnrollments(db: Database, clock: Clock) {
       );
       started.push({ id: numberID(id), sequence_id: numberID(sequence.id) });
     }
-    return { started, ended };
+    return { started, ended, skipped };
   };
+  /**
+   * Why an event may not start (or replace) this sequence's enrollment, or null when it may. Read
+   * on the event's own subscriber state; a marketing start asks for the suppression only when that
+   * can refuse it.
+   */
+  function blockedStart(event: RecordedEvent, sequenceId: bigint): string | null {
+    if (event.subscriberStatus === "blocklisted") return "subscriber_blocklisted";
+    if (q.get("sequence-marketing").get(sequenceId) !== null && event.suppressed())
+      return "suppressed";
+    return null;
+  }
 
   const at = () => clock.now().toISOString();
   const subscriberEffects: SubscriberEffects = {

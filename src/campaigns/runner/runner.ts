@@ -111,6 +111,16 @@ const scanInterval = 5_000;
 const defaultLease = 30_000;
 /** Bound on the per-batch tracked link cache: personalized URLs are distinct per recipient. */
 const maxCachedLinks = 10_000;
+/**
+ * Why a claimed delivery was skipped at its push (B116, D131): the same reasons a send row
+ * skipped for the same condition carries.
+ */
+const SKIP_REASON = {
+  changed: "subscriber_unavailable",
+  unavailable: "subscriber_unavailable",
+  blocklisted: "subscriber_blocklisted",
+  unsubscribed: "unsubscribed",
+} as const;
 
 /** In-process owners of live campaign pipes, and of the one batch sent at a time. */
 export function createCampaignRunnerRegistry() {
@@ -560,7 +570,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
       Number.isFinite(windowMs) &&
       windowMs > 1000;
     pipe.links.clear();
-    const outcomes = new Map<number, { status: DeliveryStatus; at: number }>();
+    const outcomes = new Map<number, { status: DeliveryStatus; at: number; reason?: string }>();
     const pushed = new Set<number>();
     let stop: Stop | null = null;
     let sent = 0;
@@ -637,7 +647,12 @@ export function createCampaignRunner(deps: RunnerDeps) {
               `${label(c)}: subscriber ${sub.id} changed its UUID or email after the batch was ` +
                 "claimed; the message was not sent. Resend to them manually if needed.",
             );
-          outcomes.set(i, { status: "skipped", at: clock.now().getTime() });
+          // B116 (D131): the delivery names why it was skipped; no log line, since it is not a fault.
+          outcomes.set(i, {
+            status: "skipped",
+            at: clock.now().getTime(),
+            reason: SKIP_REASON[current],
+          });
           continue;
         }
         pushed.add(i);
@@ -724,7 +739,14 @@ export function createCampaignRunner(deps: RunnerDeps) {
         return;
       }
       for (const [i, outcome] of outcomes)
-        store.settle(c.id, token, recipients[i]!.id, outcome.status, iso(outcome.at));
+        store.settle(
+          c.id,
+          token,
+          recipients[i]!.id,
+          outcome.status,
+          iso(outcome.at),
+          outcome.reason ?? null,
+        );
       if (unsent.length) {
         for (const sub of unsent) store.unclaim(c.id, token, sub.id);
         store.rewind(c.id, token, unsent[0]!.id - 1n, now);

@@ -28,7 +28,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     const installed = await call(fixture.origin, "migrate");
     expect(installed.status).toBe(200);
     expect(installed.result).toMatchObject({
-      version: "24",
+      version: "25",
       integrity: "ok",
       foreignKeyErrors: [],
       journal: "wal",
@@ -115,7 +115,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
       media: ["id", "uuid", "provider", "filename", "content_type", "thumb", "meta", "created_at"],
       campaign_media: ["campaign_id", "media_id", "filename"],
       campaign_links: ["campaign_id", "link_id"],
-      campaign_deliveries: ["campaign_id", "subscriber_id", "status", "at"],
+      campaign_deliveries: ["campaign_id", "subscriber_id", "status", "at", "reason"],
       links: ["id", "uuid", "url", "created_at"],
       link_clicks: ["id", "campaign_id", "send_id", "link_id", "subscriber_id", "created_at"],
       settings: ["key", "value", "updated_at"],
@@ -302,7 +302,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     await fixture.close();
     fixture = startSchemaFixture(directory);
     expect((await call(fixture.origin, "migrate")).result).toMatchObject({
-      version: "24",
+      version: "25",
       integrity: "ok",
       foreignKeyErrors: [],
       backups: [],
@@ -332,7 +332,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "24",
+      version: "25",
     });
   } finally {
     await fixture.close();
@@ -364,7 +364,7 @@ test("deleted identities never resolve to replacement accounts or entities after
     expect((await call(fixture.origin, "status")).result).toMatchObject({
       integrity: "ok",
       foreignKeyErrors: [],
-      version: "24",
+      version: "25",
       backups: [],
     });
   } finally {

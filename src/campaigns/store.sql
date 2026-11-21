@@ -67,6 +67,14 @@ SELECT EXISTS (SELECT 1 FROM campaign_lists WHERE campaign_id = ?
 -- name: campaign-list-ids
 SELECT list_id FROM campaign_lists WHERE campaign_id = ? AND list_id IS NOT NULL ORDER BY id;
 
+-- name: skipped-deliveries
+-- B116 (D131): one page of a campaign's skipped deliveries, by subscriber ID (partial index).
+SELECT subscriber_id, reason, at FROM campaign_deliveries
+WHERE campaign_id = ? AND status = 'skipped' ORDER BY subscriber_id LIMIT ? OFFSET ?;
+
+-- name: skipped-deliveries-count
+SELECT count(*) AS total FROM campaign_deliveries WHERE campaign_id = ? AND status = 'skipped';
+
 -- name: campaign-has-deliveries
 -- D126 (r2): the runner has delivered this campaign to someone, so an anonymous view is a view of mail sent.
 SELECT EXISTS (SELECT 1 FROM campaign_deliveries WHERE campaign_id = ?) AS has;

@@ -51,7 +51,7 @@ export async function publicFixture() {
   });
   const events = createEventStore(f.db, subscribers, {
     emailAllowed: () => true,
-    exitThenTrigger: () => ({ started: [], ended: [] }),
+    exitThenTrigger: () => ({ started: [], ended: [], skipped: [] }),
     i18n: f.app.i18n,
   });
   const mail = createSubscriberMail({

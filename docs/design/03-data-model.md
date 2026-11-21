@@ -73,7 +73,7 @@ Changes to kept tables:
 
 ### `campaign_deliveries`
 
-`campaign_id` → campaigns, `subscriber_id` → subscribers (both cascade), `status` (`claimed`, `sent`, `failed`, `unknown`, `skipped` when the subscriber lost eligibility or changed its UUID or email before the push), `at`; primary key on the pair, index on (`subscriber_id`, `at`) (migration 7, M3.2). The runner inserts a `claimed` row for every subscriber of a batch in the transaction that advances the cursor, before sending, and settles it per batch. The key makes a second campaign message to the same subscriber impossible. `claimed` rows found when a runner takes over a campaign are from a crash and become `unknown`, with `at` set to the takeover time. An outstanding `claimed` row holds the marketing frequency cap whatever its age; `sent` and `unknown` rows count from `at`.
+`campaign_id` → campaigns, `subscriber_id` → subscribers (both cascade), `status` (`claimed`, `sent`, `failed`, `unknown`, `skipped` when the subscriber lost eligibility or changed its UUID or email before the push), `at`, `reason` (B116, D131: set on a `skipped` row to `unsubscribed`, `subscriber_blocklisted` or `subscriber_unavailable`, NULL otherwise and for skips recorded before migration 25, which kept no reason); primary key on the pair, index on (`subscriber_id`, `at`), and a partial index on (`campaign_id`, `subscriber_id`) for the `skipped` rows (migration 7, M3.2; migration 25, B116). The runner inserts a `claimed` row for every subscriber of a batch in the transaction that advances the cursor, before sending, and settles it per batch. The key makes a second campaign message to the same subscriber impossible. `claimed` rows found when a runner takes over a campaign are from a crash and become `unknown`, with `at` set to the takeover time. An outstanding `claimed` row holds the marketing frequency cap whatever its age; `sent` and `unknown` rows count from `at`.
 
 Migration 7 also adds `campaigns.runner_lease` and `runner_lease_until`: the runner holding the campaign and its lease expiry, and `runner_generation`, which the `campaigns_runner_generation` trigger increments on every status change. A pipe opened at one generation stops once it differs, even when a pause was undone before the pipe looked.
 
@@ -88,7 +88,7 @@ Migration 7 also adds `campaigns.runner_lease` and `runner_lease_until`: the run
 | `occurred_at` | TEXT NOT NULL | Sent by the app, defaults to receive time |
 | `created_at` | TEXT NOT NULL | |
 | `idempotency_key` | TEXT NULL | Unique per subscriber when set |
-| `enrollments` | TEXT NULL | JSON `{started, ended, grants}` the first request with a key changed (M5.3; `grants` from D99, absent in older rows), replayed for a repeated key |
+| `enrollments` | TEXT NULL | JSON `{started, ended, grants, skipped}` of an event that changed a sequence or was refused a start (B116, D131: `skipped` is written even without a key), and of the first request with a key that changed one (M5.3; `grants` from D99, absent in older rows; `skipped` absent in rows before migration 25, which kept no refusals), replayed for a repeated key |
 
 Indexes: `(subscriber_id, name, occurred_at)`, unique `(subscriber_id, idempotency_key)`. Retention: configurable, default 400 days, purged by maintenance.
 
@@ -137,7 +137,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `list_id` | INTEGER NULL → lists | Unsubscribe scope for marketing sends |
 | `idempotency_key` | TEXT NULL UNIQUE | For tx API calls |
 | `status` | TEXT CHECK IN (`queued`, `sending`, `sent`, `failed`, `skipped`, `unknown`) | `unknown`: the process died while sending; never retried automatically |
-| `skip_reason` | TEXT NULL | `unsubscribed`, `blocklisted`, `frequency_cap`, `condition`, `bounced`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed`; B85 sequence steps also use `aggregate_limit` |
+| `skip_reason` | TEXT NULL | Every `skipped` row names one (B116, D131): `subscriber_blocklisted`, `subscriber_unavailable` (the subscriber changed, was anonymized or is gone), `unsubscribed`, `frequency_cap`; M2.4 tx marketing also uses `not_subscribed`, `unconfirmed`, `list_unavailable`, `policy_unavailable`; M5.4 sequence steps also use `late`, `template_unavailable`, `render_failed`; B85 sequence steps also use `aggregate_limit`. A `sent` row may carry `copies_blocklisted:<n>` (M2.3) |
 | `smtp_message_id` | TEXT NULL | Stable `Message-ID` assigned before enqueue commit |
 | `error` | TEXT NULL | |
 | `payload` | TEXT JSON | Private bounded versioned prepared message, including encoded bytes. NULL once retention or a deletion has dropped it |
