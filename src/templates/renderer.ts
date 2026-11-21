@@ -235,7 +235,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
                         : byteLength(c);
               }
               budget(this.context).charge(size);
-              return input.replace(
+              return input.replaceAll(
                 /[&<>"']/g,
                 (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" })[c]!,
               );
