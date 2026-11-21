@@ -49,8 +49,8 @@ export default defineConfig({
     // B134b: src/messaging/notify.ts falls back to console when no logger is injected; inject the logger instead.
     { files: ["src/messaging/notify.ts"], rules: { "no-console": "off" } },
     // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
-    // rules that src/ has already fixed (B134b): test/ follows in B134c.
-    { files: testFiles, rules: { "no-console": "off", "prefer-const": "off" } },
+    // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
+    { files: ["test/**"], rules: { "no-console": "off", "prefer-const": "off", curly: "off" } },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
     // "utf-8" as written (the rule would spell it "utf8" and refuse every UTF-8 declaration and charset), so
     // the fix would change behaviour. The lead decides at review.
@@ -85,7 +85,6 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134b: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed.
-    curly: "off", // B134b
     eqeqeq: "off", // B134b
     "no-empty": "off", // B134b
     "no-promise-executor-return": "off", // B134b

@@ -107,19 +107,27 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
   };
   const body = await readBodyBytes(c.request);
   const type = c.request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-  if (!body.length || type !== "application/json") return out;
+  if (!body.length || type !== "application/json") {
+    return out;
+  }
   let document: unknown;
   try {
     document = JSON.parse(body.toString("utf8"), (_key, value, context?: { source?: string }) => {
-      if (typeof value !== "number") return value;
+      if (typeof value !== "number") {
+        return value;
+      }
       const source = context?.source ?? "";
       return /^-?\d+$/.test(source) ? BigInt(source) : value;
     });
   } catch {
     throw new HttpError(400);
   }
-  if (document === null) return out;
-  if (typeof document !== "object" || Array.isArray(document)) throw new HttpError(400);
+  if (document === null) {
+    return out;
+  }
+  if (typeof document !== "object" || Array.isArray(document)) {
+    throw new HttpError(400);
+  }
   const record = out as unknown as Record<string, unknown>;
   // encoding/json matches field names case-insensitively.
   for (const [rawKey, value] of Object.entries(document)) {
@@ -237,8 +245,9 @@ export function registerSubscriberQueryRoutes(
       ["subscription_status", filter.subscriptionStatus, [...subscriptionStatuses, "none"]],
       ["subscriber_status", filter.subscriberStatus, subscriberStatuses],
     ] as const) {
-      if (value && !allowed.includes(value))
+      if (value && !allowed.includes(value)) {
         throw preparing(c, `invalid input value for enum ${type}: "${value}"`);
+      }
     }
     const problem = filter.fragment ? checkFragment(filter.fragment) : undefined;
     if (problem) {

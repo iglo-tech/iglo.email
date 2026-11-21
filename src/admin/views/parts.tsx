@@ -10,7 +10,9 @@ import type { Child } from "@/jsx/render";
 export function encode(params: URLSearchParams, ...exclude: Array<string>): string {
   const out = new URLSearchParams();
   for (const [key, value] of params) {
-    if (value !== "" && !exclude.includes(key)) out.append(key, value);
+    if (value !== "" && !exclude.includes(key)) {
+      out.append(key, value);
+    }
   }
   return out.toString();
 }

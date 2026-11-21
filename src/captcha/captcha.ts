@@ -128,7 +128,9 @@ function parsePayload(value: string) {
   }
   // Keys altcha-lib would add to the signed text are never issued here, so they cannot verify.
   for (const key of ["keySignature", "memoryCost", "parallelism"]) {
-    if (p[key] !== undefined && p[key] !== null && p[key] !== "" && p[key] !== 0) return undefined;
+    if (p[key] !== undefined && p[key] !== null && p[key] !== "" && p[key] !== 0) {
+      return undefined;
+    }
   }
   if (p.data !== undefined && p.data !== null) {
     return undefined;
@@ -205,7 +207,9 @@ export async function createCaptcha(deps: CaptchaDeps): Promise<Captcha> {
     }
     lastSweep = now;
     for (const [signature, expires] of used) {
-      if (expires < now) used.delete(signature);
+      if (expires < now) {
+        used.delete(signature);
+      }
     }
   };
 

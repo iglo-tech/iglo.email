@@ -127,7 +127,9 @@ function object(value: unknown, field: string): Record<string, unknown> {
 }
 function known(value: Record<string, unknown>, fields: ReadonlyArray<string>, prefix = "") {
   for (const key of Object.keys(value)) {
-    if (!fields.includes(key)) throw new EventInputError(`${prefix}${key}`);
+    if (!fields.includes(key)) {
+      throw new EventInputError(`${prefix}${key}`);
+    }
   }
 }
 // Control characters are refused on purpose: the range is the check.

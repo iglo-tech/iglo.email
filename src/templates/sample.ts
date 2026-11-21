@@ -31,7 +31,9 @@ function members(value: unknown, field: string, allowed: ReadonlyArray<string>) 
     throw new SampleError(field);
   }
   for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) throw new SampleError(`${field}.${key}`);
+    if (!allowed.includes(key)) {
+      throw new SampleError(`${field}.${key}`);
+    }
   }
   return value;
 }
@@ -109,8 +111,9 @@ export function parseSample(json: string, options: { data: boolean }): Sample {
   if (top.aggregates !== undefined) {
     const aggregates = obj(top.aggregates, "sample.aggregates");
     for (const [name, value] of Object.entries(aggregates)) {
-      if (typeof value !== "number" || !Number.isFinite(value))
+      if (typeof value !== "number" || !Number.isFinite(value)) {
         throw new SampleError(`sample.aggregates.${name}`);
+      }
     }
     sample.aggregates = aggregates as Record<string, number>;
   }
@@ -150,7 +153,9 @@ function withinLimits(value: unknown): boolean {
       return false;
     }
     if (typeof item === "object" && item !== null) {
-      for (const child of Object.values(item)) pending.push([child, depth + 1]);
+      for (const child of Object.values(item)) {
+        pending.push([child, depth + 1]);
+      }
     }
   }
   return true;

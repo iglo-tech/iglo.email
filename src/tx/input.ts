@@ -52,7 +52,9 @@ async function readBounded(request: Request): Promise<Buffer<ArrayBuffer>> {
     try {
       while (true) {
         const part = await reader.read();
-        if (part.done) break;
+        if (part.done) {
+          break;
+        }
         size += part.value.length;
         if (size > BODY_LIMIT) {
           await reader.cancel();

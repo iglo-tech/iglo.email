@@ -37,16 +37,22 @@ export async function runAnalyticsChild(): Promise<void> {
     method: Method;
     args: unknown[];
   };
-  if (!methods.includes(request.method)) throw new Error("Unknown analytics read");
+  if (!methods.includes(request.method)) {
+    throw new Error("Unknown analytics read");
+  }
   let out = "";
   const flush = () => {
     let bytes = Buffer.from(out);
-    while (bytes.length) bytes = bytes.subarray(writeSync(1, bytes));
+    while (bytes.length) {
+      bytes = bytes.subarray(writeSync(1, bytes));
+    }
     out = "";
   };
   const emit = (text: string) => {
     out += text;
-    if (out.length >= 65536) flush();
+    if (out.length >= 65536) {
+      flush();
+    }
   };
   const db = openReadOnly(request.path);
   try {

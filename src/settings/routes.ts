@@ -82,7 +82,9 @@ export function registerSettingsRoutes(
           "security.trusted_proxies",
           "security.public_rate_limit",
         ]) {
-          if (!hasField(body, native)) next[native] = current[native];
+          if (!hasField(body, native)) {
+            next[native] = current[native];
+          }
         }
         check(next, current);
         return next;

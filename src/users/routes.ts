@@ -60,7 +60,9 @@ export function registerUserRoutes(
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
       if (context.identity?.transport === "session") {
-        for (const value of auth.clearCookies()) response.headers.append("Set-Cookie", value);
+        for (const value of auth.clearCookies()) {
+          response.headers.append("Set-Cookie", value);
+        }
       }
       return response;
     },

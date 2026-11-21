@@ -155,7 +155,9 @@ async function readCapped(response: Response, limit: number) {
   if (reader) {
     for (;;) {
       const item = await reader.read();
-      if (item.done) break;
+      if (item.done) {
+        break;
+      }
       size += item.value.length;
       if (size > limit) {
         await reader.cancel();

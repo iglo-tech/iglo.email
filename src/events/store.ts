@@ -200,11 +200,12 @@ export function createEventStore(
     }
     // Refused before any write: the grant is checked against the lists as they are now.
     for (const list of input.grantLists) {
-      if (!subscribers.grantable(list))
+      if (!subscribers.grantable(list)) {
         throw new HttpError(
           400,
           options.i18n.Ts("globals.messages.invalidFields", "name", "subscriber.grant_lists"),
         );
+      }
     }
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
     // B124 (D125): read once, after the upsert, so the address and ID the event leaves are the ones checked.
@@ -292,7 +293,9 @@ export function createEventStore(
           try {
             return { result: item(e.input, e.at, e.authorize) };
           } catch (error) {
-            if (error instanceof TransactionLost || !db.inTransaction) throw error;
+            if (error instanceof TransactionLost || !db.inTransaction) {
+              throw error;
+            }
             return { failure: error };
           }
         }),

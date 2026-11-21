@@ -36,7 +36,9 @@ export interface AnalyticsDeps {
 export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const { reader, summaries, campaigns, roles, auth, settings } = deps;
   const identity = (context: RequestContext) => {
-    if (!context.identity) throw new Error("Authenticated identity required");
+    if (!context.identity) {
+      throw new Error("Authenticated identity required");
+    }
     return context.identity;
   };
   const can = (context: RequestContext, permission: string) =>
@@ -46,7 +48,9 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
     const { role, user } = identity(context);
     const manage = roles.listScope(role, user.list_role_id, "list:manage");
     const get = roles.listScope(role, user.list_role_id, "list:get");
-    if (get.all || manage.all) return { all: true, ids: [] };
+    if (get.all || manage.all) {
+      return { all: true, ids: [] };
+    }
     return get.ids.length ? get : manage;
   };
   const scope = (context: RequestContext): Scope =>
@@ -76,7 +80,9 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
       return typeof result === "string" ? body(result) : result;
     } catch (error) {
       const answer = error instanceof ReaderError ? refused[error.kind] : undefined;
-      if (answer) throw new HttpError(...answer);
+      if (answer) {
+        throw new HttpError(...answer);
+      }
       context.app.logger.error(error);
       throw new HttpError(
         500,
@@ -96,16 +102,21 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
       new HttpError(400, t(context).Ts("globals.messages.errorInvalidIDs", "error", error));
     const ids = context.url.searchParams.getAll("id").map((value) => {
       const quoted = JSON.stringify(value);
-      if (!/^[+-]?\d+$/.test(value))
+      if (!/^[+-]?\d+$/.test(value)) {
         throw invalid(`strconv.Atoi: parsing ${quoted}: invalid syntax`);
+      }
       const id = BigInt(value);
-      if (id < -9223372036854775808n || id > 9223372036854775807n)
+      if (id < -9223372036854775808n || id > 9223372036854775807n) {
         throw invalid(`strconv.Atoi: parsing ${quoted}: value out of range`);
-      if (id < 1n) throw invalid(`${id} is not a valid ID`);
+      }
+      if (id < 1n) {
+        throw invalid(`${id} is not a valid ID`);
+      }
       return id;
     });
-    if (!ids.length)
+    if (!ids.length) {
       throw new HttpError(400, t(context).Ts("globals.messages.missingFields", "name", "`id`"));
+    }
     return ids;
   };
   /** The from and to query values: 10 to 30 bytes, in a form src/analytics/dates.ts accepts. */
@@ -113,9 +124,13 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
     const params = context.url.searchParams;
     const from = params.get("from") ?? "";
     const to = params.get("to") ?? "";
-    if (!strHasLen(from, 10, 30) || !strHasLen(to, 10, 30)) throw invalidDates(context);
+    if (!strHasLen(from, 10, 30) || !strHasLen(to, 10, 30)) {
+      throw invalidDates(context);
+    }
     const range = { from: parseBound(from, "up"), to: parseBound(to, "down") };
-    if (range.from === null || range.to === null) throw invalidDates(context);
+    if (range.from === null || range.to === null) {
+      throw invalidDates(context);
+    }
     return range as Range;
   };
 
@@ -127,44 +142,54 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
       const type = context.params.type ?? "";
       if (resource === "list") {
         const { role, user } = identity(context);
-        if (!roles.canList(role, user.list_role_id, "list:get", ids))
+        if (!roles.canList(role, user.list_role_id, "list:get", ids)) {
           throw new HttpError(403, "permission denied");
+        }
         // Match the list page: campaign metrics require campaign analytics access.
         if (
           type !== "subscriptions" &&
           type !== "unsubscriptions" &&
           (!(can(context, "campaigns:get") || can(context, "campaigns:get_all")) ||
             !can(context, "campaigns:get_analytics"))
-        )
+        ) {
           throw new HttpError(403, "permission denied");
+        }
       } else if (!can(context, "campaigns:get_all")) {
         // checkCampaignPerm: access through the campaign's lists.
         const allowed = permitted(context);
-        for (const id of ids)
-          if (!allowed.all && !campaigns.hasLists(id, allowed.ids))
+        for (const id of ids) {
+          if (!allowed.all && !campaigns.hasLists(id, allowed.ids)) {
             throw new HttpError(
               403,
               t(context).Ts("globals.messages.permissionDenied", "name", "campaigns:get"),
             );
+          }
+        }
       }
       const range = parseRange(context);
       const { individualTracking } = settings();
       const text = ids.map(String);
-      if (type === "links")
+      if (type === "links") {
         return served(context, (signal) =>
           reader.respond("links", [resource, text, range, individualTracking], signal),
         );
+      }
 
       const params = context.url.searchParams;
       const interval = params.get("interval") || "day";
       // Views and clicks default to totals; unique counts need individual tracking.
       let counted = type;
       if (params.get("unique") !== "true" || !individualTracking) {
-        if (type === "views") counted = "total_views";
-        if (type === "clicks") counted = "total_clicks";
+        if (type === "views") {
+          counted = "total_views";
+        }
+        if (type === "clicks") {
+          counted = "total_clicks";
+        }
       }
-      if (!(resource === "list" ? listTypes : campaignTypes).includes(counted))
+      if (!(resource === "list" ? listTypes : campaignTypes).includes(counted)) {
         throw invalidData(context);
+      }
       if (!intervals.has(interval)) {
         throw invalidData(context);
       }

@@ -198,8 +198,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
         chargeComparison(left, b);
         const rightCost = chargeComparison(right, b);
         if (name !== "==" && name !== "!=" && name !== "contains") {
-          for (const operand of [left, right])
-            if (Array.isArray(operand)) b.charge(joinedBytes(operand));
+          for (const operand of [left, right]) {
+            if (Array.isArray(operand)) {
+              b.charge(joinedBytes(operand));
+            }
+          }
         }
         if (name === "contains" && Array.isArray(left) && left.length > 1) {
           b.step((left.length - 1) * rightCost);
@@ -221,7 +224,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
             outputEscape(this: { context: Context }, value: unknown) {
               const input = scalar(value);
               let size = 0;
-              for (const c of input)
+              for (const c of input) {
                 size +=
                   c === "&"
                     ? 5
@@ -230,6 +233,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
                       : c === '"' || c === "'"
                         ? 5
                         : byteLength(c);
+              }
               budget(this.context).charge(size);
               return input.replace(
                 /[&<>"']/g,
@@ -252,8 +256,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
           "break",
           "continue",
         ].includes(tag)
-      )
+      ) {
         delete liquid.tags[tag];
+      }
     }
     for (const filter of Object.keys(liquid.filters)) {
       liquid.unregisterFilter(filter);

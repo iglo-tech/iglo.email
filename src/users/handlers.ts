@@ -161,8 +161,12 @@ function randomToken(): string {
   let out = "";
   while (out.length < 48) {
     for (const byte of randomBytes(64)) {
-      if (byte < 248) out += alphabet[byte % 62];
-      if (out.length === 48) break;
+      if (byte < 248) {
+        out += alphabet[byte % 62];
+      }
+      if (out.length === 48) {
+        break;
+      }
     }
   }
   return out;

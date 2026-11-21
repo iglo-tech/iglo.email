@@ -243,7 +243,9 @@ function build(
     headers.set(lower, { name, value });
   };
   for (const group of s.email_headers ?? []) {
-    for (const [k, v] of Object.entries(group ?? {})) add(k, v);
+    for (const [k, v] of Object.entries(group ?? {})) {
+      add(k, v);
+    }
   }
   for (const [k, v] of Object.entries(input.headers ?? {})) {
     add(k, v);
@@ -359,11 +361,16 @@ export function newMessageId(rootUrl: string): string {
 function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
   let result: string | undefined;
   for (const group of s?.email_headers ?? []) {
-    for (const [k, v] of Object.entries(group ?? {}))
-      if (k.toLowerCase() === "message-id") result = v;
+    for (const [k, v] of Object.entries(group ?? {})) {
+      if (k.toLowerCase() === "message-id") {
+        result = v;
+      }
+    }
   }
   for (const [k, v] of Object.entries(m.headers ?? {})) {
-    if (k.toLowerCase() === "message-id") result = Array.isArray(v) ? v[0] : v;
+    if (k.toLowerCase() === "message-id") {
+      result = Array.isArray(v) ? v[0] : v;
+    }
   }
   return m.messageId || result || undefined;
 }
@@ -478,11 +485,12 @@ export function createEmailer(options: {
   function reconcile(servers: Array<SMTPServer>) {
     const keys = new Set(servers.map((s) => JSON.stringify(s)));
     for (const table of [pools, testPools]) {
-      for (const [key, pool] of table)
+      for (const [key, pool] of table) {
         if (!keys.has(key)) {
           table.delete(key);
           retire(pool);
         }
+      }
     }
   }
   function dispatch(
@@ -833,7 +841,9 @@ export function createEmailer(options: {
         const timeout = options.clock.sleep(5000, timer.signal).then(
           () => {
             for (const pool of draining) {
-              if (retired.has(pool)) cancelPool(pool);
+              if (retired.has(pool)) {
+                cancelPool(pool);
+              }
             }
           },
           () => {},

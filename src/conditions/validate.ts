@@ -33,8 +33,12 @@ const bytes = (value: string) => Buffer.byteLength(value);
 function boundedKeys(value: object, max: number): string[] | undefined {
   const keys: string[] = [];
   for (const key in value) {
-    if (!Object.hasOwn(value, key)) continue;
-    if (keys.length === max) return undefined;
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+    if (keys.length === max) {
+      return undefined;
+    }
     keys.push(key);
   }
   return keys;
@@ -54,101 +58,137 @@ export function validate(
     sqls = 0;
   const fail = (field: string, message: string) => {
     errors.push({ field, message });
-    if (errors.length >= limits.errors) throw new Stop();
+    if (errors.length >= limits.errors) {
+      throw new Stop();
+    }
   };
 
   const scalar = (value: unknown, field: string, ordered = false): Scalar | undefined => {
     if (typeof value === "string") {
-      if (value !== value.toWellFormed() || bytes(value) > limits.stringBytes)
+      if (value !== value.toWellFormed() || bytes(value) > limits.stringBytes) {
         return void fail(field, "invalid text value");
+      }
       return value;
     }
     if (typeof value === "number") {
-      if (!Number.isFinite(value)) return void fail(field, "number must be finite");
+      if (!Number.isFinite(value)) {
+        return void fail(field, "number must be finite");
+      }
       // SQLite keeps JSON integers as exact int64; a JavaScript number past 2^53 is already
       // rounded, so it could differ from the stored value it was meant to equal.
       if (
         (Number.isInteger(value) && !Number.isSafeInteger(value)) ||
         Number(String(value)) !== value
-      )
+      ) {
         return void fail(field, unsafeNumber);
+      }
       return value;
     }
     if (typeof value === "boolean") {
-      if (ordered) return void fail(field, "booleans cannot be ordered");
+      if (ordered) {
+        return void fail(field, "booleans cannot be ordered");
+      }
       return value;
     }
     return void fail(field, "must be a string, number or boolean");
   };
 
   const walk = (value: unknown, field: string, depth: number): Condition | undefined => {
-    if (depth > limits.depth) return void fail(field, "nesting is too deep");
-    if (++nodes > limits.nodes) return void fail(field, "too many conditions");
-    if (!isObject(value)) return void fail(field, "must be a condition object");
+    if (depth > limits.depth) {
+      return void fail(field, "nesting is too deep");
+    }
+    if (++nodes > limits.nodes) {
+      return void fail(field, "too many conditions");
+    }
+    if (!isObject(value)) {
+      return void fail(field, "must be a condition object");
+    }
     const present = kinds.filter((kind) => Object.hasOwn(value, kind));
-    if (present.length !== 1)
+    if (present.length !== 1) {
       return void fail(field, "must have exactly one of all, any, not, event, attr, list or sql");
+    }
     const kind = present[0]!;
     // Stops at the first unknown key, so a wide object is never walked further.
-    for (const key in value)
-      if (Object.hasOwn(value, key) && !fieldsOf[kind].includes(key))
+    for (const key in value) {
+      if (Object.hasOwn(value, key) && !fieldsOf[kind].includes(key)) {
         return void fail(safeKey.test(key) ? `${field}.${key}` : field, "unknown field");
+      }
+    }
 
     if (kind === "all" || kind === "any") {
       const items = value[kind];
-      if (!Array.isArray(items) || !items.length)
+      if (!Array.isArray(items) || !items.length) {
         return void fail(`${field}.${kind}`, "must be a non-empty array of conditions");
-      if (nodes + items.length > limits.nodes)
+      }
+      if (nodes + items.length > limits.nodes) {
         return void fail(`${field}.${kind}`, "too many conditions");
+      }
       const out: Condition[] = [];
       for (const [i, item] of items.entries()) {
         const child = walk(item, `${field}.${kind}.${i}`, depth + 1);
-        if (child) out.push(child);
+        if (child) {
+          out.push(child);
+        }
       }
       return kind === "all" ? { all: out } : { any: out };
     }
     if (kind === "not") {
-      if (!isObject(value.not)) return void fail(`${field}.not`, "must be a condition object");
+      if (!isObject(value.not)) {
+        return void fail(`${field}.not`, "must be a condition object");
+      }
       const child = walk(value.not, `${field}.not`, depth + 1);
       return child && { not: child };
     }
     if (kind === "sql") {
       const sql = value.sql;
-      if (!options.canUseSql)
+      if (!options.canUseSql) {
         return void fail(`${field}.sql`, "permission denied for raw SQL conditions");
-      if (++sqls > limits.sqlPredicates)
+      }
+      if (++sqls > limits.sqlPredicates) {
         return void fail(`${field}.sql`, "too many sql conditions");
-      if (typeof sql !== "string" || sql.length > limits.sqlLength || !formatSQLExp(sql))
+      }
+      if (typeof sql !== "string" || sql.length > limits.sqlLength || !formatSQLExp(sql)) {
         return void fail(`${field}.sql`, "must be a non-empty SQL expression");
+      }
       const problem = checkFragment(formatSQLExp(sql));
-      if (problem) return void fail(`${field}.sql`, problem);
+      if (problem) {
+        return void fail(`${field}.sql`, problem);
+      }
       return { sql };
     }
     if (kind === "list") {
       const list = value.list;
-      if (typeof list !== "number" || !Number.isSafeInteger(list) || list < 1)
+      if (typeof list !== "number" || !Number.isSafeInteger(list) || list < 1) {
         return void fail(`${field}.list`, "must be a list ID");
-      if (value.status === undefined) return { list };
+      }
+      if (value.status === undefined) {
+        return { list };
+      }
       const status = value.status;
-      if (!Array.isArray(status) || !status.length || status.length > listStatuses.length)
+      if (!Array.isArray(status) || !status.length || status.length > listStatuses.length) {
         return void fail(`${field}.status`, "must be a non-empty array of subscription statuses");
+      }
       let valid = true;
-      for (const [i, s] of status.entries())
+      for (const [i, s] of status.entries()) {
         if (typeof s !== "string" || !listStatuses.includes(s)) {
           fail(`${field}.status.${i}`, "unknown subscription status");
           valid = false;
         }
+      }
       return valid ? { list, status: [...(status as string[])] } : undefined;
     }
-    if (kind === "attr") return attr(value, field);
+    if (kind === "attr") {
+      return attr(value, field);
+    }
     return event(value, field);
   };
 
   const attr = (value: Record<string, unknown>, field: string): Condition | undefined => {
     const path = value.attr,
       op = value.op;
-    if (typeof path !== "string" || (path !== "status" && !validPath(path)))
+    if (typeof path !== "string" || (path !== "status" && !validPath(path))) {
       return void fail(`${field}.attr`, "must be an attribute name or dotted path");
+    }
     if (typeof op !== "string" || !ops.has(op)) {
       return void fail(`${field}.op`, "unknown operator");
     }

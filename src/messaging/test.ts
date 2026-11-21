@@ -45,8 +45,9 @@ function parse(value: unknown): { server: SMTPServer; email: string } {
     "msg_retry_delay",
   ];
   for (const key of strings) {
-    if (item[key] !== undefined && item[key] !== null && typeof item[key] !== "string")
+    if (item[key] !== undefined && item[key] !== null && typeof item[key] !== "string") {
       throw new HttpError(400, "Invalid data.");
+    }
   }
   for (const key of ["enabled", "exclude_from_default"]) {
     if (item[key] !== undefined && item[key] !== null && typeof item[key] !== "boolean") {

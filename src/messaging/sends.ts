@@ -1073,8 +1073,11 @@ export function createSends(options: {
       }
       writeTransaction(db, () => {
         for (const result of results) {
-          if ("unsent" in result) unsent(result.row, result.unsent === "held");
-          else finish(result.row, result.outcome);
+          if ("unsent" in result) {
+            unsent(result.row, result.unsent === "held");
+          } else {
+            finish(result.row, result.outcome);
+          }
         }
       });
     },

@@ -214,8 +214,9 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
 /** The first Message-ID among a message's own headers (any case), or undefined when it names none. */
 function headerMessageId(headers: Record<string, string | Array<string>>): string | undefined {
   for (const [name, value] of Object.entries(headers)) {
-    if (name.toLowerCase() === "message-id")
+    if (name.toLowerCase() === "message-id") {
       return (Array.isArray(value) ? value[0] : value) || undefined;
+    }
   }
   return undefined;
 }
@@ -938,7 +939,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         totalBytes += size(out.body) + size(altBody ?? "") + size(out.subject) + size(out.from);
         totalBytes += attachmentBytes;
         for (const set of out.headers) {
-          for (const [name, header] of Object.entries(set)) totalBytes += size(name) + size(header);
+          for (const [name, header] of Object.entries(set)) {
+            totalBytes += size(name) + size(header);
+          }
         }
         // Nothing is queued until every message is rendered, so a refusal sends nothing.
         if (totalBytes > TEST_SEND_BYTES || totalWork > TEST_SEND_WORK) {

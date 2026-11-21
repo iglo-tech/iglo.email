@@ -16,7 +16,9 @@ export async function readTemplateBody(request: Request): Promise<Buffer> {
     try {
       while (true) {
         const part = await reader.read();
-        if (part.done) break;
+        if (part.done) {
+          break;
+        }
         size += part.value.length;
         if (size > LIMIT) {
           await reader.cancel();
@@ -166,7 +168,9 @@ function xmlInput(body: Buffer): TemplatePatch {
   for (let i = 0; i < body.length; i++) {
     if (body[i] === 62) {
       parser.write(decoder.decode(body.subarray(start, i + 1), { stream: true }));
-      if (complete) return out;
+      if (complete) {
+        return out;
+      }
       start = i + 1;
     }
   }

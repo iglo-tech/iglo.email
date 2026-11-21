@@ -62,7 +62,11 @@ async function input(context: RequestContext, kind: "user" | "list") {
     throw new HttpError(400);
   }
   if (kind === "user") {
-    for (const p of granted) if (!validPermissions.has(p)) invalid("permission");
+    for (const p of granted) {
+      if (!validPermissions.has(p)) {
+        invalid("permission");
+      }
+    }
   }
   const items = data.lists ?? [];
   if (!Array.isArray(items)) {
@@ -85,7 +89,9 @@ async function input(context: RequestContext, kind: "user" | "list") {
       throw new HttpError(400);
     }
     for (const p of childPermissions) {
-      if (p !== "list:get" && p !== "list:manage") invalid("list permission");
+      if (p !== "list:get" && p !== "list:manage") {
+        invalid("list permission");
+      }
     }
     children.push({ id: BigInt(value.id), permissions: childPermissions as Array<string> });
   }

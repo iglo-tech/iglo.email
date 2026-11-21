@@ -109,7 +109,9 @@ export function createIdWriter(path: string) {
 export function prepareStageDir(dir: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   for (const name of readdirSync(dir)) {
-    if (name.startsWith(PREFIX)) rmSync(join(dir, name), { force: true });
+    if (name.startsWith(PREFIX)) {
+      rmSync(join(dir, name), { force: true });
+    }
   }
 }
 

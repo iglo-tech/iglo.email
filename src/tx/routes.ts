@@ -212,11 +212,16 @@ export function registerTxRoutes(
       const headers: Record<string, string> = Object.create(null);
       for (const set of m.headers) {
         for (const [name, value] of Object.entries(set)) {
-          if (!headerName.test(name) || /[\r\n\0]/.test(value) || Buffer.byteLength(value) > 2048)
+          if (!headerName.test(name) || /[\r\n\0]/.test(value) || Buffer.byteLength(value) > 2048) {
             throw invalid("headers");
+          }
           const key = canonical(name);
-          if (!Object.hasOwn(headers, key)) headers[key] = value;
-          if (Object.keys(headers).length > MAX_HEADERS) throw invalid("headers");
+          if (!Object.hasOwn(headers, key)) {
+            headers[key] = value;
+          }
+          if (Object.keys(headers).length > MAX_HEADERS) {
+            throw invalid("headers");
+          }
         }
       }
       // A marketing send has one SMTP recipient, the admitted subscriber: copies would
@@ -239,8 +244,9 @@ export function registerTxRoutes(
             a.contentType,
           ) ||
           Buffer.byteLength(a.contentType) > 2048
-        )
+        ) {
           throw invalid("file");
+        }
       }
 
       // A retry replays its first result before consulting mutable lists, templates or
@@ -303,7 +309,9 @@ export function registerTxRoutes(
       } else if (ids.length) {
         for (const id of ids) {
           const row = id > 0n ? deps.subscribers.get(id) : null;
-          if (!row) throw notFound(`${id}: `);
+          if (!row) {
+            throw notFound(`${id}: `);
+          }
           recipients.push({ row, email: row.email });
         }
       } else {

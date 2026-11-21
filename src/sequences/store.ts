@@ -132,8 +132,9 @@ export function createSequenceStore(
     const active = q.get("step-positions").all(id) as Array<Position>;
     const existing = new Set(active.map((r) => r.id));
     for (const [i, s] of input.steps.entries()) {
-      if (s.id !== null && !existing.has(s.id))
+      if (s.id !== null && !existing.has(s.id)) {
         throw new SequenceConflict(`steps.${i}.id`, "is not an active step of this sequence");
+      }
     }
     const placed = new Map(input.steps.flatMap((s, i) => (s.id === null ? [] : [[s.id, i]])));
     // A deleted step's position is a cursor: the position of the step that follows it. An
@@ -142,8 +143,13 @@ export function createSequenceStore(
     const cursor = (position: bigint) => {
       let before: Position | undefined;
       for (const r of active) {
-        if (placed.has(r.id) && r.position < position && (!before || r.position > before.position))
+        if (
+          placed.has(r.id) &&
+          r.position < position &&
+          (!before || r.position > before.position)
+        ) {
           before = r;
+        }
       }
       return before ? placed.get(before.id)! + 1 : 0;
     };
@@ -200,8 +206,9 @@ export function createSequenceStore(
     create(input: DefinitionInput) {
       const now = clock.now().toISOString();
       for (const [i, s] of input.steps.entries()) {
-        if (s.id !== null)
+        if (s.id !== null) {
           throw new SequenceConflict(`steps.${i}.id`, "is not an active step of this sequence");
+        }
       }
       const id = (
         q

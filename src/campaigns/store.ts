@@ -122,7 +122,9 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
     q.get("delete-other-campaign-lists").run(id, ids(listIds));
     for (const list of listIds) {
       const name = refs.listName(list);
-      if (name !== null) q.get("insert-campaign-list").run(id, list, name);
+      if (name !== null) {
+        q.get("insert-campaign-list").run(id, list, name);
+      }
     }
   };
   const setMedia = (id: bigint, mediaIds: bigint[]) => {
@@ -130,7 +132,9 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
     // Upstream's ID filter: an ID that names no media is left out.
     for (const media of mediaIds) {
       const filename = refs.mediaFilename(media);
-      if (filename !== null) q.get("insert-campaign-media").run(id, media, filename);
+      if (filename !== null) {
+        q.get("insert-campaign-media").run(id, media, filename);
+      }
     }
   };
   const values = (c: WritableCampaign) => ({

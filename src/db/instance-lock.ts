@@ -69,10 +69,11 @@ export function holdDataDirectory(
     } catch (error) {
       const { code, message } = error as { code?: string; message: string };
       if (code === "SQLITE_BUSY") {
-        if (busy++ === BUSY_RETRIES)
+        if (busy++ === BUSY_RETRIES) {
           throw new Error(`${directory} is in use by another iglo.email process: stop it first`, {
             cause: error,
           });
+        }
         pause(1 + Math.random() * BUSY_RETRY_MS);
         continue;
       }

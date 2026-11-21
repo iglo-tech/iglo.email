@@ -165,7 +165,9 @@ export async function createAuthentication(
   }
   function clearChallenges(userId: bigint) {
     for (const [token, challenge] of challenges) {
-      if (challenge.user.id === userId) challenges.delete(token);
+      if (challenge.user.id === userId) {
+        challenges.delete(token);
+      }
     }
   }
   function invalidate(userId: bigint) {
@@ -174,7 +176,9 @@ export async function createAuthentication(
     }
     clearChallenges(userId);
     for (const [email, entry] of resets) {
-      if (entry.userId === userId) resets.delete(email);
+      if (entry.userId === userId) {
+        resets.delete(email);
+      }
     }
   }
   store.onIdentityMutation(invalidate);
@@ -246,7 +250,9 @@ export async function createAuthentication(
   function limit(peer: string): void {
     const time = clock.now().getTime();
     for (const [key, entry] of attempts) {
-      if (time - entry.start >= policy.loginWindowMs || time < entry.start) attempts.delete(key);
+      if (time - entry.start >= policy.loginWindowMs || time < entry.start) {
+        attempts.delete(key);
+      }
     }
     let current = attempts.get(peer);
     if (!current) {
@@ -482,7 +488,9 @@ export async function createAuthentication(
       }
       const time = clock.now().getTime();
       for (const [key, entry] of resets) {
-        if (entry.expires <= time) resets.delete(key);
+        if (entry.expires <= time) {
+          resets.delete(key);
+        }
       }
       const live = resets.get(email);
       if (live?.userId === user.id) {

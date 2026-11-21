@@ -220,7 +220,9 @@ export function createRoles(db: Database, lists: ListReferences) {
           try {
             for (const child of children) {
               if (child.permissions.length) {
-                if (!lists.name(child.id)) throw new Error("Invalid list reference");
+                if (!lists.name(child.id)) {
+                  throw new Error("Invalid list reference");
+                }
                 queries
                   .get("insert-child")
                   .run(result.id, child.id, JSON.stringify(child.permissions));

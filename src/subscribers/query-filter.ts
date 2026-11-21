@@ -287,7 +287,9 @@ function allowedVirtualTableObjects(db: Database): Set<string> {
   for (const sql of allowedVirtualTables) {
     const explain = db.prepare(`EXPLAIN ${sql}`);
     for (const op of explain.all() as Array<{ opcode: string; p4: unknown }>) {
-      if (op.opcode === "VOpen") out.add(String(op.p4));
+      if (op.opcode === "VOpen") {
+        out.add(String(op.p4));
+      }
     }
     explain.finalize();
   }

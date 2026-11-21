@@ -238,8 +238,9 @@ export function createSubscriberStore(
       ...new Set(requested.filter((list) => lists.subscriberMetadata(list) !== null)),
     ];
     for (const m of memberships(id)) {
-      if ((scope.all || scope.ids.includes(m.list_id)) && !resolved.includes(m.list_id))
+      if ((scope.all || scope.ids.includes(m.list_id)) && !resolved.includes(m.list_id)) {
         q.get("membership-delete").run(id, m.list_id);
+      }
     }
     for (const list of resolved) {
       const previous = memberships(id).find((m) => m.list_id === list);
@@ -419,7 +420,9 @@ export function createSubscriberStore(
       const deleted = ids.flatMap((id) => get(id) ?? []);
       effects.deleting?.(deleted, wipe);
       if (wipe) {
-        for (const row of deleted) suppress(row);
+        for (const row of deleted) {
+          suppress(row);
+        }
       }
       for (const id of ids) {
         q.get("subscriber-delete").run(id);
@@ -444,15 +447,22 @@ export function createSubscriberStore(
           if (action === "add") {
             // D81: whatever the status, a blocklisted subscriber's membership is unsubscribed.
             const target = get(id)?.status === "blocklisted" ? "unsubscribed" : status;
-            if (!existing)
+            if (!existing) {
               q.get("membership-insert").run(id, list, target || "unconfirmed", now, now);
-            else if (target === "unsubscribed" && !status)
+            } else if (target === "unsubscribed" && !status) {
               q.get("membership-force-unsubscribe").run(now, id, list);
-            else if (target) q.get("membership-status").run(target, id, list);
-            if (target === "unsubscribed") effects.unsubscribed([id], [list]);
-          } else if (action === "remove") q.get("membership-delete").run(id, list);
-          else if (action === "unsubscribe") {
-            if (existing) q.get("membership-update").run("unsubscribed", now, id, list);
+            } else if (target) {
+              q.get("membership-status").run(target, id, list);
+            }
+            if (target === "unsubscribed") {
+              effects.unsubscribed([id], [list]);
+            }
+          } else if (action === "remove") {
+            q.get("membership-delete").run(id, list);
+          } else if (action === "unsubscribe") {
+            if (existing) {
+              q.get("membership-update").run("unsubscribed", now, id, list);
+            }
             // An absent membership stays absent, but the consent action still ends the
             // list's enrollments.
             effects.unsubscribed([id], [list]);
@@ -481,8 +491,11 @@ export function createSubscriberStore(
       const merge = (current: Record<string, unknown>) => {
         const merged = new Map(Object.entries(current));
         for (const [key, value] of Object.entries(input.attribs ?? {})) {
-          if (value === null) merged.delete(key);
-          else merged.set(key, value);
+          if (value === null) {
+            merged.delete(key);
+          } else {
+            merged.set(key, value);
+          }
         }
         return JSON.stringify(Object.fromEntries(merged));
       };

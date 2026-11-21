@@ -300,8 +300,9 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
         return;
       }
       for (const entry of await readdir(temporary, { withFileTypes: true })) {
-        if (entry.isFile() && temporaryFile.test(entry.name))
+        if (entry.isFile() && temporaryFile.test(entry.name)) {
           await rm(join(temporary, entry.name), { force: true });
+        }
       }
     },
   };

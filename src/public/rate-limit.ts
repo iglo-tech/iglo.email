@@ -23,7 +23,9 @@ export function createRateLimit(clock: Clock, policy: LimitPolicy) {
     const time = clock.now().getTime();
     if (time >= sweepAt || time < sweepAt - policy.windowMs) {
       for (const [key, entry] of peers) {
-        if (time - entry.start >= policy.windowMs || time < entry.start) peers.delete(key);
+        if (time - entry.start >= policy.windowMs || time < entry.start) {
+          peers.delete(key);
+        }
       }
       sweepAt = time + policy.windowMs;
     }
@@ -90,7 +92,9 @@ export function createThrottle(clock: Clock, ttlMs: number, capacity: number) {
     const time = clock.now().getTime();
     if (time >= cleanAt) {
       for (const [item, expiry] of expires) {
-        if (time >= expiry) expires.delete(item);
+        if (time >= expiry) {
+          expires.delete(item);
+        }
       }
       cleanAt = time + Math.min(ttlMs, 60_000);
     }

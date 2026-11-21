@@ -14,9 +14,11 @@ function linksIn(uuid: string, bodies: Array<string | null>) {
   const pattern = new RegExp(linkPath(uuid, UUID), "g");
   const links = new Set<string>();
   for (const body of bodies) {
-    if (typeof body === "string")
-      for (const [link] of Buffer.from(body, "base64").toString("latin1").matchAll(pattern))
+    if (typeof body === "string") {
+      for (const [link] of Buffer.from(body, "base64").toString("latin1").matchAll(pattern)) {
         links.add(link);
+      }
+    }
   }
   return links.size ? [...links].join("\n") : null;
 }

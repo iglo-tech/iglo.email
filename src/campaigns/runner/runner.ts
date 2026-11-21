@@ -903,7 +903,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
         registry.end(token);
         if (pipes.size) {
           writeTransaction(db, () => {
-            for (const pipe of pipes.values()) release(pipe);
+            for (const pipe of pipes.values()) {
+              release(pipe);
+            }
           });
         }
       }

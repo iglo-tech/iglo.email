@@ -338,7 +338,9 @@ export function registerBounceRoutes(
       try {
         for (;;) {
           const item = await reader.read();
-          if (item.done) break;
+          if (item.done) {
+            break;
+          }
           size += item.value.length;
           if (size > SES_BODY_LIMIT) {
             await reader.cancel();

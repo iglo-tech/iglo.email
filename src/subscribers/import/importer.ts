@@ -195,7 +195,9 @@ export function createImporter(deps: {
       if (rawAttributes) {
         try {
           const stored = JSON.stringify(parseAttributes(rawAttributes) ?? {});
-          if (Buffer.byteLength(stored) > EVENT_ATTRIBS_BYTES) throw new Error("too large");
+          if (Buffer.byteLength(stored) > EVENT_ATTRIBS_BYTES) {
+            throw new Error("too large");
+          }
           attribs = stored;
         } catch {
           // A parser's message quotes the text it failed on.
@@ -366,7 +368,9 @@ export function createImporter(deps: {
         return;
       }
       for (const name of await readdir(directory)) {
-        if (temporaryFile.test(name)) await rm(join(directory, name), { force: true });
+        if (temporaryFile.test(name)) {
+          await rm(join(directory, name), { force: true });
+        }
       }
     },
     /** A place for one upload, or undefined while an upload or an import holds it. */

@@ -275,7 +275,9 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         return true;
       });
       if (result) {
-        for (const id of ids) onMutation(id);
+        for (const id of ids) {
+          onMutation(id);
+        }
       }
       return result;
     },

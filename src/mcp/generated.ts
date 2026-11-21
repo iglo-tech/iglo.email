@@ -211,7 +211,9 @@ export function toolFor(name: string, op: Operation): ToolDefinition {
     const file = fileField(op);
     const fields = (op.body.properties ?? {}) as Record<string, unknown>;
     for (const [field, schema] of Object.entries(fields)) {
-      if (field !== file) properties[field] = inline(schema);
+      if (field !== file) {
+        properties[field] = inline(schema);
+      }
     }
     properties.filename = { type: "string", description: "The file's name." };
     properties.content_base64 = {
@@ -377,7 +379,9 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
     }
     const form = new URLSearchParams();
     for (const [key, value] of Object.entries(fields)) {
-      if (value !== undefined) form.append(key, text(value));
+      if (value !== undefined) {
+        form.append(key, text(value));
+      }
     }
     return { method, path: url, body: form.toString(), contentType: op.bodyType };
   }

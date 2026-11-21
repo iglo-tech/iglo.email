@@ -119,7 +119,9 @@ function matchedBetween(matches: (at: Date) => boolean, after: Date, until: Date
   const end = Math.floor(until.getTime() / MINUTE);
   const start = Math.max(Math.floor(after.getTime() / MINUTE) + 1, end - 1439);
   for (let minute = start; minute <= end; minute++) {
-    if (matches(new Date(minute * MINUTE))) return true;
+    if (matches(new Date(minute * MINUTE))) {
+      return true;
+    }
   }
   return false;
 }

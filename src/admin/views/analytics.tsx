@@ -142,8 +142,9 @@ export const analyticsView =
     const params = context.url.searchParams;
     const ids = params.getAll("id");
     for (const id of ids) {
-      if (!/^[1-9]\d{0,18}$/.test(id))
+      if (!/^[1-9]\d{0,18}$/.test(id)) {
         throw new HttpError(400, t.Ts("globals.messages.errorInvalidIDs", "error", id));
+      }
     }
     // Resolve the date range, defaulting to the last 7 days. The API reads times as UTC.
     const input = (value: string | null) =>
