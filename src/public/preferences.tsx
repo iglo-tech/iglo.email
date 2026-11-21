@@ -27,6 +27,10 @@ export interface PageOptions extends PageSite {
  *   paired path the forms post to. The manage view changes the name and the confirmed lists.
  *   `blocklist` and `privacy` say whether those forms appear. `lists` are the lists the link covers:
  *   a marketing send's list, a campaign's lists, none for a transactional send (B126, D123).
+ * - `transactional`: a transactional send paired them through its journal row (D126, r1). Its form
+ *   cancels pending opt-ins only; with no open membership it says already unsubscribed; a confirmed
+ *   subscriber gets the manage view, or with preferences off a pointer to a marketing link (B126 r2,
+ *   D123). It has no blocklist. Its privacy forms post to `base`.
  * - `pending`: a mail the server sent with no campaign or send (opt-in). The manage view changes
  *   pending lists only: no name, no blocklist, no privacy form.
  */
@@ -38,6 +42,7 @@ export type PageMode =
       privacy: boolean;
       lists: bigint[];
     }
+  | { kind: "transactional"; base: string }
   | { kind: "pending" };
 
 const script = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
@@ -59,6 +64,21 @@ function alreadyUnsubscribed(
   return covered.filter((list) => list.type === "public").map((list) => list.name);
 }
 
+/**
+ * What a transactional link's page reads from the subscriber's memberships (B126 r2, D123): an open
+ * opt-in, which its form cancels, and whether a confirmed membership remains, which the link cannot end
+ * (D126). A pending list names the page only when it is public.
+ */
+function transactionalMemberships(subscribers: SubscriberStore, id: bigint) {
+  const all = subscribers.allSubscriptions(id);
+  const pending = all.filter((list) => list.subscriptionStatus === "unconfirmed");
+  return {
+    pending: pending.length > 0,
+    pendingNames: pending.filter((list) => list.type === "public").map((list) => list.name),
+    confirmed: all.some((list) => list.subscriptionStatus === "confirmed"),
+  };
+}
+
 export function subscriptionPage(
   t: Translation,
   subscribers: SubscriberStore,
@@ -68,14 +88,31 @@ export function subscriptionPage(
   headers: Record<string, string>,
   mode: PageMode,
 ): Response {
+  const transactional = mode.kind === "transactional";
+  const memberships = transactional ? transactionalMemberships(subscribers, subscriber.id) : null;
+  // The manage view needs preferences. A transactional link with a confirmed membership and no open
+  // opt-in is the manage view, since its page has no unsubscribe button to offer (B126 r2).
+  const showManage =
+    options.allowPreferences &&
+    (manage || (memberships !== null && memberships.confirmed && !memberships.pending));
   // B126 (D123): a marketing or campaign link revisited after every list it covers is unsubscribed says
-  // so, with the privacy forms and the manage link it offered before. The manage view is not answered
-  // this way: it still shows what remains.
+  // so, with the privacy forms and the manage link it offered before. The check follows the manage view
+  // actually shown, so a `?manage=true` with preferences off is answered here too.
   const already =
-    !manage && mode.kind === "paired" && mode.blocklist
+    !showManage && mode.kind === "paired" && mode.blocklist
       ? alreadyUnsubscribed(subscribers, subscriber.id, mode.lists)
       : null;
-  const showManage = options.allowPreferences && manage;
+  // A transactional link: an open opt-in gets the form, a confirmed membership without preferences gets
+  // the pointer page, and nothing open gets the already page, which names no list (D126 r2).
+  const transactionalView =
+    memberships !== null && !showManage
+      ? memberships.pending
+        ? "form"
+        : memberships.confirmed
+          ? "confirmed"
+          : "already"
+      : null;
+  const alreadyNames = already ?? (transactionalView === "already" ? [] : null);
   const pending = mode.kind === "pending";
   const subscriptions = showManage
     ? subscribers
@@ -88,25 +125,26 @@ export function subscriptionPage(
     : [];
   const blocklist = mode.kind === "paired" && mode.blocklist && options.allowBlocklist;
   const privacy =
-    mode.kind === "paired" && mode.privacy && (options.allowExport || options.allowWipe);
-  const base = mode.kind === "paired" ? mode.base : "";
+    (mode.kind === "paired" ? mode.privacy : transactional) &&
+    (options.allowExport || options.allowWipe);
+  const base = mode.kind === "pending" ? "" : mode.base;
   const body = render(
     <PublicShell
-      title={already ? t.T("globals.terms.unsubscribed") : t.T("public.unsubscribeTitle")}
+      title={alreadyNames ? t.T("globals.terms.unsubscribed") : t.T("public.unsubscribeTitle")}
       assetVersion={assetVersion}
       archiveTitle={t.T("public.archiveTitle")}
       site={options}
     >
       <section class="section">
-        {already ? (
+        {alreadyNames ? (
           <>
             <h2>{t.T("globals.terms.unsubscribed")}</h2>
             <div>
               <p>
-                {already.length
+                {alreadyNames.length
                   ? t
                       .T("public.alreadyUnsubscribedLists")
-                      .replaceAll("{lists}", () => already.join(", "))
+                      .replaceAll("{lists}", () => alreadyNames.join(", "))
                   : t.T("public.alreadyUnsubscribed")}
               </p>
               {options.allowPreferences ? (
@@ -116,12 +154,27 @@ export function subscriptionPage(
               ) : null}
             </div>
           </>
+        ) : transactionalView === "confirmed" ? (
+          <>
+            <h2>{t.T("public.unsubscribeTitle")}</h2>
+            <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
+          </>
         ) : !showManage ? (
           <>
             <h2>{t.T("globals.buttons.unsubscribe")}</h2>
             <form method="post" class="unsub-form">
               <div>
-                <p>{t.T("public.unsubHelp")}</p>
+                {transactional ? (
+                  <p>
+                    {memberships!.pendingNames.length
+                      ? t
+                          .T("public.pendingNamed")
+                          .replaceAll("{lists}", () => memberships!.pendingNames.join(", "))
+                      : t.T("public.pendingGeneric")}
+                  </p>
+                ) : (
+                  <p>{t.T("public.unsubHelp")}</p>
+                )}
                 {blocklist ? (
                   <>
                     <hr />
@@ -133,7 +186,9 @@ export function subscriptionPage(
                 ) : null}
                 <p>
                   <button type="submit" class="button" id="btn-unsub">
-                    {t.T("globals.buttons.unsubscribe")}
+                    {transactional
+                      ? t.T("public.cancelPending")
+                      : t.T("globals.buttons.unsubscribe")}
                   </button>
                 </p>
                 {options.allowPreferences ? (
@@ -250,7 +305,7 @@ export function subscriptionPage(
           </form>
         </>
       ) : null}
-      {already ? backLink(t, options) : null}
+      {alreadyNames || transactionalView === "confirmed" ? backLink(t, options) : null}
       {raw(`<script>
 ${
   privacy

@@ -832,6 +832,12 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Transactional link states (B126 r2, D123 item 8)",
+    summary:
+      "A transactional send's unsubscribe link reads its subscriber's memberships. An open opt-in gets a form that names only public lists and cancels only pending opt-ins; with no open membership it says already unsubscribed; a confirmed membership gets the manage view, or with preferences off a pointer to a marketing link. Its privacy forms act through its own paired path, and blocklist is refused. The form never offers to unsubscribe from a list the person is still on.",
+    applies: [],
+  },
+  {
     area: "Mail branding (B126, D123)",
     summary:
       "The data mail's subject is 'Your data from <site>', with a generated text part, the site's logo or name and the wording 'the data this mailing service holds about you'. The opt-in mail is branded the same way, and the admin's system mails name the site. No mail or public page carries a product credit. Upstream uses listmonk's default look and the subject 'Your data'.",

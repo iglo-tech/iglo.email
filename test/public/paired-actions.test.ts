@@ -332,7 +332,9 @@ test("a transactional preference link manages confirmed lists through its own se
   expect(html).toContain(`value="${other.uuid}"`);
   expect(html).toContain('name="name"');
   expect(html).not.toContain('name="blocklist"');
-  expect(html).not.toContain("/export/");
+  // B126 round 2 (D123): the page's export and wipe act through its own send, not a marketing send.
+  expect(html).toContain(`/export/${adaUuid}`);
+  expect(html).toContain(`/wipe/${adaUuid}`);
 
   const saved = await act(
     f,

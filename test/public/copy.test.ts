@@ -429,3 +429,45 @@ test("the subscription form's 404 is the branded page, on GET and POST, when the
   expect(posted.status).toBe(404);
   expect(await posted.text()).toContain("<h2>Page not found</h2>");
 });
+
+test("with preferences off, Keep my data returns to the page the person came from: the already page", async () => {
+  for (const [name, type] of [
+    ["News", "public"],
+    ["Members", "private"],
+  ]) {
+    const f = await open({ allowPreferences: false, siteName: "Brand Co" });
+    const { send, uuid, id, list } = await sendTo(f, name, type);
+    const page = `/m/${send}/unsubscribe/${uuid}`;
+    expect((await f.fresh(page, "List-Unsubscribe=One-Click")).status).toBe(200);
+    expect(await f.status(id, list.id)).toBe("unsubscribed");
+
+    // No manage view with preferences off, so the already page answers with or without ?manage=true.
+    for (const path of [page, `${page}?manage=true`]) {
+      const html = await (await f.request(path)).text();
+      expect(html).toContain("You are already unsubscribed from these emails");
+      expect(html).not.toContain('class="manage-form"');
+      expect(html).not.toContain('href="?manage=true"');
+      expect(html).toContain('id="data-form"');
+    }
+
+    const asked = await (await f.fresh(`/m/${send}/wipe/${uuid}`)).text();
+    const keep = /<a href="([^"]+)">Keep my data<\/a>/.exec(asked)?.[1];
+    expect(keep).toBe(page);
+    const kept = await (await f.request(keep!)).text();
+    expect(kept).toContain("You are already unsubscribed from these emails");
+    expect(kept).not.toContain('class="manage-form"');
+    expect((await f.json(`/api/subscribers/${id}`)).status).toBe(200);
+  }
+});
+
+test("with preferences off, a campaign's Keep my data goes to its link without ?manage=true", async () => {
+  const f = await open({ allowPreferences: false });
+  const news = await f.list("News");
+  const id = await f.subscriber("camp@example.test", "Cam", { lists: [news.id] });
+  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const camp = f.deliveredCampaign([id], [news.id]);
+
+  const asked = await (await f.fresh(`/subscription/${camp}/wipe/${uuid}`)).text();
+  expect(asked).toContain(`<a href="/subscription/${camp}/${uuid}">Keep my data</a>`);
+  expect(asked).not.toContain("?manage=true");
+});

@@ -264,8 +264,9 @@ export function registerCampaignPublicRoutes(
       const bad = invalidUUID(context, "campUUID", "subUUID");
       if (bad) return bad;
       const camp = context.params.campUUID!.toLowerCase();
-      // B126 (D123): the confirmation's "Keep my data" returns to this campaign's manage page.
-      const manage = `/subscription/${camp}/${context.params.subUUID!.toLowerCase()}?manage=true`;
+      // B126 (D123): the confirmation's "Keep my data" returns to this campaign's page, with the manage view
+      // only when preferences are on.
+      const manage = `/subscription/${camp}/${context.params.subUUID!.toLowerCase()}${options().allowPreferences ? "?manage=true" : ""}`;
       return (
         deps.privacy.wipe(
           context,
