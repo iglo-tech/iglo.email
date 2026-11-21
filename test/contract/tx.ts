@@ -166,6 +166,12 @@ export async function runTxContract(target: {
     check(message.To.map((t) => t.Address).join() === `ext-${marker}@example.test`, "external-to");
     check(/<p>Hello \[\] A1 <\/p>/.test(message.HTML), "external-body");
     check(header(raw, "X-Tx-Fixture") === marker, "external-header-first-wins");
+    // B120 (D118, deliberate difference, 07): an HTML message with no altbody gets a generated text
+    // part, so it is multipart/alternative. Upstream sends the HTML part alone.
+    check(
+      header(raw, "Content-Type").startsWith(reference ? "text/html" : "multipart/alternative"),
+      "plain-alternative-d118",
+    );
     check(/sender@example\.test/.test(header(raw, "From")), "external-from");
     if (!reference) check(header(raw, "Message-ID") === external[0]!.smtp_message_id, "message-id");
 

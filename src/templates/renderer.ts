@@ -69,6 +69,8 @@ class Budget {
 export interface MessageBudget {
   readonly bytes: number;
   readonly work: number;
+  /** Charges emitted bytes, such as a generated text part (B120); throws when exhausted. */
+  charge(bytes: number): void;
 }
 export function createMessageBudget(): MessageBudget {
   return new Budget();

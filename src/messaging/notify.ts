@@ -8,7 +8,8 @@ import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
 import { parseAddress } from "@/settings/mail";
 import { systemTemplates } from "@/templates/builtins";
-import type { TemplateRenderer } from "@/templates/renderer";
+import { createMessageBudget, type TemplateRenderer } from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 
 export interface AdminNotifierSettings {
   notifyEmails: string[];
@@ -65,7 +66,7 @@ export function createAdminNotifier(deps: {
   /** Each unusable sender is reported once per notifier, not on every notification. */
   const reportedFrom = new Set<string>();
 
-  const enqueue = (subject: string, html: string) => {
+  const enqueue = async (subject: string, html: string) => {
     const current = deps.settings();
     const rawEmails = [
       ...new Set(
@@ -103,6 +104,8 @@ export function createAdminNotifier(deps: {
       return;
     }
 
+    // The generated text part of a notification (B120, D118); none when it has no text.
+    const text = await plainText(html, createMessageBudget());
     deps.sends.enqueueRequest({
       sends: validEmails.map((to) => ({
         subscriberUuid: null,
@@ -116,6 +119,7 @@ export function createAdminNotifier(deps: {
             subject,
             contentType: "html",
             body: Buffer.from(html),
+            ...(text ? { altBody: Buffer.from(text) } : {}),
           },
         },
       })),
@@ -123,7 +127,7 @@ export function createAdminNotifier(deps: {
   };
 
   return {
-    campaignStatus(campaign, reason = "") {
+    async campaignStatus(campaign, reason = "") {
       try {
         const current = deps.settings();
         const emails = current.notifyEmails || [];
@@ -147,13 +151,13 @@ export function createAdminNotifier(deps: {
           data: JSON.stringify(data),
         }).body;
 
-        enqueue(subject, html);
+        await enqueue(subject, html);
       } catch (error) {
         logError(error);
       }
     },
 
-    importStatus(importData) {
+    async importStatus(importData) {
       try {
         const current = deps.settings();
         const emails = current.notifyEmails || [];
@@ -175,7 +179,7 @@ export function createAdminNotifier(deps: {
           data: JSON.stringify(data),
         }).body;
 
-        enqueue(subject, html);
+        await enqueue(subject, html);
       } catch (error) {
         logError(error);
       }

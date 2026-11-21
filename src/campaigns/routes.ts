@@ -20,6 +20,7 @@ import { getID, hasID } from "@/server/validation";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { TemplateRenderer } from "@/templates/renderer";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import { MarkdownSourceError } from "@/templates/markdown";
 import type { TemplateStore } from "@/templates/store";
 import type { Authentication } from "@/users/auth";
@@ -797,18 +798,25 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         // link, no view pixel), so following any of them changes nothing and records nothing.
         const unsubscribeUrl = `${root}/subscription/${testSendUUID}/${sub.uuid}`;
         let out;
+        // An HTML campaign without a stored altbody gets a generated text part (B120, D118).
+        let altBody: string | null;
         try {
           out = compiled.render(
             subscriberContext(sub),
             { rootUrl: root, unsubscribeUrl, test: true },
             budget,
           );
+          altBody =
+            out.altBody ??
+            (campaign.content_type === "plain"
+              ? null
+              : (await plainText(out.body, budget)) || null);
         } catch (error) {
           return sendError(error);
         }
         const size = (value: string) => Buffer.byteLength(value);
         totalWork += budget.work;
-        totalBytes += size(out.body) + size(out.altBody ?? "") + size(out.subject) + size(out.from);
+        totalBytes += size(out.body) + size(altBody ?? "") + size(out.subject) + size(out.from);
         totalBytes += attachmentBytes;
         for (const set of out.headers)
           for (const [name, header] of Object.entries(set)) totalBytes += size(name) + size(header);
@@ -837,7 +845,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           subject: out.subject,
           contentType: campaign.content_type === "plain" ? "plain" : "html",
           body: Buffer.from(out.body),
-          ...(out.altBody !== null ? { altBody: Buffer.from(out.altBody) } : {}),
+          ...(altBody !== null ? { altBody: Buffer.from(altBody) } : {}),
           headers,
           ...(attachments.length ? { attachments } : {}),
           messenger: value.messenger,

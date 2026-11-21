@@ -11,7 +11,8 @@ import { assetVersion } from "@/server/asset-manifest";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import { systemTemplates } from "@/templates/builtins";
-import type { TemplateRenderer } from "@/templates/renderer";
+import { createMessageBudget, type TemplateRenderer } from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
 import { validPassword } from "@/users/password";
@@ -75,7 +76,7 @@ export function createPasswordReset(deps: ResetDeps) {
       throw new HttpError(415);
     return new URLSearchParams(await readBody(context.request));
   };
-  const mail = (context: RequestContext, email: string) => {
+  const mail = async (context: RequestContext, email: string) => {
     const reset = auth.issueReset(email);
     if (!reset) return;
     const t = context.app.i18n;
@@ -89,12 +90,15 @@ export function createPasswordReset(deps: ResetDeps) {
         logo_url: safeLogo(current.logoUrl),
       }),
     }).body;
+    // The generated text part (B120, D118); none when the mail has no text.
+    const text = await plainText(html, createMessageBudget());
     void send({
       from: current.fromEmail,
       to: [reset.user.email],
       subject: t.T("email.forgotPassword.subject"),
       contentType: "html",
       body: Buffer.from(html),
+      ...(text ? { altBody: Buffer.from(text) } : {}),
     }).result.then((outcome) => {
       if (outcome.status !== "accepted")
         logger.attention("Password reset mail not sent", "Password reset mail not sent");
@@ -131,11 +135,7 @@ export function createPasswordReset(deps: ResetDeps) {
     const email = (fields.get("email") ?? "").trim().toLowerCase();
     // The answer leaves first, so neither it nor its timing depends on the address.
     setTimeout(() => {
-      try {
-        mail(context, email);
-      } catch (error) {
-        logger.error(error);
-      }
+      mail(context, email).catch((error: unknown) => logger.error(error));
     }, 0);
     return message(context, 200, context.app.i18n.T("users.resetLinkSent"));
   };

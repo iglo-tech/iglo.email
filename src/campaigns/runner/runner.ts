@@ -14,6 +14,7 @@ import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message, Outcome } from "@/messaging/email";
+import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
@@ -464,11 +465,17 @@ export function createCampaignRunner(deps: RunnerDeps) {
     };
     for (let attempt = 0; ; attempt++) {
       try {
+        const budget = createMessageBudget();
         const out = pipe.compiled.render(
           subscriber,
           { rootUrl: root, unsubscribeUrl, ...(tracking ? { tracking } : {}) },
-          createMessageBudget(),
+          budget,
         );
+        // An HTML campaign without a stored altbody gets a generated text part (B120, D118); none
+        // when the HTML has no text.
+        const altBody =
+          out.altBody ??
+          (c.content_type === "plain" ? null : (await plainText(out.body, budget)) || null);
         const headers: Record<string, string | string[]> = {
           "X-Listmonk-Campaign": c.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
@@ -494,7 +501,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
           subject: out.subject,
           contentType: c.content_type === "plain" ? "plain" : "html",
           body: Buffer.from(out.body),
-          ...(out.altBody !== null ? { altBody: Buffer.from(out.altBody) } : {}),
+          ...(altBody !== null ? { altBody: Buffer.from(altBody) } : {}),
           headers,
           ...(attachments.length ? { attachments } : {}),
           messenger: c.messenger,

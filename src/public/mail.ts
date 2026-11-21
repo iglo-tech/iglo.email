@@ -18,7 +18,8 @@ import { createThrottle } from "@/public/rate-limit";
 import type { PublicSettings } from "@/public/settings";
 import type { SubscriberStore } from "@/subscribers/store";
 import { systemTemplates } from "@/templates/builtins";
-import type { TemplateRenderer } from "@/templates/renderer";
+import { createMessageBudget, type TemplateRenderer } from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import type { Tracking } from "@/unsubscribe/tracking";
 
 type Subscriber = NonNullable<ReturnType<SubscriberStore["get"]>>;
@@ -109,27 +110,34 @@ export function createSubscriberMail(deps: {
         contentType: string;
       }[];
     },
-  ) =>
-    deps.sends.enqueueRequest({
-      sends: [
-        {
-          subscriberUuid: sub.uuid,
-          send: {
-            source: "tx",
-            kind: "transactional",
-            subscriberId: sub.id,
-            message: {
-              from: settings.fromEmail,
-              to: [sub.email],
-              subject,
-              contentType: "html",
-              body: Buffer.from(html),
-              ...extra,
+  ): Promise<void> =>
+    // The generated text part (B120, D118) is made first, so the enqueue is one step after it. A
+    // failure is logged and nothing is queued, as a failed hook is everywhere else in this module.
+    plainText(html, createMessageBudget())
+      .then((text) => {
+        deps.sends.enqueueRequest({
+          sends: [
+            {
+              subscriberUuid: sub.uuid,
+              send: {
+                source: "tx",
+                kind: "transactional",
+                subscriberId: sub.id,
+                message: {
+                  from: settings.fromEmail,
+                  to: [sub.email],
+                  subject,
+                  contentType: "html",
+                  body: Buffer.from(html),
+                  ...(text ? { altBody: Buffer.from(text) } : {}),
+                  ...extra,
+                },
+              },
             },
-          },
-        },
-      ],
-    });
+          ],
+        });
+      })
+      .catch((error: unknown) => deps.logger.error(error));
   /** makeOptinNotifyHook: returns the number of double opt-in lists awaiting confirmation. */
   function optin(sub: Subscriber, listIds: bigint[] = []): number {
     const wanted = new Set(listIds.map(Number));
@@ -151,7 +159,7 @@ export function createSubscriberMail(deps: {
         logo_url: safeLogo(settings.logoUrl),
       }),
     }).body;
-    enqueue(sub, settings, t.T("globals.buttons.confirmSubscription"), html, {
+    void enqueue(sub, settings, t.T("globals.buttons.confirmSubscription"), html, {
       headers: {
         "X-Listmonk-Subscriber": sub.uuid,
         ...(settings.unsubscribeHeader
@@ -218,7 +226,7 @@ export function createSubscriberMail(deps: {
         mode: "html",
         data: JSON.stringify({ logo_url: safeLogo(settings.logoUrl) }),
       }).body;
-      enqueue(sub, settings, t.T("email.data.title"), html, {
+      void enqueue(sub, settings, t.T("email.data.title"), html, {
         attachments: [
           {
             name: "data.json",
