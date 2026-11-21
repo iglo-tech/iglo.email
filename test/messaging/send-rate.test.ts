@@ -562,7 +562,13 @@ describe("B37: send rate cap", () => {
       }
 
       // Drive clock until all 70 messages are delivered to the sink
-      await h.drive(() => h.sink.messages.length === 70, 50);
+      // The step is 10 ms, not 50 ms. Sink receipts are read from this clock, so a 50 ms step
+      // quantizes them: in one trace the limiter grants and the SMTP hand-offs were exactly 200 ms
+      // apart (at most 5 in any rolling second), while receipts trailed them by 150 ms, once 200 ms,
+      // and gave gaps of 250 and 150 ms and a six-receipt window. The same run at a 10 ms step gave
+      // receipt gaps of exactly 200 ms and at most 5 in any rolling second. The cap is enforced at
+      // the grant; the assertion below reads it at the sink.
+      await h.drive(() => h.sink.messages.length === 70, 10);
       await Promise.all(txPromises);
 
       expect(h.sink.messages.length).toBe(70);
@@ -629,7 +635,16 @@ describe("B37: send rate cap", () => {
       }
 
       // 80 messages total at 1/s = ~80 seconds of clock time
-      await h.drive(() => h.sink.messages.length === 80, 50);
+      // The sink can hold all 80 messages before the campaign's delivery rows are written: the
+      // outcome is recorded after the hand-off. In one trace the sink had 80 while the 10 campaign
+      // deliveries were still `claimed` and the 70 sends `sent`. So the wait ends on the rows too.
+      const campaignSent = () =>
+        h.db
+          .query<{ count: number }, any>(
+            "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+          )
+          .get(campId)!.count as number;
+      await h.drive(() => h.sink.messages.length === 80 && Number(campaignSent()) === 10, 50);
       await Promise.all(txPromises);
 
       expect(h.sink.messages.length).toBe(80);
@@ -1305,12 +1320,39 @@ describe("B37: send rate cap", () => {
         .get(campId)!.count;
       expect(Number(failedDeliveries)).toBe(0);
 
-      // Restart
+      // Restart. The receipts before it are counted first, for the rolling check after the wait.
+      const sentBeforeRestart = h.sink.messages.length;
       h.restart();
       h.runner.wake();
 
-      // Messages finish sending (1 camp + 1 tx + 1 camp = 3 total)
-      await h.drive(() => h.sink.messages.length === 3, 50);
+      // Messages finish sending (1 camp + 1 tx + 1 camp = 3 total). The wait ends on the rows as
+      // well as the sink: the sink can hold the third message before its delivery row is written.
+      // The step is 10 ms, not 50 ms, for the reason given in test 1: a 50 ms step quantizes the
+      // receipt times the wait reads.
+      const finished = () => {
+        const sent = h.db
+          .query<{ count: number }, any>(
+            "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+          )
+          .get(campId)!.count;
+        const tx = h.db
+          .query<{ status: string }, any>(
+            "SELECT status FROM sends WHERE to_email = 'main-tx-wait@example.test'",
+          )
+          .get();
+        return h.sink.messages.length === 3 && Number(sent) === 2 && tx?.status === "sent";
+      };
+      await h.drive(finished, 10);
+      // The rolling cap is asserted at the sink only for the receipts before the restart. After it the
+      // limiter starts a fresh schedule, so a send can follow the last one from before at once, and
+      // sink receipts also carry each send's own latency: in one trace the two receipts were 50 ms
+      // and 1030 ms apart at a cap of one per second, straddling the restart's injected time. That
+      // boundary belongs to the restart, which is queued in B118. Before the restart only one receipt
+      // exists in this scenario (the cap holds the rest), so this check is brief here; test 1 asserts
+      // the rolling cap across a full run with a warm pool.
+      const beforeRestart = h.sink.messages.slice(0, sentBeforeRestart).map((m) => m.at!);
+      for (const t of beforeRestart)
+        expect(beforeRestart.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(1);
 
       const txRowAfter = h.db
         .query<{ status: string; attempts: number }, any>(

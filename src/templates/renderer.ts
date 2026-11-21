@@ -69,6 +69,8 @@ class Budget {
 export interface MessageBudget {
   readonly bytes: number;
   readonly work: number;
+  /** Charges emitted bytes, such as a generated text part (B120); throws when exhausted. */
+  charge(bytes: number): void;
 }
 export function createMessageBudget(): MessageBudget {
   return new Budget();
@@ -572,11 +574,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
     return { body, subject };
   }
 
-  function renderSync(request: RenderRequest): { body: string; subject: string } {
+  function renderSync(
+    request: RenderRequest,
+    budget?: MessageBudget,
+  ): { body: string; subject: string } {
     if (active >= 4) throw new RenderCapacityError();
     active++;
     try {
-      return runMessage(request, parseTemplateData(request.data));
+      return runMessage(request, parseTemplateData(request.data), undefined, undefined, budget);
     } finally {
       active--;
     }

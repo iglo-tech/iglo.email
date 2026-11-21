@@ -18,7 +18,12 @@ import type { Sends } from "@/messaging/sends";
 import { type Claim, type Enrollments, type SchedulerContext } from "@/sequences/enrollments";
 import { renderStep, stepCompileInput, stepDataText, TEST_SUBJECT } from "@/sequences/step-data";
 import type { SubscriberStore } from "@/subscribers/store";
-import { RenderCapacityError, type TemplateRenderer } from "@/templates/renderer";
+import {
+  createMessageBudget,
+  RenderCapacityError,
+  type TemplateRenderer,
+} from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import type { TemplateStore } from "@/templates/store";
 import { messageLinks } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
@@ -304,6 +309,8 @@ export function createScheduler(options: SchedulerOptions) {
     const subject = row.subject || template.subject;
     let prepared: ReturnType<Sends["prepareSequence"]>;
     try {
+      // One budget for the message's render and its generated text part (D118).
+      const budget = createMessageBudget();
       const rendered = renderStep(
         compile(
           `${template.id}\n${template.updated_at}\n${marketing}\n${subject}`,
@@ -311,13 +318,17 @@ export function createScheduler(options: SchedulerOptions) {
         ),
         data,
         links.tracking,
+        budget,
       );
+      // The generated text part of an HTML step (B120, D118); none when it has no text.
+      const text = await plainText(rendered.body, budget);
       const message: Message = {
         from: settings.fromEmail,
         to: [subscriber.email],
         subject: row.test ? `${TEST_SUBJECT}${rendered.subject}` : rendered.subject,
         contentType: "html",
         body: Buffer.from(rendered.body),
+        ...(text ? { altBody: Buffer.from(text) } : {}),
         headers: { ...links.headers },
         attachments: [],
       };

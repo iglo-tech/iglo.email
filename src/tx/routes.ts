@@ -18,7 +18,12 @@ import { HttpError, ok } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
 import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
 import type { TemplateStore } from "@/templates/store";
-import { RenderCapacityError, type TemplateRenderer } from "@/templates/renderer";
+import {
+  createMessageBudget,
+  RenderCapacityError,
+  type TemplateRenderer,
+} from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import type { Authentication } from "@/users/auth";
 import { createByteGate, type ByteGate, type Reservation } from "@/tx/gate";
 import { BODY_LIMIT, readTxMessage, TxInputError, type TxMessage } from "@/tx/input";
@@ -340,9 +345,13 @@ export function registerTxRoutes(
         const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}${manage}}`;
         let rendered: { body: string; subject: string };
         let altBody = m.altBody;
+        // One budget for the message's parts, so the generated text counts against the same limit.
+        const budget = createMessageBudget();
         try {
-          rendered = body.renderSync(data, prepared.tracking);
-          if (alt) altBody = alt.renderSync(data, prepared.tracking).body;
+          rendered = body.renderSync(data, prepared.tracking, budget);
+          if (alt) altBody = alt.renderSync(data, prepared.tracking, budget).body;
+          // An HTML message with no explicit alt body gets a generated text part (B120, D118).
+          if (!altBody && contentType === "html") altBody = await plainText(rendered.body, budget);
         } catch (error) {
           if (error instanceof RenderCapacityError)
             throw new HttpError(429, "Too many template renders in progress.");

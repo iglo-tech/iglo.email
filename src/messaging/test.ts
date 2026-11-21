@@ -1,6 +1,7 @@
 // Notification rendering and SMTP testing adapted from listmonk cmd/settings.go, internal/notifs/notifs.go and static/email-templates at 6fcd95f.
 import { systemTemplates } from "@/templates/builtins";
-import type { TemplateRenderer } from "@/templates/renderer";
+import { createMessageBudget, type TemplateRenderer } from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import type { Translation } from "@/i18n/i18n";
 import type { SettingsStore } from "@/settings/store";
 import type { SMTPServer } from "@/messaging/email";
@@ -139,12 +140,19 @@ export function createSMTPTest(
       revalidate();
       const current = settings.read();
       let html: string;
+      let text: string;
       try {
-        html = renderer.renderSync({
-          body: systemTemplates.smtpTest,
-          mode: "html",
-          data: JSON.stringify({ logo_url: safeLogo(current["app.logo_url"]) }),
-        }).body;
+        // One budget for the render and the generated text part (D118).
+        const budget = createMessageBudget();
+        html = renderer.renderSync(
+          {
+            body: systemTemplates.smtpTest,
+            mode: "html",
+            data: JSON.stringify({ logo_url: safeLogo(current["app.logo_url"]) }),
+          },
+          budget,
+        ).body;
+        text = await plainText(html, budget);
       } catch {
         throw new HttpError(500, "SMTP test failed.");
       }
@@ -157,6 +165,7 @@ export function createSMTPTest(
           subject: t.T("globals.buttons.testConnection"),
           contentType: "html",
           body: Buffer.from(html),
+          ...(text ? { altBody: Buffer.from(text) } : {}),
         },
         current["app.root_url"],
       );

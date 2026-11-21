@@ -14,10 +14,13 @@ import type { Sends } from "@/messaging/sends";
 import type { TestSends } from "@/messaging/test-sends";
 import type { Roles } from "@/roles/roles";
 import {
+  createMessageBudget,
+  type MessageBudget,
   RenderCapacityError,
   TemplateSourceError,
   type TemplateRenderer,
 } from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import type { TemplateStore } from "@/templates/store";
 import { parseSampleValue, SampleError, type Sample } from "@/templates/sample";
 import { messageLinks } from "@/unsubscribe/message";
@@ -418,6 +421,7 @@ export function registerSequenceRoutes(
     step: { subject: string | null; kind: string },
     template: { body: string; subject: string },
     data: string,
+    budget?: MessageBudget,
   ) => {
     const i18n = c.app.i18n;
     try {
@@ -425,6 +429,8 @@ export function registerSequenceRoutes(
       return renderStep(
         deps.renderer.compile(stepCompileInput(template.body, subject, step.kind === "marketing")),
         data,
+        undefined,
+        budget,
       );
     } catch (error) {
       if (error instanceof RenderCapacityError)
@@ -489,21 +495,27 @@ export function registerSequenceRoutes(
       let queued = false;
       try {
         const settings = deps.settings();
-        const messages: Message[] = reachable.map((email) => {
+        const messages: Message[] = [];
+        for (const email of reachable) {
           const prepared = previewFor(c, value, step, sequence, email);
           const data = stepDataText(prepared.data);
-          const rendered = renderStepFor(c, step, template, data);
-          return {
+          // One budget for the message's render and its generated text part (D118).
+          const budget = createMessageBudget();
+          const rendered = renderStepFor(c, step, template, data, budget);
+          // The generated text part of an HTML step (B120, D118); none when it has no text.
+          const text = await plainText(rendered.body, budget);
+          messages.push({
             from: settings.fromEmail,
             to: [email],
             subject: `${TEST_SUBJECT}${rendered.subject}`,
             contentType: "html",
             body: Buffer.from(rendered.body),
+            ...(text ? { altBody: Buffer.from(text) } : {}),
             headers: { ...prepared.links.headers },
             // B108 (D114): chosen here, so its record is written before the message is queued.
             messageId: newMessageId(settings.marketing.rootUrl),
-          };
-        });
+          });
+        }
         // The sender may have changed its mind while these rendered: the permission is checked again.
         auth.revalidate(c, "tx:send");
         auth.revalidate(c, MANAGE);

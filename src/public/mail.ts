@@ -18,7 +18,12 @@ import { createThrottle } from "@/public/rate-limit";
 import type { PublicSettings } from "@/public/settings";
 import type { SubscriberStore } from "@/subscribers/store";
 import { systemTemplates } from "@/templates/builtins";
-import type { TemplateRenderer } from "@/templates/renderer";
+import {
+  createMessageBudget,
+  type MessageBudget,
+  type TemplateRenderer,
+} from "@/templates/renderer";
+import { plainText } from "@/messaging/plain";
 import type { Tracking } from "@/unsubscribe/tracking";
 
 type Subscriber = NonNullable<ReturnType<SubscriberStore["get"]>>;
@@ -101,6 +106,7 @@ export function createSubscriberMail(deps: {
     settings: PublicSettings,
     subject: string,
     html: string,
+    budget: MessageBudget,
     extra: {
       headers?: Record<string, string>;
       attachments?: {
@@ -109,27 +115,34 @@ export function createSubscriberMail(deps: {
         contentType: string;
       }[];
     },
-  ) =>
-    deps.sends.enqueueRequest({
-      sends: [
-        {
-          subscriberUuid: sub.uuid,
-          send: {
-            source: "tx",
-            kind: "transactional",
-            subscriberId: sub.id,
-            message: {
-              from: settings.fromEmail,
-              to: [sub.email],
-              subject,
-              contentType: "html",
-              body: Buffer.from(html),
-              ...extra,
+  ): Promise<void> =>
+    // The generated text part (B120, D118) is made first, so the enqueue is one step after it. A
+    // failure is logged and nothing is queued, as a failed hook is everywhere else in this module.
+    plainText(html, budget)
+      .then((text) => {
+        deps.sends.enqueueRequest({
+          sends: [
+            {
+              subscriberUuid: sub.uuid,
+              send: {
+                source: "tx",
+                kind: "transactional",
+                subscriberId: sub.id,
+                message: {
+                  from: settings.fromEmail,
+                  to: [sub.email],
+                  subject,
+                  contentType: "html",
+                  body: Buffer.from(html),
+                  ...(text ? { altBody: Buffer.from(text) } : {}),
+                  ...extra,
+                },
+              },
             },
-          },
-        },
-      ],
-    });
+          ],
+        });
+      })
+      .catch((error: unknown) => deps.logger.error(error));
   /** makeOptinNotifyHook: returns the number of double opt-in lists awaiting confirmation. */
   function optin(sub: Subscriber, listIds: bigint[] = []): number {
     const wanted = new Set(listIds.map(Number));
@@ -140,18 +153,23 @@ export function createSubscriberMail(deps: {
     const settings = deps.settings();
     const query = new URLSearchParams(lists.map((list) => ["l", list.uuid]));
     const unsubscribeUrl = `${settings.rootUrl}/subscription/${dummyUUID}/${sub.uuid}`;
-    const html = deps.renderer.renderSync({
-      body: systemTemplates.subscriberOptin,
-      mode: "html",
-      data: JSON.stringify({
-        subscriber: { first_name: nameChunk(sub.name, false) },
-        lists: lists.map((list) => ({ name: list.name, type: list.type })),
-        optin_url: `${settings.rootUrl}/subscription/optin/${sub.uuid}?${query}`,
-        manage_url: `${unsubscribeUrl}?manage=true`,
-        logo_url: safeLogo(settings.logoUrl),
-      }),
-    }).body;
-    enqueue(sub, settings, t.T("globals.buttons.confirmSubscription"), html, {
+    // One budget for the render and the generated text part (D118).
+    const budget = createMessageBudget();
+    const html = deps.renderer.renderSync(
+      {
+        body: systemTemplates.subscriberOptin,
+        mode: "html",
+        data: JSON.stringify({
+          subscriber: { first_name: nameChunk(sub.name, false) },
+          lists: lists.map((list) => ({ name: list.name, type: list.type })),
+          optin_url: `${settings.rootUrl}/subscription/optin/${sub.uuid}?${query}`,
+          manage_url: `${unsubscribeUrl}?manage=true`,
+          logo_url: safeLogo(settings.logoUrl),
+        }),
+      },
+      budget,
+    ).body;
+    void enqueue(sub, settings, t.T("globals.buttons.confirmSubscription"), html, budget, {
       headers: {
         "X-Listmonk-Subscriber": sub.uuid,
         ...(settings.unsubscribeHeader
@@ -213,12 +231,17 @@ export function createSubscriberMail(deps: {
     exportData(sub: Subscriber) {
       if (!exportThrottle(String(sub.id))) return;
       const settings = deps.settings();
-      const html = deps.renderer.renderSync({
-        body: systemTemplates.subscriberData,
-        mode: "html",
-        data: JSON.stringify({ logo_url: safeLogo(settings.logoUrl) }),
-      }).body;
-      enqueue(sub, settings, t.T("email.data.title"), html, {
+      // One budget for the render and the generated text part (D118).
+      const budget = createMessageBudget();
+      const html = deps.renderer.renderSync(
+        {
+          body: systemTemplates.subscriberData,
+          mode: "html",
+          data: JSON.stringify({ logo_url: safeLogo(settings.logoUrl) }),
+        },
+        budget,
+      ).body;
+      void enqueue(sub, settings, t.T("email.data.title"), html, budget, {
         attachments: [
           {
             name: "data.json",
