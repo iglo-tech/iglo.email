@@ -237,6 +237,43 @@ test("a 14 KB template that renders to 840 KB converts promptly, and /health ans
   }
 });
 
+// r2 B1: the reviewer's 7 KB template that renders to about 1 MB of nested <b>. The send is in flight
+// when /health is asked, and /health must answer within a second of being asked.
+test("a 7 KB template that renders to 1 MB does not delay /health by more than 1 s", async () => {
+  const s = await stack();
+  try {
+    const body =
+      "{% for i in (1..145) %}" +
+      "<b>".repeat(1000) +
+      "{% endfor %}t{% for i in (1..145) %}" +
+      "</b>".repeat(1000) +
+      "{% endfor %}";
+    const template = await s.call("/api/templates", "POST", {
+      name: "nested-bold",
+      type: "tx",
+      subject: "Nested",
+      body,
+    });
+    expect(template.status).toBe(200);
+    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const sending = s.call("/api/tx", "POST", {
+      subscriber_mode: "external",
+      subscriber_emails: ["bold@example.test"],
+      template_id: id,
+    });
+    await Bun.sleep(300);
+    const asked = performance.now();
+    const health = await s.call("/health");
+    expect(health.status).toBe(200);
+    expect(performance.now() - asked).toBeLessThan(1_000);
+    expect((await sending).status).toBe(200);
+    const text = await textTo(s, "bold@example.test");
+    expect(text).toContain("t");
+  } finally {
+    await s.close();
+  }
+});
+
 test("a fragment with self-closing SVG and MathML sends, with or without a text part", async () => {
   const s = await stack();
   try {

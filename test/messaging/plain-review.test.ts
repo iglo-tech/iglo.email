@@ -123,8 +123,115 @@ test("consecutive links that share an href write the URL once", async () => {
   );
 });
 
-test("a symbol-only link with its own URL is decoration: nothing is written", async () => {
-  expect(await text('<p>Next <a href="https://e.test/v">›</a></p>')).toBe("Next");
+// r2 B2: a symbol-only link is empty text. Its URL is written unless a same-href neighbour already
+// wrote it, so a reader can still act on a link whose only text is a symbol.
+test("a symbol-only link keeps its URL: See the new pricing → reads with its URL", async () => {
+  expect(await text('<p>See the new pricing <a href="https://x/pricing">→</a></p>')).toBe(
+    "See the new pricing <https://x/pricing>",
+  );
+});
+
+test("symbol-only feedback links with different hrefs keep both URLs", async () => {
+  expect(
+    await text(
+      '<p>Was this helpful? <a href="https://x/fb?v=up">👍</a> <a href="https://x/fb?v=down">👎</a></p>',
+    ),
+  ).toBe("Was this helpful? <https://x/fb?v=up> <https://x/fb?v=down>");
+});
+
+test("symbol-only rating links keep their URLs", async () => {
+  expect(
+    await text('<p>Rate: <a href="https://x/r?s=1">★</a><a href="https://x/r?s=2">★★</a></p>'),
+  ).toBe("Rate: <https://x/r?s=1> <https://x/r?s=2>");
+});
+
+// r2 S1: an attribute reference without `;` is a legacy name, and a browser leaves it literal when
+// `=` or a letter or digit follows it. A name that is not legacy stays literal.
+test("a legacy name without ; followed by = stays literal in an href", async () => {
+  expect(await text('<a href="https://x.example/?id=1&sect=news">news</a>')).toBe(
+    "news <https://x.example/?id=1&sect=news>",
+  );
+  expect(await text('<a href="https://x.example/?id=1&reg=eu&copy=2">eu</a>')).toBe(
+    "eu <https://x.example/?id=1&reg=eu&copy=2>",
+  );
+  expect(await text('<a href="https://x.example/?a=1&region=eu">eu</a>')).toBe(
+    "eu <https://x.example/?a=1&region=eu>",
+  );
+});
+
+// r2 nits: text decodes as a browser does. A legacy name without `;` decodes, a longer name that is
+// not legacy does not, and a C1 numeric reference maps to Windows-1252.
+test("text references decode as a browser does: &copy2026 is ©2026, &bull x stays literal", async () => {
+  expect(await text("<p>Copyright &copy2026</p>")).toBe("Copyright ©2026");
+  expect(await text("<p>a &bull x</p>")).toBe("a &bull x");
+  expect(await text("<p>a&#150;b</p>")).toBe("a–b");
+});
+
+// r2 S3: center is a block.
+test("center is a block: two centred lines are two lines, and same-href links keep their URLs", async () => {
+  expect(await text("<center>One</center><center>Two</center>")).toBe("One\n\nTwo");
+  expect(
+    await text(
+      '<center><a href="https://x/p">One</a></center><center><a href="https://x/p">Two</a></center>',
+    ),
+  ).toBe("One <https://x/p>\n\nTwo <https://x/p>");
+});
+
+// r2 S2: a head with no end tag ends at the body, so the body still converts.
+test("an open head with no </head> ends at the body, and the body converts", async () => {
+  expect(await text('<html><head><meta charset="utf-8"><title>T</title><body><p>Hello</p>')).toBe(
+    "Hello",
+  );
+});
+
+// r2 S4 and item 6: a link to a non-navigable scheme keeps its text and writes no URL.
+test("data:, vbscript: and javascript: links keep their text and write no URL, however they are encoded", async () => {
+  expect(await text('<a href="data:text/html,%3Cscript%3E">Open</a>')).toBe("Open");
+  expect(await text('<a href="vbscript:msgbox">Run</a>')).toBe("Run");
+  expect(await text('<a href="java&#9;script:alert(1)">Go</a>')).toBe("Go");
+  expect(await text('<a href="&#1;javascript:alert(1)">Go</a>')).toBe("Go");
+});
+
+// r2 B1: nesting of each kind converts within a tight real-time bound, and its cost grows with the
+// input, not with its square. The cap on pending end-tag handlers is what bounds it (D118).
+const MIB = 1024 * 1024;
+const nested = {
+  b: (n: number) => "<b>".repeat(n) + "t" + "</b>".repeat(n),
+  div: (n: number) => "<div>".repeat(n) + "t" + "</div>".repeat(n),
+  a: (n: number) => '<a href="x">'.repeat(n) + "t" + "</a>".repeat(n),
+  li: (n: number) => "<ul><li>".repeat(n) + "t" + "</li></ul>".repeat(n),
+  td: (n: number) => "<table><tr><td>".repeat(n) + "t" + "</td></tr></table>".repeat(n),
+};
+const bytesPerLevel: Record<keyof typeof nested, number> = {
+  b: 7,
+  div: 11,
+  a: 16,
+  li: 18,
+  td: 34,
+};
+for (const kind of Object.keys(nested) as (keyof typeof nested)[]) {
+  test(`1 MiB of nested ${kind} converts in under 1 s`, async () => {
+    const html = nested[kind](Math.floor(MIB / bytesPerLevel[kind]));
+    const started = performance.now();
+    expect(await text(html)).toContain("t");
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+}
+
+test("quadrupling nested <b> input costs at most about 6x: the cost is not the square", async () => {
+  const time = async (n: number) => {
+    const html = nested.b(n);
+    const samples: number[] = [];
+    for (let run = 0; run < 3; run++) {
+      const started = performance.now();
+      await text(html);
+      samples.push(performance.now() - started);
+    }
+    return samples.sort((a, b) => a - b)[1]!;
+  };
+  const small = await time(Math.floor(MIB / 4 / 7));
+  const large = await time(Math.floor(MIB / 7));
+  expect(large / Math.max(small, 1)).toBeLessThan(6);
 });
 
 // S7: a URL cannot end the <…> early or carry a space into the text part.
