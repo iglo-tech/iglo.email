@@ -336,7 +336,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
       notify: adminNotifier,
     });
-    await importer.sweep().catch((error) => app.logger.error(error));
+    await importer.sweep().catch((error: unknown) => app.logger.error(error));
     registerImportRoutes(router, { importer, roles, auth });
     const limiter = createSendRateLimiter({
       clock,
@@ -369,7 +369,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     });
     // A database that names a directory it must not serve from refuses media, not the server:
     // the reason is logged here, and each media operation refuses with it (D64).
-    await files.sweep().catch((error) => app.logger.error(error));
+    await files.sweep().catch((error: unknown) => app.logger.error(error));
     registerSettingsRoutes(
       router,
       settings,

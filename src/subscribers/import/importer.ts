@@ -354,7 +354,7 @@ export function createImporter(deps: {
       }
     } finally {
       await file?.close().catch(() => {});
-      await rm(path, { force: true }).catch((error) => logger.error(error));
+      await rm(path, { force: true }).catch((error: unknown) => logger.error(error));
     }
   }
 

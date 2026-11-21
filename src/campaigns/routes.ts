@@ -904,10 +904,12 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", problem));
       }
       // As listmonk, the request names the media of a test send.
-      const attachments = await deps.attachments(input.media ?? [], images).catch((error) => {
-        const reason = error instanceof UploadRootError ? error.message : "attachment";
-        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", reason));
-      });
+      const attachments = await deps
+        .attachments(input.media ?? [], images)
+        .catch((error: unknown) => {
+          const reason = error instanceof UploadRootError ? error.message : "attachment";
+          throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", reason));
+        });
       const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
       const messages: Array<Message> = [];
       let totalBytes = 0;

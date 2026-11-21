@@ -288,7 +288,7 @@ export function registerTxRoutes(
       if (embedded.problem) {
         throw new HttpError(400, t.Ts("templates.errorRendering", "error", embedded.problem));
       }
-      const inline = await deps.attachments([], embedded.images).catch((error) => {
+      const inline = await deps.attachments([], embedded.images).catch((error: unknown) => {
         const reason = error instanceof UploadRootError ? error.message : "embedded image";
         throw new HttpError(500, t.Ts("templates.errorRendering", "error", reason));
       });
