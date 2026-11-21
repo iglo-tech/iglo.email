@@ -85,13 +85,59 @@ export async function runWebhooksContract(target: {
       (await call("/api/webhooks", "POST", { url: "ftp://x.test/", events })).status === 400,
       "scheme",
     );
+    // B125 (D122): a default install refuses a private target at delivery, with no request sent. The
+    // probes subscribe to their own event, so the receiver below sees none of them; they are deleted
+    // before it is switched on.
+    check(
+      (await call("/api/settings")).body.data["webhooks.block_private_addresses"] === true,
+      "setting-default",
+    );
+    const probeList = (
+      await call("/api/lists", "POST", { name: "probe", type: "public", optin: "single" })
+    ).body.data.id as number;
+    const probe = (
+      await call("/api/subscribers", "POST", {
+        email: "probe@example.test",
+        name: "probe",
+        lists: [probeList],
+      })
+    ).body.data.id as number;
+    const probes: number[] = [];
+    for (const url of [
+      receiver.url(),
+      `http://localhost:${receiver.port}/`,
+      "http://169.254.169.254/latest/meta-data/",
+    ])
+      probes.push(
+        (await call("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
+          .id as number,
+      );
+    await call(`/api/subscribers/${probe}/blocklist`, "PUT", {});
+    for (const id of probes) {
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const [row] = (await call(`/api/webhooks/${id}/deliveries`)).body.data.results;
+        if (row?.last_error === "blocked_address") break;
+        check(Date.now() < deadline, "default-refused");
+        await Bun.sleep(5);
+      }
+    }
+    check(receiver.received.length === 0, "default-refused-no-request");
+    for (const id of probes)
+      check((await call(`/api/webhooks/${id}`, "DELETE")).status === 200, "probe-delete");
+    // The receivers below are on loopback, so the operator turns the block off; the stored false is
+    // checked again after a restart.
+    check(
+      (await call("/api/settings/webhooks.block_private_addresses", "PUT", false)).status === 200,
+      "setting-off",
+    );
+
     const created = await call("/api/webhooks", "POST", { url: receiver.url(), events });
     check(created.status === 200 && /^[0-9a-f]{64}$/.test(created.body.data.secret), "create");
     const { id, secret } = created.body.data as { id: number; secret: string };
     check(!JSON.stringify((await call("/api/webhooks")).body).includes(secret), "secret-hidden");
 
     const settings = (await call("/api/settings")).body.data;
-    check(settings["webhooks.block_private_addresses"] === false, "setting-default");
     await call("/api/settings/smtp", "PUT", [
       {
         ...settings.smtp[0],
@@ -321,6 +367,11 @@ export async function runWebhooksContract(target: {
     // Configuration and the secret survive a restart; the held row is retried in time by the
     // clock tests, so only the durable configuration is checked here.
     await target.restart();
+    // B125 (D122): a stored false is the operator's choice and survives a restart.
+    check(
+      (await call("/api/settings")).body.data["webhooks.block_private_addresses"] === false,
+      "restart-keeps-stored-false",
+    );
     const restarted = await subscriber("restarted");
     await call(`/api/subscribers/${restarted.id}`, "DELETE");
     await arrived("subscriber.deleted", 3);

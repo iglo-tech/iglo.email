@@ -48,6 +48,8 @@ export function createSubscriberMail(deps: {
 }) {
   const t = deps.i18n;
   const throttle = createThrottle(deps.clock, optinThrottleTTL, optinThrottleCap);
+  // B125: the data mail has the opt-in mail's window and allowance, per subscriber, whatever the peer.
+  const exportThrottle = createThrottle(deps.clock, optinThrottleTTL, optinThrottleCap);
   const signups = new Set<bigint>();
   let overflowed = false;
   /** The sections `privacy.exportable` allows, for the emailed file and the admin download. */
@@ -204,8 +206,12 @@ export function createSubscriberMail(deps: {
       if (throttle(sub.email.trim().toLowerCase())) quietly(() => optin(sub, pending.map(BigInt)));
     },
     exportSections,
-    /** SelfExportSubscriberData: the file goes to the subscriber, never into the response. */
+    /**
+     * SelfExportSubscriberData: the file goes to the subscriber, never into the response. Within the
+     * window a second request sends nothing; the caller answers the same either way (B125).
+     */
     exportData(sub: Subscriber) {
+      if (!exportThrottle(String(sub.id))) return;
       const settings = deps.settings();
       const html = deps.renderer.renderSync({
         body: systemTemplates.subscriberData,

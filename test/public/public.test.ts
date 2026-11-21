@@ -481,6 +481,8 @@ test("export mails native sections; the response holds nothing personal", async 
       "subscriptions",
     ].sort(),
   );
+  // B125: the export mail is throttled per subscriber, so a second one waits out the window.
+  f.clock.advance(10 * minute);
   f.overrides.exportable = ["profile"];
   await f.fresh(await paired(f, id, "export"));
   await f.drain();
@@ -489,6 +491,28 @@ test("export mails native sections; the response holds nothing personal", async 
   expect(Object.keys(JSON.parse(Buffer.from(only, "base64").toString("utf8")))).toEqual([
     "profile",
   ]);
+});
+
+test("export mail is throttled per subscriber, whatever the peer: one mail a window, the same answer, reopened by the clock (B125)", async () => {
+  const f = await open();
+  const id = await f.subscriber("nia@example.test", "Nia");
+  const path = await paired(f, id, "export");
+  // Twelve requests from three peers, four each: no peer reaches its own limit, so only the
+  // per-subscriber throttle can hold the mail back. Every answer is the same page (no oracle).
+  const answers: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const response = await f.post(path, "", `203.0.113.${(i % 3) + 1}`);
+    expect(response.status).toBe(200);
+    answers.push(await response.text());
+  }
+  expect(new Set(answers).size).toBe(1);
+  await f.drain();
+  expect(f.mailTo("nia@example.test")).toHaveLength(1);
+  // The window is ten minutes, as opt-in mail's; after it, the next request mails again.
+  f.clock.advance(10 * minute);
+  expect((await f.post(path, "", "203.0.113.9")).status).toBe(200);
+  await f.drain();
+  expect(f.mailTo("nia@example.test")).toHaveLength(2);
 });
 
 test("wipe removes the subscriber and memberships in one step", async () => {

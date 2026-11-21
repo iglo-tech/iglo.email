@@ -919,6 +919,25 @@ export async function runPublicContract(target: {
       (await post("/subscription/export/nope")).status === (reference ? 400 : 404),
       "export-bad-uuid",
     );
+    // B125 (deliberate difference, 07): a repeat export inside the throttle window answers the same
+    // page as the first, so the answer reveals nothing; the mail count is checked on the clock in
+    // test/public/public.test.ts. Upstream has no throttle, so it is production only.
+    if (!reference) {
+      const again = await post(await privacyPath(noa, "export"));
+      check(again.status === 200 && again.text === exported.text, "export-throttled-same-answer");
+    }
+    // B125 (deliberate difference, 07): personal pages send the hardening headers; upstream sends none.
+    if (!reference) {
+      const page = await visit(`/subscription/${dummy}/${noa.uuid}?manage=true`);
+      const csp = page.headers.get("content-security-policy") ?? "";
+      check(
+        page.headers.get("cache-control") === "no-store" &&
+          page.headers.get("referrer-policy") === "no-referrer" &&
+          page.headers.get("x-frame-options") === "DENY" &&
+          csp.includes("frame-ancestors 'none'"),
+        "personal-page-headers",
+      );
+    }
 
     // Wipe.
     const oli = await createSubscriber("oli", [single.id], true);

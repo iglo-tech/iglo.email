@@ -472,6 +472,8 @@ export async function runImportContract(target: {
 
     // Webhooks: blocklist mode queues what the API queues, and repeats queue nothing.
     const receiver = startReceiver();
+    // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
+    await call("/api/settings/webhooks.block_private_addresses", "PUT", false);
     const hook = await call("/api/webhooks", "POST", {
       url: receiver.url(),
       events: ["subscriber.blocklisted", "subscriber.unsubscribed"],

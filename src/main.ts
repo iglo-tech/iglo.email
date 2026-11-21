@@ -83,6 +83,7 @@ import { registerArchiveRoutes } from "@/public/archive";
 import { createSubscriberMail, createSignupMail, type SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
 import { rateLimited } from "@/public/rate-limit";
+import { personalPageHeaders } from "@/public/headers";
 import { registerPublicRoutes } from "@/public/routes";
 import { createCaptcha } from "@/captcha/captcha";
 import { publicSettings } from "@/public/settings";
@@ -266,6 +267,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     templates = createTemplateStore(db, clock, renderer, templateReferences);
     templates.initialize();
     const router = createRouter(() => restoreHold(db));
+    // B125: every personal public page, whichever route family serves it (src/public/headers.ts).
+    router.use(personalPageHeaders);
     registerTemplateRoutes(router, templates, renderer, auth);
     registerUserRoutes(router, users, roles, auth, () => publicSettings(settings!.read()));
     registerListRoutes(router, listStore, roles, auth);

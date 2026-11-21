@@ -308,21 +308,29 @@ above has the same settings for nginx.
    which lists the containers on that network (`docker network ls` shows only names). Then run the
    `docker network inspect` command above on that name. Until the proxy is listed, the server logs one line that names the address the request came
    from; it logs again only after the list changes.
-3. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
-4. **One container per volume.** Each data directory has one server ([one process per data
+3. **Private webhook targets.** A webhook whose target resolves to a private, loopback, link-local or
+   unique-local address is refused at delivery, with no request sent, and a redirect is not followed
+   ([D122](design/09-decisions.md#d122-personal-pages-send-hardening-headers-export-mail-is-throttled-per-subscriber-and-private-webhook-targets-are-refused-by-default-lead-2026-11-20)).
+   That covers a platform's internal service names and the cloud metadata address `169.254.169.254`.
+   Leave `webhooks.block_private_addresses` on, which is the default, unless a receiver you run is on
+   a private network. Turn it off then, under Settings → Security, or with
+   `PUT /api/settings/webhooks.block_private_addresses` and the body `false`. A value stored before
+   the upgrade stays as it is, so check it after upgrading ([Upgrades](#upgrades)).
+4. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
+5. **One container per volume.** Each data directory has one server ([one process per data
    directory](#one-process-per-data-directory)). A rolling deploy that starts the new container
    before the old one stops fails on the lock; stop the old one first.
-5. **Scheduled backups run without a shell.** The image has no shell, so a scheduler must start the
+6. **Scheduled backups run without a shell.** The image has no shell, so a scheduler must start the
    executable with its arguments, not a shell line. The invocation is
    `iglo.email backup --output /data/backups/latest --force`, then
    `iglo.email backup --verify /data/backups/latest`, as in [Docker](#docker). On Coolify, a scheduled
    task must have its shell option off. A scheduler that runs one command per task schedules the
    verify as its own task a few minutes after the backup, with exactly that command, so a backup that
    does not verify fails its task the same night; `--verify` exits nonzero when it does not verify.
-6. **Bootstrap variables.** Remove `IGLO_EMAIL_ADMIN_*` and `IGLO_EMAIL_API_*` after the first start,
+7. **Bootstrap variables.** Remove `IGLO_EMAIL_ADMIN_*` and `IGLO_EMAIL_API_*` after the first start,
    and restart. The server ignores them from then on. To change the API token, create a new API user
    under Users, which shows its token once, switch the integration to it, and delete the old one.
-7. **First test mail, opened in a real inbox.** Send a sequence-step or campaign test to your own
+8. **First test mail, opened in a real inbox.** Send a sequence-step or campaign test to your own
    mailbox and look at the links and images in the received message. Test sends are never tracked
    by iglo.email, so their links must point straight at your site. A link through
    `*.awstrack.me`, or a 1×1 image from an SES domain, means SES engagement tracking (Virtual
@@ -861,6 +869,15 @@ whether your integration should re-subscribe such people: it now gets `suppresse
 `DELETE /api/suppressions`. A wipe's `subscriber.deleted` webhook now carries the external ID and
 list IDs, so a receiver that stored only the numeric ID and UUID needs no change, and one that
 matches on the external ID now sees it for a wipe as well.
+
+From the release that hardens personal pages and throttles export mail (D122), three things change.
+The block on private webhook targets is on for a new install. An upgraded install keeps the value it
+stores, and an earlier release stored `false` for every install, so an install that never changed the
+setting still allows private targets. Check `webhooks.block_private_addresses` under Settings →
+Security and turn it on, unless a receiver you run is on a private network. The personal pages (the
+`/subscription/`, `/m/` and `/campaign/` paths) answer with `X-Frame-Options: DENY`, so a signup form
+embedded in an iframe stops showing: link to it, or paste its markup. A person who asks for their data
+twice within ten minutes gets one data mail; the second request answers the same page and sends nothing.
 
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain

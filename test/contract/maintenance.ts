@@ -125,6 +125,8 @@ export async function runMaintenanceContract(target: {
     const receiver = startReceiver();
     try {
       const count = (sql: string) => (db.query(sql).get() as { n: number }).n;
+      // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
+      await call("/api/settings/webhooks.block_private_addresses", "PUT", false);
       const hook = await call("/api/webhooks", "POST", {
         url: receiver.url(),
         events: ["subscriber.blocklisted", "subscriber.deleted"],

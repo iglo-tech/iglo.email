@@ -36,8 +36,9 @@ export const defaults = {
   "marketing.min_interval": "P7D",
   // Native: account-wide maximum send rate (messages/s, 0 = no cap).
   "messaging.max_send_rate": 14,
-  // Native: refuse webhook targets outside public unicast, checked after DNS resolution.
-  "webhooks.block_private_addresses": false,
+  // Native: refuse webhook targets outside public unicast, checked after DNS resolution. On by
+  // default (D122). A stored value is kept as it is, so an install that stored false keeps it.
+  "webhooks.block_private_addresses": true,
   "security.captcha": {
     altcha: {
       enabled: false,

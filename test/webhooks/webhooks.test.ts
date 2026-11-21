@@ -700,10 +700,80 @@ test("block_private_addresses refuses private targets after resolution, without 
   for (const id of ids) await queued(f, id, 1);
   for (const id of ids) expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
   expect(r.received.length).toBe(0);
-  // Off (the default), a self-hosted receiver on a private address works.
+  // Off (an operator's stored choice), a self-hosted receiver on a private address works.
   f.blockPrivate.value = false;
   f.advanceWebhooks(30_000);
   await r.waitFor(1);
+});
+
+test("with blocking on, every private, loopback, link-local and unique-local family is refused before a request; a public one connects to its checked address (B125, D122)", async () => {
+  // One name per address, each resolving to that address alone, so every target is a name.
+  const privateAddresses = [
+    "10.1.2.3",
+    "172.16.0.9",
+    "192.168.1.20",
+    "127.0.0.1",
+    "169.254.169.254",
+    "100.64.0.1",
+    "0.0.0.0",
+    "::1",
+    "::",
+    "fe80::1",
+    "fd00::5",
+    "fc00::1",
+    "::ffff:10.0.0.1",
+    "::ffff:127.0.0.1",
+    "64:ff9b::a00:1",
+    "2002:7f00:1::1",
+    "2001:db8::1",
+    "ff02::1",
+  ];
+  const publicAddresses = ["93.184.216.34", "2606:4700:4700::1111"];
+  const resolved: Record<string, string[]> = {};
+  const sent: string[] = [];
+  const f = await open({
+    webhooks: {
+      lookup: async (host: string) => resolved[host] ?? [],
+      fetch: (async (url: string | URL | Request) => {
+        sent.push(String(url));
+        return new Response(null, { status: 200 });
+      }) as typeof fetch,
+    },
+  });
+  f.blockPrivate.value = true;
+  const refused: number[] = [];
+  for (const [index, address] of privateAddresses.entries()) {
+    resolved[`private${index}.test`] = [address];
+    refused.push(
+      (
+        await f.json("/api/webhooks", "POST", {
+          url: `http://private${index}.test/`,
+          events: ["subscriber.blocklisted"],
+        })
+      ).body.data.id,
+    );
+  }
+  const allowed: number[] = [];
+  for (const [index, address] of publicAddresses.entries()) {
+    resolved[`public${index}.test`] = [address];
+    allowed.push(
+      (
+        await f.json("/api/webhooks", "POST", {
+          url: `http://public${index}.test/path`,
+          events: ["subscriber.blocklisted"],
+        })
+      ).body.data.id,
+    );
+  }
+  await blocklist(f, await f.subscriber("a@example.test"));
+  for (const id of refused) {
+    await queued(f, id, 1);
+    expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
+  }
+  for (const id of allowed)
+    await until(async () => (await deliveries(f, id))[0]?.status === "delivered");
+  // Only the public targets were requested, each at the address that was checked.
+  expect(sent.sort()).toEqual(["http://93.184.216.34/path", "http://[2606:4700:4700::1111]/path"]);
 });
 
 test("a resolver that never answers cannot outlast the request deadline", async () => {
