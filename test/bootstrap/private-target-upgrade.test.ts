@@ -121,6 +121,9 @@ async function earlierRelease(): Promise<string> {
   await stopChild(first.child);
   const db = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
   try {
+    // Schema 23 has neither the campaign delivery reason nor its index (migration 25, B116).
+    db.run("DROP INDEX idx_campaign_deliveries_skipped");
+    db.run("ALTER TABLE campaign_deliveries DROP COLUMN reason");
     db.run("UPDATE settings SET value = 'false' WHERE key = ?", [key]);
     db.run("INSERT INTO webhooks (id, url, secret, events) VALUES (1, ?, 'secret', '[]')", [
       "http://127.0.0.1:9/hook",
@@ -154,7 +157,7 @@ test("an upgrade turns the stored false on, and every restart names the refused 
   expect((await api(upgraded.port, "GET", "/api/settings")).data[key]).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
-  expect(userVersion(dataDir)).toBe(24);
+  expect(userVersion(dataDir)).toBe(25);
 
   // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);
