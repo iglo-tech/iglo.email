@@ -280,8 +280,7 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
 test("a 12 KB template of unclosed <p> elements does not delay /health by more than 200 ms, and sends its HTML", async () => {
   const s = await stack();
   try {
-    const body =
-      "{% for i in (1..85) %}" + "<p>x<b>y</b>".repeat(1000) + "{% endfor %}";
+    const body = "{% for i in (1..85) %}" + "<p>x<b>y</b>".repeat(1000) + "{% endfor %}";
     const template = await s.call("/api/templates", "POST", {
       name: "unclosed-p",
       type: "tx",
