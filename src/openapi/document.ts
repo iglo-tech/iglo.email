@@ -104,7 +104,7 @@ function build(operation: Operation): Record<string, unknown> {
       ...(content ? { 200: { description: "OK", content } } : {}),
       ...Object.fromEntries(
         [...statuses]
-          .sort()
+          .sort((a, b) => a - b)
           .map((status) => [status, { description: refused[status], content: errorContent }]),
       ),
       default: error,

@@ -61,6 +61,7 @@ export default defineConfig({
         "unicorn/prefer-number-properties": "off",
         "typescript/consistent-type-imports": "off",
         "no-useless-assignment": "off",
+        "typescript/require-array-sort-compare": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -113,7 +114,6 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off", // B134b
     "typescript/no-unsafe-return": "off", // B134b
     "typescript/no-unsafe-type-assertion": "off", // B134b
-    "typescript/require-array-sort-compare": "off", // B134b
     "typescript/unbound-method": "off", // B134b
     "typescript/use-unknown-in-catch-callback-variable": "off", // B134b
     "@nkzw/no-instanceof": "off", // B134b
