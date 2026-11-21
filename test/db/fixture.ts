@@ -142,7 +142,6 @@ export function startDbFixture(dataDir: string) {
             writeTransaction(db, (() => {
               insert();
               // This deliberately malformed callback exercises runtime protection.
-              // oxlint-disable-next-line unicorn/no-thenable
               return { then() {} };
             }) as never);
           else if (input.mode === "rejected")
