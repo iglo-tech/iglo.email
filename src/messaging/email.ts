@@ -607,9 +607,9 @@ export function createEmailer(options: {
       const remaining = temporary ? 10_000 : 60_000;
       const timeout = new AbortController();
       timer = timeout;
-      void new Promise<void>((resolve) =>
-        resolve(options.clock.sleep(remaining, timeout.signal)),
-      ).then(
+      void new Promise<void>((resolve) => {
+        resolve(options.clock.sleep(remaining, timeout.signal));
+      }).then(
         () => {
           if (settled) {
             return;
@@ -658,9 +658,9 @@ export function createEmailer(options: {
           pool!.active++;
           // The executor turns a synchronous throw from the transport into a rejection, so
           // nothing after the hand-off to a pool can throw out of `push`.
-          void new Promise<{ accepted: Array<unknown>; rejected: Array<unknown> }>((resolve) =>
-            resolve(pool!.transport.sendMail(data)),
-          )
+          void new Promise<{ accepted: Array<unknown>; rejected: Array<unknown> }>((resolve) => {
+            resolve(pool!.transport.sendMail(data));
+          })
             .then((info) =>
               complete({
                 messageId,

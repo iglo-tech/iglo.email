@@ -348,7 +348,9 @@ export function registerSequenceRoutes(
         }
         cursor = batch.next;
         // Let the scheduler and other requests take the write lock between batches.
-        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
       }
       if (dueNow) {
         enrollments.wake();

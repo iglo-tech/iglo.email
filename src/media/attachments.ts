@@ -119,7 +119,9 @@ export function createAttachments(
     if (loading < MAX_LOADS) {
       loading++;
     } else {
-      await new Promise<void>((turn) => waiting.push(turn));
+      await new Promise<void>((turn) => {
+        waiting.push(turn);
+      });
     }
     try {
       return await load(ids, inline);

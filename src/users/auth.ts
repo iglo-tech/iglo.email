@@ -91,7 +91,9 @@ class PasswordWork {
       if (this.waiting.length >= this.policy.maxHashQueue) {
         throw new HttpError(429, "Too many requests");
       }
-      await new Promise<void>((resolve) => this.waiting.push(resolve));
+      await new Promise<void>((resolve) => {
+        this.waiting.push(resolve);
+      });
     } else {
       this.active++;
     }

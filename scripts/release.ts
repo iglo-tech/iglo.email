@@ -34,7 +34,9 @@ async function availablePort(): Promise<number> {
     socket.listen(0, "127.0.0.1", done);
   });
   const address = socket.address();
-  await new Promise<void>((done) => socket.close(() => done()));
+  await new Promise<void>((done) => {
+    socket.close(() => done());
+  });
   if (address === null || typeof address === "string") {
     throw new Error("No port was assigned");
   }

@@ -368,7 +368,9 @@ export function createQueryRunner(options: RunnerOptions) {
         } else if (finished) {
           return;
         } else {
-          await new Promise<void>((resolve) => (wake = resolve));
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
         }
       }
     } finally {

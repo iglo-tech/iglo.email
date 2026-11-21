@@ -69,6 +69,7 @@ export default defineConfig({
         "typescript/use-unknown-in-catch-callback-variable": "off",
         "no-empty": "off",
         "preserve-caught-error": "off",
+        "no-promise-executor-return": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -106,7 +107,6 @@ export default defineConfig({
 
     // B134b: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed.
     eqeqeq: "off", // B134b
-    "no-promise-executor-return": "off", // B134b
     "typescript/no-explicit-any": "off", // B134b
     "typescript/no-misused-spread": "off", // B134b
     "typescript/no-non-null-assertion": "off", // B134b
