@@ -35,12 +35,8 @@ function permissionGroups(): { group: string; permissions: string[] }[] {
   return [...groups].map(([group, permissions]) => ({ group, permissions }));
 }
 /** A new role starts with upstream's defaults. A native permission is a choice to make. */
-// B124 (D125): suppressions:manage is a choice for each role, as the SQL query permission is.
 const defaultPermissions = permissions.filter(
-  (p) =>
-    p !== "subscribers:sql_query" &&
-    p !== "suppressions:manage" &&
-    !/^(lists|settings|users|roles):/.test(p),
+  (p) => p !== "subscribers:sql_query" && !/^(lists|settings|users|roles):/.test(p),
 );
 
 function Permission({ value }: { value: string }) {

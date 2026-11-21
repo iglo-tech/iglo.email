@@ -149,12 +149,10 @@ async function user(response: Response): Promise<UserRecord> {
     role.id !== 1 ||
     role.name !== "Super Admin" ||
     !Array.isArray(role.permissions) ||
-    role.permissions.length !== 29 ||
-    new Set(role.permissions).size !== 29 ||
+    role.permissions.length !== 28 ||
+    new Set(role.permissions).size !== 28 ||
     !role.permissions.includes("users:get") ||
-    !role.permissions.includes("users:manage") ||
-    // B124 r1 (D125): the built-in Super Admin holds suppressions:manage, as every permission.
-    !role.permissions.includes("suppressions:manage")
+    !role.permissions.includes("users:manage")
   )
     throw new Error("FAIL user-role-shape");
   return value.data;

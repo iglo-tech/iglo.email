@@ -15,6 +15,9 @@ export const validPermissions = new Set<string>([
   "sequences:manage",
   "subscriber_events:create",
   "subscriber_events:get",
+  // B124 (D125): removing a suppression. The built-in Super Admin passes every permission through
+  // roles.can (role 1), as it does these; its stored list keeps upstream's permissions.
+  "suppressions:manage",
   "sends:get",
   "sends:manage",
   "webhooks:manage",
