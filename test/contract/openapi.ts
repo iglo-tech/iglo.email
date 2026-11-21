@@ -882,6 +882,12 @@ export async function runOpenApiContract(target: {
     await op("GET /api/campaigns");
     await op("GET /api/campaigns", { query: "?no_body=true" });
     await op("GET /api/campaigns/{id}", { params: { id: campaign.id } });
+    // Nothing was skipped: the list is empty, and its page is answered against the document (B116).
+    check(
+      (await op("GET /api/campaigns/{id}/skipped", { params: { id: campaign.id } })).body.data
+        .total === 0,
+      "campaign-skipped-empty",
+    );
     await op("GET /api/campaigns/{id}/preview", {
       params: { id: campaign.id },
     });

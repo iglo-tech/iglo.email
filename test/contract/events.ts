@@ -86,7 +86,7 @@ export async function runEventsContract(target: {
     first.status === 200 &&
       typeof first.body.data.event_id === "number" &&
       typeof first.body.data.subscriber_id === "number" &&
-      JSON.stringify(first.body.data.enrollments) === '{"started":[],"ended":[]}',
+      JSON.stringify(first.body.data.enrollments) === '{"started":[],"ended":[],"skipped":[]}',
     "create",
   );
   const subscriber = await call(`/api/subscribers/${first.body.data.subscriber_id}`);
