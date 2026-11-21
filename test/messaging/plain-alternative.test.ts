@@ -60,11 +60,11 @@ test("a sequence step mail with the adopter's preheader is multipart/alternative
   expect(parseMail(data).top.type).toBe("multipart/alternative");
   const text = expectPreheaderGone(data);
   expect(text).toMatch(
-    /^Your export is ready\n\nHello[^\n]*, open the pack shop \(https:\/\/shop\.example\.test\/packs\?ref=7\) for more\.$/,
+    /^Your export is ready\n\nHello[^\n]*, open the pack shop <https:\/\/shop\.example\.test\/packs\?ref=7> for more\.$/,
   );
   // The text part names the link exactly as the HTML part does, tracked or not.
   const href = /href="([^"]+)"/.exec(htmlPart(data)!)![1]!.replaceAll("&amp;", "&");
-  expect(text).toContain(`(${href})`);
+  expect(text).toContain(`<${href}>`);
 });
 
 test("a transactional send without altbody is multipart/alternative with generated text", async () => {
@@ -157,7 +157,7 @@ test("a link is written as its text and its URL, and a URL that is its own text 
   expect((await f.tx({ subscriber_id: id, template_id: template })).status).toBe(200);
   // The second link's text is its URL, so the URL is written once and nothing is appended.
   expect(textPart(f.sink.messages[0]!.data)).toBe(
-    "the guide (https://example.test/guide) and https://example.test/home",
+    "the guide <https://example.test/guide> and <https://example.test/home>",
   );
 });
 
@@ -219,7 +219,7 @@ test("a large realistic newsletter converts to a text part no longer than its HT
   const data = f.sink.messages[0]!.data;
   const text = textPart(data)!;
   expect(text.split("\n")[0]).toMatch(
-    /^Story 0 with read more 0 \(https?:\/\/\S+\) today & tomorrow$/,
+    /^Story 0 with read more 0 <https?:\/\/[^\s<>]+> today & tomorrow$/,
   );
   expect(text).not.toMatch(INVISIBLE);
   expect(text.length).toBeLessThan(htmlPart(data)!.length);

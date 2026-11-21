@@ -168,8 +168,9 @@ const clean = (text: string) => text.replace(INVISIBLE, "").replace(/\s+/g, " ")
 /**
  * Converts an HTML message to its text/plain alternative and charges the output to `budget`. The
  * output is never longer than the input: markup is replaced by shorter text, and hidden or invisible
- * content is dropped. A link is written as its text and its URL, with the URL once when the text is
- * the URL. The rendered href is used as it stands, tracked or not.
+ * content is dropped. A link is written as its text and its URL in angle brackets, `text <URL>`, and
+ * the URL alone when the text is the URL or empty. The rendered href is used as it stands, tracked
+ * or not.
  */
 export async function plainText(html: string, budget: MessageBudget): Promise<string> {
   const parts: string[] = [];
@@ -177,9 +178,13 @@ export async function plainText(html: string, budget: MessageBudget): Promise<st
   let skip = 0;
   // The current text node, joined across chunks so no character reference is split.
   let raw = "";
+  // RFC 3986 Appendix C delimits a URL in plain text with angle brackets, and a link parser does not
+  // take a closing bracket as part of the URL the way it takes `)`. When the text is the URL, the
+  // URL alone is written.
   const link = (at: number, href: string) => {
     const text = parts.slice(at).join("").replace(/\s+/g, " ").trim();
-    parts.push(text === href ? "" : ` (${href})`);
+    parts.length = at;
+    parts.push(text === "" || text === href ? ` <${href}>` : ` ${text} <${href}>`);
   };
   const rewriter = new HTMLRewriter().on("*", {
     element(el) {
