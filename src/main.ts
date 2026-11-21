@@ -955,8 +955,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
 }
 
 if (import.meta.main) {
-  main().catch((error: unknown) => {
+  try {
+    await main();
+  } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : "Failed to start server");
     process.exitCode = 1;
-  });
+  }
 }
