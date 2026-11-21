@@ -63,7 +63,7 @@ test("a sequence step mail with the adopter's preheader is multipart/alternative
     /^Your export is ready\n\nHello[^\n]*, open the pack shop <https:\/\/shop\.example\.test\/packs\?ref=7> for more\.$/,
   );
   // The text part names the link exactly as the HTML part does, tracked or not.
-  const href = /href="([^"]+)"/.exec(htmlPart(data)!)![1]!.replaceAll("&amp;", "&");
+  const href = /href="([^"]+)"/.exec(htmlPart(data)!)![1]!;
   expect(text).toContain(`<${href}>`);
 });
 
