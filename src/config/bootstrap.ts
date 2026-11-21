@@ -252,7 +252,7 @@ export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void 
     fail("the value contains whitespace or a backslash; remove it");
   }
   // oxlint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\x7f]/.test(value)) {
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
     fail("the value contains a control character; remove it");
   }
   // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,

@@ -39,7 +39,7 @@ export function registerWebhookRoutes(
       typeof value !== "string" ||
       value.length > MAX_URL ||
       // oxlint-disable-next-line no-control-regex
-      /[\s\u0000-\u001f\x7f]/.test(value)
+      /[\s\u0000-\u001f\u007f]/.test(value)
     ) {
       throw invalid(c, "url");
     }

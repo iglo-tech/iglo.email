@@ -35,7 +35,7 @@ export function validTrustedURL(input: string): boolean {
   const fragment = fragmentParts.join("#");
   // Control characters are refused on purpose in a trusted URL.
   // oxlint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\x7f]/.test(withoutFragment!) || !escaped(fragment)) {
+  if (/[\u0000-\u001f\u007f]/.test(withoutFragment!) || !escaped(fragment)) {
     return false;
   }
   const match = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?]*)([^?]*)(?:\?.*)?$/s.exec(withoutFragment!);

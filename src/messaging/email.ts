@@ -88,7 +88,7 @@ export function validServer(s: SMTPServer): boolean {
     !!s.host.trim() &&
     // A host with whitespace or control characters is refused on purpose.
     // oxlint-disable-next-line no-control-regex
-    !/[\s\u0000-\u001f\x7f]/.test(s.host) &&
+    !/[\s\u0000-\u001f\u007f]/.test(s.host) &&
     Number.isInteger(s.port) &&
     s.port >= 1 &&
     s.port <= 65_535 &&
