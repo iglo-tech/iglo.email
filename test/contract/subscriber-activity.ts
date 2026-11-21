@@ -72,7 +72,11 @@ export async function runSubscriberActivity(target: {
       return /\/link\/([0-9a-f-]{36})\//.exec(
         await (await request(`/api/campaigns/${campaign.id}/preview`)).text(),
       )?.[1];
+    // The first message is kept; the campaign's other recipients are answered and dropped. One
+    // connection can carry a message per recipient, so each DATA gets its own reply.
     let mail = "";
+    let body = "";
+    let inData = false;
     const sink = Bun.listen({
       hostname: "127.0.0.1",
       port: 0,
@@ -80,11 +84,19 @@ export async function runSubscriberActivity(target: {
         open: (socket) => void socket.write("220 fixture\r\n"),
         data(socket, chunk) {
           const text = chunk.toString();
-          if (mail) mail += text;
-          if (mail.endsWith("\r\n.\r\n")) return void socket.write("250 ok\r\n");
-          if (mail) return;
-          if (/^DATA/i.test(text)) mail = " ";
-          socket.write(mail ? "354 go\r\n" : "250 ok\r\n");
+          if (inData) {
+            body += text;
+            if (!body.endsWith("\r\n.\r\n")) return;
+            inData = false;
+            if (!mail) mail = body;
+            body = "";
+            return void socket.write("250 ok\r\n");
+          }
+          if (/^DATA/i.test(text)) {
+            inData = true;
+            return void socket.write("354 go\r\n");
+          }
+          socket.write("250 ok\r\n");
         },
       },
     });
@@ -105,7 +117,8 @@ export async function runSubscriberActivity(target: {
         "subscriber-activity-smtp",
       );
       // D117: a test send's links are untracked, so the tracked link comes from a real send of the
-      // campaign to its list, which holds only this subscriber.
+      // campaign to its list. That list holds this subscriber and the outsider, so the runner
+      // delivers the campaign to both: a pixel records a view only for a delivered subscriber (D126 r2).
       const started = await request(`/api/campaigns/${campaign.id}/status`, "PUT", {
         status: "running",
       });
@@ -142,9 +155,11 @@ export async function runSubscriberActivity(target: {
       lists: [list.id, hidden.id],
       preconfirm_subscriptions: true,
     });
+    // The outsider is on the campaign's list too, so the campaign is delivered to them: their own
+    // view is then recorded, and deleting the subscriber's views must leave it alone.
     const outsider = await create("/api/subscribers", {
       email: `activity-other-${suffix}@example.test`,
-      lists: [other.id],
+      lists: [other.id, list.id],
       preconfirm_subscriptions: true,
     });
     const url = `https://example.test/activity/${suffix}`;
