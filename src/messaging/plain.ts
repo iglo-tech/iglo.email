@@ -28,6 +28,12 @@ const HEAD_CONTENT = new Set([
  * for the handlers still pending, so nesting beyond this depth would cost time with its square.
  */
 const HANDLER_CAP = 256;
+/**
+ * End-tag handlers Bun holds at once: registered and not yet fired. An implied end leaves its handler
+ * pending until an ancestor's end tag, so omitted end tags grow this count without growing the stack.
+ * Past it the conversion stops, and the message goes without a text part (D118).
+ */
+const HELD_CAP = 1024;
 /** Block elements: a line break before and after. A list item gets a bullet instead. */
 const BLOCK = new Set([
   "address",
@@ -57,6 +63,8 @@ const BLOCK = new Set([
   "pre",
   "section",
   "table",
+  "option",
+  "select",
   "tr",
   "ul",
 ]);
@@ -163,6 +171,10 @@ const PUNCTUATION: Array<[string, number]> = [
   ["rarr", 8594],
   ["darr", 8595],
   ["harr", 8596],
+  // The markup names for a tab and a newline, which a browser strips from a URL, and the colon.
+  ["colon", 58],
+  ["Tab", 9],
+  ["NewLine", 10],
 ];
 const NAMED = new Map<string, string>([
   ...LATIN1.map((name, i) => [name, String.fromCodePoint(160 + i)] as [string, string]),
@@ -346,6 +358,8 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   let lastLink: { href: string; end: number } | null = null;
   // The link whose text is being written: a new link finishes it.
   let activeLink: Link | undefined;
+  // End-tag handlers the rewriter holds: registered, and not yet fired (see HELD_CAP).
+  let held = 0;
 
   const latest = (name: string) => open.get(name)?.at(-1);
   const indexOf = (name: string) => latest(name)?.index ?? -1;
@@ -440,6 +454,8 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
         // Past the cap, markup is not tracked: no entry and no end handler, so deeper structure is plain
         // text, and the rewriter's cost per end tag stays bounded (D118).
         if (stack.length >= HANDLER_CAP && el.canHaveContent) return;
+        // An implied end pops an entry that the rewriter still holds, so running the rules past the cap
+        // would grow the held count (a deep nested list would then abort).
         impliedEnds(name);
         // A void or self-closing element has no content, so it hides nothing and has no end tag.
         const content = el.canHaveContent;
@@ -464,19 +480,26 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
           // A browser ignores the controls and spaces around a scheme and drops tab and newline inside
           // it, so the scheme is read after both. A script or data scheme writes no URL.
           // oxlint-disable-next-line no-control-regex
-          const scheme = href.replace(/[\u0000- ]/g, "");
+          const scheme = href.replace(/[\u0000-  ]/g, "");
           if (href && !href.startsWith("#") && !/^(javascript|vbscript|data):/i.test(scheme)) {
             link = { href, at: parts.length, done: false };
             activeLink = link;
           }
         }
         if (!content) return;
+        // The rewriter keeps every registered handler until it fires, so the held count is the cost of
+        // the next end tag. Past the cap the conversion stops: a throw rejects the rewriter's output.
+        if (held >= HELD_CAP) throw new Error("end-tag handlers held");
+        held++;
         const entry: Entry = { name, index: stack.length, own, popped: false, link };
         stack.push(entry);
         let list = open.get(name);
         if (!list) open.set(name, (list = []));
         list.push(entry);
-        el.onEndTag(() => close(entry));
+        el.onEndTag(() => {
+          held--;
+          close(entry);
+        });
       },
     })
     .onDocument({
