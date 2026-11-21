@@ -71,7 +71,7 @@ function queryInts(params: URLSearchParams, name: string): Array<bigint> | undef
   return out;
 }
 
-interface QueryInput {
+type QueryInput = {
   search: string;
   query: string;
   list_ids: Array<bigint>;
@@ -81,7 +81,7 @@ interface QueryInput {
   subscription_status: string;
   subscriber_status: string;
   all: boolean;
-}
+};
 const stringFields = new Set([
   "search",
   "query",
@@ -128,7 +128,7 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
   if (typeof document !== "object" || Array.isArray(document)) {
     throw new HttpError(400);
   }
-  const record = out as unknown as Record<string, unknown>;
+  const record: Record<string, unknown> = out;
   // encoding/json matches field names case-insensitively.
   for (const [rawKey, value] of Object.entries(document)) {
     const key = rawKey.toLowerCase();
@@ -391,7 +391,7 @@ export function registerSubscriberQueryRoutes(
     sqlPermission(c, filter.fragment);
     validate(c, filter);
     const admitted = query.admitLarge() ?? throwTooMany();
-    let output: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let output: ReadableStreamDefaultController<BufferSource> | undefined;
     const finish = () => {
       admitted();
       void batches.return(undefined);
@@ -415,7 +415,7 @@ export function registerSubscriberQueryRoutes(
     }
     const text = new TextEncoder();
     let started = false;
-    const csv = new ReadableStream<Uint8Array>({
+    const csv = new ReadableStream<BufferSource>({
       start(controller) {
         output = controller;
       },
@@ -445,23 +445,16 @@ export function registerSubscriberQueryRoutes(
       cancel: finish,
     });
     const gzip = (c.request.headers.get("accept-encoding") ?? "").includes("gzip");
-    return new Response(
-      gzip
-        ? csv.pipeThrough(
-            new CompressionStream("gzip") as unknown as TransformStream<Uint8Array, Uint8Array>,
-          )
-        : csv,
-      {
-        headers: {
-          "Content-Type": "text/csv",
-          "Content-Disposition": "attachment; filename=subscribers.csv",
-          "Content-Transfer-Encoding": "binary",
-          "Cache-Control": "no-cache",
-          Vary: "Accept-Encoding",
-          ...(gzip ? { "Content-Encoding": "gzip" } : {}),
-        },
+    return new Response(gzip ? csv.pipeThrough(new CompressionStream("gzip")) : csv, {
+      headers: {
+        "Content-Type": "text/csv",
+        "Content-Disposition": "attachment; filename=subscribers.csv",
+        "Content-Transfer-Encoding": "binary",
+        "Cache-Control": "no-cache",
+        Vary: "Accept-Encoding",
+        ...(gzip ? { "Content-Encoding": "gzip" } : {}),
       },
-    );
+    });
   };
 
   type Action = (input: QueryInput, ids: Array<bigint>, targets: Array<bigint>) => void;

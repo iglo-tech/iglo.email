@@ -48,6 +48,9 @@ export default defineConfig({
     },
     // B134b: src/messaging/notify.ts falls back to console when no logger is injected; inject the logger instead.
     { files: ["src/messaging/notify.ts"], rules: { "no-console": "off" } },
+    // Exception, for the lead to decide at review: the Nodemailer envelope in messaging/email.ts carries address
+    // objects that @types/nodemailer 8 omits, so its SDK boundary cast can only be a chained one, never a checked type.
+    { files: ["src/messaging/email.ts"], rules: { "quality/no-chained-type-assertions": "off" } },
     // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
     // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
     {
@@ -71,6 +74,7 @@ export default defineConfig({
         "preserve-caught-error": "off",
         "no-promise-executor-return": "off",
         "quality/no-array-filter-map": "off",
+        "quality/no-chained-type-assertions": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -120,7 +124,6 @@ export default defineConfig({
     "typescript/no-unsafe-type-assertion": "off", // B134b
     "typescript/unbound-method": "off", // B134b
     "@nkzw/no-instanceof": "off", // B134b
-    "quality/no-chained-type-assertions": "off", // B134b
     "quality/no-conditional-empty-object-spread": "off", // B134b
     "quality/no-known-value-widening": "off", // B134b
     "quality/no-object-parameters": "off", // B134b
