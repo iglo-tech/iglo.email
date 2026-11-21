@@ -22,10 +22,10 @@ function duration(input: string, days = false): number {
     re.lastIndex = pos;
     const m = re.exec(input);
     if (!m) {
-      return NaN;
+      return Number.NaN;
     }
     if (!Object.hasOwn(units, m[2]!)) {
-      return NaN;
+      return Number.NaN;
     }
     total += Number(m[1]) * units[m[2]!]!;
     pos = re.lastIndex;
@@ -54,11 +54,11 @@ export function goDuration(input: string): number {
   const negative = input.startsWith("-");
   const unsigned = input.startsWith("+") || negative ? input.slice(1) : input;
   if (!unsigned) {
-    return NaN;
+    return Number.NaN;
   }
   const result = duration(unsigned);
   if (!Number.isFinite(result) || result > 9_223_372_036_854.775) {
-    return NaN;
+    return Number.NaN;
   }
   return negative ? -result : result;
 }

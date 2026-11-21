@@ -58,6 +58,7 @@ export default defineConfig({
         curly: "off",
         "typescript/array-type": "off",
         "unicorn/numeric-separators-style": "off",
+        "unicorn/prefer-number-properties": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -127,7 +128,6 @@ export default defineConfig({
     "unicorn/consistent-function-scoping": "off", // B134b
     "unicorn/no-hex-escape": "off", // B134b
     "unicorn/prefer-at": "off", // B134b
-    "unicorn/prefer-number-properties": "off", // B134b
     "unicorn/prefer-set-has": "off", // B134b
     "unicorn/prefer-string-replace-all": "off", // B134b
     "unicorn/prefer-top-level-await": "off", // B134b
