@@ -279,6 +279,8 @@ export function createEnrollments(db: Database, clock: Clock) {
         wait: string;
       } | null;
       if (!first) continue;
+      // B124 (D125): a suppressed person starts no marketing sequence. A transactional one still starts.
+      if (q.get("sequence-marketing").get(sequence.id) !== null && event.suppressed()) continue;
       if (
         sequence.reentry === "never" &&
         q.get("any-enrollment").get(event.subscriberId, sequence.id)

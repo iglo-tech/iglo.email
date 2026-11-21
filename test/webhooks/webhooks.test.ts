@@ -744,14 +744,15 @@ test("with blocking on, the request goes to the checked address, not a fresh loo
   expect(lookups).toBe(1);
 });
 
-test("a public wipe stores and delivers only the numeric ID and UUID, on older rows too", async () => {
+test("a public wipe's own deleted event carries the external ID and lists (B124, D125); the person's other stored rows keep neither", async () => {
   const f = await open();
   const r = receiver(() => new Response("x", { status: 503 }));
   const { id } = await hook(f, r);
   const address = "wiped@example.test";
+  const external = "app-wiped-7";
   const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
     .body.data.id;
-  const subscriber = await f.subscriber(address, "W", { external_id: address, lists: [list] });
+  const subscriber = await f.subscriber(address, "W", { external_id: external, lists: [list] });
   const { uuid } = (await f.json(`/api/subscribers/${subscriber}`)).body.data;
   await blocklist(f, subscriber);
   await r.waitFor(2);
@@ -772,9 +773,16 @@ test("a public wipe stores and delivers only the numeric ID and UUID, on older r
   f.advanceWebhooks(30_000);
   await r.waitFor(6);
   await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
+  // The person's earlier events lost the address, the external ID and the lists in the wipe. The
+  // wipe's own deleted event names the external ID and the lists it had, which the operator's
+  // system needs to honour the erasure, and no address.
   const cleared = {
     subscriber: { id: subscriber, uuid, email: "", external_id: null },
     list_ids: [],
+  };
+  const deleted = {
+    subscriber: { id: subscriber, uuid, email: "", external_id: external },
+    list_ids: [list],
   };
   const afterWipe = r.received.slice(2);
   expect(afterWipe.map((x) => x.body.event).sort()).toEqual([
@@ -783,8 +791,22 @@ test("a public wipe stores and delivers only the numeric ID and UUID, on older r
     "subscriber.deleted",
     "subscriber.unsubscribed",
   ]);
-  for (const received of afterWipe) expect(received.body.data).toEqual(cleared);
+  for (const received of afterWipe)
+    expect(received.body.data).toEqual(
+      received.body.event === "subscriber.deleted" ? deleted : cleared,
+    );
   expect(body()).not.toContain(address);
+  // While the wipe's deleted event is still queued it keeps the external ID and the lists, so the
+  // receiver can still be told. Once it goes out, both leave storage.
+  expect(body()).toContain(external);
+  expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[], [], [list]]);
+  r.respond(() => new Response("ok"));
+  await until(async () => {
+    f.advanceWebhooks(30_000);
+    return (await deliveries(f, id)).every((d) => d.status === "delivered");
+  });
+  expect(body()).not.toContain(address);
+  expect(body()).not.toContain(external);
   expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[], [], []]);
 });
 

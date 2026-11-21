@@ -42,9 +42,12 @@ A sequence is a list of steps that starts when a subscriber does something (an e
   | Situation | Effect | `result` |
   |---|---|---|
   | Subscriber is blocklisted | nothing, for every list | `blocklisted` |
+  | Subscriber has a suppression after a self-wipe (D125) | nothing, for every list | `suppressed` |
   | No membership on that list | insert membership `confirmed` | `added` |
   | Membership `unconfirmed` or `confirmed` | unchanged | `member` |
   | Membership `unsubscribed` | unchanged | `unsubscribed` |
+
+  A suppression (B124, D125) is a self-wipe's record of the subscriber's address and external ID, kept as keyed hashes. It is matched after the upsert, so the address and ID the event leaves are the ones checked. Only the person's own confirmation through a public double opt-in form, or an operator's `DELETE /api/suppressions`, clears it. While it stands, an event that triggers a sequence with a marketing step does not start that sequence; a sequence of transactional steps still starts. The scheduler's consent check on every marketing step is unchanged.
 
   - A list that does not exist, a double opt-in list, or a malformed field (`[]`, duplicates, non-integers, more than 20) is `400 Invalid fields: subscriber.grant_lists` and writes nothing. In a batch only that item fails.
   - The grant needs `subscribers:manage` and manage scope on every listed list, the rule of `PUT /api/subscribers/lists`; for an existing subscriber it also needs manage scope on at least one list the subscriber already has a membership on, of any status (PUT's check), while a subscriber the event creates needs only the listed lists. Otherwise `403` and nothing is written (a batch item fails alone).

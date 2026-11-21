@@ -623,7 +623,7 @@ export const schemas: Record<string, Schema> = {
           maxItems: 20,
           uniqueItems: true,
           description:
-            "Single opt-in lists the event grants consent on (D99). Each gets a confirmed membership unless it has one; a blocklisted subscriber gets none. Needs subscribers:manage and manage scope on every list; for an existing subscriber, also on a list it already has a membership on. Absent or null grants nothing.",
+            "Single opt-in lists the event grants consent on (D99). Each gets a confirmed membership unless it has one; a blocklisted subscriber gets none, and a suppressed one (B124, D125) gets none either. Needs subscribers:manage and manage scope on every list; for an existing subscriber, also on a list it already has a membership on. Absent or null grants nothing.",
         },
       }),
       name: string,
@@ -649,9 +649,9 @@ export const schemas: Record<string, Schema> = {
         list_id: integer,
         result: {
           type: "string",
-          enum: ["added", "member", "unsubscribed", "blocklisted"],
+          enum: ["added", "member", "unsubscribed", "blocklisted", "suppressed"],
           description:
-            "added: a new confirmed membership. member: already unconfirmed or confirmed, unchanged. unsubscribed: unsubscribed, unchanged. blocklisted: the subscriber is blocklisted, nothing changed.",
+            "added: a new confirmed membership. member: already unconfirmed or confirmed, unchanged. unsubscribed: unsubscribed, unchanged. blocklisted: the subscriber is blocklisted, nothing changed. suppressed: the subscriber wiped their data and has not confirmed again (B124, D125), nothing changed.",
         },
       }),
     ),

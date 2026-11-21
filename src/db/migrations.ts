@@ -28,6 +28,7 @@ import dropBounceMailgun from "@/migrations/0019_drop_bounce_mailgun.sql" with {
 import stepAggregates from "@/migrations/0020_step_aggregates.sql" with { type: "text" };
 import enrollmentWaitOrigin from "@/migrations/0021_enrollment_wait_origin.sql" with { type: "text" };
 import testSends from "@/migrations/0022_test_sends.sql" with { type: "text" };
+import suppressions from "@/migrations/0023_suppressions.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -58,6 +59,7 @@ export const productionMigrations: readonly Migration[] = [
   { version: 20, sql: stepAggregates },
   { version: 21, sql: enrollmentWaitOrigin },
   { version: 22, sql: testSends },
+  { version: 23, sql: suppressions },
 ];
 
 function validateCatalog(catalog: readonly Migration[]): void {

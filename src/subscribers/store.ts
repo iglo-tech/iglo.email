@@ -8,6 +8,7 @@ import type { ListReferences } from "@/lists/references";
 import type { SubscriberInput } from "@/subscribers/input";
 import { HttpError } from "@/server/response";
 import { titleWords } from "@/subscribers/unicode-title";
+import { emailHash, externalHash } from "@/subscribers/suppression";
 import sql from "@/subscribers/store.sql" with { type: "text" };
 
 interface Row {
@@ -181,6 +182,27 @@ export function createSubscriberStore(
     (q.get(name).get(...args) as { data: string }).data;
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
   const byEmail = (email: string) => q.get("subscriber-by-email").get(email) as Row | null;
+  // B124 (D125): suppressions are matched and written with the database's own secret.
+  const secret = () => (q.get("suppression-secret").get() as { secret: Uint8Array }).secret;
+  const suppressionKeys = (subscriber: { email: string; external_id: string | null }) => {
+    const key = secret();
+    return [
+      emailHash(key, subscriber.email),
+      subscriber.external_id === null ? null : externalHash(key, subscriber.external_id),
+    ] as const;
+  };
+  /** Whether a suppression names this subscriber's address or external ID (D125). */
+  const suppressedBy = (subscriber: { email: string; external_id: string | null }) =>
+    q.get("suppression-match").get(...suppressionKeys(subscriber)) !== null;
+  /** A self-wipe's suppression: keyed hashes and the list IDs, written before the rows go. */
+  const suppress = (row: Row) => {
+    const lists = memberships(row.id).map((m) => Number(m.list_id));
+    q.get("suppression-insert").run(
+      ...suppressionKeys(row),
+      JSON.stringify(lists),
+      clock.now().toISOString(),
+    );
+  };
   const conflict = (error: unknown): never => {
     if (error instanceof Error && error.message.includes("subscribers.external_id"))
       throw new HttpError(409, "External ID already exists");
@@ -288,9 +310,14 @@ export function createSubscriberStore(
             now,
             now,
           ) as { id: bigint };
+        // B124 (D125): a suppressed address gets no list from a create, however it asks.
+        const requested = permittedLists(input.lists ?? [], scope);
         replace(
           row.id,
-          permittedLists(input.lists ?? [], scope),
+          requested.length &&
+            suppressedBy({ email: input.email, external_id: input.external_id ?? null })
+            ? []
+            : requested,
           scope,
           status,
           input.preconfirm_subscriptions ?? false,
@@ -355,14 +382,22 @@ export function createSubscriberStore(
       );
       return get(row.id)!;
     },
-    /** `wipe` is the subscriber's own request (D61). */
+    /**
+     * `wipe` is the subscriber's own request (D61): it also leaves a suppression of marketing
+     * consent (B124, D125), written before the rows it names go.
+     */
     remove(ids: bigint[], { wipe = false } = {}) {
       effects.admitBulk?.("delete", () => new Set(ids).size);
-      effects.deleting?.(
-        ids.flatMap((id) => get(id) ?? []),
-        wipe,
-      );
+      const deleted = ids.flatMap((id) => get(id) ?? []);
+      effects.deleting?.(deleted, wipe);
+      if (wipe) for (const row of deleted) suppress(row);
       for (const id of ids) q.get("subscriber-delete").run(id);
+    },
+    /** Whether a suppression names this subscriber's address or external ID (B124, D125). */
+    suppressed: suppressedBy,
+    /** The suppressions of one address, removed on an operator's explicit request. Their count. */
+    unsuppress(email: string): number {
+      return Number(q.get("suppression-clear").run(emailHash(secret(), email), null).changes);
     },
     blocklist,
     action(ids: bigint[], listIDs: bigint[], action: string, status: string) {
@@ -499,7 +534,13 @@ export function createSubscriberStore(
         };
         row = get(created.id)!;
       }
-      for (const list of listIds) {
+      // B124 (D125): a suppressed address joins double opt-in lists only. Its opt-in mail is the
+      // person's own confirmation, and confirming clears the suppression (`confirmOptin`).
+      const wanted =
+        listIds.length && suppressedBy(row)
+          ? listIds.filter((list) => lists.subscriberMetadata(list)?.optin === "double")
+          : listIds;
+      for (const list of wanted) {
         const previous = q.get("membership-get").get(row.id, list) as Membership | null;
         const status =
           row.status === "blocklisted"
@@ -547,8 +588,17 @@ export function createSubscriberStore(
     /** Confirm unconfirmed memberships only: never reverses an unsubscribe. */
     confirmOptin(id: bigint, listIds: bigint[], meta: Record<string, string>) {
       const now = clock.now().toISOString();
+      let confirmed = 0;
       for (const list of listIds)
-        q.get("membership-confirm").run(JSON.stringify(meta), now, id, list);
+        confirmed += Number(
+          q.get("membership-confirm").run(JSON.stringify(meta), now, id, list).changes,
+        );
+      // B124 (D125): the person confirmed by their own mail, so the suppression no longer applies.
+      const row = confirmed > 0 ? get(id) : null;
+      if (row) {
+        const [email, external] = suppressionKeys(row);
+        q.get("suppression-clear").run(email, external);
+      }
     },
     rename(id: bigint, name: string) {
       q.get("subscriber-rename").run(name, clock.now().toISOString(), id);
@@ -661,9 +711,17 @@ export function createSubscriberStore(
                 ) as { id: bigint }
             ).id;
           const target = existing?.status === "blocklisted" ? "unsubscribed" : options.status;
+          // B124 (D125): a suppressed address takes no consent from an import; its row is still imported.
+          // Unsubscribing needs no consent, so an import that unsubscribes applies to it as to anyone.
+          const listIds =
+            options.listIds.length &&
+            target !== "unsubscribed" &&
+            suppressedBy({ email: row.email, external_id: existing?.external_id ?? null })
+              ? []
+              : options.listIds;
           const ended: bigint[] = [];
           const changed: bigint[] = [];
-          for (const list of options.listIds) {
+          for (const list of listIds) {
             const previous = existing
               ? (q.get("membership-get").get(id, list) as Membership)
               : null;
@@ -730,8 +788,7 @@ export function createSubscriberStore(
     admitBulk(action: BulkAction, selected: () => number) {
       effects.admitBulk?.(action, selected);
     },
-    webhookDeleted: (ids: bigint[], wipe: boolean) =>
-      webhookData("webhook-deleted", json(ids), wipe ? 1 : 0),
+    webhookDeleted: (ids: bigint[]) => webhookData("webhook-deleted", json(ids)),
     /** A bounded page of a maintenance delete after the row `after`, in row order. */
     maintenancePage(type: MaintenanceType, after: bigint) {
       return q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as MaintenanceRow[];

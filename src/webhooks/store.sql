@@ -62,10 +62,10 @@ UPDATE webhook_deliveries SET next_attempt_at = ?, last_error = ?, updated_at = 
 UPDATE webhook_deliveries SET next_attempt_at = ?, last_error = ?, claimed_until = NULL, updated_at = ?
   WHERE id = ? AND status = 'queued' AND claimed_until = ?;
 -- name: delivery-end
--- External IDs stay only while a subscriber.deleted delivery can still go out.
+-- External IDs and list IDs stay only while a subscriber.deleted delivery can still go out (B124, D125).
 UPDATE webhook_deliveries SET status = ?1, last_error = ?2, next_attempt_at = NULL, claimed_until = NULL, updated_at = ?3,
     payload = CASE WHEN event = 'subscriber.deleted'
-      THEN json_set(payload, '$.data.subscriber.external_id', json('null')) ELSE payload END
+      THEN json_set(payload, '$.data.subscriber.external_id', json('null'), '$.data.list_ids', json('[]')) ELSE payload END
   WHERE id = ?4 AND status = 'queued' AND (?5 IS NULL OR claimed_until = ?5);
 -- name: delivery-recover
 UPDATE webhook_deliveries SET next_attempt_at = ?1, claimed_until = NULL, updated_at = ?1

@@ -22,6 +22,7 @@ const risky: Record<string, string> = {
 const groupOf: Record<string, string> = {
   tx: "subscribers",
   subscriber_events: "subscribers",
+  suppressions: "subscribers",
   roles: "users",
 };
 function permissionGroups(): { group: string; permissions: string[] }[] {

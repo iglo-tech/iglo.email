@@ -295,6 +295,16 @@ export const differences: Difference[] = [
     applies: [],
   },
   {
+    area: "Suppression after a self-wipe (B124, D125)",
+    summary:
+      "A self-wipe leaves a keyed-hash suppression of the address and external ID. While it stands, a create or import takes no list, a public signup joins only double opt-in lists (unconfirmed, with its opt-in mail), and an event's grant answers `suppressed` and grants nothing. Only the person's own confirmation clears it, or an operator's `DELETE /api/suppressions`. A transactional sequence still starts. Upstream has no such state: the next create re-opts the person.",
+    applies: [
+      "POST /api/subscribers",
+      "POST /api/import/subscribers",
+      "POST /api/public/subscription",
+    ],
+  },
+  {
     area: "Placeholder, transactional and view links (D126, r1)",
     summary:
       "The placeholder campaign's manage page and save change pending opt-ins only: no name, no confirmed list, no blocklist. A transactional send's manage link names its own paired send path, which manages confirmed lists and the name, and blocklist and privacy are refused there. A transactional mail carries no unsubscribe_url. View in browser answers only a subscriber the campaign was delivered to. Upstream acts on the subscriber UUID alone.",

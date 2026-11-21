@@ -348,6 +348,10 @@ each job.
   `list:manage` on that list, or the user role `lists:manage_all`, which gives that scope on every
   list.
 - **Transactional mail** (`POST /api/tx`): `tx:send`. That is the only permission the operation names.
+- **Suppression removal** (`DELETE /api/suppressions`, B124, D125): `suppressions:manage`, and
+  nothing else. `subscribers:manage` does not allow it. The built-in Super Admin holds the permission;
+  no default role does, so a role that removes suppressions is a deliberate grant. Give it only to a
+  credential that acts on people's explicit requests.
 - **Provisioning** (templates, sequences, lists, settings, webhooks and media):
   - templates: `templates:manage`, and `templates:get` for listing, fetching and previewing;
   - sequences: `sequences:manage`, and `sequences:get` for reading and previewing a step; a step's
@@ -850,6 +854,14 @@ data export or erasure must use a campaign's or marketing send's own paths, or t
 (`GET /api/subscribers/{id}/export`, `DELETE /api/subscribers/{id}`). Opt-in mail still ends and
 confirms pending subscriptions as before, and a test send still shows its test page.
 
+From the release that suppresses after a wipe (D125), a person who wiped their data is not put back
+on a list by the next event, create or import that names their address. Before upgrading, decide
+whether your integration should re-subscribe such people: it now gets `suppressed` in the event's
+`grants` and must ask the person to confirm, or an operator must clear the suppression with
+`DELETE /api/suppressions`. A wipe's `subscriber.deleted` webhook now carries the external ID and
+list IDs, so a receiver that stored only the numeric ID and UUID needs no change, and one that
+matches on the external ID now sees it for a wipe as well.
+
 Migrations run at startup and are forward-only. With migrations pending, startup first writes a
 verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
@@ -948,6 +960,31 @@ A session with no stored expiry (written before sessions captured one) goes seve
 - Freed space goes back to SQLite for later rows, so the file stops growing but does not shrink.
 - `sends` rows are kept for good. Their size is small, and old links and analytics read them.
 
+## Privacy: wipes and suppressions
+
+A person who wipes their data through a link in mail or a campaign (the paired paths of
+[D126](design/09-decisions.md#d126-privacy-and-blocklist-need-a-paired-send-or-campaign-lead-2026-11-20))
+removes their subscriber row and leaves a suppression ([D125](design/09-decisions.md#d125-a-self-wiped-person-is-not-silently-re-opted-into-marketing-lead-2026-11-20)):
+
+- **What it keeps.** Keyed hashes (HMAC-SHA-256) of the normalised address and of the external ID
+  when there is one, the list IDs the person had, and the time. The key is one random value in
+  the database. No address, name or external ID is stored in plain, and no route returns a hash.
+- **What it does while it stands.** An admin create or an import adds the person to no list. A
+  public signup joins only double opt-in lists, and the person gets the opt-in mail, which is their
+  own confirmation. An event's `grant_lists` answers `suppressed`, and an event starts no sequence
+  with a marketing step. Transactional mail is not affected.
+- **How it ends.** The person confirms through their opt-in mail, or an operator removes it:
+  `DELETE /api/suppressions` with `{"email": "…"}` answers `{"removed": n}`. It needs
+  `suppressions:manage`, a permission of its own (see [API user for an app integration](#api-user-for-an-app-integration)):
+  the built-in Super Admin holds it, and no other role does unless an administrator grants it. A
+  request without it is refused with 403 and removes nothing. Use this only when the person asks for it.
+- **What your system receives.** A wipe's `subscriber.deleted` webhook carries the external ID and
+  the list IDs, with an empty address, so your system can honour the erasure. iglo.email drops
+  both from its stored copy when that delivery ends. Keep them in your system only as long as your
+  own privacy policy says.
+- **Backups.** A wipe does not reach backups taken before it, and a backup holds the suppression key
+  with the hashes, as it holds everything else in the database (see [Backups](#backups)).
+
 ## Attachment sends
 
 `POST /api/tx` with caller attachments, or with a template that embeds images, holds memory until
@@ -1027,7 +1064,7 @@ A campaign follows the same loop with `update_campaign`, `preview_campaign`, `ca
   - For sequence step content: `sequences:get` to read and `sequences:manage` to change a step; `tx:send` for `test_sequence_step`, which mails a test; and `sends:get` and `bounces:get` for `get_sends` and `get_bounces`, which check real sends. Changing a step of a live sequence changes the messages of everyone who has not reached that step yet. Saving a step rewrites the whole sequence, so it also needs `subscribers:sql_query` when another step of the sequence has a raw-SQL condition.
   - `list_lists` shows only the lists the caller's role can read (`lists:get_all`, or a list role that covers the list).
   - Read-merge tools (`update_campaign`, `send_campaign_test`, `preview_campaign`, `campaign_text`, `update_sequence_step`) read the stored object before they save or render it. `preview_campaign` and `campaign_text` read only when their input omits fields; `send_campaign_test` always reads. A role with the write permission but not the read permission gets a tool error that names the read permission, and nothing is written; give the role both. For campaigns the read permission is `campaigns:get_all`, or `campaigns:get` with a list role that includes one of the campaign's lists.
-- Sample agent role, for an agent that should do nearly everything (D98): `bounces:get`, `bounces:manage`, `campaigns:get`, `campaigns:get_all`, `campaigns:get_analytics`, `campaigns:manage`, `campaigns:manage_all`, `campaigns:send`, `lists:get_all`, `lists:manage_all`, `media:get`, `media:manage`, `sends:get`, `sends:manage`, `sequences:get`, `sequences:manage`, `settings:get`, `settings:manage`, `subscriber_events:create`, `subscribers:get`, `subscribers:get_all`, `subscribers:import`, `subscribers:manage`, `templates:get`, `templates:manage`, `tx:send`, `webhooks:manage`. It is every permission that a non-excluded operation uses, except `users:*`, `roles:*`, `settings:maintain` and `webhooks:post_bounce`, which only the mail provider's bounce callback needs. Each job set in [API user for an app integration](#api-user-for-an-app-integration) is part of it. `list:get` and `list:manage` are list-role grants, not user-role permissions, so a list role adds them to narrow the agent to some lists. `subscribers:sql_query`, which allows raw SQL in subscriber queries and sequence conditions, is not in the set; add it only if the agent needs it. `campaigns:send` and `tx:send` let it send real email. `sends:manage` resends a message, `subscribers:manage` can send the opt-in mail, and `settings:manage` lets it change any setting, so give the role only to a credential you trust with those.
+- Sample agent role, for an agent that should do nearly everything (D98): `bounces:get`, `bounces:manage`, `campaigns:get`, `campaigns:get_all`, `campaigns:get_analytics`, `campaigns:manage`, `campaigns:manage_all`, `campaigns:send`, `lists:get_all`, `lists:manage_all`, `media:get`, `media:manage`, `sends:get`, `sends:manage`, `sequences:get`, `sequences:manage`, `settings:get`, `settings:manage`, `subscriber_events:create`, `subscribers:get`, `subscribers:get_all`, `subscribers:import`, `subscribers:manage`, `templates:get`, `templates:manage`, `tx:send`, `webhooks:manage`. It is every permission that a non-excluded operation uses, except `users:*`, `roles:*`, `settings:maintain`, `suppressions:manage` (which removes a person's suppression, so it is a deliberate grant) and `webhooks:post_bounce`, which only the mail provider's bounce callback needs. Each job set in [API user for an app integration](#api-user-for-an-app-integration) is part of it. `list:get` and `list:manage` are list-role grants, not user-role permissions, so a list role adds them to narrow the agent to some lists. `subscribers:sql_query`, which allows raw SQL in subscriber queries and sequence conditions, is not in the set; add it only if the agent needs it. `campaigns:send` and `tx:send` let it send real email. `sends:manage` resends a message, `subscribers:manage` can send the opt-in mail, and `settings:manage` lets it change any setting, so give the role only to a credential you trust with those.
 - A path argument must be a value of its parameter: a numeric ID is a positive integer, an enumerated value is one of its values, and no value may be `.` or `..` (written or percent-encoded). Any other value is refused with a tool error and nothing is sent.
 - Every answer is capped at 1 MiB, JSON, CSV and HTML alike, and the cap is read before anything is parsed. An answer over it is not returned: the tool answers with an error. For a JSON list, such as `get_subscribers` with `per_page=all` on a large base, it says to narrow the answer with `page` and `per_page`, or to fetch it from the REST API. For a CSV or HTML answer, it names the REST endpoint, such as `GET /api/subscribers/export`. A JSON answer under the cap comes back as its parsed value and as compact text, both at most 1 MiB (D98). An upload is limited to 1 MiB decoded (D98).
 - The endpoint validates incoming `Origin` headers against the configured root URL and rejects foreign origins with HTTP 403.

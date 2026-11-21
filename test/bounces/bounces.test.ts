@@ -138,8 +138,15 @@ test("a stored bounce delivery is cleared by the delete action and by a wipe", a
   expect(after.length).toBe(2);
   for (const { body } of after) {
     expect(body.data.subscriber.email).toBe("");
-    expect(body.data.subscriber.external_id).toBe(null);
-    expect(body.data.list_ids).toEqual([]);
+    // B124 (D125): the wipe's own deleted event names the external ID and the lists it had; the
+    // bounce's earlier delivery is cleared of both.
+    if (body.event === "subscriber.deleted") {
+      expect(body.data.subscriber.external_id).toBe("app-3");
+      expect(body.data.list_ids).toEqual([list.body.data.id]);
+    } else {
+      expect(body.data.subscriber.external_id).toBe(null);
+      expect(body.data.list_ids).toEqual([]);
+    }
   }
 });
 

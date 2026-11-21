@@ -931,6 +931,18 @@ export async function runPublicContract(target: {
     owned.subscribers.delete(oli.id);
     check((await post(`/subscription/wipe/${oli.uuid}`)).status === 404, "wipe-repeat");
     check((await post(`/subscription/wipe/${missing}`)).status === 404, "wipe-forged");
+    // B124 (D125, deliberate difference): a wiped address is suppressed. Creating it again takes no
+    // list in production, where upstream re-subscribes it to the list it had; the answer names the lists.
+    const recreated = await call("/api/subscribers", "POST", {
+      email: oli.email,
+      name: "Oli",
+      lists: [single.id],
+    });
+    check(
+      recreated.status === 200 && recreated.body.data.lists.length === (reference ? 1 : 0),
+      "wipe-suppresses-create",
+    );
+    owned.subscribers.add(recreated.body.data.id);
     if (!reference) {
       // D25: every subscriber deletion anonymizes the retained send journal.
       const created = await call("/api/templates", "POST", {
