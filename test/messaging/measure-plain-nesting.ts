@@ -29,6 +29,14 @@ const shapes: Record<string, { bytes: number; prefix?: string; build: (n: number
     prefix: "<div>".repeat(256),
     build: (n) => "<p>x</q>".repeat(n),
   },
+  // The worst shape the cap allows: 1023 open elements, then stray end tags (1023 held, 1 MiB).
+  "1023 open, stray </q>": {
+    bytes: 5,
+    prefix: "<span>".repeat(1023),
+    build: (n) => "x</q>".repeat(n),
+  },
+  // The flat baseline: no nesting, no held handlers.
+  "flat <b>t</b>": { bytes: 7, build: (n) => "<b>t</b>".repeat(n) },
 };
 
 function median(values: number[]): number {
