@@ -70,7 +70,9 @@ test("a self-wiped person gets no marketing again, and their transactional mail 
       uuid: string;
     }
   ).uuid;
-  expect((await f.request(`/m/${send}/wipe/${uuid}`, { method: "POST" })).status).toBe(200);
+  expect((await f.request(`/m/${send}/wipe/${uuid}?confirm=true`, { method: "POST" })).status).toBe(
+    200,
+  );
   expect((await f.json(`/api/subscribers/${subscriber}`)).status).not.toBe(200);
   // The table is read only to prove the absence: a row names the person by keyed hashes.
   const rows = JSON.stringify(f.db.query("SELECT * FROM suppressions").all(), (_key, value) =>

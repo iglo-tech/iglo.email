@@ -37,12 +37,7 @@ export function createPasswordReset(deps: ResetDeps) {
   const { auth, renderer, send, settings, logger } = deps;
   const form = (context: RequestContext, title: string, children: Child): Response => {
     const body = render(
-      <PublicShell
-        title={title}
-        site={settings()}
-        assetVersion={assetVersion}
-        poweredBy={context.app.i18n.T("public.poweredBy")}
-      >
+      <PublicShell title={title} site={settings()} assetVersion={assetVersion}>
         <section class="login">
           <h2>{title}</h2>
           {children}
@@ -91,6 +86,7 @@ export function createPasswordReset(deps: ResetDeps) {
         data: JSON.stringify({
           reset_url: `${current.rootUrl}/admin/reset?${query}`,
           logo_url: safeLogo(current.logoUrl),
+          site_name: current.siteName,
         }),
       },
       budget,

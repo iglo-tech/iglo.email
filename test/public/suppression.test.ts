@@ -30,7 +30,7 @@ test("a public signup after a wipe grants nothing on single opt-in, and its own 
     Number((f.db.query("SELECT count(*) AS n FROM suppressions").get() as { n: bigint }).n);
 
   // The person wipes through the campaign they were delivered.
-  expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}`)).status).toBe(200);
+  expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}?confirm=true`)).status).toBe(200);
   expect(suppressions()).toBe(1);
 
   // Single opt-in: the form answers as usual, and the person joins nothing.
@@ -86,7 +86,7 @@ test("an import row of a suppressed address is imported with no list, and other 
   const ada = await f.subscriber(address, "Ada", { lists: [news.id] });
   const camp = f.deliveredCampaign([ada], [news.id]);
   const uuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
-  expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}`)).status).toBe(200);
+  expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}?confirm=true`)).status).toBe(200);
 
   // The importer's batch is the store's own `importSubscribe`, which it calls for each batch of
   // rows. The importer's file path is covered by test/import, which cannot wipe a person first.
@@ -116,7 +116,7 @@ test("an unsubscribing import ends the membership of a suppressed address, since
   const ada = await f.subscriber(address, "Ada", { lists: [news.id] });
   const camp = f.deliveredCampaign([ada], [news.id]);
   const uuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
-  expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}`)).status).toBe(200);
+  expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}?confirm=true`)).status).toBe(200);
 
   // An operator puts the address back on the list by hand (the override is not gated), so the
   // suppressed person now has a confirmed membership for the unsubscribing import to end.

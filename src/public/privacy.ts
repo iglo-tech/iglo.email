@@ -6,7 +6,7 @@ import type { Database } from "bun:sqlite";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { publicMessage } from "@/public/message";
-import type { PageOptions } from "@/public/preferences";
+import { wipeConfirmation, type PageOptions } from "@/public/preferences";
 import type { SubscriberMail } from "@/public/mail";
 import type { RequestContext } from "@/server/context";
 import { sendingHeld } from "@/settings/hold";
@@ -17,8 +17,11 @@ type Subscriber = NonNullable<ReturnType<SubscriberStore["get"]>>;
 export interface Privacy {
   /** Mails the subscriber their data. `null`: the path pairs nobody. */
   export(context: RequestContext, current: () => Subscriber | null): Response | null;
-  /** Removes the subscriber and their data in one write. `null`: the path pairs nobody. */
-  wipe(context: RequestContext, current: () => Subscriber | null): Response | null;
+  /**
+   * Removes the subscriber and their data in one write. `null`: the path pairs nobody. `manage` is the
+   * path of the manage page the confirmation's "Keep my data" link returns to.
+   */
+  wipe(context: RequestContext, current: () => Subscriber | null, manage: string): Response | null;
 }
 
 export function createPrivacy(deps: {
@@ -47,10 +50,13 @@ export function createPrivacy(deps: {
       }
       return message(t, 200, t.T("public.dataSentTitle"), t.T("public.dataSent"));
     },
-    wipe(context, current) {
+    wipe(context, current, manage) {
       const t = context.app.i18n;
       if (!current()) return null;
       if (!deps.page().allowWipe) return failed(t, 400, t.T("public.invalidFeature"));
+      // B126 (D123): the first POST asks on its own page. Only the confirmed POST deletes anything.
+      if (context.url.searchParams.get("confirm") !== "true")
+        return wipeConfirmation(t, context.url.pathname, manage, deps.page());
       // The pairing is read again inside the write, so a change since the check writes nothing.
       const removed = writeTransaction(deps.db, () => {
         const sub = current();

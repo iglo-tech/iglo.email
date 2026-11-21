@@ -104,14 +104,13 @@ test("compiled production serves the public message page and asset boundaries", 
       expect(page.contentType).toBe("text/html; charset=UTF-8");
       expect(page.body).toMatch(/<!DOCTYPE html>/i);
       // B121 (D119): the 404 is the branded public shell, with the site's name (the default here).
-      expect(page.body).toContain("<title>404 - Not found - Mailing list</title>");
-      expect(page.body).toContain("<h2>404 - Not found</h2>");
+      // B126 (D123): titled "Page not found", with no footer and no product credit.
+      expect(page.body).toContain("<title>Page not found - Mailing list</title>");
+      expect(page.body).toContain("<h2>Page not found</h2>");
       expect(page.body).toMatch(/href="\/public\/static\/style\.css\?v=[a-z0-9]+"/);
       expect(page.body).toMatch(/href="\/public\/custom\.css\?v=[a-z0-9]+"/);
       expect(page.body).toMatch(/src="\/public\/static\/logo\.svg\?v=[a-z0-9]+"/);
-      expect(page.body).toMatch(
-        /<footer[^>]*>[\s\S]*Powered by[\s\S]*iglo\.email[\s\S]*<\/footer>/,
-      );
+      expect(page.body).not.toMatch(/<footer|Powered by|listmonk/);
     }
     expect(await rawRequest(origin, "/missing-public-page", { method: "HEAD" })).toEqual({
       status: 404,
@@ -149,15 +148,14 @@ test("compiled production serves the public message page and asset boundaries", 
     const traversal = await rawRequest(origin, "/public/static/%2e%2e/style.css");
     expect(traversal.status).toBe(404);
     expect(traversal.contentType).toBe("text/html; charset=UTF-8");
-    expect(traversal.body).toContain("<h2>404 - Not found</h2>");
+    expect(traversal.body).toContain("<h2>Page not found</h2>");
   });
 }, 30_000);
 
-// Request-local translations are escaped in both heading and footer.
+// Request-local translations are escaped in the heading (B126: the heading is `public.pageNotFound`).
 test("public fallback uses and escapes the injected translation instance", async () => {
   const i18n = createTranslation().Load({
-    "globals.terms.notFound": '<script>&"',
-    "public.poweredBy": "By <unsafe>&",
+    "public.pageNotFound": '<script>&"',
   });
   const fixture = startFixture({ i18n });
   try {
@@ -166,8 +164,7 @@ test("public fallback uses and escapes the injected translation instance", async
     });
     const body = await response.text();
     expect(response.status).toBe(404);
-    expect(body).toContain("<h2>404 - &lt;script&gt;&amp;&quot;</h2>");
-    expect(body).toContain("By &lt;unsafe&gt;&amp;");
+    expect(body).toContain("<h2>&lt;script&gt;&amp;&quot;</h2>");
     expect(body).not.toContain("<script>");
   } finally {
     await fixture.close();
@@ -201,7 +198,7 @@ test("admin and API paths keep their own answers; only other paths get the publi
       const publicPage = await fetch(`${origin}/no-such`);
       const html = await publicPage.text();
       expect(publicPage.status).toBe(404);
-      expect(html).toContain("<title>404 - Not found - Mailing list</title>");
+      expect(html).toContain("<title>Page not found - Mailing list</title>");
       expect(html).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
     },
     admin,

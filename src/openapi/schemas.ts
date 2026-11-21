@@ -167,6 +167,7 @@ const settings = (smtp: string, mailbox: string): Schema =>
   object(
     {
       "app.site_name": string,
+      "app.site_url": string,
       "app.favicon_url": string,
       "app.from_email": array(string),
       "app.logo_url": string,

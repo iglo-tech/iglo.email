@@ -86,6 +86,12 @@ UPDATE subscribers SET name=?, updated_at=? WHERE id=?;
 -- name: membership-unsubscribe-unconfirmed
 -- Adapted from unsubscribe-by-campaign with unsubAllUnconfirmed: the opt-in mail's link.
 UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber_id=? AND status = 'unconfirmed' RETURNING list_id;
+-- name: membership-unsubscribe-double-pending
+-- B126 (D123 item 8): a transactional link's cancel ends unconfirmed memberships of double opt-in lists only.
+-- An unconfirmed single opt-in membership is an active subscription, and stays.
+UPDATE subscriber_lists SET status='unsubscribed', updated_at=?
+  WHERE subscriber_id=? AND status = 'unconfirmed' AND list_id IN (SELECT id FROM lists WHERE optin = 'double')
+  RETURNING list_id;
 -- name: membership-confirm
 -- Adapted from confirm-subscription-optin, for rows still awaiting confirmation only.
 UPDATE subscriber_lists SET status='confirmed', meta=json_patch(meta, ?), updated_at=? WHERE subscriber_id=? AND list_id=? AND status='unconfirmed'

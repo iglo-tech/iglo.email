@@ -35,6 +35,7 @@ export function publicSettings(current: Record<string, any>): PublicSettings {
     subscriptionPage: current["app.enable_public_subscription_page"],
     archive: current["app.enable_public_archive"],
     siteName: current["app.site_name"],
+    siteUrl: current["app.site_url"],
     // listmonk getDefaultFromEmail: the first configured address.
     fromEmail: current["app.from_email"][0] ?? "",
     sendOptin: current["app.send_optin_confirmation"],

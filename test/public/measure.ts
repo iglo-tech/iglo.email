@@ -109,9 +109,13 @@ try {
     const campaign = f.deliveredCampaign([id]);
     const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
     start = Bun.nanoseconds();
-    const response = await f.peer(`/subscription/${campaign}/wipe/${uuid}`, address(), {
-      method: "POST",
-    });
+    const response = await f.peer(
+      `/subscription/${campaign}/wipe/${uuid}?confirm=true`,
+      address(),
+      {
+        method: "POST",
+      },
+    );
     wipes.push((Bun.nanoseconds() - start) / 1e6);
     if (response.status !== 200) throw new Error(`wipe ${response.status}`);
   }

@@ -75,7 +75,6 @@ export function registerPublicRoutes(
       <PublicShell
         title={title}
         assetVersion={assetVersion}
-        poweredBy={t.T("public.poweredBy")}
         archiveTitle={t.T("public.archiveTitle")}
         site={settings}
       >
@@ -91,8 +90,7 @@ export function registerPublicRoutes(
   const subscriber = (context: RequestContext, headers: Record<string, string> = {}) => {
     const t = context.app.i18n;
     const uuid = context.params.subUUID ?? "";
-    if (!uuidPattern.test(uuid))
-      return failed(t, 400, t.T("globals.messages.invalidUUID"), headers);
+    if (!uuidPattern.test(uuid)) return failed(t, 400, t.T("public.linkNotValid"), headers);
     return (
       deps.subscribers.byUuid(uuid.toLowerCase()) ??
       message(
@@ -191,7 +189,8 @@ export function registerPublicRoutes(
   router.route("GET", "/subscription/form", (context) => {
     const t = context.app.i18n;
     const settings = deps.settings();
-    if (!settings.subscriptionPage) return failed(t, 404, t.T("public.invalidFeature"));
+    // B126 (D123): a form that is off is a missing page, so it answers the branded "Page not found".
+    if (!settings.subscriptionPage) return publicNotFound(t, context.request.method, settings);
     const lists = deps.lists.publicLists();
     // B121 (D119): an empty list set is a configuration state, not a fault: the branded message at
     // 200, under the form's own title (a 200 page is not an error).
@@ -271,7 +270,7 @@ export function registerPublicRoutes(
     async (context) => {
       const t = context.app.i18n;
       const settings = deps.settings();
-      if (!settings.subscriptionPage) throw new HttpError(404, t.T("public.invalidFeature"));
+      if (!settings.subscriptionPage) return publicNotFound(t, context.request.method, settings);
       let fields: Fields;
       try {
         fields = await readFields(context.request);
@@ -339,7 +338,7 @@ export function registerPublicRoutes(
       }
     }
     if (uuids.some((uuid) => !uuidPattern.test(uuid)))
-      return failed(t, 400, t.T("globals.messages.invalidUUID"), headers);
+      return failed(t, 400, t.T("public.linkNotValid"), headers);
     const wanted = new Set(uuids.map((uuid) => uuid.toLowerCase()));
     const lists = deps.subscribers
       .unconfirmedLists(sub.id)

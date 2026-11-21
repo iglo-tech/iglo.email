@@ -226,6 +226,7 @@ async function createNotifyFixture(
         fromEmail: current["app.from_email"][0] ?? "",
         rootUrl: current["app.root_url"],
         logoUrl: current["app.logo_url"],
+        siteName: current["app.site_name"],
       };
     },
   });

@@ -106,13 +106,13 @@ export function registerUnsubscribeRoutes(
           context.app.i18n,
           400,
           context.app.i18n.T("globals.terms.error"),
-          context.app.i18n.T("globals.messages.invalidUUID"),
+          context.app.i18n.T("public.linkNotValid"),
         )
       : null;
   /**
    * The send and its current subscriber, when both UUIDs belong together (D126, r1): a marketing send
    * to a list, or a transactional send, which pairs through the journal like any other send. Only the
-   * marketing variant may blocklist or reach a privacy action.
+   * marketing variant may blocklist or wipe; both variants reach export (B126 r2, D123 item 8).
    */
   const pairedSend = (sendUuid: string, subscriberUuid: string) => {
     const send = deps.sends.byUuid(sendUuid.toLowerCase());
@@ -148,15 +148,13 @@ export function registerUnsubscribeRoutes(
     if (found.subscriber.status === "blocklisted")
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
     const manage = parseBool(context.url.searchParams.get("manage")) === true;
-    // B123 (D126): the page's forms post to this send's paired routes. A transactional send's page
-    // manages confirmed lists and the name only: no blocklist and no privacy form (r1).
+    // B123 (D126): the page's forms post to this send's paired routes.
     const base = `/m/${context.params.sendUUID!.toLowerCase()}`;
-    const mode: PageMode = {
-      kind: "paired",
-      base,
-      blocklist: found.marketing,
-      privacy: found.marketing,
-    };
+    // B126 (D123): a marketing link covers its send's list and may blocklist; a transactional link
+    // reads its subscriber's memberships instead, and has no blocklist (D126, r1).
+    const mode: PageMode = found.marketing
+      ? { kind: "paired", base, blocklist: true, privacy: true, lists: [found.list] }
+      : { kind: "transactional", base };
     return subscriptionPage(
       t,
       deps.subscribers,
@@ -201,13 +199,14 @@ export function registerUnsubscribeRoutes(
             () => pairedSend(sendUuid, subUuid)?.subscriber ?? null,
           ) ?? notFound(t)
         );
-      const done = writeTransaction(deps.db, () => {
+      const outcome = writeTransaction(deps.db, () => {
         // Re-read inside the write so a concurrent identity change cannot be unsubscribed.
         const found = pairedSend(sendUuid, subUuid);
-        if (!found) return false;
+        if (!found) return null;
         if (!found.marketing) {
-          // A transactional send's one-click ends pending opt-ins only, as the placeholder's does (r1).
-          const changed = deps.subscribers.unsubscribeUnconfirmed(found.subscriber.id);
+          // A transactional send's form ends pending opt-ins only: the unconfirmed memberships of double
+          // opt-in lists. An unconfirmed single opt-in membership is active, so this form never ends it (B126, D123 item 8).
+          const changed = deps.subscribers.unsubscribeDoubleOptinPending(found.subscriber.id);
           for (const list of changed)
             effects.unsubscribed({
               subscriberId: found.subscriber.id,
@@ -215,7 +214,9 @@ export function registerUnsubscribeRoutes(
               listIds: [list],
               blocklisted: false,
             });
-          return true;
+          return changed.length
+            ? ({ kind: "cancelled", count: changed.length } as const)
+            : ("unchanged" as const);
         }
         const listIds = deps.subscribers.unsubscribe(found.subscriber.id, found.list, blocklist);
         effects.unsubscribed({
@@ -224,16 +225,43 @@ export function registerUnsubscribeRoutes(
           listIds,
           blocklisted: blocklist,
         });
-        return true;
+        return "unsubscribed" as const;
       });
-      if (!done) return notFound(t);
-      return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
+      if (!outcome) return notFound(t);
+      // B126 (D123): nothing was pending, so the answer is the page the link shows now (already or confirmed).
+      if (outcome === "unchanged") {
+        const found = pairedSend(sendUuid, subUuid);
+        if (!found) return notFound(t);
+        return subscriptionPage(t, deps.subscribers, found.subscriber, options(), false, noIndex, {
+          kind: "transactional",
+          base: `/m/${sendUuid.toLowerCase()}`,
+        });
+      }
+      if (typeof outcome === "object")
+        return publicMessage(t, {
+          status: 200,
+          title: t.T("globals.messages.done"),
+          message: t.T(
+            outcome.count > 1 ? "public.pendingCancelledMany" : "public.pendingCancelled",
+          ),
+          site: options(),
+        });
+      return publicMessage(t, {
+        status: 200,
+        title: t.T("globals.terms.unsubscribed"),
+        message: t.T("public.unsubbedInfo"),
+        site: options(),
+      });
     },
     ...limit,
   );
 
-  // B123 (D126): the manage page's privacy forms. Only a subscriber this send paired is answered.
+  // B123 (D126): the manage page's privacy forms. Only a subscriber this send paired is answered. Export
+  // reaches a transactional send's pairing too, as its page offers it (B126, D123 item 8). Wipe does not:
+  // a transactional send can carry Cc and Bcc copies, so only a marketing send's pairing may delete.
   const paired = (context: RequestContext) =>
+    pairedSend(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null;
+  const pairedMarketing = (context: RequestContext) =>
     target(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null;
   router.route(
     "POST",
@@ -251,7 +279,13 @@ export function registerUnsubscribeRoutes(
     (context) => {
       const bad = invalidUUID(context, "sendUUID", "subUUID");
       if (bad) return bad;
-      return deps.privacy.wipe(context, () => paired(context)) ?? notFound(context.app.i18n);
+      // B126 (D123): the confirmation's "Keep my data" returns to the page this send shows, with the manage
+      // view only when preferences are on (the view is the only thing ?manage=true asks for).
+      const manage = `/m/${context.params.sendUUID!.toLowerCase()}/unsubscribe/${context.params.subUUID!.toLowerCase()}${options().allowPreferences ? "?manage=true" : ""}`;
+      return (
+        deps.privacy.wipe(context, () => pairedMarketing(context), manage) ??
+        notFound(context.app.i18n)
+      );
     },
     ...privacyLimit,
   );

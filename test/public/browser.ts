@@ -161,10 +161,12 @@ const passed = await withProduction(
     shot("export");
     browser("open", paired);
     browser("click", "#privacy-wipe");
-    // Accept the page's confirm() once it opens.
-    browser("eval", "window.confirm = () => true; 1");
     browser("click", "input[type=submit]");
-    browser("wait", "--text", "Your subscriptions and all associated data");
+    // B126 (D123): the wipe asks on its own page; nothing is deleted until its button is pressed.
+    browser("wait", "--text", "Delete your email data?");
+    shot("wipe-ask");
+    browser("click", "#btn-wipe");
+    browser("wait", "--text", "Your email data has been deleted.");
     shot("wipe");
     if (await row()) fail("wipe");
     process.stdout.write("PASS public browser checks\n");

@@ -341,6 +341,7 @@ export async function txFixture(
       faviconUrl: "",
       subscriptionPage: false,
       archive: false,
+      siteUrl: "",
       siteName: marketing.siteName,
       allowBlocklist: marketing.allowBlocklist,
       allowPreferences: false,
@@ -470,7 +471,8 @@ export async function txFixture(
     if (sent.status !== 200) throw new Error(`send ${sent.status}`);
     const send = (await json(`/api/sends/${sent.body.data.sends[0].id}`)).body.data.uuid as string;
     const who = (await json(`/api/subscribers/${subscriberId}`)).body.data.uuid as string;
-    return `/m/${send}/${action}/${who}`;
+    // B126 (D123): a wipe deletes only when confirmed; the bare POST answers its confirmation page.
+    return `/m/${send}/${action}/${who}${action === "wipe" ? "?confirm=true" : ""}`;
   };
   return {
     privacyPath,

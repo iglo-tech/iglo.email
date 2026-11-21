@@ -14,6 +14,7 @@ import type { Translation } from "@/i18n/i18n";
 import { createLoop } from "@/loops/loop";
 import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
+import { siteText } from "@/public/layout";
 import { createThrottle } from "@/public/rate-limit";
 import type { PublicSettings } from "@/public/settings";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -143,6 +144,18 @@ export function createSubscriberMail(deps: {
         });
       })
       .catch((error: unknown) => deps.logger.error(error));
+  /**
+   * The branding a subscriber's mail shows, the same inputs the public pages use (B126, D123): the
+   * logo, the site name and the operator's site. Liquid escapes each in the template.
+   */
+  function brand(settings: PublicSettings) {
+    return {
+      logo_url: safeLogo(settings.logoUrl),
+      site_name: settings.siteName,
+      site_url: settings.siteUrl,
+    };
+  }
+
   /** makeOptinNotifyHook: returns the number of double opt-in lists awaiting confirmation. */
   function optin(sub: Subscriber, listIds: bigint[] = []): number {
     const wanted = new Set(listIds.map(Number));
@@ -164,7 +177,7 @@ export function createSubscriberMail(deps: {
           lists: lists.map((list) => ({ name: list.name, type: list.type })),
           optin_url: `${settings.rootUrl}/subscription/optin/${sub.uuid}?${query}`,
           manage_url: `${unsubscribeUrl}?manage=true`,
-          logo_url: safeLogo(settings.logoUrl),
+          ...brand(settings),
         }),
       },
       budget,
@@ -237,19 +250,26 @@ export function createSubscriberMail(deps: {
         {
           body: systemTemplates.subscriberData,
           mode: "html",
-          data: JSON.stringify({ logo_url: safeLogo(settings.logoUrl) }),
+          data: JSON.stringify(brand(settings)),
         },
         budget,
       ).body;
-      void enqueue(sub, settings, t.T("email.data.title"), html, budget, {
-        attachments: [
-          {
-            name: "data.json",
-            content: Buffer.from(JSON.stringify(exportSections(sub), null, 2)),
-            contentType: "application/json",
-          },
-        ],
-      });
+      void enqueue(
+        sub,
+        settings,
+        siteText(t.T("email.data.subject"), settings.siteName),
+        html,
+        budget,
+        {
+          attachments: [
+            {
+              name: "data.json",
+              content: Buffer.from(JSON.stringify(exportSections(sub), null, 2)),
+              contentType: "application/json",
+            },
+          ],
+        },
+      );
     },
   };
 }
