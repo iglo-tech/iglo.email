@@ -762,7 +762,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
     });
     analyticsPurge = createAnalyticsPurge(db, readonly);
-    let server: ReturnType<typeof startServer> | undefined;
     maintenance = registerMaintenanceRoutes(router, {
       subscribers: subscriberStore,
       analytics: analyticsPurge,
@@ -818,7 +817,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     inspect?.(router);
     // The port is bound before any loop starts (B52). A bind that fails throws here, with nothing
     // started, so the finally block closes the stores and releases the lock and nothing else.
-    server = startServer(app, router);
+    const server = startServer(app, router);
     const listening = server;
     await new Promise<void>((resolve, reject) => {
       let closing = false;

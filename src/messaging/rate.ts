@@ -126,8 +126,6 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
     }
 
     return new Promise<void>((resolve, reject) => {
-      let waiter: Waiter;
-
       const abortHandler = () => {
         if (priority === "outbox") {
           const idx = outboxWaiters.indexOf(waiter);
@@ -148,7 +146,7 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
         signal.addEventListener("abort", abortHandler, { once: true });
       }
 
-      waiter = {
+      const waiter: Waiter = {
         priority,
         resolve,
         reject,
