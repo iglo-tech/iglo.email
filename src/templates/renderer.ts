@@ -89,7 +89,7 @@ class BoundedEmitter implements Emitter {
   }
 }
 function scalar(value: unknown): string {
-  if (value == null) {
+  if (value === null || value === undefined) {
     return "";
   }
   if (typeof value === "string") {
@@ -189,7 +189,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
         }
         return bytes;
       }
-      return value == null ? 0 : 32;
+      return value === null || value === undefined ? 0 : 32;
     };
     for (const name of ["==", "!=", ">", "<", ">=", "<=", "contains"] as const) {
       const original = operators[name] as (left: unknown, right: unknown, ctx: Context) => unknown;
@@ -274,7 +274,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
       const b = budget(this.context);
       b.step();
       const out =
-        value == null || value === false || value === "" ? scalar(fallback) : scalar(value);
+        value === null || value === undefined || value === false || value === ""
+          ? scalar(fallback)
+          : scalar(value);
       b.charge(byteLength(out));
       return out;
     });
@@ -485,7 +487,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       "reset_url",
       "root_url",
     ]) {
-      if (data[key] != null) {
+      if (data[key] !== null && data[key] !== undefined) {
         data[key] = url(data[key]);
       }
     }
@@ -560,7 +562,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
               args[key] = Number(value) || 0;
             }
           } else if (
-            value != null &&
+            value !== null &&
+            value !== undefined &&
             typeof value !== "boolean" &&
             !(typeof value === "number" && Number.isFinite(value))
           ) {

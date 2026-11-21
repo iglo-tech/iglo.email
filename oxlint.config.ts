@@ -112,7 +112,6 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134b: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed.
-    eqeqeq: "off", // B134b
     "typescript/no-explicit-any": "off", // B134b
     "typescript/no-misused-spread": "off", // B134b
     "typescript/no-non-null-assertion": "off", // B134b

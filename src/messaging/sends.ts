@@ -453,8 +453,15 @@ export function createSends(options: {
     ) {
       throw new Error("Invalid prepared send");
     }
-    const subscriber = input.subscriberId == null ? null : subscribers.get(input.subscriberId);
-    if (input.subscriberId != null && (!subscriber || subscriber.email !== input.message.to[0])) {
+    const subscriber =
+      input.subscriberId === null || input.subscriberId === undefined
+        ? null
+        : subscribers.get(input.subscriberId);
+    if (
+      input.subscriberId !== null &&
+      input.subscriberId !== undefined &&
+      (!subscriber || subscriber.email !== input.message.to[0])
+    ) {
       throw new Error("Invalid prepared send");
     }
     const payload = encodePayload(input.message, subscriber?.uuid ?? null);
@@ -600,7 +607,10 @@ export function createSends(options: {
       ) {
         throw new Error("Invalid prepared send");
       }
-      if ((send.subscriberId == null) !== (subscriberUuid === null)) {
+      if (
+        (send.subscriberId === null || send.subscriberId === undefined) !==
+        (subscriberUuid === null)
+      ) {
         throw new Error("Invalid prepared send");
       }
       if (
@@ -634,7 +644,7 @@ export function createSends(options: {
       prepared.forEach(({ send, subscriberUuid, payload }, index) => {
         const to = send.message.to[0]!;
         let skip: string | null = null;
-        if (send.subscriberId != null) {
+        if (send.subscriberId !== null && send.subscriberId !== undefined) {
           const current = subscribers.get(send.subscriberId);
           if (!current || current.uuid !== subscriberUuid || current.email !== to) {
             throw new HttpError(409, "Subscriber changed. Retry the request.");
@@ -871,9 +881,12 @@ export function createSends(options: {
       if (
         send.source !== "sequence" ||
         !["transactional", "marketing"].includes(send.kind) ||
-        send.subscriberId == null ||
-        send.enrollmentId == null ||
-        send.stepId == null ||
+        send.subscriberId === null ||
+        send.subscriberId === undefined ||
+        send.enrollmentId === null ||
+        send.enrollmentId === undefined ||
+        send.stepId === null ||
+        send.stepId === undefined ||
         (send.uuid !== undefined && !uuidPattern.test(send.uuid))
       ) {
         throw new Error("Invalid prepared send");

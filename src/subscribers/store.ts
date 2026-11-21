@@ -317,7 +317,11 @@ export function createSubscriberStore(
     create(input: SubscriberInput & { email: string; name: string }, scope: Scope) {
       const now = clock.now().toISOString(),
         status = input.status || "enabled";
-      if (input.external_id != null && external(input.external_id)) {
+      if (
+        input.external_id !== null &&
+        input.external_id !== undefined &&
+        external(input.external_id)
+      ) {
         throw new HttpError(409, "External ID already exists");
       }
       try {
@@ -367,7 +371,7 @@ export function createSubscriberStore(
                 ...input.attribs,
               }
         : (input.attribs ?? {});
-      if (input.external_id != null) {
+      if (input.external_id !== null && input.external_id !== undefined) {
         const existing = external(input.external_id);
         if (existing && existing.id !== row.id) {
           throw new HttpError(409, "External ID already exists");

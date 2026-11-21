@@ -47,14 +47,14 @@ async function input(context: RequestContext, kind: "user" | "list") {
   const invalid = (name: string): never => {
     throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
   };
-  if (data.name != null && typeof data.name !== "string") {
+  if (data.name !== null && data.name !== undefined && typeof data.name !== "string") {
     throw new HttpError(400);
   }
   const name = typeof data.name === "string" ? data.name : "";
   if (!strHasLen(name, 1, 2000)) {
     invalid("name");
   }
-  if (kind === "user" && data.permissions == null) {
+  if (kind === "user" && (data.permissions === null || data.permissions === undefined)) {
     invalid("permissions");
   }
   const granted = data.permissions ?? [];
