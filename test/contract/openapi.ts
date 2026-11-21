@@ -682,6 +682,24 @@ export async function runOpenApiContract(target: {
       body: { subscriber: { email: subscriber.email }, name: "canceled" },
     });
     check(ended.body.data.enrollments.ended.length === 1, "event-ended");
+    // A blocklisted person's start is refused and named, in the event's answer and in their events
+    // list (B116, D131). The person is new, so no other check sees them.
+    const refusedPerson = (
+      await op("POST /api/subscribers", {
+        body: { email: "refused@fixture.test", name: "Refused", status: "enabled" },
+      })
+    ).body.data;
+    await op("PUT /api/subscribers/{id}/blocklist", { params: { id: refusedPerson.id } });
+    const refused = await op("POST /api/subscriber-events", {
+      body: { subscriber: { email: "refused@fixture.test" }, name: "signup", data: { plan: "a" } },
+    });
+    check(
+      refused.body.data.enrollments.started.length === 0 &&
+        refused.body.data.enrollments.skipped.length === 1 &&
+        refused.body.data.enrollments.skipped[0].reason === "subscriber_blocklisted",
+      "event-skipped",
+    );
+    await op("GET /api/subscribers/{id}/subscriber-events", { params: { id: refusedPerson.id } });
     await op("GET /api/enrollments/{id}/timeline", {
       params: { id: triggered.id },
     });
@@ -1577,6 +1595,26 @@ export async function runOpenApiContract(target: {
         await op(key, { ...placeholders(key, "999999"), expect: 404 });
     }
 
+    // A campaign's skipped list is empty here: a consent skip races the runner's push, which a
+    // production run cannot hold still. The item's schema is checked against the shape the runner
+    // writes (D131); the runner's own skips are tested in process (test/campaigns/runner).
+    const skippedDelivery = {
+      subscriber_id: 1,
+      status: "skipped",
+      reason: "unsubscribed",
+      at: new Date().toISOString(),
+    };
+    check(
+      validate(
+        document,
+        { $ref: "#/components/schemas/CampaignSkippedDelivery" },
+        skippedDelivery,
+        "$",
+        0,
+        checked,
+      ).length === 0,
+      "skipped-delivery-shape",
+    );
     // Nothing documented went unexercised.
     for (const name of Object.keys(document.components.schemas))
       check(checked.has(name), `unchecked-schema-${name}`);
