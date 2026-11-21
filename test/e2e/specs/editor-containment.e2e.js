@@ -377,7 +377,8 @@ test.describe("remote images load on request", () => {
       expect(got.replaceAll(/\s+/g, " ")).toBe(original);
       const computed = (style) =>
         probe.evaluate((css) => {
-          const el = document.body.append(document.createElement("div"));
+          const el = document.createElement("div");
+          document.body.append(el);
           el.setAttribute("style", css);
           const s = getComputedStyle(el);
           return [
