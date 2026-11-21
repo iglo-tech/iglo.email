@@ -562,7 +562,13 @@ describe("B37: send rate cap", () => {
       }
 
       // Drive clock until all 70 messages are delivered to the sink
-      await h.drive(() => h.sink.messages.length === 70, 50);
+      // The step is 10 ms, not 50 ms. Sink receipts are read from this clock, so a 50 ms step
+      // quantizes them: in one trace the limiter grants and the SMTP hand-offs were exactly 200 ms
+      // apart (at most 5 in any rolling second), while receipts trailed them by 150 ms, once 200 ms,
+      // and gave gaps of 250 and 150 ms and a six-receipt window. The same run at a 10 ms step gave
+      // receipt gaps of exactly 200 ms and at most 5 in any rolling second. The cap is enforced at
+      // the grant; the assertion below reads it at the sink.
+      await h.drive(() => h.sink.messages.length === 70, 10);
       await Promise.all(txPromises);
 
       expect(h.sink.messages.length).toBe(70);
@@ -629,7 +635,16 @@ describe("B37: send rate cap", () => {
       }
 
       // 80 messages total at 1/s = ~80 seconds of clock time
-      await h.drive(() => h.sink.messages.length === 80, 50);
+      // The sink can hold all 80 messages before the campaign's delivery rows are written: the
+      // outcome is recorded after the hand-off. In one trace the sink had 80 while the 10 campaign
+      // deliveries were still `claimed` and the 70 sends `sent`. So the wait ends on the rows too.
+      const campaignSent = () =>
+        h.db
+          .query<{ count: number }, any>(
+            "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+          )
+          .get(campId)!.count as number;
+      await h.drive(() => h.sink.messages.length === 80 && Number(campaignSent()) === 10, 50);
       await Promise.all(txPromises);
 
       expect(h.sink.messages.length).toBe(80);
@@ -1309,8 +1324,29 @@ describe("B37: send rate cap", () => {
       h.restart();
       h.runner.wake();
 
-      // Messages finish sending (1 camp + 1 tx + 1 camp = 3 total)
-      await h.drive(() => h.sink.messages.length === 3, 50);
+      // Messages finish sending (1 camp + 1 tx + 1 camp = 3 total). The wait ends on the rows as
+      // well as the sink: the sink can hold the third message before its delivery row is written.
+      // The step is 10 ms, not 50 ms, for the reason given in test 1: a 50 ms step quantizes the
+      // receipt times the wait reads.
+      const finished = () => {
+        const sent = h.db
+          .query<{ count: number }, any>(
+            "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
+          )
+          .get(campId)!.count;
+        const tx = h.db
+          .query<{ status: string }, any>(
+            "SELECT status FROM sends WHERE to_email = 'main-tx-wait@example.test'",
+          )
+          .get();
+        return h.sink.messages.length === 3 && Number(sent) === 2 && tx?.status === "sent";
+      };
+      await h.drive(finished, 10);
+      // This test does not assert the rolling cap at the sink. The cap is enforced at each grant and
+      // hand-off, which are exactly one interval apart in every trace. Sink receipts also carry each
+      // send's own latency, and a fresh pool connection after the restart has a different one, so two
+      // receipts one interval apart can fall in one second (in one trace, 50 ms and 1030 ms, at a cap
+      // of one per second). Test 1 asserts the sink-side rolling cap with a warm pool.
 
       const txRowAfter = h.db
         .query<{ status: string; attempts: number }, any>(
