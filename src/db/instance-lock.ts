@@ -33,7 +33,9 @@ function takeLock(path: string): Database {
     const { journal_mode: journal } = lock
       .query<{ journal_mode: string }, []>("PRAGMA journal_mode = MEMORY")
       .get()!;
-    if (journal !== "memory") throw new Error(`journal mode is ${journal}`);
+    if (journal !== "memory") {
+      throw new Error(`journal mode is ${journal}`);
+    }
     lock.run("PRAGMA locking_mode = EXCLUSIVE");
     lock.run("PRAGMA synchronous = OFF");
     lock.run("BEGIN EXCLUSIVE");
@@ -68,7 +70,9 @@ export function holdDataDirectory(
       const { code, message } = error as { code?: string; message: string };
       if (code === "SQLITE_BUSY") {
         if (busy++ === BUSY_RETRIES)
-          throw new Error(`${directory} is in use by another iglo.email process: stop it first`);
+          throw new Error(`${directory} is in use by another iglo.email process: stop it first`, {
+            cause: error,
+          });
         pause(1 + Math.random() * BUSY_RETRY_MS);
         continue;
       }
@@ -79,12 +83,14 @@ export function holdDataDirectory(
         code === "SQLITE_NOTADB" ||
         code === "SQLITE_CORRUPT" ||
         (code === "SQLITE_ERROR" && message === "unsupported file format");
-      if (emptied || !damaged) throw new Error(`Cannot lock ${path}: ${message}`);
+      if (emptied || !damaged) {
+        throw new Error(`Cannot lock ${path}: ${message}`);
+      }
       emptied = true;
       try {
         truncateSync(path);
-      } catch (truncation) {
-        throw new Error(`Cannot lock ${path}: ${(truncation as Error).message}`);
+      } catch (error_) {
+        throw new Error(`Cannot lock ${path}: ${(error_ as Error).message}`);
       }
     }
   }

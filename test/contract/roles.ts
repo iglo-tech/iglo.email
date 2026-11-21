@@ -3,16 +3,19 @@ import { createHmac, randomUUID } from "node:crypto";
 import type { AuthTarget } from "@/test/contract/auth";
 
 function check(value: unknown, name: string): asserts value {
-  if (!value) throw new Error(`FAIL ${name}`);
+  if (!value) {
+    throw new Error(`FAIL ${name}`);
+  }
   process.stdout.write(`PASS ${name}\n`);
 }
 
 export async function runRolesContract(target: AuthTarget): Promise<void> {
-  if (!/^http:\/\/(?:127\.0\.0\.1|\[::1\]):[0-9]{1,5}$/.test(target.baseUrl))
+  if (!/^http:\/\/(?:127\.0\.0\.1|\[::1\]):[0-9]{1,5}$/.test(target.baseUrl)) {
     throw new Error("Invalid contract target");
+  }
   const auth = `Basic ${Buffer.from(`${target.credentials.user}:${target.credentials.token}`).toString("base64")}`;
   const suffix = randomUUID().replaceAll("-", "");
-  const owned: number[] = [];
+  const owned: Array<number> = [];
   let human = 0;
   let realList = 0;
   let cleanupFailed = false;
@@ -62,15 +65,17 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     let bits = "";
     for (const character of secret.replace(/=+$/, "")) {
       const index = alphabet.indexOf(character);
-      if (index < 0) throw new Error("FAIL factor-secret-format");
+      if (index < 0) {
+        throw new Error("FAIL factor-secret-format");
+      }
       bits += index.toString(2).padStart(5, "0");
     }
-    const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((v) => parseInt(v, 2)));
+    const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((v) => Number.parseInt(v, 2)));
     const counter = Buffer.alloc(8);
-    counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+    counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
     const digest = createHmac("sha1", key).update(counter).digest();
     const offset = digest[19]! & 15;
-    return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, "0");
+    return String((digest.readUInt32BE(offset) & 0x7f_ff_ff_ff) % 1_000_000).padStart(6, "0");
   }
   async function login(username: string, password: string) {
     const page = await fetch(`${target.baseUrl}/admin/login`);
@@ -107,7 +112,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     const grants = await request(`/api/roles/lists?query=m14-list-${suffix}`);
     const granted = (
       (await grants.json()) as {
-        data: { id: number; lists: { id: number; name: string; permissions: string[] }[] }[];
+        data: Array<{ id: number; lists: { id: number; name: string; permissions: string[] }[] }>;
       }
     ).data.find((item) => item.id === list);
     check(
@@ -127,7 +132,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     const users = await request(`/api/roles/users?query=${suffix}`);
     const userRoles = (
       (await users.json()) as {
-        data: Array<{ id: number; name: string; type: string; permissions: string[] }>;
+        data: Array<{ id: number; name: string; type: string; permissions: Array<string> }>;
       }
     ).data;
     check(
@@ -143,7 +148,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     );
     const lists = await request(`/api/roles/lists?query=${suffix}`);
     const listRoles = (
-      (await lists.json()) as { data: Array<{ id: number; name: string; lists: unknown[] }> }
+      (await lists.json()) as { data: Array<{ id: number; name: string; lists: Array<unknown> }> }
     ).data;
     check(
       lists.status === 200 &&
@@ -182,7 +187,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     async function currentUserRole() {
       const response = await request(`/api/roles/users?query=${suffix}`);
       check(response.status === 200, "D32-user-role-read");
-      const entries = ((await response.json()) as { data: Record<string, unknown>[] }).data;
+      const entries = ((await response.json()) as { data: Array<Record<string, unknown>> }).data;
       return entries.find((entry) => entry.id === role);
     }
     for (const variant of ["omitted", "null"] as const) {
@@ -197,7 +202,9 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
         );
         const body = (await response.json()) as { message?: string; data?: { id: number } };
         // Retain cleanup even if a regression unexpectedly creates a role.
-        if (method === "POST" && response.status === 200 && body.data?.id) owned.push(body.data.id);
+        if (method === "POST" && response.status === 200 && body.data?.id) {
+          owned.push(body.data.id);
+        }
         check(response.status === (reference ? 500 : 400), `D32-${method}-${variant}-status`);
         check(
           reference
@@ -215,7 +222,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
         );
         const named = await request(`/api/roles/users?query=${name}`);
         check(
-          ((await named.json()) as { data: unknown[] }).data.length === 0,
+          ((await named.json()) as { data: Array<unknown> }).data.length === 0,
           `D32-${method}-${variant}-name-not-written`,
         );
       }
@@ -231,7 +238,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     );
     for (const variant of ["omitted", "null", "empty"] as const) {
       const child = {
-        id: 2147483647,
+        id: 2_147_483_647,
         ...(variant === "omitted" ? {} : { permissions: variant === "null" ? null : [] }),
       };
       const cleared = await create("lists", {
@@ -244,7 +251,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       });
       check(replacement.status === 200, `list-child-${variant}-replacement`);
       const response = await request(`/api/roles/lists?query=${suffix}`);
-      const entries = ((await response.json()) as { data: { id: number; lists: unknown[] }[] })
+      const entries = ((await response.json()) as { data: Array<{ id: number; lists: unknown[] }> })
         .data;
       check(
         [list, cleared].every((id) =>
@@ -284,7 +291,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       'pq: insert or update on table "roles" violates foreign key constraint "roles_list_id_fkey" (23503). Key (list_id)=(2147483647) is not present in table "lists".';
     const badChildCreate = await request("/api/roles/lists", "POST", {
       name: `bad-child-${suffix}`,
-      lists: [{ id: 2147483647, permissions: ["list:get"] }],
+      lists: [{ id: 2_147_483_647, permissions: ["list:get"] }],
     });
     check(
       badChildCreate.status === 500 &&
@@ -300,7 +307,9 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     const after = await request(`/api/roles/lists?query=bad-child-${suffix}`);
     const orphans = ((await after.json()) as { data: Array<{ id: number }> }).data;
     check(orphans.length === (reference ? 1 : 0), "D30-invalid-child-create-atomicity");
-    for (const r of orphans) owned.push(r.id);
+    for (const r of orphans) {
+      owned.push(r.id);
+    }
     const ponies = await create("users", { name: `m14 ${suffix} Ponies`, permissions: [] });
     for (const [query, expected] of [
       ["pony", reference],
@@ -393,7 +402,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     check(primordial.status === 400, "role-primordial-protected");
     const invalidChild = await request(`/api/roles/lists/${list}`, "PUT", {
       name: `changed-child-${suffix}`,
-      lists: [{ id: 2147483647, permissions: ["list:get"] }],
+      lists: [{ id: 2_147_483_647, permissions: ["list:get"] }],
     });
     check(
       invalidChild.status === 500 &&
@@ -547,27 +556,38 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
   } finally {
     if (human) {
       const response = await request(`/api/users/${human}`, "DELETE");
-      if (response.status !== 200) cleanupFailed = true;
+      if (response.status !== 200) {
+        cleanupFailed = true;
+      }
     }
     for (const id of owned.reverse()) {
       const response = await request(`/api/roles/${id}`, "DELETE");
-      if (response.status !== 200) cleanupFailed = true;
+      if (response.status !== 200) {
+        cleanupFailed = true;
+      }
     }
-    if (realList && (await request(`/api/lists/${realList}`, "DELETE")).status !== 200)
+    if (realList && (await request(`/api/lists/${realList}`, "DELETE")).status !== 200) {
       cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL role-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL role-cleanup");
+  }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runRolesContract({
       mode: "reference",
       baseUrl,

@@ -1,8 +1,10 @@
 // MCP tools generated from the API document's operations (D98). Every documented operation that
 // no hand-written tool covers and coverage.ts does not exclude becomes one tool, so a new endpoint
 // in src/openapi/operations.ts is a tool without code here.
-import { operations, type Operation } from "@/openapi/operations";
-import { schemas, type Schema } from "@/openapi/schemas";
+import { operations } from "@/openapi/operations";
+import type { Operation } from "@/openapi/operations";
+import { schemas } from "@/openapi/schemas";
+import type { Schema } from "@/openapi/schemas";
 import { EXCLUDED_OPERATIONS, HANDWRITTEN_COVERAGE } from "@/mcp/coverage";
 import type { ToolAnnotations } from "@/mcp/annotations";
 import type { ToolDefinition } from "@/mcp/tools";
@@ -47,18 +49,19 @@ const DESTRUCTIVE_IDS = new Set([
   "blocklistBouncedSubscribers",
 ]);
 
-const snake = (id: string): string => id.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+const snake = (id: string): string => id.replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 
 /**
  * A tool is named for its operation in snake_case, without a trailing `_by_id` (updateSequenceById
  * is update_sequence). A name that another operation would share keeps its `_by_id`.
  */
-function toolNames(candidates: Operation[]): Map<string, string> {
+function toolNames(candidates: Array<Operation>): Map<string, string> {
   const claims = new Map<string, number>();
   for (const op of candidates) {
     const full = snake(op.id);
-    for (const name of new Set([full, full.replace(/_by_id$/, "")]))
+    for (const name of new Set([full, full.replace(/_by_id$/, "")])) {
       claims.set(name, (claims.get(name) ?? 0) + 1);
+    }
   }
   return new Map(
     candidates.map((op) => {
@@ -70,15 +73,23 @@ function toolNames(candidates: Operation[]): Map<string, string> {
 }
 
 /** A `$ref` inlined from the document's schemas. A schema that refers back to itself becomes `{}`. */
-function inline(value: unknown, stack: string[] = []): unknown {
-  if (Array.isArray(value)) return value.map((item) => inline(item, stack));
-  if (value === null || typeof value !== "object") return value;
+function inline(value: unknown, stack: Array<string> = []): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => inline(item, stack));
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
   const record = value as Record<string, unknown>;
   if (typeof record.$ref === "string") {
     const name = record.$ref.replace("#/components/schemas/", "");
-    if (stack.includes(name)) return {};
+    if (stack.includes(name)) {
+      return {};
+    }
     const target = schemas[name];
-    if (target === undefined) throw new Error(`no schema ${name} for an MCP tool`);
+    if (target === undefined) {
+      throw new Error(`no schema ${name} for an MCP tool`);
+    }
     return inline(target, [...stack, name]);
   }
   return Object.fromEntries(
@@ -86,7 +97,8 @@ function inline(value: unknown, stack: string[] = []): unknown {
   );
 }
 
-const pathNames = (route: string): string[] => [...route.matchAll(/\{(\w+)\}/g)].map(([, n]) => n!);
+const pathNames = (route: string): Array<string> =>
+  [...route.matchAll(/\{(\w+)\}/g)].map(([, n]) => n!);
 
 /** The same defaults the document gives a path parameter (document.ts). */
 const pathSchema = (op: Operation, name: string): Schema =>
@@ -113,12 +125,15 @@ function pathArgumentError(name: string, schema: Schema, value: unknown): string
     const minimum = typeof schema.minimum === "number" ? schema.minimum : 1;
     const number =
       typeof value === "number" ? value : /^[0-9]+$/.test(raw) ? Number(raw) : Number.NaN;
-    if (!Number.isSafeInteger(number) || number < minimum)
+    if (!Number.isSafeInteger(number) || number < minimum) {
       return `${name} must be a positive integer.`;
+    }
   } else if (Array.isArray(schema.enum) && !schema.enum.map(String).includes(raw)) {
     return `${name} must be one of: ${schema.enum.join(", ")}.`;
   }
-  if (dotSegment(raw)) return `${name} must not be "." or "..".`;
+  if (dotSegment(raw)) {
+    return `${name} must not be "." or "..".`;
+  }
   return undefined;
 }
 
@@ -129,7 +144,9 @@ function pathArgumentError(name: string, schema: Schema, value: unknown): string
 function pathMatchesRoute(route: string, url: string): boolean {
   const template = route.split(" ")[1]!;
   const pathname = url.split("?", 1)[0]!;
-  if (new URL(pathname, "http://127.0.0.1").pathname !== pathname) return false;
+  if (new URL(pathname, "http://127.0.0.1").pathname !== pathname) {
+    return false;
+  }
   const want = template.split("/");
   const got = pathname.split("/");
   return (
@@ -148,12 +165,12 @@ function fileField(op: Operation): string | undefined {
   return Object.keys(fields).find((name) => fields[name]?.contentMediaType !== undefined);
 }
 
-const requiredFields = (op: Operation): string[] =>
-  (op.body?.required as string[] | undefined) ?? [];
+const requiredFields = (op: Operation): Array<string> =>
+  (op.body?.required as Array<string> | undefined) ?? [];
 
 function needs(op: Operation): string {
   const groups = [op.permissions, ...(op.alsoPermissions ?? [])].filter(
-    (group): group is string[] => group !== undefined,
+    (group): group is Array<string> => group !== undefined,
   );
   return groups.length
     ? groups.map((group) => group.join(" or ")).join(" and ")
@@ -162,8 +179,9 @@ function needs(op: Operation): string {
 
 function annotationsFor(op: Operation): ToolAnnotations {
   const method = op.route.split(" ", 1)[0];
-  if (method === "GET" || (method === "POST" && /^(preview|validate)/.test(op.id)))
+  if (method === "GET" || (method === "POST" && /^(preview|validate)/.test(op.id))) {
     return { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+  }
   return {
     readOnlyHint: false,
     destructiveHint: method === "DELETE" || /blocklist/i.test(op.id) || DESTRUCTIVE_IDS.has(op.id),
@@ -174,7 +192,7 @@ function annotationsFor(op: Operation): ToolAnnotations {
 export function toolFor(name: string, op: Operation): ToolDefinition {
   const route = op.route.split(" ")[1]!;
   const properties: Record<string, unknown> = {};
-  const required: string[] = [];
+  const required: Array<string> = [];
 
   for (const param of pathNames(route)) {
     properties[param] = pathSchema(op, param);
@@ -185,13 +203,16 @@ export function toolFor(name: string, op: Operation): ToolDefinition {
     properties[param.name] = param.description
       ? { ...schema, description: param.description }
       : schema;
-    if (param.required) required.push(param.name);
+    if (param.required) {
+      required.push(param.name);
+    }
   }
   if (op.body && isMultipart(op)) {
     const file = fileField(op);
     const fields = (op.body.properties ?? {}) as Record<string, unknown>;
-    for (const [field, schema] of Object.entries(fields))
+    for (const [field, schema] of Object.entries(fields)) {
       if (field !== file) properties[field] = inline(schema);
+    }
     properties.filename = { type: "string", description: "The file's name." };
     properties.content_base64 = {
       type: "string",
@@ -237,7 +258,7 @@ const candidates = operations.filter(
 const names = toolNames(candidates);
 
 /** One entry per generated tool, in the document's order. */
-export const GENERATED: GeneratedOperation[] = candidates.map((operation) => {
+export const GENERATED: Array<GeneratedOperation> = candidates.map((operation) => {
   const name = names.get(operation.id)!;
   return { name, operation, tool: toolFor(name, operation) };
 });
@@ -270,9 +291,13 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
   let path = route;
   for (const param of pathNames(route)) {
     const value = args[param];
-    if (value === undefined || value === null || value === "") return missing(param);
+    if (value === undefined || value === null || value === "") {
+      return missing(param);
+    }
     const problem = pathArgumentError(param, pathSchema(op, param), value);
-    if (problem) return { error: problem };
+    if (problem) {
+      return { error: problem };
+    }
     path = path.replace(`{${param}}`, encodeURIComponent(text(value)));
   }
 
@@ -280,38 +305,57 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
   for (const param of op.query ?? []) {
     const value = args[param.name];
     if (value === undefined || value === null) {
-      if (param.required) return missing(param.name);
+      if (param.required) {
+        return missing(param.name);
+      }
       continue;
     }
-    for (const item of Array.isArray(value) ? value : [value])
+    for (const item of Array.isArray(value) ? value : [value]) {
       search.append(param.name, text(item));
+    }
   }
   const query = search.toString();
   const url = query ? `${path}?${query}` : path;
-  if (!pathMatchesRoute(op.route, url))
+  if (!pathMatchesRoute(op.route, url)) {
     return { error: "The request path does not match the operation's route, so nothing was sent." };
+  }
 
-  if (!op.body) return { method, path: url };
+  if (!op.body) {
+    return { method, path: url };
+  }
 
   if (isMultipart(op)) {
     const { filename, content_base64: encoded } = args;
-    if (typeof filename !== "string" || filename === "") return missing("filename");
-    if (typeof encoded !== "string") return missing("content_base64");
-    const compact = encoded.replace(/\s+/g, "");
-    if (compact.length > MAX_BASE64_CHARS)
+    if (typeof filename !== "string" || filename === "") {
+      return missing("filename");
+    }
+    if (typeof encoded !== "string") {
+      return missing("content_base64");
+    }
+    const compact = encoded.replaceAll(/\s+/g, "");
+    if (compact.length > MAX_BASE64_CHARS) {
       return {
         error: `The file is larger than ${MCP_MAX_UPLOAD_BYTES} bytes. Upload larger files through the REST API.`,
       };
-    if (!BASE64.test(compact)) return { error: "content_base64 is not valid base64." };
+    }
+    if (!BASE64.test(compact)) {
+      return { error: "content_base64 is not valid base64." };
+    }
 
     const file = fileField(op);
-    if (file === undefined) return { error: "The operation has no file field." };
+    if (file === undefined) {
+      return { error: "The operation has no file field." };
+    }
     const form = new FormData();
     for (const field of Object.keys(op.body.properties ?? {})) {
-      if (field === file) continue;
+      if (field === file) {
+        continue;
+      }
       const value = args[field];
       if (value === undefined || value === null) {
-        if (requiredFields(op).includes(field)) return missing(field);
+        if (requiredFields(op).includes(field)) {
+          return missing(field);
+        }
         continue;
       }
       form.append(field, text(value));
@@ -322,17 +366,24 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
 
   if (op.bodyType === "application/x-www-form-urlencoded") {
     const fields = args.body;
-    if (fields === undefined) return missing("body");
-    if (typeof fields === "string")
+    if (fields === undefined) {
+      return missing("body");
+    }
+    if (typeof fields === "string") {
       return { method, path: url, body: fields, contentType: op.bodyType };
-    if (typeof fields !== "object" || fields === null || Array.isArray(fields))
+    }
+    if (typeof fields !== "object" || fields === null || Array.isArray(fields)) {
       return { error: "body must be an object of form fields." };
+    }
     const form = new URLSearchParams();
-    for (const [key, value] of Object.entries(fields))
+    for (const [key, value] of Object.entries(fields)) {
       if (value !== undefined) form.append(key, text(value));
+    }
     return { method, path: url, body: form.toString(), contentType: op.bodyType };
   }
 
-  if (args.body === undefined) return missing("body");
+  if (args.body === undefined) {
+    return missing("body");
+  }
   return { method, path: url, body: args.body, contentType: "application/json" };
 }

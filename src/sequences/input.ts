@@ -48,10 +48,10 @@ export interface DefinitionInput {
   status: SequenceStatus | undefined;
   /** Validated `{event, where?}` as JSON text. */
   trigger: string;
-  exitOn: string[];
+  exitOn: Array<string>;
   reentry: Reentry;
   listId: bigint | null;
-  steps: StepInput[];
+  steps: Array<StepInput>;
 }
 
 export class DefinitionError extends Error {
@@ -83,9 +83,12 @@ const fail = (field: string, detail: string): never => {
 
 /** A positive JSON integer ID within the safe range, or undefined for absent/null. */
 export function idValue(value: unknown, field: string): bigint | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     return fail(field, "must be an ID");
+  }
   return BigInt(value);
 }
 
@@ -95,16 +98,26 @@ export function validEventName(name: unknown): name is string {
 }
 
 function containsSql(condition: Condition): boolean {
-  if ("sql" in condition) return true;
-  if ("all" in condition) return condition.all.some(containsSql);
-  if ("any" in condition) return condition.any.some(containsSql);
-  if ("not" in condition) return containsSql(condition.not);
+  if ("sql" in condition) {
+    return true;
+  }
+  if ("all" in condition) {
+    return condition.all.some(containsSql);
+  }
+  if ("any" in condition) {
+    return condition.any.some(containsSql);
+  }
+  if ("not" in condition) {
+    return containsSql(condition.not);
+  }
   return false;
 }
 
 /** The first error of a condition validation as a definition error. */
 function checked(result: ReturnType<typeof validate>, field: string): Condition {
-  if (result.ok) return result.condition;
+  if (result.ok) {
+    return result.condition;
+  }
   const first = result.errors[0];
   return fail(first?.field ?? field, first?.message ?? "invalid condition");
 }
@@ -116,12 +129,18 @@ function checked(result: ReturnType<typeof validate>, field: string): Condition 
  * write transaction, where the read-only child runner cannot see the uncommitted event.
  */
 function triggerWhere(where: unknown, event: string): Record<string, unknown> | Condition {
-  if (!isObject(where)) return fail("trigger.where", "must be an object");
+  if (!isObject(where)) {
+    return fail("trigger.where", "must be an object");
+  }
   let shorthand = false;
   for (const key in where) {
-    if (!Object.hasOwn(where, key)) continue;
+    if (!Object.hasOwn(where, key)) {
+      continue;
+    }
     shorthand = key.startsWith("data.");
-    if (!shorthand) break;
+    if (!shorthand) {
+      break;
+    }
   }
   if (shorthand) {
     const result = checked(
@@ -134,13 +153,15 @@ function triggerWhere(where: unknown, event: string): Record<string, unknown> | 
     validate(where, { canUseSql: true, field: "trigger.where" }),
     "trigger.where",
   );
-  if (containsSql(condition)) fail("trigger.where", "sql conditions are not supported in triggers");
+  if (containsSql(condition)) {
+    fail("trigger.where", "sql conditions are not supported in triggers");
+  }
   return condition;
 }
 
 // Aggregate names become template variables, so they are plain identifiers.
 const aggregateName = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-const aggregateFields = ["event", "since", "where", "fn", "field"];
+const aggregateFields = new Set(["event", "since", "where", "fn", "field"]);
 
 /**
  * A step's `aggregates` (D100): 1 to 10 named aggregates, each an event predicate of the condition
@@ -169,8 +190,9 @@ function aggregatesInput(value: unknown, field: string): string | null {
     const spec = value[name];
     if (!isObject(spec)) return fail(at, "must be an aggregate object");
     for (const key in spec)
-      if (Object.hasOwn(spec, key) && !aggregateFields.includes(key))
+      if (Object.hasOwn(spec, key) && !aggregateFields.has(key)) {
         return fail(`${at}.${key}`, "unknown field");
+      }
     // An absent key is absent; a present one is checked as given, so null is refused as a condition
     // refuses it. Only `fn` defaults, as the other step fields do.
     const path = spec.field;
@@ -187,7 +209,9 @@ function aggregatesInput(value: unknown, field: string): string | null {
     ) as { event: string; since?: string; where?: Record<string, Scalar> };
     const fn = aggregateFn(spec.fn, `${at}.fn`);
     if (fn === "count") {
-      if (path !== undefined) fail(`${at}.field`, "is only for sum and distinct");
+      if (path !== undefined) {
+        fail(`${at}.field`, "is only for sum and distinct");
+      }
     } else if (path === undefined) {
       fail(`${at}.field`, "is required for sum and distinct");
     } else if (typeof path !== "string" || !path.startsWith("data.") || !validPath(path.slice(5))) {
@@ -212,43 +236,56 @@ const aggregateFns = ["count", "sum", "distinct"] as const;
  * as `since` and `where` refuse one, so `{"fn": null}` cannot save as a count.
  */
 function aggregateFn(value: unknown, field: string): (typeof aggregateFns)[number] {
-  if (value === undefined) return "count";
-  if (typeof value !== "string" || !(aggregateFns as readonly string[]).includes(value))
+  if (value === undefined) {
+    return "count";
+  }
+  if (typeof value !== "string" || !(aggregateFns as ReadonlyArray<string>).includes(value)) {
     return fail(field, `must be one of ${aggregateFns.join(", ")}`);
+  }
   return value as (typeof aggregateFns)[number];
 }
 
 function choice<T extends string>(
   value: unknown,
-  allowed: readonly T[],
+  allowed: ReadonlyArray<T>,
   field: string,
   fallback: T,
 ): T {
-  if (value === undefined || value === null) return fallback;
-  if (typeof value !== "string" || !(allowed as readonly string[]).includes(value))
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  if (typeof value !== "string" || !(allowed as ReadonlyArray<string>).includes(value)) {
     return fail(field, `must be one of ${allowed.join(", ")}`);
+  }
   return value as T;
 }
 
 function duration(value: unknown, field: string): string {
-  if (typeof value !== "string" || parseDuration(value) === undefined)
+  if (typeof value !== "string" || parseDuration(value) === undefined) {
     return fail(field, "must be an ISO 8601 duration of weeks, days, hours, minutes or seconds");
+  }
   return value;
 }
 
 function step(value: unknown, i: number, context: DefinitionContext): StepInput {
   const field = `steps.${i}`;
-  if (!isObject(value)) return fail(field, "must be a step object");
+  if (!isObject(value)) {
+    return fail(field, "must be a step object");
+  }
   const id = idValue(value.id, `${field}.id`) ?? null;
   const wait = duration(value.wait, `${field}.wait`);
-  if (value.kind !== "marketing" && value.kind !== "transactional")
+  if (value.kind !== "marketing" && value.kind !== "transactional") {
     fail(`${field}.kind`, "must be marketing or transactional");
+  }
   const kind = value.kind as StepInput["kind"];
   const templateId = idValue(value.template_id, `${field}.template_id`);
-  if (templateId === undefined) return fail(`${field}.template_id`, "is required");
+  if (templateId === undefined) {
+    return fail(`${field}.template_id`, "is required");
+  }
   // Steps have no body of their own, so the template must be a complete transactional one.
-  if (context.templateType(templateId) !== "tx")
+  if (context.templateType(templateId) !== "tx") {
     fail(`${field}.template_id`, "must be an existing transactional template");
+  }
   let subject: string | null = null;
   if (value.subject !== undefined && value.subject !== null) {
     if (
@@ -256,12 +293,13 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
       value.subject !== value.subject.toWellFormed() ||
       value.subject.includes("\0") ||
       Buffer.byteLength(value.subject) > limits.subjectBytes
-    )
+    ) {
       fail(`${field}.subject`, "invalid subject");
+    }
     subject = value.subject as string;
   }
   let condition: string | null = null;
-  if (value.condition !== undefined && value.condition !== null)
+  if (value.condition !== undefined && value.condition !== null) {
     condition = JSON.stringify(
       checked(
         validate(value.condition, {
@@ -271,6 +309,7 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
         `${field}.condition`,
       ),
     );
+  }
   const onFalse = choice(value.on_false, ["skip", "exit"] as const, `${field}.on_false`, "exit");
   const capPolicy = choice(
     value.cap_policy,
@@ -304,52 +343,75 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
 
 /** A definition body for POST or PUT, validated against `context`. Throws DefinitionError. */
 export function definitionInput(value: unknown, context: DefinitionContext): DefinitionInput {
-  if (!isObject(value)) return fail("body", "must be an object");
-  if (typeof value.name !== "string") return fail("name", "is required");
+  if (!isObject(value)) {
+    return fail("body", "must be an object");
+  }
+  if (typeof value.name !== "string") {
+    return fail("name", "is required");
+  }
   const name = trimSpace(value.name);
   if (
     !name ||
     name !== name.toWellFormed() ||
     controls.test(name) ||
     Buffer.byteLength(name) > limits.nameBytes
-  )
+  ) {
     fail("name", `must be 1 to ${limits.nameBytes} bytes of text`);
+  }
   const status =
     value.status === undefined
       ? undefined
       : choice(value.status, sequenceStatuses, "status", "draft");
 
   const trigger = value.trigger;
-  if (!isObject(trigger)) return fail("trigger", "must be an object");
-  for (const key in trigger)
+  if (!isObject(trigger)) {
+    return fail("trigger", "must be an object");
+  }
+  for (const key in trigger) {
     if (Object.hasOwn(trigger, key) && key !== "event" && key !== "where")
       fail("trigger", "unknown field");
-  if (!validEventName(trigger.event)) return fail("trigger.event", "must be an event name");
+  }
+  if (!validEventName(trigger.event)) {
+    return fail("trigger.event", "must be an event name");
+  }
   const where =
     trigger.where === undefined ? undefined : triggerWhere(trigger.where, trigger.event);
 
-  const exitOn: string[] = [];
+  const exitOn: Array<string> = [];
   if (value.exit_on !== undefined && value.exit_on !== null) {
-    if (!Array.isArray(value.exit_on) || value.exit_on.length > limits.exitOn)
+    if (!Array.isArray(value.exit_on) || value.exit_on.length > limits.exitOn) {
       fail("exit_on", `must be an array of at most ${limits.exitOn} event names`);
-    for (const [i, item] of (value.exit_on as unknown[]).entries()) {
-      if (!validEventName(item)) fail(`exit_on.${i}`, "must be an event name");
-      if (!exitOn.includes(item as string)) exitOn.push(item as string);
+    }
+    for (const [i, item] of (value.exit_on as Array<unknown>).entries()) {
+      if (!validEventName(item)) {
+        fail(`exit_on.${i}`, "must be an event name");
+      }
+      if (!exitOn.includes(item as string)) {
+        exitOn.push(item as string);
+      }
     }
   }
   const reentry = choice(value.reentry, reentries, "reentry", "never");
   const listId = idValue(value.list_id, "list_id") ?? null;
-  if (listId !== null && !context.listUsable(listId)) fail("list_id", "unknown list");
+  if (listId !== null && !context.listUsable(listId)) {
+    fail("list_id", "unknown list");
+  }
 
   const steps = value.steps ?? [];
-  if (!Array.isArray(steps) || steps.length > limits.steps)
+  if (!Array.isArray(steps) || steps.length > limits.steps) {
     return fail("steps", `must be an array of at most ${limits.steps} steps`);
+  }
   const parsed = steps.map((item, i) => step(item, i, context));
   const ids = parsed.flatMap((s) => (s.id === null ? [] : [s.id]));
-  if (new Set(ids).size !== ids.length) fail("steps", "step IDs must be unique");
-  if (listId === null && parsed.some((s) => s.kind === "marketing"))
+  if (new Set(ids).size !== ids.length) {
+    fail("steps", "step IDs must be unique");
+  }
+  if (listId === null && parsed.some((s) => s.kind === "marketing")) {
     fail("list_id", "is required when a step is marketing");
-  if (status === "active" && !parsed.length) fail("steps", "an active sequence needs a step");
+  }
+  if (status === "active" && !parsed.length) {
+    fail("steps", "an active sequence needs a step");
+  }
   return {
     name,
     status,

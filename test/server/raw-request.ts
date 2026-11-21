@@ -6,12 +6,14 @@ interface RawOptions {
   headers?: Record<string, string>;
   body?: string;
   signal?: AbortSignal;
-  responseHeaders?: readonly string[];
+  responseHeaders?: ReadonlyArray<string>;
 }
 
 export function rawRequest(origin: string, path: string, options: RawOptions = {}) {
   const url = new URL(origin);
-  if (url.protocol !== "http:") throw new Error("Raw test requests require HTTP");
+  if (url.protocol !== "http:") {
+    throw new Error("Raw test requests require HTTP");
+  }
   return new Promise<{
     status: number;
     contentType: string | null;
@@ -20,7 +22,7 @@ export function rawRequest(origin: string, path: string, options: RawOptions = {
   }>((resolve, reject) => {
     const call = request(
       {
-        hostname: url.hostname.replace(/^\[|\]$/g, ""),
+        hostname: url.hostname.replaceAll(/^\[|\]$/g, ""),
         port: url.port,
         path,
         method: options.method ?? "GET",
@@ -33,7 +35,9 @@ export function rawRequest(origin: string, path: string, options: RawOptions = {
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => {
           body += chunk;
-          if (body.length > 1_000_000) call.destroy(new Error("Response exceeds size limit"));
+          if (body.length > 1_000_000) {
+            call.destroy(new Error("Response exceeds size limit"));
+          }
         });
         response.once("error", reject);
         response.once("end", () =>
@@ -58,7 +62,7 @@ export function rawRequest(origin: string, path: string, options: RawOptions = {
         );
       },
     );
-    const timer = setTimeout(() => call.destroy(new Error("Raw test request timed out")), 5_000);
+    const timer = setTimeout(() => call.destroy(new Error("Raw test request timed out")), 5000);
     call.once("close", () => clearTimeout(timer));
     call.once("error", reject);
     call.end(options.body);

@@ -22,7 +22,7 @@ function newsletter(): string {
   return `${PREHEADER}<table role="presentation" width="100%"><tr><td align="center"><img src="https://example.test/logo.png" width="180" alt="Logo" style="display:block;"></td></tr><tr><td><h1 style="font-size:28px;">Hello {{ subscriber.first_name }}</h1></td></tr></table>${stories}<p style="font-size:12px;color:#777777;">You receive this because you subscribed. <a href="{{ manage_url }}">Manage preferences</a> or <a href="https://example.test/archive">read it online</a>.</p>`;
 }
 
-function median(values: number[]): number {
+function median(values: Array<number>): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 }
@@ -36,8 +36,10 @@ const converter = await import("@/messaging/plain").then(
   () => undefined,
 );
 if (converter) {
-  for (let i = 0; i < 20; i++) await converter.plainText(html, createMessageBudget());
-  const times: number[] = [];
+  for (let i = 0; i < 20; i++) {
+    await converter.plainText(html, createMessageBudget());
+  }
+  const times: Array<number> = [];
   let text = "";
   for (let i = 0; i < CONVERSIONS; i++) {
     const started = performance.now();
@@ -52,7 +54,7 @@ if (converter) {
   const started = performance.now();
   const largeText = await converter.plainText(large, createMessageBudget());
   console.log(
-    `converter at ${(Buffer.byteLength(large) / 1048576).toFixed(2)} MiB: ${(performance.now() - started).toFixed(1)} ms once; text ${Buffer.byteLength(largeText)} bytes`,
+    `converter at ${(Buffer.byteLength(large) / 1_048_576).toFixed(2)} MiB: ${(performance.now() - started).toFixed(1)} ms once; text ${Buffer.byteLength(largeText)} bytes`,
   );
 } else {
   console.log("converter: absent (no generated text part before D118)");
@@ -63,13 +65,15 @@ const f = await txFixture();
 try {
   const template = await f.template(html, "Release notes");
   const id = await f.subscriber("ada@example.test", "Ada Lovelace");
-  const times: number[] = [];
+  const times: Array<number> = [];
   let wire = 0;
   for (let i = 0; i < SENDS; i++) {
     const started = performance.now();
     const response = await f.tx({ subscriber_id: id, template_id: template });
     times.push(performance.now() - started);
-    if (response.status !== 200) throw new Error(`tx ${response.status}`);
+    if (response.status !== 200) {
+      throw new Error(`tx ${response.status}`);
+    }
     wire = f.sink.messages.at(-1)!.data.length;
   }
   console.log(

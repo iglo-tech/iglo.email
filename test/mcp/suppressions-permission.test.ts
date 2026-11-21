@@ -5,13 +5,8 @@
 // on the compiled server, with the mailbox sink for the campaign's mail.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import {
-  admin,
-  startMailbox,
-  startProduction,
-  type Mailbox,
-  type Production,
-} from "@/test/worked-example/harness";
+import { admin, startMailbox, startProduction } from "@/test/worked-example/harness";
+import type { Mailbox, Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 
 let production: Production;
@@ -81,15 +76,17 @@ async function callTool(name: string, args: Record<string, unknown>, auth: strin
     }),
   });
   const reply = (await response.json()) as {
-    result?: { isError?: boolean; content: { type: string; text: string }[] };
+    result?: { isError?: boolean; content: Array<{ type: string; text: string }> };
     error?: { message: string };
   };
-  if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
+  if (reply.error) {
+    throw new Error(`${name}: ${reply.error.message}`);
+  }
   return reply.result!;
 }
 
 /** An API user whose role has exactly these user permissions. */
-async function reader(name: string, permissions: string[]) {
+async function reader(name: string, permissions: Array<string>) {
   const role = await api("/api/roles/users", "POST", { name: `${name}-${suffix}`, permissions });
   expect(role.status).toBe(200);
   const user = await api("/api/users", "POST", {
@@ -103,12 +100,12 @@ async function reader(name: string, permissions: string[]) {
 }
 
 /** Wipes each address through the paired path of one campaign the runner delivered to all of them. */
-async function wiped(addresses: string[]): Promise<void> {
+async function wiped(addresses: Array<string>): Promise<void> {
   const list = (
     await api("/api/lists", "POST", { name: `suppress-${suffix}`, type: "public", optin: "single" })
   ).body.data;
-  const subscribers: { uuid: string }[] = [];
-  for (const email of addresses)
+  const subscribers: Array<{ uuid: string }> = [];
+  for (const email of addresses) {
     subscribers.push(
       (
         await api("/api/subscribers", "POST", {
@@ -119,6 +116,7 @@ async function wiped(addresses: string[]): Promise<void> {
         })
       ).body.data,
     );
+  }
   const campaign = (
     await api("/api/campaigns", "POST", {
       name: `suppress-${suffix}`,
@@ -135,7 +133,9 @@ async function wiped(addresses: string[]): Promise<void> {
     (await api(`/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status,
   ).toBe(200);
   for (let i = 0; i < 300; i++) {
-    if ((await api(`/api/campaigns/${campaign.id}`)).body.data.status === "finished") break;
+    if ((await api(`/api/campaigns/${campaign.id}`)).body.data.status === "finished") {
+      break;
+    }
     await Bun.sleep(100);
   }
   for (const subscriber of subscribers) {

@@ -2,11 +2,14 @@
 // `null` and any non-string are refused with 400 naming the field and writing nothing (D103).
 // Through /api/sequences on create and on a step update.
 import { afterEach, expect, test } from "bun:test";
-import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
+import { sequencesFixture } from "@/test/sequences/fixture";
+import type { SequencesFixture } from "@/test/sequences/fixture";
 
-const fixtures: SequencesFixture[] = [];
+const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await sequencesFixture();
@@ -14,7 +17,8 @@ async function open() {
   return f;
 }
 
-const refusal = (path: string) => new RegExp(`^Invalid fields: ${path.replaceAll(".", "\\.")}`);
+const refusal = (path: string) =>
+  new RegExp(`^Invalid fields: ${path.replaceAll(".", String.raw`\.`)}`);
 
 test("D103: an absent fn is count, and an explicit count is stored as given", async () => {
   const f = await open();

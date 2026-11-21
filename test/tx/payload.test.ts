@@ -20,8 +20,9 @@ test("an attachment round-trips and only canonical base64 is accepted back", () 
   const tampered = (value: string) => payload.replace(encoded, value);
   expect(encoded).toBe("AAEC+vs=");
   // Wrong length, a foreign character, early padding, whitespace and a non-zero trailing bit.
-  for (const bad of ["AAEC+vs", "AAEC+v!=", "AA=C+vs=", "AAEC +vs=", "AAEC+vt=", "AAEC+vs==="])
+  for (const bad of ["AAEC+vs", "AAEC+v!=", "AA=C+vs=", "AAEC +vs=", "AAEC+vt=", "AAEC+vs==="]) {
     expect(() => decodePayload(tampered(bad))).toThrow();
+  }
 });
 
 test("decoding a 4 MiB attachment does not spike memory far above its size", async () => {

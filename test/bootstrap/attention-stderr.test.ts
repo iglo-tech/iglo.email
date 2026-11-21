@@ -8,8 +8,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
 import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
-import { startSink, type Captured } from "@/test/tx/sink";
-import { startSnsTunnel, type SnsTunnel } from "@/test/bounces/sns-tunnel";
+import { startSink } from "@/test/tx/sink";
+import type { Captured } from "@/test/tx/sink";
+import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
+import type { SnsTunnel } from "@/test/bounces/sns-tunnel";
 import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -30,7 +32,9 @@ beforeAll(async () => {
   const fixture = await Bun.file(join(repository, "test/bootstrap/fixtures.md")).text();
   adminUser = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1] ?? "";
   adminPassword = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1] ?? "";
-  if (!adminUser || !adminPassword) throw new Error("Bootstrap test credentials are missing");
+  if (!adminUser || !adminPassword) {
+    throw new Error("Bootstrap test credentials are missing");
+  }
   await ensureProductionBuild();
   temporaryDirectory = await mkdtemp(join(tmpdir(), "iglo-email-attention-"));
   executable = join(temporaryDirectory, "iglo.email");
@@ -39,7 +43,9 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
-  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+  if (temporaryDirectory) {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 /** The executable with a clean environment, plus `extra` (the tunnel's, for the bounce test). */
@@ -97,7 +103,9 @@ async function changeSettings(port: number, changes: Record<string, unknown>) {
 async function until<T>(read: () => Promise<T | undefined>, what: string): Promise<T> {
   for (let i = 0; i < 400; i++) {
     const value = await read();
-    if (value !== undefined) return value;
+    if (value !== undefined) {
+      return value;
+    }
     await Bun.sleep(25);
   }
   throw new Error(`timed out waiting for ${what}`);
@@ -105,7 +113,9 @@ async function until<T>(read: () => Promise<T | undefined>, what: string): Promi
 
 /** The buffer's lines that contain `text`, read through GET /api/logs. */
 const logLines = async (port: number, text: string) =>
-  ((await api(port, "GET", "/api/logs")).data as string[]).filter((line) => line.includes(text));
+  ((await api(port, "GET", "/api/logs")).data as Array<string>).filter((line) =>
+    line.includes(text),
+  );
 
 /**
  * A campaign on an empty list, run to its end. Its finish notifies the administrators
@@ -153,7 +163,7 @@ test("an invalid admin notification address is one plain stderr line and a fixed
     ]);
     expect(await logLines(port, "not-an-address")).toEqual([]);
   } finally {
-    expect(await stopChild(child, "SIGTERM", 3_000)).toBe(0);
+    expect(await stopChild(child, "SIGTERM", 3000)).toBe(0);
   }
   // Stderr holds the address, once, on a single plain line: no stack and no source excerpt.
   const stderr = await new Response(child.stderr).text();
@@ -237,7 +247,9 @@ test("a test-send bounce through the SES fixture is one plain stderr line, with 
         "the test message",
       );
       const messageId = /^Message-ID: (.+)$/im.exec(message.data)?.[1]?.trim();
-      if (!messageId) throw new Error("the test message has no Message-ID");
+      if (!messageId) {
+        throw new Error("the test message has no Message-ID");
+      }
       // SNS sends a signed notice for the bounce of that Message-ID.
       const clock = { clock: { now: () => new Date() } };
       const notice = envelope(clock, {
@@ -260,7 +272,7 @@ test("a test-send bounce through the SES fixture is one plain stderr line, with 
         expect.stringMatching(/ \*: A test send bounced$/),
       ]);
     } finally {
-      expect(await stopChild(child, "SIGTERM", 3_000)).toBe(0);
+      expect(await stopChild(child, "SIGTERM", 3000)).toBe(0);
     }
     const stderr = await new Response(child.stderr).text();
     expect(stderr.split("\n").filter((line) => line.includes("Test send bounced"))).toEqual([

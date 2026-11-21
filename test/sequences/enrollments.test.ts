@@ -3,11 +3,14 @@
 // POST /api/subscriber-events, /api/enrollments, the subscriber API and the public
 // unsubscribe endpoint.
 import { afterEach, expect, test } from "bun:test";
-import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
+import { sequencesFixture } from "@/test/sequences/fixture";
+import type { SequencesFixture } from "@/test/sequences/fixture";
 
-const fixtures: SequencesFixture[] = [];
+const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await sequencesFixture();
@@ -30,11 +33,13 @@ async function sequence(f: SequencesFixture, extra: object = {}, status = "activ
     ],
     ...extra,
   });
-  if (created.status !== 200) throw new Error(JSON.stringify(created.body));
-  return created.body.data as { id: number; steps: { id: number }[] };
+  if (created.status !== 200) {
+    throw new Error(JSON.stringify(created.body));
+  }
+  return created.body.data as { id: number; steps: Array<{ id: number }> };
 }
 const enrollments = async (f: SequencesFixture, query = "") =>
-  (await f.json(`/api/enrollments${query}`)).body.data.results as Record<string, any>[];
+  (await f.json(`/api/enrollments${query}`)).body.data.results as Array<Record<string, any>>;
 const paid = (email: string, extra: object = {}) => ({
   subscriber: { email },
   name: "order_paid",
@@ -117,9 +122,9 @@ test("trigger.where filters on event data and the subscriber after the event's u
   });
   const started = async (body: object) =>
     (
-      (await f.event(body)).body.data.enrollments.started as {
+      (await f.event(body)).body.data.enrollments.started as Array<{
         sequence_id: number;
-      }[]
+      }>
     ).map((s) => s.sequence_id);
   expect(await started(paid("a@example.test", { data: { product: "prepaid", n: 2 } }))).toEqual([
     data.id,
@@ -232,11 +237,12 @@ test("exit_on events end enrollments of paused and draft sequences too, clearing
   await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
     status: "active",
   });
-  for (const id of ids)
+  for (const id of ids) {
     expect((await f.json(`/api/enrollments/${id}`)).body.data).toMatchObject({
       status: "exited",
       exit_reason: "event:refund",
     });
+  }
   expect(
     f.db
       .query(
@@ -330,7 +336,7 @@ test("reentry never, after_exit and always", async () => {
   const always = await sequence(f, { reentry: "always" });
   const send = async (name = "order_paid") =>
     (await f.event({ subscriber: { email: "r@example.test" }, name })).body.data.enrollments;
-  const ids = (list: { sequence_id: number }[]) => list.map((e) => e.sequence_id).sort();
+  const ids = (list: Array<{ sequence_id: number }>) => list.map((e) => e.sequence_id).sort();
   const first = await send();
   expect(ids(first.started)).toEqual([never.id, afterExit.id, always.id].sort());
   // While running: never and after_exit do nothing; always replaces the running one.
@@ -423,9 +429,10 @@ test("blocklisted subscribers are never enrolled; blocklisting exits every activ
   expect(manual.status).toBe(409);
 
   // Bulk, by-query and status-update blocklisting do the same, atomically with the change.
-  const ids: number[] = [];
-  for (const email of ["q1@example.test", "q2@example.test", "q3@example.test"])
+  const ids: Array<number> = [];
+  for (const email of ["q1@example.test", "q2@example.test", "q3@example.test"]) {
     ids.push((await f.event(paid(email))).body.data.subscriber_id);
+  }
   expect((await f.json("/api/subscribers/blocklist", "PUT", { ids: [ids[0]] })).status).toBe(200);
   expect(
     (
@@ -584,9 +591,9 @@ test("a repeated public unsubscribe exits enrollments started after the first on
     });
   expect((await unsubscribe()).status).toBe(200);
   // A later matching event legitimately re-enrolls under after_exit and always.
-  const restarted = (await go()).body.data.enrollments.started as {
+  const restarted = (await go()).body.data.enrollments.started as Array<{
     id: number;
-  }[];
+  }>;
   expect(restarted.map((e: any) => e.sequence_id).sort()).toEqual([afterExit.id, always.id].sort());
   // The membership is already unsubscribed; the repeated POST still exits the new ones.
   expect((await unsubscribe()).status).toBe(200);
@@ -626,14 +633,15 @@ test("admin add-as-unsubscribed and unsubscribe without a membership exit those 
       ]),
     );
   const membership = async (id: number, list: number) =>
-    ((await f.json(`/api/subscribers/${id}`)).body.data.lists as any[]).find((l) => l.id === list)
-      ?.subscription_status;
-  const cases: {
+    ((await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<any>).find(
+      (l) => l.id === list,
+    )?.subscription_status;
+  const cases: Array<{
     email: string;
     route: "ids" | "query";
     body: object;
     status?: string;
-  }[] = [
+  }> = [
     {
       email: "a1@example.test",
       route: "ids",
@@ -753,8 +761,9 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
     { sequence_id: never.id, subscriber_id: -1 },
     { sequence_id: never.id, subscriber_id: id, force: "yes" },
     { sequence_id: 1.5, subscriber_id: id },
-  ])
+  ]) {
     expect((await enroll(bad)).status).toBe(400);
+  }
   expect((await f.json("/api/enrollments", "POST", "[1]")).status).toBe(400);
   expect((await f.json("/api/enrollments/9999")).status).toBe(404);
   expect((await f.json("/api/enrollments/9999", "DELETE")).status).toBe(404);
@@ -767,7 +776,9 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
 test("enrollment list filters, paging and permissions", async () => {
   const f = await open();
   const a = await sequence(f, { reentry: "always" });
-  for (let i = 0; i < 3; i++) await f.event(paid("p@example.test"));
+  for (let i = 0; i < 3; i++) {
+    await f.event(paid("p@example.test"));
+  }
   const all = await f.json("/api/enrollments?per_page=2");
   expect(all.body.data).toMatchObject({ total: 3, page: 1, per_page: 2 });
   expect(all.body.data.results).toHaveLength(2);
@@ -783,8 +794,9 @@ test("enrollment list filters, paging and permissions", async () => {
     "?subscriber_id=-2",
     "?status=active&status=exited",
     `?exit_reason=${"x".repeat(300)}`,
-  ])
+  ]) {
     expect((await f.json(`/api/enrollments${bad}`)).status).toBe(400);
+  }
   const reader = await f.apiUser(["sequences:get"]);
   const none = await f.apiUser(["subscribers:get_all"]);
   const id = all.body.data.results[0].id;
@@ -805,10 +817,10 @@ test("concurrent triggers and manual enrolls never create two active enrollments
   const always = await sequence(f, { reentry: "always" });
   const afterExit = await sequence(f, { reentry: "after_exit" });
   const id = await f.subscriber("race@example.test");
-  const work: Promise<{ status: number }>[] = [];
+  const work: Array<Promise<{ status: number }>> = [];
   for (let i = 0; i < 20; i++) {
-    work.push(f.event(paid("race@example.test")));
     work.push(
+      f.event(paid("race@example.test")),
       f.json("/api/enrollments", "POST", {
         sequence_id: always.id,
         subscriber_id: id,

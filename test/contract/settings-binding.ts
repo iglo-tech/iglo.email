@@ -19,7 +19,9 @@ export async function runSettingsBinding(target: {
   const put = (path: string, body: string, type = "application/json") =>
     request(path, { method: "PUT", headers: { Authorization: auth, "Content-Type": type }, body });
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL settings-binding-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL settings-binding-${label}`);
+    }
   };
   const original = await get();
   // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
@@ -183,11 +185,15 @@ export async function runSettingsBinding(target: {
   ] as const) {
     check((await put("/api/settings", addMembers(members))).status === 200, label);
     let value: any = await get();
-    if (label === "nested-alias" || label === "nested-kelvin")
+    if (label === "nested-alias" || label === "nested-kelvin") {
       value = value["security.captcha"].hcaptcha.key;
-    else if (label === "map-duplicate") value = value["bounce.actions"].bounce;
-    else if (label === "nullable") value = value["security.oidc"].roles;
-    else value = value[field];
+    } else if (label === "map-duplicate") {
+      value = value["bounce.actions"].bounce;
+    } else if (label === "nullable") {
+      value = value["security.oidc"].roles;
+    } else {
+      value = value[field];
+    }
     check(JSON.stringify(value) === JSON.stringify(expected), `${label}-projection`);
   }
   for (const members of ['"app.batch_size":1e999', '"app.batch_size":1.0', '"unknown":{"x":}']) {
@@ -219,7 +225,7 @@ export async function runSettingsBinding(target: {
   ] as const) {
     const before = await get();
     const result = await put("/api/settings", body, type);
-    check(result.status === 400 && ((await result.json()) as any).message === message, label);
+    check(result.status === 400 && (await result.json()).message === message, label);
     check(JSON.stringify(await get()) === JSON.stringify(before), `${label}-no-write`);
   }
   check(
@@ -277,7 +283,7 @@ export async function runSettingsBinding(target: {
     "0 0 * * MON#2",
     "0 0 * * 5L",
     "0 0 ? * SUN",
-  ])
+  ]) {
     check(
       (
         await put(
@@ -291,6 +297,7 @@ export async function runSettingsBinding(target: {
       ).status === 200,
       "cron-valid",
     );
+  }
   for (const cron of [
     "@every 1500ms",
     "@reboot",
@@ -326,7 +333,7 @@ export async function runSettingsBinding(target: {
   );
   check(
     descriptor.status === 400 &&
-      ((await descriptor.json()) as any).message ===
+      (await descriptor.json()).message ===
         "Invalid data: slow query cron: unrecognized descriptor: @reboot",
     "cron-error-envelope",
   );
@@ -340,7 +347,7 @@ export async function runSettingsBinding(target: {
   );
   check(
     fractional.status === 400 &&
-      ((await fractional.json()) as any).message ===
+      (await fractional.json()).message ===
         "Invalid data: slow query cron: delay must be a multiple of one second but was 1.5s",
     "cron-duration-envelope",
   );

@@ -3,16 +3,19 @@
 // and no webhook is queued. A real send's links keep their behaviour (unsubscribe.test.ts).
 import { afterEach, expect, test } from "bun:test";
 import { startReceiver } from "@/test/webhooks/receiver";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 
 const placeholder = "00000000-0000-0000-0000-000000000000";
 const message =
   "This link is from a test send. Unsubscribing from a test does nothing; in a real message this link opens the unsubscribe page.";
 const form = { "content-type": "application/x-www-form-urlencoded" };
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0)) await cleanup();
+  for (const cleanup of cleanups.splice(0)) {
+    await cleanup();
+  }
 });
 
 async function open(options: Parameters<typeof txFixture>[0] = {}) {
@@ -25,7 +28,8 @@ const membership = async (f: TxFixture, subscriber: number, list: number) =>
     (l: { id: number }) => l.id === list,
   )?.subscription_status;
 const deliveries = async (f: TxFixture, hook: number) =>
-  (await f.json(`/api/webhooks/${hook}/deliveries?per_page=100`)).body.data.results as unknown[];
+  (await f.json(`/api/webhooks/${hook}/deliveries?per_page=100`)).body.data
+    .results as Array<unknown>;
 
 test("the placeholder unsubscribe and manage links answer the test page for any subscriber UUID", async () => {
   const f = await open();
@@ -42,7 +46,7 @@ test("the placeholder unsubscribe and manage links answer the test page for any 
     `/m/${placeholder}/unsubscribe/${absent}?manage=true`,
     `/m/${placeholder}/unsubscribe/not-a-uuid`,
   ];
-  const bodies: string[] = [];
+  const bodies: Array<string> = [];
   for (const path of paths) {
     const response = await f.request(path);
     expect(response.status).toBe(200);
@@ -59,7 +63,7 @@ test("the placeholder unsubscribe and manage links answer the test page for any 
 test("POST to the placeholder, as the page form or one-click, answers the same page and changes nothing", async () => {
   const receiver = startReceiver();
   cleanups.push(() => receiver.close());
-  const events: unknown[] = [];
+  const events: Array<unknown> = [];
   const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });
   const hook = await f.json("/api/webhooks", "POST", {
     url: receiver.url(),
@@ -90,7 +94,7 @@ test("POST to the placeholder, as the page form or one-click, answers the same p
 test("a real one-click on a real send still unsubscribes and queues its webhook", async () => {
   const receiver = startReceiver();
   cleanups.push(() => receiver.close());
-  const events: unknown[] = [];
+  const events: Array<unknown> = [];
   const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });
   const hook = await f.json("/api/webhooks", "POST", {
     url: receiver.url(),

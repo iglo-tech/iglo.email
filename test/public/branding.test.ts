@@ -2,16 +2,19 @@
 // the logo, the favicon and the custom CSS link, and the site name. Through HTTP only, on the
 // public fixture that mounts the /m/ routes (txFixture), the campaign and archive routes.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
 const logo = "https://brand.example.test/logo.png";
 const favicon = "https://brand.example.test/favicon.ico";
 const placeholder = "00000000-0000-0000-0000-000000000000";
 const form = { "content-type": "application/x-www-form-urlencoded" };
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();
@@ -91,8 +94,9 @@ test("the 429 page of a limited public route is branded", async () => {
   const f = await open();
   // The optin limit is 5 a minute per peer in the public fixture; the sixth answers 429.
   let last: Response | undefined;
-  for (let i = 0; i < 6; i++)
+  for (let i = 0; i < 6; i++) {
     last = await f.peer(`/subscription/optin/${placeholder}`, "192.0.2.77");
+  }
   expect(last!.status).toBe(429);
   branded(await last!.text());
 });

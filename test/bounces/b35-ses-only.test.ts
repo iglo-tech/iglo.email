@@ -20,9 +20,11 @@ const repository = resolve(import.meta.dir, "../..");
 const admin = { user: "b35-upgrade-admin", password: "b35-upgrade-synthetic-password" };
 const legacySecret = "super-secret-mailgun-key";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 
 test("1. POST /webhooks/bounce/mailgun answers the same as an unknown route (404)", async () => {
@@ -40,8 +42,10 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
   // The schema before migration 0019 (B35), with a stored Mailgun secret.
   const dataDir = mkdtempSync(join(tmpdir(), "b35-upgrade-data-"));
   const directory = mkdtempSync(join(tmpdir(), "b35-upgrade-exe-"));
-  cleanups.push(() => rmSync(dataDir, { recursive: true, force: true }));
-  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  cleanups.push(
+    () => rmSync(dataDir, { recursive: true, force: true }),
+    () => rmSync(directory, { recursive: true, force: true }),
+  );
   const before = openDatabase(dataDir);
   runMigrations(before, dataDir, new TestClock(), productionMigrations.slice(0, 18));
   before.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('bounce.mailgun', ?)", [

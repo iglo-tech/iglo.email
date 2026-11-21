@@ -4,7 +4,8 @@ import { mkdir, rm } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { constants as osConstants } from "node:os";
 import { join } from "node:path";
-import { command, spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
+import { command, spawnGroup, stopGroup } from "@/test/reference/command";
+import type { GroupChild } from "@/test/reference/command";
 import { cache, prepare } from "@/test/reference/prepare";
 import { startReceiver } from "@/test/reference/webhook";
 
@@ -16,18 +17,20 @@ const dbUser = "reference";
 const dbPassword = "reference-db-password";
 const dbName = "reference";
 
-async function availablePorts(count: number): Promise<number[]> {
+async function availablePorts(count: number): Promise<Array<number>> {
   const sockets = Array.from({ length: count }, () => createServer());
   try {
-    for (const socket of sockets)
+    for (const socket of sockets) {
       await new Promise<void>((resolve, reject) => {
         socket.once("error", reject);
         socket.listen(0, "127.0.0.1", resolve);
       });
+    }
     return sockets.map((socket) => {
       const address = socket.address();
-      if (!address || typeof address === "string")
+      if (!address || typeof address === "string") {
         throw new Error("Could not allocate a loopback port");
+      }
       return address.port;
     });
   } finally {
@@ -42,10 +45,12 @@ async function availablePorts(count: number): Promise<number[]> {
 }
 
 async function stop(child: GroupChild | undefined) {
-  if (!child?.pid) return;
+  if (!child?.pid) {
+    return;
+  }
   stopGroup(child);
   if (child.exitCode === null && child.signalCode === null) {
-    const timer = setTimeout(() => stopGroup(child, "SIGKILL"), 3_000);
+    const timer = setTimeout(() => stopGroup(child, "SIGKILL"), 3000);
     try {
       await new Promise<void>((resolve) => child.once("close", () => resolve()));
     } finally {
@@ -65,10 +70,13 @@ async function ready(
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     signal.throwIfAborted();
-    if (child && (child.exitCode !== null || child.signalCode !== null))
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
       throw new Error(`${description} exited before readiness`);
+    }
     try {
-      if (await check()) return;
+      if (await check()) {
+        return;
+      }
     } catch {
       /* Service is still starting. */
     }
@@ -79,7 +87,7 @@ async function ready(
 
 async function healthy(url: string) {
   const response = await fetch(url, {
-    signal: AbortSignal.timeout(1_000),
+    signal: AbortSignal.timeout(1000),
     headers: { Connection: "close" },
   });
   return response.ok;
@@ -112,40 +120,47 @@ async function postgresReady(
       "-t",
       "1",
     ],
-    { timeout: 5_000, signal },
+    { timeout: 5000, signal },
   );
-  if (status.code !== 0) return false;
+  if (status.code !== 0) {
+    return false;
+  }
   return new Promise((resolve) => {
     const socket = createConnection({ host: "127.0.0.1", port });
     const finish = (value: boolean) => {
       socket.destroy();
       resolve(value);
     };
-    socket.setTimeout(1_000, () => finish(false));
+    socket.setTimeout(1000, () => finish(false));
     socket.once("error", () => finish(false));
     socket.once("close", () => finish(false));
     socket.once("connect", () => {
       const sslRequest = Buffer.alloc(8);
       sslRequest.writeInt32BE(8, 0);
-      sslRequest.writeInt32BE(80877103, 4);
+      sslRequest.writeInt32BE(80_877_103, 4);
       socket.write(sslRequest);
     });
     socket.once("data", (data) => finish(data[0] === 0x4e || data[0] === 0x53));
   });
 }
 
-async function run(args: string[]): Promise<number> {
-  if (args[0] === "--") args = args.slice(1);
-  if (!args.length) throw new Error("Usage: bun run reference:run -- <command> [args...]");
+async function run(args: Array<string>): Promise<number> {
+  if (args[0] === "--") {
+    args = args.slice(1);
+  }
+  if (!args.length) {
+    throw new Error("Usage: bun run reference:run -- <command> [args...]");
+  }
   const timeoutText = process.env.REFERENCE_COMMAND_TIMEOUT_MS ?? "600000";
   const commandTimeout = Number(timeoutText);
   if (
     !/^\d+$/.test(timeoutText) ||
     !Number.isSafeInteger(commandTimeout) ||
-    commandTimeout < 1_000 ||
+    commandTimeout < 1000 ||
     commandTimeout > 3_600_000
-  )
+  ) {
     throw new Error("REFERENCE_COMMAND_TIMEOUT_MS must be an integer from 1000 to 3600000");
+  }
   const id = randomUUID();
   const name = `iglo-reference-${id}`;
   const directory = join(cache, "runs", id);
@@ -163,19 +178,33 @@ async function run(args: string[]): Promise<number> {
   let failed = false;
   let forceStop: ReturnType<typeof setTimeout> | undefined;
   const interrupt = (signal: NodeJS.Signals) => {
-    if (receivedSignal) return;
+    if (receivedSignal) {
+      return;
+    }
     receivedSignal = signal;
     controller.abort(new Error(`Interrupted by ${signal}`));
-    if (testCommand) stopGroup(testCommand, signal);
-    if (listmonk) stopGroup(listmonk);
-    if (mailpit) stopGroup(mailpit);
+    if (testCommand) {
+      stopGroup(testCommand, signal);
+    }
+    if (listmonk) {
+      stopGroup(listmonk);
+    }
+    if (mailpit) {
+      stopGroup(mailpit);
+    }
     // A test command may handle or ignore SIGTERM/SIGINT. It must not hold
     // cleanup open indefinitely after the runner has been interrupted.
     forceStop = setTimeout(() => {
-      if (testCommand) stopGroup(testCommand, "SIGKILL");
-      if (listmonk) stopGroup(listmonk, "SIGKILL");
-      if (mailpit) stopGroup(mailpit, "SIGKILL");
-    }, 3_000);
+      if (testCommand) {
+        stopGroup(testCommand, "SIGKILL");
+      }
+      if (listmonk) {
+        stopGroup(listmonk, "SIGKILL");
+      }
+      if (mailpit) {
+        stopGroup(mailpit, "SIGKILL");
+      }
+    }, 3000);
   };
   const sigterm = () => interrupt("SIGTERM");
   const sigint = () => interrupt("SIGINT");
@@ -185,9 +214,11 @@ async function run(args: string[]): Promise<number> {
 
   // Docker operations finish before cleanup starts, even if a signal arrives in
   // the middle of creation. The exact name and label identify what we own.
-  async function docker(args: string[], timeout = 30_000) {
+  async function docker(args: Array<string>, timeout = 30_000) {
     const result = await command(["docker", ...args], { timeout });
-    if (result.code !== 0) throw new Error(`docker ${args[0]} failed: ${result.stderr.trim()}`);
+    if (result.code !== 0) {
+      throw new Error(`docker ${args[0]} failed: ${result.stderr.trim()}`);
+    }
     return result.stdout.trim();
   }
   async function removeOwned(type: "container" | "volume") {
@@ -195,16 +226,24 @@ async function run(args: string[]): Promise<number> {
       type === "container" ? ["inspect", "--type", "container", name] : ["volume", "inspect", name];
     const result = await command(["docker", ...inspectArgs], { timeout: 15_000 });
     if (result.code !== 0) {
-      if (/no such (object|container|volume)/i.test(result.stderr)) return;
+      if (/no such (object|container|volume)/i.test(result.stderr)) {
+        return;
+      }
       throw new Error(`Could not inspect owned ${type}: ${result.stderr.trim()}`);
     }
     const item = JSON.parse(result.stdout)[0];
     const labels = type === "container" ? item.Config?.Labels : item.Labels;
-    if (labels?.[label] !== id)
+    if (labels?.[label] !== id) {
       throw new Error(`Refusing to remove ${type} with an unexpected ownership label: ${name}`);
+    }
     await docker(type === "container" ? ["rm", "-f", item.Id] : ["volume", "rm", name], 30_000);
   }
-  function service(executable: string, argv: string[], env: NodeJS.ProcessEnv, logName: string) {
+  function service(
+    executable: string,
+    argv: Array<string>,
+    env: NodeJS.ProcessEnv,
+    logName: string,
+  ) {
     const fd = openSync(join(directory, logName), "a", 0o600);
     try {
       const child = spawnGroup(executable, argv, {
@@ -230,7 +269,9 @@ async function run(args: string[]): Promise<number> {
     await mkdir(join(directory, "uploads"), { mode: 0o700 });
     receiver = startReceiver();
     const [httpPort, smtpPort, referencePort] = await availablePorts(3);
-    if (!httpPort || !smtpPort || !referencePort) throw new Error("Could not allocate ports");
+    if (!httpPort || !smtpPort || !referencePort) {
+      throw new Error("Could not allocate ports");
+    }
     const mailUrl = `http://127.0.0.1:${httpPort}`;
     const referenceUrl = `http://127.0.0.1:${referencePort}`;
     const serviceEnv = {
@@ -256,11 +297,15 @@ async function run(args: string[]): Promise<number> {
       "mailpit.log",
     );
     const mailpitReady = async () => {
-      if (!(await healthy(`${mailUrl}/readyz`))) return false;
+      if (!(await healthy(`${mailUrl}/readyz`))) {
+        return false;
+      }
       const response = await fetch(`${mailUrl}/api/v1/webui`, {
-        signal: AbortSignal.timeout(1_000),
+        signal: AbortSignal.timeout(1000),
       });
-      if (!response.ok) return false;
+      if (!response.ok) {
+        return false;
+      }
       const config = (await response.json()) as {
         Label?: string;
         MessageRelay?: { Enabled?: boolean };
@@ -272,8 +317,9 @@ async function run(args: string[]): Promise<number> {
     resourcesMayExist = true;
     await docker(["volume", "create", "--label", `${label}=${id}`, name]);
     const volume = JSON.parse(await docker(["volume", "inspect", name]))[0];
-    if (volume?.Labels?.[label] !== id)
+    if (volume?.Labels?.[label] !== id) {
       throw new Error(`Refusing to use a volume with an unexpected ownership label: ${name}`);
+    }
     controller.signal.throwIfAborted();
     await docker(
       [
@@ -305,7 +351,9 @@ async function run(args: string[]): Promise<number> {
     controller.signal.throwIfAborted();
     const portOutput = await docker(["port", name, "5432/tcp"]);
     const dbPort = /^127\.0\.0\.1:(\d+)$/m.exec(portOutput)?.[1];
-    if (!dbPort) throw new Error(`Docker did not report a loopback Postgres port: ${portOutput}`);
+    if (!dbPort) {
+      throw new Error(`Docker did not report a loopback Postgres port: ${portOutput}`);
+    }
     await ready(
       () => postgresReady(name, Number(dbPort), controller.signal),
       controller.signal,
@@ -340,7 +388,7 @@ async function run(args: string[]): Promise<number> {
     });
     if (installation.code !== 0) {
       const diagnostic = `${installation.stdout}\n${installation.stderr}`
-        .replace(/LISTMONK_ADMIN_API_TOKEN=.*/g, "LISTMONK_ADMIN_API_TOKEN=[redacted]")
+        .replaceAll(/LISTMONK_ADMIN_API_TOKEN=.*/g, "LISTMONK_ADMIN_API_TOKEN=[redacted]")
         .replaceAll(adminPassword, "[redacted]")
         .replaceAll(dbPassword, "[redacted]");
       throw new Error(
@@ -348,22 +396,26 @@ async function run(args: string[]): Promise<number> {
       );
     }
     const token = /^export LISTMONK_ADMIN_API_TOKEN="([^"]+)"$/m.exec(installation.stderr)?.[1];
-    if (!token) throw new Error("listmonk installer did not generate an API token");
+    if (!token) {
+      throw new Error("listmonk installer did not generate an API token");
+    }
     const authorization = `Basic ${Buffer.from(`${apiUser}:${token}`).toString("base64")}`;
     const listArgs = ["--config", ""];
     listmonk = service(binaries.listmonk, [...listArgs, "--passive"], referenceEnv, "listmonk.log");
     await ready(() => healthy(`${referenceUrl}/health`), controller.signal, "listmonk", listmonk);
     const settingsResponse = await fetch(`${referenceUrl}/api/settings`, {
       headers: { Authorization: authorization },
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(5000),
     });
-    if (!settingsResponse.ok)
+    if (!settingsResponse.ok) {
       throw new Error(`Authenticated settings read failed: HTTP ${settingsResponse.status}`);
+    }
     const envelope = (await settingsResponse.json()) as { data: Record<string, unknown> };
     const settings = envelope.data;
     const smtp = settings.smtp as Array<Record<string, unknown>>;
-    if (!Array.isArray(smtp) || !smtp[0])
+    if (!Array.isArray(smtp) || !smtp[0]) {
       throw new Error("Upstream did not provide default SMTP settings");
+    }
     const localSMTP = [
       {
         ...smtp[0],
@@ -396,19 +448,23 @@ async function run(args: string[]): Promise<number> {
               method: "PUT",
               headers: { Authorization: authorization, "Content-Type": "application/json" },
               body: JSON.stringify(value),
-              signal: AbortSignal.timeout(2_000),
+              signal: AbortSignal.timeout(2000),
             });
           } catch {
             return false;
           } // listmonk may be reloading after the previous update.
-          if (!response.ok) badStatus = response.status;
+          if (!response.ok) {
+            badStatus = response.status;
+          }
           return true;
         },
         controller.signal,
         `settings update ${key}`,
         listmonk,
       );
-      if (badStatus) throw new Error(`Could not update ${key}: HTTP ${badStatus}`);
+      if (badStatus) {
+        throw new Error(`Could not update ${key}: HTTP ${badStatus}`);
+      }
     }
     // Reload is scheduled asynchronously by listmonk; restart once to guarantee
     // the persisted local-only SMTP and disabled update checker are active.
@@ -423,10 +479,11 @@ async function run(args: string[]): Promise<number> {
     );
     const verified = await fetch(`${referenceUrl}/api/settings`, {
       headers: { Authorization: authorization },
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(5000),
     });
-    if (!verified.ok)
+    if (!verified.ok) {
       throw new Error(`Configured listmonk authentication failed: HTTP ${verified.status}`);
+    }
     await ready(mailpitReady, controller.signal, "Mailpit", mailpit);
     controller.signal.throwIfAborted();
     const executable = args[0]!;
@@ -454,7 +511,7 @@ async function run(args: string[]): Promise<number> {
     const deadline = setTimeout(() => {
       timedOut = true;
       stopGroup(child);
-      forceTimeout = setTimeout(() => stopGroup(child, "SIGKILL"), 3_000);
+      forceTimeout = setTimeout(() => stopGroup(child, "SIGKILL"), 3000);
     }, commandTimeout);
     let exit: number;
     try {
@@ -466,13 +523,18 @@ async function run(args: string[]): Promise<number> {
       });
     } finally {
       clearTimeout(deadline);
-      if (forceTimeout) clearTimeout(forceTimeout);
+      if (forceTimeout) {
+        clearTimeout(forceTimeout);
+      }
     }
-    if (timedOut) console.error(`Reference command exceeded ${commandTimeout}ms`);
+    if (timedOut) {
+      console.error(`Reference command exceeded ${commandTimeout}ms`);
+    }
     exitCode = receivedSignal ? (receivedSignal === "SIGINT" ? 130 : 143) : timedOut ? 124 : exit;
   } catch (error) {
-    if (receivedSignal) exitCode = receivedSignal === "SIGINT" ? 130 : 143;
-    else {
+    if (receivedSignal) {
+      exitCode = receivedSignal === "SIGINT" ? 130 : 143;
+    } else {
       failed = true;
       failure = error;
     }
@@ -483,16 +545,24 @@ async function run(args: string[]): Promise<number> {
       () => stop(listmonk),
       () => stop(mailpit),
       async () => {
-        if (receiver) await receiver.server.stop(true);
+        if (receiver) {
+          await receiver.server.stop(true);
+        }
       },
       async () => {
-        if (resourcesMayExist) await removeOwned("container");
+        if (resourcesMayExist) {
+          await removeOwned("container");
+        }
       },
       async () => {
-        if (resourcesMayExist) await removeOwned("volume");
+        if (resourcesMayExist) {
+          await removeOwned("volume");
+        }
       },
       async () => {
-        if (ownsDirectory) await rm(directory, { recursive: true, force: true });
+        if (ownsDirectory) {
+          await rm(directory, { recursive: true, force: true });
+        }
       },
     ]) {
       try {
@@ -504,10 +574,16 @@ async function run(args: string[]): Promise<number> {
     }
     process.off("SIGTERM", sigterm);
     process.off("SIGINT", sigint);
-    if (forceStop) clearTimeout(forceStop);
+    if (forceStop) {
+      clearTimeout(forceStop);
+    }
   }
-  if (failed) throw failure;
-  if (cleanupError) throw new Error("Reference cleanup was incomplete");
+  if (failed) {
+    throw failure;
+  }
+  if (cleanupError) {
+    throw new Error("Reference cleanup was incomplete");
+  }
   return exitCode;
 }
 

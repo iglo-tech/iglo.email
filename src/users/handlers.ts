@@ -8,7 +8,8 @@ import { getID, strHasLen } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
 import { validPassword } from "@/users/password";
-import { projectUser, type Identity } from "@/users/models";
+import { projectUser } from "@/users/models";
+import type { Identity } from "@/users/models";
 import type { UserFields, UserStore } from "@/users/store";
 
 interface Input {
@@ -27,8 +28,9 @@ async function readJSON(request: Request): Promise<Input> {
   const body = await readBody(request);
   let data: unknown = {};
   if (body.length) {
-    if (request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json")
+    if (request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json") {
       throw new HttpError(415);
+    }
     try {
       const parse = JSON.parse as (
         text: string,
@@ -40,7 +42,9 @@ async function readJSON(request: Request): Promise<Input> {
           typeof value === "number" &&
           context?.source
         ) {
-          if (!/^-?(?:0|[1-9]\d*)$/.test(context.source)) throw new Error("Invalid identity");
+          if (!/^-?(?:0|[1-9]\d*)$/.test(context.source)) {
+            throw new Error("Invalid identity");
+          }
           return BigInt(context.source);
         }
         return value;
@@ -49,30 +53,46 @@ async function readJSON(request: Request): Promise<Input> {
       throw new HttpError(400);
     }
   }
-  if (data === null) data = {};
-  if (typeof data !== "object" || Array.isArray(data)) throw new HttpError(400);
+  if (data === null) {
+    data = {};
+  }
+  if (typeof data !== "object" || Array.isArray(data)) {
+    throw new HttpError(400);
+  }
   const value = data as Record<string, unknown>;
   function string(key: string): string {
     const field = value[key];
-    if (field == null) return "";
-    if (typeof field !== "string") throw new HttpError(400);
+    if (field == null) {
+      return "";
+    }
+    if (typeof field !== "string") {
+      throw new HttpError(400);
+    }
     return field;
   }
   function integer(key: string): bigint | null {
     const field = value[key];
-    if (field == null) return null;
+    if (field == null) {
+      return null;
+    }
     const integer =
       typeof field === "bigint"
         ? field
         : typeof field === "number" && Number.isSafeInteger(field)
           ? BigInt(field)
           : null;
-    if (integer === null || integer < -9223372036854775808n || integer > 9223372036854775807n)
+    if (
+      integer === null ||
+      integer < -9_223_372_036_854_775_808n ||
+      integer > 9_223_372_036_854_775_807n
+    ) {
       throw new HttpError(400);
+    }
     return integer;
   }
-  if (value.password_login != null && typeof value.password_login !== "boolean")
+  if (value.password_login != null && typeof value.password_login !== "boolean") {
     throw new HttpError(400);
+  }
   return {
     username: string("username").trim(),
     name: string("name").trim(),
@@ -91,8 +111,9 @@ function invalid(context: RequestContext, name: string): never {
 }
 function validEmail(value: string): boolean {
   const separator = value.indexOf("@");
-  if (separator <= 0 || separator >= value.length - 1 || value.indexOf("@", separator + 1) !== -1)
+  if (separator <= 0 || separator >= value.length - 1 || value.indexOf("@", separator + 1) !== -1) {
     return false;
+  }
   const local = value.slice(0, separator),
     domain = value.slice(separator + 1);
   const atom = (part: string) =>
@@ -102,10 +123,15 @@ function validEmail(value: string): boolean {
     ![...part].some((character) => {
       const code = character.codePointAt(0)!;
       return (
-        code <= 32 || code === 127 || /\s/.test(character) || '<>(),:;[]\\"'.includes(character)
+        code <= 32 ||
+        code === 127 ||
+        /\s/.test(character) ||
+        String.raw`<>(),:;[]\"`.includes(character)
       );
     });
-  if (!atom(local)) return false;
+  if (!atom(local)) {
+    return false;
+  }
   if (domain.startsWith("[") && domain.endsWith("]")) {
     const literal = domain.slice(1, -1);
     return isIP(literal) === 4;
@@ -113,26 +139,38 @@ function validEmail(value: string): boolean {
   return atom(domain);
 }
 function validateCommon(context: RequestContext, input: Input, create: boolean): void {
-  if ((create || input.type !== "") && input.type !== "user" && input.type !== "api")
+  if ((create || input.type !== "") && input.type !== "user" && input.type !== "api") {
     invalid(context, "type");
-  if ((create || input.status !== "") && input.status !== "enabled" && input.status !== "disabled")
+  }
+  if (
+    (create || input.status !== "") &&
+    input.status !== "enabled" &&
+    input.status !== "disabled"
+  ) {
     invalid(context, "status");
-  if (!strHasLen(input.username, 3, 2000) || !/^[a-zA-Z0-9_\-.@]+$/.test(input.username))
+  }
+  if (!strHasLen(input.username, 3, 2000) || !/^[a-zA-Z0-9_\-.@]+$/.test(input.username)) {
     invalid(context, "username");
-  if (input.type !== "api" && !validEmail(input.email.toLowerCase())) invalid(context, "email");
+  }
+  if (input.type !== "api" && !validEmail(input.email.toLowerCase())) {
+    invalid(context, "email");
+  }
 }
 function randomToken(): string {
   const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   let out = "";
-  while (out.length < 48)
+  while (out.length < 48) {
     for (const byte of randomBytes(64)) {
       if (byte < 248) out += alphabet[byte % 62];
       if (out.length === 48) break;
     }
+  }
   return out;
 }
 function current(context: RequestContext): Identity {
-  if (!context.identity) throw new Error("Authenticated identity is required");
+  if (!context.identity) {
+    throw new Error("Authenticated identity is required");
+  }
   return context.identity;
 }
 function needSuper(context: RequestContext): never {
@@ -159,11 +197,12 @@ function storageFailure(
 export function createUserHandlers(store: UserStore, roles: Roles, auth: Authentication) {
   const getUser: Handler = (context) => {
     const user = store.byId(BigInt(getID(context)));
-    if (!user)
+    if (!user) {
       throw new HttpError(
         404,
         context.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.user}"),
       );
+    }
     return ok(projectUser(user, roles));
   };
   const getUsers: Handler = (context) =>
@@ -179,13 +218,15 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
   const createUser: Handler = async (context) => {
     const input = await readJSON(context.request);
     validateCommon(context, input, true);
-    if (input.type === "user" && input.passwordLogin && !validPassword(input.password))
+    if (input.type === "user" && input.passwordLogin && !validPassword(input.password)) {
       invalid(context, "password");
+    }
     if (
       !roles.hasRole(input.userRoleId, "user") ||
       (input.listRoleId !== null && !roles.hasRole(input.listRoleId, "list"))
-    )
+    ) {
       throw new HttpError(400, "invalid role");
+    }
     const token = input.type === "api" ? randomToken() : undefined;
     const password = token
       ? createHash("sha256").update(token).digest("hex")
@@ -208,8 +249,9 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     if (
       !roles.hasRole(fields.userRoleId, "user") ||
       (fields.listRoleId !== null && !roles.hasRole(fields.listRoleId, "list"))
-    )
+    ) {
       throw new HttpError(400, "invalid role");
+    }
     let created;
     try {
       created = store.create(fields);
@@ -227,31 +269,37 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       input.passwordLogin &&
       input.password &&
       !validPassword(input.password)
-    )
+    ) {
       invalid(context, "password");
+    }
     const previous = store.byId(id);
-    if (!previous && input.type !== "api" && input.passwordLogin && !input.password)
+    if (!previous && input.type !== "api" && input.passwordLogin && !input.password) {
       throw new HttpError(
         404,
         context.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.user}"),
       );
-    if (!previous) needSuper(context);
+    }
+    if (!previous) {
+      needSuper(context);
+    }
     const type = (input.type || previous.type) as "user" | "api";
     if (
       input.type !== "api" &&
       input.passwordLogin &&
       !input.password &&
       (!previous.password || (previous.type === "api" && type === "user"))
-    )
+    ) {
       invalid(context, "password");
+    }
     const userRoleId = input.userRoleId === 0n ? previous.user_role_id : input.userRoleId;
     if (
       !roles.hasRole(userRoleId, "user") ||
       (input.listRoleId !== null &&
         input.listRoleId !== 0n &&
         !roles.hasRole(input.listRoleId, "list"))
-    )
+    ) {
       throw new HttpError(400, "invalid role");
+    }
     // Prepare possible human credentials without holding a transaction. The
     // target may change type/authority while this asynchronous work is running.
     const hash =
@@ -269,16 +317,18 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
           input.passwordLogin &&
           hash === null &&
           (!current.password || current.type === "api")
-        )
+        ) {
           invalid(context, "password");
+        }
         const currentRole = input.userRoleId === 0n ? current.user_role_id : input.userRoleId;
         if (
           !roles.hasRole(currentRole, "user") ||
           (input.listRoleId !== null &&
             input.listRoleId !== 0n &&
             !roles.hasRole(input.listRoleId, "list"))
-        )
+        ) {
           throw new HttpError(400, "invalid role");
+        }
         fields = {
           username: input.username,
           name: input.name || input.username,
@@ -300,7 +350,9 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
         return fields;
       });
     } catch (error) {
-      if (error instanceof HttpError) throw error;
+      if (error instanceof HttpError) {
+        throw error;
+      }
       storageFailure(
         error,
         "updating",
@@ -310,7 +362,9 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
         },
       );
     }
-    if (!updated) needSuper(context);
+    if (!updated) {
+      needSuper(context);
+    }
     return ok(projectUser(updated, roles));
   };
   const updateProfile: Handler = async (context) => {
@@ -318,8 +372,12 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     const principal = current(context);
     const previous = principal.user;
     if (previous.type === "user" && previous.password_login !== 0n) {
-      if (!validEmail(input.email)) invalid(context, "email");
-      if (input.password && !validPassword(input.password)) invalid(context, "password");
+      if (!validEmail(input.email)) {
+        invalid(context, "email");
+      }
+      if (input.password && !validPassword(input.password)) {
+        invalid(context, "password");
+      }
     }
     const hash =
       previous.type === "user" && previous.password_login !== 0n && input.password
@@ -333,28 +391,38 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       hash,
       principal.sessionId ?? "",
     );
-    if (!updated)
+    if (!updated) {
       throw new HttpError(
         400,
         context.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.user}"),
       );
+    }
     return ok(projectUser(updated, roles));
   };
   const deleteUser: Handler = (context) => {
-    if (!store.delete([BigInt(getID(context))])) needSuper(context);
+    if (!store.delete([BigInt(getID(context))])) {
+      needSuper(context);
+    }
     return ok(true);
   };
   const deleteUsers: Handler = (context) => {
-    const ids: bigint[] = [];
+    const ids: Array<bigint> = [];
     for (const value of context.url.searchParams.getAll("id")) {
-      if (!value) continue;
-      if (!/^[+-]?\d+$/.test(value)) throw new HttpError(400, "invalid ID");
-      const id = BigInt(value);
-      if (id < -9223372036854775808n || id > 9223372036854775807n)
+      if (!value) {
+        continue;
+      }
+      if (!/^[+-]?\d+$/.test(value)) {
         throw new HttpError(400, "invalid ID");
+      }
+      const id = BigInt(value);
+      if (id < -9_223_372_036_854_775_808n || id > 9_223_372_036_854_775_807n) {
+        throw new HttpError(400, "invalid ID");
+      }
       ids.push(id);
     }
-    if (!store.delete(ids)) needSuper(context);
+    if (!store.delete(ids)) {
+      needSuper(context);
+    }
     return ok(true);
   };
   return {

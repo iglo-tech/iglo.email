@@ -1,10 +1,13 @@
 // B19 (D81): the query-selected membership actions keep upstream's results and never revive consent.
 import { afterEach, expect, test } from "bun:test";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
-const fixtures: QueryFixture[] = [];
+const fixtures: Array<QueryFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await queryFixture();
@@ -13,7 +16,7 @@ async function open() {
 }
 const list = async (f: QueryFixture, name: string) =>
   (await f.json("/api/lists", "POST", { name })).body.data.id as number;
-const person = async (f: QueryFixture, email: string, lists: number[], extra: object = {}) =>
+const person = async (f: QueryFixture, email: string, lists: Array<number>, extra: object = {}) =>
   (
     await f.json("/api/subscribers", "POST", {
       email,
@@ -24,9 +27,9 @@ const person = async (f: QueryFixture, email: string, lists: number[], extra: ob
   ).body.data.id as number;
 const statuses = async (f: QueryFixture, id: number) =>
   (
-    (await f.json(`/api/subscribers/${id}`)).body.data.lists as {
+    (await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<{
       subscription_status: string;
-    }[]
+    }>
   ).map((l) => l.subscription_status);
 
 test("add by query keeps an unsubscribed member unsubscribed, with or without a status", async () => {
@@ -40,7 +43,7 @@ test("add by query keeps an unsubscribed member unsubscribed, with or without a 
     action: "unsubscribe",
     target_list_ids: [a],
   });
-  for (const status of [undefined, "confirmed", "unconfirmed"])
+  for (const status of [undefined, "confirmed", "unconfirmed"]) {
     expect(
       (
         await f.json("/api/subscribers/query/lists", "PUT", {
@@ -51,6 +54,7 @@ test("add by query keeps an unsubscribed member unsubscribed, with or without a 
         })
       ).status,
     ).toBe(200);
+  }
   expect(await statuses(f, id)).toEqual(["unsubscribed"]);
 });
 
@@ -62,7 +66,7 @@ test("adding by query never gives a blocklisted subscriber a live membership", a
     preconfirm_subscriptions: true,
   });
   await f.json(`/api/subscribers/${id}/blocklist`, "PUT");
-  for (const status of ["", "confirmed", "unconfirmed"])
+  for (const status of ["", "confirmed", "unconfirmed"]) {
     expect(
       (
         await f.json("/api/subscribers/query/lists", "PUT", {
@@ -73,6 +77,7 @@ test("adding by query never gives a blocklisted subscriber a live membership", a
         })
       ).status,
     ).toBe(200);
+  }
   expect(await statuses(f, id)).toEqual(["unsubscribed", "unsubscribed"]);
 });
 
@@ -91,10 +96,10 @@ test("blocklisting by query stamps only the memberships that change", async () =
   const stamp = async () =>
     Object.fromEntries(
       (
-        (await f.json(`/api/subscribers/${id}`)).body.data.lists as {
+        (await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<{
           id: number;
           subscription_updated_at: string;
-        }[]
+        }>
       ).map((l) => [l.id, l.subscription_updated_at]),
     );
   const before = await stamp();
@@ -103,6 +108,6 @@ test("blocklisting by query stamps only the memberships that change", async () =
     query: "subscribers.email = 'stamp@example.test'",
   });
   const after = await stamp();
-  expect(after[a]).toBe(before[a]!);
+  expect(after[a]).toBe(before[a]);
   expect(after[b]).toBe(f.clock.now().toISOString());
 });

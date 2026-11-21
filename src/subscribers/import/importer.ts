@@ -5,7 +5,8 @@
 // admits what it will really queue against the same budget, because memberships and webhooks can
 // change after the first pass (D61). An import is not durable: status and log live in memory as
 // upstream's do, and nothing resumes after a restart.
-import { lstat, mkdir, open, readdir, rm, type FileHandle } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rm } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
@@ -14,20 +15,11 @@ import { trimSpace } from "@/lists/store";
 import type { AdminNotifier } from "@/messaging/notify";
 import { HttpError } from "@/server/response";
 import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
-import {
-  createCsvReader,
-  CsvError,
-  validDelimiter,
-  type CsvRecord,
-} from "@/subscribers/import/csv";
+import { createCsvReader, CsvError, validDelimiter } from "@/subscribers/import/csv";
+import type { CsvRecord } from "@/subscribers/import/csv";
 import { parseAttributes } from "@/subscribers/input";
-import {
-  EVENT_ATTRIBS_BYTES,
-  nameFromEmail,
-  type ImportRow,
-  type BulkSpend,
-  type SubscriberStore,
-} from "@/subscribers/store";
+import { EVENT_ATTRIBS_BYTES, nameFromEmail } from "@/subscribers/store";
+import type { ImportRow, BulkSpend, SubscriberStore } from "@/subscribers/store";
 
 /** Short enough that a pixel or a send waits a few milliseconds (docs/perf/M1.9-import.md). */
 export const BATCH_ROWS = 100;
@@ -55,7 +47,7 @@ export interface ImportOptions {
   overwriteStatus: boolean;
   /** One byte. */
   delimiter: number;
-  listIds: bigint[];
+  listIds: Array<bigint>;
 }
 export interface ImportStatus {
   name: string;
@@ -72,8 +64,8 @@ export interface UploadSlot {
 const idle = (): ImportStatus => ({ name: "", total: 0, imported: 0, status: "none" });
 
 function createLog(clock: Clock) {
-  let older: string[] = [];
-  let newer: string[] = [];
+  let older: Array<string> = [];
+  let newer: Array<string> = [];
   let size = 0;
   return {
     add(message: string) {
@@ -105,8 +97,8 @@ export function createImporter(deps: {
     SubscriberStore,
     "importSubscribe" | "importBlocklist" | "importUnsubscribing" | "admitImport"
   >;
-  touchLists(ids: bigint[]): void;
-  domainPolicy(): { allow: string[]; block: string[] };
+  touchLists(ids: Array<bigint>): void;
+  domainPolicy(): { allow: Array<string>; block: Array<string> };
   notify?: AdminNotifier;
 }) {
   const { clock, logger, i18n, store } = deps;
@@ -128,14 +120,16 @@ export function createImporter(deps: {
     options: ImportOptions,
     policy: ReturnType<typeof deps.domainPolicy>,
     logged: boolean,
-    each: (rows: ImportRow[], final: boolean) => Promise<boolean>,
+    each: (rows: Array<ImportRow>, final: boolean) => Promise<boolean>,
   ) {
     // The log outlives a wipe and reaches accounts of other lists, so it holds no cell of a file:
     // a first row with no header above it is someone's address, not a column name.
     const say = (message: string) => {
-      if (logged) log.add(message);
+      if (logged) {
+        log.add(message);
+      }
     };
-    const rows: ImportRow[] = [];
+    const rows: Array<ImportRow> = [];
     let columns: Map<string, number> | undefined;
     let width = 0;
     let line = 0;
@@ -151,14 +145,21 @@ export function createImporter(deps: {
       columns = new Map();
       width = record.count;
       for (let i = 0; i < width; i++) {
-        const name = trimSpace(record.field(i).toString("utf8")).replace(/[^\0-\x7f]/g, "");
-        if (knownHeaders.has(name)) columns.set(name, i);
-        else say(`ignoring unknown header in column ${i + 1}`);
+        const name = trimSpace(record.field(i).toString("utf8")).replaceAll(/[^\0-\u007f]/g, "");
+        if (knownHeaders.has(name)) {
+          columns.set(name, i);
+        } else {
+          say(`ignoring unknown header in column ${i + 1}`);
+        }
       }
-      if (!columns.has("email")) throw new CsvError("'email' column not found");
+      if (!columns.has("email")) {
+        throw new CsvError("'email' column not found");
+      }
     };
     const accept = (record: CsvRecord) => {
-      if (!columns) return header(record);
+      if (!columns) {
+        return header(record);
+      }
       line++;
       if (record.count !== width) {
         say(`skipping line ${line}. wrong number of fields`);
@@ -191,7 +192,7 @@ export function createImporter(deps: {
         return;
       }
       let attribs = "{}";
-      if (rawAttributes)
+      if (rawAttributes) {
         try {
           const stored = JSON.stringify(parseAttributes(rawAttributes) ?? {});
           if (Buffer.byteLength(stored) > EVENT_ATTRIBS_BYTES) throw new Error("too large");
@@ -200,19 +201,26 @@ export function createImporter(deps: {
           // A parser's message quotes the text it failed on.
           say(`skipping invalid attributes JSON on line ${line}`);
         }
+      }
       rows.push({ email, name: name || nameFromEmail(email), attribs });
     };
     const csv = createCsvReader(options.delimiter, accept);
     const chunk = Buffer.allocUnsafe(CHUNK_BYTES);
     for (let position = 0; ;) {
       const { bytesRead } = await file.read(chunk, 0, CHUNK_BYTES, position);
-      if (!bytesRead) break;
+      if (!bytesRead) {
+        break;
+      }
       position += bytesRead;
       csv.push(chunk.subarray(0, bytesRead));
-      if (!(await each(rows, false))) return csv.lines();
+      if (!(await each(rows, false))) {
+        return csv.lines();
+      }
     }
     csv.end();
-    if (!columns) throw new CsvError("empty file");
+    if (!columns) {
+      throw new CsvError("empty file");
+    }
     await each(rows, true);
     return csv.lines();
   }
@@ -221,26 +229,36 @@ export function createImporter(deps: {
   async function validate(
     file: FileHandle,
     options: ImportOptions,
-    policy: { allow: string[]; block: string[] },
+    policy: { allow: Array<string>; block: Array<string> },
   ) {
-    if (!validDelimiter(options.delimiter))
+    if (!validDelimiter(options.delimiter)) {
       throw new CsvError("invalid field or comment delimiter");
+    }
     let selected = 0;
     const lines = await read(file, options, policy, true, async (rows) => {
-      if (stopRequested) return false;
-      if (options.mode === "blocklist") selected += rows.length;
-      else if (options.overwriteStatus)
+      if (stopRequested) {
+        return false;
+      }
+      if (options.mode === "blocklist") {
+        selected += rows.length;
+      } else if (options.overwriteStatus) {
         selected += store.importUnsubscribing(
           rows.map((row) => row.email),
           options,
         );
+      }
       rows.length = 0;
       return true;
     });
     status.total = Math.max(lines - 1, 0);
-    if (stopRequested) return false;
-    if (options.mode === "blocklist") store.admitImport("blocklist", selected);
-    else if (options.overwriteStatus) store.admitImport("unsubscribe", selected);
+    if (stopRequested) {
+      return false;
+    }
+    if (options.mode === "blocklist") {
+      store.admitImport("blocklist", selected);
+    } else if (options.overwriteStatus) {
+      store.admitImport("unsubscribe", selected);
+    }
     return true;
   }
 
@@ -248,13 +266,16 @@ export function createImporter(deps: {
   async function write(
     file: FileHandle,
     options: ImportOptions,
-    policy: { allow: string[]; block: string[] },
+    policy: { allow: Array<string>; block: Array<string> },
   ) {
     let sinceProgress = 0;
     const spent: BulkSpend = { deliveries: 0 };
-    const commit = (rows: ImportRow[]) => {
-      if (options.mode === "blocklist") store.importBlocklist(rows, spent);
-      else store.importSubscribe(rows, options, spent);
+    const commit = (rows: Array<ImportRow>) => {
+      if (options.mode === "blocklist") {
+        store.importBlocklist(rows, spent);
+      } else {
+        store.importSubscribe(rows, options, spent);
+      }
       status.imported += rows.length;
       sinceProgress += rows.length;
       if (sinceProgress >= PROGRESS_ROWS) {
@@ -264,7 +285,9 @@ export function createImporter(deps: {
     };
     await read(file, options, policy, false, async (rows, final) => {
       while (rows.length >= BATCH_ROWS || (final && rows.length)) {
-        if (stopRequested) return false;
+        if (stopRequested) {
+          return false;
+        }
         const started = clock.now().getTime();
         commit(rows.splice(0, BATCH_ROWS));
         // As long as the batch took, so other work keeps at least half of the thread.
@@ -283,10 +306,16 @@ export function createImporter(deps: {
     try {
       const domains = deps.domainPolicy();
       file = await open(path, "r");
-      if (await validate(file, options, domains)) await write(file, options, domains);
-      if (stopRequested) log.add("stop request received");
+      if (await validate(file, options, domains)) {
+        await write(file, options, domains);
+      }
+      if (stopRequested) {
+        log.add("stop request received");
+      }
       try {
-        if (options.listIds.length) deps.touchLists(options.listIds);
+        if (options.listIds.length) {
+          deps.touchLists(options.listIds);
+        }
       } catch (error) {
         log.add(`error updating lists date: ${(error as Error).message}`);
       }
@@ -304,9 +333,13 @@ export function createImporter(deps: {
       }
     } catch (error) {
       // A batch rolls back whole, so what is stored is the batches counted in `imported`.
-      if (error instanceof CsvError) failed(`error reading CSV: ${error.message}`);
-      else if (error instanceof HttpError) failed(error.message);
-      else failed(`error importing: ${(error as Error).message}`);
+      if (error instanceof CsvError) {
+        failed(`error reading CSV: ${error.message}`);
+      } else if (error instanceof HttpError) {
+        failed(error.message);
+      } else {
+        failed(`error importing: ${(error as Error).message}`);
+      }
       try {
         deps.notify?.importStatus({
           name: status.name,
@@ -329,13 +362,18 @@ export function createImporter(deps: {
     /** Remove what a process that died left. Only our own names, whatever else is here. */
     async sweep() {
       await mkdir(directory, { recursive: true, mode: 0o700 });
-      if (!(await lstat(directory)).isDirectory()) return;
-      for (const name of await readdir(directory))
+      if (!(await lstat(directory)).isDirectory()) {
+        return;
+      }
+      for (const name of await readdir(directory)) {
         if (temporaryFile.test(name)) await rm(join(directory, name), { force: true });
+      }
     },
     /** A place for one upload, or undefined while an upload or an import holds it. */
     reserve(): UploadSlot | undefined {
-      if (uploading || busy() || closing.signal.aborted) return undefined;
+      if (uploading || busy() || closing.signal.aborted) {
+        return undefined;
+      }
       uploading = true;
       const path = join(directory, `${crypto.randomUUID()}.upload`);
       return {
@@ -343,13 +381,17 @@ export function createImporter(deps: {
         signal: closing.signal,
         async release() {
           uploading = false;
-          if (taken !== path) await rm(path, { force: true }).catch(() => {});
+          if (taken !== path) {
+            await rm(path, { force: true }).catch(() => {});
+          }
         },
       };
     },
     /** Upstream's NewSession and LoadCSV. The file is the import's from here. */
     start(slot: UploadSlot, options: ImportOptions) {
-      if (closing.signal.aborted) throw new HttpError(503, "The server is shutting down.");
+      if (closing.signal.aborted) {
+        throw new HttpError(503, "The server is shutting down.");
+      }
       uploading = false;
       taken = slot.path;
       stopRequested = false;

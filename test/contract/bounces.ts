@@ -16,7 +16,9 @@ export async function runBouncesContract(target: {
   const reference = target.mode === "reference";
   const suffix = crypto.randomUUID().slice(0, 8);
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL bounces-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL bounces-${label}`);
+    }
   };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
@@ -52,7 +54,9 @@ export async function runBouncesContract(target: {
       await Bun.sleep(1200);
       for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(100)) {
         try {
-          if ((await fetch(`${target.baseUrl}/health`)).ok) break;
+          if ((await fetch(`${target.baseUrl}/health`)).ok) {
+            break;
+          }
         } catch {
           /* Still reloading. */
         }
@@ -60,7 +64,7 @@ export async function runBouncesContract(target: {
     }
   };
   const address = (name: string) => `${name}-${suffix}@example.com`;
-  const subscriber = async (name: string, lists: number[] = []) => {
+  const subscriber = async (name: string, lists: Array<number> = []) => {
     const email = address(name);
     const created = await call("/api/subscribers", "POST", {
       email,
@@ -76,14 +80,16 @@ export async function runBouncesContract(target: {
   const post = (body: unknown, headers?: Record<string, string>) =>
     call("/webhooks/bounce", "POST", body, headers);
   const bounces = async (id: number) =>
-    (await call(`/api/subscribers/${id}/bounces`)).body.data as any[];
+    (await call(`/api/subscribers/${id}/bounces`)).body.data as Array<any>;
   /** Upstream queues bounces; a sentinel behind them in that queue shows they were handled. */
   const flushed = async () => {
     const sentinel = await subscriber(`sentinel-${crypto.randomUUID().slice(0, 8)}`);
     const sent = await post({ email: sentinel.email, type: "soft", source: "sentinel" });
     check(sent.status === 200, "sentinel");
     for (const deadline = Date.now() + 10_000; ; await Bun.sleep(25)) {
-      if ((await bounces(sentinel.id)).length === 1) break;
+      if ((await bounces(sentinel.id)).length === 1) {
+        break;
+      }
       check(Date.now() < deadline, "sentinel-wait");
     }
     await call(`/api/subscribers/${sentinel.id}`, "DELETE");
@@ -94,10 +100,10 @@ export async function runBouncesContract(target: {
     await flushed();
   };
   const originals = (await call("/api/settings")).body.data as Record<string, any>;
-  const lists: number[] = [],
-    campaigns: number[] = [],
-    users: number[] = [],
-    roles: number[] = [];
+  const lists: Array<number> = [],
+    campaigns: Array<number> = [],
+    users: Array<number> = [],
+    roles: Array<number> = [];
   const list = async (name: string) => {
     const created = await call("/api/lists", "POST", {
       name: `bounce-${name}-${suffix}`,
@@ -122,7 +128,11 @@ export async function runBouncesContract(target: {
     campaigns.push(created.body.data.id);
     return created.body.data as { id: number; uuid: string; name: string };
   };
-  const apiUser = async (name: string, permissions: string[], listPermissions?: unknown[]) => {
+  const apiUser = async (
+    name: string,
+    permissions: Array<string>,
+    listPermissions?: Array<unknown>,
+  ) => {
     const role = await call("/api/roles/users", "POST", {
       name: `${name}-${suffix}`,
       permissions,
@@ -232,7 +242,7 @@ export async function runBouncesContract(target: {
     check((await post({ email: "a@b.c", type: "hard" }, readOnly)).status === 403, "post-denied");
 
     // Validation.
-    const invalid: [string, unknown, string?][] = [
+    const invalid: Array<[string, unknown, string?]> = [
       ["no-address", { type: "hard" }, "Invalid fields: email / subscriber_uuid"],
       ["uuid", { subscriber_uuid: "nope", type: "hard" }, "Invalid fields: subscriber_uuid"],
       ["email", { email: "nope", type: "hard" }],
@@ -244,7 +254,9 @@ export async function runBouncesContract(target: {
     for (const [label, body, message] of invalid) {
       const answer = await post(body);
       check(answer.status === 400, `invalid-${label}`);
-      if (message) check(answer.body.message === message, `invalid-text-${label}`);
+      if (message) {
+        check(answer.body.message === message, `invalid-text-${label}`);
+      }
     }
 
     // Recording by email, by UUID and with a campaign. Unknown recipients are accepted and
@@ -355,16 +367,22 @@ export async function runBouncesContract(target: {
     // fails its enum cast with 500. Clients get the sort and an empty page instead.
     const byName = await call(`/api/bounces?${ours}&order_by=campaign_name`);
     const badType = await call("/api/bounces?type=nope");
-    if (reference) check(byName.status === 500 && badType.status === 500, "difference-reference");
-    else check(byName.status === 200 && badType.body.data.total === 0, "difference-production");
+    if (reference) {
+      check(byName.status === 500 && badType.status === 500, "difference-reference");
+    } else {
+      check(byName.status === 200 && badType.body.data.total === 0, "difference-production");
+    }
 
     // The documented `meta` spelling is an escaped JSON string. Upstream keeps the string; the
     // schema's `meta` is an object, so it stores the object the string holds.
     const dee = await subscriber("dee", [listB]);
     await recorded({ email: dee.email, type: "soft", meta: '{"additional":"info"}' });
     const [documented] = await bounces(dee.id);
-    if (reference) check(documented.meta === '{"additional":"info"}', "meta-reference");
-    else check(documented.meta.additional === "info", "meta-production");
+    if (reference) {
+      check(documented.meta === '{"additional":"info"}', "meta-reference");
+    } else {
+      check(documented.meta.additional === "info", "meta-production");
+    }
 
     // Thresholds: rows stop at the count, whose bounce fires the action. Soft is `none`.
     await recorded({ email: bob.email, type: "soft", source: "beta" });
@@ -377,11 +395,11 @@ export async function runBouncesContract(target: {
     const statuses = async (id: number) =>
       (await call(`/api/subscribers/${id}`)).body.data.lists.map(
         (l: any) => l.subscription_status,
-      ) as string[];
+      ) as Array<string>;
     const consentTimes = async (id: number) =>
       (await call(`/api/subscribers/${id}`)).body.data.lists.map((l: any) =>
         Date.parse(l.subscription_updated_at),
-      ) as number[];
+      ) as Array<number>;
     const consentBefore = await consentTimes(eve.id);
     await recorded({ email: eve.email, type: "hard", source: "api" });
     check(
@@ -396,16 +414,17 @@ export async function runBouncesContract(target: {
     // Upstream's action changes only the status, so its time stays that of the subscription.
     // `subscription_updated_at` here says when consent changed.
     const consentAfter = await consentTimes(eve.id);
-    if (reference)
+    if (reference) {
       check(
         consentAfter.every((time, i) => time === consentBefore[i]),
         "unsubscribe-time-reference",
       );
-    else
+    } else {
       check(
         consentAfter.every((time, i) => time > consentBefore[i]!),
         "unsubscribe-time-production",
       );
+    }
     check((await call(`/api/subscribers/${eve.id}`)).body.data.status === "enabled", "unsub-sub");
     await recorded({ email: eve.email, type: "hard", source: "api" });
     check((await bounces(eve.id)).length === 2, "over-threshold");
@@ -479,7 +498,7 @@ export async function runBouncesContract(target: {
     const visible = await seen(ivy.id);
     check(visible.status === 200 && visible.body.data.length === 1, "scope-list");
     check(Array.isArray(visible.body.data), "subscriber-array");
-    const absent = await seen(999999999);
+    const absent = await seen(999_999_999);
     check(absent.status === 200 && absent.body.data.length === 0, "scope-absent");
     check((await call("/api/subscribers/x/bounces")).status === 400, "subscriber-bad-id");
     // Global reads stay unscoped upstream.
@@ -501,8 +520,9 @@ export async function runBouncesContract(target: {
 
     // Delete by ID and by query.
     const jon = await subscriber("jon", [listA]);
-    for (const source of ["d1", "d2", "d3", "d4", "d5"])
+    for (const source of ["d1", "d2", "d3", "d4", "d5"]) {
       await recorded({ email: jon.email, type: "soft", source, campaign_uuid: second.uuid });
+    }
     await recorded({ email: jon.email, type: "hard", source: "d5" });
     const ids = async (source: string) =>
       (await query(`source=${source}`)).results.map((b: any) => b.id as number);
@@ -515,8 +535,9 @@ export async function runBouncesContract(target: {
     check((await ids("d1")).length === 0, "delete-one-row");
     check((await call(`/api/bounces?id=${d2}&id=${d3}`, "DELETE")).status === 200, "delete-many");
     check((await ids("d2")).length + (await ids("d3")).length === 0, "delete-many-rows");
-    for (const path of ["", "?id=x", "?id=0", "?all=false", "?all=nope", "?source=d4"])
+    for (const path of ["", "?id=x", "?id=0", "?all=false", "?all=nope", "?source=d4"]) {
       check((await call(`/api/bounces${path}`, "DELETE")).status === 400, `delete-refused${path}`);
+    }
     check((await call("/api/bounces?all=true&campaign_id=x", "DELETE")).status === 400, "camp-x");
     check((await ids("d4")).length === 1, "delete-refused-rows");
     // An ID wins over `all` and its filters, as upstream.
@@ -575,9 +596,11 @@ export async function runBouncesContract(target: {
     const counted = await call(`/api/campaigns/${first.id}`);
     check(counted.body.data.bounces === 2, "campaign-count");
 
-    if (!reference) await production();
+    if (!reference) {
+      await production();
+    }
   } finally {
-    const failures: unknown[] = [];
+    const failures: Array<unknown> = [];
     const attempt = async (run: () => Promise<unknown>) => {
       try {
         await run();
@@ -586,15 +609,25 @@ export async function runBouncesContract(target: {
       }
     };
     await attempt(() => call("/api/bounces?all=true", "DELETE"));
-    for (const id of campaigns) await attempt(() => call(`/api/campaigns/${id}`, "DELETE"));
-    for (const id of lists) await attempt(() => call(`/api/lists/${id}`, "DELETE"));
-    for (const id of users) await attempt(() => call(`/api/users/${id}`, "DELETE"));
-    for (const id of roles.reverse()) await attempt(() => call(`/api/roles/${id}`, "DELETE"));
+    for (const id of campaigns) {
+      await attempt(() => call(`/api/campaigns/${id}`, "DELETE"));
+    }
+    for (const id of lists) {
+      await attempt(() => call(`/api/lists/${id}`, "DELETE"));
+    }
+    for (const id of users) {
+      await attempt(() => call(`/api/users/${id}`, "DELETE"));
+    }
+    for (const id of roles.reverse()) {
+      await attempt(() => call(`/api/roles/${id}`, "DELETE"));
+    }
     await attempt(() => setting("bounce.actions", originals["bounce.actions"]));
     await attempt(() => setting("bounce.ses_enabled", originals["bounce.ses_enabled"]));
     await attempt(() => setting("bounce.enabled", originals["bounce.enabled"]));
     await attempt(() => setting("bounce.webhooks_enabled", originals["bounce.webhooks_enabled"]));
-    if (failures.length) process.stderr.write("Bounce contract cleanup failed\n");
+    if (failures.length) {
+      process.stderr.write("Bounce contract cleanup failed\n");
+    }
   }
 
   /** Native behavior, through the compiled executable's real HTTP, SQLite file and restart. */
@@ -639,8 +672,9 @@ export async function runBouncesContract(target: {
         "bounce.postmark",
         "bounce.forwardemail",
         "bounce.lettermint",
-      ])
+      ]) {
         check(settings[key] && typeof settings[key].enabled === "boolean", `kept-${key}`);
+      }
 
       // A transactional send to an address with no subscriber, and to a subscriber.
       const smtp = (await call("/api/settings")).body.data.smtp;
@@ -764,8 +798,11 @@ export async function runBouncesContract(target: {
               Array.from({ length: 100 }, () => call("/webhooks/service/ses", "POST", "{")),
             );
             for (const answer of batch) {
-              if (answer.status === 429) limited = true;
-              else count++;
+              if (answer.status === 429) {
+                limited = true;
+              } else {
+                count++;
+              }
             }
             check(count <= 8000, "webhook-budget-bounded");
           }
@@ -788,13 +825,17 @@ export async function runBouncesContract(target: {
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runBouncesContract({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS bounces reference contract\n");
   } catch (error) {

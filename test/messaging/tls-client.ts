@@ -1,7 +1,8 @@
 // Runs in a fresh process so the synthetic CA is scoped to this test process.
 import assert from "node:assert/strict";
 import { createRealClock } from "@/clock";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 const server: SMTPServer = {
   name: "",
   enabled: true,

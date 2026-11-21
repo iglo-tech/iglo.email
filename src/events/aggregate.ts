@@ -5,7 +5,8 @@
 // its `where` come from the condition language's own SQL pieces, so an aggregate matches exactly
 // the events a condition with the same predicate would count.
 import type { Database, Statement } from "bun:sqlite";
-import { jsonPath, type Param } from "@/conditions/json";
+import { jsonPath } from "@/conditions/json";
+import type { Param } from "@/conditions/json";
 import { ContextError, instant, sinceBound, subscriberID } from "@/conditions/since";
 import type { ConditionContext, ConditionError, Scalar } from "@/conditions/types";
 import { whereSQL, windowSQL } from "@/events/condition-sql";
@@ -43,7 +44,7 @@ export type AggregateResult =
 /** The statement of one aggregate and the arguments it binds for one subscriber and lower bound. */
 interface Compiled {
   sql: string;
-  args: Param[];
+  args: Array<Param>;
 }
 
 /**
@@ -64,7 +65,7 @@ function compile(aggregate: Aggregate, subscriber: bigint, after: string | undef
   const numeric = "json_type(data, ?) IN ('integer', 'real')";
   let select: string;
   // Parameters of the select list come before the statement's own.
-  let selectArgs: Param[];
+  let selectArgs: Array<Param>;
   if (fn === "count") {
     select = "coalesce(sum(hit), 0)";
     selectArgs = [];
@@ -94,8 +95,11 @@ export function createEventAggregates(db: Database) {
   const statements = new Map<string, Statement>();
   const prepared = (sql: string) => {
     let stmt = statements.get(sql);
-    if (stmt) statements.delete(sql);
-    else stmt = db.prepare(sql);
+    if (stmt) {
+      statements.delete(sql);
+    } else {
+      stmt = db.prepare(sql);
+    }
     statements.set(sql, stmt);
     if (statements.size > CACHE) {
       const [oldest, old] = statements.entries().next().value!;
@@ -117,19 +121,21 @@ export function createEventAggregates(db: Database) {
         id = subscriberID(context.subscriberId);
         now = instant(context.now, "now");
       } catch (error) {
-        if (error instanceof ContextError)
+        if (error instanceof ContextError) {
           return { ok: false, error: { kind: "context", message: error.message } };
+        }
         return { ok: false, error: { kind: "execution", message: "aggregate query failed" } };
       }
-      const values: [string, number][] = [];
+      const values: Array<[string, number]> = [];
       for (const [name, aggregate] of Object.entries(aggregates)) {
         let after: string | undefined;
         try {
           after =
             aggregate.since === undefined ? undefined : sinceBound(context, now, aggregate.since);
         } catch (error) {
-          if (error instanceof ContextError)
+          if (error instanceof ContextError) {
             return { ok: false, error: { kind: "context", message: error.message } };
+          }
           throw error;
         }
         const compiled = compile(aggregate, id, after);
@@ -139,16 +145,21 @@ export function createEventAggregates(db: Database) {
             scanned: bigint | number;
             n: bigint | number | null;
           };
-          if (Number(row.scanned) > AGGREGATE_LIMIT) return { ok: false, limit: true };
+          if (Number(row.scanned) > AGGREGATE_LIMIT) {
+            return { ok: false, limit: true };
+          }
           value = Number(row.n ?? 0);
         } catch (error) {
           // SQLite's 64-bit integer sum overflowed: the total is not exact, so none is returned.
-          if (error instanceof Error && error.message === "integer overflow")
+          if (error instanceof Error && error.message === "integer overflow") {
             return { ok: false, limit: true };
+          }
           return { ok: false, error: { kind: "execution", message: "aggregate query failed" } };
         }
         // A sum past the safe integer range would be a rounded total, so none is returned.
-        if (aggregate.fn === "sum" && !(Math.abs(value) <= SAFE)) return { ok: false, limit: true };
+        if (aggregate.fn === "sum" && !(Math.abs(value) <= SAFE)) {
+          return { ok: false, limit: true };
+        }
         values.push([name, value]);
       }
       // `Object.fromEntries` defines each name as an own property, so a name such as `__proto__`
@@ -156,7 +167,9 @@ export function createEventAggregates(db: Database) {
       return { ok: true, values: Object.fromEntries(values) };
     },
     close() {
-      for (const stmt of statements.values()) stmt.finalize();
+      for (const stmt of statements.values()) {
+        stmt.finalize();
+      }
       statements.clear();
     },
   };

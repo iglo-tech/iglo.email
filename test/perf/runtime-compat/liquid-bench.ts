@@ -9,8 +9,9 @@ import { percentile } from "@/test/perf/runtime-compat/metrics";
 import { processCheck } from "@/test/perf/runtime-compat/process-check";
 
 const args = new Set(process.argv.slice(2));
-for (const arg of args)
+for (const arg of args) {
   if (!["--smoke", "--control-only"].includes(arg)) throw new Error(`Unknown option: ${arg}`);
+}
 const smoke = args.has("--smoke");
 const count = smoke ? 100 : 10_000;
 const repetitions = smoke ? 1 : 3;
@@ -34,9 +35,9 @@ function data(i: number) {
   };
 }
 function run(n: number, label: "parse-per-recipient" | "compile-once") {
-  const parseSamples: number[] = [];
-  const renderSamples: number[] = [];
-  const latency: number[] = [];
+  const parseSamples: Array<number> = [];
+  const renderSamples: Array<number> = [];
+  const latency: Array<number> = [];
   const digest = createHash("sha256");
   let peakRss = process.memoryUsage().rss;
   let outputBytes = 0;
@@ -66,7 +67,9 @@ function run(n: number, label: "parse-per-recipient" | "compile-once") {
     parseSamples.push(parsed - begin);
     renderSamples.push(finished - parsed);
     latency.push(finished - begin);
-    if (i % 100 === 0) peakRss = Math.max(peakRss, process.memoryUsage().rss);
+    if (i % 100 === 0) {
+      peakRss = Math.max(peakRss, process.memoryUsage().rss);
+    }
   }
   const elapsedMs = performance.now() - started;
   return {
@@ -112,8 +115,9 @@ console.log(
 console.log(JSON.stringify({ kind: "probe", ...(await processCheck("source-liquid")) }));
 console.log(JSON.stringify({ kind: "probe", ...(await processCheck("compiled-liquid")) }));
 console.log(JSON.stringify({ kind: "warmup", ...run(smoke ? 20 : 200, "parse-per-recipient") }));
-if (!args.has("--control-only"))
+if (!args.has("--control-only")) {
   console.log(JSON.stringify({ kind: "warmup", ...run(smoke ? 20 : 200, "compile-once") }));
+}
 for (let i = 1; i <= repetitions; i++) {
   const baseline = run(count, "parse-per-recipient");
   console.log(JSON.stringify({ kind: "repetition", repetition: i, ...baseline }));

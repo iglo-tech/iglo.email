@@ -42,14 +42,26 @@ export function createMarketingPolicy(deps: {
 }): MarketingPolicy {
   return {
     consent({ subscriberId, listId }) {
-      if (subscriberId === null) return "not_subscribed";
-      if (listId === null) return "list_unavailable";
+      if (subscriberId === null) {
+        return "not_subscribed";
+      }
+      if (listId === null) {
+        return "list_unavailable";
+      }
       const list = deps.lists.subscriberMetadata(listId);
-      if (!list) return "list_unavailable";
+      if (!list) {
+        return "list_unavailable";
+      }
       const membership = deps.subscribers.membership(subscriberId, listId);
-      if (!membership) return "not_subscribed";
-      if (membership.status === "unsubscribed") return "unsubscribed";
-      if (membership.status === "confirmed") return null;
+      if (!membership) {
+        return "not_subscribed";
+      }
+      if (membership.status === "unsubscribed") {
+        return "unsubscribed";
+      }
+      if (membership.status === "confirmed") {
+        return null;
+      }
       return list.optin === "double" ? "unconfirmed" : null;
     },
     capStart(now) {

@@ -16,7 +16,9 @@ export async function runMediaContract(target: {
   const reference = target.mode === "reference";
   const suffix = crypto.randomUUID().slice(0, 8);
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL media-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL media-${label}`);
+    }
   };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
@@ -32,7 +34,7 @@ export async function runMediaContract(target: {
         ...headers,
         ...(body === undefined || form ? {} : { "content-type": "application/json" }),
       },
-      ...(body === undefined ? {} : { body: form ? (body as FormData) : JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: form ? body : JSON.stringify(body) }),
       signal: AbortSignal.timeout(30_000),
     });
     const text = await response.text();
@@ -66,7 +68,9 @@ export async function runMediaContract(target: {
       await Bun.sleep(1200);
       for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(100)) {
         try {
-          if ((await fetch(`${target.baseUrl}/health`)).ok) break;
+          if ((await fetch(`${target.baseUrl}/health`)).ok) {
+            break;
+          }
         } catch {
           /* Still reloading. */
         }
@@ -76,9 +80,9 @@ export async function runMediaContract(target: {
   /** A served file, by the path of its URL: the host differs between root URL and test target. */
   const served = (url: string, init?: RequestInit) =>
     fetch(`${target.baseUrl}${new URL(url).pathname}`, init);
-  const roles: number[] = [],
-    users: number[] = [];
-  const apiUser = async (name: string, permissions: string[]) => {
+  const roles: Array<number> = [],
+    users: Array<number> = [];
+  const apiUser = async (name: string, permissions: Array<string>) => {
     const role = await call("/api/roles/users", "POST", {
       name: `${name}-${suffix}`,
       permissions,
@@ -99,7 +103,7 @@ export async function runMediaContract(target: {
     };
   };
   const originals = (await call("/api/settings")).body.data as Record<string, any>;
-  const created: number[] = [];
+  const created: Array<number> = [];
   const keep = <T extends { id: number }>(item: T) => (created.push(item.id), item);
   try {
     // Permissions.
@@ -146,8 +150,11 @@ export async function runMediaContract(target: {
       `meta-${JSON.stringify(image.meta)}`,
     );
     check(new URL(image.url).pathname === `/uploads/${name}`, `url-${image.url}`);
-    if (reference) check(image.thumb_url.endsWith(`/uploads/thumb_${name}`), "thumb-url");
-    else check(image.thumb_url === image.url, "thumb-url");
+    if (reference) {
+      check(image.thumb_url.endsWith(`/uploads/thumb_${name}`), "thumb-url");
+    } else {
+      check(image.thumb_url === image.url, "thumb-url");
+    }
     check(new URL(image.url).origin === originals["app.root_url"], "url-root");
 
     // Names made safe and unique.
@@ -221,7 +228,9 @@ export async function runMediaContract(target: {
     check(file.headers.get("content-type") === "image/png", "serve-type");
     check(Buffer.from(await file.arrayBuffer()).equals(Buffer.from(imagePng)), "serve-bytes");
     const head = await served(image.url, { method: "HEAD" });
-    if (!reference) check(head.status === 200, `head-${head.status}`);
+    if (!reference) {
+      check(head.status === 200, `head-${head.status}`);
+    }
     check((await served(image.thumb_url)).status === 200, "serve-thumb");
     check((await served(`${image.url}.missing`)).status === 404, "serve-missing");
     check(
@@ -269,7 +278,9 @@ export async function runMediaContract(target: {
     // Upstream answers its generic creation error; a missing row is simply not found here.
     check(missing.status === (reference ? 500 : 404), `delete-missing-${missing.status}`);
 
-    if (reference) return;
+    if (reference) {
+      return;
+    }
     const dataDir = target.dataDir!;
     const uploads = join(dataDir, "uploads");
     const raw = (path: string, init?: RequestInit) =>
@@ -283,7 +294,7 @@ export async function runMediaContract(target: {
       "../secret.txt",
       "../../secret.txt",
       "/etc/passwd",
-      "..\\..\\secret.txt",
+      String.raw`..\..\secret.txt`,
       `sub/../../secret-${suffix}.txt`,
     ]) {
       const item = keep(await stored(hostile, "x", "text/plain"));
@@ -413,7 +424,9 @@ export async function runMediaContract(target: {
 
     // S3 is refused and its settings stay.
     const s3 = { "upload.s3.bucket": `bucket-${suffix}`, "upload.provider": "s3" };
-    for (const [key, value] of Object.entries(s3)) await setting(key, value);
+    for (const [key, value] of Object.entries(s3)) {
+      await setting(key, value);
+    }
     const refusedS3 = await upload(`s3-${suffix}.png`);
     check(refusedS3.status === 400, `s3-upload-${refusedS3.status}`);
     check(
@@ -463,22 +476,32 @@ export async function runMediaContract(target: {
     await target.restart!();
     check((await served(image.url)).status === 200, "recovered-serve");
   } finally {
-    for (const id of created) await call(`/api/media/${id}`, "DELETE");
-    for (const id of users) await call(`/api/users/${id}`, "DELETE");
-    for (const id of roles) await call(`/api/roles/users/${id}`, "DELETE");
+    for (const id of created) {
+      await call(`/api/media/${id}`, "DELETE");
+    }
+    for (const id of users) {
+      await call(`/api/users/${id}`, "DELETE");
+    }
+    for (const id of roles) {
+      await call(`/api/roles/users/${id}`, "DELETE");
+    }
     await call("/api/settings/upload.extensions", "PUT", originals["upload.extensions"]);
   }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runMediaContract({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS media reference contract\n");
   } catch (error) {

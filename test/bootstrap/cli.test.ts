@@ -19,7 +19,9 @@ beforeAll(async () => {
   const fixture = await Bun.file(join(repository, "test/bootstrap/fixtures.md")).text();
   adminUser = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1] ?? "";
   adminPassword = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1] ?? "";
-  if (!adminUser || !adminPassword) throw new Error("Bootstrap test credentials are missing");
+  if (!adminUser || !adminPassword) {
+    throw new Error("Bootstrap test credentials are missing");
+  }
 
   await ensureProductionBuild();
 
@@ -30,10 +32,12 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
-  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+  if (temporaryDirectory) {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
-function start(args: string[], env: Record<string, string> = {}) {
+function start(args: Array<string>, env: Record<string, string> = {}) {
   return Bun.spawn([executable, ...args], {
     cwd: temporaryDirectory,
     env: { PATH: "", ...env },
@@ -42,20 +46,22 @@ function start(args: string[], env: Record<string, string> = {}) {
   });
 }
 
-async function runCli(args: string[], env: Record<string, string> = {}) {
+async function runCli(args: Array<string>, env: Record<string, string> = {}) {
   const child = start(args, env);
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
     child.kill("SIGKILL");
-  }, 3_000);
+  }, 3000);
   try {
     const [code, stdout, stderr] = await Promise.all([
       child.exited,
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
     ]);
-    if (timedOut) throw new Error(`CLI did not exit: ${args.join(" ")}`);
+    if (timedOut) {
+      throw new Error(`CLI did not exit: ${args.join(" ")}`);
+    }
     return { code, stdout, stderr };
   } finally {
     clearTimeout(timer);
@@ -68,7 +74,7 @@ async function runCli(args: string[], env: Record<string, string> = {}) {
  */
 async function launch(
   port: number,
-  build: (port: number) => { args: string[]; env?: Record<string, string> },
+  build: (port: number) => { args: Array<string>; env?: Record<string, string> },
 ) {
   const { args, env = {} } = build(port);
   const child = start(args, env);
@@ -86,7 +92,9 @@ async function launch(
  * The executable started on a free port. `build` gives the arguments from the port; a start that
  * reports its port in use is retried on another port.
  */
-function startOnPort(build: (port: number) => { args: string[]; env?: Record<string, string> }) {
+function startOnPort(
+  build: (port: number) => { args: Array<string>; env?: Record<string, string> },
+) {
   return startOnFreePort(async (port) => ({ child: await launch(port, build), port }));
 }
 
@@ -96,7 +104,7 @@ function startOnPort(build: (port: number) => { args: string[]; env?: Record<str
  */
 async function shutDown(child: ReturnType<typeof start>, signal: "SIGTERM" | "SIGINT") {
   // 3 s, not the helper's 5 s: a serial `bun test` gives each test 5 s, so SIGKILL must come first.
-  const code = await stopChild(child, signal, 3_000);
+  const code = await stopChild(child, signal, 3000);
   if (code !== 0) {
     const stderr = await new Response(child.stderr).text();
     throw new Error(
@@ -120,7 +128,9 @@ async function login(
     .getSetCookie()
     .find((item) => item.startsWith("nonce="))
     ?.split(";", 1)[0];
-  if (!nonce || !cookie) throw new Error("Login form is missing its nonce");
+  if (!nonce || !cookie) {
+    throw new Error("Login form is missing its nonce");
+  }
   return fetch(`${base}/admin/login`, {
     method: "POST",
     redirect: "manual",
@@ -243,16 +253,16 @@ describe("compiled executable", () => {
       expect(body).not.toContain(adminPassword);
       const wrongMethod = await fetch(`http://127.0.0.1:${port}/health`, {
         method: "POST",
-        signal: AbortSignal.timeout(1_000),
+        signal: AbortSignal.timeout(1000),
       });
       expect(wrongMethod.status).not.toBe(200);
       const unknownPath = await fetch(`http://127.0.0.1:${port}/missing`, {
-        signal: AbortSignal.timeout(1_000),
+        signal: AbortSignal.timeout(1000),
       });
       expect(unknownPath.status).toBe(404);
       for (const path of ["/api/not-present", "/api/lang/en"]) {
         const apiResponse = await fetch(`http://127.0.0.1:${port}${path}`, {
-          signal: AbortSignal.timeout(1_000),
+          signal: AbortSignal.timeout(1000),
         });
         expect(apiResponse.status).toBe(404);
         expect(apiResponse.headers.get("content-type")).toBe("application/json");
@@ -348,10 +358,10 @@ describe("compiled executable", () => {
       const { result } = (await response.json()) as {
         result: {
           version: string;
-          shapes: Record<string, string[]>;
+          shapes: Record<string, Array<string>>;
           integrity: string;
-          foreignKeyErrors: unknown[];
-          backups: string[];
+          foreignKeyErrors: Array<unknown>;
+          backups: Array<string>;
         };
       };
       expect(result).toMatchObject({
@@ -366,7 +376,7 @@ describe("compiled executable", () => {
         method: "POST",
         body: JSON.stringify({ action: "read-persist" }),
       });
-      expect(((await search.json()) as { result: string[] }).result).toEqual([
+      expect(((await search.json()) as { result: Array<string> }).result).toEqual([
         "persistent@example.test",
       ]);
       expect(result.shapes.mat_list_subscriber_stats).toEqual([
@@ -397,7 +407,9 @@ describe("compiled executable", () => {
     });
     try {
       const address = socket.address();
-      if (!address || typeof address === "string") throw new Error("No test port was assigned");
+      if (!address || typeof address === "string") {
+        throw new Error("No test port was assigned");
+      }
       const dataDir = join(temporaryDirectory, "listen-failure");
       const result = await runCli(["--port", String(address.port), "--data-dir", dataDir]);
       expect(result.code).not.toBe(0);
@@ -478,7 +490,7 @@ describe("compiled executable", () => {
       [[], { IGLO_EMAIL_DATA_DIR: "" }, "data-dir"],
       [[], { IGLO_EMAIL_ROOT_URL: "invalid" }, "root-url"],
       [["--port", "bad"], { IGLO_EMAIL_PORT: "9000" }, "port"],
-    ] as Array<[string[], Record<string, string>, string]>) {
+    ] as Array<[Array<string>, Record<string, string>, string]>) {
       const result = await runCli(args, env);
       expect(result.code).not.toBe(0);
       expect(result.stderr.toLowerCase()).toContain(message);
@@ -575,13 +587,15 @@ describe("compiled executable", () => {
         },
         ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_ADMIN_USER"],
       ],
-    ] as Array<[Record<string, string>, string[]]>) {
+    ] as Array<[Record<string, string>, Array<string>]>) {
       const result = await runCli(
         ["--data-dir", join(temporaryDirectory, `api-partial-${crypto.randomUUID()}`)],
         env,
       );
       expect(result.code).not.toBe(0);
-      for (const name of names) expect(result.stderr).toContain(name);
+      for (const name of names) {
+        expect(result.stderr).toContain(name);
+      }
       expect(result.stderr).not.toContain(token);
       expect(result.stderr).not.toContain(adminPassword);
     }
@@ -608,7 +622,7 @@ describe("compiled executable", () => {
         headers: { authorization: `token logs-api:${token}` },
       });
       expect(response.status).toBe(200);
-      const lines = (await response.json()).data as string[];
+      const lines = (await response.json()).data as Array<string>;
       // One line per process, in the fixed wording of the log buffer, with no error class.
       expect(lines.filter((line) => line.includes("X-Forwarded-For"))).toEqual([
         expect.stringMatching(
@@ -648,7 +662,9 @@ describe("compiled executable", () => {
     ] as const) {
       const result = await runCli(["--root-url", value]);
       expect(result.code).not.toBe(0);
-      for (const text of expected) expect(result.stderr).toContain(text);
+      for (const text of expected) {
+        expect(result.stderr).toContain(text);
+      }
       expect(result.stderr).not.toContain("hunter2");
       expect(result.stderr).not.toContain("token=abc");
     }
@@ -714,7 +730,7 @@ describe("compiled executable", () => {
     const hostile: ReadonlyArray<readonly [string, string | null]> = [
       ["news.example.com@evil.example.net", null],
       ["news.example.com/@evil.example.net", null],
-      ["news.example.com\\evil.example.net", null],
+      [String.raw`news.example.com\evil.example.net`, null],
       ["news.example.com?next=https://evil.example.net", null],
       ["news.example.com#https://evil.example.net", null],
       ["news.example.com/%2f%2fevil.example.net", "news.example.com"],
@@ -768,7 +784,9 @@ describe("compiled executable", () => {
       expect(refused.code).not.toBe(0);
       const suggestion = /such as (\S+)/.exec(refused.stderr)?.[1];
       expect(suggestion).toBe(`https://${value}`);
-      if (!suggestion) throw new Error("No suggestion");
+      if (!suggestion) {
+        throw new Error("No suggestion");
+      }
       expect(new URL(suggestion).hostname).toBe(intended);
 
       // The suggestion starts the server, and the server's root URL is the one meant.

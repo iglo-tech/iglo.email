@@ -14,12 +14,12 @@ export interface EventCount {
 export type AttrOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "exists";
 
 export type Condition =
-  | { all: Condition[] }
-  | { any: Condition[] }
+  | { all: Array<Condition> }
+  | { any: Array<Condition> }
   | { not: Condition }
   | { event: string; since?: Since; where?: Record<string, Scalar>; count?: EventCount }
-  | { attr: string; op: AttrOp; value?: Scalar | Scalar[] }
-  | { list: number; status?: string[] }
+  | { attr: string; op: AttrOp; value?: Scalar | Array<Scalar> }
+  | { list: number; status?: Array<string> }
   | { sql: string };
 
 /**
@@ -73,7 +73,7 @@ export interface FieldError {
 
 export type ValidationResult =
   | { ok: true; condition: Condition }
-  | { ok: false; errors: FieldError[] };
+  | { ok: false; errors: Array<FieldError> };
 
 export type ConditionErrorKind =
   /** The condition is not valid. */

@@ -9,13 +9,17 @@ import type { CampaignsFixture } from "@/test/campaigns/fixture";
 export async function readerSession(
   f: CampaignsFixture,
   name: string,
-  permissions: string[],
-  lists: { id: number; permissions: string[] }[],
+  permissions: Array<string>,
+  lists: Array<{ id: number; permissions: string[] }>,
 ): Promise<Record<string, string>> {
   const role = await f.json("/api/roles/users", "POST", { name, permissions });
-  if (role.status !== 200) throw new Error(`role ${role.status}`);
+  if (role.status !== 200) {
+    throw new Error(`role ${role.status}`);
+  }
   const listRole = await f.json("/api/roles/lists", "POST", { name: `${name}-lists`, lists });
-  if (listRole.status !== 200) throw new Error(`list role ${listRole.status}`);
+  if (listRole.status !== 200) {
+    throw new Error(`list role ${listRole.status}`);
+  }
   const created = await f.json("/api/users", "POST", {
     username: name,
     email: `${name}@fixture.test`,
@@ -28,9 +32,13 @@ export async function readerSession(
     user_role_id: role.body.data.id,
     list_role_id: listRole.body.data.id,
   });
-  if (created.status !== 200) throw new Error(`user ${created.status}`);
+  if (created.status !== 200) {
+    throw new Error(`user ${created.status}`);
+  }
   const session = await f.owners.auth.login(name, "reader-password-1");
-  if (!session || !("id" in session)) throw new Error("reader login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("reader login failed");
+  }
   return { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
 }
 

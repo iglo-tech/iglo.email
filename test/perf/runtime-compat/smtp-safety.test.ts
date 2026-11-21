@@ -22,6 +22,7 @@ test("requires a complete reference-run context with numeric loopback destinatio
     { ...valid, MAILPIT_URL: "http://127.0.0.1:8025/other" },
     { ...valid, MAILPIT_URL: "http://user:pass@127.0.0.1:8025" },
     { ...valid, REFERENCE_RUN_ID: "unowned" },
-  ])
+  ]) {
     expect(() => referenceMailpit(invalid)).toThrow();
+  }
 });

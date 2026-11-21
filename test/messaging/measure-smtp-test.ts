@@ -15,10 +15,10 @@ const mailpit = new Mailpit(sink, marker);
 try {
   await withProduction(
     resolve("dist/iglo.email"),
-    AbortSignal.timeout(120000),
+    AbortSignal.timeout(120_000),
     async (origin) => {
       const auth = await provisionApiUser(origin, admin);
-      const latencies: number[] = [];
+      const latencies: Array<number> = [];
       for (let i = 0; i < 35; i++) {
         const begin = performance.now();
         const response = await fetch(`${origin}/api/settings/smtp/test`, {
@@ -37,7 +37,9 @@ try {
         });
         assert.equal(response.status, 200);
         assert.deepEqual(await response.json(), { data: [] });
-        if (i >= 5) latencies.push(performance.now() - begin);
+        if (i >= 5) {
+          latencies.push(performance.now() - begin);
+        }
       }
       const query = new URLSearchParams({ query: `to:${marker}@example.test`, limit: "100" });
       const list = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
@@ -63,7 +65,7 @@ try {
       );
     },
     admin,
-    120000,
+    120_000,
   );
 } finally {
   await mailpit.removeOwned();

@@ -23,7 +23,7 @@ export function createAttachments(
   /** Least recently used first. An entry holds for one version of the file. */
   const cache = new Map<string, { content: Buffer; size: number; modified: number }>();
   const reading = new Map<string, Promise<Buffer>>();
-  const waiting: (() => void)[] = [];
+  const waiting: Array<() => void> = [];
   let loading = 0;
   let cached = 0;
   const forget = (key: string) => {
@@ -44,16 +44,22 @@ export function createAttachments(
     // Concurrent requests for a template's image share one read and not a copy each.
     const version = `${key}:${file.size}:${file.modified}`;
     const pending = reading.get(version);
-    if (pending) return pending;
+    if (pending) {
+      return pending;
+    }
     const read = files
       .read(file.path)
       .then((content) => {
         forget(key);
-        if (content.length > cacheBytes) return content;
+        if (content.length > cacheBytes) {
+          return content;
+        }
         cache.set(key, { content, size: file.size, modified: file.modified });
         cached += content.length;
         for (const oldest of cache.keys()) {
-          if (cached <= cacheBytes) break;
+          if (cached <= cacheBytes) {
+            break;
+          }
           forget(oldest);
         }
         return content;
@@ -65,19 +71,27 @@ export function createAttachments(
 
   /** Every item or an error: a campaign never goes out without one of its files. */
   async function load(
-    ids: readonly (bigint | number)[],
-    inline: readonly InlineImage[],
-  ): Promise<Attachment[]> {
-    const out: Attachment[] = [];
+    ids: ReadonlyArray<bigint | number>,
+    inline: ReadonlyArray<InlineImage>,
+  ): Promise<Array<Attachment>> {
+    const out: Array<Attachment> = [];
     let total = 0;
     for (const { id, cid } of [...ids.map((id) => ({ id, cid: undefined })), ...inline]) {
       const media = store.get(id);
-      if (!media) throw new Error(`attachment ${id} not found`);
-      if (media.provider !== "filesystem") throw new Error(`attachment ${id} is not stored here`);
+      if (!media) {
+        throw new Error(`attachment ${id} not found`);
+      }
+      if (media.provider !== "filesystem") {
+        throw new Error(`attachment ${id} is not stored here`);
+      }
       const file = await files.stat(media.filename);
-      if (!file) throw new Error(`attachment ${id} has no file`);
+      if (!file) {
+        throw new Error(`attachment ${id} has no file`);
+      }
       total += file.size;
-      if (total > MAX_BYTES) throw new Error(`attachments over ${MAX_BYTES} bytes`);
+      if (total > MAX_BYTES) {
+        throw new Error(`attachments over ${MAX_BYTES} bytes`);
+      }
       out.push({
         name: media.filename,
         content: await bytes(id, file),
@@ -93,20 +107,29 @@ export function createAttachments(
 
   /** At most MAX_LOADS load at a time, so requests in a burst wait holding no bytes. */
   return async function attachments(
-    ids: readonly (bigint | number)[],
-    inline: readonly InlineImage[] = [],
-  ): Promise<Attachment[]> {
-    if (ids.length + inline.length > MAX_FILES)
+    ids: ReadonlyArray<bigint | number>,
+    inline: ReadonlyArray<InlineImage> = [],
+  ): Promise<Array<Attachment>> {
+    if (ids.length + inline.length > MAX_FILES) {
       throw new Error(`more than ${MAX_FILES} attachments`);
-    if (!ids.length && !inline.length) return [];
-    if (loading < MAX_LOADS) loading++;
-    else await new Promise<void>((turn) => waiting.push(turn));
+    }
+    if (!ids.length && !inline.length) {
+      return [];
+    }
+    if (loading < MAX_LOADS) {
+      loading++;
+    } else {
+      await new Promise<void>((turn) => waiting.push(turn));
+    }
     try {
       return await load(ids, inline);
     } finally {
       const next = waiting.shift();
-      if (next) next();
-      else loading--;
+      if (next) {
+        next();
+      } else {
+        loading--;
+      }
     }
   };
 }

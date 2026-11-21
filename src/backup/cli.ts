@@ -1,12 +1,7 @@
 // The `backup` command. Not ported: listmonk has no backup command.
 import { createRealClock } from "@/clock";
-import {
-  createBackup,
-  inspectBackup,
-  releaseHold,
-  type BackupOptions,
-  type Inspection,
-} from "@/backup/snapshot";
+import { createBackup, inspectBackup, releaseHold } from "@/backup/snapshot";
+import type { BackupOptions, Inspection } from "@/backup/snapshot";
 import { productionMigrations } from "@/db/migrations";
 
 export const backupHelp = `
@@ -37,7 +32,7 @@ interface BackupArguments {
   dataDir?: string;
 }
 
-function parseArguments(args: string[]): BackupArguments {
+function parseArguments(args: Array<string>): BackupArguments {
   const parsed: BackupArguments = {
     help: false,
     force: false,
@@ -47,29 +42,39 @@ function parseArguments(args: string[]): BackupArguments {
   const valued = { "--output": "output", "--verify": "verify", "--data-dir": "dataDir" } as const;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
-    if (arg === "--help") parsed.help = true;
-    else if (arg === "--force") parsed.force = true;
-    else if (arg === "--release-hold") parsed.releaseHold = true;
-    else if (arg === "--consent-reconciled") parsed.acknowledged = true;
-    else {
+    if (arg === "--help") {
+      parsed.help = true;
+    } else if (arg === "--force") {
+      parsed.force = true;
+    } else if (arg === "--release-hold") {
+      parsed.releaseHold = true;
+    } else if (arg === "--consent-reconciled") {
+      parsed.acknowledged = true;
+    } else {
       const equals = arg.indexOf("=");
       const name = equals === -1 ? arg : arg.slice(0, equals);
-      if (!Object.hasOwn(valued, name)) throw new Error(`Unknown flag: ${name}`);
+      if (!Object.hasOwn(valued, name)) {
+        throw new Error(`Unknown flag: ${name}`);
+      }
       const value = equals === -1 ? args[++i] : arg.slice(equals + 1);
-      if (value === undefined || value.trim() === "" || value.includes("\0"))
+      if (value === undefined || value.trim() === "" || value.includes("\0")) {
         throw new Error(`${name} requires a value`);
+      }
       parsed[valued[name as keyof typeof valued]] = value;
     }
   }
-  if (parsed.verify !== undefined && (parsed.output !== undefined || parsed.force))
+  if (parsed.verify !== undefined && (parsed.output !== undefined || parsed.force)) {
     throw new Error("--verify cannot be combined with --output or --force");
+  }
   if (
     parsed.releaseHold &&
     (parsed.verify !== undefined || parsed.output !== undefined || parsed.force)
-  )
+  ) {
     throw new Error("--release-hold cannot be combined with --verify, --output or --force");
-  if (parsed.acknowledged && !parsed.releaseHold)
+  }
+  if (parsed.acknowledged && !parsed.releaseHold) {
     throw new Error("--consent-reconciled only goes with --release-hold");
+  }
   return parsed;
 }
 
@@ -85,12 +90,13 @@ function print(report: Inspection): void {
         : ""),
   );
   // Not a failure: such a row behaves as a missing attachment does, here as on the live server.
-  for (const name of report.missing)
+  for (const name of report.missing) {
     process.stderr.write(`A media row names a file the backup lacks: ${name}\n`);
+  }
 }
 
 export function runBackup(
-  args: string[],
+  args: Array<string>,
   env: Environment,
   hooks: Pick<BackupOptions, "beforePublish"> = {},
 ): void {
@@ -103,11 +109,12 @@ export function runBackup(
   const supportedVersion = productionMigrations.length;
   const dataDir = parsed.dataDir ?? env.IGLO_EMAIL_DATA_DIR ?? "./data";
   if (parsed.releaseHold) {
-    if (!parsed.acknowledged)
+    if (!parsed.acknowledged) {
       throw new Error(
         "--release-hold needs --consent-reconciled: restoring lost opt-outs and deliveries " +
           "after the backup is yours to do first (docs/operations.md, Restore)",
       );
+    }
     const released = releaseHold({ dataDir, clock, supportedVersion });
     process.stdout.write(
       released
@@ -119,11 +126,12 @@ export function runBackup(
   if (parsed.verify !== undefined) {
     const report = inspectBackup(parsed.verify, clock, supportedVersion);
     print(report);
-    if (report.schemaVersion > supportedVersion)
+    if (report.schemaVersion > supportedVersion) {
       throw new Error(
         `Database version ${report.schemaVersion} is ahead of this executable, which supports ` +
           `${supportedVersion}: restore it with a newer one`,
       );
+    }
     process.stdout.write(
       report.schemaVersion < supportedVersion
         ? `Integrity: ok; the server migrates this backup to version ${supportedVersion}\n`

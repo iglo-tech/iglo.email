@@ -10,7 +10,7 @@ import type { Database } from "bun:sqlite";
  */
 /** Sends to these addresses with no subscriber; the anonymizer below clears them. */
 export function createUnlinkedSends(db: Database) {
-  return (emails: string[]) =>
+  return (emails: Array<string>) =>
     db
       .query<{ id: bigint }, [string]>(
         `SELECT id FROM sends INDEXED BY idx_sends_unlinked_to WHERE subscriber_id IS NULL
@@ -21,9 +21,13 @@ export function createUnlinkedSends(db: Database) {
 }
 
 export function createSendAnonymizer(db: Database) {
-  return (subscribers: { id: bigint; email: string }[]) => {
-    if (!db.inTransaction) throw new Error("Sends are anonymized in the caller's transaction");
-    if (!subscribers.length) return;
+  return (subscribers: Array<{ id: bigint; email: string }>) => {
+    if (!db.inTransaction) {
+      throw new Error("Sends are anonymized in the caller's transaction");
+    }
+    if (!subscribers.length) {
+      return;
+    }
     db.query(
       `UPDATE sends SET
          status = CASE status WHEN 'queued' THEN 'skipped' ELSE status END,

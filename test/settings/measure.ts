@@ -2,7 +2,7 @@
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 const admin = { user: "m12-measure-admin", password: "m12-measure-password" };
-const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+const mean = (values: Array<number>) => values.reduce((a, b) => a + b, 0) / values.length;
 for (let repetition = 1; repetition <= 3; repetition++) {
   await withProduction(
     resolve(process.argv[2] ?? "dist/iglo.email"),
@@ -19,15 +19,19 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           headers,
           ...(value === undefined ? {} : { body: JSON.stringify(value) }),
         });
-        if (response.status !== 200) throw new Error(`Unexpected HTTP status ${response.status}`);
+        if (response.status !== 200) {
+          throw new Error(`Unexpected HTTP status ${response.status}`);
+        }
         return (await response.json()).data;
       };
       const measure = async (count: number, warm: number, action: (i: number) => Promise<void>) => {
-        const samples: number[] = [];
+        const samples: Array<number> = [];
         for (let i = 0; i < count + warm; i++) {
           const start = performance.now();
           await action(i);
-          if (i >= warm) samples.push(performance.now() - start);
+          if (i >= warm) {
+            samples.push(performance.now() - start);
+          }
         }
         return mean(samples);
       };
@@ -47,18 +51,21 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         await request("/api/settings");
       });
       const snapshot = await request("/api/settings");
-      for (const field of ["smtp", "bounce.mailboxes", "messengers"])
+      for (const field of ["smtp", "bounce.mailboxes", "messengers"]) {
         for (const item of snapshot[field]) item.password = "";
-      for (const field of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
+      }
+      for (const field of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
         snapshot[field] = "";
+      }
       for (const [field, subfield] of [
         ["bounce.azure", "shared_secret"],
         ["bounce.postmark", "password"],
         ["bounce.forwardemail", "key"],
         ["bounce.lettermint", "key"],
         ["security.oidc", "client_secret"],
-      ] as const)
+      ] as const) {
         snapshot[field][subfield] = "";
+      }
       snapshot["security.captcha"].hcaptcha.secret = "";
       const full = await measure(20, 5, async (i) => {
         snapshot["app.site_name"] = `measure-${i}`;
@@ -79,7 +86,9 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           .getSetCookie()
           .find((value) => value.startsWith("nonce="))
           ?.split(";", 1)[0];
-        if (!nonce || !cookie) throw new Error("Missing synthetic login nonce");
+        if (!nonce || !cookie) {
+          throw new Error("Missing synthetic login nonce");
+        }
         const response = await fetch(origin + "/admin/login", {
           method: "POST",
           redirect: "manual",
@@ -91,13 +100,17 @@ for (let repetition = 1; repetition <= 3; repetition++) {
             .getSetCookie()
             .find((value) => value.startsWith("session="))
             ?.split(";", 1)[0] ?? "";
-        if (response.status !== 302 || !sessionCookie) throw new Error("Synthetic login failed");
+        if (response.status !== 302 || !sessionCookie) {
+          throw new Error("Synthetic login failed");
+        }
       });
       const sessionRead = await measure(50, 5, async () => {
         const response = await fetch(origin + "/api/profile", {
           headers: { Cookie: sessionCookie },
         });
-        if (response.status !== 200) throw new Error("Synthetic session read failed");
+        if (response.status !== 200) {
+          throw new Error("Synthetic session read failed");
+        }
         await response.arrayBuffer();
       });
       process.stdout.write(

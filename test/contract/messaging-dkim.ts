@@ -43,7 +43,9 @@ export async function runDKIMSettings(target: {
       publicKeyEncoding: { type: "spki", format: "pem" },
     });
     const servers = structuredClone(initial.smtp);
-    for (const item of servers) item.password = "";
+    for (const item of servers) {
+      item.password = "";
+    }
     servers[0] = {
       ...servers[0],
       host: sink.host,
@@ -78,7 +80,7 @@ export async function runDKIMSettings(target: {
         assert.equal(found.length, 1);
         const raw = await mailpit.raw(found[0]!.ID);
         assert.equal(verifyFixtureDkim(raw, createPublicKey(verificationKey)), signed);
-        if (signed)
+        if (signed) {
           assert.equal(
             verifyFixtureDkim(
               raw.replace("retained settings fixture", "tampered settings fixture"),
@@ -86,6 +88,7 @@ export async function runDKIMSettings(target: {
             ),
             false,
           );
+        }
       }
     };
     assert.equal((await request("/api/settings/smtp", "PUT", servers)).status, 200);
@@ -97,7 +100,9 @@ export async function runDKIMSettings(target: {
     const retaining = structuredClone(saved.smtp);
     for (const item of retaining) {
       item.password = "";
-      if (item.dkim) item.dkim.private_key = "";
+      if (item.dkim) {
+        item.dkim.private_key = "";
+      }
     }
     assert.equal((await request("/api/settings/smtp", "PUT", retaining)).status, 200);
     await target.restart();
@@ -110,20 +115,24 @@ export async function runDKIMSettings(target: {
     assert.deepEqual(await bad.json(), { message: "Invalid DKIM configuration." });
     assert.deepEqual((await read()).smtp[0].dkim, saved.smtp[0].dkim);
     const full = await read();
-    for (const key of ["smtp", "messengers", "bounce.mailboxes"])
+    for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
       for (const item of full[key]) {
         item.password = "";
         if (item.dkim) item.dkim.private_key = "";
       }
-    for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) full[key] = "";
+    }
+    for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
+      full[key] = "";
+    }
     for (const [key, field] of [
       ["bounce.azure", "shared_secret"],
       ["bounce.postmark", "password"],
       ["bounce.forwardemail", "key"],
       ["bounce.lettermint", "key"],
       ["security.oidc", "client_secret"],
-    ] as const)
+    ] as const) {
       full[key][field] = "";
+    }
     full["security.captcha"].hcaptcha.secret = "";
     const baseline = await read();
     const shortKey = generateKeyPairSync("rsa", {
@@ -151,7 +160,7 @@ export async function runDKIMSettings(target: {
       key_selector: "m08",
       private_key: privateKey,
     };
-    const candidates: unknown[] = [
+    const candidates: Array<unknown> = [
       [],
       "invalid",
       { domain_name: "fixture.example.test" },
@@ -161,7 +170,7 @@ export async function runDKIMSettings(target: {
       { ...valid, private_key: encrypted },
       { ...valid, private_key: ecKey },
       { ...valid, private_key: shortKey },
-      { ...valid, private_key: "x".repeat(16385) },
+      { ...valid, private_key: "x".repeat(16_385) },
       { ...valid, private_key: null },
     ];
     for (const candidate of candidates) {

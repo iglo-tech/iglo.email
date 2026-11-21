@@ -1,11 +1,14 @@
 // B5: a reschedule that shortens a wait makes the step due now, never late
 // (docs/design/05-sequences.md#reschedule), through the real scheduler on the injected clock.
 import { afterEach, expect, test } from "bun:test";
-import { day, schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { day, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -18,7 +21,7 @@ async function shorten(f: SchedulerFixture, id: number, wait: string) {
   delete full.status;
   expect((await f.json(`/api/sequences/${id}`, "PUT", full)).status).toBe(200);
 }
-const reschedule = (f: SchedulerFixture, seq: { id: number; steps: { id: number }[] }) =>
+const reschedule = (f: SchedulerFixture, seq: { id: number; steps: Array<{ id: number }> }) =>
   f.json(`/api/sequences/${seq.id}/steps/${seq.steps[0]!.id}/reschedule`, "POST");
 async function sent(f: SchedulerFixture) {
   await f.until(

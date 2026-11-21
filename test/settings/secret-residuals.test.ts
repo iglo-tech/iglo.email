@@ -2,7 +2,8 @@
 // session. The page sends each masked secret back empty, which the API reads as "keep"; `unmasked`
 // takes the page's shape the same way (settings.js onSubmit).
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { admin, api, get, login, type Fixture } from "@/test/admin/support";
+import { admin, api, get, login } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;
@@ -20,10 +21,15 @@ async function read(): Promise<Record<string, any>> {
 }
 
 function unmasked(value: unknown): any {
-  if (typeof value === "string") return /^•+$/.test(value) ? "" : value;
-  if (Array.isArray(value)) return value.map(unmasked);
-  if (value && typeof value === "object")
+  if (typeof value === "string") {
+    return /^•+$/.test(value) ? "" : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(unmasked);
+  }
+  if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unmasked(item)]));
+  }
   return value;
 }
 

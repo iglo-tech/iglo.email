@@ -41,7 +41,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
       expect(installed.result.shapes[name]).toBeDefined();
       expect(installed.result.counts[name]).toBe("0");
     }
-    const columns: Record<string, string[]> = {
+    const columns: Record<string, Array<string>> = {
       subscribers: [
         "id",
         "uuid",

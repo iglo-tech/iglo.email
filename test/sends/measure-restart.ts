@@ -1,6 +1,7 @@
 // Finite timing at compiled producer process/HTTP barriers, outside production.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,7 +20,9 @@ async function launch(dataDir: string) {
     let output = "";
     child.stdout.on("data", (chunk) => {
       output += chunk.toString();
-      if (output.includes("\n")) ok(output.split("\n")[0]!);
+      if (output.includes("\n")) {
+        ok(output.split("\n")[0]!);
+      }
     });
     child.once("exit", () => fail(new Error("Producer exited before readiness")));
   });
@@ -34,7 +37,7 @@ async function launch(dataDir: string) {
       method,
       headers,
       ...(body === undefined ? {} : { body }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(10_000),
     });
     assert.equal(response.status, 200);
     return ((await response.json()) as { data: any }).data;
@@ -45,7 +48,9 @@ async function kill(child: ChildProcessWithoutNullStreams) {
   const done = new Promise<void>((ok) => child.once("exit", () => ok()));
   child.kill("SIGKILL");
   await done;
-  if (active === child) active = undefined;
+  if (active === child) {
+    active = undefined;
+  }
 }
 try {
   for (let repetition = 1; repetition <= 3; repetition++) {
@@ -77,6 +82,8 @@ try {
     await kill(worker.child);
   }
 } finally {
-  if (active) await kill(active);
+  if (active) {
+    await kill(active);
+  }
   await rm(directory, { recursive: true, force: true });
 }

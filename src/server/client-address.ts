@@ -12,9 +12,15 @@ const normalize = (address: string) =>
 export function parseProxy(value: string): { address: string; prefix: number } | undefined {
   const [address = "", prefix, ...rest] = value.split("/");
   const size = isIP(address) === 6 ? 128 : isIP(address) === 4 ? 32 : 0;
-  if (!size || rest.length) return undefined;
-  if (prefix === undefined) return { address, prefix: size };
-  if (!/^\d{1,3}$/.test(prefix) || Number(prefix) < 1 || Number(prefix) > size) return undefined;
+  if (!size || rest.length) {
+    return undefined;
+  }
+  if (prefix === undefined) {
+    return { address, prefix: size };
+  }
+  if (!/^\d{1,3}$/.test(prefix) || Number(prefix) < 1 || Number(prefix) > size) {
+    return undefined;
+  }
   return { address, prefix: Number(prefix) };
 }
 
@@ -26,7 +32,7 @@ export function parseProxy(value: string): { address: string; prefix: number } |
  * A header from a peer outside the list is ignored, and the first such request is reported to
  * `logger` (D107), once until the list changes. The report names the peer, never the header.
  */
-export function createClientAddress(trusted: () => string[], logger?: ErrorLogger) {
+export function createClientAddress(trusted: () => Array<string>, logger?: ErrorLogger) {
   let key: string | undefined;
   let proxies = new BlockList();
   let reported = false;
@@ -40,7 +46,9 @@ export function createClientAddress(trusted: () => string[], logger?: ErrorLogge
       proxies = new BlockList();
       for (const entry of list) {
         const proxy = parseProxy(entry);
-        if (proxy) proxies.addSubnet(proxy.address, proxy.prefix, family(proxy.address));
+        if (proxy) {
+          proxies.addSubnet(proxy.address, proxy.prefix, family(proxy.address));
+        }
       }
     }
     let client = normalize(context.peerAddress);
@@ -54,9 +62,13 @@ export function createClientAddress(trusted: () => string[], logger?: ErrorLogge
     const hops = context.request.headers.get("x-forwarded-for")?.split(",") ?? [];
     for (const raw of hops.reverse()) {
       const hop = normalize(raw.trim());
-      if (!isIP(hop)) break;
+      if (!isIP(hop)) {
+        break;
+      }
       client = hop;
-      if (!isTrusted(hop)) break;
+      if (!isTrusted(hop)) {
+        break;
+      }
     }
     return client;
   };

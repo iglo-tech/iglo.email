@@ -7,9 +7,11 @@ import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 
-const directories: string[] = [];
+const directories: Array<string> = [];
 afterEach(() => {
-  for (const d of directories.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const d of directories.splice(0)) {
+    rmSync(d, { recursive: true, force: true });
+  }
 });
 
 test("a blocklisted subscriber's live memberships become unsubscribed, nothing else changes", () => {
@@ -23,13 +25,14 @@ test("a blocklisted subscriber's live memberships become unsubscribed, nothing e
   for (const [id, status] of [
     [1, "blocklisted"],
     [2, "enabled"],
-  ] as const)
+  ] as const) {
     db.run("INSERT INTO subscribers (id, uuid, email, name, status) VALUES (?, ?, ?, 'S', ?)", [
       id,
       `u${id}`,
       `s${id}@example.test`,
       status,
     ]);
+  }
   db.run(
     `INSERT INTO subscriber_lists (subscriber_id, list_id, status, created_at, updated_at)
      VALUES (1, 1, 'confirmed', ?1, ?1), (2, 1, 'confirmed', ?1, ?1)`,

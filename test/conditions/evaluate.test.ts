@@ -6,11 +6,8 @@ import { compile } from "@/conditions/compile";
 import { createConditionEvaluator } from "@/conditions/evaluate";
 import type { ConditionContext } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
-import {
-  conditionsFixture,
-  type ConditionsFixture,
-  type ModelSubscriber,
-} from "@/test/conditions/fixture";
+import { conditionsFixture } from "@/test/conditions/fixture";
+import type { ConditionsFixture, ModelSubscriber } from "@/test/conditions/fixture";
 
 let f: ConditionsFixture;
 let rich: ModelSubscriber, bare: ModelSubscriber, disabled: ModelSubscriber;
@@ -22,26 +19,33 @@ const at = (offsetMs: number) => new Date(now.getTime() + offsetMs).toISOString(
 
 const value = async (condition: unknown, ctx: ConditionContext) => {
   const result = await f.evaluator.evaluate(condition, ctx);
-  if (!result.ok) throw new Error(JSON.stringify(result.error));
+  if (!result.ok) {
+    throw new Error(JSON.stringify(result.error));
+  }
   return result.value;
 };
 const failure = async (condition: unknown, ctx: ConditionContext) => {
   const result = await f.evaluator.evaluate(condition, ctx);
-  if (result.ok) throw new Error(`expected an error, got ${result.value}`);
+  if (result.ok) {
+    throw new Error(`expected an error, got ${result.value}`);
+  }
   return result.error;
 };
 
 function children(): number {
   let count = 0;
   for (const entry of readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) continue;
+    if (!/^\d+$/.test(entry)) {
+      continue;
+    }
     try {
       if (
         new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(
           readFileSync(`/proc/${entry}/status`, "utf8"),
         )
-      )
+      ) {
         count++;
+      }
     } catch {
       /* exited meanwhile */
     }
@@ -50,7 +54,7 @@ function children(): number {
 }
 
 beforeAll(async () => {
-  f = await conditionsFixture({ timeoutMs: 1_500, memoryBytes: 128 * 1024 * 1024 });
+  f = await conditionsFixture({ timeoutMs: 1500, memoryBytes: 128 * 1024 * 1024 });
   now = f.clock.now();
   listA = f.addList("a");
   listB = f.addList("b");
@@ -107,7 +111,7 @@ afterAll(async () => {
 describe("attribute comparisons and type rules", () => {
   const attr = (path: string, op: string, v?: unknown) =>
     v === undefined ? { attr: path, op } : { attr: path, op, value: v };
-  const cases: [unknown, boolean][] = [
+  const cases: Array<[unknown, boolean]> = [
     [attr("plan", "eq", "subscription"), true],
     [attr("plan", "eq", "Subscription"), false],
     [attr("plan", "ne", "free"), true],
@@ -180,10 +184,11 @@ describe("attribute comparisons and type rules", () => {
     [attr("status", "ne", "enabled"), false],
     [attr("status", "in", ["disabled", "blocklisted"]), false],
   ];
-  for (const [condition, expected] of cases)
+  for (const [condition, expected] of cases) {
     test(`${JSON.stringify(condition)} is ${expected}`, async () => {
       expect(await value(condition, context(rich))).toBe(expected);
     });
+  }
 
   test("status for a disabled subscriber, and attributes of an empty subscriber", async () => {
     expect(await value(attr("status", "eq", "disabled"), context(disabled))).toBe(true);
@@ -204,7 +209,7 @@ describe("attribute comparisons and type rules", () => {
 describe("large numbers", () => {
   let big: ModelSubscriber;
   // Stored as written: SQLite keeps the exact int64, beyond what a JavaScript number holds.
-  const unsafe = 1000000000000000100;
+  const unsafe = 1_000_000_000_000_000_100;
   beforeAll(() => {
     big = f.addSubscriber({
       attribsJSON:
@@ -224,7 +229,7 @@ describe("large numbers", () => {
   });
 
   test("conditions comparing integers beyond the safe range are refused, not mis-evaluated", async () => {
-    const conditions: unknown[] = [
+    const conditions: Array<unknown> = [
       { attr: "invoice_id", op: "eq", value: unsafe },
       { attr: "invoice_id", op: "ne", value: unsafe },
       { attr: "invoice_id", op: "lt", value: unsafe },
@@ -243,7 +248,7 @@ describe("large numbers", () => {
 
   test("safe edge integers compare exactly with stored attributes and event data", async () => {
     const max = Number.MAX_SAFE_INTEGER;
-    const cases: [unknown, boolean][] = [
+    const cases: Array<[unknown, boolean]> = [
       [{ attr: "edge", op: "eq", value: max }, true],
       [{ attr: "edge", op: "ne", value: max }, false],
       [{ attr: "edge", op: "eq", value: max - 1 }, false],
@@ -264,13 +269,14 @@ describe("large numbers", () => {
       [{ event: "invoice_paid", where: { "data.edge": max } }, true],
       [{ event: "invoice_paid", where: { "data.edge": max - 1 } }, false],
     ];
-    for (const [condition, expected] of cases)
+    for (const [condition, expected] of cases) {
       expect([condition, await value(condition, context(big))]).toEqual([condition, expected]);
+    }
   });
 });
 
 describe("event predicates", () => {
-  const cases: [string, unknown, boolean][] = [
+  const cases: Array<[string, unknown, boolean]> = [
     ["any time", { event: "download_finished" }, true],
     ["unknown name", { event: "nope" }, false],
     [
@@ -348,10 +354,11 @@ describe("event predicates", () => {
       false,
     ],
   ];
-  for (const [name, condition, expected] of cases)
+  for (const [name, condition, expected] of cases) {
     test(name, async () => {
       expect(await value(condition, context(rich))).toBe(expected);
     });
+  }
 
   test("last_step falls back to the trigger before the first step", async () => {
     const condition = { event: "download_finished", since: "last_step", count: { eq: 4 } };
@@ -392,7 +399,7 @@ describe("lists and combinators", () => {
   test("all, any and not, nested", async () => {
     const t = { attr: "plan", op: "exists" },
       no = { attr: "missing", op: "exists" };
-    const cases: [unknown, boolean][] = [
+    const cases: Array<[unknown, boolean]> = [
       [{ all: [t] }, true],
       [{ all: [t, no] }, false],
       [{ any: [no, t] }, true],
@@ -403,8 +410,9 @@ describe("lists and combinators", () => {
       [{ all: [{ any: [no, { not: no }] }, { not: { all: [t, no] } }] }, true],
       [{ any: [{ all: [t, no] }, { not: { any: [t] } }] }, false],
     ];
-    for (const [condition, expected] of cases)
+    for (const [condition, expected] of cases) {
       expect([condition, await value(condition, context(rich))]).toEqual([condition, expected]);
+    }
   });
 
   test("the worked example: prepaid without a download", async () => {
@@ -426,7 +434,9 @@ describe("errors are returned, never thrown", () => {
       message: "condition.op: unknown operator",
     });
     let deep: unknown = { attr: "a", op: "exists" };
-    for (let i = 0; i < 10_000; i++) deep = { any: [deep] };
+    for (let i = 0; i < 10_000; i++) {
+      deep = { any: [deep] };
+    }
     expect((await failure(deep, context(rich))).kind).toBe("invalid");
   });
 
@@ -481,18 +491,21 @@ describe("compilation", () => {
       {
         all: [
           { attr: "plan", op: "eq", value: marker },
-          { attr: "plan", op: "in", value: [marker, 12345.678] },
+          { attr: "plan", op: "in", value: [marker, 12_345.678] },
           { event: marker, since: "P3D", where: { "data.source": marker }, count: { lte: 987 } },
-          { list: 424242, status: ["confirmed"] },
+          { list: 424_242, status: ["confirmed"] },
         ],
       },
       { canUseSql: false },
     );
-    if (!checked.ok) throw new Error("invalid");
+    if (!checked.ok) {
+      throw new Error("invalid");
+    }
     const compiled = compile(checked.condition);
     expect(compiled.sql.split(";").length).toBe(1);
-    for (const literal of ["marker", "12345", "987", "424242", "confirmed", "P3D", "source"])
+    for (const literal of ["marker", "12345", "987", "424242", "confirmed", "P3D", "source"]) {
       expect(compiled.sql).not.toContain(literal);
+    }
     expect(compiled.fragments).toEqual([]);
   });
 });
@@ -552,8 +565,9 @@ describe("the sql escape hatch", () => {
         { event: "download_finished", since: "trigger" },
         { list: listA },
         { not: { any: [{ list: listB }, { attr: "status", op: "eq", value: "enabled" }] } },
-      ])
+      ]) {
         expect((await evaluator.evaluate(condition, context(rich))).ok).toBe(true);
+      }
       expect(calls).toBe(0);
       expect((await evaluator.evaluate({ sql: "1 = 1" }, context(rich))).ok).toBe(true);
       expect(calls).toBe(1);
@@ -602,8 +616,9 @@ describe("the sql escape hatch", () => {
   });
 
   test("fragments bind no parameters of the generated query", async () => {
-    for (const sql of ["subscribers.id = ?1", "subscribers.id = :id", "subscribers.id = ?"])
+    for (const sql of ["subscribers.id = ?1", "subscribers.id = :id", "subscribers.id = ?"]) {
       expect([sql, (await failure({ sql }, context(rich))).kind]).toEqual([sql, "query"]);
+    }
   });
 
   test("refused fragments and tables", async () => {
@@ -616,8 +631,9 @@ describe("the sql escape hatch", () => {
       "(SELECT count(*) FROM sqlite_schema) > 0",
       "(SELECT count(*) FROM pragma_table_list) > 0",
       "no_such_column = 1",
-    ])
+    ]) {
       expect([sql, (await failure({ sql }, context(rich))).kind]).toEqual([sql, "query"]);
+    }
     // Writes are impossible: the subscriber is unchanged.
     expect(await value({ attr: "plan", op: "eq", value: "subscription" }, context(rich))).toBe(
       true,
@@ -635,7 +651,7 @@ describe("the sql escape hatch", () => {
       kind: "timeout",
       message: "query timed out",
     });
-    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(performance.now() - started).toBeLessThan(5000);
     expect(await failure({ sql: "length(randomblob(1000000000)) > 0" }, context(rich))).toEqual({
       kind: "memory",
       message: "query exceeded the memory limit",
@@ -655,7 +671,8 @@ describe("the sql escape hatch", () => {
       kind: "busy",
       message: "too many queries in progress",
     });
-    for (const result of await Promise.all(running))
+    for (const result of await Promise.all(running)) {
       expect(result).toEqual({ ok: false, error: { kind: "timeout", message: "query timed out" } });
+    }
   });
 });

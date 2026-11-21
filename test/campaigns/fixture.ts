@@ -5,7 +5,8 @@ import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApp, type ErrorLogger } from "@/app";
+import { createApp } from "@/app";
+import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
@@ -17,7 +18,8 @@ import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
 import { createCampaignStore } from "@/campaigns/store";
-import { registerCampaignRoutes, type CampaignSettings } from "@/campaigns/routes";
+import { registerCampaignRoutes } from "@/campaigns/routes";
+import type { CampaignSettings } from "@/campaigns/routes";
 import { registerCampaignPublicRoutes } from "@/campaigns/public";
 import { createSubscriberStore, noSubscriberEffects } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
@@ -42,7 +44,8 @@ import { createSettings } from "@/settings/store";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
-import { startWebhookDelivery, type WebhookTransport } from "@/webhooks/delivery";
+import { startWebhookDelivery } from "@/webhooks/delivery";
+import type { WebhookTransport } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
@@ -72,7 +75,7 @@ export async function campaignsFixture(
   const clock = new TestClock();
   const db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const app = createApp({
     bootstrap: {
       host: "127.0.0.1",
@@ -104,7 +107,9 @@ export async function campaignsFixture(
   const auth = await createAuthentication(users, roles, clock, root, defaultAuthPolicy);
   await bootstrapAdmin(users, auth, admin);
   const session = await auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("fixture login failed");
+  }
   const renderer = createRenderer(clock, app.i18n);
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences);
@@ -147,7 +152,7 @@ export async function campaignsFixture(
     disableTracking: false,
     individualTracking: false,
   };
-  const unsubscribed: unknown[] = [];
+  const unsubscribed: Array<unknown> = [];
   const media = createMediaStore(db, clock);
   // Media settings are the real ones, so that tests reach them through the settings API.
   const stored = createSettings(db, clock, root, roles);
@@ -218,7 +223,9 @@ export async function campaignsFixture(
     // The privacy answers are the public fixture's concern; here every path pairs nobody.
     privacy: { export: () => null, wipe: () => null },
   });
-  if (webhooks) registerWebhookRoutes(router, { webhooks, auth });
+  if (webhooks) {
+    registerWebhookRoutes(router, { webhooks, auth });
+  }
   const delivery = webhooks
     ? startWebhookDelivery({
         db,
@@ -260,25 +267,30 @@ export async function campaignsFixture(
   };
   const list = async (name: string, optin = "single") =>
     (await json("/api/lists", "POST", { name, type: "public", optin })).body.data.id as number;
-  const subscriber = async (email: string, listIds: number[], extra: object = {}) => {
+  const subscriber = async (email: string, listIds: Array<number>, extra: object = {}) => {
     const created = await json("/api/subscribers", "POST", {
       email,
       name: "Ada Lovelace",
       lists: listIds,
       ...extra,
     });
-    if (created.status !== 200) throw new Error(`subscriber ${created.status}`);
+    if (created.status !== 200) {
+      throw new Error(`subscriber ${created.status}`);
+    }
     return created.body.data as { id: number; uuid: string; email: string };
   };
   const campaign = async (input: object) => {
     const created = await json("/api/campaigns", "POST", input);
-    if (created.status !== 200)
+    if (created.status !== 200) {
       throw new Error(`campaign ${created.status} ${JSON.stringify(created.body)}`);
+    }
     return created.body.data as Record<string, any> & { id: number; uuid: string };
   };
   /** Wait for the sink: test sends are queued to the emailer, as in listmonk. */
   const mail = async (count: number) => {
-    for (let i = 0; i < 400 && sink.messages.length < count; i++) await Bun.sleep(5);
+    for (let i = 0; i < 400 && sink.messages.length < count; i++) {
+      await Bun.sleep(5);
+    }
     return sink.messages;
   };
   return {

@@ -2,10 +2,12 @@
 // static/admin/views/message.html at 6fcd95f. A view is one function from a checked request to
 // a page; see src/admin/routes.ts for how one is added.
 import { STATUS_CODES } from "node:http";
-import { renderAdminShell, type JSONValue } from "@/admin/layout/shell";
+import { renderAdminShell } from "@/admin/layout/shell";
+import type { JSONValue } from "@/admin/layout/shell";
 import { sidebar } from "@/admin/layout/sidebar";
 import { adminPolicy } from "@/admin/policy";
-import { render, type Child } from "@/jsx/render";
+import { render } from "@/jsx/render";
+import type { Child } from "@/jsx/render";
 import type { Roles } from "@/roles/roles";
 import { restoreHold } from "@/settings/hold";
 import { assetVersion } from "@/server/asset-manifest";
@@ -23,12 +25,12 @@ export interface AdminSite {
   readonly disableTracking: boolean;
   readonly individualTracking: boolean;
   /** The configured from addresses, the default first. */
-  readonly fromEmails: readonly string[];
-  readonly messengers: readonly string[];
+  readonly fromEmails: ReadonlyArray<string>;
+  readonly messengers: ReadonlyArray<string>;
   /** app.enable_public_subscription_page. */
   readonly publicSubscription: boolean;
   /** security.trusted_urls: where a public form may send a subscriber afterwards. */
-  readonly trustedUrls: readonly string[];
+  readonly trustedUrls: ReadonlyArray<string>;
   /** security.captcha: the active provider and the hCaptcha site key, for the forms snippet. */
   readonly captcha: { readonly provider: "" | "altcha" | "hcaptcha"; readonly key: string };
   /** appearance.admin.*: what /admin/custom.css and /admin/custom.js answer. */
@@ -44,7 +46,7 @@ export interface AdminPage {
   /** Module under assets/admin/js/views, without its extension. */
   readonly script?: string;
   /** Keys that module reads through `i18n.t`. */
-  readonly translationKeys?: readonly string[];
+  readonly translationKeys?: ReadonlyArray<string>;
   /** Added to `window._LM_CONFIG` for that module. */
   readonly config?: Readonly<Record<string, JSONValue>>;
   /** Without the sidebar and top bar, for an iframe. */
@@ -57,9 +59,9 @@ export interface AdminRequest {
   readonly identity: Identity;
   readonly site: AdminSite;
   /** True for any of the permissions; a trailing `*` matches a prefix, as upstream's `Can`. */
-  can(...permissions: string[]): boolean;
+  can(...permissions: Array<string>): boolean;
   /** The lists this user holds a list permission on. */
-  listScope(permission: "list:get" | "list:manage"): { all: boolean; ids: bigint[] };
+  listScope(permission: "list:get" | "list:manage"): { all: boolean; ids: Array<bigint> };
 }
 /** A view answers with a page, or a Response for what is not one (a redirect). */
 export type AdminView = (
@@ -108,7 +110,7 @@ export function createAdminPages(deps: {
   site: () => AdminSite;
 }) {
   const { auth, roles, site } = deps;
-  const has = (identity: Identity, permissions: string[]) =>
+  const has = (identity: Identity, permissions: Array<string>) =>
     permissions.some((permission) =>
       permission.endsWith("*")
         ? identity.role.id === 1n ||
@@ -118,9 +120,13 @@ export function createAdminPages(deps: {
   /** renderAdminError. */
   const failure = (context: RequestContext, error: unknown): Response => {
     const known = error instanceof HttpError;
-    if (!known) context.app.logger.error(error);
+    if (!known) {
+      context.app.logger.error(error);
+    }
     const status = known ? error.status : 500;
-    if (context.request.method === "HEAD") return new Response(null, { status });
+    if (context.request.method === "HEAD") {
+      return new Response(null, { status });
+    }
     const message = (known && error.message) || STATUS_CODES[status] || "";
     const home = context.app.i18n.T("globals.terms.dashboard");
     return adminMessage(status, "Error", message, home);
@@ -130,14 +136,16 @@ export function createAdminPages(deps: {
    * view. A page request without a session goes to login and comes back afterwards.
    */
   const adminPage =
-    (view: AdminView, ...permissions: string[]): Handler =>
+    (view: AdminView, ...permissions: Array<string>): Handler =>
     async (context) => {
       const started = performance.now();
       let identity: Identity;
       try {
         identity = auth.authorize(context);
       } catch (error) {
-        if (!(error instanceof HttpError)) throw error;
+        if (!(error instanceof HttpError)) {
+          throw error;
+        }
         const next = new URLSearchParams({ next: context.url.pathname + context.url.search });
         return new Response(null, {
           status: 307,
@@ -147,17 +155,20 @@ export function createAdminPages(deps: {
       context.identity = identity;
       const i18n = context.app.i18n;
       try {
-        if (permissions.length && !has(identity, permissions))
+        if (permissions.length && !has(identity, permissions)) {
           throw new HttpError(
             403,
             i18n.Ts("globals.messages.permissionDenied", "name", permissions.join(", ")),
           );
-        const can = (...wanted: string[]) => has(identity, wanted);
+        }
+        const can = (...wanted: Array<string>) => has(identity, wanted);
         const current = site();
         const listScope: AdminRequest["listScope"] = (permission) =>
           roles.listScope(identity.role, identity.user.list_role_id, permission);
         const page = await view({ context, identity, site: current, can, listScope });
-        if (page instanceof Response) return page;
+        if (page instanceof Response) {
+          return page;
+        }
         const hold = restoreHold(context.app.db);
         const html = renderAdminShell({
           title: page.title,

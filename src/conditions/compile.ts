@@ -25,14 +25,14 @@ export interface CompiledCondition {
    * Raw `sql` fragments, in the order of the fragment slots in `sql`. When there are any, the
    * read-only child checks them, fills the slots and runs the whole statement in one snapshot.
    */
-  fragments: string[];
+  fragments: Array<string>;
 }
 
 const subscriber: Slot = { slot: "subscriber" };
 export const defaultListStatuses = ["unconfirmed", "confirmed"];
 
 export function compile(condition: Condition): CompiledCondition {
-  const fragments: string[] = [];
+  const fragments: Array<string> = [];
   const part = (c: Condition): SQLPart<Slot> => {
     if ("all" in c || "any" in c) {
       const items = "all" in c ? c.all : c.any;
@@ -50,10 +50,12 @@ export function compile(condition: Condition): CompiledCondition {
       fragments.push(formatSQLExp(c.sql));
       return fragmentPartSQL(subscriber);
     }
-    if ("list" in c) return membershipSQL(c.list, c.status ?? defaultListStatuses);
+    if ("list" in c) {
+      return membershipSQL(c.list, c.status ?? defaultListStatuses);
+    }
     if ("attr" in c) {
       if (c.attr === "status") {
-        const values = (Array.isArray(c.value) ? c.value : [c.value]) as string[];
+        const values = (Array.isArray(c.value) ? c.value : [c.value]) as Array<string>;
         return statusSQL(values, c.op === "ne");
       }
       return attributeSQL(c.attr, c.op, c.value);

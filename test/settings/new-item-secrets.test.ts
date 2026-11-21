@@ -4,7 +4,8 @@
 // test would no longer see the uuid-less state it exercises.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
-import { admin, api, get, login, type Fixture } from "@/test/admin/support";
+import { admin, api, get, login } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 import { openDatabase } from "@/db/connection";
 import { writeStoredValue } from "@/settings/stored";
@@ -26,10 +27,15 @@ async function read(): Promise<Record<string, any>> {
 // The settings page sends each masked secret back empty, which the API reads as "keep"
 // (settings.js onSubmit). Every save below takes the page's shape the same way.
 function unmasked(value: unknown): any {
-  if (typeof value === "string") return /^•+$/.test(value) ? "" : value;
-  if (Array.isArray(value)) return value.map(unmasked);
-  if (value && typeof value === "object")
+  if (typeof value === "string") {
+    return /^•+$/.test(value) ? "" : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(unmasked);
+  }
+  if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unmasked(item)]));
+  }
   return value;
 }
 
@@ -107,10 +113,10 @@ test("3. a new messenger with a blank password stores none, and the stored one k
   });
   expect((await save(second)).status).toBe(200);
 
-  const messengers = (await read()).messengers as {
+  const messengers = (await read()).messengers as Array<{
     name: string;
     password?: string;
-  }[];
+  }>;
   const added = messengers.find((item) => item.name === "b51-chat-two");
   expect(added).toBeDefined();
   expect(added!.password).toBeUndefined();

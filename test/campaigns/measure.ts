@@ -5,12 +5,12 @@
 import { campaignsFixture } from "@/test/campaigns/fixture";
 
 const runs = Number(process.env.CAMPAIGNS_MEASURE_RUNS ?? "3");
-const mib = (bytes: number) => +(bytes / 1048576).toFixed(1);
-const median = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1]!;
+const mib = (bytes: number) => +(bytes / 1_048_576).toFixed(1);
+const median = (values: Array<number>) => [...values].sort((a, b) => a - b)[values.length >> 1]!;
 const f = await campaignsFixture();
 try {
   const news = await f.list("news");
-  const emails: string[] = [];
+  const emails: Array<string> = [];
   for (let i = 0; i < 1000; i++) {
     const email = `r${i}@example.test`;
     await f.subscriber(email, [news], { attribs: { city: "Kraków", plan: "pro" } });
@@ -40,10 +40,10 @@ try {
   };
   const c = await f.campaign({ name: "Weekly", subject: "s", lists: [news] });
   const measure = async (input: object, count: number) => {
-    const status: number[] = [];
-    const response: number[] = [];
-    const delivered: number[] = [];
-    const rssGrowth: number[] = [];
+    const status: Array<number> = [];
+    const response: Array<number> = [];
+    const delivered: Array<number> = [];
+    const rssGrowth: Array<number> = [];
     for (let run = 0; run < runs; run++) {
       Bun.gc(true);
       f.sink.messages.length = 0;
@@ -58,7 +58,9 @@ try {
       status.push(sent.status);
       if (sent.status === 200) {
         const deadline = performance.now() + 300_000;
-        while (f.sink.messages.length < count && performance.now() < deadline) await Bun.sleep(2);
+        while (f.sink.messages.length < count && performance.now() < deadline) {
+          await Bun.sleep(2);
+        }
         delivered.push(performance.now() - started);
       }
     }
@@ -72,8 +74,9 @@ try {
     };
   };
   const results = [];
-  for (const count of [1, 10, 100, 1000])
+  for (const count of [1, 10, 100, 1000]) {
     results.push({ case: "realistic", ...(await measure(realistic, count)) });
+  }
   const header = `{% for i in (1..512) %}${"x".repeat(1024)}{% endfor %}`;
   results.push({
     case: "review ten 512 KiB headers",

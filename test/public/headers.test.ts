@@ -1,11 +1,14 @@
 // B125: every HTML answer of a personal page (under /m/, /subscription/ and /campaign/) carries
 // the hardening headers, the 404 and 429 answers included, through HTTP on the public fixture.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();
@@ -51,7 +54,9 @@ test("every personal page answers with the hardening headers, its 404 included",
     `/m/${unknownSend}/unsubscribe/${adaUuid}`,
     `/subscription/${unknownCampaign}/${adaUuid}`,
   ];
-  for (const path of pages) expectHardened(await f.peer(path, "198.51.100.1"));
+  for (const path of pages) {
+    expectHardened(await f.peer(path, "198.51.100.1"));
+  }
 });
 
 /**
@@ -76,7 +81,9 @@ test("the signup form may be framed: its GET, its POST answers and its limited a
   const posted = await f.post("/subscription/form", accepted, "192.0.2.72");
   expect(posted.status).toBe(200);
   expectFrameable(posted);
-  for (let i = 0; i < 5; i++) await f.post("/subscription/form", bad, "192.0.2.70");
+  for (let i = 0; i < 5; i++) {
+    await f.post("/subscription/form", bad, "192.0.2.70");
+  }
   const limited = await f.post("/subscription/form", bad, "192.0.2.70");
   expect(limited.status).toBe(429);
   expectFrameable(limited);

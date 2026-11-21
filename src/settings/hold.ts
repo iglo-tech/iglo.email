@@ -24,14 +24,17 @@ export interface HoldRecord {
 /** Fails closed: a row that cannot be read is a hold of unknown age, not a release. */
 export function holdRecord(db: Database): HoldRecord | null {
   const value = storedValue(db, HOLD);
-  if (value === null) return null;
+  if (value === null) {
+    return null;
+  }
   try {
     const parsed = parseStoredJson(value) as { since?: unknown; released_at?: unknown };
-    if (typeof parsed.since === "string")
+    if (typeof parsed.since === "string") {
       return {
         since: parsed.since,
         releasedAt: typeof parsed.released_at === "string" ? parsed.released_at : null,
       };
+    }
   } catch {
     /* Below. */
   }
@@ -40,7 +43,9 @@ export function holdRecord(db: Database): HoldRecord | null {
 
 export function restoreHold(db: Database): RestoreHold | null {
   const record = holdRecord(db);
-  if (!record || record.releasedAt !== null) return null;
+  if (!record || record.releasedAt !== null) {
+    return null;
+  }
   return {
     since: record.since,
     reason:
@@ -55,12 +60,16 @@ export const sendingHeld = (db: Database): boolean => restoreHold(db) !== null;
 /** The same check for a request or a direct send, which get a clear error. */
 export function refuseWhileHeld(db: Database): void {
   const hold = restoreHold(db);
-  if (hold) throw new HttpError(503, `Sending is held. ${hold.reason}`);
+  if (hold) {
+    throw new HttpError(503, `Sending is held. ${hold.reason}`);
+  }
 }
 
 /** Into a snapshot. A hold already there stays as it is: its gap began at that older moment. */
 export function placeRestoreHold(db: Database, since: string): void {
-  if (!sendingHeld(db)) writeStoredValue(db, HOLD, { since });
+  if (!sendingHeld(db)) {
+    writeStoredValue(db, HOLD, { since });
+  }
 }
 
 export function releaseRestoreHold(db: Database, record: HoldRecord, at: string): void {

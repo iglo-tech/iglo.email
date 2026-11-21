@@ -58,20 +58,20 @@ export const nameFromEmail = (email: string) =>
  */
 export interface SubscriberEffects {
   /** The subscribers are now blocklisted. */
-  blocklisted(ids: bigint[]): void;
+  blocklisted(ids: Array<bigint>): void;
   /** The subscribers' memberships of `listIds` are now unsubscribed. */
-  unsubscribed(ids: bigint[], listIds: bigint[]): void;
+  unsubscribed(ids: Array<bigint>, listIds: Array<bigint>): void;
   /** The subscribers are about to be deleted (D25: messaging anonymizes their sends). */
-  deleting?(subscribers: { id: bigint; email: string }[], wipe?: boolean): void;
+  deleting?(subscribers: Array<{ id: bigint; email: string }>, wipe?: boolean): void;
   /**
    * Consent that really changed, after the write: `blocklisted` when the subscriber was not
    * blocklisted before, `listIds` for memberships that were not unsubscribed before. Unlike the
    * effects above it stays silent on repeats, so a replayed request queues no webhook.
    */
-  changed?(change: { id: bigint; blocklisted: boolean; listIds: bigint[] }): void;
+  changed?(change: { id: bigint; blocklisted: boolean; listIds: Array<bigint> }): void;
   /** Set-based `changed` for these subscribers, called before the write it reports. */
-  blocklisting?(ids: bigint[]): void;
-  unsubscribing?(ids: bigint[], listIds: bigint[]): void;
+  blocklisting?(ids: Array<bigint>): void;
+  unsubscribing?(ids: Array<bigint>, listIds: Array<bigint>): void;
   /** May refuse a bulk action, by throwing, before its first write. */
   admitBulk?(action: BulkAction, selected: () => number): void;
   /** The same for one batch of an import: adds what it will queue to `spent`, or refuses it. */
@@ -90,7 +90,7 @@ export interface BulkSpend {
   deliveries: number;
 }
 export interface ImportSubscribe {
-  listIds: bigint[];
+  listIds: Array<bigint>;
   status: string;
   overwriteUserInfo: boolean;
   overwriteStatus: boolean;
@@ -109,9 +109,11 @@ export const MAINTENANCE_PAGE = 2000;
 export const MAINTENANCE_SUBSCRIBERS = 100;
 export const MAINTENANCE_MEMBERSHIPS = 500;
 /** The first `limit` hits of a page, and where the next batch starts. */
-function maintenanceBatch(page: MaintenanceRow[], limit: number) {
+function maintenanceBatch(page: Array<MaintenanceRow>, limit: number) {
   const last = page.at(-1);
-  if (!last) return null;
+  if (!last) {
+    return null;
+  }
   const ids = page
     .filter((row) => row.hit)
     .slice(0, limit)
@@ -126,7 +128,7 @@ export const noSubscriberEffects: SubscriberEffects = {
 };
 export interface Scope {
   all: boolean;
-  ids: bigint[];
+  ids: Array<bigint>;
 }
 const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER)
@@ -140,7 +142,7 @@ export function createSubscriberStore(
 ) {
   const q = prepareNamedQueries(db, [{ name: "subscribers/store", sql }]);
   const get = (id: bigint) => q.get("subscriber-by-id").get(id) as Row | null;
-  const memberships = (id: bigint) => q.get("subscriber-memberships").all(id) as Membership[];
+  const memberships = (id: bigint) => q.get("subscriber-memberships").all(id) as Array<Membership>;
   /** The memberships with their list's metadata; a membership whose list is gone is left out. */
   const subscriptions = (id: bigint) =>
     memberships(id).flatMap((m) => {
@@ -159,7 +161,9 @@ export function createSubscriberStore(
     external_id: row.external_id,
     lists: memberships(row.id).map((m) => {
       const list = lists.subscriberMetadata(m.list_id);
-      if (!list) throw new Error("Missing list");
+      if (!list) {
+        throw new Error("Missing list");
+      }
       const value: Record<string, unknown> = {
         subscription_status: m.status,
         subscription_created_at: m.created_at,
@@ -180,11 +184,13 @@ export function createSubscriberStore(
     memberships(id)
       .filter((m) => m.status !== "unsubscribed")
       .map((m) => m.list_id);
-  const consentChanged = (id: bigint, blocklisted: boolean, listIds: bigint[]) => {
-    if (blocklisted || listIds.length) effects.changed?.({ id, blocklisted, listIds });
+  const consentChanged = (id: bigint, blocklisted: boolean, listIds: Array<bigint>) => {
+    if (blocklisted || listIds.length) {
+      effects.changed?.({ id, blocklisted, listIds });
+    }
   };
-  const json = (ids: bigint[]) => `[${ids.join(",")}]`;
-  const webhookData = (name: string, ...args: (string | number | null)[]) =>
+  const json = (ids: Array<bigint>) => `[${ids.join(",")}]`;
+  const webhookData = (name: string, ...args: Array<string | number | null>) =>
     (q.get(name).get(...args) as { data: string }).data;
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
   const byEmail = (email: string) => q.get("subscriber-by-email").get(email) as Row | null;
@@ -210,17 +216,19 @@ export function createSubscriberStore(
     );
   };
   const conflict = (error: unknown): never => {
-    if (error instanceof Error && error.message.includes("subscribers.external_id"))
+    if (error instanceof Error && error.message.includes("subscribers.external_id")) {
       throw new HttpError(409, "External ID already exists");
-    if (error instanceof Error && error.message.includes("subscribers.email"))
+    }
+    if (error instanceof Error && error.message.includes("subscribers.email")) {
       throw new HttpError(409, "E-mail already exists.");
+    }
     throw error;
   };
-  const permittedLists = (requested: bigint[], scope: Scope) =>
+  const permittedLists = (requested: Array<bigint>, scope: Scope) =>
     requested.filter((id) => scope.all || scope.ids.includes(id));
   const replace = (
     id: bigint,
-    requested: bigint[],
+    requested: Array<bigint>,
     scope: Scope,
     status: string,
     preconfirm: boolean,
@@ -229,13 +237,16 @@ export function createSubscriberStore(
     const resolved = [
       ...new Set(requested.filter((list) => lists.subscriberMetadata(list) !== null)),
     ];
-    for (const m of memberships(id))
+    for (const m of memberships(id)) {
       if ((scope.all || scope.ids.includes(m.list_id)) && !resolved.includes(m.list_id))
         q.get("membership-delete").run(id, m.list_id);
+    }
     for (const list of resolved) {
       const previous = memberships(id).find((m) => m.list_id === list);
       // D81: a blocklisted subscriber's existing rows end in blockOne, which stamps them.
-      if (status === "blocklisted" && previous) continue;
+      if (status === "blocklisted" && previous) {
+        continue;
+      }
       const target =
         status === "blocklisted"
           ? "unsubscribed"
@@ -244,12 +255,15 @@ export function createSubscriberStore(
             : preconfirm
               ? "confirmed"
               : "unconfirmed";
-      if (previous) q.get("membership-status").run(target, id, list);
-      else q.get("membership-insert").run(id, list, target, now, now);
+      if (previous) {
+        q.get("membership-status").run(target, id, list);
+      } else {
+        q.get("membership-insert").run(id, list, target, now, now);
+      }
     }
   };
   const importUnsubscribing = (
-    emails: string[],
+    emails: Array<string>,
     options: Pick<ImportSubscribe, "listIds" | "status">,
   ) => {
     const row = q
@@ -265,18 +279,20 @@ export function createSubscriberStore(
    * D81: the one way a subscriber becomes blocklisted. Every membership ends unsubscribed, and the
    * membership `updated_at` is stamped once for each row that really changed. Returns those lists.
    */
-  const blockOne = (id: bigint, now: string): bigint[] => {
+  const blockOne = (id: bigint, now: string): Array<bigint> => {
     q.get("subscriber-blocklist").run(now, id);
-    const rows = q.get("membership-unsubscribe-all").all(now, id) as {
+    const rows = q.get("membership-unsubscribe-all").all(now, id) as Array<{
       list_id: bigint;
-    }[];
+    }>;
     return rows.map((row) => row.list_id);
   };
-  const blocklist = (ids: bigint[]) => {
+  const blocklist = (ids: Array<bigint>) => {
     effects.admitBulk?.("blocklist", () => new Set(ids).size);
     effects.blocklisting?.(ids);
     const now = clock.now().toISOString();
-    for (const id of ids) blockOne(id, now);
+    for (const id of ids) {
+      blockOne(id, now);
+    }
     effects.blocklisted(ids);
   };
   const store = {
@@ -286,13 +302,12 @@ export function createSubscriberStore(
     memberships,
     project,
     /** The addresses of those of `ids` with a membership in `scope`, in one query. */
-    readable(ids: bigint[], scope: Scope) {
+    readable(ids: Array<bigint>, scope: Scope) {
       const rows = q
         .get("subscribers-readable")
-        .all(`[${ids.join(",")}]`, scope.all, `[${scope.ids.join(",")}]`) as Pick<
-        Row,
-        "id" | "email"
-      >[];
+        .all(`[${ids.join(",")}]`, scope.all, `[${scope.ids.join(",")}]`) as Array<
+        Pick<Row, "id" | "email">
+      >;
       return new Map(rows.map((row) => [row.id, row.email]));
     },
     transaction(fn: () => Response): Response {
@@ -301,8 +316,9 @@ export function createSubscriberStore(
     create(input: SubscriberInput & { email: string; name: string }, scope: Scope) {
       const now = clock.now().toISOString(),
         status = input.status || "enabled";
-      if (input.external_id != null && external(input.external_id))
+      if (input.external_id != null && external(input.external_id)) {
         throw new HttpError(409, "External ID already exists");
+      }
       try {
         const row = q
           .get("subscriber-insert")
@@ -352,8 +368,9 @@ export function createSubscriberStore(
         : (input.attribs ?? {});
       if (input.external_id != null) {
         const existing = external(input.external_id);
-        if (existing && existing.id !== row.id)
+        if (existing && existing.id !== row.id) {
           throw new HttpError(409, "External ID already exists");
+        }
       }
       const subscribed = subscribedLists(row.id);
       try {
@@ -366,7 +383,7 @@ export function createSubscriberStore(
           now,
           row.id,
         );
-        if (!patch || (input.lists !== undefined && input.lists !== null))
+        if (!patch || (input.lists !== undefined && input.lists !== null)) {
           replace(
             row.id,
             permittedLists(input.lists ?? [], scope),
@@ -375,11 +392,16 @@ export function createSubscriberStore(
             input.preconfirm_subscriptions ?? false,
             now,
           );
-        if (status === "blocklisted") blockOne(row.id, now);
+        }
+        if (status === "blocklisted") {
+          blockOne(row.id, now);
+        }
       } catch (error) {
         return conflict(error);
       }
-      if (status === "blocklisted") effects.blocklisted([row.id]);
+      if (status === "blocklisted") {
+        effects.blocklisted([row.id]);
+      }
       const remaining = new Map(memberships(row.id).map((m) => [m.list_id, m.status]));
       consentChanged(
         row.id,
@@ -392,12 +414,16 @@ export function createSubscriberStore(
      * `wipe` is the subscriber's own request (D61): it also leaves a suppression of marketing
      * consent (B124, D125), written before the rows it names go.
      */
-    remove(ids: bigint[], { wipe = false } = {}) {
+    remove(ids: Array<bigint>, { wipe = false } = {}) {
       effects.admitBulk?.("delete", () => new Set(ids).size);
       const deleted = ids.flatMap((id) => get(id) ?? []);
       effects.deleting?.(deleted, wipe);
-      if (wipe) for (const row of deleted) suppress(row);
-      for (const id of ids) q.get("subscriber-delete").run(id);
+      if (wipe) {
+        for (const row of deleted) suppress(row);
+      }
+      for (const id of ids) {
+        q.get("subscriber-delete").run(id);
+      }
     },
     /** Whether a suppression names this subscriber's address or external ID (B124, D125). */
     suppressed: suppressedBy,
@@ -406,13 +432,13 @@ export function createSubscriberStore(
       return Number(q.get("suppression-clear").run(emailHash(secret(), email), null).changes);
     },
     blocklist,
-    action(ids: bigint[], listIDs: bigint[], action: string, status: string) {
+    action(ids: Array<bigint>, listIDs: Array<bigint>, action: string, status: string) {
       if (action === "unsubscribe" || (action === "add" && status === "unsubscribed")) {
         effects.admitBulk?.("unsubscribe", () => new Set(ids).size);
         effects.unsubscribing?.(ids, listIDs);
       }
       const now = clock.now().toISOString();
-      for (const id of new Set(ids))
+      for (const id of new Set(ids)) {
         for (const list of new Set(listIDs)) {
           const existing = memberships(id).find((m) => m.list_id === list);
           if (action === "add") {
@@ -432,6 +458,7 @@ export function createSubscriberStore(
             effects.unsubscribed([id], [list]);
           }
         }
+      }
     },
     /** Event lookup: by `external_id`, then by `email`. Read-only; the caller holds the write. */
     resolveForEvent(input: EventSubscriber): Row | null {
@@ -453,20 +480,26 @@ export function createSubscriberStore(
       const now = clock.now().toISOString();
       const merge = (current: Record<string, unknown>) => {
         const merged = new Map(Object.entries(current));
-        for (const [key, value] of Object.entries(input.attribs ?? {}))
+        for (const [key, value] of Object.entries(input.attribs ?? {})) {
           if (value === null) merged.delete(key);
           else merged.set(key, value);
+        }
         return JSON.stringify(Object.fromEntries(merged));
       };
       const bounded = (attribs: string, previous: number) => {
-        if (Buffer.byteLength(attribs) > Math.max(EVENT_ATTRIBS_BYTES, previous))
+        if (Buffer.byteLength(attribs) > Math.max(EVENT_ATTRIBS_BYTES, previous)) {
           throw new HttpError(400, "Invalid attributes.");
+        }
         return attribs;
       };
       const blocked = () => new HttpError(400, "The e-mail domain is blocklisted.");
       if (!row) {
-        if (input.email === undefined) throw new HttpError(404, "Subscriber not found");
-        if (!emailAllowed(input.email)) throw blocked();
+        if (input.email === undefined) {
+          throw new HttpError(404, "Subscriber not found");
+        }
+        if (!emailAllowed(input.email)) {
+          throw blocked();
+        }
         const attribs = bounded(merge({}), 0);
         try {
           const created = q
@@ -490,8 +523,9 @@ export function createSubscriberStore(
       let externalID = row.external_id;
       if (input.external_id !== undefined && input.external_id !== row.external_id) {
         // Found by email: link a new external ID, but never re-point an existing one.
-        if (row.external_id !== null || external(input.external_id))
+        if (row.external_id !== null || external(input.external_id)) {
           throw new HttpError(409, "External ID and e-mail belong to different subscribers.");
+        }
         externalID = input.external_id;
         changed = true;
       }
@@ -499,21 +533,31 @@ export function createSubscriberStore(
       if (input.email !== undefined && input.email !== row.email) {
         // The same address in another ASCII case is not a change.
         const owner = byEmail(input.email);
-        if (owner && owner.id !== row.id) throw new HttpError(409, "E-mail already exists.");
+        if (owner && owner.id !== row.id) {
+          throw new HttpError(409, "E-mail already exists.");
+        }
         if (!owner) {
-          if (!emailAllowed(input.email)) throw blocked();
+          if (!emailAllowed(input.email)) {
+            throw blocked();
+          }
           email = input.email;
           changed = true;
         }
       }
       const name = input.name || row.name;
-      if (name !== row.name) changed = true;
+      if (name !== row.name) {
+        changed = true;
+      }
       let attribs = row.attribs;
       if (input.attribs !== undefined) {
         attribs = bounded(merge(JSON.parse(row.attribs)), Buffer.byteLength(row.attribs));
-        if (attribs !== row.attribs) changed = true;
+        if (attribs !== row.attribs) {
+          changed = true;
+        }
       }
-      if (!changed) return row;
+      if (!changed) {
+        return row;
+      }
       try {
         q.get("subscriber-update").run(email, name, row.status, attribs, externalID, now, row.id);
       } catch (error) {
@@ -528,11 +572,12 @@ export function createSubscriberStore(
      * Confirmed memberships stay, others restart unconfirmed, and a blocklisted subscriber's
      * memberships are unsubscribed. The caller holds the write.
      */
-    publicSubscribe(input: { email: string; name: string }, listIds: bigint[]): Row {
+    publicSubscribe(input: { email: string; name: string }, listIds: Array<bigint>): Row {
       const now = clock.now().toISOString();
       let row = byEmail(input.email);
-      if (row) q.get("subscriber-touch").run(now, row.id);
-      else {
+      if (row) {
+        q.get("subscriber-touch").run(now, row.id);
+      } else {
         const created = q
           .get("subscriber-insert")
           .get(crypto.randomUUID(), input.email, input.name, "enabled", "{}", null, now, now) as {
@@ -554,8 +599,11 @@ export function createSubscriberStore(
             : previous?.status === "confirmed"
               ? "confirmed"
               : "unconfirmed";
-        if (previous) q.get("membership-status").run(status, row.id, list);
-        else q.get("membership-insert").run(row.id, list, status, now, now);
+        if (previous) {
+          q.get("membership-status").run(status, row.id, list);
+        } else {
+          q.get("membership-insert").run(row.id, list, status, now, now);
+        }
       }
       return row;
     },
@@ -581,7 +629,9 @@ export function createSubscriberStore(
     exportSubscriptions(id: bigint) {
       return memberships(id).flatMap((m) => {
         const list = lists.subscriberMetadata(m.list_id);
-        if (!list) return [];
+        if (!list) {
+          return [];
+        }
         return [
           {
             subscription_status: m.status,
@@ -593,13 +643,14 @@ export function createSubscriberStore(
       });
     },
     /** Confirm unconfirmed memberships only: never reverses an unsubscribe. */
-    confirmOptin(id: bigint, listIds: bigint[], meta: Record<string, string>) {
+    confirmOptin(id: bigint, listIds: Array<bigint>, meta: Record<string, string>) {
       const now = clock.now().toISOString();
       let confirmed = 0;
-      for (const list of listIds)
+      for (const list of listIds) {
         confirmed += Number(
           q.get("membership-confirm").run(JSON.stringify(meta), now, id, list).changes,
         );
+      }
       // B124 (D125): the person confirmed by their own mail, so the suppression no longer applies.
       const row = confirmed > 0 ? get(id) : null;
       if (row) {
@@ -611,9 +662,9 @@ export function createSubscriberStore(
       q.get("subscriber-rename").run(name, clock.now().toISOString(), id);
     },
     /** Adapted from unsubscribe-by-campaign with unsubAllUnconfirmed. Returns changed lists. */
-    unsubscribeUnconfirmed(id: bigint): bigint[] {
+    unsubscribeUnconfirmed(id: bigint): Array<bigint> {
       const rows = q.get("membership-unsubscribe-unconfirmed").all(clock.now().toISOString(), id);
-      const changed = (rows as { list_id: bigint }[]).map((row) => row.list_id);
+      const changed = (rows as Array<{ list_id: bigint }>).map((row) => row.list_id);
       consentChanged(id, false, changed);
       return changed;
     },
@@ -621,11 +672,11 @@ export function createSubscriberStore(
      * A transactional link's cancel (B126, D123 item 8): ends the unconfirmed memberships of double
      * opt-in lists only. An unconfirmed single opt-in membership is active and stays. Returns changed lists.
      */
-    unsubscribeDoubleOptinPending(id: bigint): bigint[] {
+    unsubscribeDoubleOptinPending(id: bigint): Array<bigint> {
       const rows = q
         .get("membership-unsubscribe-double-pending")
         .all(clock.now().toISOString(), id);
-      const changed = (rows as { list_id: bigint }[]).map((row) => row.list_id);
+      const changed = (rows as Array<{ list_id: bigint }>).map((row) => row.list_id);
       consentChanged(id, false, changed);
       return changed;
     },
@@ -653,16 +704,16 @@ export function createSubscriberStore(
      * list (or with `blocklist`, every list) unsubscribed and optionally blocklist the
      * subscriber. Returns the list IDs whose status changed. The caller holds the write.
      */
-    unsubscribe(id: bigint, list: bigint, blocklist: boolean): bigint[] {
+    unsubscribe(id: bigint, list: bigint, blocklist: boolean): Array<bigint> {
       const now = clock.now().toISOString();
       const newlyBlocklisted = blocklist && get(id)?.status !== "blocklisted";
       // D81: the blocklist box takes the same path as every other way in.
       const changed = blocklist
         ? blockOne(id, now)
         : (
-            q.get("membership-unsubscribe-list").all(now, id, list) as {
+            q.get("membership-unsubscribe-list").all(now, id, list) as Array<{
               list_id: bigint;
-            }[]
+            }>
           ).map((row) => row.list_id);
       consentChanged(id, newlyBlocklisted, changed);
       return changed;
@@ -682,14 +733,16 @@ export function createSubscriberStore(
      */
     bounceUnsubscribe(id: bigint) {
       const rows = q.get("membership-unsubscribe-all").all(clock.now().toISOString(), id);
-      const changed = (rows as { list_id: bigint }[]).map((row) => row.list_id);
-      if (changed.length) effects.unsubscribed([id], changed);
+      const changed = (rows as Array<{ list_id: bigint }>).map((row) => row.list_id);
+      if (changed.length) {
+        effects.unsubscribed([id], changed);
+      }
       consentChanged(id, false, changed);
     },
     /** JSON arrays of webhook data, read in one statement before the write they describe. */
-    webhookUnsubscribed: (ids: bigint[], lists: bigint[] | null) =>
+    webhookUnsubscribed: (ids: Array<bigint>, lists: Array<bigint> | null) =>
       webhookData("webhook-unsubscribed", json(ids), lists && json(lists)),
-    webhookBlocklisted: (ids: bigint[]) => webhookData("webhook-blocklisted", json(ids)),
+    webhookBlocklisted: (ids: Array<bigint>) => webhookData("webhook-blocklisted", json(ids)),
     /**
      * One batch of an import in its own transaction, row by row in file order like
      * upsert-subscriber. A blocklisted subscriber stays so and is unsubscribed from new lists, and
@@ -697,9 +750,9 @@ export function createSubscriberStore(
      * as an API write, so it exits enrollments and queues the webhook in this transaction. The
      * batch is admitted first, against what memberships and webhooks are now.
      */
-    importSubscribe(rows: ImportRow[], options: ImportSubscribe, spent: BulkSpend) {
+    importSubscribe(rows: Array<ImportRow>, options: ImportSubscribe, spent: BulkSpend) {
       writeTransaction(db, () => {
-        if (options.overwriteStatus)
+        if (options.overwriteStatus) {
           effects.admitImportBatch?.(spent, {
             unsubscribed: importUnsubscribing(
               rows.map((row) => row.email),
@@ -707,12 +760,15 @@ export function createSubscriberStore(
             ),
             blocklisted: 0,
           });
+        }
         const now = clock.now().toISOString();
         for (const row of rows) {
           const existing = byEmail(row.email);
-          if (existing && options.overwriteUserInfo)
+          if (existing && options.overwriteUserInfo) {
             q.get("subscriber-import-update").run(row.name, row.attribs, now, existing.id);
-          else if (existing) q.get("subscriber-touch").run(now, existing.id);
+          } else if (existing) {
+            q.get("subscriber-touch").run(now, existing.id);
+          }
           const id =
             existing?.id ??
             (
@@ -738,31 +794,39 @@ export function createSubscriberStore(
             suppressedBy({ email: row.email, external_id: existing?.external_id ?? null })
               ? []
               : options.listIds;
-          const ended: bigint[] = [];
-          const changed: bigint[] = [];
+          const ended: Array<bigint> = [];
+          const changed: Array<bigint> = [];
           for (const list of listIds) {
             const previous = existing
               ? (q.get("membership-get").get(id, list) as Membership)
               : null;
-            if (!previous) q.get("membership-insert").run(id, list, target, now, now);
-            else
+            if (!previous) {
+              q.get("membership-insert").run(id, list, target, now, now);
+            } else {
               q.get("membership-update").run(
                 options.overwriteStatus ? target : previous.status,
                 now,
                 id,
                 list,
               );
-            if (target !== "unsubscribed" || (previous && !options.overwriteStatus)) continue;
+            }
+            if (target !== "unsubscribed" || (previous && !options.overwriteStatus)) {
+              continue;
+            }
             ended.push(list);
-            if (previous && previous.status !== "unsubscribed") changed.push(list);
+            if (previous && previous.status !== "unsubscribed") {
+              changed.push(list);
+            }
           }
-          if (ended.length) effects.unsubscribed([id], ended);
+          if (ended.length) {
+            effects.unsubscribed([id], ended);
+          }
           consentChanged(id, false, changed);
         }
       });
     },
     /** One batch of a blocklist import: new addresses are created and all go through `blocklist`. */
-    importBlocklist(rows: ImportRow[], spent: BulkSpend) {
+    importBlocklist(rows: Array<ImportRow>, spent: BulkSpend) {
       writeTransaction(db, () => {
         const emails = [...new Set(rows.map((row) => row.email))];
         const known = q.get("import-blocklisting").get(JSON.stringify(emails)) as {
@@ -807,10 +871,10 @@ export function createSubscriberStore(
     admitBulk(action: BulkAction, selected: () => number) {
       effects.admitBulk?.(action, selected);
     },
-    webhookDeleted: (ids: bigint[]) => webhookData("webhook-deleted", json(ids)),
+    webhookDeleted: (ids: Array<bigint>) => webhookData("webhook-deleted", json(ids)),
     /** A bounded page of a maintenance delete after the row `after`, in row order. */
     maintenancePage(type: MaintenanceType, after: bigint) {
-      return q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as MaintenanceRow[];
+      return q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as Array<MaintenanceRow>;
     },
     /**
      * One batch of a maintenance delete, through `remove`. `null` when none are left. It is
@@ -818,9 +882,13 @@ export function createSubscriberStore(
      */
     maintenanceRemove(type: MaintenanceType, after: bigint, spent: BulkSpend) {
       return writeTransaction(db, () => {
-        const page = q.get(`maintenance-${type}`).all(after, MAINTENANCE_PAGE) as MaintenanceRow[];
+        const page = q
+          .get(`maintenance-${type}`)
+          .all(after, MAINTENANCE_PAGE) as Array<MaintenanceRow>;
         const batch = maintenanceBatch(page, MAINTENANCE_SUBSCRIBERS);
-        if (!batch) return null;
+        if (!batch) {
+          return null;
+        }
         if (batch.ids.length) {
           effects.admitDeleteBatch?.(spent, batch.ids.length);
           store.remove(batch.ids);
@@ -833,10 +901,14 @@ export function createSubscriberStore(
       return writeTransaction(db, () => {
         const page = q
           .get("maintenance-unconfirmed")
-          .all(after, MAINTENANCE_PAGE, before) as MaintenanceRow[];
+          .all(after, MAINTENANCE_PAGE, before) as Array<MaintenanceRow>;
         const batch = maintenanceBatch(page, MAINTENANCE_MEMBERSHIPS);
-        if (!batch) return null;
-        if (batch.ids.length) q.get("maintenance-unconfirmed-delete").run(json(batch.ids));
+        if (!batch) {
+          return null;
+        }
+        if (batch.ids.length) {
+          q.get("maintenance-unconfirmed-delete").run(json(batch.ids));
+        }
         return { last: batch.last, removed: batch.ids.length };
       });
     },

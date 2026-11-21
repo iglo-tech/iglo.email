@@ -11,9 +11,11 @@
 // M61_AUDIENCE (campaign subscribers; default enough for the configured maximum rate).
 import assert from "node:assert/strict";
 import { Database } from "bun:sqlite";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer, type Socket } from "node:net";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
 import { join } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import {
@@ -42,7 +44,7 @@ const admin = {
 
 /** Loopback SMTP sink: recipient and accept time of every message, nothing else. */
 async function startSink() {
-  const delivered: { to: string; accepted: number }[] = [];
+  const delivered: Array<{ to: string; accepted: number }> = [];
   const sockets = new Set<Socket>();
   const server = createServer((socket) => {
     sockets.add(socket);
@@ -60,22 +62,28 @@ async function startSink() {
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 2);
         if (data) {
-          if (line !== ".") continue;
+          if (line !== ".") {
+            continue;
+          }
           data = false;
           delivered.push({ to, accepted: performance.now() });
           socket.write("250 queued\r\n");
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === "EHLO") socket.write("250-sink.test\r\n250 8BITMIME\r\n");
-        else if (verb === "RCPT") {
+        if (verb === "EHLO") {
+          socket.write("250-sink.test\r\n250 8BITMIME\r\n");
+        } else if (verb === "RCPT") {
           to = /<([^>]*)>/.exec(line)?.[1] ?? "";
           socket.write("250 ok\r\n");
         } else if (verb === "DATA") {
           data = true;
           socket.write("354 go\r\n");
-        } else if (verb === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (verb === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   });
@@ -85,7 +93,9 @@ async function startSink() {
     port,
     delivered,
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((done) => server.close(() => done()));
     },
   };
@@ -138,13 +148,19 @@ async function startServer(directory: string) {
     },
   );
   child.stderr!.on("data", (chunk: Buffer) => {
-    if (stderr.length < 1_000_000) stderr += chunk.toString();
+    if (stderr.length < 1_000_000) {
+      stderr += chunk.toString();
+    }
   });
   const deadline = Date.now() + 10_000;
   for (;;) {
-    if (child.exitCode !== null) throw new Error(`server exited: ${stderr}`);
+    if (child.exitCode !== null) {
+      throw new Error(`server exited: ${stderr}`);
+    }
     try {
-      if ((await fetch(`${origin}/health`)).status === 200) break;
+      if ((await fetch(`${origin}/health`)).status === 200) {
+        break;
+      }
     } catch {
       /* not ready */
     }
@@ -162,7 +178,9 @@ async function startServer(directory: string) {
       return stderr;
     },
     async stop() {
-      if (child.exitCode !== null || child.signalCode !== null) return;
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+      }
       const exited = new Promise<void>((done) => child.once("exit", () => done()));
       child.kill("SIGTERM");
       const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);
@@ -239,7 +257,9 @@ async function seed(api: Api, count: number, list: number, parallel = 8) {
 async function waitFor(check: () => boolean, timeoutMs: number, what: string) {
   const deadline = Date.now() + timeoutMs;
   while (!check()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
     await Bun.sleep(50);
   }
 }
@@ -308,30 +328,31 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
       assert.equal(exits.status, 200, JSON.stringify(exits.body));
     }
     if (hasEvents) {
-      for (let i = 0; i < 20; i++)
+      for (let i = 0; i < 20; i++) {
         await api("/api/subscriber-events", "POST", {
           subscriber: { email: `warm${i}@example.test` },
           name: "warmup",
         });
+      }
     }
     reader = new Database(app.database, { readonly: true });
     const db = reader;
     const queue = () =>
       Object.fromEntries(
         (
-          db.query("SELECT status, count(*) AS n FROM sends GROUP BY status").all() as {
+          db.query("SELECT status, count(*) AS n FROM sends GROUP BY status").all() as Array<{
             status: string;
             n: number;
-          }[]
+          }>
         ).map((row) => [row.status, row.n]),
       );
     const enrollments = () =>
       Object.fromEntries(
         (
-          db.query("SELECT status, count(*) AS n FROM enrollments GROUP BY status").all() as {
+          db.query("SELECT status, count(*) AS n FROM enrollments GROUP BY status").all() as Array<{
             status: string;
             n: number;
-          }[]
+          }>
         ).map((row) => [row.status, row.n]),
       );
     // Exits by sequence and reason: `event:signup` is a `reentry: always` replacement,
@@ -343,7 +364,7 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
             .query(
               "SELECT q.name || ' ' || e.status || ' ' || coalesce(e.exit_reason, '-') AS k, count(*) AS n FROM enrollments e JOIN sequences q ON q.id = e.sequence_id GROUP BY k ORDER BY k",
             )
-            .all() as { k: string; n: number }[]
+            .all() as Array<{ k: string; n: number }>
         ).map((row) => [row.k, row.n]),
       );
     const campaignState = async () => {
@@ -358,8 +379,8 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
       await waitFor(() => sink.delivered.length > 0, 30_000, "first campaign message");
     }
 
-    const events: Result[] = [];
-    const tx: (Result & { to: string })[] = [];
+    const events: Array<Result> = [];
+    const tx: Array<Result & { to: string }> = [];
     let inFlight = 0,
       inFlightPeak = 0,
       shed = 0;
@@ -388,12 +409,14 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
       pending.add(p);
     };
     const probeDir = process.env.M61_TAIL_PROBE;
-    if (probeDir) process.kill(app.pid, "SIGUSR1");
+    if (probeDir) {
+      process.kill(app.pid, "SIGUSR1");
+    }
     const start = performance.now() + 50;
     const end = start + windowMs;
     const startQueue = queue();
     const startCampaign = campaign ? await campaignState() : null;
-    const samples: object[] = [];
+    const samples: Array<object> = [];
     let nextSample = start;
     let eventIndex = 0,
       txIndex = 0,
@@ -472,19 +495,25 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
     const endExits = sequences ? exits() : null;
     await Promise.all(pending);
     // Let tx and sequence sends queued near the end arrive, for their delivery latency.
-    if (sequences) await Bun.sleep(5_000);
+    if (sequences) {
+      await Bun.sleep(5_000);
+    }
 
     const inWindow = (d: { accepted: number }) => d.accepted >= start && d.accepted < end;
     const mail = sink.delivered;
     const campaignMail = mail.filter((d) => d.to.startsWith("m") && inWindow(d));
     const sequenceMail = mail.filter((d) => d.to.startsWith("ev") && inWindow(d));
     const txMail = new Map(mail.filter((d) => d.to.startsWith("tx")).map((d) => [d.to, d]));
-    const buckets: number[] = Array.from({ length: Math.ceil(windowMs / 10_000) }, () => 0);
-    for (const d of campaignMail) buckets[Math.floor((d.accepted - start) / 10_000)]!++;
+    const buckets: Array<number> = Array.from({ length: Math.ceil(windowMs / 10_000) }, () => 0);
+    for (const d of campaignMail) {
+      buckets[Math.floor((d.accepted - start) / 10_000)]!++;
+    }
     const times = campaignMail.map((d) => d.accepted).sort((a, b) => a - b);
     let maxOneSecond = 0;
     for (let i = 0, j = 0; i < times.length; i++) {
-      while (times[j]! < times[i]! - 1000) j++;
+      while (times[j]! < times[i]! - 1000) {
+        j++;
+      }
       maxOneSecond = Math.max(maxOneSecond, i - j + 1);
     }
     const ok = (r: Result) => r.status === 200;
@@ -554,10 +583,11 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
       samples,
     };
     record(result, true);
-    if (campaign)
+    if (campaign) {
       await api(`/api/campaigns/${campaignId}/status`, "PUT", {
         status: "cancelled",
       });
+    }
   } finally {
     reader?.close();
     await app?.stop();
@@ -567,5 +597,6 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
 }
 
 const scenarios = process.argv.slice(2);
-for (const name of scenarios.length ? scenarios : ["events", "baseline", "mixed"])
+for (const name of scenarios.length ? scenarios : ["events", "baseline", "mixed"]) {
   await run(name as "events" | "baseline" | "mixed" | "campaign");
+}

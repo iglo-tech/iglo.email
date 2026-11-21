@@ -39,13 +39,13 @@ const shapes: Record<string, { bytes: number; prefix?: string; build: (n: number
   "flat <b>t</b>": { bytes: 7, build: (n) => "<b>t</b>".repeat(n) },
 };
 
-function median(values: number[]): number {
+function median(values: Array<number>): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
 async function time(html: string): Promise<{ ms: number; text: string }> {
-  const samples: number[] = [];
+  const samples: Array<number> = [];
   let text = "";
   for (let run = 0; run < 5; run++) {
     const started = performance.now();

@@ -34,7 +34,7 @@ export interface WebhookSubject {
 export interface WebhookData {
   /** Null for a send to an address that is not a subscriber. */
   subscriber: WebhookSubject | null;
-  list_ids: (number | object)[];
+  list_ids: Array<number | object>;
   [key: string]: unknown;
 }
 interface Row {
@@ -74,7 +74,7 @@ export interface ClaimedDelivery {
 }
 export interface WebhookInput {
   url: string;
-  events: string[];
+  events: Array<string>;
   enabled: boolean;
 }
 
@@ -86,7 +86,7 @@ export const webhookID = safeID;
 const project = (row: Row) => ({
   id: safeID(row.id),
   url: row.url,
-  events: JSON.parse(row.events) as string[],
+  events: JSON.parse(row.events) as Array<string>,
   enabled: row.enabled === 1n,
   created_at: row.created_at,
   updated_at: row.updated_at,
@@ -104,7 +104,7 @@ const projectDelivery = (row: DeliveryRow) => ({
   created_at: row.created_at,
   updated_at: row.updated_at,
 });
-const page = (rows: unknown[], total: bigint, page: number, perPage: number) => ({
+const page = (rows: Array<unknown>, total: bigint, page: number, perPage: number) => ({
   results: rows,
   total: Number(total),
   per_page: perPage,
@@ -115,7 +115,8 @@ export const generateSecret = () => randomBytes(32).toString("hex");
 
 export function createWebhookStore(db: Database, clock: Clock) {
   const q = prepareNamedQueries(db, [{ name: "webhooks/store", sql }]);
-  const count = (name: string, ...args: bigint[]) => (q.get(name).get(...args) as { n: bigint }).n;
+  const count = (name: string, ...args: Array<bigint>) =>
+    (q.get(name).get(...args) as { n: bigint }).n;
   const iso = () => clock.now().toISOString();
   /** The next attempt, clamped to the window's end; null when the window is over. */
   const nextAttempt = (delay: number, createdAt: string) => {
@@ -129,13 +130,13 @@ export function createWebhookStore(db: Database, clock: Clock) {
   const subscribed = (event: WebhookEvent) => q.get("webhooks-for-event").all(event).length;
   return {
     /** The enabled webhooks' IDs and targets, for the upgrade notice (B125). No secrets. */
-    enabledTargets(): { id: number; url: string }[] {
-      return (q.get("webhook-enabled-targets").all() as { id: bigint; url: string }[]).map(
+    enabledTargets(): Array<{ id: number; url: string }> {
+      return (q.get("webhook-enabled-targets").all() as Array<{ id: bigint; url: string }>).map(
         ({ id, url }) => ({ id: Number(id), url }),
       );
     },
     list(pageNumber: number, perPage: number) {
-      const rows = q.get("webhook-list").all(perPage, (pageNumber - 1) * perPage) as Row[];
+      const rows = q.get("webhook-list").all(perPage, (pageNumber - 1) * perPage) as Array<Row>;
       return page(rows.map(project), count("webhook-count"), pageNumber, perPage);
     },
     get(id: bigint) {
@@ -144,7 +145,9 @@ export function createWebhookStore(db: Database, clock: Clock) {
     },
     /** Inside the caller's write transaction. Null when the configured limit is reached. */
     create(input: WebhookInput, secret: string) {
-      if (count("webhook-count") >= BigInt(MAX_WEBHOOKS)) return null;
+      if (count("webhook-count") >= BigInt(MAX_WEBHOOKS)) {
+        return null;
+      }
       const now = iso();
       const row = q
         .get("webhook-insert")
@@ -176,7 +179,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
     deliveries(id: bigint, pageNumber: number, perPage: number) {
       const rows = q.get("delivery-list").all(id, perPage, (pageNumber - 1) * perPage);
       return page(
-        (rows as DeliveryRow[]).map(projectDelivery),
+        (rows as Array<DeliveryRow>).map(projectDelivery),
         count("delivery-count", id),
         pageNumber,
         perPage,
@@ -188,9 +191,13 @@ export function createWebhookStore(db: Database, clock: Clock) {
      * when a webhook wants the event. The row stores the exact body, sent unchanged by retries.
      */
     queueWebhook(event: WebhookEvent, data: () => WebhookData) {
-      if (!db.inTransaction) throw new Error("Webhooks are queued in the caller's transaction");
-      const hooks = q.get("webhooks-for-event").all(event) as { id: bigint }[];
-      if (!hooks.length) return;
+      if (!db.inTransaction) {
+        throw new Error("Webhooks are queued in the caller's transaction");
+      }
+      const hooks = q.get("webhooks-for-event").all(event) as Array<{ id: bigint }>;
+      if (!hooks.length) {
+        return;
+      }
       const at = iso();
       const snapshot = data();
       const subscriber = snapshot.subscriber
@@ -209,8 +216,12 @@ export function createWebhookStore(db: Database, clock: Clock) {
      * of what `queueWebhook`'s callback returns, so no row passes through JavaScript.
      */
     queueMany(event: WebhookEvent, data: () => string) {
-      if (!db.inTransaction) throw new Error("Webhooks are queued in the caller's transaction");
-      if (!subscribed(event)) return;
+      if (!db.inTransaction) {
+        throw new Error("Webhooks are queued in the caller's transaction");
+      }
+      if (!subscribed(event)) {
+        return;
+      }
       q.get("delivery-insert-many").run(event, data(), iso());
       wake();
     },
@@ -221,12 +232,18 @@ export function createWebhookStore(db: Database, clock: Clock) {
      * whatever its status, and on a subscriber's own wipe their list IDs too. Pending rows stay
      * and go out cleared.
      */
-    clearSubscribers(ids: bigint[], wipe = false) {
-      if (!db.inTransaction) throw new Error("Deliveries are cleared in the caller's transaction");
-      if (!ids.length) return;
+    clearSubscribers(ids: Array<bigint>, wipe = false) {
+      if (!db.inTransaction) {
+        throw new Error("Deliveries are cleared in the caller's transaction");
+      }
+      if (!ids.length) {
+        return;
+      }
       const selected = JSON.stringify(ids.map(String));
       q.get("delivery-clear-subscribers").run(iso(), selected);
-      if (wipe) q.get("delivery-clear-memberships").run(selected);
+      if (wipe) {
+        q.get("delivery-clear-memberships").run(selected);
+      }
     },
     /**
      * The body to send now, which a deletion may have cleared since the claim. Null when the
@@ -250,30 +267,37 @@ export function createWebhookStore(db: Database, clock: Clock) {
     claim(lease: Date, now: Date, free: (webhook: bigint) => number) {
       const until = lease.toISOString(),
         at = now.toISOString(),
-        claimed: ClaimedDelivery[] = [];
-      for (const hook of q.get("webhook-targets").all() as (WebhookTarget & {
-        enabled: bigint;
-      })[]) {
+        claimed: Array<ClaimedDelivery> = [];
+      for (const hook of q.get("webhook-targets").all() as Array<
+        WebhookTarget & {
+          enabled: bigint;
+        }
+      >) {
         if (hook.enabled !== 1n) {
-          const held = q.get("delivery-due").all(hook.id, at, HELD_BATCH) as {
+          const held = q.get("delivery-due").all(hook.id, at, HELD_BATCH) as Array<{
             id: bigint;
             created_at: string;
-          }[];
+          }>;
           for (const row of held) {
             const next = nextAttempt(MAX_RETRY_MS, row.created_at);
-            if (next) q.get("delivery-postpone").run(next, "webhook_disabled", at, row.id);
-            else q.get("delivery-end").run("failed", "webhook_disabled", at, row.id, null);
+            if (next) {
+              q.get("delivery-postpone").run(next, "webhook_disabled", at, row.id);
+            } else {
+              q.get("delivery-end").run("failed", "webhook_disabled", at, row.id, null);
+            }
           }
           continue;
         }
         const slots = free(hook.id);
-        if (slots < 1) continue;
-        const rows = q.get("delivery-claim").all(until, hook.id, at, slots) as Omit<
-          ClaimedDelivery,
-          "target"
-        >[];
-        for (const row of rows)
+        if (slots < 1) {
+          continue;
+        }
+        const rows = q.get("delivery-claim").all(until, hook.id, at, slots) as Array<
+          Omit<ClaimedDelivery, "target">
+        >;
+        for (const row of rows) {
           claimed.push({ ...row, target: { id: hook.id, url: hook.url, secret: hook.secret } });
+        }
       }
       return claimed;
     },
@@ -287,15 +311,17 @@ export function createWebhookStore(db: Database, clock: Clock) {
     ): "delivered" | "queued" | "failed" | null {
       const at = iso(),
         lease = delivery.claimed_until;
-      if (error === null)
+      if (error === null) {
         return q.get("delivery-end").run("delivered", null, at, delivery.id, lease).changes
           ? "delivered"
           : null;
+      }
       const next = nextAttempt(retryDelay(delivery.attempts), delivery.created_at);
-      if (next === null)
+      if (next === null) {
         return q.get("delivery-end").run("failed", error, at, delivery.id, lease).changes
           ? "failed"
           : null;
+      }
       return q.get("delivery-retry").run(next, error, at, delivery.id, lease).changes
         ? "queued"
         : null;

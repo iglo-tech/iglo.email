@@ -6,13 +6,16 @@
 // Through HTTP, on the public
 // fixture, with private single and double opt-in lists beside public ones.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
 const brandUrl = "https://brand.example.test/";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open(overrides: Partial<Record<string, unknown>> = {}) {
   const f = await publicFixture();
@@ -33,7 +36,13 @@ async function txPage(f: PublicFixture, template: number, id: number) {
 }
 
 /** An admin's change of a subscriber's lists, as the subscriber list API makes it. */
-const change = (f: PublicFixture, id: number, action: string, lists: number[], status?: string) =>
+const change = (
+  f: PublicFixture,
+  id: number,
+  action: string,
+  lists: Array<number>,
+  status?: string,
+) =>
   f.json("/api/subscribers/lists", "PUT", {
     ids: [id],
     action,

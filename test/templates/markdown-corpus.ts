@@ -1,6 +1,6 @@
 // Ordinary Markdown documents whose rendered output B104 must not change. The test pins a SHA-256
 // of each output (or its refusal), recorded on origin/main before the link-scan fix.
-export const markdownCorpus: string[] = [
+export const markdownCorpus: Array<string> = [
   '# Heading\n\nParagraph with **bold**, *em*, `code` and [a link](https://example.com/path?x=1&y=2 "Title here").\n',
   "- one\n- two\n  - nested [x](https://example.com/x)\n- three\n",
   "1. first\n2. second with ![img](https://example.com/i.png 'alt title')\n",

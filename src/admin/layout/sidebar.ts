@@ -2,7 +2,7 @@
 import type { NavigationGroup, NavigationLink } from "@/admin/layout/shell";
 import type { Translation } from "@/i18n/i18n";
 
-type Can = (...permissions: string[]) => boolean;
+type Can = (...permissions: Array<string>) => boolean;
 
 /** Upstream's navigation for this user. A link to an unported view still has its route. */
 export function sidebar(
@@ -10,7 +10,7 @@ export function sidebar(
   t: Translation,
   can: Can,
   now: Date,
-): (NavigationLink | NavigationGroup)[] {
+): Array<NavigationLink | NavigationGroup> {
   const link = (id: string, label: string, href: string): NavigationLink => ({
     label,
     href,
@@ -20,7 +20,7 @@ export function sidebar(
     id: string,
     icon: string,
     label: string,
-    links: (NavigationLink | false)[],
+    links: Array<NavigationLink | false>,
   ): NavigationGroup => ({
     label,
     icon,
@@ -29,7 +29,7 @@ export function sidebar(
   });
   const threeMonthsAgo = new Date(now);
   threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 3);
-  const items: (NavigationLink | NavigationGroup)[] = [
+  const items: Array<NavigationLink | NavigationGroup> = [
     link("dashboard", t.T("globals.terms.dashboard"), "/admin"),
     group("lists", "list", t.T("globals.terms.lists"), [
       link("lists.all", t.T("menu.allLists"), "/admin/lists"),
@@ -50,7 +50,7 @@ export function sidebar(
       "subscribers:import",
       "bounces:get",
     )
-  )
+  ) {
     items.push(
       group("subscribers", "at-sign", t.T("globals.terms.subscribers"), [
         can("subscribers:get", "subscribers:get_all") &&
@@ -61,6 +61,7 @@ export function sidebar(
           link("subscribers.bounces", t.T("globals.terms.bounces"), "/admin/subscribers/bounces"),
       ]),
     );
+  }
   if (
     can(
       "campaigns:get",
@@ -71,7 +72,7 @@ export function sidebar(
       "media:get",
       "templates:get",
     )
-  )
+  ) {
     items.push(
       group("campaigns", "send", t.T("globals.terms.campaigns"), [
         can("campaigns:get", "campaigns:get_all") &&
@@ -86,14 +87,16 @@ export function sidebar(
           link("campaigns.analytics", t.T("globals.terms.analytics"), "/admin/campaigns/analytics"),
       ]),
     );
-  if (can("sequences:get"))
+  }
+  if (can("sequences:get")) {
     items.push(
       group("sequences", "activity", t.T("globals.terms.sequences"), [
         link("sequences.all", t.T("menu.allSequences"), "/admin/sequences"),
         link("sequences.enrollments", t.T("sequences.enrollments"), "/admin/sequences/enrollments"),
       ]),
     );
-  if (can("users:get", "users:manage", "roles:get", "roles:manage"))
+  }
+  if (can("users:get", "users:manage", "roles:get", "roles:manage")) {
     items.push(
       group("users", "users", t.T("globals.terms.users"), [
         can("users:get") && link("users.users", t.T("globals.terms.users"), "/admin/users"),
@@ -102,7 +105,8 @@ export function sidebar(
           link("users.list-roles", t.T("users.listRoles"), "/admin/users/roles/lists"),
       ]),
     );
-  if (can("settings:get", "settings:manage", "settings:maintain"))
+  }
+  if (can("settings:get", "settings:manage", "settings:maintain")) {
     items.push(
       group("settings", "settings", t.T("globals.terms.settings"), [
         can("settings:get") &&
@@ -117,5 +121,6 @@ export function sidebar(
           ),
       ]),
     );
+  }
   return items;
 }

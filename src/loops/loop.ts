@@ -14,7 +14,7 @@ export interface LoopOptions<T> {
   /** The wait after a nonempty batch, for loops that must leave the writer to others. */
   readonly pauseMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
-  claim(now: Date, leaseUntil: Date, batchSize: number): readonly T[];
+  claim(now: Date, leaseUntil: Date, batchSize: number): ReadonlyArray<T>;
   process(item: T): Promise<void> | void;
 }
 
@@ -42,12 +42,14 @@ export function createLoop<T>(options: LoopOptions<T>): PendingLoop {
     ["leaseMs", options.leaseMs, 2_147_483_647],
     ["batchSize", options.batchSize, 1000],
   ] as const) {
-    if (!Number.isSafeInteger(value) || value < 1 || value > max)
+    if (!Number.isSafeInteger(value) || value < 1 || value > max) {
       throw new RangeError(`Invalid ${name}`);
+    }
   }
   const pauseMs = options.pauseMs ?? 0;
-  if (!Number.isSafeInteger(pauseMs) || pauseMs < 0 || pauseMs > 2_147_483_647)
+  if (!Number.isSafeInteger(pauseMs) || pauseMs < 0 || pauseMs > 2_147_483_647) {
     throw new RangeError("Invalid pauseMs");
+  }
   if (Object.prototype.toString.call(options.claim) === "[object AsyncFunction]") {
     throw new TypeError("Claim callback must be synchronous");
   }
@@ -66,13 +68,18 @@ export function createLoop<T>(options: LoopOptions<T>): PendingLoop {
   controller.signal.addEventListener(
     "abort",
     () => {
-      if (!started) finish();
+      if (!started) {
+        finish();
+      }
     },
     { once: true },
   );
   const stopFromSignal = () => controller.abort(options.signal?.reason);
-  if (options.signal?.aborted) stopFromSignal();
-  else options.signal?.addEventListener("abort", stopFromSignal, { once: true });
+  if (options.signal?.aborted) {
+    stopFromSignal();
+  } else {
+    options.signal?.addEventListener("abort", stopFromSignal, { once: true });
+  }
   let idle: AbortController | undefined;
   let wakeable = false;
   let wakeInterrupted = false;
@@ -82,18 +89,23 @@ export function createLoop<T>(options: LoopOptions<T>): PendingLoop {
       while (!controller.signal.aborted) {
         const now = options.clock.now();
         const until = new Date(now.getTime() + options.leaseMs);
-        if (!Number.isFinite(now.getTime()) || !Number.isFinite(until.getTime()))
+        if (!Number.isFinite(now.getTime()) || !Number.isFinite(until.getTime())) {
           throw new Error("Clock returned an invalid claim time");
+        }
         const items = writeTransaction(options.db, () => {
           const claimed: unknown = options.claim(now, until, options.batchSize);
-          if (claimed instanceof Promise) void claimed.catch(() => undefined);
+          if (claimed instanceof Promise) {
+            void claimed.catch(() => undefined);
+          }
           if (!Array.isArray(claimed) || claimed.length > options.batchSize) {
             throw new Error("Claim callback must return an array within the configured batch size");
           }
-          return claimed as T[];
+          return claimed as Array<T>;
         });
         for (const item of items) {
-          if (controller.signal.aborted) break;
+          if (controller.signal.aborted) {
+            break;
+          }
           await options.process(item);
         }
         // A synchronous or already-resolved processor only yields microtasks.
@@ -119,7 +131,9 @@ export function createLoop<T>(options: LoopOptions<T>): PendingLoop {
               wakeable = false;
             }
           } catch (error) {
-            if (!controller.signal.aborted && !wakeInterrupted) throw error;
+            if (!controller.signal.aborted && !wakeInterrupted) {
+              throw error;
+            }
             notified = false;
           }
         }
@@ -139,7 +153,9 @@ export function createLoop<T>(options: LoopOptions<T>): PendingLoop {
     done,
     /** Runs the loop: its first claim happens here, synchronously, as before. */
     start() {
-      if (started || controller.signal.aborted) return;
+      if (started || controller.signal.aborted) {
+        return;
+      }
       started = true;
       run().then(finish, fail);
     },

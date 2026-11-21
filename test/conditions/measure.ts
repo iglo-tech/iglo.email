@@ -14,14 +14,16 @@ const events = Number(process.argv[3] ?? 1_000_000);
 const f = await conditionsFixture({ timeoutMs: 10_000 });
 const report = (name: string, values: Record<string, unknown>) =>
   process.stdout.write(`${JSON.stringify({ name, ...values })}\n`);
-const mb = (bytes: number) => Math.round((bytes / 1048576) * 10) / 10;
+const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
 const round = (ms: number) => Math.round(ms * 1000) / 1000;
 let peak = 0;
 const sampler = setInterval(() => (peak = Math.max(peak, process.memoryUsage().rss)), 5);
 
 try {
   const started = performance.now();
-  for (const name of ["one", "two", "three"]) f.addList(name);
+  for (const name of ["one", "two", "three"]) {
+    f.addList(name);
+  }
   f.db.run("BEGIN");
   f.db.run(
     `WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < ?)
@@ -93,14 +95,20 @@ try {
   };
   for (const [name, condition] of Object.entries(typical)) {
     const checked = validate(condition, { canUseSql: true });
-    if (!checked.ok) throw new Error(`${name}: ${JSON.stringify(checked.errors)}`);
+    if (!checked.ok) {
+      throw new Error(`${name}: ${JSON.stringify(checked.errors)}`);
+    }
     const valid: Condition = checked.condition;
     const compileRuns = 10_000;
     let t = performance.now();
-    for (let i = 0; i < compileRuns; i++) validate(condition, { canUseSql: true });
+    for (let i = 0; i < compileRuns; i++) {
+      validate(condition, { canUseSql: true });
+    }
     const validateUs = ((performance.now() - t) / compileRuns) * 1000;
     t = performance.now();
-    for (let i = 0; i < compileRuns; i++) compile(valid);
+    for (let i = 0; i < compileRuns; i++) {
+      compile(valid);
+    }
     const compileUs = ((performance.now() - t) / compileRuns) * 1000;
     const compiled = compile(valid);
     const plan = (
@@ -116,19 +124,19 @@ try {
           ...compiled.params.map((p) =>
             typeof p === "object" ? (p.slot === "after" ? "" : 1) : p,
           ),
-        ) as {
+        ) as Array<{
         detail: string;
-      }[]
+      }>
     ).map((row) => row.detail);
-    const runs = compiled.fragments.length ? 50 : 2_000;
-    const samples: number[] = [];
+    const runs = compiled.fragments.length ? 50 : 2000;
+    const samples: Array<number> = [];
     let trues = 0;
     Bun.gc(true);
     peak = process.memoryUsage().rss;
     const rssBefore = peak;
     t = performance.now();
     for (let i = 0; i < runs; i++) {
-      const id = BigInt(1 + ((i * 104729) % subscribers));
+      const id = BigInt(1 + ((i * 104_729) % subscribers));
       const s = performance.now();
       const result = await f.evaluator.evaluate(condition, {
         subscriberId: id,
@@ -138,8 +146,12 @@ try {
         now,
       });
       samples.push(performance.now() - s);
-      if (!result.ok) throw new Error(`${name}: ${JSON.stringify(result.error)}`);
-      if (result.value) trues++;
+      if (!result.ok) {
+        throw new Error(`${name}: ${JSON.stringify(result.error)}`);
+      }
+      if (result.value) {
+        trues++;
+      }
     }
     samples.sort((a, b) => a - b);
     report(name, {

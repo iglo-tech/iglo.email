@@ -1,5 +1,6 @@
 // The settings public pages read for each request, as listmonk cmd/init.go collects them.
-import { captchaProvider, type Provider } from "@/captcha/captcha";
+import { captchaProvider } from "@/captcha/captcha";
+import type { Provider } from "@/captcha/captcha";
 import type { ShellSite } from "@/public/layout";
 
 export interface PublicSettings extends ShellSite {
@@ -14,11 +15,11 @@ export interface PublicSettings extends ShellSite {
   allowExport: boolean;
   allowWipe: boolean;
   allowPreferences: boolean;
-  exportable: string[];
-  domainAllowlist: string[];
-  domainBlocklist: string[];
-  trustedUrls: string[];
-  trustedProxies: string[];
+  exportable: Array<string>;
+  domainAllowlist: Array<string>;
+  domainBlocklist: Array<string>;
+  trustedUrls: Array<string>;
+  trustedProxies: Array<string>;
   rateLimits: { subscribe: number; optin: number; unsubscribe: number; privacy: number };
   /** The active provider, and the hCaptcha site key the form embeds. */
   captcha: { provider: Provider; key: string };

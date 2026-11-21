@@ -29,8 +29,12 @@ async function waitFor<T>(read: () => Promise<T | undefined>, what: string): Pro
   const deadline = Date.now() + 20_000;
   for (;;) {
     const value = await read();
-    if (value !== undefined) return value;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (value !== undefined) {
+      return value;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
     await Bun.sleep(25);
   }
 }
@@ -99,7 +103,7 @@ test("the admin notification carries the app.logo_url the server saved", async (
     );
 
     // The message is quoted-printable: undo the soft line breaks and =3D escapes before matching.
-    const html = mail.data.replace(/=\r\n/g, "").replace(/=3D/g, "=");
+    const html = mail.data.replaceAll("=\r\n", "").replaceAll("=3D", "=");
     expect(html).toContain(`src="${logo}"`);
   } finally {
     await server.stop();

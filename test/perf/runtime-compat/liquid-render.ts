@@ -1,7 +1,8 @@
 // Comparison: listmonk models/templates.go, models/campaigns.go and
 // internal/manager/message.go compile layout/body/subject before recipient rendering.
 // This is a new synthetic Liquid fixture, not a Go-template port.
-import { Liquid, type LiquidOptions, type Template } from "liquidjs";
+import { Liquid } from "liquidjs";
+import type { LiquidOptions, Template } from "liquidjs";
 
 export interface FixtureInput {
   mode?: "html" | "plain";
@@ -34,7 +35,7 @@ export function compile(liquid: Liquid, body: string, layout?: string) {
 }
 export function renderCompiled(
   liquid: Liquid,
-  compiled: { body: Template[]; layout?: Template[] | undefined },
+  compiled: { body: Array<Template>; layout?: Array<Template> | undefined },
   data: Record<string, unknown>,
 ) {
   const body = String(liquid.renderSync(compiled.body, data));

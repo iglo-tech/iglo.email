@@ -3,7 +3,8 @@
 // also run against pinned upstream, and the signed cases against compiled production, in
 // test/contract/bounces.ts (through a loopback certificate tunnel, test/bounces/sns-tunnel.ts).
 import { afterEach, expect, test } from "bun:test";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import {
   CERT,
@@ -14,12 +15,14 @@ import {
   issue,
   network,
   post,
-  type Network,
 } from "@/test/bounces/ses-fixture";
+import type { Network } from "@/test/bounces/ses-fixture";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 
 async function open(net: Network = network()) {
@@ -28,12 +31,12 @@ async function open(net: Network = network()) {
   return f;
 }
 const rows = (f: TxFixture) =>
-  f.db.query("SELECT subscriber_id, type, source, meta FROM bounces ORDER BY id").all() as {
+  f.db.query("SELECT subscriber_id, type, source, meta FROM bounces ORDER BY id").all() as Array<{
     subscriber_id: bigint | null;
     type: string;
     source: string;
     meta: string;
-  }[];
+  }>;
 const status = async (f: TxFixture, id: number) =>
   (await f.json(`/api/subscribers/${id}`)).body.data?.status as string | undefined;
 
@@ -56,7 +59,7 @@ test("signature version 2 verifies, and the certificate is fetched once", async 
   const net = network();
   const f = await open(net);
   await f.subscriber("v2@example.com");
-  for (let i = 0; i < 2; i++)
+  for (let i = 0; i < 2; i++) {
     expect(
       (
         await post(
@@ -65,6 +68,7 @@ test("signature version 2 verifies, and the certificate is fetched once", async 
         )
       ).status,
     ).toBe(200);
+  }
   expect(net.requests.length).toBe(1);
 });
 
@@ -222,7 +226,9 @@ test("refused messages change nothing", async () => {
       Timestamp: new Date(f.clock.now().getTime() - 2 * 86_400_000).toISOString(),
     }),
   ];
-  for (const body of refused) expect((await post(f, body)).status).toBe(400);
+  for (const body of refused) {
+    expect((await post(f, body)).status).toBe(400);
+  }
   // The header is not signed, so it must agree with the signed type; unknown types are refused.
   expect(
     (await post(f, envelope(f, { Message: message }), "SubscriptionConfirmation")).status,
@@ -278,8 +284,9 @@ test("a verified subscription confirmation fetches only its own SNS URL", async 
     "https://sns.eu-west-1.amazonaws.com@evil.test/?x=1",
     "https://sns.s3.amazonaws.com/?x=1",
   ];
-  for (const bad of off)
+  for (const bad of off) {
     expect((await post(f, confirm(bad), "SubscriptionConfirmation")).status).toBe(400);
+  }
   // An unverified confirmation fetches nothing, not even its certificate again.
   expect(
     (await post(f, confirm(url, { key: issue().key }), "SubscriptionConfirmation")).status,
@@ -303,7 +310,7 @@ test("a topic that is not on the list is refused, and a foreign confirmation is 
   const id = await f.subscriber("topic@example.com");
   const url = "https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&Token=t";
   const message = bounceMessage(f, ["topic@example.com"]);
-  const attempts = (topics: string[]) => {
+  const attempts = (topics: Array<string>) => {
     f.setBounce({ "bounce.ses_topic_arns": topics });
     return [
       () => post(f, envelope(f, { Message: message, TopicArn: foreign })),
@@ -322,8 +329,9 @@ test("a topic that is not on the list is refused, and a foreign confirmation is 
     ];
   };
   // Another account's topic, with the operator's account allowed.
-  for (const run of attempts(["arn:aws:sns:*:123456789012:*"]))
+  for (const run of attempts(["arn:aws:sns:*:123456789012:*"])) {
     expect((await run()).status).toBe(400);
+  }
   // An exact ARN does not match its neighbour; an empty list accepts nothing, even the right topic.
   const own = "arn:aws:sns:eu-west-1:123456789012:bounces";
   f.setBounce({ "bounce.ses_topic_arns": [`${own}-other`] });
@@ -355,7 +363,7 @@ test("a topic that is not on the list is refused, and a foreign confirmation is 
 
 test("a message naming thousands of recipients records at most 50", async () => {
   const f = await open();
-  const real: string[] = [];
+  const real: Array<string> = [];
   for (let i = 0; i < 52; i++) {
     const email = `real${i}@example.com`;
     await f.subscriber(email);

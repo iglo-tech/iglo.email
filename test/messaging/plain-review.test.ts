@@ -53,14 +53,14 @@ test("70k nested links convert within a generous real-time bound", async () => {
   const elapsed = performance.now() - started;
   // Past the 1024 cap on open elements (D118 r4), the message has no text part.
   expect(result).toBe("");
-  expect(elapsed).toBeLessThan(5_000);
+  expect(elapsed).toBeLessThan(5000);
 });
 
 test("70k nested blocks convert within a generous real-time bound", async () => {
   const html = "<div>".repeat(70_000) + "t" + "</div>".repeat(70_000);
   const started = performance.now();
   expect(await text(html)).toBe("");
-  expect(performance.now() - started).toBeLessThan(5_000);
+  expect(performance.now() - started).toBeLessThan(5000);
 });
 
 // r4: every open element counts toward the cap, so nesting within it keeps its text.
@@ -215,19 +215,19 @@ const bytesPerLevel: Record<keyof typeof nested, number> = {
   li: 18,
   td: 34,
 };
-for (const kind of Object.keys(nested) as (keyof typeof nested)[]) {
+for (const kind of Object.keys(nested) as Array<keyof typeof nested>) {
   test(`1 MiB of nested ${kind} is under 1 s, and past the 1024 cap it has no text part`, async () => {
     const html = nested[kind](Math.floor(MIB / bytesPerLevel[kind]));
     const started = performance.now();
     expect(await text(html)).toBe("");
-    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 }
 
 test("quadrupling nested <b> input costs at most about 6x: the cost is not the square", async () => {
   const time = async (n: number) => {
     const html = nested.b(n);
-    const samples: number[] = [];
+    const samples: Array<number> = [];
     for (let run = 0; run < 3; run++) {
       const started = performance.now();
       await text(html);
@@ -278,7 +278,7 @@ for (const kind of Object.keys(implied)) {
     const { unit, bytes } = implied[kind]!;
     const build = (size: number) => prefix[kind]! + unit.repeat(Math.floor(size / bytes));
     const time = async (size: number) => {
-      const samples: number[] = [];
+      const samples: Array<number> = [];
       for (let run = 0; run < 3; run++) {
         const started = performance.now();
         await text(build(size));
@@ -289,7 +289,7 @@ for (const kind of Object.keys(implied)) {
     const small = await time(256 * 1024);
     const large = await time(MIB);
     expect(large / Math.max(small, 5)).toBeLessThanOrEqual(5);
-    expect(large).toBeLessThan(1_000);
+    expect(large).toBeLessThan(1000);
   });
 }
 
@@ -299,7 +299,7 @@ test("the worst linear case, 1023 open spans then stray end tags to 1 MiB, is un
   const html = "<span>".repeat(1023) + "x</q>".repeat(Math.floor(MIB / 5));
   const started = performance.now();
   await text(html);
-  expect(performance.now() - started).toBeLessThan(1_000);
+  expect(performance.now() - started).toBeLessThan(1000);
 });
 
 test("a message past the implied-end cap gives no text part, and its HTML is still converted by the caller", async () => {

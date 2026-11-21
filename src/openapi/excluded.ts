@@ -1,7 +1,7 @@
 // Routes the document leaves out, each with why. The coverage test holds this list to the router.
 export interface Excluded {
   /** Exact "METHOD /path" routes, or a `/prefix/*` the router does not own. */
-  routes: string[];
+  routes: Array<string>;
   reason: string;
 }
 
@@ -55,7 +55,7 @@ const adminPages = [
   "/admin/users/roles/new",
 ];
 
-export const excluded: Excluded[] = [
+export const excluded: Array<Excluded> = [
   {
     routes: adminPages.map((path) => `GET ${path}`),
     reason: "Admin pages: server-rendered HTML for a browser session, not an API.",

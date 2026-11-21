@@ -4,13 +4,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
-import { createServer, createConnection, type Socket } from "node:net";
+import { createServer, createConnection } from "node:net";
+import type { Socket } from "node:net";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createListReferences } from "@/lists/references";
 import { createSubscriberStore } from "@/subscribers/store";
-import { createEmailer, type Message } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { Message } from "@/messaging/email";
 import { createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
@@ -48,7 +50,9 @@ const relay = createServer((client) => {
 });
 await new Promise<void>((done) => relay.listen(0, "127.0.0.1", done));
 const relayAddress = relay.address();
-if (!relayAddress || typeof relayAddress === "string") throw new Error("Missing relay port");
+if (!relayAddress || typeof relayAddress === "string") {
+  throw new Error("Missing relay port");
+}
 const directory = await mkdtemp(join(tmpdir(), "iglo-outbox-measure-"));
 const clock = createRealClock(),
   db = openDatabase(directory);
@@ -84,7 +88,9 @@ const tracked = {
   finishAll(results: Parameters<typeof sends.finishAll>[0]) {
     sends.finishAll(results);
     for (const result of results) {
-      if (!("outcome" in result)) continue;
+      if (!("outcome" in result)) {
+        continue;
+      }
       const { outcome } = result;
       pending.get(outcome.messageId)?.(outcome.status === "accepted");
       pending.delete(outcome.messageId);
@@ -94,7 +100,7 @@ const tracked = {
 let loop: ReturnType<typeof startOutbox> | undefined;
 try {
   for (const mode of ["control", "durable"] as const) {
-    if (mode === "durable")
+    if (mode === "durable") {
       loop = startOutbox({
         db,
         clock,
@@ -102,10 +108,11 @@ try {
         sends: tracked,
         emailer: mailer,
       });
+    }
     for (let repetition = 0; repetition <= 3; repetition++) {
       const count = repetition === 0 ? 10 : 50;
-      const ids: string[] = [],
-        enqueue: number[] = [];
+      const ids: Array<string> = [],
+        enqueue: Array<number> = [];
       const before = connects;
       peak = live;
       const start = performance.now();
@@ -121,14 +128,14 @@ try {
           const dispatched = direct.push(message);
           const result = await dispatched.result;
           assert.equal(result.status, "accepted");
-          ids.push(dispatched.messageId.replace(/[<>]/g, ""));
+          ids.push(dispatched.messageId.replaceAll(/[<>]/g, ""));
         } else {
           const begin = performance.now();
           const entry = sends.enqueue({ source: "tx", kind: "transactional", message });
           enqueue.push(performance.now() - begin);
           const accepted = new Promise<boolean>((done) => pending.set(entry.smtp_message_id, done));
           assert.equal(await accepted, true);
-          ids.push(entry.smtp_message_id.replace(/[<>]/g, ""));
+          ids.push(entry.smtp_message_id.replaceAll(/[<>]/g, ""));
         }
       }
       const elapsed = performance.now() - start;
@@ -136,13 +143,15 @@ try {
         m.Subject.startsWith(`${marker} ${mode}-${repetition}-`),
       );
       assert.equal(received.length, count);
-      assert.deepEqual(received.map((m) => m.MessageID.replace(/[<>]/g, "")).sort(), ids.sort());
+      assert.deepEqual(received.map((m) => m.MessageID.replaceAll(/[<>]/g, "")).sort(), ids.sort());
       process.stdout.write(
         `${JSON.stringify({ mode, repetition, count, elapsedMs: elapsed, enqueueMeanMs: enqueue.length ? enqueue.reduce((a, b) => a + b, 0) / enqueue.length : null, accepted: count, matched: received.length, connections: connects - before, peakLive: peak })}\n`,
       );
       await mailpit.removeOwned();
     }
-    if (mode === "control") await direct.close();
+    if (mode === "control") {
+      await direct.close();
+    }
   }
 } finally {
   const stopped = loop?.stop();
@@ -151,7 +160,9 @@ try {
   subscribers.close();
   lists.close();
   db.close(true);
-  for (const socket of sockets) socket.destroy();
+  for (const socket of sockets) {
+    socket.destroy();
+  }
   await new Promise<void>((done, fail) => relay.close((error) => (error ? fail(error) : done())));
   await mailpit.removeOwned();
   await rm(directory, { recursive: true, force: true });

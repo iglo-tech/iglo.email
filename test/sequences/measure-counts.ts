@@ -28,7 +28,9 @@ try {
         `s${id}`,
         `Sequence ${id}`,
       ]);
-      for (const position of [0, 1, 2]) step.run(`${id}-${position}`, id, position);
+      for (const position of [0, 1, 2]) {
+        step.run(`${id}-${position}`, id, position);
+      }
     }
   })();
   // Real active rows are unique per subscriber, so each enrollment has its own subscriber.
@@ -42,7 +44,7 @@ try {
     "INSERT INTO sends (uuid, source, kind, to_email, enrollment_id, step_id, status) VALUES (?, 'sequence', 'transactional', 'm@example.test', ?, ?, 'sent')",
   );
   const started = performance.now();
-  for (let from = 0; from < count; from += 50_000)
+  for (let from = 0; from < count; from += 50_000) {
     db.transaction(() => {
       for (let i = from; i < Math.min(count, from + 50_000); i += 1) {
         const id = i + 2;
@@ -52,9 +54,10 @@ try {
         send.run(`e${id}`, id, (sequence - 1) * 3 + 1);
       }
     })();
+  }
   console.log(`seeded ${count} in ${Math.round(performance.now() - started)} ms`);
   const timed = (label: string, read: () => unknown) => {
-    const times: number[] = [];
+    const times: Array<number> = [];
     for (let run = 0; run < runs; run += 1) {
       const at = performance.now();
       read();

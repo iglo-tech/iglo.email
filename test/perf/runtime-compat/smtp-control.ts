@@ -2,11 +2,8 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import nodemailer from "nodemailer";
-import {
-  assertOwnedMailpit,
-  referenceMailpit,
-  type ReferenceMailpit,
-} from "@/test/perf/runtime-compat/smtp-env";
+import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import type { ReferenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import {
   alternateBody,
@@ -38,7 +35,7 @@ export async function control(reference: ReferenceMailpit, pooled = false) {
     disableFileAccess: true,
     disableUrlAccess: true,
     connectionTimeout: 5000,
-    socketTimeout: 10000,
+    socketTimeout: 10_000,
   });
   const expectedPlain = `<${marker}.plain@example.test>`;
   const expectedHtml = `<${marker}.html@example.test>`;
@@ -55,7 +52,7 @@ export async function control(reference: ReferenceMailpit, pooled = false) {
         done();
         return;
       }
-      const chunks: Buffer[] = [];
+      const chunks: Array<Buffer> = [];
       const stream = mail.message.createReadStream();
       stream.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
       stream.once("error", done);
@@ -158,4 +155,6 @@ export async function control(reference: ReferenceMailpit, pooled = false) {
     await mailpit.removeOwned();
   }
 }
-if (import.meta.main) console.log(JSON.stringify(await control(referenceMailpit(process.env))));
+if (import.meta.main) {
+  console.log(JSON.stringify(await control(referenceMailpit(process.env))));
+}

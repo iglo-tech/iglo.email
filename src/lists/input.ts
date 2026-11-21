@@ -26,11 +26,15 @@ const stringFields: Record<string, StringField> = {
 
 // JSON.parse validates the complete document. Split only its top-level members
 // afterward so duplicate keys and case aliases are applied in source order.
-function jsonMembers(body: string): [string, unknown][] {
+function jsonMembers(body: string): Array<[string, unknown]> {
   const parsed: unknown = JSON.parse(body);
-  if (parsed === null) return [];
-  if (typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("object required");
-  const result: [string, unknown][] = [];
+  if (parsed === null) {
+    return [];
+  }
+  if (typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("object required");
+  }
+  const result: Array<[string, unknown]> = [];
   const append = (member: string) => {
     const value = JSON.parse(`{${member}}`) as Record<string, unknown>;
     result.push(...Object.entries(value));
@@ -42,16 +46,25 @@ function jsonMembers(body: string): [string, unknown][] {
   for (let i = start; i < body.length; i++) {
     const c = body[i]!;
     if (quoted) {
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === '"') quoted = false;
-    } else if (c === '"') quoted = true;
-    else if (c === "{" || c === "[") depth++;
-    else if (c === "}" || c === "]") {
-      if (depth) depth--;
-      else if (c === "}") {
+      if (escaped) {
+        escaped = false;
+      } else if (c === "\\") {
+        escaped = true;
+      } else if (c === '"') {
+        quoted = false;
+      }
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === "{" || c === "[") {
+      depth++;
+    } else if (c === "}" || c === "]") {
+      if (depth) {
+        depth--;
+      } else if (c === "}") {
         const member = body.slice(start, i).trim();
-        if (member) append(member);
+        if (member) {
+          append(member);
+        }
         break;
       }
     } else if (c === "," && depth === 0) {
@@ -63,15 +76,19 @@ function jsonMembers(body: string): [string, unknown][] {
 }
 function jsonInput(body: string): ListInput {
   const out = empty();
-  let tagStorage: string[] = [];
+  let tagStorage: Array<string> = [];
   for (const [key, value] of jsonMembers(body)) {
     const normalizedKey = key.toLowerCase().replaceAll("ſ", "s");
     const field = Object.hasOwn(stringFields, normalizedKey)
       ? stringFields[normalizedKey]
       : undefined;
     if (field) {
-      if (value === null) continue;
-      if (typeof value !== "string") throw new Error("invalid string");
+      if (value === null) {
+        continue;
+      }
+      if (typeof value !== "string") {
+        throw new Error("invalid string");
+      }
       out[field] = value.toWellFormed();
     } else if (normalizedKey === "tags") {
       if (value === null || (Array.isArray(value) && value.length === 0)) {
@@ -81,8 +98,9 @@ function jsonInput(body: string): ListInput {
         if (
           !Array.isArray(value) ||
           value.some((v: unknown) => v !== null && typeof v !== "string")
-        )
+        ) {
           throw new Error("invalid tags");
+        }
         out.tags = value.map((v: string | null, i: number) => {
           const text = v?.toWellFormed() ?? tagStorage[i] ?? "";
           tagStorage[i] = text;
@@ -119,15 +137,18 @@ function xmlInput(body: Buffer): ListInput {
     if (
       declaration.version !== "1.0" ||
       (declaration.encoding && declaration.encoding.toLowerCase() !== "utf-8")
-    )
+    ) {
       throw new Error("unsupported XML declaration");
+    }
   });
   // Saxes neither registers DTD entities nor resolves external declarations.
   parser.on("doctype", () => {
     throw new Error("declaration");
   });
   parser.on("opentagstart", () => {
-    if (depth >= 64) throw new Error("depth");
+    if (depth >= 64) {
+      throw new Error("depth");
+    }
   });
   parser.on("opentag", (tag) => {
     depth++;
@@ -138,29 +159,42 @@ function xmlInput(body: Buffer): ListInput {
     }
   });
   const characters = (value: string) => {
-    if (depth === 2 && field) text += value;
+    if (depth === 2 && field) {
+      text += value;
+    }
   };
   parser.on("text", characters);
   parser.on("cdata", characters);
   parser.on("closetag", () => {
     if (depth === 2 && field) {
-      if (field === "tags") out.tags.push(text);
-      else out[field] = text;
+      if (field === "tags") {
+        out.tags.push(text);
+      } else {
+        out[field] = text;
+      }
       field = undefined;
     }
-    if (--depth === 0) complete = true;
+    if (--depth === 0) {
+      complete = true;
+    }
   });
   const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   let start = 0;
   for (let i = 0; i < body.length; i++) {
-    if (body[i] !== 62) continue;
+    if (body[i] !== 62) {
+      continue;
+    }
     parser.write(decoder.decode(body.subarray(start, i + 1), { stream: true }));
-    if (complete) return out;
+    if (complete) {
+      return out;
+    }
     start = i + 1;
   }
   parser.write(decoder.decode(body.subarray(start)));
   parser.close();
-  if (!complete) throw new Error("root required");
+  if (!complete) {
+    throw new Error("root required");
+  }
   return out;
 }
 
@@ -169,24 +203,34 @@ export async function listInput(context: RequestContext): Promise<ListInput> {
   const type = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
   let value: ListInput;
   try {
-    if (!body.length) value = empty();
-    else if (type === "application/json") value = jsonInput(body.toString("utf8"));
-    else if (type === "application/xml" || type === "text/xml") value = xmlInput(body);
-    else throw new HttpError(415);
+    if (!body.length) {
+      value = empty();
+    } else if (type === "application/json") {
+      value = jsonInput(body.toString("utf8"));
+    } else if (type === "application/xml" || type === "text/xml") {
+      value = xmlInput(body);
+    } else {
+      throw new HttpError(415);
+    }
   } catch (error) {
-    if (error instanceof HttpError) throw error;
+    if (error instanceof HttpError) {
+      throw error;
+    }
     throw new HttpError(400);
   }
-  if (!strHasLen(value.name, 1, 2000))
+  if (!strHasLen(value.name, 1, 2000)) {
     throw new HttpError(400, context.app.i18n.T("globals.messages.invalidName"));
+  }
   for (const [name, field, allowed] of [
     ["type", value.type, ["public", "private"]],
     ["optin", value.optin, ["single", "double"]],
     ["status", value.status, ["active", "archived"]],
-  ] as const)
+  ] as const) {
     if (field && !(allowed as readonly string[]).includes(field))
       throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
-  if (normalizeTags(value.tags).some((tag) => Array.from(tag).length > 100))
+  }
+  if (normalizeTags(value.tags).some((tag) => Array.from(tag).length > 100)) {
     throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", "tags"));
+  }
   return value;
 }

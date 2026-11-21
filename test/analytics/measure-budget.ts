@@ -11,7 +11,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 
 const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
-const mb = (bytes: number) => Math.round((bytes / 1048576) * 10) / 10;
+const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
 
 async function wal(gapAfterMs: number, label: string, seconds: number, checkpoint: boolean) {
   const directory = mkdtempSync(join(tmpdir(), "iglo-wal-"));
@@ -49,11 +49,13 @@ async function wal(gapAfterMs: number, label: string, seconds: number, checkpoin
     });
     const walPath = `${db.filename}-wal`;
     let peak = 0;
-    const samples: number[] = [];
+    const samples: Array<number> = [];
     const end = performance.now() + seconds * 1000;
     let second = 0;
     while (performance.now() < end) {
-      for (let i = 0; i < 50; i++) insert.run(); // 50 commits per second, autocheckpoint on
+      for (let i = 0; i < 50; i++) {
+        insert.run();
+      } // 50 commits per second, autocheckpoint on
       await Bun.sleep(1000 - 0);
       let size = 0;
       try {
@@ -62,7 +64,9 @@ async function wal(gapAfterMs: number, label: string, seconds: number, checkpoin
         /* no WAL file */
       }
       peak = Math.max(peak, size);
-      if (++second % 5 === 0) samples.push(mb(size));
+      if (++second % 5 === 0) {
+        samples.push(mb(size));
+      }
     }
     running = false;
     await Promise.all(pollers);
@@ -118,7 +122,9 @@ async function egress(budgeted: boolean, clients: number, bodyBytes: number) {
     return socket;
   });
   const deadline = performance.now() + 60_000;
-  while (served + refused < clients && performance.now() < deadline) await Bun.sleep(50);
+  while (served + refused < clients && performance.now() < deadline) {
+    await Bun.sleep(50);
+  }
   await Bun.sleep(1000);
   clearInterval(sampler);
   peak = Math.max(peak, process.memoryUsage().rss);
@@ -131,7 +137,9 @@ async function egress(budgeted: boolean, clients: number, bodyBytes: number) {
     rssBeforeMB: mb(before),
     rssPeakMB: mb(peak),
   });
-  for (const socket of sockets) socket.destroy();
+  for (const socket of sockets) {
+    socket.destroy();
+  }
   server.stop(true);
   await reader.close();
 }
@@ -144,4 +152,6 @@ if (mode === "wal") {
 } else if (mode === "egress") {
   await egress(false, 40, 20_000_000);
   await egress(true, 40, 20_000_000);
-} else throw new Error("usage: measure-budget.ts wal|egress");
+} else {
+  throw new Error("usage: measure-budget.ts wal|egress");
+}

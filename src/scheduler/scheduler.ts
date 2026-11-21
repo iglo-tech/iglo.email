@@ -15,14 +15,11 @@ import { sendingHeld } from "@/settings/hold";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Message } from "@/messaging/email";
 import type { Sends } from "@/messaging/sends";
-import { type Claim, type Enrollments, type SchedulerContext } from "@/sequences/enrollments";
+import type { Claim, Enrollments, SchedulerContext } from "@/sequences/enrollments";
 import { renderStep, stepCompileInput, stepDataText, TEST_SUBJECT } from "@/sequences/step-data";
 import type { SubscriberStore } from "@/subscribers/store";
-import {
-  createMessageBudget,
-  RenderCapacityError,
-  type TemplateRenderer,
-} from "@/templates/renderer";
+import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
+import type { TemplateRenderer } from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 import type { TemplateStore } from "@/templates/store";
 import { messageLinks } from "@/unsubscribe/message";
@@ -59,7 +56,7 @@ const DECIDED_ON = [
   "cap_policy",
   "max_late",
   "list_id",
-] as const satisfies readonly (keyof SchedulerContext)[];
+] as const satisfies ReadonlyArray<keyof SchedulerContext>;
 
 /** A claim with the full context its decision read. */
 interface Decision extends Claim {
@@ -102,7 +99,9 @@ export function createScheduler(options: SchedulerOptions) {
     try {
       logger.attention(message, safe);
       // The exception behind a failed decision is an unexpected error: its stack keeps its own line.
-      if (cause !== undefined) logger.error(cause);
+      if (cause !== undefined) {
+        logger.error(cause);
+      }
     } catch {
       /* Logging never changes a decision. */
     }
@@ -110,10 +109,15 @@ export function createScheduler(options: SchedulerOptions) {
   const compiled = new Map<string, ReturnType<TemplateRenderer["compile"]>>();
   function compile(key: string, input: Parameters<TemplateRenderer["compile"]>[0]) {
     let template = compiled.get(key);
-    if (template) compiled.delete(key);
-    else template = options.renderer.compile(input);
+    if (template) {
+      compiled.delete(key);
+    } else {
+      template = options.renderer.compile(input);
+    }
     compiled.set(key, template);
-    if (compiled.size > COMPILED) compiled.delete(compiled.keys().next().value!);
+    if (compiled.size > COMPILED) {
+      compiled.delete(compiled.keys().next().value!);
+    }
     return template;
   }
 
@@ -125,13 +129,19 @@ export function createScheduler(options: SchedulerOptions) {
    */
   function commit(claim: Decision, write: (current: SchedulerContext) => void): boolean {
     return writeTransaction(db, () => {
-      if (!enrollments.owns(claim)) return false;
+      if (!enrollments.owns(claim)) {
+        return false;
+      }
       const current = enrollments.schedulerContext(claim.id);
-      if (!current) return false;
+      if (!current) {
+        return false;
+      }
       if (current.sequence_status !== claim.step.sequence_status) {
-        if (current.sequence_status === "archived")
+        if (current.sequence_status === "archived") {
           enrollments.endClaimed(claim, "exited", "sequence_archived", clock.now());
-        else enrollments.release(claim, null);
+        } else {
+          enrollments.release(claim, null);
+        }
         return false;
       }
       if (DECIDED_ON.some((field) => current[field] !== claim.step[field])) {
@@ -180,28 +190,44 @@ export function createScheduler(options: SchedulerOptions) {
 
   async function decide(item: { id: bigint; lease: string }) {
     const row = enrollments.schedulerContext(item.id);
-    if (!row || row.status !== "active" || row.claimed_until !== item.lease) return;
+    if (!row || row.status !== "active" || row.claimed_until !== item.lease) {
+      return;
+    }
     const claim: Decision = { id: row.id, lease: item.lease, step: row };
     const now = clock.now();
     // A send already recorded for this step (a crash before the advance, or a step revisited
     // after a reorder) is never written or sent again: only advance.
-    if (sends.sequenceSend(row.id, row.step_id)) return advance(claim);
-    if (row.sequence_status === "archived") return end(claim, "exited", "sequence_archived");
+    if (sends.sequenceSend(row.id, row.step_id)) {
+      return advance(claim);
+    }
+    if (row.sequence_status === "archived") {
+      return end(claim, "exited", "sequence_archived");
+    }
     // Paused (or returned to draft) after the claim: release it; it runs when resumed.
-    if (row.sequence_status !== "active")
+    if (row.sequence_status !== "active") {
       return commit(claim, () => enrollments.release(claim, null));
+    }
     const subscriber = options.subscribers.get(row.subscriber_id);
-    if (!subscriber) return end(claim, "canceled", "subscriber_deleted");
-    if (subscriber.status === "blocklisted") return end(claim, "exited", "blocklisted");
-    if (row.step_status === "deleted") return advance(claim);
+    if (!subscriber) {
+      return end(claim, "canceled", "subscriber_deleted");
+    }
+    if (subscriber.status === "blocklisted") {
+      return end(claim, "exited", "blocklisted");
+    }
+    if (row.step_status === "deleted") {
+      return advance(claim);
+    }
     const maxLate = row.max_late ?? (row.kind === "marketing" ? MARKETING_MAX_LATE : null);
     const late = maxLate === null ? undefined : parseDuration(maxLate);
-    if (late !== undefined && now.getTime() > Date.parse(row.due_at) + late)
+    if (late !== undefined && now.getTime() > Date.parse(row.due_at) + late) {
       return skipped(claim, subscriber.email, "late");
+    }
     const marketing = row.kind === "marketing";
     if (marketing) {
       const reason = sends.marketingReason(row.subscriber_id, row.list_id);
-      if (reason && reason !== "frequency_cap") return end(claim, "exited", "unsubscribed");
+      if (reason && reason !== "frequency_cap") {
+        return end(claim, "exited", "unsubscribed");
+      }
     }
 
     const trigger = row.trigger_event_id === null ? null : options.events.get(row.trigger_event_id);
@@ -222,26 +248,32 @@ export function createScheduler(options: SchedulerOptions) {
         );
         return retry(claim, lateBackoff(row));
       }
-      if (!result.value)
+      if (!result.value) {
         return row.on_false === "skip" ? advance(claim) : end(claim, "exited", "condition");
+      }
     }
 
     const template = row.template_id === null ? null : options.templates.get(row.template_id);
     if (!template || template.type !== "tx") {
       // Logged once, when recorded: a template deleted during the condition is a stale
       // decision, released and decided again.
-      if (skipped(claim, subscriber.email, "template_unavailable"))
+      if (skipped(claim, subscriber.email, "template_unavailable")) {
         attention(
           "Sequence step has no transactional template: skipped",
           `Sequence step ${row.step_id} has no transactional template; enrollment ${row.id} skipped it`,
         );
+      }
       return;
     }
     if (marketing) {
       // Rechecked after the condition, which may have waited on the query runner.
       const reason = sends.marketingReason(row.subscriber_id, row.list_id);
-      if (reason === "frequency_cap") return capped(claim, subscriber.email);
-      if (reason) return end(claim, "exited", "unsubscribed");
+      if (reason === "frequency_cap") {
+        return capped(claim, subscriber.email);
+      }
+      if (reason) {
+        return end(claim, "exited", "unsubscribed");
+      }
     }
 
     // Aggregates are read once the condition and the cap admit the step, before rendering (D100).
@@ -252,11 +284,12 @@ export function createScheduler(options: SchedulerOptions) {
     if (row.aggregates !== null) {
       const result = options.events.aggregate(JSON.parse(row.aggregates), context);
       if (!result.ok && "limit" in result) {
-        if (skipped(claim, subscriber.email, "aggregate_limit"))
+        if (skipped(claim, subscriber.email, "aggregate_limit")) {
           attention(
             "Sequence step has an aggregate past its limit: skipped",
             `Sequence step ${row.step_id} has an aggregate that is over ${AGGREGATE_LIMIT} events or outside the exact integer range for enrollment ${row.id}; skipped`,
           );
+        }
         return;
       }
       if (!result.ok) {
@@ -347,12 +380,15 @@ export function createScheduler(options: SchedulerOptions) {
         subscriber.uuid,
       );
     } catch (error) {
-      if (error instanceof RenderCapacityError) return retry(claim, BUSY_MS);
-      if (skipped(claim, subscriber.email, "render_failed"))
+      if (error instanceof RenderCapacityError) {
+        return retry(claim, BUSY_MS);
+      }
+      if (skipped(claim, subscriber.email, "render_failed")) {
         attention(
           "Sequence step could not be rendered: skipped",
           `Sequence step ${row.step_id} could not be rendered for enrollment ${row.id}; skipped`,
         );
+      }
       return;
     }
 
@@ -393,7 +429,9 @@ export function createScheduler(options: SchedulerOptions) {
         queued = true;
       }
     });
-    if (queued) sends.notify();
+    if (queued) {
+      sends.notify();
+    }
   }
 
   const loop = createLoop<{ id: bigint; lease: string }>({

@@ -32,19 +32,21 @@ export function createListReferences(db: Database) {
         created_at: string | null;
         updated_at: string | null;
       } | null;
-      if (!row) return null;
-      const tags = row.tags ? (JSON.parse(row.tags) as unknown[]) : null;
+      if (!row) {
+        return null;
+      }
+      const tags = row.tags ? (JSON.parse(row.tags) as Array<unknown>) : null;
       // Upstream lazy subscriber projection embeds raw list tags, unlike the
       // standalone list API. normalizeTags stores NULL for an empty result.
       return { ...row, id: Number(row.id), tags: tags?.length ? tags : null };
     },
     /** Adapted from get-lists: active public lists by ID. */
-    publicLists(): PublicList[] {
-      return queries.get("public-lists").all() as PublicList[];
+    publicLists(): Array<PublicList> {
+      return queries.get("public-lists").all() as Array<PublicList>;
     },
     /** Adapted from get-list-types: lists by UUID, of any type; unknown UUIDs are absent. */
-    byUuids(uuids: string[]): PublicList[] {
-      return queries.get("lists-by-uuid").all(JSON.stringify(uuids)) as PublicList[];
+    byUuids(uuids: Array<string>): Array<PublicList> {
+      return queries.get("lists-by-uuid").all(JSON.stringify(uuids)) as Array<PublicList>;
     },
     close: () => queries.close(),
   };

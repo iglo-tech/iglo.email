@@ -37,10 +37,10 @@ const base = temporaryDirectory(measurements);
 const dataDir = join(base, "data");
 const destination = join(base, "destination");
 const wal = join(dataDir, "iglo-email.db-wal");
-const mb = (bytes: number) => +(bytes / 1048576).toFixed(1);
-const percentile = (values: number[], p: number) =>
+const mb = (bytes: number) => +(bytes / 1_048_576).toFixed(1);
+const percentile = (values: Array<number>, p: number) =>
   +(values.toSorted((a, b) => a - b)[Math.floor((values.length - 1) * p)] ?? 0).toFixed(1);
-const summary = (values: number[]) => ({
+const summary = (values: Array<number>) => ({
   writes: values.length,
   p50: percentile(values, 0.5),
   p95: percentile(values, 0.95),
@@ -98,8 +98,9 @@ try {
   await first.stop();
   seed();
   const bytes = new Uint8Array(uploadBytes).fill(7);
-  for (let i = 0; i < uploadFiles; i++)
+  for (let i = 0; i < uploadFiles; i++) {
     writeFileSync(join(dataDir, "uploads", `orphan-${i}.bin`), bytes);
+  }
   console.log(`seeded in ${Math.round((performance.now() - started) / 1000)} s`);
 
   const server = await startServer(executable, dataDir);
@@ -108,11 +109,15 @@ try {
     for (let run = 1; run <= runs; run++) {
       const output = join(destination, `backup-${run}`);
       let phase: "before" | "during" | "after" = "before";
-      const latencies = { before: [] as number[], during: [] as number[], after: [] as number[] };
+      const latencies = {
+        before: [] as Array<number>,
+        during: [] as Array<number>,
+        after: [] as Array<number>,
+      };
       let writing = true;
       let next = 0;
       let backupBegun = 0;
-      const stalls: { atSeconds: number; ms: number }[] = [];
+      const stalls: Array<{ atSeconds: number; ms: number }> = [];
       const writers = [0, 1, 2, 3].map(async () => {
         while (writing) {
           const begun = performance.now();
@@ -120,14 +125,17 @@ try {
             client,
             `r${run}-${next++}-${crypto.randomUUID()}`,
           );
-          if (status !== 200) throw new Error(`write ${status}`);
+          if (status !== 200) {
+            throw new Error(`write ${status}`);
+          }
           const elapsed = performance.now() - begun;
           latencies[phase].push(elapsed);
-          if (phase === "during" && elapsed > 300)
+          if (phase === "during" && elapsed > 300) {
             stalls.push({
               atSeconds: +((begun - backupBegun) / 1000).toFixed(2),
               ms: Math.round(elapsed),
             });
+          }
           // About 100 writes a second over the four clients.
           await Bun.sleep(40);
         }
@@ -170,15 +178,19 @@ try {
         const partial = readdirSync(destination).find((name) => name.startsWith("."));
         if (partial) {
           const elapsed = performance.now() - begun;
-          if (!snapshotEnd && existsSync(join(destination, partial, "uploads")))
+          if (!snapshotEnd && existsSync(join(destination, partial, "uploads"))) {
             snapshotEnd = elapsed;
-          if (!copyEnd && existsSync(join(destination, partial, "iglo-email-backup.json")))
+          }
+          if (!copyEnd && existsSync(join(destination, partial, "iglo-email-backup.json"))) {
             copyEnd = elapsed;
+          }
         }
         await Bun.sleep(20);
       }
       const seconds = (performance.now() - begun) / 1000;
-      if ((await child.exited) !== 0) throw new Error(await new Response(child.stderr).text());
+      if ((await child.exited) !== 0) {
+        throw new Error(await new Response(child.stderr).text());
+      }
       await probe.stdin.end();
       const lockWaitMs = Number(await new Response(probe.stdout).text());
 
@@ -193,7 +205,9 @@ try {
         env: { PATH: "" },
       });
       const verifySeconds = (performance.now() - verifyBegun) / 1000;
-      if (verify.exitCode !== 0) throw new Error(verify.stderr.toString());
+      if (verify.exitCode !== 0) {
+        throw new Error(verify.stderr.toString());
+      }
 
       const databaseBytes = statSync(join(dataDir, "iglo-email.db")).size;
       const snapshotBytes = statSync(join(output, "iglo-email.db")).size;

@@ -15,7 +15,9 @@ import { TestClock } from "@/test/server/fixture";
 
 const open: Array<() => void> = [];
 afterEach(() => {
-  for (const close of open.splice(0)) close();
+  for (const close of open.splice(0)) {
+    close();
+  }
 });
 
 const outcome = (status: Outcome["status"], retry?: "transient"): Outcome => ({
@@ -203,7 +205,9 @@ test("a COMMIT that fails rolls back every outcome of the batch", () => {
   expect(() => f.journal.finishAll(results)).toThrow(/FOREIGN KEY/);
   expect(f.db.inTransaction).toBe(false);
   // Nothing was journaled, including the rows whose own UPDATE had succeeded.
-  for (const id of ids) expect(f.row(id)).toMatchObject({ status: "sending", error: null });
+  for (const id of ids) {
+    expect(f.row(id)).toMatchObject({ status: "sending", error: null });
+  }
   // Once the fault is gone the same results go through: the rows were left claimable by finish.
   f.db.run("DROP TRIGGER commit_fault");
   f.journal.finishAll(results);
@@ -230,7 +234,9 @@ test("a statement that fails rolls back the earlier outcomes of the batch", () =
     ]),
   ).toThrow(/injected/);
   expect(f.db.inTransaction).toBe(false);
-  for (const id of ids) expect(f.row(id).status).toBe("sending");
+  for (const id of ids) {
+    expect(f.row(id).status).toBe("sending");
+  }
 });
 
 test("finishAll with no results writes nothing", () => {

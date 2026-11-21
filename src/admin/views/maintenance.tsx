@@ -40,7 +40,7 @@ function DateField({ model, label }: { model: string; label: string }) {
 
 export const maintenanceView: AdminView = ({ context }) => {
   const t = context.app.i18n;
-  const data = (model: string, options: [string, string][], hints: string[] = []) => (
+  const data = (model: string, options: Array<[string, string]>, hints: Array<string> = []) => (
     <div class="col-4">
       <label data-field="">
         Data

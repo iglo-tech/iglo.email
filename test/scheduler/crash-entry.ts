@@ -11,7 +11,8 @@ import { createRealClock } from "@/clock";
 import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { createSettings } from "@/settings/store";
-import { offsetClock, seed, startRuntime, type Wrap } from "@/test/scheduler/runtime";
+import { offsetClock, seed, startRuntime } from "@/test/scheduler/runtime";
+import type { Wrap } from "@/test/scheduler/runtime";
 
 const dataDir = process.env.SCHEDULER_CRASH_DIR!;
 const smtpPort = Number(process.env.SCHEDULER_CRASH_SMTP_PORT);
@@ -26,15 +27,21 @@ const barriers: Record<string, [string, string, "before" | "after"]> = {
 };
 const wrap: Wrap = (name, owner) => {
   const barrier = barriers[at];
-  if (!barrier || barrier[0] !== name) return owner;
+  if (!barrier || barrier[0] !== name) {
+    return owner;
+  }
   const [, method, when] = barrier;
   return new Proxy(owner, {
     get(target, key, receiver) {
       const value = Reflect.get(target, key, receiver);
-      if (key !== method || typeof value !== "function") return value;
-      return (...args: unknown[]) => {
-        if (when === "before") kill();
-        const result = (value as (...a: unknown[]) => unknown).apply(target, args);
+      if (key !== method || typeof value !== "function") {
+        return value;
+      }
+      return (...args: Array<unknown>) => {
+        if (when === "before") {
+          kill();
+        }
+        const result = (value as (...a: Array<unknown>) => unknown).apply(target, args);
         kill();
         return result;
       };
@@ -50,11 +57,12 @@ const live = startRuntime({
   ...(seedOnly ? { outbox: false, scheduler: false } : {}),
 });
 // Enrolling due now wakes the scheduler after this synchronous seed commits.
-if (process.env.SCHEDULER_CRASH_SEED === "1")
+if (process.env.SCHEDULER_CRASH_SEED === "1") {
   seed(live.db, live.enrollments, 1, [
     { wait: "PT0S", kind: "transactional" },
     { wait: "PT0S", kind: "marketing" },
   ]);
+}
 if (seedOnly) {
   const lists = createListReferences(live.db);
   const roles = createRoles(live.db, lists);
@@ -63,7 +71,7 @@ if (seedOnly) {
     ...current,
     smtp: [
       {
-        ...(current.smtp as Record<string, unknown>[])[0],
+        ...(current.smtp as Array<Record<string, unknown>>)[0],
         name: "sink",
         enabled: true,
         host: "127.0.0.1",

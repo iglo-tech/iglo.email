@@ -1,7 +1,8 @@
 // Adapted from listmonk static/public/templates/message.html and cmd/handlers.go at 6fcd95f.
 import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
-import { PublicShell, siteText, type PageSite } from "@/public/layout";
+import { PublicShell, siteText } from "@/public/layout";
+import type { PageSite } from "@/public/layout";
 import { assetVersion } from "@/server/asset-manifest";
 
 /**
@@ -9,7 +10,9 @@ import { assetVersion } from "@/server/asset-manifest";
  * of the public routes shows it, so no result, error or missing page is a dead end.
  */
 export function backLink(i18n: Translation, site: PageSite) {
-  if (!site.siteUrl) return null;
+  if (!site.siteUrl) {
+    return null;
+  }
   return (
     <p>
       <a href={site.siteUrl}>{siteText(i18n.T("public.backToSite"), site.siteName)}</a>
@@ -19,11 +22,12 @@ export function backLink(i18n: Translation, site: PageSite) {
 
 /** The public 404 with the site's branding (B121), titled "Page not found" (B126, D123). */
 export function publicNotFound(i18n: Translation, method: string, site: PageSite): Response {
-  if (method === "HEAD")
+  if (method === "HEAD") {
     return new Response(null, {
       status: 404,
       headers: { "Content-Type": "text/html; charset=UTF-8" },
     });
+  }
   const title = i18n.T("public.pageNotFound");
   const body = render(
     <PublicShell

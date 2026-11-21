@@ -63,7 +63,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const directory = mkdtempSync(join(tmpdir(), "iglo-send-rate-"));
   const db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
 
   const app = createApp({
     bootstrap: {
@@ -93,7 +93,9 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const auth = await createAuthentication(users, roles, clock, root, defaultAuthPolicy);
   await bootstrapAdmin(users, auth, admin);
   const session = await auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("login failed");
+  }
 
   const media = createMediaStore(db, clock);
   const files = createFilesystem(directory, () => ({
@@ -195,7 +197,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     auth,
     sends,
     outbox: {
-      dispatch: (ids: bigint[]) => outbox.dispatch(ids),
+      dispatch: (ids: Array<bigint>) => outbox.dispatch(ids),
     },
     subscribers,
     templates,
@@ -262,7 +264,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
       maxSendErrors: current["app.max_send_errors"] ?? 1000,
       slidingWindow: false,
       slidingWindowDuration: "1h",
-      slidingWindowRate: 10000,
+      slidingWindowRate: 10_000,
       rootUrl: root,
       messengers: ["email", "sink"],
       unsubscribeHeader: true,
@@ -387,8 +389,9 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
       subject,
       body,
     });
-    if (created.status !== 200)
+    if (created.status !== 200) {
       throw new Error(`template ${created.status}: ${JSON.stringify(created.body)}`);
+    }
     return created.body.data.id as number;
   };
 
@@ -405,7 +408,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
       describe: () => {
         const rows = db
           .query("SELECT status, COUNT(*) AS n FROM sends GROUP BY status ORDER BY status")
-          .all() as { status: string; n: number }[];
+          .all() as Array<{ status: string; n: number }>;
         const sends = rows.map((row) => `${row.status} ${row.n}`).join(", ") || "none";
         return `sink messages ${sink.messages.length}; clock ${clock.now().toISOString()}; sends ${sends}`;
       },
@@ -643,7 +646,7 @@ describe("B37: send rate cap", () => {
           .query<{ count: number }, any>(
             "SELECT count(*) as count FROM campaign_deliveries WHERE campaign_id = ? AND status = 'sent'",
           )
-          .get(campId)!.count as number;
+          .get(campId)!.count;
       await h.drive(() => h.sink.messages.length === 80 && Number(campaignSent()) === 10, 50);
       await Promise.all(txPromises);
 
@@ -923,7 +926,9 @@ describe("B37: send rate cap", () => {
 
       // Advance by 100ms (t=100)
       h.clock.advance(100);
-      for (let j = 0; j < 3; j++) await Bun.sleep(0);
+      for (let j = 0; j < 3; j++) {
+        await Bun.sleep(0);
+      }
       expect(h.sink.messages.length).toBe(1);
 
       // Raise rate to 10/s (interval 100ms). Since 100ms has elapsed since first send,
@@ -965,7 +970,9 @@ describe("B37: send rate cap", () => {
       granted = true;
     });
     clock.advance(100);
-    for (let j = 0; j < 5; j++) await Bun.sleep(0);
+    for (let j = 0; j < 5; j++) {
+      await Bun.sleep(0);
+    }
     expect(granted).toBe(false);
 
     clock.advance(900);
@@ -1010,7 +1017,9 @@ describe("B37: send rate cap", () => {
       await h.emailer.close();
       for (let i = 0; i < 12; i++) {
         h.clock.advance(1000);
-        for (let j = 0; j < 5; j++) await Bun.sleep(0);
+        for (let j = 0; j < 5; j++) {
+          await Bun.sleep(0);
+        }
       }
       await h.runner.stop();
 
@@ -1044,7 +1053,7 @@ describe("B37: send rate cap", () => {
 
       // The settings page's test button: the request goes through the route, as the admin sends it.
       const server = h.settingsStore.read().smtp[0]!;
-      const answers: { status: number; body: { message?: string } }[] = [];
+      const answers: Array<{ status: number; body: { message?: string } }> = [];
       const attempt = h
         .json("/api/settings/smtp/test", "POST", { ...server, email: "admin@example.test" })
         .then((answer: { status: number; body: { message?: string } }) => {
@@ -1084,7 +1093,7 @@ describe("B37: send rate cap", () => {
       expect(floatRes.status).toBe(400);
 
       // PUT too large (> 10000) gives 400
-      const bigRes = await h.json("/api/settings/messaging.max_send_rate", "PUT", 10001);
+      const bigRes = await h.json("/api/settings/messaging.max_send_rate", "PUT", 10_001);
       expect(bigRes.status).toBe(400);
 
       // PUT valid 25 succeeds
@@ -1351,8 +1360,9 @@ describe("B37: send rate cap", () => {
       // exists in this scenario (the cap holds the rest), so this check is brief here; test 1 asserts
       // the rolling cap across a full run with a warm pool.
       const beforeRestart = h.sink.messages.slice(0, sentBeforeRestart).map((m) => m.at!);
-      for (const t of beforeRestart)
+      for (const t of beforeRestart) {
         expect(beforeRestart.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(1);
+      }
 
       const txRowAfter = h.db
         .query<{ status: string; attempts: number }, any>(

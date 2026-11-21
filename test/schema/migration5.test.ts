@@ -92,7 +92,7 @@ function seedVersion4(directory: string) {
   }
 }
 
-const positions = (db: Database, ids: number[]) =>
+const positions = (db: Database, ids: Array<number>) =>
   ids.map((id) =>
     Number(
       db
@@ -113,7 +113,9 @@ const backups = async (directory: string) =>
 async function until(condition: () => boolean, label: string) {
   const deadline = Date.now() + 15_000;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`timed out: ${label}`);
+    if (Date.now() > deadline) {
+      throw new Error(`timed out: ${label}`);
+    }
     await Bun.sleep(25);
   }
 }

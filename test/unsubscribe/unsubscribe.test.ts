@@ -2,11 +2,14 @@
 // the public /m/:sendUUID pages and a loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
 import { permissions } from "@/roles/roles";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 
-const fixtures: TxFixture[] = [];
+const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 /** A fixture whose default credentials are an API user, so clock advances keep working. */
 async function open(options: Parameters<typeof txFixture>[0] = {}) {
@@ -23,7 +26,9 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
     user_role_id: role.body.data.id,
   });
   const headers = f.sessionHeaders as Record<string, string>;
-  for (const key of Object.keys(headers)) delete headers[key];
+  for (const key of Object.keys(headers)) {
+    delete headers[key];
+  }
   headers.authorization = `Basic ${btoa(`unsubscribe-api:${user.body.data.password}`)}`;
   return f;
 }
@@ -32,11 +37,13 @@ const day = 86_400_000;
 /** Decoded message text: unfolded headers plus a quoted-printable-decoded body. */
 function decoded(data: string) {
   const at = data.indexOf("\r\n\r\n");
-  const headers = data.slice(0, at).replace(/\r\n[ \t]+/g, " ");
+  const headers = data.slice(0, at).replaceAll(/\r\n[ \t]+/g, " ");
   const body = data
     .slice(at + 4)
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   const header = (name: string) =>
     new RegExp(`^${name}: (.*)$`, "mi").exec(headers)?.[1]?.trim() ?? null;
   return { headers, body, header };
@@ -284,7 +291,9 @@ test("failed marketing does not count; resend respects the cap and rechecks cons
   });
   f.restartOutbox();
   for (let i = 0; i < 50; i++) {
-    if ((await f.json(`/api/sends/${resend.body.data.id}`)).body.data.status !== "queued") break;
+    if ((await f.json(`/api/sends/${resend.body.data.id}`)).body.data.status !== "queued") {
+      break;
+    }
     await Bun.sleep(20);
   }
   expect((await f.json(`/api/sends/${resend.body.data.id}`)).body.data).toMatchObject({
@@ -400,7 +409,7 @@ test("a delayed marketing send recovered as unknown counts from its attempt", as
 });
 
 test("one-click POST and the page form unsubscribe the send's list without login", async () => {
-  const events: unknown[] = [];
+  const events: Array<unknown> = [];
   const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });
   const { template, list } = await setup(f);
   const news = await list("news");

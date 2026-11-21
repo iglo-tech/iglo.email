@@ -46,9 +46,9 @@ export function createTestSends(db: Database, clock: Clock) {
      * Inside the caller's write transaction, and before any of the messages is handed to the
      * emailer: a write that fails sends nothing, and a sent message always has its record.
      */
-    record(entries: TestSendEntry[]) {
+    record(entries: Array<TestSendEntry>) {
       const at = clock.now().toISOString();
-      for (const entry of entries)
+      for (const entry of entries) {
         insert.run(
           normalizeMessageId(entry.messageId),
           entry.kind,
@@ -57,16 +57,19 @@ export function createTestSends(db: Database, clock: Clock) {
           entry.step_id,
           at,
         );
+      }
     },
     /** The test a Message-ID names inside the window, or null. */
     find(messageId: string): TestSendRecord | null {
       const key = normalizeMessageId(messageId);
-      if (!key) return null;
+      if (!key) {
+        return null;
+      }
       const since = new Date(clock.now().getTime() - TEST_SEND_RETENTION_MS).toISOString();
       return lookup.get(key, since) ?? null;
     },
     /** One retention pass inside the loop's write transaction: at most `limit` records past the window. */
-    purge(now: Date, limit: number): Id[] {
+    purge(now: Date, limit: number): Array<Id> {
       const before = new Date(now.getTime() - TEST_SEND_RETENTION_MS).toISOString();
       return db
         .query<{ id: bigint }, [string, number]>(

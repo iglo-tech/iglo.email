@@ -11,7 +11,8 @@ import { rateLimited } from "@/public/rate-limit";
 import { registerPublicRoutes } from "@/public/routes";
 import { createCaptcha } from "@/captcha/captcha";
 import { createPrivacy } from "@/public/privacy";
-import { publicSettings, type PublicSettings } from "@/public/settings";
+import { publicSettings } from "@/public/settings";
+import type { PublicSettings } from "@/public/settings";
 import { createRoles } from "@/roles/roles";
 import { createClientAddress } from "@/server/client-address";
 import { createSettings } from "@/settings/store";
@@ -21,12 +22,14 @@ import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 const form = { "content-type": "application/x-www-form-urlencoded" };
 
 export async function publicFixture() {
-  const calls: { inTransaction: boolean; listIds: bigint[] }[] = [];
+  const calls: Array<{ inTransaction: boolean; listIds: bigint[] }> = [];
   let failEffect = false;
   const effects: UnsubscribeEffects = {
     unsubscribed(event) {
       calls.push({ inTransaction: f.db.inTransaction, listIds: event.listIds });
-      if (failEffect) throw new Error("effect failed");
+      if (failEffect) {
+        throw new Error("effect failed");
+      }
     },
   };
   const overrides: Partial<PublicSettings> = {};
@@ -133,7 +136,7 @@ export async function publicFixture() {
      * A campaign the runner has delivered to each of these subscribers: the pairing D126 gives
      * their privacy paths and their blocklist. Its UUID.
      */
-    deliveredCampaign(subscribers: number[], lists: number[] = []): string {
+    deliveredCampaign(subscribers: Array<number>, lists: Array<number> = []): string {
       const campaign = campaigns.create(
         {
           type: "regular",
@@ -161,7 +164,9 @@ export async function publicFixture() {
       const runner = createRunnerStore(f.db);
       const now = f.clock.now().toISOString();
       for (const id of subscribers) {
-        if (!runner.claim(campaign.id, BigInt(id), now)) throw new Error("delivery not claimed");
+        if (!runner.claim(campaign.id, BigInt(id), now)) {
+          throw new Error("delivery not claimed");
+        }
       }
       return campaign.uuid;
     },

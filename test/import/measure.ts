@@ -26,13 +26,14 @@ const DUMMY = "00000000-0000-0000-0000-000000000000";
 
 const csv = (label: string, rows: number) => {
   const lines = ["email,name,attributes"];
-  for (let i = 0; i < rows; i++)
+  for (let i = 0; i < rows; i++) {
     lines.push(`${label}${i}@example.test,Person ${i},"{""plan"":""p${i % 7}"",""n"":${i}}"`);
+  }
   return `${lines.join("\n")}\n`;
 };
-const quantile = (values: number[], q: number) =>
+const quantile = (values: Array<number>, q: number) =>
   [...values].sort((a, b) => a - b)[Math.floor((values.length - 1) * q)] ?? 0;
-const summary = (values: number[]) => ({
+const summary = (values: Array<number>) => ({
   n: values.length,
   p50: +quantile(values, 0.5).toFixed(1),
   p99: +quantile(values, 0.99).toFixed(1),
@@ -74,8 +75,8 @@ async function overHttp() {
       const page = `${origin}/subscription/form`;
       const probing = async <T>(work: () => Promise<T>) => {
         let running = true;
-        const gaps = { pixel: [] as number[], page: [] as number[] };
-        const loop = async (url: string, out: number[]) => {
+        const gaps = { pixel: [] as Array<number>, page: [] as Array<number> };
+        const loop = async (url: string, out: Array<number>) => {
           while (running) {
             const started = performance.now();
             await (await fetch(url)).arrayBuffer();
@@ -92,7 +93,9 @@ async function overHttp() {
       const finish = async () => {
         while (true) {
           const status = await json("/api/import/subscribers");
-          if (status.status === "finished" || status.status === "failed") return status;
+          if (status.status === "finished" || status.status === "failed") {
+            return status;
+          }
           await Bun.sleep(50);
         }
       };
@@ -106,7 +109,9 @@ async function overHttp() {
           headers: { authorization },
           body: form,
         });
-        if (response.status !== 200) throw new Error(await response.text());
+        if (response.status !== 200) {
+          throw new Error(await response.text());
+        }
         const status = await finish();
         const seconds = (performance.now() - started) / 1000;
         await json("/api/import/subscribers", "DELETE");
@@ -189,7 +194,9 @@ async function uploadOnly() {
         body: form,
       });
       const seconds = (performance.now() - started) / 1000;
-      if (response.status !== 200) throw new Error(await response.text());
+      if (response.status !== 200) {
+        throw new Error(await response.text());
+      }
       await fetch(`${origin}/api/import/subscribers`, { method: "DELETE", headers });
       return {
         seconds: +seconds.toFixed(2),
@@ -218,9 +225,9 @@ async function lockHolds() {
       unsubscribed() {},
       ...effects.subscriberEffects,
     });
-    const holds: number[] = [];
+    const holds: Array<number> = [];
     const timed =
-      <A extends unknown[]>(fn: (...args: A) => void) =>
+      <A extends Array<unknown>>(fn: (...args: A) => void) =>
       (...args: A) => {
         const started = performance.now();
         fn(...args);
@@ -256,9 +263,13 @@ async function lockHolds() {
         listIds: [listId],
       });
       await slot.release();
-      while (importer.status().status === "importing") await Bun.sleep(20);
+      while (importer.status().status === "importing") {
+        await Bun.sleep(20);
+      }
       const result = importer.status();
-      if (result.status !== "finished") throw new Error(importer.logs());
+      if (result.status !== "finished") {
+        throw new Error(importer.logs());
+      }
       importer.stop();
       return { batches: holds.length, holdMs: summary(holds) };
     };
@@ -280,7 +291,13 @@ async function lockHolds() {
 
 const mode = process.argv[4] ?? "all";
 const report: Record<string, unknown> = { rows: count };
-if (mode === "all" || mode === "http") report.http = await overHttp();
-if (mode === "all" || mode === "upload") report.upload = await uploadOnly();
-if (mode === "all" || mode === "locks") report.locks = await lockHolds();
+if (mode === "all" || mode === "http") {
+  report.http = await overHttp();
+}
+if (mode === "all" || mode === "upload") {
+  report.upload = await uploadOnly();
+}
+if (mode === "all" || mode === "locks") {
+  report.locks = await lockHolds();
+}
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

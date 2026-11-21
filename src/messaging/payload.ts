@@ -46,33 +46,49 @@ function prepare(message: Message, subscriberUuid: string | null, encode: boolea
     !bytes(message.body, maxBody) ||
     (message.altBody !== undefined && !bytes(message.altBody, maxBody)) ||
     (message.messenger !== undefined && !safe(message.messenger, 2048))
-  )
+  ) {
     invalid();
+  }
   if (
     message.headers !== undefined &&
     (!message.headers || typeof message.headers !== "object" || Array.isArray(message.headers))
-  )
+  ) {
     invalid();
-  const headers: Record<string, string | string[]> = {};
+  }
+  const headers: Record<string, string | Array<string>> = {};
   const entries = Object.entries(message.headers ?? {});
-  if (entries.length > 64) invalid();
+  if (entries.length > 64) {
+    invalid();
+  }
   for (const [name, value] of entries) {
-    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name)) invalid();
+    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name)) {
+      invalid();
+    }
     if (Array.isArray(value)) {
-      if (value.length !== 1 || !safe(value[0], 2048)) invalid();
+      if (value.length !== 1 || !safe(value[0], 2048)) {
+        invalid();
+      }
       headers[name] = [...value];
     } else {
-      if (!safe(value, 2048)) invalid();
+      if (!safe(value, 2048)) {
+        invalid();
+      }
       headers[name] = value;
     }
     if (["cc", "bcc"].includes(name.toLowerCase())) {
       const list = (Array.isArray(value) ? value[0]! : value).split(",");
-      if (!list.length || list.some((v) => !address(v.trim()))) invalid();
+      if (!list.length || list.some((v) => !address(v.trim()))) {
+        invalid();
+      }
     }
   }
-  if (message.attachments !== undefined && !Array.isArray(message.attachments)) invalid();
+  if (message.attachments !== undefined && !Array.isArray(message.attachments)) {
+    invalid();
+  }
   const attachments = message.attachments ?? [];
-  if (attachments.length > 10) invalid();
+  if (attachments.length > 10) {
+    invalid();
+  }
   let total = 0;
   const encodedAttachments = attachments.map((a) => {
     if (
@@ -84,10 +100,13 @@ function prepare(message: Message, subscriberUuid: string | null, encode: boolea
       (a.contentType !== undefined && !mediaType(a.contentType)) ||
       (a.inline !== undefined && typeof a.inline !== "boolean") ||
       (a.disposition !== undefined && !["inline", "attachment"].includes(a.disposition))
-    )
+    ) {
       invalid();
+    }
     total += a.content.byteLength;
-    if (total > maxAttachments) invalid();
+    if (total > maxAttachments) {
+      invalid();
+    }
     return {
       name: a.name,
       content: encode ? view(a.content).toString("base64") : "",
@@ -97,7 +116,9 @@ function prepare(message: Message, subscriberUuid: string | null, encode: boolea
       ...(a.disposition === undefined ? {} : { disposition: a.disposition }),
     };
   });
-  if (!encode) return;
+  if (!encode) {
+    return;
+  }
   const payload = JSON.stringify({
     version: 1,
     subscriberUuid,
@@ -115,21 +136,26 @@ function prepare(message: Message, subscriberUuid: string | null, encode: boolea
       ...(message.messenger === undefined ? {} : { messenger: message.messenger }),
     },
   });
-  if (Buffer.byteLength(payload) > maxPayload) invalid();
+  if (Buffer.byteLength(payload) > maxPayload) {
+    invalid();
+  }
   return payload;
 }
 export function decodePayload(payload: string): {
   message: Message;
   subscriberUuid: string | null;
 } {
-  if (typeof payload !== "string" || Buffer.byteLength(payload) > maxPayload) invalid();
+  if (typeof payload !== "string" || Buffer.byteLength(payload) > maxPayload) {
+    invalid();
+  }
   try {
     const raw = JSON.parse(payload);
     if (
       raw.version !== 1 ||
       !(raw.subscriberUuid === null || typeof raw.subscriberUuid === "string")
-    )
+    ) {
       invalid();
+    }
     const decode = (v: unknown, max: number) => {
       if (
         typeof v !== "string" ||
@@ -139,14 +165,19 @@ export function decodePayload(payload: string): {
         // frame per group, about 25 times the string's size for a 4 MiB attachment (B26).
         // The round trip below still rejects any padding that is not canonical.
         !/^[A-Za-z0-9+/]*={0,2}$/.test(v)
-      )
+      ) {
         invalid();
+      }
       const result = Buffer.from(v as string, "base64");
-      if (result.length > max || result.toString("base64") !== v) invalid();
+      if (result.length > max || result.toString("base64") !== v) {
+        invalid();
+      }
       return result;
     };
     const m = raw.message;
-    if (!m || !Array.isArray(m.attachments) || m.attachments.length > 10) invalid();
+    if (!m || !Array.isArray(m.attachments) || m.attachments.length > 10) {
+      invalid();
+    }
     const message: Message = {
       ...m,
       body: decode(m.body, maxBody),

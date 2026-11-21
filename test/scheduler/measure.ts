@@ -11,7 +11,7 @@ import { startSink } from "@/test/tx/sink";
 
 const enrollments = Number(process.argv[2] ?? 10_000);
 const repetitions = Number(process.argv[3] ?? 3);
-const sendLoad = 2_000;
+const sendLoad = 2000;
 const clock = createRealClock();
 const sink = await startSink({});
 
@@ -20,11 +20,13 @@ const count = (db: { query: Function }, sql: string) =>
 async function until(check: () => boolean, label: string, ms = 600_000) {
   const deadline = Date.now() + ms;
   while (!check()) {
-    if (Date.now() > deadline) throw new Error(`timed out: ${label}`);
+    if (Date.now() > deadline) {
+      throw new Error(`timed out: ${label}`);
+    }
     await Bun.sleep(10);
   }
 }
-const rss = () => Math.round(process.memoryUsage().rss / 1048576);
+const rss = () => Math.round(process.memoryUsage().rss / 1_048_576);
 
 /** Seed with no loops running, so timing starts when the scheduler starts. */
 async function prepare(dir: string, n: number, kind: "transactional" | "marketing") {
@@ -55,7 +57,9 @@ async function schedulerRun(kind: "transactional" | "marketing") {
     }, "scheduler");
     const seconds = (performance.now() - started) / 1000;
     const queued = count(r.db, "SELECT count(*) AS n FROM sends WHERE status = 'queued'");
-    if (queued !== enrollments || r.errors.length) throw new Error("unexpected scheduler result");
+    if (queued !== enrollments || r.errors.length) {
+      throw new Error("unexpected scheduler result");
+    }
     await r.close();
     return { seconds, perSecond: enrollments / seconds, peakRssMiB: peak };
   } finally {
@@ -107,7 +111,9 @@ async function outboxRun(busy: boolean) {
       "SELECT count(*) AS n FROM enrollments WHERE status = 'completed'",
     );
     await r.close();
-    if (sink.messages.length - before < sendLoad) throw new Error("missing messages");
+    if (sink.messages.length - before < sendLoad) {
+      throw new Error("missing messages");
+    }
     sink.messages.length = 0;
     return {
       seconds,
@@ -119,7 +125,7 @@ async function outboxRun(busy: boolean) {
   }
 }
 
-const results: Record<string, unknown[]> = {
+const results: Record<string, Array<unknown>> = {
   transactional: [],
   marketing: [],
   sendLoadAlone: [],

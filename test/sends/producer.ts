@@ -22,8 +22,9 @@ import { createHash } from "node:crypto";
 const directory = process.env.SENDS_FIXTURE_DIR!;
 const port = Number(process.env.SENDS_FIXTURE_SMTP_PORT);
 const useAuth = process.env.SENDS_FIXTURE_AUTH === "1";
-if (!directory || !Number.isInteger(port) || port < 1 || port > 65535)
+if (!directory || !Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error("Invalid fixture configuration");
+}
 const clock = new TestClock(),
   db = openDatabase(directory);
 clock.advance(Number(process.env.SENDS_FIXTURE_CLOCK_OFFSET ?? "0"));
@@ -42,7 +43,9 @@ const auth = await createAuthentication(
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 await bootstrapAdmin(users, auth, admin);
 const login = await auth.login(admin.user, admin.password);
-if (!login || !("id" in login)) throw new Error("Fixture authentication failed");
+if (!login || !("id" in login)) {
+  throw new Error("Fixture authentication failed");
+}
 const app = createApp({
   bootstrap: {
     host: "127.0.0.1",
@@ -168,7 +171,9 @@ router.route("POST", "/fixture/enqueue", async ({ request }) => {
   body.fill(0);
   altBody?.fill(0);
   attachment.fill(0);
-  for (const part of largeAttachments) part.content.fill(0);
+  for (const part of largeAttachments) {
+    part.content.fill(0);
+  }
   headers["X-Fixture"] = "mutated";
   to[0] = "changed@example.test";
   return ok(entry);
@@ -179,7 +184,9 @@ router.route("POST", "/fixture/settings", () => {
 });
 router.route("POST", "/fixture/start", async ({ request }) => {
   const mode = await request.text();
-  if (loop) throw new Error("already started");
+  if (loop) {
+    throw new Error("already started");
+  }
   const wrapped = {
     ...emailer,
     push(message: Parameters<typeof emailer.push>[0]) {
@@ -191,7 +198,7 @@ router.route("POST", "/fixture/start", async ({ request }) => {
         };
       }
       const dispatch = emailer.push(message);
-      if (mode === "after-ack")
+      if (mode === "after-ack") {
         return {
           ...dispatch,
           result: dispatch.result.then(async (result) => {
@@ -200,6 +207,7 @@ router.route("POST", "/fixture/start", async ({ request }) => {
             return result;
           }),
         };
+      }
       return dispatch;
     },
   };
@@ -208,7 +216,9 @@ router.route("POST", "/fixture/start", async ({ request }) => {
     finishAll(results: Parameters<typeof sends.finishAll>[0]) {
       sends.finishAll(results);
       finishedCount += results.length;
-      for (const notify of waiters.splice(0)) notify();
+      for (const notify of waiters.splice(0)) {
+        notify();
+      }
       finish();
     },
   };
@@ -225,7 +235,9 @@ router.route("GET", "/fixture/committed", async () => {
 });
 router.route("GET", "/fixture/finished", async (context) => {
   const count = Number(context.url.searchParams.get("count"));
-  while (finishedCount < count) await new Promise<void>((resolve) => waiters.push(resolve));
+  while (finishedCount < count) {
+    await new Promise<void>((resolve) => waiters.push(resolve));
+  }
   return ok(finishedCount);
 });
 router.route("GET", "/fixture/session", () =>
@@ -269,7 +281,9 @@ router.route("POST", "/fixture/authority", async ({ request }) => {
     listRoleId: null,
   });
   const human = await auth.login("fixture-human", "synthetic-human-password");
-  if (!human || !("id" in human)) throw new Error("Fixture login failed");
+  if (!human || !("id" in human)) {
+    throw new Error("Fixture login failed");
+  }
   const held = async (headers: Record<string, string>, mutate: () => void) => {
     let entered!: () => void, release!: () => void;
     const ready = new Promise<void>((resolve) => {
@@ -361,7 +375,7 @@ router.route("POST", "/fixture/failed", async ({ request }) => {
   return ok(true);
 });
 router.route("POST", "/fixture/invalid", () => {
-  const failures: string[] = [];
+  const failures: Array<string> = [];
   for (const message of [
     {
       from: "sender@example.test",

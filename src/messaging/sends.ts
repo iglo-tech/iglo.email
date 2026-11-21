@@ -161,13 +161,17 @@ export function createSends(options: {
 }) {
   const { db, clock, subscribers } = options;
   const ended = (row: Row, status: string, error: string, changes: number) => {
-    if (!changes) return;
+    if (!changes) {
+      return;
+    }
     // D85: `row` was read at claim time. A send anonymized since then ends silently, like the
     // skipped retry above, so a wiped subscriber's list never reaches a `send.failed` payload.
     const current = db
       .query<{ to_email: string }, [bigint]>("SELECT to_email FROM sends WHERE id = ?")
       .get(row.id);
-    if (current?.to_email === "") return;
+    if (current?.to_email === "") {
+      return;
+    }
     options.ended?.({ ...row, status, error });
   };
   let wake = () => {};
@@ -196,19 +200,23 @@ export function createSends(options: {
     message: Message;
     removed: number;
   } {
-    if (!message.headers) return { message, removed: 0 };
+    if (!message.headers) {
+      return { message, removed: 0 };
+    }
     let removed = 0;
     const keep = (value: string) =>
       value
         .split(",")
         .filter((part) => {
           const address = parseAddress(trimSpace(part));
-          if (address === undefined || !blocklisted(address)) return true;
+          if (address === undefined || !blocklisted(address)) {
+            return true;
+          }
           removed++;
           return false;
         })
         .join(",");
-    const headers: Record<string, string | string[]> = {};
+    const headers: Record<string, string | Array<string>> = {};
     for (const [name, value] of Object.entries(message.headers)) {
       const lower = name.toLowerCase();
       headers[name] =
@@ -222,19 +230,29 @@ export function createSends(options: {
   }
   function eligibility(row: Row, subscriberUuid: string | null): string | null {
     if (subscriberUuid !== null) {
-      if (row.subscriber_id === null) return "subscriber_unavailable";
-      const subscriber = subscribers.get(row.subscriber_id);
-      if (!subscriber || subscriber.uuid !== subscriberUuid || subscriber.email !== row.to_email)
+      if (row.subscriber_id === null) {
         return "subscriber_unavailable";
-      if (subscriber.status === "blocklisted") return "subscriber_blocklisted";
-    } else if (row.subscriber_id !== null) return "subscriber_unavailable";
+      }
+      const subscriber = subscribers.get(row.subscriber_id);
+      if (!subscriber || subscriber.uuid !== subscriberUuid || subscriber.email !== row.to_email) {
+        return "subscriber_unavailable";
+      }
+      if (subscriber.status === "blocklisted") {
+        return "subscriber_blocklisted";
+      }
+    } else if (row.subscriber_id !== null) {
+      return "subscriber_unavailable";
+    }
     // Unlinked rows (external mode, unknown-at-enqueue addresses) are rechecked by address.
-    if (blocklisted(row.to_email)) return "subscriber_blocklisted";
-    if (row.kind === "marketing")
+    if (blocklisted(row.to_email)) {
+      return "subscriber_blocklisted";
+    }
+    if (row.kind === "marketing") {
       return marketing(row.subscriber_id, row.list_id, {
         lineage: row.id,
         pending: false,
       });
+    }
     return null;
   }
   function claimOne(time: Date, lease: Date): Row | null {
@@ -248,7 +266,9 @@ export function createSends(options: {
            SELECT min(id) FROM sends WHERE status='queued' AND next_attempt_at <= ?))`,
       )
       .get(time.toISOString());
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
     // `AND status='queued'` is the transition's from-state. On one connection nothing can
     // change the row between the SELECT above and this UPDATE (single-threaded, no await), so
     // `changes` is always 1 here and the guard is unreachable without a concurrent writer. It
@@ -267,7 +287,9 @@ export function createSends(options: {
   function admit(row: Row): Message | null {
     let payload: ReturnType<typeof decodePayload>;
     try {
-      if (!row.payload) throw new Error();
+      if (!row.payload) {
+        throw new Error();
+      }
       payload = decodePayload(row.payload);
     } catch {
       const { changes } = db.run(
@@ -299,12 +321,12 @@ export function createSends(options: {
   /** Journals one SMTP outcome. Not-started outcomes are mapped to `unsent` by the caller first. */
   function finish(row: Row, outcome: Outcome) {
     const at = now();
-    if (outcome.status === "accepted")
+    if (outcome.status === "accepted") {
       db.run(
         "UPDATE sends SET status='sent', sent_at=?, error=?, claimed_until=NULL WHERE id=? AND status='sending'",
         [at, outcome.rejected.length ? "partial_acceptance" : null, row.id],
       );
-    else if (outcome.status === "ambiguous") {
+    } else if (outcome.status === "ambiguous") {
       const { changes } = db.run(
         "UPDATE sends SET status='unknown', error='uncertain', claimed_until=NULL WHERE id=? AND status='sending'",
         [row.id],
@@ -317,11 +339,12 @@ export function createSends(options: {
         "UPDATE sends SET status='queued', error='temporary_rejection', next_attempt_at=?, claimed_until=NULL WHERE id=? AND status='sending' AND payload IS NOT NULL",
         [new Date(clock.now().getTime() + delay).toISOString(), row.id],
       );
-      if (!changes)
+      if (!changes) {
         db.run(
           "UPDATE sends SET status='skipped', skip_reason='subscriber_unavailable', error=NULL, claimed_until=NULL, next_attempt_at=NULL WHERE id=? AND status='sending' AND payload IS NULL",
           [row.id],
         );
+      }
     } else {
       const error = outcome.retry === "transient" ? "temporary_rejection" : "not_accepted";
       const { changes } = db.run(
@@ -354,7 +377,7 @@ export function createSends(options: {
    * The one `sending` -> `unknown`/`interrupted` transition. With `expiredBefore`, only rows
    * whose lease ended by then; without, every `sending` row.
    */
-  function interrupt(expiredBefore?: string, live: readonly bigint[] = []) {
+  function interrupt(expiredBefore?: string, live: ReadonlyArray<bigint> = []) {
     const interrupted = db
       .query<Row, [string | null, string]>(
         `UPDATE sends SET status='unknown', error='interrupted', claimed_until=NULL, next_attempt_at=NULL
@@ -362,7 +385,9 @@ export function createSends(options: {
              AND id NOT IN (SELECT value FROM json_each(?2)) RETURNING *`,
       )
       .all(expiredBefore ?? null, JSON.stringify(live.map(Number)));
-    for (const row of interrupted) ended(row, "unknown", "interrupted", 1);
+    for (const row of interrupted) {
+      ended(row, "unknown", "interrupted", 1);
+    }
   }
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /**
@@ -383,11 +408,17 @@ export function createSends(options: {
     scope: { lineage: bigint | null; pending: boolean },
   ): string | null {
     const policy = options.marketingPolicy;
-    if (!policy) return "policy_unavailable";
+    if (!policy) {
+      return "policy_unavailable";
+    }
     const reason = policy.consent({ subscriberId, listId });
-    if (reason) return reason;
+    if (reason) {
+      return reason;
+    }
     const start = policy.capStart(clock.now());
-    if (start === null || subscriberId === null) return null;
+    if (start === null || subscriberId === null) {
+      return null;
+    }
     const hit = db
       .query<{ id: bigint }, [bigint, bigint, string, number]>(
         `WITH RECURSIVE chain(id, parent) AS (
@@ -406,7 +437,9 @@ export function createSends(options: {
          LIMIT 1`,
       )
       .get(scope.lineage ?? 0n, subscriberId, start.toISOString(), scope.pending ? 1 : 0);
-    if (hit) return "frequency_cap";
+    if (hit) {
+      return "frequency_cap";
+    }
     const campaign = policy.lastCampaignDelivery?.(subscriberId);
     return campaign && (campaign.outstanding || campaign.at.getTime() > start.getTime())
       ? "frequency_cap"
@@ -417,16 +450,18 @@ export function createSends(options: {
       !input ||
       !["tx", "sequence"].includes(input.source) ||
       !["transactional", "marketing"].includes(input.kind)
-    )
+    ) {
       throw new Error("Invalid prepared send");
+    }
     const subscriber = input.subscriberId == null ? null : subscribers.get(input.subscriberId);
-    if (input.subscriberId != null && (!subscriber || subscriber.email !== input.message.to[0]))
+    if (input.subscriberId != null && (!subscriber || subscriber.email !== input.message.to[0])) {
       throw new Error("Invalid prepared send");
+    }
     const payload = encodePayload(input.message, subscriber?.uuid ?? null);
     const uuid = crypto.randomUUID();
     const id = writeTransaction(db, () => {
       const row = db
-        .query<{ id: bigint }, any[]>(
+        .query<{ id: bigint }, Array<any>>(
           `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?) RETURNING id`,
         )
         .get(
@@ -453,21 +488,28 @@ export function createSends(options: {
     const result = writeTransaction(db, () => {
       authorize();
       const original = get(id);
-      if (!original) throw new HttpError(404);
+      if (!original) {
+        throw new HttpError(404);
+      }
       const child = byChild(id);
-      if (child) return project(child);
-      if (!["failed", "unknown"].includes(original.status) || !original.payload)
+      if (child) {
+        return project(child);
+      }
+      if (!["failed", "unknown"].includes(original.status) || !original.payload) {
         throw new HttpError(409);
+      }
       let payload: ReturnType<typeof decodePayload>;
       try {
         payload = decodePayload(original.payload);
       } catch {
         throw new HttpError(409);
       }
-      if (eligibility(original, payload.subscriberUuid)) throw new HttpError(409);
+      if (eligibility(original, payload.subscriberUuid)) {
+        throw new HttpError(409);
+      }
       const uuid = crypto.randomUUID();
       const inserted = db
-        .query<{ id: bigint }, any[]>(
+        .query<{ id: bigint }, Array<any>>(
           `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, list_id, status, smtp_message_id, payload, retry_of, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?) RETURNING id`,
         )
         .get(
@@ -498,13 +540,15 @@ export function createSends(options: {
   // unique column, so one request with several recipients keeps one key and the
   // request fingerprint without a schema change. The raw key is never stored.
   const keyPrefix = (key: string) => `tx:${createHash("sha256").update(key).digest("hex")}:`;
-  function replay(prefix: string, fingerprint: string): PublicRow[] | null {
+  function replay(prefix: string, fingerprint: string): Array<PublicRow> | null {
     const rows = db
       .query<PublicRow & { idempotency_key: string }, [string, string]>(
         `SELECT ${publicColumns}, idempotency_key FROM sends WHERE idempotency_key >= ? AND idempotency_key < ?`,
       )
       .all(prefix, `${prefix.slice(0, -1)};`);
-    if (!rows.length) return null;
+    if (!rows.length) {
+      return null;
+    }
     const indexed = rows.map((row) => {
       const rest = row.idempotency_key.slice(prefix.length);
       const at = rest.lastIndexOf(":");
@@ -514,8 +558,9 @@ export function createSends(options: {
         index: Number(rest.slice(at + 1)),
       };
     });
-    if (indexed.some((item) => item.fingerprint !== fingerprint))
+    if (indexed.some((item) => item.fingerprint !== fingerprint)) {
       throw new HttpError(409, "Idempotency key was already used with a different request.");
+    }
     return indexed.sort((a, b) => a.index - b.index).map((item) => item.row);
   }
   /**
@@ -525,17 +570,18 @@ export function createSends(options: {
    * key returns the first rows and inserts nothing.
    */
   function enqueueRequest(input: {
-    sends: RequestedSend[];
+    sends: Array<RequestedSend>;
     idempotency?: { key: string; fingerprint: string } | null;
     authorize?: () => void;
   }): {
     replayed: boolean;
-    ids: bigint[];
-    sends: SendSummary[];
-    queued: bigint[];
+    ids: Array<bigint>;
+    sends: Array<SendSummary>;
+    queued: Array<bigint>;
   } {
-    if (!Array.isArray(input.sends) || !input.sends.length || input.sends.length > 1000)
+    if (!Array.isArray(input.sends) || !input.sends.length || input.sends.length > 1000) {
       throw new Error("Invalid prepared send");
+    }
     const fingerprint = input.idempotency?.fingerprint;
     if (
       input.idempotency &&
@@ -543,22 +589,26 @@ export function createSends(options: {
         !input.idempotency.key ||
         typeof fingerprint !== "string" ||
         !/^[0-9a-f]{64}$/.test(fingerprint))
-    )
+    ) {
       throw new Error("Invalid prepared send");
+    }
     const prepared = input.sends.map(({ send, subscriberUuid }) => {
       if (
         !send ||
         !["tx", "sequence"].includes(send.source) ||
         !["transactional", "marketing"].includes(send.kind)
-      )
+      ) {
         throw new Error("Invalid prepared send");
-      if ((send.subscriberId == null) !== (subscriberUuid === null))
+      }
+      if ((send.subscriberId == null) !== (subscriberUuid === null)) {
         throw new Error("Invalid prepared send");
+      }
       if (
         send.uuid !== undefined &&
         (typeof send.uuid !== "string" || !uuidPattern.test(send.uuid))
-      )
+      ) {
         throw new Error("Invalid prepared send");
+      }
       return {
         send,
         subscriberUuid,
@@ -570,33 +620,40 @@ export function createSends(options: {
       const prefix = input.idempotency ? keyPrefix(input.idempotency.key) : null;
       if (prefix) {
         const previous = replay(prefix, fingerprint!);
-        if (previous)
+        if (previous) {
           return {
             replayed: true,
             ids: previous.map((row) => row.id),
             sends: previous.map(summary),
             queued: [],
           };
+        }
       }
-      const rows: PublicRow[] = [];
-      const queued: bigint[] = [];
+      const rows: Array<PublicRow> = [];
+      const queued: Array<bigint> = [];
       prepared.forEach(({ send, subscriberUuid, payload }, index) => {
         const to = send.message.to[0]!;
         let skip: string | null = null;
         if (send.subscriberId != null) {
           const current = subscribers.get(send.subscriberId);
-          if (!current || current.uuid !== subscriberUuid || current.email !== to)
+          if (!current || current.uuid !== subscriberUuid || current.email !== to) {
             throw new HttpError(409, "Subscriber changed. Retry the request.");
-          if (current.status === "blocklisted") skip = "subscriber_blocklisted";
-        } else if (blocklisted(to)) skip = "subscriber_blocklisted";
-        if (!skip && send.kind === "marketing")
+          }
+          if (current.status === "blocklisted") {
+            skip = "subscriber_blocklisted";
+          }
+        } else if (blocklisted(to)) {
+          skip = "subscriber_blocklisted";
+        }
+        if (!skip && send.kind === "marketing") {
           skip = marketing(send.subscriberId ?? null, send.listId ?? null, {
             lineage: null,
             pending: true,
           });
+        }
         const uuid = send.uuid ?? crypto.randomUUID();
         const row = db
-          .query<{ id: bigint }, any[]>(
+          .query<{ id: bigint }, Array<any>>(
             `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
           )
           .get(
@@ -616,7 +673,9 @@ export function createSends(options: {
             skip ? null : payload,
             now(),
           )!;
-        if (!skip) queued.push(row.id);
+        if (!skip) {
+          queued.push(row.id);
+        }
         rows.push(getPublic(row.id)!);
       });
       return {
@@ -626,7 +685,9 @@ export function createSends(options: {
         queued,
       };
     });
-    if (result.queued.length) wake();
+    if (result.queued.length) {
+      wake();
+    }
     return result;
   }
   /**
@@ -637,7 +698,7 @@ export function createSends(options: {
   function replayRequest(input: {
     idempotency: { key: string; fingerprint: string };
     authorize?: () => void;
-  }): { ids: bigint[]; sends: SendSummary[] } | null {
+  }): { ids: Array<bigint>; sends: Array<SendSummary> } | null {
     return writeTransaction(db, () => {
       input.authorize?.();
       const previous = replay(keyPrefix(input.idempotency.key), input.idempotency.fingerprint);
@@ -665,14 +726,16 @@ export function createSends(options: {
              WHERE subscriber_id = ?1 AND kind = 'marketing' AND status = 'unknown'))`,
       )
       .get(subscriberId)?.at;
-    const journal = latest ? Date.parse(latest) : NaN;
-    const campaign = policy?.lastCampaignDelivery?.(subscriberId)?.at.getTime() ?? NaN;
+    const journal = latest ? Date.parse(latest) : Number.NaN;
+    const campaign = policy?.lastCampaignDelivery?.(subscriberId)?.at.getTime() ?? Number.NaN;
     const last = Number.isFinite(campaign)
       ? Number.isFinite(journal)
         ? Math.max(journal, campaign)
         : campaign
       : journal;
-    if (!policy || !Number.isFinite(last)) return floor;
+    if (!policy || !Number.isFinite(last)) {
+      return floor;
+    }
     // capStart is monotonic in its argument: find the first instant whose window starts at or
     // after the last counted send. A window is at most about 10,000 years plus a few days.
     const admits = (t: number) => {
@@ -680,16 +743,23 @@ export function createSends(options: {
       return start === null || start.getTime() >= last;
     };
     let low = Math.max(floor.getTime(), last);
-    if (admits(low)) return new Date(low);
+    if (admits(low)) {
+      return new Date(low);
+    }
     let high = low + 86_400_000;
     while (!admits(high)) {
-      if (high - low > 4e14) return new Date(high);
+      if (high - low > 4e14) {
+        return new Date(high);
+      }
       high = low + (high - low) * 2;
     }
     while (high - low > 1) {
       const mid = Math.floor((low + high) / 2);
-      if (admits(mid)) high = mid;
-      else low = mid;
+      if (admits(mid)) {
+        high = mid;
+      } else {
+        low = mid;
+      }
     }
     return new Date(high);
   }
@@ -719,8 +789,9 @@ export function createSends(options: {
           listId: bigint | null;
         },
   ): bigint {
-    if (!db.inTransaction)
+    if (!db.inTransaction) {
       throw new Error("Sequence sends are written in the caller's transaction");
+    }
     const row =
       "prepared" in input
         ? {
@@ -749,9 +820,11 @@ export function createSends(options: {
             skip: input.skip,
             payload: null,
           };
-    if (row.enrollmentId === null || row.stepId === null) throw new Error("Invalid prepared send");
+    if (row.enrollmentId === null || row.stepId === null) {
+      throw new Error("Invalid prepared send");
+    }
     return db
-      .query<{ id: bigint }, any[]>(
+      .query<{ id: bigint }, Array<any>>(
         `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, 'sequence', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
       .get(
@@ -802,8 +875,9 @@ export function createSends(options: {
         send.enrollmentId == null ||
         send.stepId == null ||
         (send.uuid !== undefined && !uuidPattern.test(send.uuid))
-      )
+      ) {
         throw new Error("Invalid prepared send");
+      }
       return {
         send,
         subscriberUuid,
@@ -818,15 +892,18 @@ export function createSends(options: {
     sequenceAdmission(prepared: PreparedSequenceSend): string | null {
       const { send, subscriberUuid } = prepared;
       const current = subscribers.get(send.subscriberId!);
-      if (!current || current.uuid !== subscriberUuid || current.email !== send.message.to[0])
+      if (!current || current.uuid !== subscriberUuid || current.email !== send.message.to[0]) {
         return "subscriber_unavailable";
-      if (current.status === "blocklisted" || blocklisted(current.email))
+      }
+      if (current.status === "blocklisted" || blocklisted(current.email)) {
         return "subscriber_blocklisted";
-      if (send.kind === "marketing")
+      }
+      if (send.kind === "marketing") {
         return marketing(send.subscriberId!, send.listId ?? null, {
           lineage: null,
           pending: true,
         });
+      }
       return null;
     },
     recordSequence,
@@ -842,15 +919,17 @@ export function createSends(options: {
      * Claim specific queued rows for an awaited producer dispatch and admit them, all in one
      * commit before any SMTP call. Rows already claimed by the loop are left to it.
      */
-    claimQueued(ids: bigint[], time: Date, lease: Date): Claimed[] {
+    claimQueued(ids: Array<bigint>, time: Date, lease: Date): Array<Claimed> {
       return writeTransaction(db, () => {
-        const claimed: Claimed[] = [];
+        const claimed: Array<Claimed> = [];
         for (const id of ids) {
           const changed = db.run(
             "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?3, claimed_until=?1, next_attempt_at=NULL WHERE id=?2 AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?3)",
             [lease.toISOString(), id, time.toISOString()],
           );
-          if (!changed.changes) continue;
+          if (!changed.changes) {
+            continue;
+          }
           const row = get(id)!;
           claimed.push({ row, message: admit(row) });
         }
@@ -886,8 +965,12 @@ export function createSends(options: {
           "SELECT json_extract(payload, '$.message.body') AS body, json_extract(payload, '$.message.altBody') AS alt, tracked_links AS links FROM sends WHERE id = ?",
         )
         .get(id);
-      if (!row) return false;
-      if (row.links?.includes(text)) return true;
+      if (!row) {
+        return false;
+      }
+      if (row.links?.includes(text)) {
+        return true;
+      }
       return [row.body, row.alt].some(
         (value) => typeof value === "string" && Buffer.from(value, "base64").includes(text),
       );
@@ -905,25 +988,26 @@ export function createSends(options: {
       return row ? project(row) : null;
     },
     list(filter: SendFilter) {
-      const clauses: string[] = [],
-        values: (string | bigint | number)[] = [];
+      const clauses: Array<string> = [],
+        values: Array<string | bigint | number> = [];
       for (const [key, value] of [
         ["status", filter.status],
         ["kind", filter.kind],
         ["source", filter.source],
         ["subscriber_id", filter.subscriberId],
         ["list_id", filter.listId],
-      ] as const)
+      ] as const) {
         if (value !== undefined) {
           clauses.push(`${key} = ?`);
           values.push(value);
         }
+      }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
       const total = db
-        .query<{ total: bigint }, any[]>(`SELECT count(*) AS total FROM sends${where}`)
+        .query<{ total: bigint }, Array<any>>(`SELECT count(*) AS total FROM sends${where}`)
         .get(...values)!.total;
       const rows = db
-        .query<PublicRow, any[]>(
+        .query<PublicRow, Array<any>>(
           `SELECT ${publicColumns} FROM sends${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         )
         .all(...values, filter.perPage, (filter.page - 1) * filter.perPage);
@@ -953,11 +1037,11 @@ export function createSends(options: {
      * `live` are rows whose push is still in flight in this process: a clock jump over their
      * lease must not settle them, their own outcome will.
      */
-    expireLeases(time: Date, live: readonly bigint[] = []) {
+    expireLeases(time: Date, live: ReadonlyArray<bigint> = []) {
       interrupt(time.toISOString(), live);
     },
     /** Claim the lowest due row inside the caller's write transaction. */
-    claim(time: Date, lease: Date): Row[] {
+    claim(time: Date, lease: Date): Array<Row> {
       const row = claimOne(time, lease);
       return row ? [row] : [];
     },
@@ -967,11 +1051,13 @@ export function createSends(options: {
      * Each row is admitted right after its claim, so a later row in the batch sees an
      * earlier one as `sending` for the marketing cap, as it would one batch later.
      */
-    claimBatch(time: Date, lease: Date, limit: number): Claimed[] {
-      const claimed: Claimed[] = [];
+    claimBatch(time: Date, lease: Date, limit: number): Array<Claimed> {
+      const claimed: Array<Claimed> = [];
       for (let i = 0; i < limit; i++) {
         const row = claimOne(time, lease);
-        if (!row) break;
+        if (!row) {
+          break;
+        }
         claimed.push({ row, message: admit(row) });
       }
       return claimed;
@@ -980,13 +1066,16 @@ export function createSends(options: {
     finish,
     /** Journal several SMTP outcomes in one commit. */
     finishAll(
-      results: ({ row: Row; outcome: Outcome } | { row: Row; unsent: "held" | "failed" })[],
+      results: Array<{ row: Row; outcome: Outcome } | { row: Row; unsent: "held" | "failed" }>,
     ) {
-      if (!results.length) return;
+      if (!results.length) {
+        return;
+      }
       writeTransaction(db, () => {
-        for (const result of results)
+        for (const result of results) {
           if ("unsent" in result) unsent(result.row, result.unsent === "held");
           else finish(result.row, result.outcome);
+        }
       });
     },
     onWake(fn: () => void) {

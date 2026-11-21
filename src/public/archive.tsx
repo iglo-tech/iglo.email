@@ -2,12 +2,8 @@
 // (ViewCampaignMessage), cmd/archive.go, gorilla/feeds RSS output and
 // static/public/templates/archive.html at 6fcd95f. Pages render without tracking, so a GET
 // changes nothing; archive pages use only the campaign's sample subscriber.
-import {
-  archiveSubscriber,
-  compileCampaign,
-  testSendUUID,
-  type CampaignSubscriber,
-} from "@/campaigns/render";
+import { archiveSubscriber, compileCampaign, testSendUUID } from "@/campaigns/render";
+import type { CampaignSubscriber } from "@/campaigns/render";
 import { writable } from "@/campaigns/routes";
 import type { CampaignRow, CampaignStore } from "@/campaigns/store";
 import type { Translation } from "@/i18n/i18n";
@@ -22,7 +18,8 @@ import type { RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import type { SubscriberStore } from "@/subscribers/store";
-import { RenderCapacityError, type TemplateRenderer } from "@/templates/renderer";
+import { RenderCapacityError } from "@/templates/renderer";
+import type { TemplateRenderer } from "@/templates/renderer";
 import type { TemplateStore } from "@/templates/store";
 
 /** Campaign HTML runs without scripts on the public origin. */
@@ -41,17 +38,19 @@ const number = (value: string | null) => {
 function pagination(url: URL) {
   const page = Math.max(number(url.searchParams.get("page")), 1);
   let perPage = number(url.searchParams.get("per_page"));
-  if (perPage < 1) perPage = defaultPerPage;
+  if (perPage < 1) {
+    perPage = defaultPerPage;
+  }
   perPage = Math.min(perPage, maxPerPage);
   return { page, perPage, offset: Math.min((page - 1) * perPage, Number.MAX_SAFE_INTEGER) };
 }
 const xml = (value: string) =>
   value
-    .replace(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10ffff}]/gu, "")
-    .replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    .replaceAll(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10ffff}]/gu, "")
+    .replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const cdata = (value: string) =>
   `<![CDATA[${value
-    .replace(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10ffff}]/gu, "")
+    .replaceAll(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10ffff}]/gu, "")
     .replaceAll("]]>", "]]]]><![CDATA[>")}]]>`;
 const rssDate = (value: string) => {
   const [day, date, month, year, time] = new Date(value).toUTCString().split(" ");
@@ -129,7 +128,7 @@ export function registerArchiveRoutes(
     const t = context.app.i18n;
     const { campUUID = "", subUUID = "" } = context.params;
     // D117: a test send's message link answers the test page, and renders no subscriber's message.
-    if (campUUID.toLowerCase() === testSendUUID)
+    if (campUUID.toLowerCase() === testSendUUID) {
       return message(
         t,
         200,
@@ -137,14 +136,16 @@ export function registerArchiveRoutes(
         t.T("public.testSendMessageInfo"),
         noIndex,
       );
-    if (!uuidPattern.test(campUUID) || !uuidPattern.test(subUUID))
+    }
+    if (!uuidPattern.test(campUUID) || !uuidPattern.test(subUUID)) {
       return message(t, 400, t.T("globals.terms.error"), t.T("public.linkNotValid"), noIndex);
+    }
     const found = deps.store.byUuid(campUUID.toLowerCase());
     const row = found && deps.store.get(found.id);
     const sub = row && deps.subscribers.byUuid(subUUID.toLowerCase());
     // D126 (r1): the message is shown only to a subscriber the campaign was delivered to. Every other
     // answer is the same invalid-link page, so the UUIDs reveal nothing (no existence oracle).
-    if (!row || !sub || !deps.store.delivered(row.id, sub.id))
+    if (!row || !sub || !deps.store.delivered(row.id, sub.id)) {
       return message(
         t,
         404,
@@ -152,6 +153,7 @@ export function registerArchiveRoutes(
         t.T("globals.messages.invalidLink"),
         noIndex,
       );
+    }
     try {
       const { body } = renderMessage(row, row.template_id, {
         uuid: sub.uuid,
@@ -168,7 +170,9 @@ export function registerArchiveRoutes(
   });
 
   router.route("GET", "/api/public/archive", (context) => {
-    if (!enabled()) throw new HttpError(404, "404 unknown endpoint");
+    if (!enabled()) {
+      throw new HttpError(404, "404 unknown endpoint");
+    }
     const t = context.app.i18n;
     const { page, perPage, offset } = pagination(context.url);
     let found: ReturnType<typeof entries>;
@@ -190,7 +194,9 @@ export function registerArchiveRoutes(
   });
 
   router.route("GET", "/archive.xml", (context) => {
-    if (!enabled()) return hidden(context);
+    if (!enabled()) {
+      return hidden(context);
+    }
     const t = context.app.i18n;
     const settings = deps.settings();
     const { perPage, offset } = pagination(context.url);
@@ -225,7 +231,9 @@ ${items}  </channel>
   });
 
   router.route("GET", "/archive", (context) => {
-    if (!enabled()) return hidden(context);
+    if (!enabled()) {
+      return hidden(context);
+    }
     const t = context.app.i18n;
     const settings = deps.settings();
     const { page, perPage, offset } = pagination(context.url);
@@ -298,11 +306,15 @@ ${items}  </channel>
   });
 
   router.route("GET", "/archive/latest", (context) => {
-    if (!enabled()) return hidden(context);
+    if (!enabled()) {
+      return hidden(context);
+    }
     const t = context.app.i18n;
     try {
       const [latest] = entries(1, 0, true).results;
-      if (!latest) return notFound(t);
+      if (!latest) {
+        return notFound(t);
+      }
       return new Response(latest.content, { headers: pageHeaders });
     } catch (error) {
       context.app.logger.error(error);
@@ -311,12 +323,16 @@ ${items}  </channel>
   });
 
   router.route("GET", "/archive/:id", (context) => {
-    if (!enabled()) return hidden(context);
+    if (!enabled()) {
+      return hidden(context);
+    }
     const t = context.app.i18n;
     const key = context.params.id!;
     const id = deps.store.archivedId(uuidPattern.test(key) ? key.toLowerCase() : key);
     const row = id === null ? null : deps.store.get(id);
-    if (!row) return notFound(t);
+    if (!row) {
+      return notFound(t);
+    }
     try {
       return new Response(archiveMessage(row).body, { headers: pageHeaders });
     } catch (error) {

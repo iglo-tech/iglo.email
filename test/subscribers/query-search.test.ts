@@ -2,10 +2,11 @@
 // Reference: listmonk queries/subscribers.sql (`~* ('***=' || search)`) and
 // internal/core/subscribers.go allowedSubQueryTables at 6fcd95f.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
 const q = (fragment: string) => encodeURIComponent(fragment);
-const emails = (body: { data: { results: { email: string }[] | null } }) =>
+const emails = (body: { data: { results: Array<{ email: string }> | null } }) =>
   (body.data.results ?? []).map((row) => row.email.split("-")[0]);
 
 const get = (f: QueryFixture, path: string) => f.request(path, { headers: f.sessionHeaders });
@@ -18,8 +19,9 @@ describe("accented search", () => {
       ["accent-a@example.test", "José Acc"],
       ["plain-a@example.test", "Jose Acc"],
       ["upper-a@example.test", "JOSÉ Upper"],
-    ])
+    ]) {
       expect((await f.json("/api/subscribers", "POST", { email, name })).status).toBe(200);
+    }
   });
   afterAll(async () => {
     await f.close();
@@ -60,8 +62,9 @@ describe("sharp S search", () => {
       ["capital-s@example.test", "GRO\u1E9E Sharp"],
       ["small-s@example.test", "Gro\u00DF Sharp"],
       ["double-s@example.test", "GROSS Sharp"],
-    ])
+    ]) {
       expect((await f.json("/api/subscribers", "POST", { email, name })).status).toBe(200);
+    }
   });
   afterAll(async () => {
     await f.close();
@@ -80,7 +83,7 @@ describe("sharp S search", () => {
     ).toBe(200);
     const all = await f.json("/api/subscribers?per_page=all");
     const status = Object.fromEntries(
-      (all.body.data.results as { email: string; status: string }[]).map((row) => [
+      (all.body.data.results as Array<{ email: string; status: string }>).map((row) => [
         row.email.split("-")[0],
         row.status,
       ]),

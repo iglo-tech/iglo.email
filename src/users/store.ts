@@ -45,7 +45,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
   const now = () => clock.now().toISOString();
   const revoke = (id: bigint, except = "") =>
     queries.get("delete-user-sessions").run(String(id), except, except);
-  const remaining = (ids: bigint[]) =>
+  const remaining = (ids: Array<bigint>) =>
     (
       queries.get("remaining-super-admins").get(JSON.stringify(ids.map(String))) as {
         count: bigint;
@@ -83,20 +83,24 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     byName,
     byEmail,
     /** The first users, with the built-in Super Admin role, in one transaction and only while none exist. */
-    bootstrap(users: BootstrapUser[]): void {
+    bootstrap(users: Array<BootstrapUser>): void {
       writeTransaction(db, () => {
-        if (count() !== 0n) return;
+        if (count() !== 0n) {
+          return;
+        }
         const userRoleId = roles.primordial(now());
-        for (const user of users) insert({ ...user, userRoleId, listRoleId: null });
+        for (const user of users) {
+          insert({ ...user, userRoleId, listRoleId: null });
+        }
       });
     },
-    list(orderBy: string, order: string): UserRow[] {
+    list(orderBy: string, order: string): Array<UserRow> {
       const sort = ["username", "email", "created_at", "loggedin_at"].includes(orderBy)
         ? orderBy
         : "created_at";
       // B80: order takes any case (a deliberate difference from upstream's ASC).
       const direction = order === "" || order.toLowerCase() === "asc" ? "asc" : "desc";
-      return queries.get("get-users").all(sort, direction) as UserRow[];
+      return queries.get("get-users").all(sort, direction) as Array<UserRow>;
     },
     create(fields: UserFields): UserRow {
       return insert(fields);
@@ -104,7 +108,9 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     update(id: bigint, resolve: (current: UserRow) => UserFields): UserRow | null {
       const result = writeTransaction(db, () => {
         const previous = byId(id);
-        if (!previous) return null;
+        if (!previous) {
+          return null;
+        }
         // Resolve omitted fields only after obtaining the current row and the
         // write lock. Password hashing must already have finished outside here.
         const fields = resolve(previous);
@@ -121,7 +127,9 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
           fields.userRoleId === 1n &&
           fields.passwordLogin &&
           fields.password !== null;
-        if (canAdminister && !stillCan && remaining([id]) === 0n) return null;
+        if (canAdminister && !stillCan && remaining([id]) === 0n) {
+          return null;
+        }
         const updated = queries
           .get("update-user")
           .get(
@@ -144,11 +152,14 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
             previous.username !== updated.username ||
             previous.type !== updated.type ||
             previous.status !== updated.status)
-        )
+        ) {
           revoke(id);
+        }
         return updated;
       });
-      if (result) onMutation(id);
+      if (result) {
+        onMutation(id);
+      }
       return result;
     },
     updateProfile(
@@ -160,7 +171,9 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     ): UserRow | null {
       const result = writeTransaction(db, () => {
         const previous = byId(id);
-        if (!previous) return null;
+        if (!previous) {
+          return null;
+        }
         const updated = queries
           .get("update-profile")
           .get(
@@ -170,10 +183,14 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
             now(),
             id,
           ) as UserRow | null;
-        if (updated && hash !== null) revoke(id, sessionId);
+        if (updated && hash !== null) {
+          revoke(id, sessionId);
+        }
         return updated;
       });
-      if (result && hash !== null) onMutation(id);
+      if (result && hash !== null) {
+        onMutation(id);
+      }
       return result;
     },
     /** A password reset: applies to an enabled login user and ends all of their sessions. */
@@ -185,24 +202,31 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
           current.type !== "user" ||
           current.status !== "enabled" ||
           current.password_login === 0n
-        )
+        ) {
           return null;
+        }
         const result = queries.get("update-password").get(hash, now(), id) as UserRow;
         revoke(id);
         return result;
       });
-      if (updated) onMutation(id);
+      if (updated) {
+        onMutation(id);
+      }
       return updated;
     },
     /** Operator recovery from a lost device: any user's TOTP goes and all their sessions end. */
     clearFactor(id: bigint): UserRow | null {
       const cleared = writeTransaction(db, () => {
-        if (!byId(id)) return null;
+        if (!byId(id)) {
+          return null;
+        }
         queries.get("set-twofa").run("none", null, now(), id);
         revoke(id);
         return byId(id);
       });
-      if (cleared) onMutation(id);
+      if (cleared) {
+        onMutation(id);
+      }
       return cleared;
     },
     setFactor(
@@ -224,24 +248,35 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
           current.username !== expected.username ||
           current.twofa_type !== expected.twofa_type ||
           current.twofa_key !== expected.twofa_key
-        )
+        ) {
           return false;
+        }
         queries.get("set-twofa").run(type, secret, now(), current.id);
         revoke(current.id, session);
         return true;
       });
-      if (changed) onMutation(expected.id);
+      if (changed) {
+        onMutation(expected.id);
+      }
       return changed;
     },
-    delete(ids: bigint[]): boolean {
+    delete(ids: Array<bigint>): boolean {
       const result = writeTransaction(db, () => {
-        if (!ids.length || remaining(ids) === 0n) return false;
+        if (!ids.length || remaining(ids) === 0n) {
+          return false;
+        }
         const result = queries.get("delete-users").run(JSON.stringify(ids.map(String)));
-        if (!result.changes) return false;
-        for (const id of ids) revoke(id);
+        if (!result.changes) {
+          return false;
+        }
+        for (const id of ids) {
+          revoke(id);
+        }
         return true;
       });
-      if (result) for (const id of ids) onMutation(id);
+      if (result) {
+        for (const id of ids) onMutation(id);
+      }
       return result;
     },
     createSession(user: UserRow, id: string, csrf: string, duration: number): boolean {
@@ -256,8 +291,9 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
           current.twofa_key !== user.twofa_key ||
           current.password !== user.password ||
           current.username !== user.username
-        )
+        ) {
           return false;
+        }
         const time = now();
         const created = Date.parse(time);
         const expires = created + duration;
@@ -266,9 +302,10 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
           duration <= 0 ||
           !Number.isSafeInteger(expires) ||
           expires <= created ||
-          expires > 8640000000000000
-        )
+          expires > 8_640_000_000_000_000
+        ) {
           return false;
+        }
         queries
           .get("create-session")
           .run(id, JSON.stringify({ user_id: String(user.id), csrf, expires_at: expires }), time);
@@ -278,18 +315,23 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     },
     session(id: string): { user: UserRow; csrf: string } | null {
       const row = queries.get("get-session").get(id) as SessionRow | null;
-      if (!row) return null;
+      if (!row) {
+        return null;
+      }
       const time = Date.parse(row.created_at);
       const currentTime = clock.now().getTime();
-      if (!Number.isFinite(time) || !Number.isFinite(currentTime) || time > currentTime)
+      if (!Number.isFinite(time) || !Number.isFinite(currentTime) || time > currentTime) {
         return null;
+      }
       let data: unknown;
       try {
         data = JSON.parse(row.data);
       } catch {
         return null;
       }
-      if (!data || typeof data !== "object") return null;
+      if (!data || typeof data !== "object") {
+        return null;
+      }
       const record = data as Partial<SessionData>;
       const expires = Object.hasOwn(record, "expires_at")
         ? record.expires_at
@@ -297,23 +339,33 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       if (
         typeof expires !== "number" ||
         !Number.isSafeInteger(expires) ||
-        expires > 8640000000000000 ||
+        expires > 8_640_000_000_000_000 ||
         expires <= time ||
         expires <= currentTime
-      )
+      ) {
         return null;
+      }
       if (
         typeof record.user_id !== "string" ||
         !/^[1-9]\d*$/.test(record.user_id) ||
         typeof record.csrf !== "string" ||
         !/^[A-Za-z0-9_-]{43}$/.test(record.csrf)
-      )
+      ) {
         return null;
+      }
       const sessionUserId = BigInt(record.user_id);
-      if (sessionUserId > 9223372036854775807n) return null;
-      const user = byId(sessionUserId);
-      if (!user || user.status !== "enabled" || user.type !== "user" || user.password_login === 0n)
+      if (sessionUserId > 9_223_372_036_854_775_807n) {
         return null;
+      }
+      const user = byId(sessionUserId);
+      if (
+        !user ||
+        user.status !== "enabled" ||
+        user.type !== "user" ||
+        user.password_login === 0n
+      ) {
+        return null;
+      }
       return { user, csrf: record.csrf };
     },
     deleteSession(id: string): void {

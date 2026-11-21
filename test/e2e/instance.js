@@ -19,7 +19,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const children = new Set();
 const owned = new Set();
 process.once("exit", () => {
-  for (const child of children) child.kill("SIGKILL");
+  for (const child of children) {
+    child.kill("SIGKILL");
+  }
 });
 
 /** One `backup` (or `backup --release-hold`) run; the result carries the exit code and both streams. */
@@ -76,18 +78,24 @@ export async function startInstance(executable, dataDir, directory) {
   const ready = async (current, base) => {
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
-      if (current.exitCode !== null) throw new Error(`the instance exited: ${errors}`);
+      if (current.exitCode !== null) {
+        throw new Error(`the instance exited: ${errors}`);
+      }
       try {
         const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(500) });
         if (response.status === 200) {
           // A server that already holds the port answers /health too; a process that lost the bind
           // exits a moment later, so a live process after a pause is the one that owns the port.
           await sleep(150);
-          if (current.exitCode === null) return;
+          if (current.exitCode === null) {
+            return;
+          }
           throw new Error(`the instance exited after the port answered: ${errors}`);
         }
       } catch (error) {
-        if (current.exitCode !== null) throw error;
+        if (current.exitCode !== null) {
+          throw error;
+        }
       }
       await sleep(25);
     }
@@ -97,24 +105,34 @@ export async function startInstance(executable, dataDir, directory) {
   /** Starts on `port`, or on a new port the first time; a port taken by another process is retried. */
   const start = async (port) => {
     for (let attempt = 1; ; attempt++) {
-      if (closing) throw new Error("the instance is closing, so it does not start again");
+      if (closing) {
+        throw new Error("the instance is closing, so it does not start again");
+      }
       const chosen = port ?? (await freePort());
       // A close that began while the port was being chosen found no process to stop, and it has
       // removed the directory already: nothing may be spawned on it now, or the server would
       // recreate the directory after its removal.
-      if (closing) throw new Error("the instance closed before it started");
+      if (closing) {
+        throw new Error("the instance closed before it started");
+      }
       const current = spawnOn(chosen);
       try {
         await ready(current, `http://127.0.0.1:${chosen}`);
         // A close that began while this process was starting has already stopped `child`, which
         // is this one: it must not stay up as the instance's answer.
-        if (closing) throw new Error("the instance closed while it was starting");
+        if (closing) {
+          throw new Error("the instance closed while it was starting");
+        }
         listenPort = chosen;
         origin = `http://127.0.0.1:${chosen}`;
         return;
       } catch (error) {
-        if (current.exitCode === null) await stopped(current);
-        if (closing || attempt >= 5 || !/in use/i.test(errors)) throw error;
+        if (current.exitCode === null) {
+          await stopped(current);
+        }
+        if (closing || attempt >= 5 || !/in use/i.test(errors)) {
+          throw error;
+        }
         await sleep(50 * attempt);
       }
     }
@@ -122,8 +140,9 @@ export async function startInstance(executable, dataDir, directory) {
 
   const stopped = (current) =>
     new Promise((resolve) => {
-      if (current.exitCode !== null || current.signalCode !== null)
+      if (current.exitCode !== null || current.signalCode !== null) {
         return resolve(current.exitCode);
+      }
       const force = setTimeout(() => current.kill("SIGKILL"), 15_000);
       current.once("exit", (code) => {
         clearTimeout(force);
@@ -134,7 +153,9 @@ export async function startInstance(executable, dataDir, directory) {
 
   const stop = async () => {
     const current = child;
-    if (!current) return 0;
+    if (!current) {
+      return 0;
+    }
     const code = await stopped(current);
     child = undefined;
     return code;
@@ -176,7 +197,9 @@ export async function startInstance(executable, dataDir, directory) {
 export async function stopOwnedInstances() {
   const results = await Promise.allSettled([...owned].map((handle) => handle.close()));
   const failed = results.filter((result) => result.status === "rejected");
-  if (failed.length) throw new Error(failed.map((result) => result.reason.message).join("\n"));
+  if (failed.length) {
+    throw new Error(failed.map((result) => result.reason.message).join("\n"));
+  }
 }
 
 /**
@@ -193,7 +216,9 @@ export async function restoredInstance(executable, sourceDataDir) {
       "--output",
       snapshot,
     ]);
-    if (made.code !== 0) throw new Error(`backup exited ${made.code}: ${made.stderr}`);
+    if (made.code !== 0) {
+      throw new Error(`backup exited ${made.code}: ${made.stderr}`);
+    }
     const dataDir = join(directory, "data");
     await cp(snapshot, dataDir, { recursive: true });
     return await startInstance(executable, dataDir, directory);

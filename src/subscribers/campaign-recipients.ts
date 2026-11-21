@@ -7,7 +7,7 @@ import sql from "@/subscribers/campaign-recipients.sql" with { type: "text" };
 
 export interface CampaignAudience {
   /** The campaign's lists and their opt-in types. */
-  lists: { id: bigint; optin: string }[];
+  lists: Array<{ id: bigint; optin: string }>;
   type: "regular" | "optin";
 }
 export interface CampaignRecipient {
@@ -22,7 +22,7 @@ export interface CampaignRecipient {
 export function createCampaignRecipients(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "subscribers/campaign-recipients", sql }]);
   const lists = (audience: CampaignAudience) =>
-    JSON.stringify(audience.lists.map((l) => ({ id: l.id.toString(), optin: l.optin }))).replace(
+    JSON.stringify(audience.lists.map((l) => ({ id: l.id.toString(), optin: l.optin }))).replaceAll(
       /"id":"(\d+)"/g,
       '"id":$1',
     );
@@ -41,7 +41,7 @@ export function createCampaignRecipients(db: Database) {
     next(audience: CampaignAudience, after: bigint, max: bigint, limit: number) {
       const ids = q
         .get("campaign-recipient-ids")
-        .all(lists(audience), audience.type, after, max, limit) as { id: bigint }[];
+        .all(lists(audience), audience.type, after, max, limit) as Array<{ id: bigint }>;
       const recipient = q.get("campaign-recipient");
       return ids.map(({ id }) => recipient.get(id) as CampaignRecipient);
     },
@@ -62,9 +62,15 @@ export function createCampaignRecipients(db: Database) {
         status: string | null;
         eligible: bigint;
       };
-      if (row.uuid === null) return "unavailable";
-      if (row.uuid !== recipient.uuid || row.email !== recipient.email) return "changed";
-      if (row.eligible === 1n) return "eligible";
+      if (row.uuid === null) {
+        return "unavailable";
+      }
+      if (row.uuid !== recipient.uuid || row.email !== recipient.email) {
+        return "changed";
+      }
+      if (row.eligible === 1n) {
+        return "eligible";
+      }
       return row.status === "blocklisted" ? "blocklisted" : "unsubscribed";
     },
     close: () => q.close(),

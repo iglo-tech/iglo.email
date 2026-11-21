@@ -12,7 +12,7 @@ interface UserRecord {
   status: string;
   password_login: boolean;
   password: string | null;
-  user_role: { id: number; name: string; permissions: string[] };
+  user_role: { id: number; name: string; permissions: Array<string> };
   list_role: unknown;
 }
 
@@ -31,7 +31,9 @@ export interface AuthTarget {
 }
 
 function check(value: unknown, name: string): asserts value {
-  if (!value) throw new Error(`FAIL ${name}`);
+  if (!value) {
+    throw new Error(`FAIL ${name}`);
+  }
   process.stdout.write(`PASS ${name}\n`);
 }
 
@@ -53,7 +55,9 @@ async function form(
   const html = await page.text();
   const nonce = /name="nonce"\s+value="([^"]+)"/.exec(html)?.[1] ?? "";
   const nonceCookie = cookie(page, "nonce");
-  if (page.status !== 200 || !nonce || !nonceCookie) throw new Error("FAIL login-form");
+  if (page.status !== 200 || !nonce || !nonceCookie) {
+    throw new Error("FAIL login-form");
+  }
   const response = await fetch(`${target.baseUrl}/admin/login`, {
     method: "POST",
     redirect: "manual",
@@ -86,11 +90,21 @@ async function request(
   } = {},
 ): Promise<Response> {
   const headers = new Headers();
-  if (options.auth) headers.set("Authorization", options.auth);
-  if (options.cookie) headers.set("Cookie", options.cookie);
-  if (options.csrf) headers.set("X-CSRF-Token", options.csrf);
-  if (options.origin) headers.set("Origin", options.origin);
-  if (options.body !== undefined) headers.set("Content-Type", "application/json");
+  if (options.auth) {
+    headers.set("Authorization", options.auth);
+  }
+  if (options.cookie) {
+    headers.set("Cookie", options.cookie);
+  }
+  if (options.csrf) {
+    headers.set("X-CSRF-Token", options.csrf);
+  }
+  if (options.origin) {
+    headers.set("Origin", options.origin);
+  }
+  if (options.body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
   return fetch(`${target.baseUrl}${path}`, {
     method: options.method ?? "GET",
     headers,
@@ -100,10 +114,13 @@ async function request(
 }
 
 async function user(response: Response): Promise<UserRecord> {
-  if (response.status !== 200) throw new Error(`FAIL user-response-status-${response.status}`);
+  if (response.status !== 200) {
+    throw new Error(`FAIL user-response-status-${response.status}`);
+  }
   const value = (await response.json()) as { data?: UserRecord };
-  if (!value.data || !Number.isSafeInteger(value.data.id) || value.data.id < 1)
+  if (!value.data || !Number.isSafeInteger(value.data.id) || value.data.id < 1) {
     throw new Error("FAIL user-response-id");
+  }
   const keys = [
     "avatar",
     "created_at",
@@ -140,8 +157,9 @@ async function user(response: Response): Promise<UserRecord> {
     !Number.isFinite(Date.parse(entry.updated_at)) ||
     (entry.loggedin_at !== null &&
       (typeof entry.loggedin_at !== "string" || !Number.isFinite(Date.parse(entry.loggedin_at))))
-  )
+  ) {
     throw new Error("FAIL user-response-shape");
+  }
   const role = value.data.user_role;
   if (
     !role ||
@@ -153,15 +171,17 @@ async function user(response: Response): Promise<UserRecord> {
     new Set(role.permissions).size !== 28 ||
     !role.permissions.includes("users:get") ||
     !role.permissions.includes("users:manage")
-  )
+  ) {
     throw new Error("FAIL user-role-shape");
+  }
   return value.data;
 }
 
 /** One stateful corpus for the disposable reference and compiled production. */
 export async function runAuthContract(target: AuthTarget): Promise<void> {
-  if (!/^http:\/\/(?:127\.0\.0\.1|\[::1\]):[0-9]{1,5}$/.test(target.baseUrl))
+  if (!/^http:\/\/(?:127\.0\.0\.1|\[::1\]):[0-9]{1,5}$/.test(target.baseUrl)) {
     throw new Error("Invalid contract target");
+  }
   const basic = header(target.credentials);
   const suffix = randomUUID().replaceAll("-", "").slice(0, 16);
   const name = `m13-human-${suffix}`;
@@ -169,7 +189,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
   const apiName = `m13-api-${suffix}`;
   const password = "  m13-spaced-password  ";
   const email = `${name}@example.test`;
-  const created: number[] = [];
+  const created: Array<number> = [];
   let cleanupFailed = false;
   try {
     const health = await request(target, "/api/health", { auth: basic });
@@ -361,7 +381,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     const listResponse = await request(target, "/api/users?order_by=username&order=asc", {
       auth: basic,
     });
-    const list = (await listResponse.json()) as { data: UserRecord[] };
+    const list = (await listResponse.json()) as { data: Array<UserRecord> };
     check(
       listResponse.status === 200 &&
         Array.isArray(list.data) &&
@@ -373,7 +393,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     const upperResponse = await request(target, "/api/users?order_by=username&order=ASC", {
       auth: basic,
     });
-    const upperNames = ((await upperResponse.json()) as { data: UserRecord[] }).data.map(
+    const upperNames = ((await upperResponse.json()) as { data: Array<UserRecord> }).data.map(
       (entry) => entry.username,
     );
     check(
@@ -390,8 +410,9 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         `/api/users?order_by=loggedin_at&order=${direction}`,
         { auth: basic },
       );
-      const ordered = ((await orderedResponse.json()) as { data: { loggedin_at: string | null }[] })
-        .data;
+      const ordered = (
+        (await orderedResponse.json()) as { data: Array<{ loggedin_at: string | null }> }
+      ).data;
       check(
         orderedResponse.status === 200 &&
           Array.isArray(ordered) &&
@@ -477,10 +498,13 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         auth: basic,
         body: { name: listRoleName, lists: [] },
       });
-      if (roleResponse.status !== 200) throw new Error("FAIL reference-list-role-setup");
+      if (roleResponse.status !== 200) {
+        throw new Error("FAIL reference-list-role-setup");
+      }
       const role = ((await roleResponse.json()) as { data: { id: number } }).data;
-      if (!Number.isSafeInteger(role.id) || role.id < 1)
+      if (!Number.isSafeInteger(role.id) || role.id < 1) {
         throw new Error("FAIL reference-list-role-id");
+      }
       let listUserId = 0;
       try {
         const response = await request(target, "/api/users", {
@@ -495,7 +519,9 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
             list_role_id: role.id,
           },
         });
-        if (response.status !== 200) throw new Error("FAIL reference-list-user-setup");
+        if (response.status !== 200) {
+          throw new Error("FAIL reference-list-user-setup");
+        }
         const entry = (
           (await response.json()) as {
             data: { id: number; list_role_id: number; list_role: unknown };
@@ -512,7 +538,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         );
         const responseList = await request(target, "/api/users", { auth: basic });
         const entries = (
-          (await responseList.json()) as { data: { id: number; list_role: unknown }[] }
+          (await responseList.json()) as { data: Array<{ id: number; list_role: unknown }> }
         ).data;
         const listRole = entries.find((item) => item.id === listUserId)?.list_role;
         check(
@@ -530,8 +556,9 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
             listUserId &&
             (await request(target, `/api/users/${listUserId}`, { method: "DELETE", auth: basic }))
               .status !== 200
-          )
+          ) {
             cleanupFailed = true;
+          }
         } catch {
           cleanupFailed = true;
         }
@@ -539,8 +566,9 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
           if (
             (await request(target, `/api/roles/${role.id}`, { method: "DELETE", auth: basic }))
               .status !== 200
-          )
+          ) {
             cleanupFailed = true;
+          }
         } catch {
           cleanupFailed = true;
         }
@@ -570,7 +598,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         api.password.length === 48,
       "users-create-api-token",
     );
-    const apiAuth = header({ user: apiName, token: api.password! });
+    const apiAuth = header({ user: apiName, token: api.password });
     const apiRead = await user(await request(target, `/api/users/${api.id}`, { auth: basic }));
     check(!apiRead.password && apiRead.id === api.id, "users-token-returned-once");
     check(
@@ -694,11 +722,12 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         .status === 403,
       "converted-human-password-is-not-api-token",
     );
-    if (target.mode === "normal")
+    if (target.mode === "normal") {
       check(
         (await request(target, "/api/profile", { cookie: spaced.session })).status === 403,
         "converted-human-session-revoked",
       );
+    }
     const apiUpdated = await user(
       await request(target, `/api/users/${api.id}`, {
         method: "PUT",
@@ -859,21 +888,27 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
           method: "DELETE",
           auth: basic,
         });
-        if (response.status !== 200) cleanupFailed = true;
+        if (response.status !== 200) {
+          cleanupFailed = true;
+        }
       } catch {
         cleanupFailed = true;
       }
     }
-    if (cleanupFailed) process.stderr.write("FAIL cleanup-user\n");
+    if (cleanupFailed) {
+      process.stderr.write("FAIL cleanup-user\n");
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL cleanup-user");
+  if (cleanupFailed) {
+    throw new Error("FAIL cleanup-user");
+  }
   await lastHumanAdmin(target, basic);
 }
 
 /** Both callers own a disposable target; restore its bootstrap account even on failure. */
 async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> {
   const response = await request(target, "/api/users", { auth: basic });
-  const list = (await response.json()) as { data: UserRecord[] };
+  const list = (await response.json()) as { data: Array<UserRecord> };
   const humans = list.data.filter(
     (entry) => entry.type === "user" && entry.status === "enabled" && entry.user_role.id === 1,
   );
@@ -883,7 +918,7 @@ async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> 
   );
   const admin = humans[0]!;
   try {
-    const defaults: [string, Record<string, unknown>][] = [
+    const defaults: Array<[string, Record<string, unknown>]> = [
       ["omitted-role-status", {}],
       ["zero-empty-role-status", { user_role_id: 0, status: "" }],
       ["omitted-role", { status: "enabled" }],
@@ -1054,12 +1089,15 @@ async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> 
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference")
+    if (process.argv[2] !== "reference") {
       throw new Error("Use the reference or owned production contract command");
+    }
     const baseUrl = process.env.REFERENCE_URL ?? "";
     const apiUser = process.env.REFERENCE_API_USER ?? "";
     const apiToken = process.env.REFERENCE_API_TOKEN ?? "";
-    if (!apiUser || !apiToken) throw new Error("Missing reference credentials");
+    if (!apiUser || !apiToken) {
+      throw new Error("Missing reference credentials");
+    }
     await runAuthContract({
       mode: "reference",
       baseUrl,

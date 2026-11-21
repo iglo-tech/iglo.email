@@ -7,7 +7,9 @@ const FORM =
 /** The stored text form of a bound, or null when it is not one of the accepted forms. */
 export function parseBound(text: string, rounding: "up" | "down"): string | null {
   const match = FORM.exec(text.trim());
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
   const [, y, mo, d, h = "0", mi = "0", s = "0", fraction = "", zone = "Z"] = match;
   const at = new Date(0);
   at.setUTCFullYear(Number(y), Number(mo) - 1, Number(d));
@@ -18,8 +20,9 @@ export function parseBound(text: string, rounding: "up" | "down"): string | null
     Number(h) > 24 ||
     Number(mi) > 59 ||
     Number(s) > 60
-  )
+  ) {
     return null;
+  }
   let time = at.getTime();
   const ms = Number(`0.${fraction || "0"}`) * 1000;
   time += rounding === "up" ? Math.ceil(ms) : Math.floor(ms);

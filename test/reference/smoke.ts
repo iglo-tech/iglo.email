@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { join } from "node:path";
-import { command, spawnGroup, stopGroup, type GroupChild } from "@/test/reference/command";
+import { command, spawnGroup, stopGroup } from "@/test/reference/command";
+import type { GroupChild } from "@/test/reference/command";
 import { cache, repository, sourceCommit } from "@/test/reference/prepare";
 
 interface State {
@@ -17,11 +18,15 @@ interface State {
   grandchildUrl?: string;
 }
 function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
+  if (!condition) {
+    throw new Error(message);
+  }
 }
-async function docker(args: string[]) {
+async function docker(args: Array<string>) {
   const result = await command(["docker", ...args], { timeout: 30_000 });
-  if (result.code !== 0) throw new Error(`docker ${args[0]} failed: ${result.stderr.trim()}`);
+  if (result.code !== 0) {
+    throw new Error(`docker ${args[0]} failed: ${result.stderr.trim()}`);
+  }
   return result.stdout.trim();
 }
 async function waitFor<T>(
@@ -32,12 +37,14 @@ async function waitFor<T>(
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const result = await fn();
-    if (result !== undefined) return result;
+    if (result !== undefined) {
+      return result;
+    }
     await Bun.sleep(100);
   }
   throw new Error(`Timed out waiting for ${description}`);
 }
-function startRunner(args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
+function startRunner(args: Array<string>, extraEnv: NodeJS.ProcessEnv = {}) {
   const child = spawnGroup(process.execPath, ["run", "reference:run", "--", ...args], {
     cwd: repository,
     env: { ...process.env, ...extraEnv },
@@ -70,7 +77,9 @@ async function finish(runner: ReturnType<typeof startRunner>) {
       }),
     ]);
   } finally {
-    if (timer) clearTimeout(timer);
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
 async function stateFile(path: string, runner: ReturnType<typeof startRunner>): Promise<State> {
@@ -80,7 +89,9 @@ async function stateFile(path: string, runner: ReturnType<typeof startRunner>): 
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       if (runner.child.exitCode !== null || runner.child.signalCode !== null)
-        throw new Error(`Reference command exited before its child was ready: ${runner.output()}`);
+        throw new Error(`Reference command exited before its child was ready: ${runner.output()}`, {
+          cause: error,
+        });
       return undefined;
     }
   }, "reference command readiness");
@@ -124,7 +135,9 @@ async function checkCleanup(id: string, state?: State) {
         "--filter",
         `label=io.iglo.email.reference.run=${id}`,
       ]);
-      if (containers || volumes) return undefined;
+      if (containers || volumes) {
+        return undefined;
+      }
       if (state) {
         const closed = await Promise.all([
           ...[
@@ -136,7 +149,9 @@ async function checkCleanup(id: string, state?: State) {
           ].map(absent),
           smtpAbsent(state.smtpHost, state.smtpPort),
         ]);
-        if (!closed.every(Boolean)) return undefined;
+        if (!closed.every(Boolean)) {
+          return undefined;
+        }
       }
       return true;
     },
@@ -151,7 +166,9 @@ function runId(output: string) {
 }
 
 const realDocker = Bun.which("docker");
-if (!realDocker) throw new Error("Docker CLI is required");
+if (!realDocker) {
+  throw new Error("Docker CLI is required");
+}
 await mkdir(cache, { recursive: true });
 const temp = await mkdtemp(join(cache, "validation-"));
 const sentinelName = `iglo-reference-sentinel-${randomUUID()}`;
@@ -376,7 +393,7 @@ try {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       if (startup.child.exitCode !== null || startup.child.signalCode !== null)
-        throw new Error(`Startup exited before signal: ${startup.output()}`);
+        throw new Error(`Startup exited before signal: ${startup.output()}`, { cause: error });
       return undefined;
     }
   }, "the owned startup operation");
@@ -391,7 +408,7 @@ try {
   await sentinelSurvives();
   console.log("Signal during partial startup cleanup passed");
 } finally {
-  const cleanupErrors: string[] = [];
+  const cleanupErrors: Array<string> = [];
   for (const runner of active) {
     try {
       if (runner.child.exitCode === null && runner.child.signalCode === null) {
@@ -404,7 +421,9 @@ try {
     }
   }
   try {
-    if (sentinel) stopGroup(sentinel, "SIGKILL");
+    if (sentinel) {
+      stopGroup(sentinel, "SIGKILL");
+    }
   } catch (error) {
     cleanupErrors.push(String(error));
   }

@@ -83,7 +83,7 @@ test("migration 18 clears stale TOTP keys and raises a stored zero bounce count 
       .map((n) => set.find((v) => v.startsWith(`${n}=`))!.split(";")[0])
       .join("; ");
     const get = async (path: string) =>
-      ((await (await fetch(`${f.origin}${path}`, { headers: { cookie } })).json()) as any).data;
+      (await (await fetch(`${f.origin}${path}`, { headers: { cookie } })).json()).data;
     const users = await get("/api/users");
     const type = (name: string) => users.find((u: any) => u.username === name).twofa_type;
     expect(type("api-user")).toBe("none");
@@ -159,7 +159,7 @@ test("migrated API user keeps its key", async () => {
       headers: { authorization: `token api-user:${apiKey}` },
     });
     expect(key.status).toBe(200);
-    expect(((await key.json()) as any).data.username).toBe("api-user");
+    expect((await key.json()).data.username).toBe("api-user");
   } finally {
     await f.close();
     rmSync(persisted.dataDir, { recursive: true, force: true });
@@ -201,7 +201,7 @@ test("password login turned back on for a migrated password-off user asks for no
       "x-csrf-token": cookies[1]!.slice("csrf=".length),
       "content-type": "application/json",
     };
-    const users = ((await (await fetch(`${f.origin}/api/users`, { headers })).json()) as any).data;
+    const users = (await (await fetch(`${f.origin}/api/users`, { headers })).json()).data;
     const target = users.find((u: any) => u.username === "no-password");
     expect(target.password_login).toBe(false);
     const put = await fetch(`${f.origin}/api/users/${target.id}`, {
@@ -226,7 +226,7 @@ test("password login turned back on for a migrated password-off user asks for no
     expect(login.location).not.toContain("totp");
     expect(login.session).toBe(true);
     const after = await fetch(`${f.origin}/api/users/${target.id}`, { headers });
-    expect(((await after.json()) as any).data.twofa_type).toBe("none");
+    expect((await after.json()).data.twofa_type).toBe("none");
   } finally {
     await f.close();
     rmSync(persisted.dataDir, { recursive: true, force: true });

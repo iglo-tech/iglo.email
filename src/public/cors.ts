@@ -11,9 +11,11 @@ const allowMethods = "GET,HEAD,PUT,PATCH,POST,DELETE";
 const allowHeaders = "Origin,Content-Type,Accept,Authorization";
 
 /** trustedURLsToCORSOrigins: the unique scheme and host of each URL, and `*` if present. */
-function trustedOrigins(urls: string[]): string[] {
+function trustedOrigins(urls: Array<string>): Array<string> {
   const origins = urls.flatMap((url) => {
-    if (url === "*") return [url];
+    if (url === "*") {
+      return [url];
+    }
     const parts = /^(https?):\/\/(?:[^/?#@]*@)?([^/?#]+)/i.exec(url);
     return parts ? [`${parts[1]!.toLowerCase()}://${parts[2]}`] : [];
   });
@@ -22,17 +24,23 @@ function trustedOrigins(urls: string[]): string[] {
 
 /** The router's error answer, here so an error response keeps its CORS headers. */
 function failure(context: RequestContext, error: unknown): Response {
-  if (error instanceof HttpError) return errorResponse(error, context.request.method);
+  if (error instanceof HttpError) {
+    return errorResponse(error, context.request.method);
+  }
   context.app.logger.error(error);
   return errorResponse(new HttpError(500), context.request.method);
 }
 
-export function publicCors(settings: () => { trustedUrls: string[] }): Middleware {
+export function publicCors(settings: () => { trustedUrls: Array<string> }): Middleware {
   return async (context, next) => {
     const path = context.url.pathname;
-    if (!path.startsWith(scope) && path !== widget) return next();
+    if (!path.startsWith(scope) && path !== widget) {
+      return next();
+    }
     const origins = trustedOrigins(settings().trustedUrls);
-    if (!origins.length) return next();
+    if (!origins.length) {
+      return next();
+    }
     const { headers, method } = context.request;
     const origin = headers.get("origin");
     const allowed = !origin
@@ -40,7 +48,7 @@ export function publicCors(settings: () => { trustedUrls: string[] }): Middlewar
       : origins.includes("*")
         ? "*"
         : origins.find((item) => item.toLowerCase() === origin.toLowerCase());
-    if (method === "OPTIONS" && origin && headers.get("access-control-request-method"))
+    if (method === "OPTIONS" && origin && headers.get("access-control-request-method")) {
       return new Response(null, {
         status: 204,
         headers: allowed
@@ -52,9 +60,12 @@ export function publicCors(settings: () => { trustedUrls: string[] }): Middlewar
             }
           : { Vary: "Origin" },
       });
+    }
     const response = await next().catch((error: unknown) => failure(context, error));
     response.headers.append("Vary", "Origin");
-    if (allowed) response.headers.set("Access-Control-Allow-Origin", allowed);
+    if (allowed) {
+      response.headers.set("Access-Control-Allow-Origin", allowed);
+    }
     return response;
   };
 }

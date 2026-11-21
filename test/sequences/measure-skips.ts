@@ -8,7 +8,7 @@ import { schedulerFixture } from "@/test/scheduler/fixture";
 const RUNS = Number(process.env.SKIPS_MEASURE_RUNS ?? 5);
 const EVENTS = Number(process.env.SKIPS_MEASURE_EVENTS ?? 1000);
 
-function median(values: number[]): number {
+function median(values: Array<number>): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 }
@@ -42,7 +42,7 @@ try {
   const blocked = (await post("blocked@example.test", "signup")).body.data.subscriber_id as number;
   await f.json(`/api/subscribers/${blocked}/blocklist`, "PUT", {});
 
-  const workloads: [string, () => Promise<{ status: number }>][] = [
+  const workloads: Array<[string, () => Promise<{ status: number }>]> = [
     ["plain: no sequence triggered", () => post("plain@example.test", "noop")],
     [
       "started: transactional sequence starts (replaces its enrollment)",
@@ -54,11 +54,13 @@ try {
     ],
   ];
   for (const [label, run] of workloads) {
-    const samples: number[] = [];
+    const samples: Array<number> = [];
     for (let r = 0; r < RUNS; r++) {
       const started = performance.now();
       for (let i = 0; i < EVENTS; i++) {
-        if ((await run()).status !== 200) throw new Error(`${label}: event refused`);
+        if ((await run()).status !== 200) {
+          throw new Error(`${label}: event refused`);
+        }
       }
       samples.push((performance.now() - started) / EVENTS);
     }
@@ -68,13 +70,17 @@ try {
   }
 
   // The subscriber's event page after the blocked events above: one page of 50 newest events.
-  const pageSamples: number[] = [];
+  const pageSamples: Array<number> = [];
   for (let r = 0; r < RUNS; r++) {
     const started = performance.now();
     for (let i = 0; i < 100; i++) {
       const page = await f.json(`/api/subscribers/${blocked}/subscriber-events?page=1&per_page=50`);
-      if (page.status !== 200) throw new Error(`events page ${page.status}`);
-      if (page.body.data.results.length !== 50) throw new Error("events page is not full");
+      if (page.status !== 200) {
+        throw new Error(`events page ${page.status}`);
+      }
+      if (page.body.data.results.length !== 50) {
+        throw new Error("events page is not full");
+      }
     }
     pageSamples.push((performance.now() - started) / 100);
   }

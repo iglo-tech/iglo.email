@@ -32,7 +32,7 @@ const record = (entry: object) => {
   console.log(line);
   appendFileSync(output, `${line}\n`);
 };
-const stats = (values: number[]) => {
+const stats = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
   return {
@@ -70,11 +70,12 @@ async function run(variant: "idle" | "before" | "after") {
   const insert = db.query(
     "INSERT INTO events(subscriber_id, name, data, occurred_at, created_at) VALUES (?, ?, '{\"a\":1}', ?, ?)",
   );
-  for (let i = 0; i < events; i += 20_000)
+  for (let i = 0; i < events; i += 20_000) {
     writeTransaction(db, () => {
       for (let j = i; j < Math.min(events, i + 20_000); j++)
         insert.run(subscriber.id, `event-${j % 50}`, old, old);
     });
+  }
   insert.finalize();
   // Let the seeding's checkpoint and file writes finish, so they are not counted as the purge's.
   db.run("PRAGMA wal_checkpoint(TRUNCATE)");
@@ -112,8 +113,8 @@ async function run(variant: "idle" | "before" | "after") {
       : variant === "after"
         ? startPurge({ db, clock: real, logger, purges: [createEventPurge(store)] })
         : null;
-  const lateness: number[] = [];
-  const whole: number[] = [];
+  const lateness: Array<number> = [];
+  const whole: Array<number> = [];
   const end = started + seconds * 1000;
   let next = performance.now();
   while (performance.now() < end) {
@@ -153,5 +154,6 @@ async function run(variant: "idle" | "before" | "after") {
 
 // One variant per process (argv[4]), so one run's heap and page cache do not shape the next.
 const only = process.argv[4];
-for (const variant of ["idle", "before", "after"] as const)
+for (const variant of ["idle", "before", "after"] as const) {
   if (!only || only === variant) await run(variant);
+}

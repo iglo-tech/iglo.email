@@ -3,22 +3,29 @@ import { writeFile } from "node:fs/promises";
 
 function required(name: string) {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing ${name}`);
+  if (!value) {
+    throw new Error(`Missing ${name}`);
+  }
   return value;
 }
 function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
+  if (!condition) {
+    throw new Error(message);
+  }
 }
 async function request(url: string, init: RequestInit = {}) {
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(5_000) });
-  if (!response.ok)
+  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(5000) });
+  if (!response.ok) {
     throw new Error(`${url} returned HTTP ${response.status}: ${await response.text()}`);
+  }
   return response;
 }
 
 const mode = process.argv[2];
 const statePath = process.argv[3];
-if (!statePath) throw new Error("Missing smoke state path");
+if (!statePath) {
+  throw new Error("Missing smoke state path");
+}
 const reference = required("REFERENCE_URL");
 const mailpit = required("MAILPIT_URL");
 const receiver = required("WEBHOOK_RECEIVER_URL");
@@ -51,7 +58,7 @@ if (mode === "wait" || mode === "orphan") {
     { stdio: ["ignore", "pipe", "ignore"] },
   );
   const grandchildPort = await new Promise<number>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Grandchild did not start")), 5_000);
+    const timeout = setTimeout(() => reject(new Error("Grandchild did not start")), 5000);
     let output = "";
     grandchild.stdout.on("data", (chunk: Buffer) => {
       output += chunk.toString();
@@ -74,10 +81,12 @@ if (mode === "wait" || mode === "orphan") {
       grandchildUrl: `http://127.0.0.1:${grandchildPort}`,
     }),
   );
-  if (mode === "orphan") process.exit(0);
+  if (mode === "orphan") {
+    process.exit(0);
+  }
   await new Promise(() => {});
 } else if (mode === "failure") {
-  const captured = (await (await request(`${receiver}/deliveries`)).json()) as unknown[];
+  const captured = (await (await request(`${receiver}/deliveries`)).json()) as Array<unknown>;
   const mailbox = (await (await request(`${mailpit}/api/v1/messages`)).json()) as { total: number };
   assert(
     captured.length === 0 && mailbox.total === 0,
@@ -135,7 +144,9 @@ if (mode === "wait" || mode === "orphan") {
         message.Subject === "Reference smoke message" &&
         message.To.some((to) => to.Address === "recipient@example.test"),
     );
-    if (found) break;
+    if (found) {
+      break;
+    }
     await Bun.sleep(100);
   }
   assert(found, "Mailpit did not receive the reference email");
@@ -149,7 +160,7 @@ if (mode === "wait" || mode === "orphan") {
     method: "POST",
     headers: { "X-Reference-Fixture": "synthetic" },
     body: payload,
-    signal: AbortSignal.timeout(5_000),
+    signal: AbortSignal.timeout(5000),
   });
   assert(delivery.status === 503, "webhook response status was not applied");
   const captured = (await (await request(`${receiver}/deliveries`)).json()) as Array<{
@@ -164,7 +175,7 @@ if (mode === "wait" || mode === "orphan") {
   );
   await request(`${receiver}/deliveries`, { method: "DELETE" });
   assert(
-    ((await (await request(`${receiver}/deliveries`)).json()) as unknown[]).length === 0,
+    ((await (await request(`${receiver}/deliveries`)).json()) as Array<unknown>).length === 0,
     "webhook reset failed",
   );
   console.log("Reference health, authentication, SMTP delivery, and webhook capture passed");

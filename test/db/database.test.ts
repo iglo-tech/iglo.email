@@ -99,8 +99,9 @@ test("immediate writes commit or roll back and reject nested or asynchronous cal
       await request(origin, { action: "migrate", catalog: "first" });
       const outcome = (await request(origin, { action: "transaction", mode })).result;
       expect(outcome.active).toBe(false);
-      if (mode === "success") expect(outcome.error).toBeNull();
-      else
+      if (mode === "success") {
+        expect(outcome.error).toBeNull();
+      } else {
         expect(outcome.error).toMatch(
           mode === "failure"
             ? /original error/
@@ -108,12 +109,14 @@ test("immediate writes commit or roll back and reject nested or asynchronous cal
               ? /nested/i
               : /synchron|async|promise/i,
         );
+      }
       const record = (await request(origin, { action: "get", id: "1" })).result;
       expect(record).toEqual(mode === "success" ? { id: "1", value: "changed" } : null);
-      if (mode !== "success")
+      if (mode !== "success") {
         expect((await request(origin, { action: "insert", id: "2", value: "usable" })).status).toBe(
           200,
         );
+      }
     });
   }
 });
@@ -237,7 +240,7 @@ test("snapshots unversioned user schema and never reuses names when the clock st
     });
     await request(origin, { action: "migrate", catalog: "both" });
     await request(origin, { action: "migrate", catalog: "three" });
-    const backups: string[] = (await request(origin, { action: "status" })).result.backups;
+    const backups: Array<string> = (await request(origin, { action: "status" })).result.backups;
     expect(backups).toHaveLength(3);
     expect(new Set(backups).size).toBe(3);
   });
@@ -261,7 +264,8 @@ test("named blocks reject malformed input and preserve semicolons, comments and 
       [{ name: "a", sql: "-- name: empty\n-- only a comment" }],
       [{ name: "a", sql: "-- name: invalid\nSELECT FROM" }],
       [{ name: "a", sql: "-- name: multiple\nSELECT 1; SELECT 2" }],
-    ])
+    ]) {
       expect((await request(origin, { action: "named", sources })).status).toBe(400);
+    }
   });
 });

@@ -125,7 +125,7 @@ export function createBounceStore(
   },
 ) {
   const q = prepareNamedQueries(db, [{ name: "bounces/store", sql }]);
-  const json = (ids: (bigint | number)[]) => JSON.stringify(ids.map(String));
+  const json = (ids: Array<bigint | number>) => JSON.stringify(ids.map(String));
   const rows = (filter: BounceFilter) => {
     // B80: order takes any case; anything but asc sorts descending, as before.
     const direction = filter.order?.toLowerCase() === "asc" ? "ASC" : "DESC";
@@ -133,7 +133,7 @@ export function createBounceStore(
     // Postgres sorts nulls as the largest value; the ID settles ties in stored rows.
     const order = `${column} ${direction} NULLS ${direction === "ASC" ? "LAST" : "FIRST"}, b.id DESC`;
     return db
-      .query<Row, (string | number | bigint)[]>(query.replace("%order%", order))
+      .query<Row, Array<string | number | bigint>>(query.replace("%order%", order))
       .all(
         filter.id ?? 0,
         filter.campaignId ?? 0,
@@ -165,7 +165,9 @@ export function createBounceStore(
       !event.recipient || sanitizeEmail(email) === event.recipient;
     const send = event.sendUuid ? deps.sendTarget(event.sendUuid) : null;
     if (send) {
-      if (!send.to_email) return null;
+      if (!send.to_email) {
+        return null;
+      }
       const subscriber = send.subscriber_id === null ? null : owner.get(send.subscriber_id);
       const claimed =
         !subscriber || !event.subscriberUuid || subscriber.uuid === event.subscriberUuid;
@@ -173,8 +175,9 @@ export function createBounceStore(
         const meta = { ...(JSON.parse(event.bareMeta) as object), send_uuid: send.uuid };
         return { ...coded(event), meta: JSON.stringify(meta) };
       }
-      if (subscriber && sanitizeEmail(subscriber.email) !== sanitizeEmail(send.to_email))
+      if (subscriber && sanitizeEmail(subscriber.email) !== sanitizeEmail(send.to_email)) {
         return { ...coded(event), send };
+      }
       return { subscriber, send, meta: event.meta, source: event.source };
     }
     const subscriber = event.subscriberUuid
@@ -182,7 +185,9 @@ export function createBounceStore(
       : event.email
         ? owner.byEmail(event.email)
         : null;
-    if (!subscriber) return null;
+    if (!subscriber) {
+      return null;
+    }
     return addressed(subscriber.email)
       ? { subscriber, send: null, meta: event.meta, source: event.source }
       : coded(event);
@@ -190,10 +195,15 @@ export function createBounceStore(
   /** Bounce actions at the count (record-bounce's block1, block2 and final delete). */
   const act = (subscriber: { id: bigint; status: string }, action: string) => {
     const owner = deps.subscribers();
-    if (action === "delete") owner.remove([subscriber.id]);
-    else if (subscriber.status === "blocklisted") return;
-    else if (action === "blocklist") owner.bounceBlocklist(subscriber.id);
-    else if (action === "unsubscribe") owner.bounceUnsubscribe(subscriber.id);
+    if (action === "delete") {
+      owner.remove([subscriber.id]);
+    } else if (subscriber.status === "blocklisted") {
+      return;
+    } else if (action === "blocklist") {
+      owner.bounceBlocklist(subscriber.id);
+    } else if (action === "unsubscribe") {
+      owner.bounceUnsubscribe(subscriber.id);
+    }
   };
   return {
     query(filter: BounceFilter) {
@@ -211,9 +221,13 @@ export function createBounceStore(
      */
     record(event: BounceEvent) {
       const action = deps.actions()[event.type];
-      if (!action || (event.campaignUuid && !reUUID.test(event.campaignUuid))) return;
+      if (!action || (event.campaignUuid && !reUUID.test(event.campaignUuid))) {
+        return;
+      }
       const named = identify(event);
-      if (!named) return;
+      if (!named) {
+        return;
+      }
       const { subscriber, send, meta, source } = named;
       const campaignId = event.campaignUuid ? deps.campaignID(event.campaignUuid) : null;
       const num = subscriber
@@ -231,7 +245,7 @@ export function createBounceStore(
             meta,
             event.createdAt,
           ) as { id: bigint };
-        if (subscriber || send)
+        if (subscriber || send) {
           deps.recorded({
             id: inserted.id,
             type: event.type,
@@ -240,16 +254,23 @@ export function createBounceStore(
             campaign_uuid: campaignId === null ? null : event.campaignUuid,
             send,
           });
+        }
       }
-      if (subscriber && num >= action.count) act(subscriber, action.action);
+      if (subscriber && num >= action.count) {
+        act(subscriber, action.action);
+      }
     },
     /**
      * B108 (D114): the test send a notice is of, when no send resolves for it and its Message-ID is
      * a test's record. Such a notice is named in the log and recorded nowhere: a test is not a bounce.
      */
     testOf(event: BounceEvent): TestSendRecord | null {
-      if (!event.messageId) return null;
-      if (event.sendUuid && deps.sendTarget(event.sendUuid)) return null;
+      if (!event.messageId) {
+        return null;
+      }
+      if (event.sendUuid && deps.sendTarget(event.sendUuid)) {
+        return null;
+      }
       return deps.testSend(event.messageId);
     },
     /**
@@ -264,7 +285,7 @@ export function createBounceStore(
     pruneReceipts() {
       q.get("receipts-expire").run(clock.now().toISOString(), RECEIPT_PRUNE_BATCH);
     },
-    deleteIDs(ids: (bigint | number)[]) {
+    deleteIDs(ids: Array<bigint | number>) {
       q.get("bounces-delete-ids").run(json(ids));
     },
     deleteFiltered(campaignId: number, source: string, type: string) {
@@ -274,21 +295,25 @@ export function createBounceStore(
       q.get("bounces-delete-subscriber").run(id);
     },
     /** D25: bounces of sends about to be anonymized, whose provider text names the person. */
-    deleteForSends(ids: bigint[]) {
-      if (ids.length) q.get("bounces-delete-sends").run(json(ids));
+    deleteForSends(ids: Array<bigint>) {
+      if (ids.length) {
+        q.get("bounces-delete-sends").run(json(ids));
+      }
     },
     /** blocklist-bounced-subscribers, through the subscribers' owner. The caller holds the write. */
-    blocklist(ids: (bigint | number)[], campaignId: number, source: string, type: string) {
+    blocklist(ids: Array<bigint | number>, campaignId: number, source: string, type: string) {
       const selected = (
         ids.length
           ? q.get("bounced-subscribers-ids").all(json(ids))
           : q.get("bounced-subscribers-filtered").all(campaignId, source, type)
-      ) as { subscriber_id: bigint }[];
-      if (selected.length) deps.subscribers().blocklist(selected.map((row) => row.subscriber_id));
+      ) as Array<{ subscriber_id: bigint }>;
+      if (selected.length) {
+        deps.subscribers().blocklist(selected.map((row) => row.subscriber_id));
+      }
     },
     /** The subscriber's own export. */
     forExport(id: bigint, limit: number) {
-      const found = q.get("bounces-export").all(id, limit) as { meta: string }[];
+      const found = q.get("bounces-export").all(id, limit) as Array<{ meta: string }>;
       return found.map((row) => ({ ...row, meta: JSON.parse(row.meta) as unknown }));
     },
     close: () => q.close(),

@@ -104,27 +104,40 @@ const strings = new Set([
   "bounce.ses_topic_arns",
   "upload.extensions",
 ]);
-for (const key of strings) shapes[key] = [""];
+for (const key of strings) {
+  shapes[key] = [""];
+}
 function zero(shape: any): any {
-  if (shape === null || Array.isArray(shape)) return null;
-  if (typeof shape === "object")
+  if (shape === null || Array.isArray(shape)) {
+    return null;
+  }
+  if (typeof shape === "object") {
     return Object.fromEntries(
       Object.entries(shape)
         .filter(([key]) => key !== "*" && !(shape === smtpShape && key === "dkim"))
         .map(([key, value]) => [key, zero(value)]),
     );
-  if (typeof shape === "string") return "";
-  if (typeof shape === "boolean") return false;
+  }
+  if (typeof shape === "string") {
+    return "";
+  }
+  if (typeof shape === "boolean") {
+    return false;
+  }
   return 0;
 }
-function entries(value: unknown): [string, unknown][] {
-  if (value instanceof Members) return value.entries;
-  if (value && typeof value === "object" && !Array.isArray(value)) return Object.entries(value);
+function entries(value: unknown): Array<[string, unknown]> {
+  if (value instanceof Members) {
+    return value.entries;
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return Object.entries(value);
+  }
   return fail();
 }
 // All JSON field tags here are ASCII. Go's simple folding also admits long s
 // and Kelvin sign, without multi-character expansions such as ß -> SS.
-const foldField = (value: string) => value.replace(/ſ/g, "s").replace(/K/g, "k").toLowerCase();
+const foldField = (value: string) => value.replaceAll("ſ", "s").replaceAll("K", "k").toLowerCase();
 // Folded name -> declared name for one static shape; the first declared match wins, as with find.
 const foldedNames = new WeakMap<object, Map<string, string>>();
 function lookup(shape: object, key: string): string | undefined {
@@ -133,7 +146,9 @@ function lookup(shape: object, key: string): string | undefined {
     names = new Map();
     for (const name of Object.keys(shape)) {
       const folded = foldField(name);
-      if (!names.has(folded)) names.set(folded, name);
+      if (!names.has(folded)) {
+        names.set(folded, name);
+      }
     }
     foldedNames.set(shape, names);
   }
@@ -141,22 +156,29 @@ function lookup(shape: object, key: string): string | undefined {
 }
 /** Whether a decoded settings object names a top-level key, with Go field folding. */
 export function hasField(value: unknown, key: string): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
   return entries(value).some(([name]) => foldField(name) === foldField(key));
 }
 function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
-  if (value === null)
+  if (value === null) {
     return shape === null ||
       Array.isArray(shape) ||
       (shape && typeof shape === "object" && Object.hasOwn(shape, "*"))
       ? null
       : previous;
+  }
   if (shape === null) {
-    if (typeof value !== "number" || !Number.isSafeInteger(value)) return fail();
+    if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+      return fail();
+    }
     return value;
   }
   if (Array.isArray(shape)) {
-    if (!Array.isArray(value)) return fail();
+    if (!Array.isArray(value)) {
+      return fail();
+    }
     // D48 discards truncated elements rather than retaining Go slice backing capacity.
     return value.map((item, index) => bind(item, shape[0], previous?.[index] ?? zero(shape[0])));
   }
@@ -164,63 +186,84 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
     const members = entries(value);
     const result: Record<string, unknown> = previous ? cloneJson(previous) : {};
     if (Object.hasOwn(shape, "*")) {
-      for (const [key, entry] of members)
+      for (const [key, entry] of members) {
         Object.defineProperty(result, key, {
           value: bind(entry, shape["*"]),
           enumerable: true,
           writable: true,
           configurable: true,
         });
+      }
       return result;
     }
-    for (const [key, fallback] of Object.entries(shape))
+    for (const [key, fallback] of Object.entries(shape)) {
       if (key !== "dkim" && !Object.hasOwn(result, key)) result[key] = zero(fallback);
+    }
     for (const [key, entry] of members) {
       const match = lookup(shape, key);
       if (match === "dkim" && shape === smtpShape) {
         try {
-          if (entry === null) result[match] = null;
-          else {
+          if (entry === null) {
+            result[match] = null;
+          } else {
             const fields = entries(entry);
             for (const required of ["domain_name", "key_selector", "private_key"]) {
               const values = fields.filter(([name]) => foldField(name) === required);
-              if (!values.length || values.some(([, value]) => typeof value !== "string"))
+              if (!values.length || values.some(([, value]) => typeof value !== "string")) {
                 return fail("Invalid DKIM configuration.");
+              }
             }
             result[match] = bind(entry, shape[match], zero(shape[match]));
           }
         } catch {
           return fail("Invalid DKIM configuration.");
         }
-      } else if (match) result[match] = bind(entry, shape[match], result[match]);
+      } else if (match) {
+        result[match] = bind(entry, shape[match], result[match]);
+      }
     }
     return result;
   }
-  if (typeof shape === "number") return int64(value) ?? fail();
-  if (typeof value !== typeof shape) return fail();
+  if (typeof shape === "number") {
+    return int64(value) ?? fail();
+  }
+  if (typeof value !== typeof shape) {
+    return fail();
+  }
   return typeof value === "string" ? value.toWellFormed() : value;
 }
 export function projectRaw(value: Settings, root: string): Settings {
   const out = bindFull(value, root);
-  for (const key of arrays) out[key] ??= [];
-  for (const key of ["smtp", "messengers", "bounce.mailboxes"])
+  for (const key of arrays) {
+    out[key] ??= [];
+  }
+  for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
     for (const item of out[key]) {
       if (!item.password) delete item.password;
       if (key === "smtp" && !item.dkim) delete item.dkim;
     }
+  }
   return out;
 }
 export function bindFull(value: unknown, root: string): Settings {
-  if (value !== null && (typeof value !== "object" || Array.isArray(value))) return fail();
+  if (value !== null && (typeof value !== "object" || Array.isArray(value))) {
+    return fail();
+  }
   const out: Settings = {};
   for (const [key, shape] of Object.entries(shapes)) {
-    if (Array.isArray(shape)) out[key] = null;
-    else if (shape && typeof shape === "object") out[key] = bind({}, shape);
-    else out[key] = typeof shape === "string" ? "" : typeof shape === "boolean" ? false : 0;
+    if (Array.isArray(shape)) {
+      out[key] = null;
+    } else if (shape && typeof shape === "object") {
+      out[key] = bind({}, shape);
+    } else {
+      out[key] = typeof shape === "string" ? "" : typeof shape === "boolean" ? false : 0;
+    }
   }
   for (const [key, entry] of value === null ? [] : entries(value)) {
     const match = lookup(shapes, key);
-    if (match) out[match] = bind(entry, shapes[match], out[match]);
+    if (match) {
+      out[match] = bind(entry, shapes[match], out[match]);
+    }
   }
   out["app.root_url"] = root;
   out["app.check_updates"] = false;
@@ -231,8 +274,9 @@ export function bindKey(current: Settings, key: string, value: unknown): Setting
     !Object.hasOwn(shapes, key) ||
     (key === "app.check_updates" && value !== false) ||
     (value === null && !arrays.has(key))
-  )
+  ) {
     return fail();
+  }
   const out = cloneJson(current);
   out[key] = bind(value, shapes[key]);
   return out;
@@ -242,45 +286,71 @@ export function bindKey(current: Settings, key: string, value: unknown): Setting
 // a server with no authentication has no use for one, and switching back to login needs a new one.
 // B57: for an SMTP server, an empty auth protocol is no authentication too (email.ts makeTransport), so
 // it is treated as none. A bounce mailbox with "" still logs in (upstream pop.go), so it keeps its password.
-function preserve(item: Settings, old: Settings[], smtp: boolean) {
+function preserve(item: Settings, old: Array<Settings>, smtp: boolean) {
   const previous = item.uuid ? old.findLast((v) => v.uuid === item.uuid) : undefined;
-  if (!item.uuid) item.uuid = crypto.randomUUID();
-  if (item.auth_protocol === "none" || (smtp && item.auth_protocol === "")) delete item.password;
-  else if (!item.password && previous) item.password = previous.password;
-  if (!item.password) delete item.password;
+  if (!item.uuid) {
+    item.uuid = crypto.randomUUID();
+  }
+  if (item.auth_protocol === "none" || (smtp && item.auth_protocol === "")) {
+    delete item.password;
+  } else if (!item.password && previous) {
+    item.password = previous.password;
+  }
+  if (!item.password) {
+    delete item.password;
+  }
 }
 // B56: two items of one list with the same uuid would share a secret, so the whole save is refused.
 // Items without a uuid are new and are not compared.
-function refuseDuplicateUUIDs(items: Settings[], label: string) {
+function refuseDuplicateUUIDs(items: Array<Settings>, label: string) {
   const seen = new Set<string>();
   for (const item of items) {
     const uuid = item?.uuid;
-    if (!uuid) continue;
-    if (seen.has(uuid)) fail(`Duplicate uuid in ${label}: each item needs its own.`);
+    if (!uuid) {
+      continue;
+    }
+    if (seen.has(uuid)) {
+      fail(`Duplicate uuid in ${label}: each item needs its own.`);
+    }
     seen.add(uuid);
   }
 }
 export function normalize(next: Settings, current: Settings, roles: Roles, now: number): Settings {
-  for (const key of arrays) next[key] ??= [];
+  for (const key of arrays) {
+    next[key] ??= [];
+  }
   refuseDuplicateUUIDs(next.smtp, "SMTP servers");
   refuseDuplicateUUIDs(next["bounce.mailboxes"], "bounce mailboxes");
   refuseDuplicateUUIDs(next.messengers, "messengers");
-  const addresses: string[] = [];
-  if (next["app.from_email"].length > 250) return fail("omax 250 `from` addresses are allowed");
+  const addresses: Array<string> = [];
+  if (next["app.from_email"].length > 250) {
+    return fail("omax 250 `from` addresses are allowed");
+  }
   for (const raw of next["app.from_email"]) {
     const value = trimSpace(raw ?? "");
-    if (!value) continue;
-    if ([...value].length > 2000) return fail("`from` address cannot exceed 2000 characters");
+    if (!value) {
+      continue;
+    }
+    if ([...value].length > 2000) {
+      return fail("`from` address cannot exceed 2000 characters");
+    }
     const opening = value.indexOf("{{");
     const tpl = opening >= 0 && value.includes("}}", opening + 2);
-    if (tpl && !addresses.length)
+    if (tpl && !addresses.length) {
       return fail("default (first) `from` address cannot contain template expressions");
-    if (!tpl) {
-      if (!validFromAddress(value)) return fail(`invalid from email address: ${value}`);
     }
-    if (!addresses.includes(value)) addresses.push(value);
+    if (!tpl) {
+      if (!validFromAddress(value)) {
+        return fail(`invalid from email address: ${value}`);
+      }
+    }
+    if (!addresses.includes(value)) {
+      addresses.push(value);
+    }
   }
-  if (!addresses.length) return fail("at least one `from` address is required");
+  if (!addresses.length) {
+    return fail("at least one `from` address is required");
+  }
   next["app.from_email"] = addresses;
   // B126 (D123): the operator's own site, an absolute http(s) URL under the root URL rules (D107).
   next["app.site_url"] = trimSpace(next["app.site_url"] ?? "");
@@ -294,16 +364,25 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   const names = new Set(["email"]);
   let hasDefault = false;
   for (const server of next.smtp) {
-    if (!server || typeof server !== "object") return fail();
-    if (server.enabled && !server.exclude_from_default) hasDefault = true;
-    let name = simpleLower(trimSpace(server.name)).replace(/[^a-z0-9-]/gu, "-");
+    if (!server || typeof server !== "object") {
+      return fail();
+    }
+    if (server.enabled && !server.exclude_from_default) {
+      hasDefault = true;
+    }
+    let name = simpleLower(trimSpace(server.name)).replaceAll(/[^a-z0-9-]/gu, "-");
     if (name) {
-      if (!name.startsWith("email-")) name = `email-${name}`;
-      if (names.has(name)) return fail(`Duplicate messenger name: ${name}`);
+      if (!name.startsWith("email-")) {
+        name = `email-${name}`;
+      }
+      if (names.has(name)) {
+        return fail(`Duplicate messenger name: ${name}`);
+      }
       names.add(name);
     }
-    if (server.exclude_from_default && !name)
+    if (server.exclude_from_default && !name) {
       return fail("A name is required for an SMTP server excluded from the default messenger.");
+    }
     server.name = name;
     server.host = trimSpace(server.host);
     // B51: a DKIM key is inherited only from the stored item with this uuid, never from one without.
@@ -311,132 +390,180 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
       ? current.smtp.findLast((item: Settings) => item.uuid === server.uuid)
       : undefined;
     preserve(server, current.smtp, true);
-    if (!Object.hasOwn(server, "dkim") && prior?.dkim) server.dkim = cloneJson(prior.dkim);
+    if (!Object.hasOwn(server, "dkim") && prior?.dkim) {
+      server.dkim = cloneJson(prior.dkim);
+    }
     if (server.dkim) {
-      if (!server.dkim.private_key && prior?.dkim) server.dkim.private_key = prior.dkim.private_key;
+      if (!server.dkim.private_key && prior?.dkim) {
+        server.dkim.private_key = prior.dkim.private_key;
+      }
       validateDKIM(server.dkim);
-    } else delete server.dkim;
-    if (server.enabled)
+    } else {
+      delete server.dkim;
+    }
+    if (server.enabled) {
       server.from_addresses = (server.from_addresses ?? [])
         .map((a: string) => simpleLower(trimSpace(a ?? "")))
         .filter(Boolean);
+    }
   }
-  if (!hasDefault)
+  if (!hasDefault) {
     return fail(
       "At least one enabled SMTP server must be included in the default 'email' messenger.",
     );
+  }
   for (const box of next["bounce.mailboxes"]) {
-    if (!box || typeof box !== "object") return fail();
+    if (!box || typeof box !== "object") {
+      return fail();
+    }
     box.host = trimSpace(box.host);
-    if (!(goDuration(box.scan_interval) >= 60000))
+    if (!(goDuration(box.scan_interval) >= 60_000)) {
       return fail("Bounce scan interval should be minimum 1 minute.");
+    }
     preserve(box, current["bounce.mailboxes"], false);
   }
   for (const item of next.messengers) {
-    if (!item || typeof item !== "object") return fail();
+    if (!item || typeof item !== "object") {
+      return fail();
+    }
     preserve(item, current.messengers, false);
-    const name = simpleLower(item.name).replace(/[^a-z0-9-]/g, "");
-    if (names.has(name)) return fail(`Duplicate messenger name: ${name}`);
-    if (!name) return fail("Invalid messenger name.");
+    const name = simpleLower(item.name).replaceAll(/[^a-z0-9-]/g, "");
+    if (names.has(name)) {
+      return fail(`Duplicate messenger name: ${name}`);
+    }
+    if (!name) {
+      return fail("Invalid messenger name.");
+    }
     item.name = name;
     names.add(name);
   }
   // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
   // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
   const storedRules = (current["bounce.actions"] ?? {}) as Settings;
-  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as [string, Settings][]) {
+  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as Array<
+    [string, Settings]
+  >) {
     if (
       Object.hasOwn(storedRules, name) &&
       JSON.stringify(storedRules[name]) === JSON.stringify(rule)
-    )
+    ) {
       continue;
-    if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000)
+    }
+    if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000) {
       return fail("Bounce action count must be between 1 and 1000.");
-    if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action))
+    }
+    if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action)) {
       return fail("Bounce action must be none, unsubscribe, blocklist or delete.");
+    }
   }
-  for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
+  for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
     if (!next[key]) next[key] = current[key];
+  }
   for (const [key, field] of [
     ["bounce.azure", "shared_secret"],
     ["bounce.postmark", "password"],
     ["bounce.forwardemail", "key"],
     ["bounce.lettermint", "key"],
     ["security.oidc", "client_secret"],
-  ] as const)
-    if (!next[key]?.[field!]) {
+  ] as const) {
+    if (!next[key]?.[field]) {
       if (!next[key]) return fail();
-      next[key][field!] = current[key][field!];
+      next[key][field] = current[key][field];
     }
+  }
   if (!next["security.captcha"]?.hcaptcha?.secret) {
-    if (!next["security.captcha"]?.hcaptcha) return fail();
+    if (!next["security.captcha"]?.hcaptcha) {
+      return fail();
+    }
     next["security.captcha"].hcaptcha.secret = current["security.captcha"].hcaptcha.secret;
   }
   next["marketing.min_interval"] = trimSpace(next["marketing.min_interval"] ?? "");
-  if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined)
+  if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined) {
     return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
+  }
   const sendRate = next["messaging.max_send_rate"];
   if (
     typeof sendRate !== "number" ||
     !Number.isInteger(sendRate) ||
     sendRate < 0 ||
-    sendRate > 10000
-  )
+    sendRate > 10_000
+  ) {
     return fail("Invalid messaging.max_send_rate: use an integer between 0 and 10000.");
-  for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"])
+  }
+  for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"]) {
     next[key] = next[key].map((d: string) => simpleLower(trimSpace(d ?? ""))).filter(Boolean);
+  }
   next["upload.extensions"] = next["upload.extensions"].map((v: string) =>
     simpleLower(trimSpace(v ?? "").replace(/^\./, "")),
   );
   next["security.trusted_urls"] = next["security.trusted_urls"]
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
-  for (const url of next["security.trusted_urls"])
+  for (const url of next["security.trusted_urls"]) {
     if (url !== "*" && !validTrustedURL(url))
       return fail(`Invalid data: invalid trusted URL: ${url}`);
+  }
   next["security.trusted_proxies"] = next["security.trusted_proxies"]
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
-  for (const proxy of next["security.trusted_proxies"])
+  for (const proxy of next["security.trusted_proxies"]) {
     if (!parseProxy(proxy)) return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
+  }
   next["bounce.ses_topic_arns"] = next["bounce.ses_topic_arns"]
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
-  if (next["bounce.ses_topic_arns"].length > 100)
+  if (next["bounce.ses_topic_arns"].length > 100) {
     return fail("Invalid data: at most 100 SNS topic ARNs.");
-  for (const arn of next["bounce.ses_topic_arns"])
+  }
+  for (const arn of next["bounce.ses_topic_arns"]) {
     if (!validTopicArn(arn)) return fail(`Invalid data: invalid SNS topic ARN: ${arn}`);
-  for (const budget of Object.values(next["security.public_rate_limit"] ?? {}))
+  }
+  for (const budget of Object.values(next["security.public_rate_limit"] ?? {})) {
     if (!Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 1_000_000)
       return fail("Invalid security.public_rate_limit: use whole requests per minute.");
+  }
   const oidc = next["security.oidc"];
-  if (!oidc) return fail();
-  if (oidc.roles === null) oidc.roles = current["security.oidc"].roles;
+  if (!oidc) {
+    return fail();
+  }
+  if (oidc.roles === null) {
+    oidc.roles = current["security.oidc"].roles;
+  }
   const exists = (id: number | null, type: "user" | "list") =>
     id !== null && Number.isSafeInteger(id) && id > 0 && roles.hasRole(BigInt(id), type);
   if (
     (oidc.auto_create_users || oidc.default_user_role_id !== null) &&
     !exists(oidc.default_user_role_id, "user")
-  )
+  ) {
     return fail(`OIDC default user role ID ${oidc.default_user_role_id ?? 0} does not exist`);
-  if (oidc.default_list_role_id !== null && !exists(oidc.default_list_role_id, "list"))
+  }
+  if (oidc.default_list_role_id !== null && !exists(oidc.default_list_role_id, "list")) {
     return fail(`OIDC default list role ID ${oidc.default_list_role_id} does not exist`);
+  }
   for (let i = 0; i < oidc.roles.length; i++) {
     const mapping = oidc.roles[i];
-    if (!mapping.claim) return fail(`OIDC role mapping ${i + 1}: claim is required`);
-    if (!mapping.match) return fail(`OIDC role mapping ${i + 1}: match is required`);
-    if (mapping.user_role_id !== null && !exists(mapping.user_role_id, "user"))
+    if (!mapping.claim) {
+      return fail(`OIDC role mapping ${i + 1}: claim is required`);
+    }
+    if (!mapping.match) {
+      return fail(`OIDC role mapping ${i + 1}: match is required`);
+    }
+    if (mapping.user_role_id !== null && !exists(mapping.user_role_id, "user")) {
       return fail(
         `OIDC role mapping ${i + 1}: user role ID ${mapping.user_role_id} does not exist`,
       );
-    if (mapping.list_role_id !== null && !exists(mapping.list_role_id, "list"))
+    }
+    if (mapping.list_role_id !== null && !exists(mapping.list_role_id, "list")) {
       return fail(
         `OIDC role mapping ${i + 1}: list role ID ${mapping.list_role_id} does not exist`,
       );
+    }
   }
   if (next["app.cache_slow_queries"]) {
     const error = cronError(next["app.cache_slow_queries_interval"]);
-    if (error) return fail(`Invalid data: slow query cron: ${error}`);
+    if (error) {
+      return fail(`Invalid data: slow query cron: ${error}`);
+    }
   }
   sessionDuration(next["security.session_duration"], now);
   next["app.root_url"] = current["app.root_url"];
@@ -446,26 +573,35 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
 export function masked(settings: Settings): Settings {
   const out = cloneJson(settings);
   const mask = (value: string | undefined) => "•".repeat([...(value ?? "")].length);
-  for (const key of ["smtp", "messengers", "bounce.mailboxes"])
+  for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
     for (const item of out[key]) {
       if (item.password) item.password = mask(item.password);
       if (key === "smtp" && item.dkim) item.dkim.private_key = mask(item.dkim.private_key);
     }
-  for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"])
+  }
+  for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
     if (out[key]) out[key] = mask(out[key]);
+  }
   for (const [key, field] of [
     ["bounce.azure", "shared_secret"],
     ["bounce.postmark", "password"],
     ["bounce.forwardemail", "key"],
     ["bounce.lettermint", "key"],
     ["security.oidc", "client_secret"],
-  ] as const)
-    out[key][field!] = mask(out[key][field!]);
+  ] as const) {
+    out[key][field] = mask(out[key][field]);
+  }
   out["security.captcha"].hcaptcha.secret = mask(out["security.captcha"].hcaptcha.secret);
   for (const mapping of out["security.oidc"].roles ?? []) {
-    if (mapping.user_role_id === null) delete mapping.user_role_id;
-    if (mapping.list_role_id === null) delete mapping.list_role_id;
+    if (mapping.user_role_id === null) {
+      delete mapping.user_role_id;
+    }
+    if (mapping.list_role_id === null) {
+      delete mapping.list_role_id;
+    }
   }
-  if (!out["upload.s3.aws_secret_access_key"]) delete out["upload.s3.aws_secret_access_key"];
+  if (!out["upload.s3.aws_secret_access_key"]) {
+    delete out["upload.s3.aws_secret_access_key"];
+  }
   return out;
 }

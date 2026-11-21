@@ -30,8 +30,8 @@ const address = (prefix) => `${unique(prefix)}@example.com`;
 
 // Webhooks, receivers and settings this file made or changed. `afterEach` deletes, closes and puts
 // them back, even after a timeout has closed the page.
-let webhooks = [];
-let receivers = [];
+const webhooks = [];
+const receivers = [];
 let changed = {};
 
 test.beforeEach(async ({ page }) => {
@@ -49,27 +49,35 @@ test.afterEach(async ({ request }) => {
       failures.push(`${label}: ${error.message}`);
     }
   };
-  for (const target of receivers.splice(0)) await step("closing a receiver", () => target.close());
+  for (const target of receivers.splice(0)) {
+    await step("closing a receiver", () => target.close());
+  }
   const call = await requestAdmin(request);
-  for (const id of webhooks.splice(0))
+  for (const id of webhooks.splice(0)) {
     await step(`deleting webhook ${id}`, async () => {
       const response = await call(`/api/webhooks/${id}`, "DELETE");
       if (response.status !== 200) throw new Error(`answered ${response.status}`);
     });
+  }
   const pending = changed;
   changed = {};
-  for (const [key, value] of Object.entries(pending))
+  for (const [key, value] of Object.entries(pending)) {
     await step(`restoring ${key}`, async () => {
       const response = await call(`/api/settings/${key}`, "PUT", value);
       if (response.status !== 200) throw new Error(`answered ${response.status}`);
     });
-  if (failures.length) throw new Error(failures.join("\n"));
+  }
+  if (failures.length) {
+    throw new Error(failures.join("\n"));
+  }
 });
 
 // Changes a setting, remembering what the server had so `afterEach` puts it back.
 async function change(page, key, value) {
   const settings = await ok(page, "/api/settings");
-  if (!(key in changed)) changed[key] = settings[key];
+  if (!(key in changed)) {
+    changed[key] = settings[key];
+  }
   await ok(page, `/api/settings/${key}`, "PUT", value);
 }
 
@@ -159,7 +167,9 @@ function unsubscribeLink(mail) {
 async function unsubscribeInBrowser(page, url, { blocklist = false } = {}) {
   await page.goto(url);
   await expect(page.locator("#btn-unsub")).toBeVisible();
-  if (blocklist) await page.locator("#privacy-blocklist").check();
+  if (blocklist) {
+    await page.locator("#privacy-blocklist").check();
+  }
   await page.locator("#btn-unsub").click();
   await expect(page.locator("body")).toContainText(/unsubscribed/i);
 }
@@ -330,12 +340,16 @@ test("over the webhook budget the bulk delete screen shows the API's message and
   test.setTimeout(150_000);
   // 20 webhooks on subscriber.deleted and 2,501 subscribers: 50,020 deliveries, over 50,000. The
   // refusal comes before anything is queued, so no request leaves for these addresses.
-  for (let i = 0; i < 20; i += 1) await hook(page, UNREACHED, ["subscriber.deleted"]);
+  for (let i = 0; i < 20; i += 1) {
+    await hook(page, UNREACHED, ["subscriber.deleted"]);
+  }
 
   const list = await makeList(page);
   const domain = `${unique("budget")}.example.com`;
   const rows = ["email,name,attributes"];
-  for (let i = 0; i < 2501; i += 1) rows.push(`reader${i}@${domain},"Reader ${i}","{}"`);
+  for (let i = 0; i < 2501; i += 1) {
+    rows.push(`reader${i}@${domain},"Reader ${i}","{}"`);
+  }
   const started = await page.evaluate(
     async ([listID, text]) => {
       const csrf =

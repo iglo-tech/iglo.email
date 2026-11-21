@@ -5,17 +5,14 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
-import { memoryIds, stageRows, type IdList } from "@/subscribers/id-stage";
+import { memoryIds, stageRows } from "@/subscribers/id-stage";
+import type { IdList } from "@/subscribers/id-stage";
 import type { ExportRow } from "@/subscribers/export";
-import {
-  countSQL,
-  idsSQL,
-  pageSQL,
-  type Arg,
-  type SubscriberFilter,
-} from "@/subscribers/query-filter";
+import { countSQL, idsSQL, pageSQL } from "@/subscribers/query-filter";
+import type { Arg, SubscriberFilter } from "@/subscribers/query-filter";
 import type { QueryRunner, RunnerError } from "@/subscribers/query-runner";
-import { noSubscriberEffects, type BulkAction, type SubscriberEffects } from "@/subscribers/store";
+import { noSubscriberEffects } from "@/subscribers/store";
+import type { BulkAction, SubscriberEffects } from "@/subscribers/store";
 import querySql from "@/subscribers/query.sql" with { type: "text" };
 import exportSql from "@/subscribers/export.sql" with { type: "text" };
 
@@ -32,7 +29,7 @@ export const MEMORY_PAGE = 1000;
  */
 export const LARGE_SELECTIONS = 2;
 
-const json = (ids: bigint[]) => `[${ids.join(",")}]`;
+const json = (ids: Array<bigint>) => `[${ids.join(",")}]`;
 
 export function createSubscriberQuery(options: {
   /** The write connection; bulk actions run here in one transaction. */
@@ -53,16 +50,20 @@ export function createSubscriberQuery(options: {
   let large = 0;
   const writes = prepareNamedQueries(db, [{ name: "subscribers/query", sql: querySql }]);
   const reads = prepareNamedQueries(readonly, [{ name: "subscribers/export", sql: exportSql }]);
-  const column = (connection: Database, sql: string, args: Arg[]) =>
-    (connection.query(sql).values(...args) as unknown[][]).map((row) => row[0] as bigint);
+  const column = (connection: Database, sql: string, args: Array<Arg>) =>
+    (connection.query(sql).values(...args) as Array<unknown>[]).map((row) => row[0] as bigint);
   return {
     /** Admit one large selection; returns its idempotent release, or undefined when full. */
     admitLarge(): (() => void) | undefined {
-      if (large >= largeLimit) return undefined;
+      if (large >= largeLimit) {
+        return undefined;
+      }
       large++;
       let held = true;
       return () => {
-        if (held) large--;
+        if (held) {
+          large--;
+        }
         held = false;
       };
     },
@@ -81,7 +82,9 @@ export function createSubscriberQuery(options: {
         const [total, ids] = await runner.stage([count, page]);
         const value = Number(total!.slice(0, 1)[0] ?? 0n);
         total!.close();
-        if (large) return { total: value, ids: ids! };
+        if (large) {
+          return { total: value, ids: ids! };
+        }
         const held = memoryIds(ids!.slice(0, ids!.length));
         ids!.close();
         return { total: value, ids: held };
@@ -89,19 +92,24 @@ export function createSubscriberQuery(options: {
       readonly.run("BEGIN");
       try {
         const total = Number(column(readonly, count.sql, count.args)[0] ?? 0n);
-        if (!total) return { total, ids: memoryIds([]) };
-        if (!large)
+        if (!total) {
+          return { total, ids: memoryIds([]) };
+        }
+        if (!large) {
           return {
             total,
             ids: memoryIds(column(readonly, page.sql, page.args)),
           };
+        }
         const rows = readonly.query(page.sql).iterate(...page.args) as Iterable<
           Record<string, bigint>
         >;
         const ids = stageRows(
           runner.stageDir,
           (function* () {
-            for (const row of rows) yield Object.values(row)[0]!;
+            for (const row of rows) {
+              yield Object.values(row)[0]!;
+            }
           })(),
         );
         return { total, ids };
@@ -124,9 +132,9 @@ export function createSubscriberQuery(options: {
      */
     async *ids(
       filter: SubscriberFilter,
-      only: bigint[] = [],
+      only: Array<bigint> = [],
       onError?: (error: RunnerError) => void,
-    ): AsyncGenerator<bigint[]> {
+    ): AsyncGenerator<Array<bigint>> {
       if (filter.fragment) {
         // As upstream's export, a COUNT() over the same snapshot runs first, so a failing
         // or timed-out query is reported before any row is streamed.
@@ -136,9 +144,12 @@ export function createSubscriberQuery(options: {
           select,
         ];
         for await (const [index, values] of runner.run(statements, onError)) {
-          if (index === 0) continue;
-          for (let i = 0; i < values.length || i === 0; i += BATCH)
+          if (index === 0) {
+            continue;
+          }
+          for (let i = 0; i < values.length || i === 0; i += BATCH) {
             yield values.slice(i, i + BATCH);
+          }
         }
         return;
       }
@@ -147,26 +158,30 @@ export function createSubscriberQuery(options: {
       while (true) {
         const s = idsSQL(filter, { only, after, limit: BATCH });
         const batch = column(readonly, s.sql, s.args);
-        if (!batch.length) return;
+        if (!batch.length) {
+          return;
+        }
         yield batch;
         after = batch.at(-1)!;
       }
     },
-    exportRows: (ids: bigint[]) =>
-      ids.length ? (reads.get("export-rows").all(json(ids)) as ExportRow[]) : [],
+    exportRows: (ids: Array<bigint>) =>
+      ids.length ? (reads.get("export-rows").all(json(ids)) as Array<ExportRow>) : [],
     /**
      * Apply an action to the subscribers matching `filter` inside the caller's write
      * transaction. `candidates` are IDs a raw fragment selected in its snapshot; the built-in
      * filters and current permissions are rechecked here so a concurrent change cannot
      * redirect the action. Without a fragment the whole selection happens here.
      */
-    apply(filter: SubscriberFilter, candidates: IdList | null, act: (ids: bigint[]) => void) {
+    apply(filter: SubscriberFilter, candidates: IdList | null, act: (ids: Array<bigint>) => void) {
       const builtIn = { ...filter, fragment: "" };
       if (candidates) {
         for (let i = 0; i < candidates.length; i += BATCH) {
           const s = idsSQL(builtIn, { only: candidates.slice(i, i + BATCH) });
           const ids = column(db, s.sql, s.args);
-          if (ids.length) act(ids);
+          if (ids.length) {
+            act(ids);
+          }
         }
         return;
       }
@@ -174,7 +189,9 @@ export function createSubscriberQuery(options: {
       while (true) {
         const s = idsSQL(builtIn, { after, limit: BATCH });
         const ids = column(db, s.sql, s.args);
-        if (!ids.length) return;
+        if (!ids.length) {
+          return;
+        }
         act(ids);
         after = ids.at(-1)!;
       }
@@ -182,7 +199,9 @@ export function createSubscriberQuery(options: {
     /** In the action's transaction, before its first write. */
     admitBulk(action: BulkAction, filter: SubscriberFilter, candidates: IdList | null) {
       effects.admitBulk?.(action, () => {
-        if (candidates) return candidates.length;
+        if (candidates) {
+          return candidates.length;
+        }
         const count = countSQL({ ...filter, fragment: "" });
         return Number(column(db, count.sql, count.args)[0] ?? 0n);
       });
@@ -190,42 +209,49 @@ export function createSubscriberQuery(options: {
     transaction(fn: () => void): void {
       writeTransaction(db, fn);
     },
-    remove(ids: bigint[]) {
+    remove(ids: Array<bigint>) {
       effects.deleting?.(
-        writes.get("emails-by-ids").all(json(ids)) as {
+        writes.get("emails-by-ids").all(json(ids)) as Array<{
           id: bigint;
           email: string;
-        }[],
+        }>,
       );
       writes.get("delete-by-ids").run(json(ids));
     },
-    blocklist(ids: bigint[]) {
+    blocklist(ids: Array<bigint>) {
       effects.blocklisting?.(ids);
       const now = clock.now().toISOString();
       writes.get("blocklist-by-ids").run(now, json(ids));
       writes.get("blocklist-memberships-by-ids").run(now, json(ids));
       effects.blocklisted(ids);
     },
-    addLists(ids: bigint[], lists: bigint[], status: string) {
+    addLists(ids: Array<bigint>, lists: Array<bigint>, status: string) {
       const now = clock.now().toISOString();
       writes
         .get("add-memberships-by-ids")
         .run(status || "unconfirmed", now, json(ids), json(lists));
       // Existing memberships keep their status; only those now unsubscribed end enrollments.
-      if (status !== "unsubscribed") return;
-      const pairs = writes.get("unsubscribed-memberships-by-ids").all(json(ids), json(lists)) as {
+      if (status !== "unsubscribed") {
+        return;
+      }
+      const pairs = writes
+        .get("unsubscribed-memberships-by-ids")
+        .all(json(ids), json(lists)) as Array<{
         subscriber_id: bigint;
         list_id: bigint;
-      }[];
-      const byList = new Map<bigint, bigint[]>();
-      for (const { subscriber_id, list_id } of pairs)
+      }>;
+      const byList = new Map<bigint, Array<bigint>>();
+      for (const { subscriber_id, list_id } of pairs) {
         byList.set(list_id, [...(byList.get(list_id) ?? []), subscriber_id]);
-      for (const [list, subscribers] of byList) effects.unsubscribed(subscribers, [list]);
+      }
+      for (const [list, subscribers] of byList) {
+        effects.unsubscribed(subscribers, [list]);
+      }
     },
-    removeLists(ids: bigint[], lists: bigint[]) {
+    removeLists(ids: Array<bigint>, lists: Array<bigint>) {
       writes.get("delete-memberships-by-ids").run(json(ids), json(lists));
     },
-    unsubscribeLists(ids: bigint[], lists: bigint[]) {
+    unsubscribeLists(ids: Array<bigint>, lists: Array<bigint>) {
       effects.unsubscribing?.(ids, lists);
       writes
         .get("unsubscribe-memberships-by-ids")

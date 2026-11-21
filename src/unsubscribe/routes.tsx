@@ -8,14 +8,11 @@ import { dummyUUID } from "@/campaigns/render";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import type { Sends } from "@/messaging/sends";
-import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
+import { parseBool, readPreferences } from "@/public/form";
+import type { PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
-import {
-  savePreferences,
-  subscriptionPage,
-  type PageMode,
-  type PageOptions,
-} from "@/public/preferences";
+import { savePreferences, subscriptionPage } from "@/public/preferences";
+import type { PageMode, PageOptions } from "@/public/preferences";
 import type { Privacy } from "@/public/privacy";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
@@ -36,7 +33,7 @@ export interface UnsubscribeEffects {
   unsubscribed(event: {
     subscriberId: bigint;
     listId: bigint;
-    listIds: bigint[];
+    listIds: Array<bigint>;
     blocklisted: boolean;
   }): void;
 }
@@ -100,7 +97,7 @@ export function registerUnsubscribeRoutes(
     const site = options();
     return publicMessage(i18n, { status, title, message, site }, headers);
   };
-  const invalidUUID = (context: RequestContext, ...names: string[]) =>
+  const invalidUUID = (context: RequestContext, ...names: Array<string>) =>
     names.some((name) => !uuidPattern.test(context.params[name] ?? ""))
       ? page(
           context.app.i18n,
@@ -116,12 +113,19 @@ export function registerUnsubscribeRoutes(
    */
   const pairedSend = (sendUuid: string, subscriberUuid: string) => {
     const send = deps.sends.byUuid(sendUuid.toLowerCase());
-    if (!send || send.subscriber_id === null) return null;
+    if (!send || send.subscriber_id === null) {
+      return null;
+    }
     const subscriber = deps.subscribers.get(send.subscriber_id);
-    if (!subscriber || subscriber.uuid !== subscriberUuid.toLowerCase()) return null;
-    if (send.kind === "marketing" && send.list_id !== null)
+    if (!subscriber || subscriber.uuid !== subscriberUuid.toLowerCase()) {
+      return null;
+    }
+    if (send.kind === "marketing" && send.list_id !== null) {
       return { marketing: true as const, send, list: send.list_id, subscriber };
-    if (send.kind === "transactional") return { marketing: false as const, send, subscriber };
+    }
+    if (send.kind === "transactional") {
+      return { marketing: false as const, send, subscriber };
+    }
     return null;
   };
   /** The marketing send and its subscriber: the only pairing that blocklists or reaches privacy. */
@@ -140,13 +144,20 @@ export function registerUnsubscribeRoutes(
 
   router.route("GET", "/m/:sendUUID/unsubscribe/:subUUID", (context) => {
     const t = context.app.i18n;
-    if (context.params.sendUUID === dummyUUID) return testSendPage(t);
+    if (context.params.sendUUID === dummyUUID) {
+      return testSendPage(t);
+    }
     const bad = invalidUUID(context, "sendUUID", "subUUID");
-    if (bad) return bad;
+    if (bad) {
+      return bad;
+    }
     const found = pairedSend(context.params.sendUUID!, context.params.subUUID!);
-    if (!found) return notFound(t, noIndex);
-    if (found.subscriber.status === "blocklisted")
+    if (!found) {
+      return notFound(t, noIndex);
+    }
+    if (found.subscriber.status === "blocklisted") {
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
+    }
     const manage = parseBool(context.url.searchParams.get("manage")) === true;
     // B123 (D126): the page's forms post to this send's paired routes.
     const base = `/m/${context.params.sendUUID!.toLowerCase()}`;
@@ -173,23 +184,33 @@ export function registerUnsubscribeRoutes(
     async (context) => {
       const t = context.app.i18n;
       // D116: a mail client's one-click POST to a test send changes nothing and answers the page.
-      if (context.params.sendUUID === dummyUUID) return testSendPage(t);
+      if (context.params.sendUUID === dummyUUID) {
+        return testSendPage(t);
+      }
       const bad = invalidUUID(context, "sendUUID", "subUUID");
-      if (bad) return bad;
+      if (bad) {
+        return bad;
+      }
       const sendUuid = context.params.sendUUID!;
       const subUuid = context.params.subUUID!;
-      if (!pairedSend(sendUuid, subUuid)) return notFound(t);
+      if (!pairedSend(sendUuid, subUuid)) {
+        return notFound(t);
+      }
       let form: PreferenceForm;
       try {
         form = await readPreferences(context.request);
       } catch (error) {
-        if (error instanceof HttpError) throw error;
+        if (error instanceof HttpError) {
+          throw error;
+        }
         return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
       }
       const blocklist = deps.settings().allowBlocklist && form.blocklist;
       // D126 (r1): only a marketing send may blocklist; a transactional send's page cannot.
-      if (blocklist && !target(sendUuid, subUuid)) return notFound(t);
-      if (form.manage && !blocklist)
+      if (blocklist && !target(sendUuid, subUuid)) {
+        return notFound(t);
+      }
+      if (form.manage && !blocklist) {
         return (
           savePreferences(
             { db: deps.db, subscribers: deps.subscribers, effects },
@@ -199,21 +220,25 @@ export function registerUnsubscribeRoutes(
             () => pairedSend(sendUuid, subUuid)?.subscriber ?? null,
           ) ?? notFound(t)
         );
+      }
       const outcome = writeTransaction(deps.db, () => {
         // Re-read inside the write so a concurrent identity change cannot be unsubscribed.
         const found = pairedSend(sendUuid, subUuid);
-        if (!found) return null;
+        if (!found) {
+          return null;
+        }
         if (!found.marketing) {
           // A transactional send's form ends pending opt-ins only: the unconfirmed memberships of double
           // opt-in lists. An unconfirmed single opt-in membership is active, so this form never ends it (B126, D123 item 8).
           const changed = deps.subscribers.unsubscribeDoubleOptinPending(found.subscriber.id);
-          for (const list of changed)
+          for (const list of changed) {
             effects.unsubscribed({
               subscriberId: found.subscriber.id,
               listId: list,
               listIds: [list],
               blocklisted: false,
             });
+          }
           return changed.length
             ? ({ kind: "cancelled", count: changed.length } as const)
             : ("unchanged" as const);
@@ -227,17 +252,21 @@ export function registerUnsubscribeRoutes(
         });
         return "unsubscribed" as const;
       });
-      if (!outcome) return notFound(t);
+      if (!outcome) {
+        return notFound(t);
+      }
       // B126 (D123): nothing was pending, so the answer is the page the link shows now (already or confirmed).
       if (outcome === "unchanged") {
         const found = pairedSend(sendUuid, subUuid);
-        if (!found) return notFound(t);
+        if (!found) {
+          return notFound(t);
+        }
         return subscriptionPage(t, deps.subscribers, found.subscriber, options(), false, noIndex, {
           kind: "transactional",
           base: `/m/${sendUuid.toLowerCase()}`,
         });
       }
-      if (typeof outcome === "object")
+      if (typeof outcome === "object") {
         return publicMessage(t, {
           status: 200,
           title: t.T("globals.messages.done"),
@@ -246,6 +275,7 @@ export function registerUnsubscribeRoutes(
           ),
           site: options(),
         });
+      }
       return publicMessage(t, {
         status: 200,
         title: t.T("globals.terms.unsubscribed"),
@@ -268,7 +298,9 @@ export function registerUnsubscribeRoutes(
     "/m/:sendUUID/export/:subUUID",
     (context) => {
       const bad = invalidUUID(context, "sendUUID", "subUUID");
-      if (bad) return bad;
+      if (bad) {
+        return bad;
+      }
       return deps.privacy.export(context, () => paired(context)) ?? notFound(context.app.i18n);
     },
     ...privacyLimit,
@@ -278,7 +310,9 @@ export function registerUnsubscribeRoutes(
     "/m/:sendUUID/wipe/:subUUID",
     (context) => {
       const bad = invalidUUID(context, "sendUUID", "subUUID");
-      if (bad) return bad;
+      if (bad) {
+        return bad;
+      }
       // B126 (D123): the confirmation's "Keep my data" returns to the page this send shows, with the manage
       // view only when preferences are on (the view is the only thing ?manage=true asks for).
       const manage = `/m/${context.params.sendUUID!.toLowerCase()}/unsubscribe/${context.params.subUUID!.toLowerCase()}${options().allowPreferences ? "?manage=true" : ""}`;
@@ -292,17 +326,20 @@ export function registerUnsubscribeRoutes(
 
   router.route("GET", "/m/:sendUUID/px.png", (context) => {
     const bad = invalidUUID(context, "sendUUID");
-    if (bad) return bad;
+    if (bad) {
+      return bad;
+    }
     const settings = deps.settings();
     if (!settings.disableTracking) {
       const send = deps.sends.byUuid(context.params.sendUUID!.toLowerCase());
-      if (send)
+      if (send) {
         try {
           deps.tracking.view(send.id, settings.individualTracking ? send.subscriber_id : null);
         } catch (error) {
           // listmonk always answers with the pixel and logs a registration failure.
           context.app.logger.error(error);
         }
+      }
     }
     return new Response(Uint8Array.from(pixel), {
       status: 200,
@@ -317,21 +354,25 @@ export function registerUnsubscribeRoutes(
   router.route("GET", "/m/:sendUUID/link/:linkUUID", (context) => {
     const t = context.app.i18n;
     const bad = invalidUUID(context, "sendUUID", "linkUUID");
-    if (bad) return bad;
+    if (bad) {
+      return bad;
+    }
     const sendUuid = context.params.sendUUID!.toLowerCase();
     const linkUuid = context.params.linkUUID!.toLowerCase();
     const send = deps.sends.byUuid(sendUuid);
     const link = send ? deps.tracking.get(linkUuid) : null;
     // No open redirect: the link must have been rendered into this send's message.
-    if (!send || !link || !deps.sends.bodyIncludes(send.id, linkPath(sendUuid, linkUuid)))
+    if (!send || !link || !deps.sends.bodyIncludes(send.id, linkPath(sendUuid, linkUuid))) {
       return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidLink"), noIndex);
+    }
     const settings = deps.settings();
-    if (!settings.disableTracking)
+    if (!settings.disableTracking) {
       deps.tracking.click(
         send.id,
         link.id,
         settings.individualTracking ? send.subscriber_id : null,
       );
+    }
     return new Response(null, {
       status: 307,
       headers: { Location: link.url, ...noIndex },

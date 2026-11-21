@@ -15,6 +15,7 @@ test("min_interval parses ISO 8601 durations and rejects other syntax", () => {
   expect(intervalStart("P1Y", new Date("2028-02-29T00:00:00Z"))?.toISOString()).toBe(
     "2027-02-28T00:00:00.000Z",
   );
-  for (const bad of ["7d", "P", "PT", "P1.5D", "-P1D", "p7d", "P7DT", "P 7D", "P99999999D", "1h"])
+  for (const bad of ["7d", "P", "PT", "P1.5D", "-P1D", "p7d", "P7DT", "P 7D", "P99999999D", "1h"]) {
     expect(intervalStart(bad, now)).toBeUndefined();
+  }
 });

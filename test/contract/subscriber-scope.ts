@@ -10,10 +10,12 @@ export async function runSubscriberScope(target: {
 }) {
   const suffix = crypto.randomUUID();
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const resources: { kind: string; id: number }[] = [];
+  const resources: Array<{ kind: string; id: number }> = [];
   let cleanupFailed = false;
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL ${label}`);
+    if (!value) {
+      throw new Error(`FAIL ${label}`);
+    }
   }
   async function denied(response: Response, subject: string, label: string) {
     check(
@@ -40,8 +42,9 @@ export async function runSubscriberScope(target: {
   async function create(path: string, kind: string, data: unknown) {
     const response = await request(path, "POST", data);
     const value = (await response.json()).data;
-    if (response.status === 200 && typeof value?.id === "number")
+    if (response.status === 200 && typeof value?.id === "number") {
       resources.push({ kind, id: value.id });
+    }
     check(response.status === 200 && value?.id, "subscriber-scope-setup");
     return value;
   }
@@ -138,8 +141,9 @@ export async function runSubscriberScope(target: {
     );
     if (deniedCreate.status === 200) {
       const unexpected = (await deniedCreate.clone().json()).data;
-      if (typeof unexpected?.id === "number")
+      if (typeof unexpected?.id === "number") {
         resources.push({ kind: "subscribers", id: unexpected.id });
+      }
     }
     await denied(deniedCreate, "lists", "subscriber-scope-create-denied-envelope");
     for (const method of ["PUT", "PATCH"]) {
@@ -179,12 +183,13 @@ export async function runSubscriberScope(target: {
         "subscriber-scope-mixed-bulk-envelope",
       );
     }
-    for (const before of [visibleBefore, invisibleBefore])
+    for (const before of [visibleBefore, invisibleBefore]) {
       check(
         JSON.stringify((await (await request(`/api/subscribers/${before.id}`)).json()).data) ===
           JSON.stringify(before),
         "subscriber-scope-denied-state-unchanged",
       );
+    }
     row = (await (await request(`/api/subscribers/${visible.id}`)).json()).data;
     check(
       row.status === "enabled" &&
@@ -376,10 +381,13 @@ export async function runSubscriberScope(target: {
       );
     }
   } finally {
-    for (const { kind, id } of resources.reverse())
+    for (const { kind, id } of resources.reverse()) {
       if ((await request(`/api/${kind}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL subscriber-scope-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL subscriber-scope-cleanup");
+  }
 }
 if (import.meta.main) {
   try {
@@ -388,8 +396,9 @@ if (import.meta.main) {
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (process.argv[2] !== "reference" || !baseUrl || !user || !token)
+    if (process.argv[2] !== "reference" || !baseUrl || !user || !token) {
       throw new Error("Reference required");
+    }
     await runSubscriberScope({ mode: "reference", baseUrl, credentials: { user, token } });
   } catch (error) {
     process.stderr.write(

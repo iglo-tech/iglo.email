@@ -70,7 +70,9 @@ async function save(page, button, path, { reloads = false } = {}) {
   const loaded = reloads ? page.waitForEvent("load", { timeout: 10_000 }).catch(() => null) : null;
   await button.click();
   const put = await sent;
-  if (loaded && put?.ok()) await loaded;
+  if (loaded && put?.ok()) {
+    await loaded;
+  }
   return put;
 }
 

@@ -2,13 +2,8 @@
 // each delete as one statement. Here a delete is many short transactions, with the event loop
 // free between them, because the server's one thread also serves pixels, sends and loops
 // (docs/perf/M4.6-maintenance.md; the differences are in 07-api-and-ui.md).
-import {
-  startPosition,
-  type AnalyticsKind,
-  type AnalyticsPurge,
-  type ExportRow,
-  type Position,
-} from "@/analytics/purge";
+import { startPosition } from "@/analytics/purge";
+import type { AnalyticsKind, AnalyticsPurge, ExportRow, Position } from "@/analytics/purge";
 import type { Clock } from "@/clock";
 import type { LogBuffer } from "@/maintenance/log-buffer";
 import type { Handler, RequestContext } from "@/server/context";
@@ -25,12 +20,18 @@ const FORMAT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\
 /** Go's time.Parse(time.RFC3339, ...), as the stored text form. */
 function rfc3339(text: string | null): string | null {
   const match = FORMAT.exec(text ?? "");
-  if (!match) return null;
-  const [, y, mo, d, h, mi, s, fraction = "", zone] = match as unknown as string[];
+  if (!match) {
+    return null;
+  }
+  const [, y, mo, d, h, mi, s, fraction = "", zone] = match as unknown as Array<string>;
   const day = new Date(0);
   day.setUTCFullYear(Number(y), Number(mo) - 1, Number(d));
-  if (day.getUTCMonth() !== Number(mo) - 1 || day.getUTCDate() !== Number(d)) return null;
-  if (Number(h) > 23 || Number(mi) > 59 || Number(s) > 59) return null;
+  if (day.getUTCMonth() !== Number(mo) - 1 || day.getUTCDate() !== Number(d)) {
+    return null;
+  }
+  if (Number(h) > 23 || Number(mi) > 59 || Number(s) > 59) {
+    return null;
+  }
   const at = new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}${fraction.slice(0, 4)}${zone}`);
   return Number.isNaN(at.getTime()) ? null : at.toISOString();
 }
@@ -54,7 +55,9 @@ export function registerMaintenanceRoutes(
     new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
   const parsed = (c: RequestContext, name: string) => {
     const value = rfc3339(c.url.searchParams.get(name));
-    if (value === null) throw invalidData(c);
+    if (value === null) {
+      throw invalidData(c);
+    }
     return value;
   };
   let running: Promise<unknown> | undefined;
@@ -70,15 +73,21 @@ export function registerMaintenanceRoutes(
     step: () => number | null,
     prepare: () => Promise<void> = async () => {},
   ) => {
-    if (running) throw new HttpError(429, "A maintenance operation is already running.");
+    if (running) {
+      throw new HttpError(429, "A maintenance operation is already running.");
+    }
     keepOpen(c.request);
     const run = (async () => {
       await prepare();
       let total = 0;
       for (;;) {
-        if (closed) throw new HttpError(503, "The server is shutting down.");
+        if (closed) {
+          throw new HttpError(503, "The server is shutting down.");
+        }
         const removed = step();
-        if (removed === null) return total;
+        if (removed === null) {
+          return total;
+        }
         total += removed;
         await clock.sleep(0);
       }
@@ -102,16 +111,22 @@ export function registerMaintenanceRoutes(
       wanted = true;
       return 0;
     });
-    if (!wanted) return;
+    if (!wanted) {
+      return;
+    }
     let selected = 0;
     let after = 0n;
     for (;;) {
       const page = subscribers.maintenancePage(type, after);
       const last = page.at(-1);
-      if (!last) break;
+      if (!last) {
+        break;
+      }
       selected += page.filter((row) => row.hit).length;
       after = last.id;
-      if (closed) throw new HttpError(503, "The server is shutting down.");
+      if (closed) {
+        throw new HttpError(503, "The server is shutting down.");
+      }
       await clock.sleep(0);
     }
     subscribers.admitBulk("delete", () => selected);
@@ -119,14 +134,18 @@ export function registerMaintenanceRoutes(
 
   const gcSubscribers: Handler = async (c) => {
     const type = c.params.type;
-    if (type !== "orphan" && type !== "blocklisted") throw invalidData(c);
+    if (type !== "orphan" && type !== "blocklisted") {
+      throw invalidData(c);
+    }
     let after = 0n;
     const spent = { deliveries: 0 };
     const count = await operation(
       c,
       () => {
         const batch = subscribers.maintenanceRemove(type, after, spent);
-        if (!batch) return null;
+        if (!batch) {
+          return null;
+        }
         after = batch.last;
         return batch.removed;
       },
@@ -140,7 +159,9 @@ export function registerMaintenanceRoutes(
     let after = 0n;
     const count = await operation(c, () => {
       const batch = subscribers.removeUnconfirmed(after, before);
-      if (!batch) return null;
+      if (!batch) {
+        return null;
+      }
       after = batch.last;
       return batch.removed;
     });
@@ -150,15 +171,20 @@ export function registerMaintenanceRoutes(
   const gcAnalytics: Handler = async (c) => {
     const before = parsed(c, "before_date");
     const type = c.params.type;
-    if (type !== "all" && type !== "views" && type !== "clicks") throw invalidData(c);
-    const kinds: AnalyticsKind[] = type === "all" ? ["views", "clicks"] : [type];
+    if (type !== "all" && type !== "views" && type !== "clicks") {
+      throw invalidData(c);
+    }
+    const kinds: Array<AnalyticsKind> = type === "all" ? ["views", "clicks"] : [type];
     let position = startPosition;
     await operation(c, () => {
       const kind = kinds[0];
-      if (!kind) return null;
+      if (!kind) {
+        return null;
+      }
       const next = analytics.purge(kind, before, position);
-      if (next) position = next;
-      else {
+      if (next) {
+        position = next;
+      } else {
         kinds.shift();
         position = startPosition;
       }
@@ -170,8 +196,12 @@ export function registerMaintenanceRoutes(
   const exportCSV: Handler = (c) => {
     const since = parsed(c, "since");
     const type = c.params.type;
-    if (type !== "views" && type !== "clicks") throw invalidData(c);
-    if (exporting >= MAX_EXPORTS) throw new HttpError(429, "Too many exports in progress.");
+    if (type !== "views" && type !== "clicks") {
+      throw invalidData(c);
+    }
+    if (exporting >= MAX_EXPORTS) {
+      throw new HttpError(429, "Too many exports in progress.");
+    }
     const text = new TextEncoder();
     const columns = [
       "campaign_id",
@@ -200,7 +230,9 @@ export function registerMaintenanceRoutes(
     let started = false;
     let released = false;
     const release = () => {
-      if (!released) exporting--;
+      if (!released) {
+        exporting--;
+      }
       released = true;
     };
     exporting++;

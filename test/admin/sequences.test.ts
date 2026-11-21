@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, get, login, userWith, type Fixture } from "@/test/admin/support";
+import { admin, get, login, userWith } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;
@@ -53,8 +54,9 @@ test("each route asks for its endpoint's permission", async () => {
     "/admin/subscribers/7/events",
     "/admin/subscribers/7/enrollments",
     "/admin/subscribers/7/sends",
-  ])
+  ]) {
     expect((await get(f, path, none)).status).toBe(403);
+  }
 
   const reader = await userWith(f, cookie, "m55-reader", ["sequences:get"]);
   const screen = await get(f, "/admin/sequences", reader);

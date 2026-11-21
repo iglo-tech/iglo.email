@@ -1,7 +1,8 @@
 // Labelled test-only caller of the production messaging owner, not a production route.
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomBytes, createPublicKey } from "node:crypto";
-import { createEmailer, type SMTPServer, type Message } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer, Message } from "@/messaging/email";
 import { createRealClock } from "@/clock";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
@@ -143,7 +144,7 @@ try {
   assert.match(header(overriddenRaw, "To"), /message-visible@example\.test/);
   assert.equal(header(overriddenRaw, "X-Precedence"), "message");
   const visible = await mailpit.message(selected.ID);
-  assert.equal(visible.ReturnPath.replace(/[<>]/g, ""), "envelope@example.test");
+  assert.equal(visible.ReturnPath.replaceAll(/[<>]/g, ""), "envelope@example.test");
   servers = [{ ...server, enabled: false }];
   const disabled = emailer.push({ ...m, subject: `${marker} disabled` });
   assert.equal((await disabled.result).status, "proven-not-accepted");

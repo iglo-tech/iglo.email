@@ -9,7 +9,7 @@ import type { Translation } from "@/i18n/i18n";
 import { assetVersion } from "@/server/asset-manifest";
 import { getID } from "@/server/validation";
 
-const examples: [string, unknown][] = [
+const examples: Array<[string, unknown]> = [
   ["No download since the trigger", { not: { event: "download_finished", since: "trigger" } }],
   ["Has a recent event", { event: "download_finished", since: "P30D", count: { gte: 1 } }],
   ["Attribute compare", { attr: "plan", op: "eq", value: "subscription" }],

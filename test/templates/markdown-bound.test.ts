@@ -18,10 +18,10 @@ const bound = (source: string) => markdownOutputBound(source, Number.MAX_SAFE_IN
 function rendering(source: string): { refusal: string | null; htmlCalls: number } {
   const html = markdown.html;
   let htmlCalls = 0;
-  markdown.html = ((...args: Parameters<typeof html>) => {
+  markdown.html = (...args: Parameters<typeof html>) => {
     htmlCalls++;
     return html(...args);
-  }) as typeof html;
+  };
   let refusal: string | null = null;
   try {
     renderMarkdown(
@@ -53,12 +53,12 @@ test("a 100-ampersand reference URL used 2,000 times is refused by the bound bef
 });
 
 test("hard breaks before CRLF are charged", () => {
-  const source = "a  \r\n".repeat(26000);
+  const source = "a  \r\n".repeat(26_000);
   expect(bound(source)).toBeGreaterThanOrEqual(bytes(realOutput(source)));
 });
 
 test("hard breaks before a lone CR are charged", () => {
-  const source = "a  \r".repeat(26000);
+  const source = "a  \r".repeat(26_000);
   expect(bound(source)).toBeGreaterThanOrEqual(bytes(realOutput(source)));
 });
 
@@ -70,7 +70,7 @@ test("NUL is charged at U+FFFD's length", () => {
 // The variants: each escaped character, repeated, as the URL, title and alt text of a link, an image and a
 // reference definition, each used 1, 50 or 400 times. A title is single-quoted unless it is an apostrophe.
 test("generated URL, title and alt variants built from the escaped characters stay under the bound", () => {
-  const failures: string[] = [];
+  const failures: Array<string> = [];
   let tested = 0;
   for (const c of ["'", '"', "&", "<", ">"]) {
     for (const n of [1, 2, 5, 20, 60]) {
@@ -86,14 +86,21 @@ test("generated URL, title and alt variants built from the escaped characters st
       for (const uses of [1, 50, 400]) {
         for (const form of forms) {
           let source = "";
-          for (let i = 0; i < uses; i++) source += form(i) + "\n";
+          for (let i = 0; i < uses; i++) {
+            source += form(i) + "\n";
+          }
           source += `\n${defined}`;
-          for (let i = 0; i < uses; i++) source += `![${run}][r] \n`;
-          if (bytes(source) > 128 * 1024) continue;
+          for (let i = 0; i < uses; i++) {
+            source += `![${run}][r] \n`;
+          }
+          if (bytes(source) > 128 * 1024) {
+            continue;
+          }
           tested++;
           const actual = bytes(realOutput(source));
-          if (actual > bound(source))
+          if (actual > bound(source)) {
             failures.push(`${c} n=${n} uses=${uses}: bound ${bound(source)} < actual ${actual}`);
+          }
         }
       }
     }
@@ -107,26 +114,28 @@ test("a property test: generated URL, title and alt variants built from the esca
   const seeded = (seed: number) => {
     let a = seed >>> 0;
     return () => {
-      a = (a + 0x6d2b79f5) >>> 0;
+      a = (a + 0x6d_2b_79_f5) >>> 0;
       let t = a;
       t = Math.imul(t ^ (t >>> 15), t | 1);
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
     };
   };
   const SPECIALS = ["'", '"', "&", "<", ">"];
   const ESCAPED = [...SPECIALS, "a", "&amp;", "&nGt;", "&#x27;", "\u0000", "ü", "😀"];
   const LINE_ENDINGS = ["\n", "  \n", "\\\n", "  \r\n", "  \r", "\r\n", "\r"];
-  const failures: string[] = [];
+  const failures: Array<string> = [];
   let tested = 0;
   for (let seed = 1; seed <= 400; seed++) {
     const next = seeded(seed);
-    const pick = (pool: string[], n: number) => {
+    const pick = (pool: Array<string>, n: number) => {
       let s = "";
-      for (let i = 0; i < n; i++) s += pool[Math.floor(next() * pool.length)]!;
+      for (let i = 0; i < n; i++) {
+        s += pool[Math.floor(next() * pool.length)]!;
+      }
       return s;
     };
-    const lines: string[] = [];
+    const lines: Array<string> = [];
     const count = 2 + Math.floor(next() * 14);
     for (let i = 0; i < count; i++) {
       // Half the URLs are mostly the characters that expand (`'`, `&`, `"`, `<`, `>`), the expansion the bound must cover.
@@ -134,7 +143,7 @@ test("a property test: generated URL, title and alt variants built from the esca
         next() < 0.5
           ? pick(["'", "&"], 5 + Math.floor(next() * 35))
           : pick(ESCAPED, 1 + Math.floor(next() * 12));
-      const title = pick(ESCAPED, 1 + Math.floor(next() * 6)).replace(/"/g, "'");
+      const title = pick(ESCAPED, 1 + Math.floor(next() * 6)).replaceAll('"', "'");
       const alt = pick(ESCAPED, 1 + Math.floor(next() * 6));
       const label = `r${i}`;
       switch (Math.floor(next() * 5)) {
@@ -159,14 +168,18 @@ test("a property test: generated URL, title and alt variants built from the esca
     let source = "";
     for (const line of lines) {
       const uses = 1 + Math.floor(next() * 400);
-      for (let u = 0; u < uses; u++)
+      for (let u = 0; u < uses; u++) {
         source += line + LINE_ENDINGS[Math.floor(next() * LINE_ENDINGS.length)]!;
+      }
     }
-    if (bytes(source) > 128 * 1024) continue;
+    if (bytes(source) > 128 * 1024) {
+      continue;
+    }
     tested++;
     const actual = bytes(realOutput(source));
-    if (actual > bound(source))
+    if (actual > bound(source)) {
       failures.push(`seed ${seed}: bound ${bound(source)} < actual ${actual}`);
+    }
   }
   expect(failures).toEqual([]);
   // Most documents are in range; a run that tested few could pass by accident.

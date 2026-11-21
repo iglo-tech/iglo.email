@@ -2,12 +2,15 @@
 // is bounded by the work budget. A reader holding only campaigns:get must not hold up the server:
 // a GET sent while a preview renders must answer within a second of being sent.
 import { afterEach, expect, test } from "bun:test";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { previewForm, readerSession, repeat } from "@/test/campaigns/markdown-support";
 
-const fixtures: CampaignsFixture[] = [];
+const fixtures: Array<CampaignsFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await campaignsFixture();
@@ -125,7 +128,7 @@ test("a 64 KiB escaped-bracket run with a link definition answers within a secon
     [{ id: news, permissions: ["list:get"] }],
   );
   const started = performance.now();
-  const body = "[a]: /u\n\n" + repeat("\\[", 64 * 1024);
+  const body = "[a]: /u\n\n" + repeat(String.raw`\[`, 64 * 1024);
   const response = await previewRequest(f, campaign.id, headers, body);
   await response.text();
   expect(performance.now() - started).toBeLessThan(1000);
@@ -218,7 +221,9 @@ async function firstLine(stream: ReadableStream<Uint8Array>): Promise<string> {
   let text = "";
   while (!text.includes("\n")) {
     const { value, done } = await reader.read();
-    if (done) throw new Error("served fixture exited before it was ready");
+    if (done) {
+      throw new Error("served fixture exited before it was ready");
+    }
     text += decoder.decode(value, { stream: true });
   }
   reader.releaseLock();

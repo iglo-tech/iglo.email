@@ -1,15 +1,15 @@
 // Native: which resolved addresses `webhooks.block_private_addresses` refuses.
 import { isIPv4, isIPv6 } from "node:net";
 
-const octets = (address: string) => address.split(".").map(Number) as number[];
-const inRange = (bytes: number[], prefix: number[], bits: number) =>
+const octets = (address: string) => address.split(".").map(Number) as Array<number>;
+const inRange = (bytes: Array<number>, prefix: Array<number>, bits: number) =>
   prefix.every((value, index) => {
     const mask = Math.max(0, Math.min(8, bits - index * 8));
     const shift = 8 - mask;
     return bytes[index]! >> shift === value >> shift;
   });
 /** Everything but public unicast: RFC 6890 special-purpose ranges. */
-const blocked4: [number[], number][] = [
+const blocked4: Array<[number[], number]> = [
   [[0, 0, 0, 0], 8],
   [[10, 0, 0, 0], 8],
   [[100, 64, 0, 0], 10],
@@ -26,15 +26,15 @@ const blocked4: [number[], number][] = [
   [[224, 0, 0, 0], 4],
   [[240, 0, 0, 0], 4],
 ];
-const blocked6: [number[], number][] = [
+const blocked6: Array<[number[], number]> = [
   [[0x20, 0x01, 0x0d, 0xb8], 32],
   [[0x20, 0x01, 0x00, 0x00], 32],
 ];
-const v4Blocked = (bytes: number[]) =>
+const v4Blocked = (bytes: Array<number>) =>
   blocked4.some(([prefix, bits]) => inRange(bytes, prefix, bits));
 
 /** The 16 bytes of a valid IPv6 address, zone removed. */
-function bytes6(address: string): number[] {
+function bytes6(address: string): Array<number> {
   let text = address.split("%", 1)[0]!;
   const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(text)?.[1];
   if (dotted) {
@@ -57,19 +57,32 @@ function bytes6(address: string): number[] {
 
 /** True unless the address is public unicast. Anything unparsable is refused. */
 export function blockedAddress(address: string): boolean {
-  if (isIPv4(address)) return v4Blocked(octets(address));
-  if (!isIPv6(address)) return true;
+  if (isIPv4(address)) {
+    return v4Blocked(octets(address));
+  }
+  if (!isIPv6(address)) {
+    return true;
+  }
   const bytes = bytes6(address);
   const zero = (end: number) => bytes.slice(0, end).every((byte) => byte === 0);
   // IPv4-compatible (::a.b.c.d), except the unspecified and loopback addresses themselves.
-  if (zero(12)) return !bytes.slice(12, 15).some(Boolean) || v4Blocked(bytes.slice(12));
+  if (zero(12)) {
+    return !bytes.slice(12, 15).some(Boolean) || v4Blocked(bytes.slice(12));
+  }
   // IPv4-mapped.
-  if (zero(10) && bytes[10] === 255 && bytes[11] === 255) return v4Blocked(bytes.slice(12));
-  // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) reach the embedded IPv4 address.
-  if (inRange(bytes, [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0], 96))
+  if (zero(10) && bytes[10] === 255 && bytes[11] === 255) {
     return v4Blocked(bytes.slice(12));
-  if (inRange(bytes, [0x20, 0x02], 16)) return v4Blocked(bytes.slice(2, 6));
+  }
+  // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) reach the embedded IPv4 address.
+  if (inRange(bytes, [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0], 96)) {
+    return v4Blocked(bytes.slice(12));
+  }
+  if (inRange(bytes, [0x20, 0x02], 16)) {
+    return v4Blocked(bytes.slice(2, 6));
+  }
   // Global unicast is 2000::/3; link-local, ULA, multicast and the rest are outside it.
-  if (!inRange(bytes, [0x20], 3)) return true;
+  if (!inRange(bytes, [0x20], 3)) {
+    return true;
+  }
   return blocked6.some(([prefix, bits]) => inRange(bytes, prefix, bits));
 }

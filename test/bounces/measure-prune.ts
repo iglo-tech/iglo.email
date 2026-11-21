@@ -24,7 +24,9 @@ try {
   const expired = "2026-01-01T00:00:00.000Z",
     now = "2026-01-02T00:00:00.000Z";
   db.transaction(() => {
-    for (let i = 0; i < rows; i++) insert.run(`event:${crypto.randomUUID()}`, expired);
+    for (let i = 0; i < rows; i++) {
+      insert.run(`event:${crypto.randomUUID()}`, expired);
+    }
   })();
   const bounded = db.query(`DELETE FROM r WHERE key IN
     (SELECT key FROM r WHERE expires_at <= ?1 ORDER BY expires_at LIMIT ?2)`);

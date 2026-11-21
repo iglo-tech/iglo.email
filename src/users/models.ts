@@ -29,14 +29,18 @@ export interface Identity {
 }
 
 function jsonID(id: bigint): number | object {
-  if (id <= BigInt(Number.MAX_SAFE_INTEGER)) return Number(id);
+  if (id <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Number(id);
+  }
   const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON;
   return rawJSON(id.toString());
 }
 
 export function projectUser(user: UserRow, roles: Roles, token?: string, forList = false) {
   const role = roles.userRole(user.user_role_id);
-  if (!role) throw new Error("User has an invalid role");
+  if (!role) {
+    throw new Error("User has an invalid role");
+  }
   const listRole = user.list_role_id === null ? null : roles.listRole(user.list_role_id, forList);
   return {
     id: jsonID(user.id),

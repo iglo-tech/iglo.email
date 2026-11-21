@@ -20,12 +20,16 @@ const scenario = process.argv[2] ?? "all";
 const base = resolve(process.env.IGLO_EMAIL_PERF_DIR ?? join(repository, "upstream/measurements"));
 mkdirSync(base, { recursive: true });
 const fsType = Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.toString().trim();
-if (/tmpfs|ramfs/.test(fsType)) throw new Error(`Refusing ${fsType} measurement directory`);
+if (/tmpfs|ramfs/.test(fsType)) {
+  throw new Error(`Refusing ${fsType} measurement directory`);
+}
 process.env.TMPDIR = base;
 const free = () => Bun.spawnSync(["free", "-m"]).stdout.toString().trim();
 
-function stats(values: number[]) {
-  if (!values.length) return null;
+function stats(values: Array<number>) {
+  if (!values.length) {
+    return null;
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
   const round = (n: number) => +n.toFixed(2);
@@ -40,9 +44,13 @@ function stats(values: number[]) {
 
 function serverRss(executable: string): number | null {
   for (const pid of readdirSync("/proc")) {
-    if (!/^\d+$/.test(pid)) continue;
+    if (!/^\d+$/.test(pid)) {
+      continue;
+    }
     try {
-      if (readlinkSync(`/proc/${pid}/exe`) !== executable) continue;
+      if (readlinkSync(`/proc/${pid}/exe`) !== executable) {
+        continue;
+      }
       const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
       return kb ? Math.round(Number(kb) / 1024) : null;
     } catch {
@@ -106,40 +114,44 @@ async function run(name: string, sequences: boolean) {
             reentry: "always",
             steps,
           });
-          if (triggering.status !== 200 || exiting.status !== 200)
+          if (triggering.status !== 200 || exiting.status !== 200) {
             throw new Error("sequence setup failed");
+          }
         }
       }
-      for (let i = 0; i < 20; i++)
+      for (let i = 0; i < 20; i++) {
         await api("/api/subscriber-events", "POST", {
           subscriber: { email: `warm${i}@example.test` },
           name: "warmup",
         });
+      }
       const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
       const sample = () => ({
         events: (reader.query("SELECT count(*) AS n FROM events").get() as { n: number }).n,
         enrollments: Object.fromEntries(
           (
-            reader.query("SELECT status, count(*) AS n FROM enrollments GROUP BY status").all() as {
+            reader
+              .query("SELECT status, count(*) AS n FROM enrollments GROUP BY status")
+              .all() as Array<{
               status: string;
               n: number;
-            }[]
+            }>
           ).map((row) => [row.status, row.n]),
         ),
       });
-      const results: {
+      const results: Array<{
         deadline: number;
         sent: number;
         done: number;
         status: number;
         started: number;
         ended: number;
-      }[] = [];
+      }> = [];
       let inFlight = 0,
         inFlightPeak = 0,
         shed = 0;
       const pending = new Set<Promise<void>>();
-      const samples: object[] = [];
+      const samples: Array<object> = [];
       const rssStart = serverRss(executable);
       const start = performance.now() + 50;
       const end = start + WINDOW_MS;
@@ -185,7 +197,7 @@ async function run(name: string, sequences: boolean) {
               }),
             });
             const body = (await response.json()) as {
-              data?: { enrollments: { started: unknown[]; ended: unknown[] } };
+              data?: { enrollments: { started: Array<unknown>; ended: Array<unknown> } };
             };
             results.push({
               deadline,
@@ -241,8 +253,11 @@ const results: Record<string, unknown> = {
   dataFs: fsType,
   freeBefore: free(),
 };
-if (scenario === "all" || scenario === "baseline") results.baseline = await run("baseline", false);
-if (scenario === "all" || scenario === "sequences")
+if (scenario === "all" || scenario === "baseline") {
+  results.baseline = await run("baseline", false);
+}
+if (scenario === "all" || scenario === "sequences") {
   results.sequences = await run("sequences", true);
+}
 results.freeAfter = free();
 process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);

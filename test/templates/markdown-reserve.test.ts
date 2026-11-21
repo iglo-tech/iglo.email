@@ -8,7 +8,7 @@ import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 
 /** The reserved and the actual output bytes of a render that completes, or undefined for a refusal. */
 function measure(source: string): { reserved: number; actual: number } | undefined {
-  const charges: number[] = [];
+  const charges: Array<number> = [];
   const budget = createMarkdownBudget((bytes) => charges.push(bytes));
   try {
     const html = renderMarkdown(source, budget);
@@ -75,7 +75,7 @@ const shapes = [
   "![](",
   '[x](y "',
   "[x][",
-  "\\[",
+  String.raw`\[`,
   "*'w",
   "|a|\n",
   ">=\n",
@@ -88,16 +88,16 @@ const shapes = [
 function generator(seed: number): () => number {
   let state = seed;
   return () => {
-    state = (state * 1103515245 + 12345) % 2147483648;
-    return state / 2147483648;
+    state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return state / 2_147_483_648;
   };
 }
 
-function corpus(): string[] {
-  const random = generator(20261119);
-  const documents: string[] = [];
+function corpus(): Array<string> {
+  const random = generator(20_261_119);
+  const documents: Array<string> = [];
   for (let i = 0; i < 600; i++) {
-    const parts: string[] = [];
+    const parts: Array<string> = [];
     const count = 1 + Math.floor(random() * 12);
     for (let j = 0; j < count; j++) {
       parts.push(constructs[Math.floor(random() * constructs.length)]!);
@@ -108,7 +108,7 @@ function corpus(): string[] {
 }
 
 test("the reserve bounds the output of every construct the first reserve missed", () => {
-  const violations: string[] = [];
+  const violations: Array<string> = [];
   for (const construct of constructs) {
     for (const repeated of [1, 8, 40]) {
       const source = construct.repeat(repeated);
@@ -124,12 +124,14 @@ test("the reserve bounds the output of every construct the first reserve missed"
 });
 
 test("the reserve bounds the output of the reviewer's block shapes at 2 KiB", () => {
-  const violations: string[] = [];
+  const violations: Array<string> = [];
   let measured = 0;
   for (const shape of shapes) {
     const source = shape.repeat(Math.ceil(2048 / shape.length)).slice(0, 2048);
     const result = measure(source);
-    if (!result) continue;
+    if (!result) {
+      continue;
+    }
     measured++;
     if (result.actual > result.reserved) {
       violations.push(`${JSON.stringify(shape)}: ${result.actual} > ${result.reserved}`);
@@ -140,11 +142,13 @@ test("the reserve bounds the output of the reviewer's block shapes at 2 KiB", ()
 });
 
 test("the reserve bounds the output of a seeded random corpus", () => {
-  const violations: string[] = [];
+  const violations: Array<string> = [];
   let measured = 0;
   for (const source of corpus()) {
     const result = measure(source);
-    if (!result) continue;
+    if (!result) {
+      continue;
+    }
     measured++;
     if (result.actual > result.reserved) {
       violations.push(

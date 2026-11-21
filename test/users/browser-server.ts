@@ -7,7 +7,9 @@ const repository = resolve(import.meta.dir, "../..");
 const fixture = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
 const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1];
 const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1];
-if (!user || !password) throw new Error("Synthetic browser fixture is missing");
+if (!user || !password) {
+  throw new Error("Synthetic browser fixture is missing");
+}
 const controller = new AbortController();
 const stop = () => controller.abort();
 process.once("SIGTERM", stop);
@@ -26,7 +28,9 @@ try {
     300_000,
   );
 } catch (error) {
-  if (!controller.signal.aborted) throw error;
+  if (!controller.signal.aborted) {
+    throw error;
+  }
 } finally {
   process.off("SIGTERM", stop);
   process.off("SIGINT", stop);

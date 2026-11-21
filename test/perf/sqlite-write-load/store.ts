@@ -45,14 +45,16 @@ export class SpikeStore {
     }
   }
   seed(count: number) {
-    if (!Number.isSafeInteger(count) || count < 1) throw new Error("Invalid seed size");
+    if (!Number.isSafeInteger(count) || count < 1) {
+      throw new Error("Invalid seed size");
+    }
     const insert = this.db.prepare(
       "INSERT INTO spike_subscribers(id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
     );
     try {
       for (let first = 1; first <= count; first += 500) {
         this.write("seed", Math.min(500, count - first + 1), () => {
-          for (let id = first; id < Math.min(first + 500, count + 1); id++)
+          for (let id = first; id < Math.min(first + 500, count + 1); id++) {
             insert.run(
               id,
               `subscriber${id}@example.test`,
@@ -60,6 +62,7 @@ export class SpikeStore {
               timestamp,
               timestamp,
             );
+          }
         });
       }
       this.write("seed", 1, () =>
@@ -69,34 +72,41 @@ export class SpikeStore {
       insert.finalize();
     }
   }
-  reserve(count: number): number[] {
-    if (!Number.isSafeInteger(count) || count < 1) throw new Error("Invalid reservation size");
+  reserve(count: number): Array<number> {
+    if (!Number.isSafeInteger(count) || count < 1) {
+      throw new Error("Invalid reservation size");
+    }
     return this.write("reservation", count, () => {
       const rows = this.db
         .query<{ id: bigint }, [number]>(
           "SELECT id FROM spike_subscribers WHERE id > (SELECT last_subscriber_id FROM spike_campaigns WHERE id=1) AND id <= (SELECT max_subscriber_id FROM spike_campaigns WHERE id=1) AND status != 'blocklisted' ORDER BY id LIMIT ?",
         )
         .all(count);
-      if (rows.length)
+      if (rows.length) {
         this.db.run("UPDATE spike_campaigns SET last_subscriber_id = ? WHERE id=1", [
           rows.at(-1)!.id,
         ]);
+      }
       return rows.map((row) => Number(row.id));
     });
   }
   process(count: number) {
     const inTransaction = this.db.inTransaction;
-    if (inTransaction) throw new Error("Processing must be outside a transaction");
+    if (inTransaction) {
+      throw new Error("Processing must be outside a transaction");
+    }
     this.write("progress", count, () => {
       const result = this.db.run(
         "UPDATE spike_campaigns SET sent=sent+? WHERE id=1 AND sent+? <= last_subscriber_id",
         [count, count],
       );
-      if (result.changes !== 1) throw new Error("Progress exceeds reservation");
+      if (result.changes !== 1) {
+        throw new Error("Progress exceeds reservation");
+      }
     });
     return { sent: this.campaign().sent, inTransaction };
   }
-  events(events: SyntheticEvent[]) {
+  events(events: Array<SyntheticEvent>) {
     this.write("events", events.length, () => {
       const insert = this.db.prepare(
         "INSERT INTO spike_events(subscriber_id,name,data,occurred_at,created_at,idempotency_key) VALUES (?, ?, ?, ?, ?, ?)",
@@ -106,7 +116,7 @@ export class SpikeStore {
           const date = event.occurredAt ?? timestamp;
           const payload = JSON.stringify({
             order: event.sequence,
-            amount: 12345,
+            amount: 12_345,
             currency: "USD",
             source: "synthetic",
           });
@@ -117,29 +127,34 @@ export class SpikeStore {
       }
     });
   }
-  mutate(operations: Mutation[], rollback = false) {
+  mutate(operations: Array<Mutation>, rollback = false) {
     try {
       this.write("subscriber", operations.length, () => {
         for (const item of operations) {
-          if (item.operation === "insert")
+          if (item.operation === "insert") {
             this.db.run(
               "INSERT INTO spike_subscribers(id,name,email,created_at,updated_at) VALUES(?,?,?,?,?)",
               [item.id, item.name!, item.email!, timestamp, timestamp],
             );
-          else if (item.operation === "update")
+          } else if (item.operation === "update") {
             this.db.run("UPDATE spike_subscribers SET name=?, email=?, updated_at=? WHERE id=?", [
               item.name!,
               item.email!,
               timestamp,
               item.id,
             ]);
-          else this.db.run("DELETE FROM spike_subscribers WHERE id=?", [item.id]);
+          } else {
+            this.db.run("DELETE FROM spike_subscribers WHERE id=?", [item.id]);
+          }
         }
-        if (rollback) throw new Error("synthetic rollback");
+        if (rollback) {
+          throw new Error("synthetic rollback");
+        }
       });
     } catch (error) {
-      if (!(rollback && error instanceof Error && error.message === "synthetic rollback"))
+      if (!(rollback && error instanceof Error && error.message === "synthetic rollback")) {
         throw error;
+      }
     }
   }
   disableTriggers() {

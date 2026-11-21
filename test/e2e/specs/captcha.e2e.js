@@ -23,7 +23,9 @@ async function subscribers(page, email) {
 async function fillForm(page, list, email) {
   await page.goto(SUB_FORM);
   await page.locator("input[name=email]").fill(email);
-  for (const box of await page.locator("ul.lists input[type=checkbox]").all()) await box.uncheck();
+  for (const box of await page.locator("ul.lists input[type=checkbox]").all()) {
+    await box.uncheck();
+  }
   await page.locator(`ul.lists input[value="${list.uuid}"]`).check();
 }
 
@@ -31,7 +33,7 @@ test.beforeEach(async ({ page }) => {
   await signIn(page);
   before = (await ok(page, "/api/settings"))["security.captcha"];
   await ok(page, "/api/settings/security.captcha", "PUT", {
-    altcha: { enabled: true, complexity: 20000 },
+    altcha: { enabled: true, complexity: 20_000 },
     hcaptcha: { ...before.hcaptcha, enabled: false, secret: "" },
   });
 });
@@ -65,7 +67,7 @@ test("the widget solves the challenge, the form subscribes, and a replay is refu
   const solved = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
   expect(Object.keys(solved)).toEqual(["challenge", "solution"]);
   expect(Object.keys(solved.solution)).toEqual(["counter", "derivedKey", "time"]);
-  expect(solved.solution.counter).toBeLessThanOrEqual(20000);
+  expect(solved.solution.counter).toBeLessThanOrEqual(20_000);
   await Promise.all([page.waitForLoadState(), page.locator("button[type=submit]").click()]);
   await expect(page.locator("body")).toContainText("Subscribed successfully.");
   const [row] = await subscribers(page, email);

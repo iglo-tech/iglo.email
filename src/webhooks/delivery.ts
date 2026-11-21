@@ -39,7 +39,7 @@ function hostOf(url: string): string | undefined {
 
 export interface WebhookTransport {
   /** Addresses of a hostname. */
-  lookup?: (hostname: string) => Promise<string[]>;
+  lookup?: (hostname: string) => Promise<Array<string>>;
   blocked?: (address: string) => boolean;
   fetch?: typeof fetch;
 }
@@ -54,12 +54,14 @@ class Refused extends Error {}
  * configured host's.
  */
 async function pinned(url: URL, transport: WebhookTransport) {
-  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  const hostname = url.hostname.replaceAll(/^\[|\]$/g, "");
   const addresses = isIP(hostname)
     ? [hostname]
     : await (transport.lookup ?? resolveAddresses)(hostname);
   const blocked = transport.blocked ?? blockedAddress;
-  if (!addresses.length || addresses.some(blocked)) throw new Refused();
+  if (!addresses.length || addresses.some(blocked)) {
+    throw new Refused();
+  }
   const address = addresses[0]!;
   const target = new URL(url);
   target.hostname = isIP(address) === 6 ? `[${address}]` : address;
@@ -88,11 +90,15 @@ export async function refusesTarget(
 
 async function drain(response: Response) {
   const reader = response.body?.getReader();
-  if (!reader) return;
+  if (!reader) {
+    return;
+  }
   try {
     for (let read = 0; read < RESPONSE_BYTES;) {
       const { done, value } = await reader.read();
-      if (done) return;
+      if (done) {
+        return;
+      }
       read += value.length;
     }
   } finally {
@@ -129,10 +135,11 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
   const logged = new Map<bigint, number>();
   const abandon = new AbortController();
   /** Finished attempts, settled together in the next claim's commit. */
-  const finished: { delivery: ClaimedDelivery; error: string | null }[] = [];
+  const finished: Array<{ delivery: ClaimedDelivery; error: string | null }> = [];
   const settleFinished = () => {
-    for (const { delivery, error } of finished.splice(0))
+    for (const { delivery, error } of finished.splice(0)) {
       report(delivery, webhooks.settle(delivery, error), error);
+    }
   };
 
   /** One attempt; its whole time is bounded. An error code is safe to store and show. */
@@ -161,7 +168,9 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
       const route = options.blockPrivate() ? await beforeAbort(pinned(url, transport)) : null;
       // Read after the last wait: a deletion during DNS must not leave the claim's body to send.
       const payload = webhooks.claimedPayload(delivery);
-      if (payload === null) return CLAIM_GONE;
+      if (payload === null) {
+        return CLAIM_GONE;
+      }
       const unix = Math.floor(clock.now().getTime() / 1000);
       const response = await send(route?.url ?? url, {
         method: "POST",
@@ -187,8 +196,12 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
         ? `redirect_${response.status}`
         : `http_${response.status}`;
     } catch (error) {
-      if (timedOut) return "timeout";
-      if (error instanceof Refused) return "blocked_address";
+      if (timedOut) {
+        return "timeout";
+      }
+      if (error instanceof Refused) {
+        return "blocked_address";
+      }
       return "network_error";
     } finally {
       controller.abort();
@@ -197,11 +210,17 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
 
   function report(delivery: ClaimedDelivery, status: string | null, error: string | null) {
     const id = delivery.target.id;
-    if (error === null) return void logged.delete(id);
-    if (status !== "failed" && delivery.attempts < FAILURE_LOG_ATTEMPTS) return;
+    if (error === null) {
+      return void logged.delete(id);
+    }
+    if (status !== "failed" && delivery.attempts < FAILURE_LOG_ATTEMPTS) {
+      return;
+    }
     const now = clock.now().getTime(),
       last = logged.get(id);
-    if (last !== undefined && now - last < FAILURE_LOG_MS) return;
+    if (last !== undefined && now - last < FAILURE_LOG_MS) {
+      return;
+    }
     logged.set(id, now);
     // Only the webhook's ID and a safe code: its URL can hold a token and bodies are foreign.
     options.logger.attention(
@@ -233,12 +252,18 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
    * D122). The same check as a delivery's; the lookups run together, each within the deadline.
    */
   async function refusedTargets(): Promise<void> {
-    if (!options.blockPrivate()) return;
+    if (!options.blockPrivate()) {
+      return;
+    }
     await Promise.all(
       webhooks.enabledTargets().map(async ({ id, url }) => {
         const host = hostOf(url);
-        if (host === undefined) return;
-        if ((await withinDeadline(refusesTarget(url, transport))) !== true) return;
+        if (host === undefined) {
+          return;
+        }
+        if ((await withinDeadline(refusesTarget(url, transport))) !== true) {
+          return;
+        }
         options.logger.attention(
           `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`,
           REFUSED_NOTICE,
@@ -258,7 +283,9 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
     batchSize: MAX_WEBHOOKS * WEBHOOK_CONCURRENCY,
     claim(now, lease) {
       settleFinished();
-      if (sendingHeld(options.db)) return [];
+      if (sendingHeld(options.db)) {
+        return [];
+      }
       return webhooks.claim(lease, now, (id) => WEBHOOK_CONCURRENCY - (active.get(id) ?? 0));
     },
     // Requests run beside the loop, so it keeps claiming for receivers with free slots.
@@ -267,12 +294,17 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
       active.set(id, (active.get(id) ?? 0) + 1);
       const run = attempt(delivery)
         .then((error) => {
-          if (!abandon.signal.aborted && error !== CLAIM_GONE) finished.push({ delivery, error });
+          if (!abandon.signal.aborted && error !== CLAIM_GONE) {
+            finished.push({ delivery, error });
+          }
         })
         .finally(() => {
           const left = active.get(id)! - 1;
-          if (left) active.set(id, left);
-          else active.delete(id);
+          if (left) {
+            active.set(id, left);
+          } else {
+            active.delete(id);
+          }
           running.delete(run);
           loop.wake();
         });
@@ -308,7 +340,9 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
         await loop.stop();
       } finally {
         await Promise.allSettled(running);
-        if (finished.length) writeTransaction(options.db, settleFinished);
+        if (finished.length) {
+          writeTransaction(options.db, settleFinished);
+        }
       }
     },
   };

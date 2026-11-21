@@ -18,7 +18,9 @@ try {
   runMigrations(db, dataDir, createRealClock(), productionMigrations);
   const reads = (label: string) => {
     const started = performance.now();
-    for (let i = 0; i < ROUNDS; i++) sendingHeld(db);
+    for (let i = 0; i < ROUNDS; i++) {
+      sendingHeld(db);
+    }
     console.log(`${label}: ${(((performance.now() - started) * 1000) / ROUNDS).toFixed(2)} us`);
   };
   reads("sendingHeld, no row");

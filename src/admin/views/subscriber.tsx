@@ -715,8 +715,9 @@ export function subscriberView(tab: SubscriberTab): AdminView {
   return ({ context, can }) => {
     const t = context.app.i18n;
     const needed = tabPermission[tab];
-    if (needed && !can(needed))
+    if (needed && !can(needed)) {
       throw new HttpError(403, t.Ts("globals.messages.permissionDenied", "name", needed));
+    }
     const id = String(getID(context));
     const canSave = can("subscribers:manage");
     return {

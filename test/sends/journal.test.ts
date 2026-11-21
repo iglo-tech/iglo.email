@@ -17,7 +17,8 @@ import { TestClock } from "@/test/server/fixture";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
-import { createEmailer, type Message } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { Message } from "@/messaging/email";
 import { startOutbox } from "@/messaging/outbox";
 import { createServer } from "node:net";
 import { createHash } from "node:crypto";
@@ -54,7 +55,9 @@ async function fixture() {
   );
   await bootstrapAdmin(users, auth, { user: "fixture-admin", password: "fixture-admin-password" });
   const session = await auth.login("fixture-admin", "fixture-admin-password");
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("fixture login failed");
+  }
   const journal = createSends({ db, clock, subscribers, rootUrl: () => "http://fixture.test" });
   const router = createRouter();
   registerSendRoutes(router, journal, auth);
@@ -139,8 +142,9 @@ test("native send journal pages and detail expose only safe metadata", async () 
       "per_page=101",
       "status=bogus",
       "subscriber_id=9223372036854775808",
-    ])
+    ]) {
       expect((await f.call(`/api/sends?${query}`)).status).toBe(400);
+    }
     expect((await f.call("/api/sends/999")).status).toBe(404);
     expect((await f.call(`/api/sends/${a.id}/resend`, "POST", "{}")).status).toBe(409);
     expect((await f.call(`/api/sends/${a.id}/resend`, "POST", '{"extra":1}')).status).toBe(400);
@@ -290,7 +294,9 @@ test("actual TCP refusal retries only at injected-clock deadlines and stops afte
   const listener = createServer();
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   const address = listener.address();
-  if (!address || typeof address === "string") throw new Error("missing listener");
+  if (!address || typeof address === "string") {
+    throw new Error("missing listener");
+  }
   const port = address.port;
   await new Promise<void>((resolve, reject) =>
     listener.close((error) => (error ? reject(error) : resolve())),
@@ -631,8 +637,9 @@ test("prepared payload limits are enforced atomically at the owner and safe HTTP
         ],
       },
     ];
-    for (const input of invalid)
+    for (const input of invalid) {
       expect(() => enqueue(input as Message)).toThrow("Invalid prepared message");
+    }
     const response = await f.call("/api/sends?per_page=100");
     expect(response.status).toBe(200);
     expect(JSON.parse(response.text).data.total).toBe(3);
@@ -692,9 +699,9 @@ test("high automatic journal IDs retain exact JSON, path, filters and overflow b
   try {
     // Set only disposable historical high-water state; subsequent IDs are allocated normally.
     f.db.run("INSERT INTO sqlite_sequence(name, seq) VALUES ('sends', ?) ON CONFLICT DO NOTHING", [
-      9007199254740992n,
+      9_007_199_254_740_992n,
     ]);
-    f.db.run("UPDATE sqlite_sequence SET seq=? WHERE name='sends'", [9007199254740992n]);
+    f.db.run("UPDATE sqlite_sequence SET seq=? WHERE name='sends'", [9_007_199_254_740_992n]);
     f.journal.enqueue({ source: "tx", kind: "transactional", message: message() });
     f.journal.enqueue({ source: "tx", kind: "transactional", message: message() });
     const collection = await f.call("/api/sends?status=queued&source=tx&kind=transactional");
@@ -706,7 +713,9 @@ test("high automatic journal IDs retain exact JSON, path, filters and overflow b
     expect(
       JSON.parse((await f.call("/api/sends?subscriber_id=9007199254740993")).text).data.total,
     ).toBe(0);
-    f.db.run("INSERT INTO sqlite_sequence(name, seq) VALUES ('lists', ?)", [9007199254740992n]);
+    f.db.run("INSERT INTO sqlite_sequence(name, seq) VALUES ('lists', ?)", [
+      9_007_199_254_740_992n,
+    ]);
     const highList = f.listStore.create({
       name: "high list",
       type: "private",
@@ -719,26 +728,26 @@ test("high automatic journal IDs retain exact JSON, path, filters and overflow b
       source: "tx",
       kind: "transactional",
       message: message(),
-      listId: 9007199254740993n,
+      listId: 9_007_199_254_740_993n,
     });
     const listFiltered = await f.call("/api/sends?list_id=9007199254740993");
     expect(listFiltered.text).toContain('"list_id":9007199254740993');
     expect(listFiltered.text).toContain('"id":9007199254740995');
     f.listStore.remove(
-      [9007199254740993n],
+      [9_007_199_254_740_993n],
       { query: "", type: "", optin: "", status: "", tags: [] },
       { all: true, ids: [] },
     );
     expect((await f.call("/api/sends/9007199254740995")).text).toContain('"list_id":null');
     expect(JSON.stringify(highList)).toContain('"id":9007199254740993');
     f.db.run("INSERT INTO sqlite_sequence(name, seq) VALUES ('subscribers', ?)", [
-      9007199254740992n,
+      9_007_199_254_740_992n,
     ]);
     const subscriber = f.subscribers.create(
       { email: "recipient@example.test", name: "High ID" },
       { all: true, ids: [] },
     );
-    expect(subscriber.id).toBe(9007199254740993n);
+    expect(subscriber.id).toBe(9_007_199_254_740_993n);
     f.journal.enqueue({
       source: "tx",
       kind: "transactional",
@@ -762,7 +771,9 @@ test("high automatic journal IDs retain exact JSON, path, filters and overflow b
 test("automatic allocation reaches signed 64-bit maximum and fails atomically beyond it", async () => {
   const f = await fixture();
   try {
-    f.db.run("INSERT INTO sqlite_sequence(name, seq) VALUES ('sends', ?)", [9223372036854775806n]);
+    f.db.run("INSERT INTO sqlite_sequence(name, seq) VALUES ('sends', ?)", [
+      9_223_372_036_854_775_806n,
+    ]);
     f.journal.enqueue({ source: "tx", kind: "transactional", message: message() });
     expect((await f.call("/api/sends/9223372036854775807")).text).toContain(
       '"id":9223372036854775807',
@@ -938,7 +949,9 @@ test("live resend authority rejects disabled, deleted and revoked principals whi
       listRoleId: null,
     });
     const login = await f.auth.login("human-send", "synthetic-human-password");
-    if (!login || !("id" in login)) throw new Error("fixture login failed");
+    if (!login || !("id" in login)) {
+      throw new Error("fixture login failed");
+    }
     await held(
       {
         cookie: `session=${login.id}`,
@@ -968,7 +981,7 @@ test("the outbox claims the lowest queued id that is new or due for retry (D24)"
     const [first] = f.journal.claim(f.clock.now(), new Date(f.clock.now().getTime() + 60_000));
     expect(Number(first!.id)).toEqual(a);
     f.journal.finish(first!, {
-      messageId: first!.smtp_message_id!,
+      messageId: first!.smtp_message_id,
       status: "proven-not-accepted",
       stage: "setup",
       accepted: [],

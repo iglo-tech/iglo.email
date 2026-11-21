@@ -18,7 +18,13 @@ function Item(props: { t: Translation; picker: boolean; canManage: boolean }) {
     <figure class="card" data-testid="media-item" x-bind:data-id="m.id">
       <a class="thumb" x-bind:href="m.url" x-bind:title="m.filename" {...open}>
         <template x-if="rasterThumb(m)">
-          <img x-bind:src="m.thumb_url" x-bind:alt="m.filename" loading="lazy" decoding="async" />
+          <img
+            alt=""
+            x-bind:src="m.thumb_url"
+            x-bind:alt="m.filename"
+            loading="lazy"
+            decoding="async"
+          />
         </template>
         <template x-if="!rasterThumb(m)">
           <span class="ext" x-text="fileExt(m.filename)"></span>

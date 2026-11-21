@@ -40,9 +40,9 @@ import {
   rmSync,
   statfsSync,
   statSync,
-  type Stats,
   writeFileSync,
 } from "node:fs";
+import type { Stats } from "node:fs";
 import { open } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Clock } from "@/clock";
@@ -50,7 +50,8 @@ import { withStoppedDatabase } from "@/db/connection";
 import { writeTransaction } from "@/db/transaction";
 import { uploadRoot } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
-import { holdRecord, placeRestoreHold, releaseRestoreHold, type HoldRecord } from "@/settings/hold";
+import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
+import type { HoldRecord } from "@/settings/hold";
 import { storedUploadPath, writeUploadPath } from "@/settings/stored";
 
 const DATABASE = "iglo-email.db";
@@ -70,7 +71,7 @@ export interface Inspection {
   uploadFiles: number;
   uploadBytes: number;
   /** Stored names a media row of the snapshot has and the uploads lack. */
-  missing: string[];
+  missing: Array<string>;
   hold: HoldRecord | null;
 }
 
@@ -79,16 +80,20 @@ function single<T>(db: Database, pragma: string): T {
 }
 
 /** The directory's files as uploads keep them: visible regular names, and no symlink (D64). */
-function uploadedFiles(directory: string): { name: string; size: number }[] {
+function uploadedFiles(directory: string): Array<{ name: string; size: number }> {
   let entries;
   try {
     entries = readdirSync(directory, { withFileTypes: true });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
     throw error;
   }
   return entries.flatMap((entry) => {
-    if (!entry.isFile() || entry.name.startsWith(".")) return [];
+    if (!entry.isFile() || entry.name.startsWith(".")) {
+      return [];
+    }
     const size = lstatSync(join(directory, entry.name), { throwIfNoEntry: false })?.size;
     return size === undefined ? [] : [{ name: entry.name, size }];
   });
@@ -108,7 +113,7 @@ function openSnapshot(path: string): Database {
 }
 
 /** Every stored name of the snapshot, thumbnails included. */
-function storedNames(db: Database, clock: Clock): string[] {
+function storedNames(db: Database, clock: Clock): Array<string> {
   const media = createMediaStore(db, clock);
   try {
     return media
@@ -121,10 +126,14 @@ function storedNames(db: Database, clock: Clock): string[] {
 
 function inspect(target: string, clock: Clock, supportedVersion: number): Inspection {
   const stats = statSync(target, { throwIfNoEntry: false });
-  if (!stats) throw new Error(`No backup at ${target}`);
+  if (!stats) {
+    throw new Error(`No backup at ${target}`);
+  }
   const file = stats.isDirectory() ? join(target, DATABASE) : target;
   const databaseBytes = statSync(file, { throwIfNoEntry: false })?.size;
-  if (databaseBytes === undefined) throw new Error(`No ${DATABASE} in ${target}`);
+  if (databaseBytes === undefined) {
+    throw new Error(`No ${DATABASE} in ${target}`);
+  }
   let db: Database;
   try {
     db = openSnapshot(file);
@@ -138,7 +147,9 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     } catch {
       throw new Error(`${target} is not a usable database`);
     }
-    if (integrity !== "ok") throw new Error(`${target} failed its integrity check: ${integrity}`);
+    if (integrity !== "ok") {
+      throw new Error(`${target} failed its integrity check: ${integrity}`);
+    }
     const schemaVersion = Number(single<bigint>(db, "user_version"));
     const report = {
       schemaVersion,
@@ -146,14 +157,16 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
       databaseBytes,
       uploadFiles: 0,
       uploadBytes: 0,
-      missing: [] as string[],
+      missing: [] as Array<string>,
       hold: schemaVersion === 0 ? null : holdRecord(db),
     };
     // A bare snapshot has no uploads, and a schema ahead of this executable cannot be read by it.
-    if (!stats.isDirectory() || schemaVersion === 0 || schemaVersion > supportedVersion)
+    if (!stats.isDirectory() || schemaVersion === 0 || schemaVersion > supportedVersion) {
       return report;
-    if (!statSync(join(target, MANIFEST), { throwIfNoEntry: false }))
+    }
+    if (!statSync(join(target, MANIFEST), { throwIfNoEntry: false })) {
       throw new Error(`No ${MANIFEST} in ${target}: not a backup`);
+    }
     const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf8")) as {
       uploads: string;
     };
@@ -173,8 +186,9 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
 /** Reads a backup, or a bare snapshot file, and changes nothing. Throws if it is damaged. */
 export function inspectBackup(path: string, clock: Clock, supportedVersion: number): Inspection {
   const target = resolve(path);
-  if (basename(target).startsWith(PARTIAL))
+  if (basename(target).startsWith(PARTIAL)) {
     throw new Error(`${path} is an interrupted backup, not a backup`);
+  }
   return inspect(target, clock, supportedVersion);
 }
 
@@ -183,7 +197,8 @@ export async function runFlushChild(): Promise<void> {
   const file = await open(process.argv[3]!, "r");
   let running = true;
   void (async () => {
-    for await (const _ of Bun.stdin.stream());
+    for await (const _ of Bun.stdin.stream()) {
+    }
     running = false;
   })();
   while (running) {
@@ -240,20 +255,28 @@ function standing(path: string): "missing" | "folder" {
     stats = lstatSync(path, { throwIfNoEntry: false });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
-    throw new Error(`${path} is below something that is not a folder`);
+    throw new Error(`${path} is below something that is not a folder`, { cause: error });
   }
-  if (!stats) return "missing";
+  if (!stats) {
+    return "missing";
+  }
   if (stats.isSymbolicLink()) {
     const target = followed(path);
-    if (!target) throw new Error(`${path} is a symlink to a missing target`);
-    if (target.isDirectory()) return "folder";
+    if (!target) {
+      throw new Error(`${path} is a symlink to a missing target`);
+    }
+    if (target.isDirectory()) {
+      return "folder";
+    }
     throw new Error(
       target.isFile()
         ? `${path} is a symlink to a file, not a folder`
         : `${path} is a symlink to something other than a folder`,
     );
   }
-  if (stats.isDirectory()) return "folder";
+  if (stats.isDirectory()) {
+    return "folder";
+  }
   throw new Error(stats.isFile() ? `${path} is a file, not a folder` : `${path} is not a folder`);
 }
 
@@ -267,8 +290,12 @@ function followed(path: string): Stats | undefined {
   } catch (error) {
     const { code } = error as NodeJS.ErrnoException;
     if (code === "ENOTDIR")
-      throw new Error(`${path} is a symlink to a path below a file, not a folder`);
-    if (code === "ELOOP") throw new Error(`${path} is a symlink loop`);
+      throw new Error(`${path} is a symlink to a path below a file, not a folder`, {
+        cause: error,
+      });
+    if (code === "ELOOP") {
+      throw new Error(`${path} is a symlink loop`);
+    }
     throw error;
   }
 }
@@ -289,7 +316,9 @@ function currentAt(path: string): Stats | undefined {
     return lstatSync(path, { throwIfNoEntry: false });
   } catch (error) {
     const { code } = error as NodeJS.ErrnoException;
-    if (code === "ENOTDIR" || code === "ELOOP") return undefined;
+    if (code === "ENOTDIR" || code === "ELOOP") {
+      return undefined;
+    }
     throw error;
   }
 }
@@ -318,13 +347,13 @@ function realFolder(path: string): boolean {
  * with createFolders. The caller resolves the parent as the realpath of `existing`, joined with the
  * folders still to be made, so an alias in the existing part is followed as the kernel would.
  */
-function missingFolders(directory: string): { existing: string; missing: string[] } {
+function missingFolders(directory: string): { existing: string; missing: Array<string> } {
   const names = directory.split(sep).filter(Boolean);
   let existing: string = sep;
   for (const [index, name] of names.entries()) {
     const current = join(existing, name);
     if (standing(current) === "missing") {
-      const missing: string[] = [];
+      const missing: Array<string> = [];
       let path = existing;
       for (const next of names.slice(index)) {
         path = join(path, next);
@@ -344,7 +373,7 @@ function missingFolders(directory: string): { existing: string; missing: string[
  * check is named, rather than reported as a raw ENOTDIR, ELOOP or EEXIST. A missing folder above
  * one that was made is left as ENOENT: openPartial makes the chain again, and names it if that fails.
  */
-function createFolders(folders: string[], made: MadeFolder[]): void {
+function createFolders(folders: Array<string>, made: Array<MadeFolder>): void {
   for (const folder of folders) {
     try {
       mkdirSync(folder, { mode: 0o700 });
@@ -354,7 +383,7 @@ function createFolders(folders: string[], made: MadeFolder[]): void {
       if (code === "ENOENT") throw error;
       if (code !== "EEXIST" && code !== "ENOTDIR" && code !== "ELOOP") throw error;
       if (realFolder(folder)) continue;
-      throw new Error(`${folder} changed meanwhile: it is not a folder`);
+      throw new Error(`${folder} changed meanwhile: it is not a folder`, { cause: error });
     }
   }
 }
@@ -364,10 +393,12 @@ function createFolders(folders: string[], made: MadeFolder[]): void {
  * the folders are made; the realpath check after them is what keeps that answer true.
  */
 function checkBoundaries(output: string, data: string, uploads: string): void {
-  if (inside(data, output))
+  if (inside(data, output)) {
     throw new Error(`The output ${output} would replace the data directory`);
-  if (inside(output, uploads))
+  }
+  if (inside(output, uploads)) {
     throw new Error(`The output ${output} is inside the upload directory`);
+  }
 }
 
 /**
@@ -376,13 +407,15 @@ function checkBoundaries(output: string, data: string, uploads: string): void {
  * word, since it is not this backup's to remove. A different folder at a made folder's path is left
  * alone and named. rmdir never follows a symlink, so a link at the path is refused too.
  */
-function removeCreated(made: MadeFolder[], warn: (message: string) => void): void {
+function removeCreated(made: Array<MadeFolder>, warn: (message: string) => void): void {
   for (const folder of [...made].reverse()) {
     // Each folder is inspected and removed on its own, so one that cannot be looked at does not stop
     // the rest from being cleaned.
     try {
       const current = currentAt(folder.path);
-      if (!current) continue;
+      if (!current) {
+        continue;
+      }
       if (!isMade(folder, current)) {
         warn(
           `${folder.path} was made by this backup, but another folder is at its place; it is left alone`,
@@ -392,7 +425,9 @@ function removeCreated(made: MadeFolder[], warn: (message: string) => void): voi
       rmdirSync(folder.path);
     } catch (error) {
       const { code } = error as NodeJS.ErrnoException;
-      if (code === "ENOENT" || code === "ENOTEMPTY" || code === "EEXIST") continue;
+      if (code === "ENOENT" || code === "ENOTEMPTY" || code === "EEXIST") {
+        continue;
+      }
       warn(`${folder.path} was made by this backup and could not be removed: ${code}`);
     }
   }
@@ -443,26 +478,35 @@ function whileMade<T>(made: MadeFolder, step: () => T): T {
   try {
     return step();
   } catch (error) {
-    if (movedAway(made)) throw changedMeanwhile(made.path);
+    if (movedAway(made)) {
+      throw changedMeanwhile(made.path);
+    }
     throw error;
   }
 }
 
 /** Refuses what no flag may replace; a forced replacement must hold a backup or nothing. */
 function checkDestination(output: string, data: string, force: boolean): void {
-  if (inside(data, output))
+  if (inside(data, output)) {
     throw new Error(`The output ${output} would replace the data directory`);
-  if (!lstatSync(output, { throwIfNoEntry: false })) return;
-  if (!force) throw new Error(`${output} already exists; pass --force to replace it`);
-  if (!replaceable(output))
+  }
+  if (!lstatSync(output, { throwIfNoEntry: false })) {
+    return;
+  }
+  if (!force) {
+    throw new Error(`${output} already exists; pass --force to replace it`);
+  }
+  if (!replaceable(output)) {
     throw new Error(`${output} does not look like a backup; not replacing it`);
+  }
 }
 
 /** Back where it was. Neither step replaces what took the name meanwhile, unless it is empty. */
 function putBack(aside: string, output: string): void {
   try {
-    if (lstatSync(aside).isDirectory()) renameSync(aside, output);
-    else {
+    if (lstatSync(aside).isDirectory()) {
+      renameSync(aside, output);
+    } else {
       linkSync(aside, output);
       rmSync(aside);
     }
@@ -482,7 +526,9 @@ function stepAside(output: string, live: Stats): string | undefined {
   try {
     renameSync(output, aside);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
     throw error;
   }
   const moved = lstatSync(aside);
@@ -490,7 +536,9 @@ function stepAside(output: string, live: Stats): string | undefined {
     putBack(aside, output);
     throw new Error(`${output} is the live data directory; not replacing it`);
   }
-  if (replaceable(aside)) return aside;
+  if (replaceable(aside)) {
+    return aside;
+  }
   putBack(aside, output);
   throw new Error(`${output} does not look like a backup; not replacing it`);
 }
@@ -507,7 +555,9 @@ function publish(
   force: boolean,
   live: Stats,
 ): string | undefined {
-  if (!isMade(partial)) throw changedMeanwhile(partial.path);
+  if (!isMade(partial)) {
+    throw changedMeanwhile(partial.path);
+  }
   const aside = force ? stepAside(output, live) : undefined;
   try {
     renameSync(partial.path, output);
@@ -515,8 +565,10 @@ function publish(
     if (aside) putBack(aside, output);
     const { code } = error as NodeJS.ErrnoException;
     if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR")
-      throw new Error(`${output} already exists; pass --force to replace it`);
-    if (code === "ENOENT") throw changedMeanwhile(partial.path);
+      throw new Error(`${output} already exists; pass --force to replace it`, { cause: error });
+    if (code === "ENOENT") {
+      throw changedMeanwhile(partial.path);
+    }
     throw error;
   }
   return aside;
@@ -537,8 +589,8 @@ function resolvedParent(wanted: string, folders: { existing: string }): string {
 function openPartial(
   wanted: string,
   parent: string,
-  missing: string[],
-  created: MadeFolder[],
+  missing: Array<string>,
+  created: Array<MadeFolder>,
 ): MadeFolder {
   let folders = missing;
   for (let attempt = 1; ; attempt++) {
@@ -548,15 +600,17 @@ function openPartial(
         // call's to report or remove. The retry makes it again if it is still missing.
         created.splice(0, created.length, ...created.filter((folder) => !movedAway(folder)));
         const again = missingFolders(dirname(wanted));
-        if (resolvedParent(wanted, again) !== parent)
+        if (resolvedParent(wanted, again) !== parent) {
           throw new Error(
             `${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`,
           );
+        }
         folders = again.missing;
       }
       createFolders(folders, created);
-      if (realpathSync(dirname(wanted)) !== parent)
+      if (realpathSync(dirname(wanted)) !== parent) {
         throw new Error(`${dirname(wanted)} changed meanwhile: it no longer resolves to ${parent}`);
+      }
       // The directory is 0700 from mkdtemp: see the database file in createBackup.
       return madeAt(mkdtempSync(join(parent, PARTIAL)));
     } catch (error) {
@@ -565,6 +619,7 @@ function openPartial(
       if (attempt > 1)
         throw new Error(
           `${dirname(wanted)} changed meanwhile: a folder in it was removed or replaced`,
+          { cause: error },
         );
     }
   }
@@ -579,7 +634,9 @@ function sealSnapshot(path: string, since: string, data: string): string {
     const source = uploadRoot(data, stored);
     db.transaction(() => {
       placeRestoreHold(db, since);
-      if (resolve(data, stored) !== source) writeUploadPath(db, relative(data, source));
+      if (resolve(data, stored) !== source) {
+        writeUploadPath(db, relative(data, source));
+      }
     })();
     return source;
   } finally {
@@ -591,8 +648,9 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
   const { clock, warn } = options;
   const dataDir = resolve(options.dataDir);
   const databasePath = join(dataDir, DATABASE);
-  if (!statSync(databasePath, { throwIfNoEntry: false }))
+  if (!statSync(databasePath, { throwIfNoEntry: false })) {
     throw new Error(`No database at ${databasePath}`);
+  }
   const data = realpathSync(dataDir);
   // The identity of the live data directory, taken before anything can move: see stepAside.
   const live = statSync(data);
@@ -604,13 +662,14 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
   checkDestination(output, data, options.force ?? false);
 
   const db = new Database(databasePath, { readonly: true, strict: true, safeIntegers: true });
-  let created: MadeFolder[] = [];
+  let created: Array<MadeFolder> = [];
   let partial: MadeFolder | undefined;
   let flusher: Bun.Subprocess | undefined;
   try {
     db.run("PRAGMA busy_timeout = 5000");
-    if (single<bigint>(db, "user_version") === 0n)
+    if (single<bigint>(db, "user_version") === 0n) {
       throw new Error(`${databasePath} has no schema yet; start the server once`);
+    }
     const liveUploads = uploadRoot(data, storedUploadPath(db));
     checkBoundaries(output, data, liveUploads);
     const pages = single<bigint>(db, "page_count") - single<bigint>(db, "freelist_count");
@@ -618,14 +677,16 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       Number(pages * single<bigint>(db, "page_size")) +
       uploadedFiles(liveUploads).reduce((sum, { size }) => sum + size, 0);
     const available = (options.available ?? freeBytes)(realpathSync(folders.existing));
-    if (needed > available)
+    if (needed > available) {
       throw new Error(`A backup needs about ${needed} bytes and ${parent} has ${available} free`);
+    }
     // A folder that does not exist yet has no leftovers in it.
-    for (const entry of folders.missing.length === 0 ? readdirSync(parent) : [])
+    for (const entry of folders.missing.length === 0 ? readdirSync(parent) : []) {
       if (entry.startsWith(PARTIAL))
         warn(`${join(parent, entry)} is left from an interrupted backup or is one still running`);
       else if (entry.startsWith(REPLACED))
         warn(`${join(parent, entry)} is a backup that a forced backup did not finish replacing`);
+    }
 
     // Once openPartial has checked the path, output is parent joined with the basename, which is the
     // real path of the output. The boundaries were checked on that path above, so they are not
@@ -664,7 +725,9 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
           // A file the live server deleted after it was listed is skipped. Anything else missing is
           // the backup's own path, which whileMade names.
           const gone = !lstatSync(join(source, name), { throwIfNoEntry: false });
-          if ((error as NodeJS.ErrnoException).code === "ENOENT" && gone) continue;
+          if ((error as NodeJS.ErrnoException).code === "ENOENT" && gone) {
+            continue;
+          }
           throw error;
         }
         chmodSync(join(target, name), 0o600);
@@ -673,8 +736,9 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       const manifest = join(made.path, MANIFEST);
       writeFileSync(manifest, `${JSON.stringify({ uploads })}\n`, { mode: 0o600, flag: "wx" });
       sync(manifest);
-      for (let directory = target; directory !== parent; directory = dirname(directory))
+      for (let directory = target; directory !== parent; directory = dirname(directory)) {
         sync(directory);
+      }
     });
 
     const inspection = whileMade(made, () => inspect(made.path, clock, options.supportedVersion));
@@ -695,6 +759,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
         `${output} is in place, but its folder could not be synced (${code}), so it may not survive a crash; ` +
           (aside ? `the backup it replaced is kept at ${aside}; ` : "") +
           `check it with --verify`,
+        { cause: error },
       );
     }
     if (aside) {
@@ -712,7 +777,9 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     flusher?.kill();
     db.close(true);
     try {
-      if (partial) removePartial(partial, warn);
+      if (partial) {
+        removePartial(partial, warn);
+      }
     } finally {
       removeCreated(created, warn);
     }
@@ -730,7 +797,9 @@ export function releaseHold(options: ReleaseOptions): HoldRecord | null {
   return withStoppedDatabase(options.dataDir, options.supportedVersion, (db) =>
     writeTransaction(db, () => {
       const record = holdRecord(db);
-      if (!record || record.releasedAt !== null) return null;
+      if (!record || record.releasedAt !== null) {
+        return null;
+      }
       const at = options.clock.now().toISOString();
       releaseRestoreHold(db, record, at);
       return { since: record.since, releasedAt: at };

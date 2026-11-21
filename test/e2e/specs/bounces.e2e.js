@@ -81,23 +81,27 @@ test.beforeEach(async ({ page }) => {
 // Webhooks and receivers this file registered and has not removed. A timed-out test never reaches
 // its own cleanup, so `afterEach` takes them from here; the 20-webhook cap would otherwise fail a
 // later budget test on the same stack.
-let hooks = [];
-let receivers = [];
+const hooks = [];
+const receivers = [];
 async function removeLeftovers(request) {
   const failures = [];
-  for (const target of receivers.splice(0))
+  for (const target of receivers.splice(0)) {
     await target.close().catch((error) => failures.push(`closing a receiver: ${error.message}`));
+  }
   if (hooks.length) {
     const call = await requestAdmin(request);
     for (const id of hooks.splice(0)) {
       const response = await call(`/api/webhooks/${id}`, "DELETE").catch((error) => ({
         status: error.message,
       }));
-      if (response.status !== 200 && response.status !== 404)
+      if (response.status !== 200 && response.status !== 404) {
         failures.push(`deleting webhook ${id}: ${response.status}`);
+      }
     }
   }
-  if (failures.length) throw new Error(failures.join("\n"));
+  if (failures.length) {
+    throw new Error(failures.join("\n"));
+  }
 }
 
 // The run shares one database: a later spec expects bounces as this one found them.
@@ -119,7 +123,9 @@ test.afterEach(async ({ page, context, request }) => {
     "webhooks.block_private_addresses": before["webhooks.block_private_addresses"],
     "bounce.actions": before["bounce.actions"],
   });
-  if (leftover) throw leftover;
+  if (leftover) {
+    throw leftover;
+  }
 });
 
 test("applies bounce actions by type and lists what was recorded", async ({ page }) => {
@@ -310,7 +316,9 @@ test("rejects invalid scopes, preserves explicit IDs, and uses bounce permission
   const list = await makeList(page);
   const subs = [await makeSub(page, list.id), await makeSub(page, list.id)];
   const source = unique("scope");
-  for (const sub of subs) await postBounce(page, { source, type: "soft", email: sub.email });
+  for (const sub of subs) {
+    await postBounce(page, { source, type: "soft", email: sub.email });
+  }
   const bounces = (await ok(page, `/api/bounces?source=${source}`)).results;
   expect(bounces).toHaveLength(2);
   for (const url of ["?all=true&campaign_id=invalid", "?all=true&id=invalid", ""]) {
@@ -320,7 +328,9 @@ test("rejects invalid scopes, preserves explicit IDs, and uses bounce permission
   const absent = unique("missing");
   await ok(page, `/api/bounces?all=true&source=${absent}`, "DELETE");
   await ok(page, `/api/bounces/blocklist?source=${absent}`, "PUT");
-  for (const sub of subs) expect(await subStatus(page, sub.id)).toBe("enabled");
+  for (const sub of subs) {
+    expect(await subStatus(page, sub.id)).toBe("enabled");
+  }
 
   // Upstream calls with an API user's Basic credentials; a session of the same role gives the
   // same permission check, and the CSRF header api() sends.
@@ -407,7 +417,9 @@ for (const filter of [
       await expect(bounceRow(page)).toHaveCount(20);
       await page.locator("thead input[type=checkbox]").check();
       await page.getByTestId("btn-bulk-actions").click();
-      if (filter !== "selected IDs") await page.getByTestId("select-all-bounces").click();
+      if (filter !== "selected IDs") {
+        await page.getByTestId("select-all-bounces").click();
+      }
       if (filter === "deselected row") {
         await page.getByTestId("btn-bulk-actions").click();
         await bounceRow(page).first().locator("input[name=id]").uncheck();

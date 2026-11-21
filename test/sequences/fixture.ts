@@ -43,7 +43,8 @@ import { registerSequenceRoutes } from "@/sequences/routes";
 import { createTestSends } from "@/messaging/test-sends";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
-import { createMarketingPolicy, type MarketingSettings } from "@/unsubscribe/policy";
+import { createMarketingPolicy } from "@/unsubscribe/policy";
+import type { MarketingSettings } from "@/unsubscribe/policy";
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 
@@ -67,7 +68,7 @@ export async function sequencesFixture(
     options.legacy(db);
   }
   runMigrations(db, directory, clock, productionMigrations);
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const app = createApp({
     bootstrap: {
       host: "127.0.0.1",
@@ -114,7 +115,9 @@ export async function sequencesFixture(
   );
   await bootstrapAdmin(users, auth, admin);
   const session = await auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("fixture login failed");
+  }
   const renderer = createRenderer(clock, app.i18n);
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences);
@@ -187,7 +190,7 @@ export async function sequencesFixture(
   registerTxRoutes(router, {
     auth,
     sends,
-    outbox: { dispatch: (ids: bigint[]) => outbox.dispatch(ids) },
+    outbox: { dispatch: (ids: Array<bigint>) => outbox.dispatch(ids) },
     subscribers,
     templates,
     renderer,
@@ -275,19 +278,23 @@ export async function sequencesFixture(
   /** An API user whose role grants exactly `permissions`, optionally with a list role. */
   let roleCount = 0;
   const apiUser = async (
-    permissions: string[],
-    listPermissions?: { id: number; permissions: string[] }[],
+    permissions: Array<string>,
+    listPermissions?: Array<{ id: number; permissions: string[] }>,
   ) => {
     const name = `api-${++roleCount}`;
     const role = await json("/api/roles/users", "POST", { name, permissions });
-    if (role.status !== 200) throw new Error(`role ${role.status}`);
+    if (role.status !== 200) {
+      throw new Error(`role ${role.status}`);
+    }
     let listRole: number | undefined;
     if (listPermissions) {
       const created = await json("/api/roles/lists", "POST", {
         name: `${name}-lists`,
         lists: listPermissions,
       });
-      if (created.status !== 200) throw new Error(`list role ${created.status}`);
+      if (created.status !== 200) {
+        throw new Error(`list role ${created.status}`);
+      }
       listRole = created.body.data.id;
     }
     const user = await json("/api/users", "POST", {
@@ -297,7 +304,9 @@ export async function sequencesFixture(
       user_role_id: role.body.data.id,
       ...(listRole === undefined ? {} : { list_role_id: listRole }),
     });
-    if (user.status !== 200) throw new Error(`user ${user.status}`);
+    if (user.status !== 200) {
+      throw new Error(`user ${user.status}`);
+    }
     return {
       authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}`,
     };
@@ -309,7 +318,9 @@ export async function sequencesFixture(
       subject: type === "tx" ? "Hello" : "",
       body: type === "campaign" ? `${body}{{ content | raw }}` : body,
     });
-    if (created.status !== 200) throw new Error(`template ${created.status}`);
+    if (created.status !== 200) {
+      throw new Error(`template ${created.status}`);
+    }
     return created.body.data.id as number;
   };
   const list = async (name: string) =>
@@ -326,7 +337,9 @@ export async function sequencesFixture(
       name: "Fixture",
       ...extra,
     });
-    if (created.status !== 200) throw new Error(`subscriber ${created.status}`);
+    if (created.status !== 200) {
+      throw new Error(`subscriber ${created.status}`);
+    }
     return created.body.data.id as number;
   };
   const event = (body: object, headers: Record<string, string> = sessionHeaders) =>

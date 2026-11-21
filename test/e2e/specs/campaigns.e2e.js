@@ -60,7 +60,9 @@ async function menu(page, name, action) {
   const item = row(page, name).getByRole("menuitem", { name: action, exact: true });
   // A menu that is closing still reads as visible, so the whole open-and-click is retried.
   await expect(async () => {
-    if (!(await item.isVisible())) await openMenu(row(page, name));
+    if (!(await item.isVisible())) {
+      await openMenu(row(page, name));
+    }
     await item.click({ timeout: 3000 });
   }).toPass({ timeout: 20_000 });
 }
@@ -69,8 +71,11 @@ async function switchFormat(page, format, accept = true) {
   const settings = page.locator('button[popovertarget="content-settings"]');
   await settings.click();
   await page.locator('#content-settings select[name="content_type"]').selectOption(format);
-  if (accept) await confirm(page);
-  else await button(page.locator("dialog[open]"), "Cancel").click();
+  if (accept) {
+    await confirm(page);
+  } else {
+    await button(page.locator("dialog[open]"), "Cancel").click();
+  }
   await settings.click();
 }
 
@@ -119,7 +124,9 @@ for (const format of ["richtext", "html", "markdown", "plain"]) {
   for (const count of [1, 2]) {
     test(`creates, edits and previews ${format} with ${count} list(s)`, async ({ page }) => {
       const lists = [await makeList(page)];
-      if (count > 1) lists.push(await makeList(page, unique("Opt-in list"), "double"));
+      if (count > 1) {
+        lists.push(await makeList(page, unique("Opt-in list"), "double"));
+      }
       const name = unique(`New ${format}`);
       const subject = unique(`Subject ${format}`);
       await page.goto(CAMPAIGNS);
@@ -129,7 +136,9 @@ for (const format of ["richtext", "html", "markdown", "plain"]) {
       await page.getByLabel("Subject", { exact: true }).fill(subject);
       await page.locator('input[name="from_email"]').fill("Sender <sender@example.com>");
       await page.getByRole("combobox", { name: "Format", exact: true }).selectOption(format);
-      for (const list of lists) await selectList(listField(page), list.name);
+      for (const list of lists) {
+        await selectList(listField(page), list.name);
+      }
       for (const tag of ["news", "monthly"]) {
         await page.getByPlaceholder("Tags", { exact: true }).fill(tag);
         await page.getByPlaceholder("Tags", { exact: true }).press("Enter");
@@ -378,8 +387,9 @@ test("clones full content into a draft and cancels cloning and deletion", async 
   await expect(page).toHaveURL(/\/campaigns\/\d+$/);
   const id = Number(new URL(page.url()).pathname.split("/").pop());
   const clone = await campaign(page, id);
-  for (const key of ["subject", "body", "content_type", "altbody", "headers", "attribs", "tags"])
+  for (const key of ["subject", "body", "content_type", "altbody", "headers", "attribs", "tags"]) {
     expect(clone[key]).toEqual(c[key]);
+  }
   expect(clone).toMatchObject({ name, status: "draft" });
   expect(clone.uuid).not.toBe(c.uuid);
   expect(clone.lists.map((l) => l.id)).toEqual(lists);
@@ -401,12 +411,13 @@ test("searches and filters campaigns through the page URL", async ({ page }) => 
     ["Bravo", news],
     ["Alpha", news],
     ["Charlie", other],
-  ])
+  ]) {
     await create(page, { name: `${prefix} ${name}`, tags: [tag] });
+  }
   const alpha = `${prefix} Alpha`;
   const scheduled = await create(page, {
     name: `${prefix} Scheduled`,
-    send_at: new Date(Date.now() + 86400000).toISOString(),
+    send_at: new Date(Date.now() + 86_400_000).toISOString(),
   });
   await ok(page, `/api/campaigns/${scheduled.id}/status`, "PUT", { status: "scheduled" });
   const search = page.getByRole("textbox", { name: "Search", exact: true });
@@ -449,8 +460,9 @@ test("sorts by name and by scheduled date through the timestamp dropdown", async
     Bravo: "2099-01-13T12:00:00.000Z",
     Charlie: "2099-01-12T12:00:00.000Z",
   };
-  for (const [name, send_at] of Object.entries(dates))
+  for (const [name, send_at] of Object.entries(dates)) {
     await create(page, { name: `${prefix} ${name}`, send_at });
+  }
   await page.goto(`${CAMPAIGNS}?query=${prefix}&page=2`);
   const names = (list) => list.map((name) => `${prefix} ${name}`);
   const heading = page.locator(".cy-name").getByRole("link", { name: "Name", exact: true });
@@ -524,7 +536,9 @@ for (const { label, all, filter } of [
     await expect(rows(page).first()).toBeVisible();
     await page.locator('thead input[type="checkbox"]').check();
     await page.locator('button[popovertarget="camp-bulk-actions"]').click();
-    if (all) await page.getByRole("menuitem", { name: /Select all/ }).click();
+    if (all) {
+      await page.getByRole("menuitem", { name: /Select all/ }).click();
+    }
     await page.getByRole("menuitem", { name: /^Delete/ }).click();
     await confirm(page);
     await expect(rows(page)).toHaveCount(0);
@@ -567,7 +581,7 @@ test("uploads an attachment, persists it and delivers it when starting from the 
   const [mail] = await mailFor(emails[0]);
   expect(mail.body).toContain(filename);
   await expect
-    .poll(async () => (await campaign(page, c.id)).status, { timeout: 20000 })
+    .poll(async () => (await campaign(page, c.id)).status, { timeout: 20_000 })
     .toBe("finished");
   await page.goto(`${CAMPAIGNS}?query=${c.name}`);
   await expect(row(page, c.name)).toContainText("Finished");

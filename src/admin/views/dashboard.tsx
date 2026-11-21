@@ -4,7 +4,8 @@
 // /api/dashboard/*: each section waits and fails alone, and its text goes in through x-text.
 import { Icon } from "@/admin/layout/icon";
 import type { AdminView } from "@/admin/page";
-import { systemStats, type SystemStats } from "@/admin/system";
+import { systemStats } from "@/admin/system";
+import type { SystemStats } from "@/admin/system";
 import { Alert, EmptyState } from "@/admin/views/parts";
 import type { Translation } from "@/i18n/i18n";
 
@@ -52,9 +53,7 @@ function Stat(props: {
             value
           )}
         </div>
-        {props.children ? (
-          <dl class="stat-meta hstack justify-between">{props.children as never}</dl>
-        ) : null}
+        {props.children ? <dl class="stat-meta hstack justify-between">{props.children}</dl> : null}
       </article>
     </div>
   );

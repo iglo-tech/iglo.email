@@ -10,7 +10,7 @@ import { createRenderer } from "@/templates/renderer";
 import { markdownCorpus } from "@/test/templates/markdown-corpus";
 import { newsletter } from "@/test/templates/markdown-newsletter";
 
-const pinned: string[] = [
+const pinned: Array<string> = [
   "fd6c83adc06e4baecc889e105f2b9f8d1a477c41ce71ac814a7f73f434cfe6d8 175",
   "3df31e0027c42e4339285098c4060924398959a798366a678e13d103e21586ef 118",
   "169d83a14c556f57cc937252b176c68843a30fe4e7fc085521a112f7ec6fafe9 115",
@@ -49,7 +49,7 @@ const pinned: string[] = [
 test("ordinary Markdown renders as pinned", async () => {
   const renderer = createRenderer(createRealClock(), createTranslation());
   expect(markdownCorpus.length).toBe(pinned.length);
-  const actual: string[] = [];
+  const actual: Array<string> = [];
   for (const body of markdownCorpus) {
     try {
       const { body: html } = await renderer.render({ body, data: "{}", mode: "markdown" });
@@ -65,8 +65,8 @@ test("ordinary Markdown renders as pinned", async () => {
 // limit admits. Each line is the SHA-256 and byte length of the HTML this renderer produces.
 const newsletterPinned = [
   ["4", "b6751f21c9726be5138c9677c38f186a26f5ca43891231c278af85f7944bea70", 4975],
-  ["16", "7f231e39ed737d047baeb2da6c887f02631d35ebe0e8ea3243c0dbfb5ae1258f", 21395],
-  ["64", "dd34f01cea6c48937cdc6360997062bb518929c56efd6792e0985b48bd8a08d4", 89054],
+  ["16", "7f231e39ed737d047baeb2da6c887f02631d35ebe0e8ea3243c0dbfb5ae1258f", 21_395],
+  ["64", "dd34f01cea6c48937cdc6360997062bb518929c56efd6792e0985b48bd8a08d4", 89_054],
 ] as const;
 
 test("realistic newsletters render exactly as pinned, up to 64 KiB", async () => {

@@ -3,11 +3,14 @@
 // the private list is never named. The mail comes from the scheduler and the SMTP sink, and the link
 // is read from the send the scheduler wrote, through the public route.
 import { afterEach, expect, test } from "bun:test";
-import { schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();

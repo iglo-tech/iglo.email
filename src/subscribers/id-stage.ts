@@ -25,27 +25,33 @@ const PREFIX = "q-";
 /** A read-only sequence of IDs, in memory or on disk. `close` frees the disk file. */
 export interface IdList {
   readonly length: number;
-  slice(start: number, end: number): bigint[];
+  slice(start: number, end: number): Array<bigint>;
   close(): void;
 }
 
-export function memoryIds(ids: bigint[]): IdList {
+export function memoryIds(ids: Array<bigint>): IdList {
   return { length: ids.length, slice: (start, end) => ids.slice(start, end), close() {} };
 }
 
 /** IDs `[start, end)` of the file behind `fd`, by position. */
-export function readIds(fd: number, start: number, end: number): bigint[] {
+export function readIds(fd: number, start: number, end: number): Array<bigint> {
   const count = Math.max(0, end - start);
-  if (!count) return [];
+  if (!count) {
+    return [];
+  }
   const buffer = Buffer.allocUnsafe(count * WIDTH);
   let filled = 0;
   while (filled < buffer.length) {
     const got = readSync(fd, buffer, filled, buffer.length - filled, start * WIDTH + filled);
-    if (got === 0) break;
+    if (got === 0) {
+      break;
+    }
     filled += got;
   }
-  const ids: bigint[] = [];
-  for (let at = 0; at + WIDTH <= filled; at += WIDTH) ids.push(buffer.readBigInt64LE(at));
+  const ids: Array<bigint> = [];
+  for (let at = 0; at + WIDTH <= filled; at += WIDTH) {
+    ids.push(buffer.readBigInt64LE(at));
+  }
   return ids;
 }
 
@@ -56,7 +62,9 @@ export function fileIds(fd: number, length = Math.floor(fstatSync(fd).size / WID
     length,
     slice: (start, end) => readIds(fd, start, Math.min(end, length)),
     close() {
-      if (!open) return;
+      if (!open) {
+        return;
+      }
       open = false;
       closeSync(fd);
     },
@@ -71,7 +79,9 @@ export function createIdWriter(path: string) {
   let written = 0;
   const flush = () => {
     let at = 0;
-    while (at < used) at += writeSync(fd, buffer, at, used - at);
+    while (at < used) {
+      at += writeSync(fd, buffer, at, used - at);
+    }
     written += used / WIDTH;
     used = 0;
   };
@@ -79,7 +89,9 @@ export function createIdWriter(path: string) {
     push(id: bigint) {
       buffer.writeBigInt64LE(id, used);
       used += WIDTH;
-      if (used === buffer.length) flush();
+      if (used === buffer.length) {
+        flush();
+      }
     },
     /** Write what is buffered; returns the total written so far. */
     flush(): number {
@@ -96,8 +108,9 @@ export function createIdWriter(path: string) {
 /** Create the staging directory and remove files that an earlier run left behind. */
 export function prepareStageDir(dir: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  for (const name of readdirSync(dir))
+  for (const name of readdirSync(dir)) {
     if (name.startsWith(PREFIX)) rmSync(join(dir, name), { force: true });
+  }
 }
 
 let counter = 0;
@@ -123,7 +136,9 @@ export function stageRows(dir: string, rows: Iterable<bigint>): IdList {
   const writer = createIdWriter(path);
   let fd: number;
   try {
-    for (const id of rows) writer.push(id);
+    for (const id of rows) {
+      writer.push(id);
+    }
     writer.flush();
     writer.close();
     fd = openAndUnlink(path);

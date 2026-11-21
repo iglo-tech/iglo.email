@@ -11,14 +11,15 @@ type Segment = { name: string } | { literal: string };
 interface Route {
   readonly method: Method;
   readonly path: string;
-  readonly segments: Segment[];
+  readonly segments: Array<Segment>;
   readonly handler: Handler;
-  readonly middleware: Middleware[];
+  readonly middleware: Array<Middleware>;
 }
 
-function segments(path: string): Segment[] {
-  if (!path.startsWith("/") || path.includes("?") || path.includes("#"))
+function segments(path: string): Array<Segment> {
+  if (!path.startsWith("/") || path.includes("?") || path.includes("#")) {
     throw new Error("Invalid route path");
+  }
   const names = new Set<string>();
   return path === "/"
     ? []
@@ -28,8 +29,9 @@ function segments(path: string): Segment[] {
         .map((part) => {
           if (part.startsWith(":")) {
             const name = part.slice(1);
-            if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || names.has(name))
+            if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || names.has(name)) {
               throw new Error("Invalid route parameter");
+            }
             names.add(name);
             return { name };
           }
@@ -38,17 +40,23 @@ function segments(path: string): Segment[] {
 }
 
 function precedence(a: Route, b: Route): number {
-  if (a.segments.length !== b.segments.length) return a.segments.length - b.segments.length;
+  if (a.segments.length !== b.segments.length) {
+    return a.segments.length - b.segments.length;
+  }
   for (let i = 0; i < a.segments.length; i++) {
     const left = a.segments[i]!;
     const right = b.segments[i]!;
-    if ("literal" in left !== "literal" in right) return "literal" in left ? -1 : 1;
+    if ("literal" in left !== "literal" in right) {
+      return "literal" in left ? -1 : 1;
+    }
   }
   return 0;
 }
 
 function routingPath(path: string): string | undefined {
-  if (/%(?![0-9A-Fa-f]{2})/.test(path)) return undefined;
+  if (/%(?![0-9A-Fa-f]{2})/.test(path)) {
+    return undefined;
+  }
   let decoded: string;
   try {
     decoded = decodeURIComponent(path);
@@ -57,23 +65,29 @@ function routingPath(path: string): string | undefined {
   }
   // Go retains RawPath only when the spelling differs from its default escape.
   // Echo prefers that original path and does not further unescape parameters.
-  const escaped = encodeURI(decoded).replace(
+  const escaped = encodeURI(decoded).replaceAll(
     /[!'()*?#]/g,
     (value) => `%${value.charCodeAt(0).toString(16).toUpperCase()}`,
   );
   return escaped === path ? decoded : path;
 }
 
-function match(route: Route, parts: string[]): Record<string, string> | undefined {
-  if (parts.length !== route.segments.length) return undefined;
+function match(route: Route, parts: Array<string>): Record<string, string> | undefined {
+  if (parts.length !== route.segments.length) {
+    return undefined;
+  }
   const params: Record<string, string> = Object.create(null);
   for (let i = 0; i < parts.length; i++) {
     const segment = route.segments[i]!;
     const part = parts[i]!;
     if ("literal" in segment) {
-      if (part !== segment.literal) return undefined;
+      if (part !== segment.literal) {
+        return undefined;
+      }
     } else {
-      if (!part) return undefined;
+      if (!part) {
+        return undefined;
+      }
       params[segment.name] = part;
     }
   }
@@ -81,9 +95,9 @@ function match(route: Route, parts: string[]): Record<string, string> | undefine
 }
 
 export class Router {
-  private readonly routes: Route[] = [];
-  private readonly middleware: Middleware[] = [];
-  private readonly missing: { prefix: string; handler: Handler }[] = [];
+  private readonly routes: Array<Route> = [];
+  private readonly middleware: Array<Middleware> = [];
+  private readonly missing: Array<{ prefix: string; handler: Handler }> = [];
 
   /**
    * Echo's RouteNotFound: answers unmatched paths under a prefix, instead of the public 404. The
@@ -95,15 +109,15 @@ export class Router {
   }
 
   /** Every registered route, in no particular order. Read-only: the document's coverage test. */
-  list(): readonly { method: string; path: string }[] {
+  list(): ReadonlyArray<{ method: string; path: string }> {
     return this.routes.map(({ method, path }) => ({ method, path }));
   }
 
-  use(...middleware: Middleware[]): void {
+  use(...middleware: Array<Middleware>): void {
     this.middleware.push(...middleware);
   }
 
-  route(method: Method, path: string, handler: Handler, ...middleware: Middleware[]): void {
+  route(method: Method, path: string, handler: Handler, ...middleware: Array<Middleware>): void {
     const route = { method, path, segments: segments(path), handler, middleware };
     if (
       this.routes.some(
@@ -117,8 +131,9 @@ export class Router {
               : "literal" in other && part.literal === other.literal;
           }),
       )
-    )
+    ) {
       throw new Error(`Duplicate route: ${method} ${path}`);
+    }
     this.routes.push(route);
     this.routes.sort(precedence);
   }
@@ -136,16 +151,19 @@ export class Router {
   private async respond(app: App, request: Request, peerAddress: string): Promise<Response> {
     const url = new URL(request.url);
     const path = routingPath(url.pathname);
-    if (path === undefined)
+    if (path === undefined) {
       return new Response("400 Bad Request", {
         status: 400,
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
+    }
     const parts = path === "/" ? [] : path.slice(1).split("/");
     let selected: Route | undefined;
     let params: Record<string, string> = {};
     for (const route of this.routes) {
-      if (route.method !== request.method) continue;
+      if (route.method !== request.method) {
+        continue;
+      }
       const found = match(route, parts);
       if (found) {
         selected = route;
@@ -155,9 +173,13 @@ export class Router {
     }
     const context: RequestContext = { app, request, url, params, peerAddress };
     const fallback: Handler = () => {
-      if (url.pathname.startsWith("/api/")) throw new HttpError(404, "404 unknown endpoint");
+      if (url.pathname.startsWith("/api/")) {
+        throw new HttpError(404, "404 unknown endpoint");
+      }
       const asset = assetResponse(url.pathname, request.method);
-      if (asset) return asset;
+      if (asset) {
+        return asset;
+      }
       const missing = this.missing
         .filter(({ prefix }) => url.pathname.startsWith(prefix))
         .sort((a, b) => b.prefix.length - a.prefix.length)[0];
@@ -181,7 +203,9 @@ export class Router {
     try {
       return await dispatch(0);
     } catch (error) {
-      if (error instanceof HttpError) return errorResponse(error, request.method);
+      if (error instanceof HttpError) {
+        return errorResponse(error, request.method);
+      }
       app.logger.error(error);
       return errorResponse(new HttpError(500), request.method);
     }

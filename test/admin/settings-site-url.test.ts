@@ -2,7 +2,8 @@
 // default, takes an absolute http(s) URL under the root URL rules (D107), and a rejected value
 // changes nothing and does not echo a credential. Public boundaries only: the settings API.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, api, get, login, type Fixture } from "@/test/admin/support";
+import { admin, api, get, login } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;

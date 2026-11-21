@@ -6,7 +6,9 @@ import { provisionApiUser, withProduction } from "@/test/contract/owned";
 
 const admin = { user: "empty-values-admin", password: "empty-values-synthetic-password" };
 function check(value: unknown, name: string): asserts value {
-  if (!value) throw new Error(`FAIL ${name}`);
+  if (!value) {
+    throw new Error(`FAIL ${name}`);
+  }
   process.stdout.write(`PASS ${name}\n`);
 }
 await withProduction(

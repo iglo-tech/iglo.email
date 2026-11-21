@@ -11,7 +11,8 @@ import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { dueBetween } from "@/analytics/schedule";
 import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
 import { createRouter, startServer } from "@/server/server";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
 
 const DAY = 86_400_000;
 let f: CampaignsFixture;
@@ -65,7 +66,9 @@ const view = async (
 /** Sign in again after moving the clock past the session's lifetime. */
 const relogin = async () => {
   const session = await f.owners.auth.login("fixture-admin", "fixture-admin-password");
-  if (!session || !("id" in session)) throw new Error("login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("login failed");
+  }
   headers = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
 };
 const data = async (path: string) => {
@@ -241,8 +244,12 @@ test("sends group by template and by sequence step; only sent ones count as send
   const three = send(welcome, first);
   send(welcome, second);
   const linkId = owners.tracking.get(owners.tracking.link("https://example.test/")!)!.id;
-  for (const id of [one, one, two, three, three]) owners.tracking.view(id, null);
-  for (const id of [two, two]) owners.tracking.click(id, linkId, null);
+  for (const id of [one, one, two, three, three]) {
+    owners.tracking.view(id, null);
+  }
+  for (const id of [two, two]) {
+    owners.tracking.click(id, linkId, null);
+  }
 
   expect(await data(`/api/sends/analytics?${wide}`)).toEqual([
     {
@@ -299,7 +306,7 @@ test("sequence counts are per page of IDs, per step, and leave test enrollments 
   const { db } = f;
   const owners = f.owners;
   const at = "2026-01-02T00:00:00.000Z";
-  const one = (sql: string, ...args: (string | number | bigint | null)[]) =>
+  const one = (sql: string, ...args: Array<string | number | bigint | null>) =>
     (db.query(sql).get(...args) as { id: bigint }).id;
   const subscriber = await f.subscriber("counts@example.test", []);
   const other = await f.subscriber("counts-other@example.test", []);
@@ -346,12 +353,17 @@ test("sequence counts are per page of IDs, per step, and leave test enrollments 
   send(real, second, "skipped");
   const hidden = send(trial, first, "sent");
   const link = owners.tracking.get(owners.tracking.link("https://example.test/")!)!.id;
-  for (const id of [sent, sent, hidden]) owners.tracking.view(id, null);
+  for (const id of [sent, sent, hidden]) {
+    owners.tracking.view(id, null);
+  }
   owners.tracking.click(sent, link, null);
 
   const counts = await data(`/api/sequences/counts?id=${sequence}`);
   const byStatus = Object.fromEntries(
-    (counts.enrollments as { status: string; count: number }[]).map((r) => [r.status, r.count]),
+    (counts.enrollments as Array<{ status: string; count: number }>).map((r) => [
+      r.status,
+      r.count,
+    ]),
   );
   expect(byStatus).toEqual({ active: 1, completed: 1, exited: 1 });
   const row = (id: bigint, position: number, sentCount: number, skipped: number, seen: number) => ({
@@ -374,7 +386,7 @@ test("sequence counts are per page of IDs, per step, and leave test enrollments 
 
 test("the refresh loop runs on the interval and keeps numbers still between runs", async () => {
   options.cacheSlowQueries = true;
-  const logged: unknown[] = [];
+  const logged: Array<unknown> = [];
   const settings = { enabled: true, interval: "TZ=UTC 0 4 * * *" };
   const loop = startSummaryRefresh({
     clock: f.clock,
@@ -430,7 +442,7 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
 test("a refresh that fails is logged, keeps the old rows and leaves the loop running", async () => {
   const failing = createAnalyticsReader({ path: "/nonexistent/iglo.db" });
   const broken = createSummaries(f.db, f.clock, failing);
-  const logged: unknown[] = [];
+  const logged: Array<unknown> = [];
   const loop = startSummaryRefresh({
     clock: f.clock,
     logger: {
@@ -440,7 +452,9 @@ test("a refresh that fails is logged, keeps the old rows and leaves the loop run
     summaries: broken,
     settings: () => ({ enabled: true, interval: "@hourly" }),
   });
-  for (let i = 0; i < 400 && !logged.length; i++) await Bun.sleep(5);
+  for (let i = 0; i < 400 && !logged.length; i++) {
+    await Bun.sleep(5);
+  }
   expect(logged[0]).toBeInstanceOf(ReaderError);
   await f.clock.whenSleeping();
   f.clock.advance(60_000);
@@ -556,7 +570,7 @@ const ended = (done: Promise<void>) =>
 /** The refresh loop with the cached dashboard behind it, driven by the fake clock. */
 function refreshing(interval: string) {
   options.cacheSlowQueries = true;
-  const logged: unknown[] = [];
+  const logged: Array<unknown> = [];
   const settings = { enabled: true, interval };
   const loop = startSummaryRefresh({
     clock: f.clock,
@@ -574,7 +588,7 @@ function refreshing(interval: string) {
     /** Let the loop reach its sleep, move the clock, and wait for what that woke to finish. */
     async tick(ms: number) {
       const settled = () =>
-        Promise.race([f.clock.whenSleeping(), loop.done.catch(() => {}), Bun.sleep(2_000)]);
+        Promise.race([f.clock.whenSleeping(), loop.done.catch(() => {}), Bun.sleep(2000)]);
       await settled();
       f.clock.advance(ms);
       await Bun.sleep(1);
@@ -642,8 +656,11 @@ test("every zone the settings accept can be evaluated", () => {
     // An empty location is UTC to Go's time.LoadLocation, not the system zone.
     expect(due("")).toBe(true);
   } finally {
-    if (system === undefined) delete process.env.TZ;
-    else process.env.TZ = system;
+    if (system === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = system;
+    }
   }
 });
 
@@ -653,7 +670,7 @@ test("@every shorter than a minute refreshes on time", async () => {
     await refresh.tick(0);
     expect(await refresh.lists()).toBe(0);
     await f.list("one");
-    await refresh.tick(4_999);
+    await refresh.tick(4999);
     expect(await refresh.lists()).toBe(0);
     await refresh.tick(1);
     expect(await refresh.lists()).toBe(1);
@@ -699,9 +716,9 @@ test("a send counts on the day it was delivered, not the day it was queued", asy
     .run(template, step);
   const sends = async (from: string, to: string, group: string) =>
     (
-      (await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as {
+      (await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as Array<{
         sends: number;
-      }[]
+      }>
     ).map((row) => row.sends);
   for (const group of ["template", "step"]) {
     expect(await sends("2026-01-02", "2026-01-03", group)).toEqual([1]);
@@ -750,10 +767,12 @@ const alive = (pid: number) => {
   }
 };
 const until = async (condition: () => boolean) => {
-  for (let i = 0; i < 400 && !condition(); i++) await Bun.sleep(5);
+  for (let i = 0; i < 400 && !condition(); i++) {
+    await Bun.sleep(5);
+  }
   expect(condition()).toBe(true);
 };
-const kinds = async (reads: Promise<unknown>[]) =>
+const kinds = async (reads: Array<Promise<unknown>>) =>
   (await Promise.allSettled(reads)).map((result) =>
     result.status === "rejected" ? (result.reason as ReaderError).kind : "read",
   );
@@ -808,7 +827,7 @@ test("a client that disconnects takes its read with it", async () => {
   const owned = createAnalyticsReader({
     path: "x",
     command: child.command,
-    timeoutMs: 2_000,
+    timeoutMs: 2000,
   });
   const router = createRouter();
   registerAnalyticsRoutes(router, {
@@ -842,7 +861,7 @@ test("output over the cap is refused whole and the child is killed", async () =>
   const big = createAnalyticsReader({
     path: "x",
     command: ["sh", "-c", "head -c 100000 /dev/zero; exec sleep 30"],
-    maxOutputBytes: 1_000,
+    maxOutputBytes: 1000,
     timeoutMs: 300,
   });
   await expect(big.read("dashboardCounts", [])).rejects.toMatchObject({
@@ -867,8 +886,8 @@ test("a child above the memory limit is killed", async () => {
       "-e",
       "const b = Buffer.alloc(120 * 1048576, 1); await Bun.sleep(30000); console.log(b.length)",
     ],
-    memoryBytes: 80 * 1048576,
-    timeoutMs: 3_000,
+    memoryBytes: 80 * 1_048_576,
+    timeoutMs: 3000,
   });
   await expect(hungry.read("dashboardCounts", [])).rejects.toMatchObject({
     kind: "limit",
@@ -901,7 +920,7 @@ test("a read over a limit is a clean error, never a partial body", async () => {
   const big = createAnalyticsReader({
     path: "x",
     command: ["sh", "-c", `printf '{"data":['; head -c 100000 /dev/zero | tr '\\0' 1`],
-    maxOutputBytes: 1_000,
+    maxOutputBytes: 1000,
   });
   const router = createRouter();
   registerAnalyticsRoutes(router, {

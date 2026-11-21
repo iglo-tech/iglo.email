@@ -5,12 +5,15 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { createRateLimit, createThrottle } from "@/public/rate-limit";
 import { createClientAddress } from "@/server/client-address";
 import { imagePng } from "@/test/media/images";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();
@@ -36,8 +39,9 @@ test("each limit is per peer, answers 429 and reopens on the clock", async () =>
   const f = await open();
   const list = await f.list("News");
   const bad = form({ email: "bad", l: list.uuid });
-  for (let i = 0; i < 5; i++)
+  for (let i = 0; i < 5; i++) {
     expect((await f.post("/subscription/form", bad, "192.0.2.7")).status).toBe(400);
+  }
   const limited = await f.post("/subscription/form", bad, "192.0.2.7");
   expect(limited.status).toBe(429);
   expect(limited.headers.get("retry-after")).toBe("60");
@@ -64,8 +68,9 @@ const forwarded = (f: PublicFixture, peer: string, chain: string) =>
 test("a forwarded header from an untrusted peer is ignored, however it varies", async () => {
   const f = await open();
   f.overrides.trustedProxies = ["10.0.0.0/8"];
-  for (let i = 0; i < 5; i++)
+  for (let i = 0; i < 5; i++) {
     expect((await forwarded(f, "192.0.2.50", `203.0.113.${i}`)).status).toBe(400);
+  }
   expect((await forwarded(f, "192.0.2.50", "203.0.113.99")).status).toBe(429);
   expect((await forwarded(f, "192.0.2.51", "203.0.113.99")).status).toBe(400);
 });
@@ -73,8 +78,9 @@ test("a forwarded header from an untrusted peer is ignored, however it varies", 
 test("behind trusted proxies one visitor exhausts only their own budget", async () => {
   const f = await open();
   f.overrides.trustedProxies = ["10.0.0.0/8", "2001:db8::/32"];
-  for (let i = 0; i < 5; i++)
+  for (let i = 0; i < 5; i++) {
     expect((await forwarded(f, "10.0.0.1", "203.0.113.1")).status).toBe(400);
+  }
   expect((await forwarded(f, "10.0.0.1", "203.0.113.1")).status).toBe(429);
   // Another visitor through the same proxy still has theirs.
   expect((await forwarded(f, "10.0.0.1", "203.0.113.2")).status).toBe(400);
@@ -226,7 +232,9 @@ test("opt-in, unsubscribe and privacy POSTs are limited too", async () => {
     `/subscription/${dummy}/${missing}`,
     `/subscription/${dummy}/export/${missing}`,
   ]) {
-    for (let i = 0; i < 5; i++) expect((await f.post(path)).status).toBe(404);
+    for (let i = 0; i < 5; i++) {
+      expect((await f.post(path)).status).toBe(404);
+    }
     expect((await f.post(path)).status).toBe(429);
   }
   // Export and wipe share their budget.
@@ -243,7 +251,9 @@ test("the limiter stays bounded without locking out new peers", () => {
   });
   expect(check("a")).toBe(0);
   expect(check("a")).toBeGreaterThan(0);
-  for (const peer of ["b", "c", "d"]) expect(check(peer)).toBe(0);
+  for (const peer of ["b", "c", "d"]) {
+    expect(check(peer)).toBe(0);
+  }
   // "a" was evicted as the oldest, so a flood cannot grow the table or block anyone.
   expect(check("a")).toBe(0);
   expect(check("d")).toBeGreaterThan(0);
@@ -334,7 +344,9 @@ test("the opt-in queue is bounded and a wipe beats a queued signup", async () =>
   await f.fresh(await paired(f, gone, "wipe"));
   await f.drain();
   expect(f.mailTo("gone@example.test")).toHaveLength(0);
-  for (let id = 1n; id <= 6000n; id++) f.mail.acceptSignup(id);
+  for (let id = 1n; id <= 6000n; id++) {
+    f.mail.acceptSignup(id);
+  }
   expect(f.mail.queued()).toBe(5000);
 });
 
@@ -343,7 +355,9 @@ test("a full opt-in budget refuses new keys instead of mailing unrecorded", () =
   const allow = createThrottle(clock, 10 * minute, 2);
   expect(allow("a")).toBe(true);
   expect(allow("b")).toBe(true);
-  for (let i = 0; i < 3; i++) expect(allow("c")).toBe(false);
+  for (let i = 0; i < 3; i++) {
+    expect(allow("c")).toBe(false);
+  }
   expect(allow("a")).toBe(false);
   clock.advance(10 * minute);
   expect(allow("c")).toBe(true);
@@ -364,14 +378,14 @@ test("a signup answer never reveals an existing subscriber", async () => {
     const response = await api(f, email, list.uuid);
     answers.push([response.status, await response.text()]);
   }
-  expect(answers[1]).toEqual(answers[0]!);
-  expect(answers[2]).toEqual(answers[0]!);
+  expect(answers[1]).toEqual(answers[0]);
+  expect(answers[2]).toEqual(answers[0]);
   const posts = [];
   for (const email of ["new2@example.test", "known@example.test"]) {
     const response = await f.fresh("/subscription/form", form({ email, l: list.uuid }));
     posts.push(await response.text());
   }
-  expect(posts[1]).toBe(posts[0]!);
+  expect(posts[1]).toBe(posts[0]);
   expect(await f.status(known, list.id)).toBe("confirmed");
   await f.drain();
   expect(f.mailTo("blocked@example.test")).toHaveLength(0);
@@ -500,7 +514,7 @@ test("export mail is throttled per subscriber, whatever the peer: one mail a win
   const path = await paired(f, id, "export");
   // Twelve requests from three peers, four each: no peer reaches its own limit, so only the
   // per-subscriber throttle can hold the mail back. Every answer is the same page (no oracle).
-  const answers: string[] = [];
+  const answers: Array<string> = [];
   for (let i = 0; i < 12; i++) {
     const response = await f.post(path, "", `203.0.113.${(i % 3) + 1}`);
     expect(response.status).toBe(200);
@@ -571,7 +585,7 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
   expect(f.db.query("SELECT * FROM sends ORDER BY id").all()).toEqual(before);
   f.db.run("DROP TRIGGER wipe_fails");
 
-  const counts = sendCounts(f) as { status: string; n: bigint }[];
+  const counts = sendCounts(f) as Array<{ status: string; n: bigint }>;
   expect((await f.fresh(await paired(f, id, "wipe"))).status).toBe(200);
   for (const send of [...Object.values(rows), unlinked]) {
     const { data } = (await f.json(`/api/sends/${send}`)).body;
@@ -583,11 +597,11 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
     f.db.query("SELECT count(*) AS n FROM sends WHERE payload IS NOT NULL AND id != ?").get(other),
   ).toEqual({ n: 0n });
   // Row counts and settled statuses stay; only queued mail is cancelled.
-  const after = f.db.query("SELECT id, status, skip_reason FROM sends ORDER BY id").all() as {
+  const after = f.db.query("SELECT id, status, skip_reason FROM sends ORDER BY id").all() as Array<{
     id: bigint;
     status: string;
     skip_reason: string | null;
-  }[];
+  }>;
   expect(after).toHaveLength(before.length);
   expect(after.find((row) => row.id === rows.queued)).toEqual({
     id: rows.queued!,
@@ -607,8 +621,9 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
   );
   expect((await f.json(`/api/sends/${other}`)).body.data.to_email).toBe("kept@example.test");
   // Nothing wiped can go out again.
-  for (const send of [rows.failed!, rows.unknown!])
+  for (const send of [rows.failed!, rows.unknown!]) {
     expect((await f.json(`/api/sends/${send}/resend`, "POST", {})).status).toBe(409);
+  }
   await f.drain();
   expect(f.sink.messages).toHaveLength(0);
 });
@@ -671,7 +686,7 @@ test("tx templates get manage_url for subscribers, and it opens preferences", as
   const send = async (body: object) => (await f.tx({ template_id: template, ...body })).status;
   const url = async (to: string) => {
     await f.drain();
-    const text = f.mailTo(to).at(-1)!.data.replace(/=\r\n/g, "").replaceAll("=3D", "=");
+    const text = f.mailTo(to).at(-1)!.data.replaceAll("=\r\n", "").replaceAll("=3D", "=");
     return /\[(.*?)\]/.exec(text)![1]!;
   };
   expect(await send({ subscriber_id: id })).toBe(200);

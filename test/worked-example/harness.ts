@@ -1,7 +1,8 @@
 // Harness for the 05-sequences worked example: the compiled production executable in a temporary
 // directory, a loopback SMTP sink that records when each message arrived, and API helpers.
 // Everything runs against generated data; mail never leaves the loopback sink.
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -13,7 +14,9 @@ export const admin = { user: "worked-admin", password: "worked-example-admin-pas
 
 export class Failure extends Error {}
 export function check(condition: unknown, label: string): asserts condition {
-  if (!condition) throw new Failure(`FAIL worked-example: ${label}`);
+  if (!condition) {
+    throw new Failure(`FAIL worked-example: ${label}`);
+  }
 }
 
 /** The compiled executable, started, stopped and restarted on one data directory and port. */
@@ -57,7 +60,9 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
     );
     const current = child;
     current.stderr!.on("data", (chunk: Buffer) => {
-      if (child === current) errors = (errors + chunk.toString()).slice(-8000);
+      if (child === current) {
+        errors = (errors + chunk.toString()).slice(-8000);
+      }
     });
     exited = new Promise((r) => current.once("exit", (code) => r(code)));
     const deadline = Date.now() + 10_000;
@@ -72,18 +77,25 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
           response.status === 200 &&
           current.pid !== undefined &&
           listensOn(current.pid, listenPort)
-        )
+        ) {
           return;
+        }
       } catch {}
-      if (Date.now() > deadline) throw new Error("production readiness timed out");
+      if (Date.now() > deadline) {
+        throw new Error("production readiness timed out");
+      }
       await Bun.sleep(25);
     }
   };
   /** Graceful stop (SIGTERM); SIGKILL only if it hangs, which fails the run. */
   const stop = async () => {
-    if (!child || !exited) return;
+    if (!child || !exited) {
+      return;
+    }
     const current = child;
-    if (current.exitCode === null && current.signalCode === null) current.kill("SIGTERM");
+    if (current.exitCode === null && current.signalCode === null) {
+      current.kill("SIGTERM");
+    }
     const timer = setTimeout(() => current.kill("SIGKILL"), 15_000);
     const code = await exited;
     clearTimeout(timer);
@@ -128,11 +140,13 @@ export interface Mail {
 /** Unfolded headers plus a quoted-printable-decoded body, as test/unsubscribe decodes mail. */
 function decode(data: string, to: string, at: number): Mail {
   const split = data.indexOf("\r\n\r\n");
-  const headers = data.slice(0, split).replace(/\r\n[ \t]+/g, " ");
+  const headers = data.slice(0, split).replaceAll(/\r\n[ \t]+/g, " ");
   const body = data
     .slice(split + 4)
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   const header = (name: string) =>
     new RegExp(`^${name}: (.*)$`, "mi").exec(headers)?.[1]?.trim() ?? null;
   return { to, subject: header("Subject") ?? "", body, header, at };
@@ -140,7 +154,7 @@ function decode(data: string, to: string, at: number): Mail {
 
 export async function startMailbox() {
   const sink = await startSink();
-  const mails: Mail[] = [];
+  const mails: Array<Mail> = [];
   const poll = setInterval(() => {
     while (mails.length < sink.messages.length) {
       const message = sink.messages[mails.length]!;

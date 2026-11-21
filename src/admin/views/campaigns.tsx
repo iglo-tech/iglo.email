@@ -428,7 +428,9 @@ function TimestampHeading(props: {
     order = sortOrder(params);
   const sortURL = (name: string) => {
     const next = new URLSearchParams(params);
-    for (const key of ["order_by", "order", "page"]) next.delete(key);
+    for (const key of ["order_by", "order", "page"]) {
+      next.delete(key);
+    }
     next.set("order_by", name);
     next.set("order", orderBy === name && order === "asc" ? "desc" : "asc");
     return `${base}?${next}`;

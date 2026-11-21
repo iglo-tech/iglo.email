@@ -18,7 +18,9 @@ export async function runImportContract(target: {
   const reference = target.mode === "reference";
   const suffix = crypto.randomUUID().slice(0, 8);
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL import-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL import-${label}`);
+    }
   };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
@@ -34,7 +36,7 @@ export async function runImportContract(target: {
         ...headers,
         ...(body === undefined || form ? {} : { "content-type": "application/json" }),
       },
-      ...(body === undefined ? {} : { body: form ? (body as FormData) : JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: form ? body : JSON.stringify(body) }),
       signal: AbortSignal.timeout(60_000),
     });
     const text = await response.text();
@@ -48,9 +50,12 @@ export async function runImportContract(target: {
   };
   const form = (params: unknown, content?: BlobPart, name = "subscribers.csv") => {
     const data = new FormData();
-    if (params !== undefined)
+    if (params !== undefined) {
       data.append("params", typeof params === "string" ? params : JSON.stringify(params));
-    if (content !== undefined) data.append("file", new File([content], name));
+    }
+    if (content !== undefined) {
+      data.append("file", new File([content], name));
+    }
     return data;
   };
   const post = (params: unknown, content?: BlobPart, name?: string, headers?: any) =>
@@ -61,7 +66,9 @@ export async function runImportContract(target: {
   const settled = async () => {
     for (const deadline = Date.now() + 60_000; Date.now() < deadline; await Bun.sleep(20)) {
       const current = await status();
-      if (current.status === "finished" || current.status === "failed") return current;
+      if (current.status === "finished" || current.status === "failed") {
+        return current;
+      }
     }
     throw new Error("FAIL import-did-not-settle");
   };
@@ -73,10 +80,10 @@ export async function runImportContract(target: {
     check((await reset()).status === 200, "reset");
     return { ...done, log };
   };
-  const created: number[] = [];
-  const lists: number[] = [];
-  const roles: number[] = [];
-  const users: number[] = [];
+  const created: Array<number> = [];
+  const lists: Array<number> = [];
+  const roles: Array<number> = [];
+  const users: Array<number> = [];
   const list = async (label: string) => {
     const result = await call("/api/lists", "POST", { name: `${label}-${suffix}` });
     check(result.status === 200, "list");
@@ -88,7 +95,9 @@ export async function runImportContract(target: {
     const query = encodeURIComponent(`subscribers.email = '${email}'`);
     const found = await call(`/api/subscribers?query=${query}`);
     const row = found.body.data.results[0];
-    if (row && !created.includes(row.id)) created.push(row.id);
+    if (row && !created.includes(row.id)) {
+      created.push(row.id);
+    }
     return row;
   };
   const membership = (row: any, id: number) =>
@@ -99,7 +108,7 @@ export async function runImportContract(target: {
     created.push(result.body.data.id);
     return result.body.data;
   };
-  const subscribe = (ids: number[], extra: Record<string, unknown> = {}) => ({
+  const subscribe = (ids: Array<number>, extra: Record<string, unknown> = {}) => ({
     mode: "subscribe",
     delim: ",",
     lists: ids,
@@ -211,7 +220,7 @@ export async function runImportContract(target: {
     check(dup.name === "First" && membership(dup, a) === "unconfirmed", "duplicate-first-wins");
 
     // Bad rows are skipped and logged; a bad attribute cell costs only the attributes.
-    const bytes = (...parts: (string | number[])[]) =>
+    const bytes = (...parts: Array<string | number[]>) =>
       Buffer.concat(
         parts.map((part) => (typeof part === "string" ? Buffer.from(part) : Buffer.from(part))),
       );
@@ -240,9 +249,12 @@ export async function runImportContract(target: {
     check(rows.log.includes("skipping line 5"), "rows-log-nul");
     check(rows.log.includes("skipping invalid attributes JSON on line 6"), "rows-log-attribs");
     // Deliberate: upstream quotes the row; this log keeps no personal data.
-    if (!reference) check(!rows.log.includes("@"), "rows-log-no-address");
-    for (const label of ["short", "long", "binary", "nul"])
+    if (!reference) {
+      check(!rows.log.includes("@"), "rows-log-no-address");
+    }
+    for (const label of ["short", "long", "binary", "nul"]) {
       check(!(await subscriber(address(label))), `rows-absent-${label}`);
+    }
     for (const label of ["badjson", "array", "good"]) {
       const row = await subscriber(address(label));
       check(row && Object.keys(row.attribs ?? {}).length === 0, `rows-present-${label}`);
@@ -419,7 +431,9 @@ export async function runImportContract(target: {
     check((await logs()).includes("stop request received"), "stop-log");
     check((await reset()).body.data.status === "none", "stopped-reset");
 
-    if (reference) return;
+    if (reference) {
+      return;
+    }
 
     // ZIP is after v1, and a refused file changes nothing.
     await refused(await post(subscribe([a]), "PK", "subscribers.zip"), 400, "CSV");
@@ -455,8 +469,11 @@ export async function runImportContract(target: {
             ),
           ),
         pull(c) {
-          if (++sent > 120) c.close();
-          else c.enqueue(chunk);
+          if (++sent > 120) {
+            c.close();
+          } else {
+            c.enqueue(chunk);
+          }
         },
       }),
     }).catch(() => null);
@@ -464,8 +481,9 @@ export async function runImportContract(target: {
     check(JSON.stringify(await status()) === JSON.stringify(IDLE), "oversized-idle");
     const temporary = join(target.dataDir!, ".iglo-email-import");
     const drained = async () => {
-      for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20))
+      for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {
         if (!existsSync(temporary) || readdirSync(temporary).length === 0) return true;
+      }
       return false;
     };
     check(await drained(), "temporary-empty");
@@ -486,12 +504,12 @@ export async function runImportContract(target: {
       const queued = await run({ mode: "blocklist", delim: ",", lists: [] }, file);
       check(queued.status === "finished", "hook-import");
       await receiver.waitFor(3);
-      const events = receiver.received.map(
-        (r) => `${r.body.event}:${r.body.data.subscriber.email}`,
+      const events = new Set(
+        receiver.received.map((r) => `${r.body.event}:${r.body.data.subscriber.email}`),
       );
-      check(events.includes(`subscriber.unsubscribed:${address("hooked")}`), "hook-unsubscribed");
-      check(events.includes(`subscriber.blocklisted:${address("hooked")}`), "hook-blocklisted");
-      check(events.includes(`subscriber.blocklisted:${address("hooknew")}`), "hook-new");
+      check(events.has(`subscriber.unsubscribed:${address("hooked")}`), "hook-unsubscribed");
+      check(events.has(`subscriber.blocklisted:${address("hooked")}`), "hook-blocklisted");
+      check(events.has(`subscriber.blocklisted:${address("hooknew")}`), "hook-new");
       const unsub = receiver.received.find((r) => r.body.event === "subscriber.unsubscribed")!;
       check(unsub.body.data.subscriber.id === person.id, "hook-subject");
       check(JSON.stringify(unsub.body.data.list_ids) === JSON.stringify([a]), "hook-lists");
@@ -548,13 +566,17 @@ export async function runImportContract(target: {
       );
       check(staying.status === "finished", "budget-exact");
     } finally {
-      for (const id of hooks) await call(`/api/webhooks/${id}`, "DELETE");
+      for (const id of hooks) {
+        await call(`/api/webhooks/${id}`, "DELETE");
+      }
       receiver.close();
     }
     check(await drained(), "temporary-empty-after");
   } finally {
     await call("/api/import/subscribers", "DELETE");
-    for (const id of users) await call(`/api/users/${id}`, "DELETE");
+    for (const id of users) {
+      await call(`/api/users/${id}`, "DELETE");
+    }
     for (const id of roles) {
       await call(`/api/roles/users/${id}`, "DELETE");
       await call(`/api/roles/lists/${id}`, "DELETE");
@@ -563,19 +585,25 @@ export async function runImportContract(target: {
       query: `subscribers.email LIKE '%${suffix}@example.test'`,
       list_ids: [],
     });
-    for (const id of lists) await call(`/api/lists/${id}`, "DELETE");
+    for (const id of lists) {
+      await call(`/api/lists/${id}`, "DELETE");
+    }
   }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runImportContract({ mode: "reference", baseUrl, credentials: { user, token } });
     process.stdout.write("PASS import reference contract\n");
   } catch (error) {

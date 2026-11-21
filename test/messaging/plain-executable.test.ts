@@ -28,8 +28,12 @@ async function waitFor<T>(read: () => Promise<T | undefined>, what: string): Pro
   const deadline = Date.now() + 20_000;
   for (;;) {
     const value = await read();
-    if (value !== undefined) return value;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (value !== undefined) {
+      return value;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
     await Bun.sleep(25);
   }
 }
@@ -139,7 +143,7 @@ test("a tx template link built from data keeps its & after the HTML escape: text
 test("a multi-list double opt-in mail keeps both list parameters, with & not &amp;", async () => {
   const s = await stack();
   try {
-    const lists: number[] = [];
+    const lists: Array<number> = [];
     for (const name of ["Alpha", "Beta"]) {
       const list = await s.call("/api/lists", "POST", { name, type: "public", optin: "double" });
       lists.push(((await list.json()) as { data: { id: number } }).data.id);
@@ -265,7 +269,7 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
     const asked = performance.now();
     const health = await s.call("/health");
     expect(health.status).toBe(200);
-    expect(performance.now() - asked).toBeLessThan(1_000);
+    expect(performance.now() - asked).toBeLessThan(1000);
     expect((await sending).status).toBe(200);
     // Past the 1024 cap on open elements (D118 r4): the message sends its HTML with no text part.
     expect(await textTo(s, "bold@example.test")).toBeUndefined();

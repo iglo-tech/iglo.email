@@ -5,7 +5,8 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import type { ListReferences } from "@/lists/references";
-import { numberID, type Enrollments } from "@/sequences/enrollments";
+import { numberID } from "@/sequences/enrollments";
+import type { Enrollments } from "@/sequences/enrollments";
 import type { DefinitionInput, SequenceStatus } from "@/sequences/input";
 import type { TemplateStore } from "@/templates/store";
 import sql from "@/sequences/store.sql" with { type: "text" };
@@ -92,7 +93,7 @@ export function createSequenceStore(
 ) {
   const q = prepareNamedQueries(db, [{ name: "sequences/store", sql }]);
   const row = (id: bigint) => q.get("sequence-by-id").get(id) as SequenceRow | null;
-  const steps = (id: bigint) => q.get("steps-by-sequence").all(id) as StepRow[];
+  const steps = (id: bigint) => q.get("steps-by-sequence").all(id) as Array<StepRow>;
   const full = (id: bigint) => {
     const found = row(id);
     return found && { ...summary(found), steps: steps(id).map(step) };
@@ -102,47 +103,62 @@ export function createSequenceStore(
   /** Activation needs current steps whose templates and list still exist. */
   function checkActivatable(id: bigint) {
     const current = steps(id);
-    if (!current.length) throw new SequenceConflict("steps", "an active sequence needs a step");
+    if (!current.length) {
+      throw new SequenceConflict("steps", "an active sequence needs a step");
+    }
     const listId = row(id)!.list_id;
     for (const [i, s] of current.entries()) {
-      if (s.template_id === null || templateType(s.template_id) !== "tx")
+      if (s.template_id === null || templateType(s.template_id) !== "tx") {
         throw new SequenceConflict(
           `steps.${i}.template_id`,
           "must be an existing transactional template",
         );
-      if (s.kind === "marketing" && listId === null)
+      }
+      if (s.kind === "marketing" && listId === null) {
         throw new SequenceConflict("list_id", "is required when a step is marketing");
+      }
     }
   }
   function changeStatus(id: bigint, from: SequenceStatus, to: SequenceStatus) {
-    if (to === "active") checkActivatable(id);
-    if (to === "archived" && from !== "archived") deps.enrollments.archive(id);
+    if (to === "active") {
+      checkActivatable(id);
+    }
+    if (to === "archived" && from !== "archived") {
+      deps.enrollments.archive(id);
+    }
   }
   function writeSteps(id: bigint, input: DefinitionInput, now: string) {
     type Position = { id: bigint; position: bigint };
-    const active = q.get("step-positions").all(id) as Position[];
+    const active = q.get("step-positions").all(id) as Array<Position>;
     const existing = new Set(active.map((r) => r.id));
-    for (const [i, s] of input.steps.entries())
+    for (const [i, s] of input.steps.entries()) {
       if (s.id !== null && !existing.has(s.id))
         throw new SequenceConflict(`steps.${i}.id`, "is not an active step of this sequence");
+    }
     const placed = new Map(input.steps.flatMap((s, i) => (s.id === null ? [] : [[s.id, i]])));
     // A deleted step's position is a cursor: the position of the step that follows it. An
     // enrollment waiting on it continues after its nearest kept predecessor, wherever that now
     // sits, so the cursor stays right across any number of later saves.
     const cursor = (position: bigint) => {
       let before: Position | undefined;
-      for (const r of active)
+      for (const r of active) {
         if (placed.has(r.id) && r.position < position && (!before || r.position > before.position))
           before = r;
+      }
       return before ? placed.get(before.id)! + 1 : 0;
     };
     const removed = active.filter((r) => !placed.has(r.id));
-    const cursors = [...(q.get("pending-deleted-steps").all(id) as Position[]), ...removed].map(
-      (r) => [r.id, cursor(r.position)] as const,
-    );
+    const cursors = [
+      ...(q.get("pending-deleted-steps").all(id) as Array<Position>),
+      ...removed,
+    ].map((r) => [r.id, cursor(r.position)] as const);
     // Removed steps are never hard-deleted: enrollments and sends may point at them.
-    for (const old of removed) q.get("step-delete-soft").run(now, old.id);
-    for (const [step, position] of cursors) q.get("step-cursor").run(position, step);
+    for (const old of removed) {
+      q.get("step-delete-soft").run(now, old.id);
+    }
+    for (const [step, position] of cursors) {
+      q.get("step-cursor").run(position, step);
+    }
     q.get("steps-park").run(id);
     for (const [position, s] of input.steps.entries()) {
       const values = [
@@ -156,8 +172,11 @@ export function createSequenceStore(
         s.maxLate,
         s.aggregates,
       ] as const;
-      if (s.id !== null) q.get("step-update").run(position, ...values, now, s.id);
-      else q.get("step-insert").run(crypto.randomUUID(), id, position, ...values, now, now);
+      if (s.id !== null) {
+        q.get("step-update").run(position, ...values, now, s.id);
+      } else {
+        q.get("step-insert").run(crypto.randomUUID(), id, position, ...values, now, now);
+      }
     }
   }
 
@@ -169,7 +188,7 @@ export function createSequenceStore(
       const status = filter.status ?? null;
       const rows = q
         .get("sequences-page")
-        .all(status, filter.perPage, (filter.page - 1) * filter.perPage) as SequenceRow[];
+        .all(status, filter.perPage, (filter.page - 1) * filter.perPage) as Array<SequenceRow>;
       const total = (q.get("sequences-count").get(status) as { n: bigint }).n;
       return {
         results: rows.map(summary),
@@ -180,9 +199,10 @@ export function createSequenceStore(
     },
     create(input: DefinitionInput) {
       const now = clock.now().toISOString();
-      for (const [i, s] of input.steps.entries())
+      for (const [i, s] of input.steps.entries()) {
         if (s.id !== null)
           throw new SequenceConflict(`steps.${i}.id`, "is not an active step of this sequence");
+      }
       const id = (
         q
           .get("sequence-insert")
@@ -199,13 +219,17 @@ export function createSequenceStore(
           ) as { id: bigint }
       ).id;
       writeSteps(id, input, now);
-      if (input.status === "active") checkActivatable(id);
+      if (input.status === "active") {
+        checkActivatable(id);
+      }
       return full(id)!;
     },
     /** Replace a definition; kept steps keep their IDs. Null when it does not exist. */
     update(id: bigint, input: DefinitionInput) {
       const current = row(id);
-      if (!current) return null;
+      if (!current) {
+        return null;
+      }
       const now = clock.now().toISOString();
       const status = input.status ?? current.status;
       q.get("sequence-update").run(
@@ -224,7 +248,9 @@ export function createSequenceStore(
     },
     setStatus(id: bigint, status: SequenceStatus) {
       const current = row(id);
-      if (!current) return null;
+      if (!current) {
+        return null;
+      }
       const now = clock.now().toISOString();
       q.get("sequence-status").run(status, now, id);
       changeStatus(id, current.status, status);
@@ -232,8 +258,12 @@ export function createSequenceStore(
     },
     /** Delete a sequence that never had enrollments; archive it otherwise. */
     remove(id: bigint): "ok" | "missing" | "enrolled" {
-      if (!row(id)) return "missing";
-      if (q.get("sequence-has-enrollments").get(id)) return "enrolled";
+      if (!row(id)) {
+        return "missing";
+      }
+      if (q.get("sequence-has-enrollments").get(id)) {
+        return "enrolled";
+      }
       q.get("steps-delete").run(id);
       q.get("sequence-delete").run(id);
       return "ok";

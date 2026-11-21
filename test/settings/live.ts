@@ -11,7 +11,9 @@ export async function runSettingsLive(target: {
   const base = target.baseUrl;
   const adminAuth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL settings-live-${label}`);
+    if (!value) {
+      throw new Error(`FAIL settings-live-${label}`);
+    }
   }
   const request = (path: string, method = "GET", body?: unknown, auth = adminAuth) =>
     fetch(base + path, {
@@ -153,14 +155,16 @@ export async function runSettingsLive(target: {
     "external-path-policy",
   );
   const badSmtp = structuredClone(initial.smtp);
-  for (const server of badSmtp) server.enabled = false;
+  for (const server of badSmtp) {
+    server.enabled = false;
+  }
   const before = await get();
   check((await key("smtp", badSmtp)).status === 400, "invalid-smtp");
   check(JSON.stringify(await get()) === JSON.stringify(before), "invalid-atomic");
-  const roles: number[] = [],
-    users: number[] = [];
+  const roles: Array<number> = [],
+    users: Array<number> = [];
   try {
-    async function token(perms: string[]) {
+    async function token(perms: Array<string>) {
       const name = `m12-${crypto.randomUUID()}`;
       const roleResponse = await request("/api/roles/users", "POST", { name, permissions: perms });
       check(roleResponse.status === 200, "role-create");
@@ -267,7 +271,7 @@ export async function runSettingsLive(target: {
       "cookie-origin",
     );
     check((await cookieRequest({ "X-CSRF-Token": csrf.slice(5) })).status === 200, "cookie-valid");
-    async function human(perms: string[]) {
+    async function human(perms: Array<string>) {
       const name = `m12-human-${crypto.randomUUID()}`;
       const roleResponse = await request("/api/roles/users", "POST", { name, permissions: perms });
       check(roleResponse.status === 200, "human-role-create");
@@ -373,7 +377,11 @@ export async function runSettingsLive(target: {
       check((await get())["security.session_duration"] === "1h", "session-policy-restart");
     }
   } finally {
-    for (const id of users) await request(`/api/users/${id}`, "DELETE");
-    for (const id of roles) await request(`/api/roles/users/${id}`, "DELETE");
+    for (const id of users) {
+      await request(`/api/users/${id}`, "DELETE");
+    }
+    for (const id of roles) {
+      await request(`/api/roles/users/${id}`, "DELETE");
+    }
   }
 }

@@ -56,11 +56,11 @@ function rejected(db: Database, sql: string): boolean {
     db.run("ROLLBACK TO probe; RELEASE probe");
   }
 }
-function backupNames(directory: string): string[] {
+function backupNames(directory: string): Array<string> {
   const path = join(directory, "backups");
   return existsSync(path) ? readdirSync(path).filter((name) => name.endsWith(".db")) : [];
 }
-function matches(db: Database, query: string): string[] {
+function matches(db: Database, query: string): Array<string> {
   return db
     .query<{ email: string }, [string]>(
       "SELECT COALESCE(s.email, '<missing:' || f.rowid || '>') AS email FROM subscribers_fts f LEFT JOIN subscribers s ON s.id = f.rowid WHERE subscribers_fts MATCH ? ORDER BY email",
@@ -73,16 +73,18 @@ export function startSchemaFixture(directory: string) {
   const db = openDatabase(directory);
   const clock = new TestClock();
   function status() {
-    const found = db
-      .query<{ name: string }, []>(
-        "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-      .all()
-      .map((row) => row.name);
+    const found = new Set(
+      db
+        .query<{ name: string }, []>(
+          "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    );
     const shapes: Record<string, string[]> = {};
     const counts: Record<string, unknown> = {};
     for (const table of tables) {
-      if (found.includes(table)) {
+      if (found.has(table)) {
         shapes[table] = db
           .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
           .all()
@@ -321,13 +323,17 @@ export function startSchemaFixture(directory: string) {
         now,
       ]);
       const role = scalar(db, "SELECT id FROM roles WHERE name='viewer'");
-      if (typeof role !== "bigint") throw new Error("Missing viewer role");
+      if (typeof role !== "bigint") {
+        throw new Error("Missing viewer role");
+      }
       db.run(
         "INSERT INTO users(username,email,name,user_role_id,status,created_at,updated_at) VALUES ('departed','departed@example.test','Departed',?,'enabled',?,?)",
         [role, now, now],
       );
       const user = scalar(db, "SELECT id FROM users WHERE username='departed'");
-      if (typeof user !== "bigint") throw new Error("Missing departed user");
+      if (typeof user !== "bigint") {
+        throw new Error("Missing departed user");
+      }
       db.run(
         "INSERT INTO sessions(id,data,created_at) VALUES ('retained-user',json_object('user_id',?),?)",
         [user, now],

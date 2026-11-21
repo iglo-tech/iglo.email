@@ -2,12 +2,8 @@
 // controllable emailer that records each push on the injected clock.
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import { createRunnerStore } from "@/campaigns/runner/store";
-import {
-  createCampaignRunnerRegistry,
-  startCampaignRunner,
-  type RunnerDeps,
-  type RunnerSettings,
-} from "@/campaigns/runner/runner";
+import { createCampaignRunnerRegistry, startCampaignRunner } from "@/campaigns/runner/runner";
+import type { RunnerSettings } from "@/campaigns/runner/runner";
 import type { Clock } from "@/clock";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import type { Message, Outcome } from "@/messaging/email";
@@ -26,7 +22,7 @@ export async function runnerFixture(
   const f = await campaignsFixture(options);
   const store = createRunnerStore(f.db);
   const recipients = createCampaignRecipients(f.db);
-  const pushes: Push[] = [];
+  const pushes: Array<Push> = [];
   let inFlight = 0;
   let maxInFlight = 0;
   const control = {
@@ -42,7 +38,9 @@ export async function runnerFixture(
       const result = new Promise<Outcome>((done) => (resolve = done));
       let settled = false;
       const settle = (status = control.outcome) => {
-        if (settled) return;
+        if (settled) {
+          return;
+        }
         settled = true;
         inFlight--;
         resolve({
@@ -54,7 +52,9 @@ export async function runnerFixture(
         });
       };
       pushes.push({ at: f.clock.now().getTime(), message, to: message.to[0]!, settle });
-      if (!control.hold) queueMicrotask(() => settle());
+      if (!control.hold) {
+        queueMicrotask(() => settle());
+      }
       return { messageId: message.messageId ?? "", result };
     },
   };
@@ -65,14 +65,14 @@ export async function runnerFixture(
     maxSendErrors: 1000,
     slidingWindow: false,
     slidingWindowDuration: "1h",
-    slidingWindowRate: 10000,
+    slidingWindowRate: 10_000,
     rootUrl: "http://fixture.test",
     messengers: ["email", "fixture"],
     unsubscribeHeader: true,
     disableTracking: false,
     individualTracking: false,
   };
-  const runners: ReturnType<typeof startCampaignRunner>[] = [];
+  const runners: Array<ReturnType<typeof startCampaignRunner>> = [];
   // Runners of one fixture share a process and so a data directory (D15).
   const registry = createCampaignRunnerRegistry();
   const start = (leaseMs = 30_000, clock: Clock = f.clock) => {
@@ -91,7 +91,7 @@ export async function runnerFixture(
       templates: f.owners.templates,
       renderer: f.owners.renderer,
       tracking: f.owners.tracking,
-      emailer: options.realEmailer ? (f.owners.emailer as RunnerDeps["emailer"]) : emailer,
+      emailer: options.realEmailer ? f.owners.emailer : emailer,
       settings: () => settings,
       attachments: f.owners.attachments,
       embedImages: f.owners.embedImages,
@@ -102,7 +102,7 @@ export async function runnerFixture(
     return runner;
   };
   /** Campaigns this fixture created, so a stuck wait can report their state. */
-  const campaignIds: number[] = [];
+  const campaignIds: Array<number> = [];
   const campaign = async (input: object) => {
     const created = await f.campaign(input);
     campaignIds.push(created.id);
@@ -170,7 +170,7 @@ export async function runnerFixture(
   /** Subscribers with given list statuses; `status` blocklists the subscriber. */
   const member = async (
     email: string,
-    lists: number[],
+    lists: Array<number>,
     listStatus: "unconfirmed" | "confirmed" | "unsubscribed" = "confirmed",
     extra: object = {},
   ) => {
@@ -184,7 +184,9 @@ export async function runnerFixture(
         action: "unsubscribe",
         target_list_ids: lists,
       });
-      if (r.status !== 200) throw new Error(`unsubscribe ${r.status}`);
+      if (r.status !== 200) {
+        throw new Error(`unsubscribe ${r.status}`);
+      }
     }
     return sub;
   };
@@ -217,7 +219,9 @@ export async function runnerFixture(
     async close() {
       const stopping = runners.map((runner) => runner.stop().catch(() => {}));
       control.hold = false;
-      for (const push of pushes) push.settle();
+      for (const push of pushes) {
+        push.settle();
+      }
       await Promise.all(stopping);
       recipients.close();
       store.close();

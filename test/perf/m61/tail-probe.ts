@@ -18,11 +18,13 @@ let recording = false;
 let windowStart = 0;
 
 type Span = { s: number; e: number; group: string };
-const spans: Span[] = [];
+const spans: Array<Span> = [];
 const byLabel = new Map<string, { n: number; ms: number; max: number }>();
-const gcs: { s: number; e: number; kind: number }[] = [];
+const gcs: Array<{ s: number; e: number; kind: number }> = [];
 const total = (group: string, label: string, s: number, e: number) => {
-  if (!recording) return;
+  if (!recording) {
+    return;
+  }
   spans.push({ s, e, group });
   const k = `${group} | ${label}`;
   const c = byLabel.get(k) ?? { n: 0, ms: 0, max: 0 };
@@ -38,7 +40,9 @@ const tableOf = (sql: string) =>
   /\b(?:into|update|from|join)\s+"?([a-z_]+)"?/i.exec(sql)?.[1]?.toLowerCase() ?? "?";
 const groupOf = (sql: string, table: string) => {
   const head = sql.trimStart().slice(0, 12).toUpperCase();
-  if (head.startsWith("BEGIN")) return "begin";
+  if (head.startsWith("BEGIN")) {
+    return "begin";
+  }
   if (head.startsWith("COMMIT")) {
     const t = [...txTables];
     txTables = new Set();
@@ -51,21 +55,28 @@ const groupOf = (sql: string, table: string) => {
           : t.join("+") || "empty";
     return `commit:${kind}`;
   }
-  if (head.startsWith("ROLLBACK") || head.startsWith("SAVEPOINT") || head.startsWith("RELEASE"))
+  if (head.startsWith("ROLLBACK") || head.startsWith("SAVEPOINT") || head.startsWith("RELEASE")) {
     return "savepoint";
+  }
   txTables.add(table);
-  if (table === "events") return "sql:events";
-  if (/enrollment|sequence/.test(table)) return "sql:sequences";
-  if (table === "sends" || table === "outbox") return "sql:sends";
+  if (table === "events") {
+    return "sql:events";
+  }
+  if (/enrollment|sequence/.test(table)) {
+    return "sql:sequences";
+  }
+  if (table === "sends" || table === "outbox") {
+    return "sql:sends";
+  }
   return "sql:other";
 };
 const clean = (sql: string) =>
   sql
-    .replace(/--[^\n]*\n/g, " ")
-    .replace(/\s+/g, " ")
+    .replaceAll(/--[^\n]*\n/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
 
-function timed<A extends unknown[], R>(
+function timed<A extends Array<unknown>, R>(
   fn: (...a: A) => R,
   sql: string,
   self: unknown,
@@ -73,7 +84,9 @@ function timed<A extends unknown[], R>(
   const text = clean(sql);
   const table = tableOf(text);
   return (...args: A) => {
-    if (!recording) return fn.apply(self, args);
+    if (!recording) {
+      return fn.apply(self, args);
+    }
     const s = performance.now();
     try {
       return fn.apply(self, args);
@@ -85,37 +98,42 @@ function timed<A extends unknown[], R>(
 // `db.query` returns the cached Statement on later calls: wrap each one once.
 const wrapped = new WeakSet<object>();
 function wrapStatement<T extends object>(stmt: T, sql: string): T {
-  if (wrapped.has(stmt)) return stmt;
+  if (wrapped.has(stmt)) {
+    return stmt;
+  }
   wrapped.add(stmt);
   for (const m of ["run", "get", "all", "values"] as const) {
     const original = (stmt as Record<string, unknown>)[m];
-    if (typeof original === "function")
+    if (typeof original === "function") {
       (stmt as Record<string, unknown>)[m] = timed(original as never, sql, stmt);
+    }
   }
   return stmt;
 }
 for (const m of ["query", "prepare"] as const) {
-  const original = Database.prototype[m] as (sql: string, ...r: unknown[]) => object;
+  const original = Database.prototype[m] as (sql: string, ...r: Array<unknown>) => object;
   (Database.prototype as unknown as Record<string, unknown>)[m] = function (
     this: Database,
     sql: string,
-    ...rest: unknown[]
+    ...rest: Array<unknown>
   ) {
     return wrapStatement(original.call(this, sql, ...rest), sql);
   };
 }
 const originalRun = Database.prototype.run;
-Database.prototype.run = function (this: Database, sql: string, ...rest: never[]) {
+Database.prototype.run = function (this: Database, sql: string, ...rest: Array<never>) {
   return timed(originalRun as never, sql, this)(sql, ...rest);
 } as never;
 const originalExec = Database.prototype.exec;
-Database.prototype.exec = function (this: Database, sql: string, ...rest: never[]) {
+Database.prototype.exec = function (this: Database, sql: string, ...rest: Array<never>) {
   return timed(originalExec as never, sql, this)(sql, ...rest);
 } as never;
 for (const m of ["parse", "stringify"] as const) {
-  const original = JSON[m] as (...a: unknown[]) => unknown;
-  (JSON as unknown as Record<string, unknown>)[m] = function (...a: unknown[]) {
-    if (!recording) return original.apply(JSON, a);
+  const original = JSON[m] as (...a: Array<unknown>) => unknown;
+  (JSON as unknown as Record<string, unknown>)[m] = function (...a: Array<unknown>) {
+    if (!recording) {
+      return original.apply(JSON, a);
+    }
     const s = performance.now();
     try {
       return original.apply(JSON, a);
@@ -126,7 +144,9 @@ for (const m of ["parse", "stringify"] as const) {
 }
 
 new PerformanceObserver((list) => {
-  if (!recording) return;
+  if (!recording) {
+    return;
+  }
   for (const e of list.getEntries()) {
     const d = (e as unknown as { detail?: { kind?: number } }).detail;
     gcs.push({
@@ -137,15 +157,17 @@ new PerformanceObserver((list) => {
   }
 }).observe({ entryTypes: ["gc"] });
 
-const lags: { at: number; late: number }[] = [];
-let allLate: number[] = [];
+const lags: Array<{ at: number; late: number }> = [];
+let allLate: Array<number> = [];
 let expected = 0;
 const tick = () => {
   const now = performance.now();
   const late = now - expected;
   if (recording) {
     allLate.push(late);
-    if (late >= LAG_MS) lags.push({ at: now, late });
+    if (late >= LAG_MS) {
+      lags.push({ at: now, late });
+    }
   }
   expected = performance.now() + 1;
   setTimeout(tick, 1);
@@ -154,8 +176,10 @@ expected = performance.now() + 1;
 setTimeout(tick, 1);
 const histogram = monitorEventLoopDelay({ resolution: 1 });
 
-const pct = (xs: number[], p: number) => {
-  if (!xs.length) return 0;
+const pct = (xs: Array<number>, p: number) => {
+  if (!xs.length) {
+    return 0;
+  }
   const sorted = [...xs].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]!;
 };
@@ -172,10 +196,14 @@ function finish() {
     const from = lag.at - lag.late;
     blocked += lag.late;
     let covered = 0;
-    while (lo < spans.length && spans[lo]!.e < from - 5_000) lo++;
+    while (lo < spans.length && spans[lo]!.e < from - 5000) {
+      lo++;
+    }
     for (let i = lo; i < spans.length; i++) {
       const sp = spans[i]!;
-      if (sp.s >= lag.at) break;
+      if (sp.s >= lag.at) {
+        break;
+      }
       const o = Math.min(sp.e, lag.at) - Math.max(sp.s, from);
       if (o > 0) {
         covered += o;

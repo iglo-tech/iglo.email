@@ -3,9 +3,11 @@
 // Run with `bun run scheduler:crash`. Mail goes only to the loopback sink below.
 import assert from "node:assert/strict";
 import { Database } from "bun:sqlite";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type Socket } from "node:net";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
@@ -13,13 +15,13 @@ import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
 interface Sink {
   port: number;
   /** Subjects of messages whose data ended, accepted or held. */
-  subjects: string[];
+  subjects: Array<string>;
   held: Promise<void>;
   close(): Promise<void>;
 }
 /** Loopback SMTP sink; with `hold`, the first message's final dot is never answered. */
 async function startSink(hold: boolean): Promise<Sink> {
-  const subjects: string[] = [];
+  const subjects: Array<string> = [];
   const sockets = new Set<Socket>();
   let announce!: () => void;
   const held = new Promise<void>((r) => (announce = r));
@@ -30,7 +32,7 @@ async function startSink(hold: boolean): Promise<Sink> {
     socket.on("error", () => {});
     socket.setEncoding("latin1");
     let buffer = "";
-    let data: string[] | null = null;
+    let data: Array<string> | null = null;
     socket.write("220 sink.test ESMTP\r\n");
     socket.on("data", (chunk: string) => {
       buffer += chunk;
@@ -48,28 +50,38 @@ async function startSink(hold: boolean): Promise<Sink> {
           if (holding) {
             holding = false;
             announce();
-          } else socket.write("250 queued\r\n");
+          } else {
+            socket.write("250 queued\r\n");
+          }
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === "EHLO") socket.write("250-sink.test\r\n250 8BITMIME\r\n");
-        else if (verb === "DATA") {
+        if (verb === "EHLO") {
+          socket.write("250-sink.test\r\n250 8BITMIME\r\n");
+        } else if (verb === "DATA") {
           data = [];
           socket.write("354 go\r\n");
-        } else if (verb === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (verb === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("sink address");
+  if (!address || typeof address === "string") {
+    throw new Error("sink address");
+  }
   return {
     port: address.port,
     subjects,
     held,
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((r) => server.close(() => r()));
     },
   };
@@ -104,7 +116,9 @@ async function within<T>(promise: Promise<T>, ms: number, label: string): Promis
   }
 }
 async function stop(child: ChildProcess, exited: Promise<unknown>) {
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGTERM");
+  }
   await within(exited, 15_000, "fixture stop").catch(async () => {
     child.kill("SIGKILL");
     // Reaped before the caller goes on: a process still running would outlive the test.
@@ -158,7 +172,9 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
       after.enrollments[0] !== "completed" ||
       after.sends.some((s) => s.status === "queued" || s.status === "sending")
     ) {
-      if (Date.now() > deadline) throw new Error(`${point}: restart did not finish`);
+      if (Date.now() > deadline) {
+        throw new Error(`${point}: restart did not finish`);
+      }
       await Bun.sleep(50);
       after = state(dir);
     }
@@ -195,7 +211,7 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
 }
 // The real production executable: kill it while SMTP delivery of step 0 is in flight.
 type Launched = Awaited<ReturnType<typeof launchProduction>>;
-async function production(dir: string, launched: Launched[]) {
+async function production(dir: string, launched: Array<Launched>) {
   const running = await startOnFreePort((port) => launchProduction(dir, port));
   launched.push(running);
   return running;
@@ -216,7 +232,7 @@ async function launchProduction(dir: string, port: number) {
     },
   );
   let errors = "";
-  child.stderr!.on("data", (chunk: Buffer) => {
+  child.stderr.on("data", (chunk: Buffer) => {
     errors = (errors + chunk.toString()).slice(-4000);
   });
   const exited = new Promise<{ code: number | null; signal: string | null }>((r) =>
@@ -228,7 +244,9 @@ async function launchProduction(dir: string, port: number) {
       await stderrDrained(child);
       throw new Error(`production exited before listening: ${errors}`);
     }
-    if (child.pid !== undefined && listensOn(child.pid, port)) break;
+    if (child.pid !== undefined && listensOn(child.pid, port)) {
+      break;
+    }
     if (Date.now() > deadline) {
       child.kill("SIGKILL");
       await exited;
@@ -241,7 +259,7 @@ async function launchProduction(dir: string, port: number) {
 {
   const dir = await mkdtemp(join(tmpdir(), "iglo-scheduler-production-"));
   const sink = await startSink(true);
-  const launched: Launched[] = [];
+  const launched: Array<Launched> = [];
   try {
     const seeded = launch(dir, sink.port, {
       SCHEDULER_CRASH_SEED: "1",
@@ -260,7 +278,9 @@ async function launchProduction(dir: string, port: number) {
       after.enrollments[0] !== "completed" ||
       after.sends.some((s) => s.status === "queued" || s.status === "sending")
     ) {
-      if (Date.now() > deadline) throw new Error("production: restart did not finish");
+      if (Date.now() > deadline) {
+        throw new Error("production: restart did not finish");
+      }
       await Bun.sleep(50);
       after = state(dir);
     }
@@ -281,8 +301,9 @@ async function launchProduction(dir: string, port: number) {
     // A failed run stops every production process it started, and prints what they wrote.
     for (const [index, running] of launched.entries()) {
       console.error(`production process ${index + 1} stderr:\n${running.errors()}`);
-      if (running.child.exitCode === null && running.child.signalCode === null)
+      if (running.child.exitCode === null && running.child.signalCode === null) {
         running.child.kill("SIGKILL");
+      }
       await running.exited;
     }
     throw error;

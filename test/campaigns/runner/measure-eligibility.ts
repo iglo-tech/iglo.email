@@ -8,7 +8,7 @@ import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 const RUNS = Number(process.env.ELIGIBLE_MEASURE_RUNS ?? 5);
 const CHECKS = Number(process.env.ELIGIBLE_MEASURE_CHECKS ?? 20_000);
 
-function median(values: number[]): number {
+function median(values: Array<number>): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 }
@@ -21,14 +21,18 @@ try {
   const audience = { type: "regular" as const, lists: [{ id: BigInt(list), optin: "single" }] };
   const recipient = {
     id: BigInt(member.id),
-    uuid: member.uuid as string,
+    uuid: member.uuid,
     email: "eligible@x.test",
   };
-  if (recipients.eligible(audience, recipient) !== "eligible") throw new Error("not eligible");
-  const samples: number[] = [];
+  if (recipients.eligible(audience, recipient) !== "eligible") {
+    throw new Error("not eligible");
+  }
+  const samples: Array<number> = [];
   for (let r = 0; r < RUNS; r++) {
     const started = performance.now();
-    for (let i = 0; i < CHECKS; i++) recipients.eligible(audience, recipient);
+    for (let i = 0; i < CHECKS; i++) {
+      recipients.eligible(audience, recipient);
+    }
     samples.push(((performance.now() - started) * 1000) / CHECKS);
   }
   console.log(

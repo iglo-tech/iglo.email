@@ -11,7 +11,9 @@ export function parseDuration(text: string): number | undefined {
     /^P(?:(\d{1,6})W)?(?:(\d{1,6})D)?(?:T(?:(\d{1,6})H)?(?:(\d{1,6})M)?(?:(\d{1,6})S)?)?$/.exec(
       text,
     );
-  if (!m || text === "P" || text.endsWith("T")) return undefined;
+  if (!m || text === "P" || text.endsWith("T")) {
+    return undefined;
+  }
   const [weeks, days, hours, minutes, seconds] = m.slice(1).map((part) => Number(part ?? 0)) as [
     number,
     number,

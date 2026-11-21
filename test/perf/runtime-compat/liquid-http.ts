@@ -1,17 +1,19 @@
 // Test-only loopback HTTP boundary for explicitly supplied or generated data.
-import { render, type FixtureInput } from "@/test/perf/runtime-compat/liquid-render";
+import { render } from "@/test/perf/runtime-compat/liquid-render";
+import type { FixtureInput } from "@/test/perf/runtime-compat/liquid-render";
 
 export function startLiquidFixture() {
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      if (request.method !== "POST" || new URL(request.url).pathname !== "/render")
+      if (request.method !== "POST" || new URL(request.url).pathname !== "/render") {
         return new Response("Not found", { status: 404 });
+      }
       try {
         const input = (await request.json()) as FixtureInput & { action?: string };
         if (input.action === "prototype-array") {
-          const array: string[] = [];
+          const array: Array<string> = [];
           array.length = 1;
           Object.setPrototypeOf(
             array,
@@ -36,8 +38,9 @@ export function startLiquidFixture() {
             }),
           });
         }
-        if (typeof input.body !== "string" || input.body.length > 65536)
+        if (typeof input.body !== "string" || input.body.length > 65_536) {
           throw new Error("Invalid synthetic template");
+        }
         return Response.json({ result: render(input) });
       } catch (error) {
         return Response.json({ error: String(error) }, { status: 400 });

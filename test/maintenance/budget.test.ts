@@ -9,9 +9,11 @@ import { MAINTENANCE_SUBSCRIBERS as BATCH } from "@/subscribers/store";
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 /** With 19 webhooks this is the largest selection under 50,000 deliveries: 49,989. */
 const SELECTED = 2631;
@@ -50,7 +52,9 @@ async function open(afterBatch: (left: number) => Promise<void>) {
     expect(created.status).toBe(200);
     return created.body.data.id as number;
   };
-  for (let i = 0; i < 19; i++) await hook(true);
+  for (let i = 0; i < 19; i++) {
+    await hook(true);
+  }
   const extra = await hook(false);
   await f.crashWebhooks();
   f.db.run(
@@ -69,8 +73,12 @@ test("a webhook enabled and disabled during a delete cannot carry it over the bu
   let toggle = async (_left: number) => {};
   const { setExtra, remove, count } = await open((left) => toggle(left));
   toggle = async (left) => {
-    if (left === SELECTED - BATCH) await setExtra(true);
-    if (left === SELECTED - BATCH * 2) await setExtra(false);
+    if (left === SELECTED - BATCH) {
+      await setExtra(true);
+    }
+    if (left === SELECTED - BATCH * 2) {
+      await setExtra(false);
+    }
   };
 
   // 1,900 + 2,000 = 3,900, then 1,900 a batch: 24 more reach 49,500, and the last 31 would pass.

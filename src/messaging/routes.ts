@@ -15,21 +15,30 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
       const params = context.url.searchParams;
       function positive(key: string, limit: bigint): bigint | undefined {
         const values = params.getAll(key);
-        if (!values.length) return undefined;
-        if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0]!) || values[0]!.length > 19)
+        if (!values.length) {
+          return undefined;
+        }
+        if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0]!) || values[0]!.length > 19) {
           throw new HttpError(400);
+        }
         const value = BigInt(values[0]!);
-        if (value > limit) throw new HttpError(400);
+        if (value > limit) {
+          throw new HttpError(400);
+        }
         return value;
       }
-      function choice(key: string, allowed: string[]): string | undefined {
+      function choice(key: string, allowed: Array<string>): string | undefined {
         const values = params.getAll(key);
-        if (!values.length) return undefined;
-        if (values.length !== 1 || !allowed.includes(values[0]!)) throw new HttpError(400);
+        if (!values.length) {
+          return undefined;
+        }
+        if (values.length !== 1 || !allowed.includes(values[0]!)) {
+          throw new HttpError(400);
+        }
         return values[0];
       }
       const filter: SendFilter = {
-        page: Number(positive("page", 1000000n) ?? 1n),
+        page: Number(positive("page", 1_000_000n) ?? 1n),
         perPage: Number(positive("per_page", 100n) ?? 20n),
       };
       const status = choice("status", [
@@ -42,13 +51,23 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
         ]),
         kind = choice("kind", ["transactional", "marketing"]),
         source = choice("source", ["tx", "sequence"]),
-        subscriberId = positive("subscriber_id", 9223372036854775807n),
-        listId = positive("list_id", 9223372036854775807n);
-      if (status !== undefined) filter.status = status;
-      if (kind !== undefined) filter.kind = kind;
-      if (source !== undefined) filter.source = source;
-      if (subscriberId !== undefined) filter.subscriberId = subscriberId;
-      if (listId !== undefined) filter.listId = listId;
+        subscriberId = positive("subscriber_id", 9_223_372_036_854_775_807n),
+        listId = positive("list_id", 9_223_372_036_854_775_807n);
+      if (status !== undefined) {
+        filter.status = status;
+      }
+      if (kind !== undefined) {
+        filter.kind = kind;
+      }
+      if (source !== undefined) {
+        filter.source = source;
+      }
+      if (subscriberId !== undefined) {
+        filter.subscriberId = subscriberId;
+      }
+      if (listId !== undefined) {
+        filter.listId = listId;
+      }
       return ok(sends.list(filter));
     },
     auth.middleware("sends:get"),
@@ -58,7 +77,9 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
     "/api/sends/:id",
     (context) => {
       const row = sends.get(BigInt(getID(context)));
-      if (!row) throw new HttpError(404);
+      if (!row) {
+        throw new HttpError(404);
+      }
       return ok(row);
     },
     auth.middleware("sends:get"),
@@ -73,8 +94,9 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
       if (
         body &&
         context.request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json"
-      )
+      ) {
         throw new HttpError(415);
+      }
       if (body) {
         let value: unknown;
         try {
@@ -87,8 +109,9 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
           typeof value !== "object" ||
           Array.isArray(value) ||
           Object.keys(value).length
-        )
+        ) {
           throw new HttpError(400);
+        }
       }
       return ok(
         sends.resend(BigInt(getID(context)), () => auth.revalidate(context, "sends:manage")),

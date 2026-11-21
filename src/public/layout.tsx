@@ -40,7 +40,9 @@ export function siteText(text: string, siteName: string): string {
  * it is on, else nowhere. An empty href is never written (B126).
  */
 export function logoHref(site: ShellSite): string {
-  if (site.siteUrl) return site.siteUrl;
+  if (site.siteUrl) {
+    return site.siteUrl;
+  }
   return site.subscriptionPage ? `${site.rootUrl}/subscription/form` : "";
 }
 
@@ -52,7 +54,9 @@ export function PublicShell({
   archiveTitle,
   children,
 }: PublicShellProps) {
-  if (!/^[a-f0-9]{10}$/.test(assetVersion)) throw new TypeError("Invalid asset version");
+  if (!/^[a-f0-9]{10}$/.test(assetVersion)) {
+    throw new TypeError("Invalid asset version");
+  }
   const siteName = site.siteName;
   const logo = (
     <img src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />

@@ -10,7 +10,7 @@ export interface Credentials {
 }
 
 export interface VolatileField {
-  readonly path: readonly string[];
+  readonly path: ReadonlyArray<string>;
   readonly kind: "id" | "timestamp";
   readonly bind: string;
   readonly after?: string;
@@ -19,7 +19,11 @@ export interface VolatileField {
 
 export type ExpectedBody =
   | { readonly kind: "wire"; readonly value: string }
-  | { readonly kind: "json"; readonly value: unknown; readonly volatile: readonly VolatileField[] }
+  | {
+      readonly kind: "json";
+      readonly value: unknown;
+      readonly volatile: ReadonlyArray<VolatileField>;
+    }
   | {
       readonly kind: "public-404";
       readonly siteName: string;
@@ -29,7 +33,7 @@ export type ExpectedBody =
       readonly logoAlt: string;
       /** Empty when the page has no footer (B126: production's shell has none). */
       readonly footerText: string;
-      readonly footerLinks: readonly { readonly text: string; readonly href: string }[];
+      readonly footerLinks: ReadonlyArray<{ readonly text: string; readonly href: string }>;
       readonly customScript: boolean;
       readonly archiveTitle: string | null;
     }

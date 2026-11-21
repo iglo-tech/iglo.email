@@ -15,7 +15,9 @@ export async function runSettingsNul(target: {
       ...(body === undefined ? {} : { body }),
     });
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL settings-D46-${label}`);
+    if (!value) {
+      throw new Error(`FAIL settings-D46-${label}`);
+    }
   }
   async function read() {
     const response = await request();
@@ -46,8 +48,9 @@ export async function runSettingsNul(target: {
     change(out);
     const response = await request("/api/settings", "PUT", JSON.stringify(out));
     check(response.status === (target.mode === "reference" ? 500 : 400), `full-${i}`);
-    if (target.mode === "normal")
+    if (target.mode === "normal") {
       check(JSON.stringify(await response.json()) === '{"message":"Invalid data."}', "safe-error");
+    }
     check(JSON.stringify(await read()) === JSON.stringify(before), `full-${i}-no-write`);
   }
   for (const [key, value] of [
@@ -62,8 +65,8 @@ export async function runSettingsNul(target: {
   out.smtp[0].name = "Normalized\0 Name";
   const body =
     JSON.stringify(out).slice(0, -1) +
-    ',"app.site_name":"bad\\u0000name","APP.SITE_NAME":"Final bound value",' +
-    '"unconsumed_metadata":{"bad":"discarded\\u0000value"}}';
+    String.raw`,"app.site_name":"bad\u0000name","APP.SITE_NAME":"Final bound value",` +
+    String.raw`"unconsumed_metadata":{"bad":"discarded\u0000value"}}`;
   const response = await request("/api/settings", "PUT", body);
   check(response.status === 200, "final-bound-write");
   const after = await read();

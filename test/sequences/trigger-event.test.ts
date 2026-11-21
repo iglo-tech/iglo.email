@@ -2,11 +2,14 @@
 // `trigger_event_id` must be the subscriber's own event under the sequence's trigger name, else
 // 400 with nothing written. Through POST /api/enrollments and the events API.
 import { afterEach, expect, test } from "bun:test";
-import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
+import { sequencesFixture } from "@/test/sequences/fixture";
+import type { SequencesFixture } from "@/test/sequences/fixture";
 
-const fixtures: SequencesFixture[] = [];
+const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await sequencesFixture();
@@ -93,7 +96,7 @@ test("D101: another subscriber's event, another event name or an unknown ID is 4
   ).body.data.event_id as number;
   const before = f.count("enrollments");
 
-  const cases: [string, unknown][] = [
+  const cases: Array<[string, unknown]> = [
     ["another subscriber's event", theirs],
     ["an event under another name", feedback],
     ["an unknown ID", 999_999],

@@ -95,8 +95,9 @@ test.describe("Users, roles & login", () => {
     await expect(page.locator("form input[type=checkbox]:checked")).not.toHaveCount(0);
     await expect(page.locator("form input[type=checkbox]:not(:checked)")).toHaveCount(0);
     // The permissions this project adds have boxes too, so a save cannot lose them unseen.
-    for (const value of ["sequences:manage", "sends:get", "webhooks:manage"])
+    for (const value of ["sequences:manage", "sends:get", "webhooks:manage"]) {
       await expect(page.locator(`input[value="${value}"]`)).toBeChecked();
+    }
   });
 
   test("edits a user role", async ({ page }) => {
@@ -371,9 +372,10 @@ test.describe("Your own account", () => {
     await page.goto(USERS);
     const { body } = await api(page, "/api/users");
     const me = body.data.find((u) => u.username === ADMIN.user);
-    for (const u of body.data)
+    for (const u of body.data) {
       if (u.id !== me.id && u.user_role.id === 1 && u.status === "enabled" && u.type === "user")
         expect((await api(page, `/api/users/${u.id}`, "DELETE")).status).toBe(200);
+    }
 
     await page.goto(`${USERS}/${me.id}`);
     await page.locator("select[name=status]").selectOption("disabled");
@@ -444,8 +446,9 @@ test.describe("Your own account", () => {
       `${USER_ROLES}/new`,
       LIST_ROLES,
       "/admin/settings",
-    ])
+    ]) {
       expect((await other.goto(path)).status(), path).toBe(403);
+    }
     await other.goto(`${USERS}/${viewer.id}`);
     await expect(other.locator("input[name=username]")).toHaveValue(viewer.username);
     await expect(other.getByTestId("btn-save")).toHaveCount(0);

@@ -1,6 +1,7 @@
 // The contract's verdicts are only as good as this validator, so it is held to refusing.
 import { expect, test } from "bun:test";
-import { validate, type Document } from "@/test/openapi/schema";
+import { validate } from "@/test/openapi/schema";
+import type { Document } from "@/test/openapi/schema";
 
 const document: Document = {
   paths: {},

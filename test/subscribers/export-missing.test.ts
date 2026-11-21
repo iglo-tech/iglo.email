@@ -1,7 +1,8 @@
 // A missing numeric subscriber's data export answers listmonk's 400, as before D101; only an
 // absent external ID is a 404 (D101). Through the HTTP API of the in-process production owners.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
 describe("export of a missing subscriber", () => {
   let f: QueryFixture;

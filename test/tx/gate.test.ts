@@ -15,7 +15,7 @@ const gate = (
 test("reservations are granted in arrival order and freed by release", async () => {
   const g = gate();
   const first = (await g.acquire(60))!;
-  let order: string[] = [];
+  const order: string[] = [];
   const second = g.acquire(60).then((r) => (order.push("second"), r));
   // A small request behind a waiting one does not jump the queue.
   const third = g.acquire(10).then((r) => (order.push("third"), r));
@@ -56,7 +56,9 @@ test("a cost over the budget, a full queue and a full holder count are refused",
   (await waiting)!.release();
   const three = [await g.acquire(1), await g.acquire(1), await g.acquire(1)];
   expect(g.admit(1)).toBeNull();
-  for (const r of three) r!.release();
+  for (const r of three) {
+    r!.release();
+  }
 });
 
 test("grow never waits, shrink wakes a waiter, and a released reservation holds nothing", async () => {
@@ -79,12 +81,16 @@ test("admissions overtake a waiter a bounded number of times, then are refused w
   const g = gate(new TestClock(), { maxOvertakes: 3, maxHolders: 10 });
   const held = [(await g.acquire(70))!];
   const big = g.acquire(60);
-  for (let i = 0; i < 3; i++) held.push(g.admit(5)!);
+  for (let i = 0; i < 3; i++) {
+    held.push(g.admit(5)!);
+  }
   expect(g.stats()).toEqual({ bytes: 85, holders: 4, waiting: 1 });
   // The fourth fits but would pass the waiter once too often: refused, and nothing queues.
   expect(g.admit(5)).toBeNull();
   expect(g.stats().waiting).toBe(1);
-  for (const r of held) r.release();
+  for (const r of held) {
+    r.release();
+  }
   const reservation = (await big)!;
   expect(reservation.bytes).toBe(60);
   reservation.release();

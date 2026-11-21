@@ -21,7 +21,7 @@ async function bounded<T>(operation: Promise<T>, message: string): Promise<T> {
 test("BEGIN IMMEDIATE serializes writers in separate processes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "iglo-writers-"));
   const fixture = startDbFixture(directory);
-  const children: ReturnType<typeof Bun.spawn>[] = [];
+  const children: Array<ReturnType<typeof Bun.spawn>> = [];
   try {
     await fetch(fixture.origin, {
       method: "POST",
@@ -66,7 +66,9 @@ test("BEGIN IMMEDIATE serializes writers in separate processes", async () => {
     });
     expect(((await response.json()) as { result: { value: string } }).result.value).toBe("second");
   } finally {
-    for (const child of children) if (child.exitCode === null) child.kill("SIGKILL");
+    for (const child of children) {
+      if (child.exitCode === null) child.kill("SIGKILL");
+    }
     await Promise.allSettled(children.map((child) => child.exited));
     await fixture.close();
     await rm(directory, { recursive: true, force: true });

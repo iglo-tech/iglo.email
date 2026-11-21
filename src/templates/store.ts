@@ -4,7 +4,8 @@ import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import type { CampaignTemplateReferences } from "@/campaigns/template-references";
-import { TemplateSourceError, type TemplateRenderer } from "@/templates/renderer";
+import { TemplateSourceError } from "@/templates/renderer";
+import type { TemplateRenderer } from "@/templates/renderer";
 import { initialTemplates } from "@/templates/builtins";
 import sql from "@/templates/store.sql" with { type: "text" };
 
@@ -53,7 +54,7 @@ export function createTemplateStore(
   const q = prepareNamedQueries(db, [{ name: "templates/store", sql }]);
   const byId = (id: bigint) => q.get("template-by-id").get(id) as TemplateRow | null;
   const defaultRow = () => q.get("template-default").get() as TemplateRow | null;
-  const all = () => q.get("templates-all").all() as TemplateRow[];
+  const all = () => q.get("templates-all").all() as Array<TemplateRow>;
   const count = () => (q.get("template-count").get() as { count: bigint }).count;
   const insert = (value: WritableTemplate, isDefault = false) => {
     const now = clock.now().toISOString();
@@ -78,41 +79,51 @@ export function createTemplateStore(
       Buffer.byteLength(value.name) < 1 ||
       Buffer.byteLength(value.name) > 2000 ||
       value.name.includes("\0")
-    )
+    ) {
       throw new TemplateError("name");
-    if (value.type !== "campaign" && value.type !== "tx") throw new TemplateError("type");
+    }
+    if (value.type !== "campaign" && value.type !== "tx") {
+      throw new TemplateError("type");
+    }
     if (
       typeof value.subject !== "string" ||
       Buffer.byteLength(value.subject) > 2048 ||
       value.subject.includes("\0") ||
       (value.type === "tx" && !value.subject.trim())
-    )
+    ) {
       throw new TemplateError("subject");
+    }
     if (
       typeof value.body !== "string" ||
-      Buffer.byteLength(value.body) > 65536 ||
+      Buffer.byteLength(value.body) > 65_536 ||
       value.body.includes("\0") ||
       (value.body_source !== null &&
         (typeof value.body_source !== "string" ||
-          Buffer.byteLength(value.body_source) > 65536 ||
+          Buffer.byteLength(value.body_source) > 65_536 ||
           value.body_source.includes("\0")))
-    )
+    ) {
       throw new TemplateError("body");
+    }
     try {
       renderer.validate(value.body, value.subject, value.type === "campaign");
     } catch (error) {
-      if (error instanceof TemplateSourceError && error.field === "subject")
+      if (error instanceof TemplateSourceError && error.field === "subject") {
         throw new TemplateError("subject-syntax");
-      if (error instanceof TemplateSourceError && error.field === "slot")
+      }
+      if (error instanceof TemplateSourceError && error.field === "slot") {
         throw new TemplateError("slot");
+      }
       throw new TemplateError("body");
     }
   }
   function initialize() {
     writeTransaction(db, () => {
-      if (count() !== 0n) return;
-      for (const value of initialTemplates)
+      if (count() !== 0n) {
+        return;
+      }
+      for (const value of initialTemplates) {
         insert({ ...value, body_source: null }, value.isDefault);
+      }
     });
   }
   function create(input: WritableTemplate) {
@@ -127,8 +138,12 @@ export function createTemplateStore(
   function update(id: bigint, input: TemplatePatch) {
     const result = writeTransaction(db, () => {
       const old = byId(id);
-      if (!old) throw new TemplateError("missing");
-      if (input.type !== undefined && input.type !== old.type) throw new TemplateError("type");
+      if (!old) {
+        throw new TemplateError("missing");
+      }
+      if (input.type !== undefined && input.type !== old.type) {
+        throw new TemplateError("type");
+      }
       const value = {
         name: input.name ?? old.name,
         type: old.type,
@@ -136,7 +151,9 @@ export function createTemplateStore(
         body: input.body ?? old.body,
         body_source: input.body_source === undefined ? old.body_source : input.body_source,
       };
-      if (value.type === "campaign") value.subject = "";
+      if (value.type === "campaign") {
+        value.subject = "";
+      }
       validate(value);
       q.get("template-update").run(
         value.name,
@@ -153,7 +170,9 @@ export function createTemplateStore(
   function setDefault(id: bigint) {
     return writeTransaction(db, () => {
       const row = byId(id);
-      if (!row || row.type !== "campaign") throw new TemplateError("default");
+      if (!row || row.type !== "campaign") {
+        throw new TemplateError("default");
+      }
       q.get("template-clear-default").run();
       q.get("template-set-default").run(id);
     });
@@ -161,20 +180,24 @@ export function createTemplateStore(
   function remove(id: bigint) {
     return writeTransaction(db, () => {
       const row = byId(id);
-      if (!row || row.is_default || count() <= 1n) throw new TemplateError("delete");
+      if (!row || row.is_default || count() <= 1n) {
+        throw new TemplateError("delete");
+      }
       const def = defaultRow();
-      if (!def) throw new TemplateError("default");
+      if (!def) {
+        throw new TemplateError("default");
+      }
       references.reassign(id, def.id);
       q.get("template-delete").run(id);
     });
   }
   function list(query = "", orderBy = "", order = "") {
     const search = query
-      .replace(
+      .replaceAll(
         /^[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g,
         "",
       )
-      .replace(/[\t\n\f\r ]+/g, " ")
+      .replaceAll(/[\t\n\f\r ]+/g, " ")
       .toLowerCase();
     const field =
       (["name", "type", "created_at", "updated_at"] as const).find((f) => f === orderBy) ??

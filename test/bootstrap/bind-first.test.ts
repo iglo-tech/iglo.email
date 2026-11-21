@@ -5,7 +5,8 @@
 // process has exited: a queued row has no API that shows it while no loop runs.
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { createServer, type Server as NetServer } from "node:net";
+import { createServer } from "node:net";
+import type { Server as NetServer } from "node:net";
 import { join } from "node:path";
 import { encodePayload } from "@/messaging/payload";
 import {
@@ -30,7 +31,9 @@ beforeAll(async () => {
   executable = await buildExecutable(build);
 });
 afterAll(async () => {
-  for (const undo of cleanup.splice(0).reverse()) await undo();
+  for (const undo of cleanup.splice(0).reverse()) {
+    await undo();
+  }
   removeDirectory(build);
 });
 
@@ -116,7 +119,9 @@ async function occupy(): Promise<{ port: number; server: NetServer }> {
   });
   cleanup.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("occupied address");
+  if (!address || typeof address === "string") {
+    throw new Error("occupied address");
+  }
   return { port: address.port, server };
 }
 
@@ -188,7 +193,7 @@ test("a normal start after a failed bind serves /health and runs its loops", asy
 
   const server = await startServer(executable, dataDir);
   cleanup.push(() => server.kill());
-  const health = await fetch(server.health, { signal: AbortSignal.timeout(2_000) });
+  const health = await fetch(server.health, { signal: AbortSignal.timeout(2000) });
   expect(health.ok).toBe(true);
 
   // The loops start after the bind; the queued send and the due delivery are claimed at once.

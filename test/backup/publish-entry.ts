@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { runBackup } from "@/backup/cli";
 import { flushChildArgument, runFlushChild } from "@/backup/snapshot";
 
-if (process.argv[2] === flushChildArgument) await runFlushChild();
+if (process.argv[2] === flushChildArgument) {
+  await runFlushChild();
+}
 
 const [action, path, ...args] = process.argv.slice(2);
 const actions: Record<string, () => void> = {

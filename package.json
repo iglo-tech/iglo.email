@@ -121,6 +121,7 @@
   },
   "devDependencies": {
     "@alpinejs/csp": "3.15.12",
+    "@cloudflare/oxlint-config": "0.1.0",
     "@codemirror/commands": "6.10.4",
     "@codemirror/lang-css": "6.3.1",
     "@codemirror/lang-html": "6.4.11",
@@ -139,8 +140,9 @@
     "@types/qrcode": "1.5.6",
     "chart.js": "4.5.1",
     "oxfmt": "0.75.0",
-    "oxlint": "1.90.0",
+    "oxlint": "1.94.0",
     "squire-rte": "2.4.8",
+    "tsrs": "7.1.0-beta.tsrs4",
     "typescript": "6.0.3"
   },
   "engines": {

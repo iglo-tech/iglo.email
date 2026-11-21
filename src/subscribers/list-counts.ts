@@ -8,13 +8,15 @@ export function createListCounts(db: Database) {
   return {
     all(): Map<bigint, Record<string, number>> {
       const result = new Map<bigint, Record<string, number>>();
-      for (const row of queries.get("membership-counts").all() as {
+      for (const row of queries.get("membership-counts").all() as Array<{
         list_id: bigint;
         status: string;
         count: bigint;
-      }[]) {
+      }>) {
         let counts = result.get(row.list_id);
-        if (!counts) result.set(row.list_id, (counts = {}));
+        if (!counts) {
+          result.set(row.list_id, (counts = {}));
+        }
         counts[row.status] = Number(row.count);
       }
       return result;

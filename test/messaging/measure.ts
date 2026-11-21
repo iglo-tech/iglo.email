@@ -1,10 +1,12 @@
 // Serial local comparison: M0.8 non-pooled control versus the production messaging owner.
 import assert from "node:assert/strict";
 import { createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
-import { createConnection, createServer, type Socket } from "node:net";
+import { createConnection, createServer } from "node:net";
+import type { Socket } from "node:net";
 import nodemailer from "nodemailer";
 import { createRealClock } from "@/clock";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { verifyFixtureDkim } from "@/test/perf/runtime-compat/dkim-check";
 import { percentile } from "@/test/perf/runtime-compat/metrics";
@@ -28,8 +30,9 @@ const proxy = createServer((client) => {
   live++;
   peak = Math.max(peak, live);
   const upstream = createConnection({ host: sink.host, port: sink.port });
-  if (client.remotePort)
+  if (client.remotePort) {
     relayClosed.set(client.remotePort, new Promise<void>((done) => client.once("close", done)));
+  }
   sockets.add(client);
   sockets.add(upstream);
   client.on("error", () => {});
@@ -37,7 +40,9 @@ const proxy = createServer((client) => {
   client.pipe(upstream).pipe(client);
   client.once("close", () => {
     live--;
-    if (live === 0) idle?.();
+    if (live === 0) {
+      idle?.();
+    }
     sockets.delete(client);
     upstream.destroy();
   });
@@ -48,7 +53,9 @@ const proxy = createServer((client) => {
 });
 await new Promise<void>((done) => proxy.listen(0, "127.0.0.1", done));
 const address = proxy.address();
-if (!address || typeof address === "string") throw new Error("Missing relay port");
+if (!address || typeof address === "string") {
+  throw new Error("Missing relay port");
+}
 const config: SMTPServer = {
   name: "",
   enabled: true,
@@ -82,7 +89,7 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
     sendMs = 0,
     observationMs = 0,
     rss = process.memoryUsage().rss;
-  const latency: number[] = [];
+  const latency: Array<number> = [];
   try {
     for (let offset = 0; offset < count; offset += 100) {
       const end = Math.min(count, offset + 100),
@@ -132,7 +139,7 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
                 ignoreTLS: true,
                 name: config.hello_hostname,
                 connectionTimeout: 5000,
-                socketTimeout: 30000,
+                socketTimeout: 30_000,
                 disableFileAccess: true,
                 disableUrlAccess: true,
                 dkim: {
@@ -169,9 +176,11 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
       const observe = performance.now(),
         found = await mailpit.list();
       assert.equal(found.length, end - offset);
-      const actual = new Set(found.map((m) => m.MessageID.replace(/[<>]/g, "")));
+      const actual = new Set(found.map((m) => m.MessageID.replaceAll(/[<>]/g, "")));
       assert.equal(actual.size, ids.size);
-      for (const id of ids) assert.ok(actual.has(id));
+      for (const id of ids) {
+        assert.ok(actual.has(id));
+      }
       matched += actual.size;
       assert.equal(
         verifyFixtureDkim(await mailpit.raw(found[0]!.ID), createPublicKey(keys.publicKey)),
@@ -201,7 +210,9 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
       }
     }
     assert.equal((await mailpit.list()).length, 0);
-    if (mode === "control") assert.ok(peak <= 4);
+    if (mode === "control") {
+      assert.ok(peak <= 4);
+    }
     relayClosed.clear();
     console.log(
       JSON.stringify({
@@ -233,6 +244,8 @@ try {
     await run("owner", 1000, String(i));
   }
 } finally {
-  for (const socket of sockets) socket.destroy();
+  for (const socket of sockets) {
+    socket.destroy();
+  }
   await new Promise<void>((done) => proxy.close(() => done()));
 }

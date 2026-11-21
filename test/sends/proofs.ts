@@ -1,7 +1,9 @@
 // Real SMTP responses at the native outbox boundary, under reference:run.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createServer, createConnection, type Socket } from "node:net";
+import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { createServer, createConnection } from "node:net";
+import type { Socket } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -42,12 +44,16 @@ async function relay(mode: string) {
       toServer += chunk.toString("latin1");
       for (;;) {
         const end = toServer.indexOf("\r\n");
-        if (end < 0) break;
+        if (end < 0) {
+          break;
+        }
         const line = toServer.slice(0, end);
         toServer = toServer.slice(end + 2);
         if (data) {
           upstream.write(`${line}\r\n`, "latin1");
-          if (line === ".") data = false;
+          if (line === ".") {
+            data = false;
+          }
           continue;
         }
         if (line.startsWith("AUTH ")) {
@@ -71,19 +77,27 @@ async function relay(mode: string) {
             continue;
           }
         }
-        if (line.startsWith("EHLO ")) ehlo = true;
+        if (line.startsWith("EHLO ")) {
+          ehlo = true;
+        }
         upstream.write(`${line}\r\n`, "latin1");
-        if (line === "DATA") data = true;
+        if (line === "DATA") {
+          data = true;
+        }
       }
     });
     upstream.on("data", (chunk: Buffer) => {
       fromServer += chunk.toString("latin1");
       for (;;) {
         const end = fromServer.indexOf("\r\n");
-        if (end < 0) break;
+        if (end < 0) {
+          break;
+        }
         const line = fromServer.slice(0, end);
         fromServer = fromServer.slice(end + 2);
-        if (/^250[- ]PIPELINING/i.test(line)) continue;
+        if (/^250[- ]PIPELINING/i.test(line)) {
+          continue;
+        }
         if (ehlo && line.startsWith("250 ")) {
           client.write("250-AUTH PLAIN\r\n");
           ehlo = false;
@@ -94,12 +108,16 @@ async function relay(mode: string) {
   });
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Missing relay port");
+  if (!address || typeof address === "string") {
+    throw new Error("Missing relay port");
+  }
   return {
     port: address.port,
     counts: () => ({ connections, recipients }),
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((ok, fail) => server.close((error) => (error ? fail(error) : ok())));
     },
   };
@@ -119,7 +137,9 @@ async function start(port: number, auth: boolean, dir: string, offset = 0) {
     let value = "";
     child!.stdout.on("data", (chunk) => {
       value += chunk.toString();
-      if (value.includes("\n")) ok(value.split("\n")[0]!);
+      if (value.includes("\n")) {
+        ok(value.split("\n")[0]!);
+      }
     });
     child!.once("exit", () => fail(new Error("Fixture exited before readiness")));
   });
@@ -134,9 +154,11 @@ async function start(port: number, auth: boolean, dir: string, offset = 0) {
       method,
       headers,
       ...(body === undefined ? {} : { body }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`Fixture ${path} failed: ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`Fixture ${path} failed: ${response.status}`);
+    }
     return ((await response.json()) as { data: any }).data;
   }
   const session = await call("/fixture/session");
@@ -147,7 +169,9 @@ async function start(port: number, auth: boolean, dir: string, offset = 0) {
   };
 }
 async function kill() {
-  if (!child) return;
+  if (!child) {
+    return;
+  }
   const old = child;
   child = undefined;
   const exited = new Promise<void>((ok) => old.once("exit", () => ok()));
@@ -182,7 +206,9 @@ try {
       const temporary = mode.endsWith("temporary") || mode === "mixed";
       assert.equal(row.status, temporary ? "queued" : mode === "partial" ? "sent" : "failed", mode);
       assert.equal(row.attempts, 1);
-      if (mode === "partial") assert.equal(row.error, "partial_acceptance");
+      if (mode === "partial") {
+        assert.equal(row.error, "partial_acceptance");
+      }
       if (temporary) {
         await fixture.call("/fixture/clock", "POST", "999");
         row = await fixture.get(entry.id);
@@ -243,7 +269,7 @@ try {
     assert.equal(final.smtp_message_id, entry.smtp_message_id);
     assert.equal(peer.counts().recipients, 5);
     await kill();
-    fixture = await start(peer.port, false, dir, offset + 16000);
+    fixture = await start(peer.port, false, dir, offset + 16_000);
     await fixture.call("/fixture/start", "POST", "normal");
     await fixture.call("/fixture/idle");
     assert.equal((await fixture.get(entry.id)).attempts, 5);

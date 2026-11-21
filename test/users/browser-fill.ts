@@ -8,8 +8,9 @@ const username = lookup("IGLO_EMAIL_ADMIN_USER");
 const password = lookup(
   process.argv[2] === "wrong" ? "M13_BROWSER_WRONG_PASSWORD" : "IGLO_EMAIL_ADMIN_PASSWORD",
 );
-if (!username || !password || !["wrong", "valid"].includes(process.argv[2] ?? ""))
+if (!username || !password || !["wrong", "valid"].includes(process.argv[2] ?? "")) {
   throw new Error("Invalid synthetic browser fixture");
+}
 for (const [selector, value] of [
   ["#username", username],
   ["#password", password],
@@ -18,5 +19,7 @@ for (const [selector, value] of [
     ["agent-browser", "--session", "m13-browser", "fill", selector!, value!],
     { stdout: "inherit", stderr: "inherit" },
   );
-  if ((await child.exited) !== 0) throw new Error("Browser fill failed");
+  if ((await child.exited) !== 0) {
+    throw new Error("Browser fill failed");
+  }
 }

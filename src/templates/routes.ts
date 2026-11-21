@@ -5,18 +5,12 @@ import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 import { readTemplateBody, templateInput } from "@/templates/input";
-import {
-  TemplateError,
-  type TemplateRow,
-  type TemplateStore,
-  type TemplateType,
-} from "@/templates/store";
-import {
-  RenderCapacityError,
-  TemplateSourceError,
-  type TemplateRenderer,
-} from "@/templates/renderer";
-import { parseSample, previewContext, SampleError, type Sample } from "@/templates/sample";
+import { TemplateError } from "@/templates/store";
+import type { TemplateRow, TemplateStore, TemplateType } from "@/templates/store";
+import { RenderCapacityError, TemplateSourceError } from "@/templates/renderer";
+import type { TemplateRenderer } from "@/templates/renderer";
+import { parseSample, previewContext, SampleError } from "@/templates/sample";
+import type { Sample } from "@/templates/sample";
 
 const idValue = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER)
@@ -41,7 +35,9 @@ function noBody(context: RequestContext) {
   );
 }
 function translateError(context: RequestContext, error: unknown): never {
-  if (error instanceof HttpError) throw error;
+  if (error instanceof HttpError) {
+    throw error;
+  }
   if (error instanceof TemplateError) {
     const t = context.app.i18n;
     switch (error.reason) {
@@ -140,7 +136,9 @@ export function registerTemplateRoutes(
     );
   const getRow = (context: RequestContext) => {
     const row = store.get(BigInt(getID(context)));
-    if (!row) throw new TemplateError("missing");
+    if (!row) {
+      throw new TemplateError("missing");
+    }
     return row;
   };
   const preview = async (
@@ -149,11 +147,15 @@ export function registerTemplateRoutes(
     body: string,
     sample?: Sample,
   ) => {
-    if (type === "campaign_visual") throw new TemplateError("type");
+    if (type === "campaign_visual") {
+      throw new TemplateError("type");
+    }
     // Without a sample the context is the dummy one, byte for byte as it has always been.
     const rendered = sample === undefined ? data : JSON.stringify(previewContext(dummy, sample));
     try {
-      if (type === "campaign") renderer.validate(body, "", true);
+      if (type === "campaign") {
+        renderer.validate(body, "", true);
+      }
       const result = await renderer.render(
         type === "campaign"
           ? { body: sampleBody, layout: body, mode: "html", data: rendered }
@@ -163,16 +165,21 @@ export function registerTemplateRoutes(
       return html(result.body);
     } catch (error) {
       auth.revalidate(context, "templates:get");
-      if (error instanceof HttpError) throw error;
-      if (error instanceof TemplateSourceError && error.field === "slot")
+      if (error instanceof HttpError) {
+        throw error;
+      }
+      if (error instanceof TemplateSourceError && error.field === "slot") {
         throw new TemplateError("slot");
-      if (error instanceof TemplateSourceError)
+      }
+      if (error instanceof TemplateSourceError) {
         throw new HttpError(
           400,
           context.app.i18n.Ts("templates.errorCompiling", "error", "invalid body"),
         );
-      if (error instanceof RenderCapacityError)
+      }
+      if (error instanceof RenderCapacityError) {
         throw new HttpError(429, "Too many template renders in progress.");
+      }
       throw new HttpError(
         400,
         context.app.i18n.Ts("templates.errorRendering", "error", "invalid template"),
@@ -209,8 +216,12 @@ export function registerTemplateRoutes(
         const parsed = new URLSearchParams();
         // Request.FormValue ignores ParseForm errors and keeps the valid pairs.
         for (const pair of bytes.toString("utf8").split("&")) {
-          if (/%(?![0-9a-fA-F]{2})/.test(pair) || pair.includes(";")) continue;
-          for (const [key, value] of new URLSearchParams(pair)) parsed.append(key, value);
+          if (/%(?![0-9a-fA-F]{2})/.test(pair) || pair.includes(";")) {
+            continue;
+          }
+          for (const [key, value] of new URLSearchParams(pair)) {
+            parsed.append(key, value);
+          }
         }
         form = parsed;
       } else if (media === "multipart/form-data") {
@@ -238,15 +249,18 @@ export function registerTemplateRoutes(
         try {
           sample = parseSample(rawSample, { data: true });
         } catch (error) {
-          if (error instanceof SampleError)
+          if (error instanceof SampleError) {
             throw new HttpError(
               400,
               context.app.i18n.Ts("globals.messages.invalidFields", "name", error.field),
             );
+          }
           throw error;
         }
       }
-      if (type !== "campaign" && type !== "tx") throw new TemplateError("type");
+      if (type !== "campaign" && type !== "tx") {
+        throw new TemplateError("type");
+      }
       auth.revalidate(context, "templates:get");
       return preview(context, type, body, sample);
     }),

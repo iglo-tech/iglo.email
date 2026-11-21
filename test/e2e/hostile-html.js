@@ -123,22 +123,34 @@ export function audit(root) {
   const banned =
     /^(script|style|iframe|object|embed|base|meta|link|form|input|button|select|textarea|svg|math|template|video|audio|noscript)$/;
   for (const el of root.querySelectorAll("*")) {
-    if (banned.test(el.localName)) bad.push(el.localName);
-    if (el.namespaceURI !== "http://www.w3.org/1999/xhtml") bad.push(`foreign ${el.localName}`);
+    if (banned.test(el.localName)) {
+      bad.push(el.localName);
+    }
+    if (el.namespaceURI !== "http://www.w3.org/1999/xhtml") {
+      bad.push(`foreign ${el.localName}`);
+    }
     for (const { name, value } of el.attributes) {
-      if (/^(on|x-|@|:)/.test(name)) bad.push(`${el.localName} ${name}`);
-      if (name === "name" && el.localName !== "a") bad.push(`${el.localName} name`);
-      if (name === "srcset" || name === "srcdoc" || name === "formaction") bad.push(name);
+      if (/^(on|x-|@|:)/.test(name)) {
+        bad.push(`${el.localName} ${name}`);
+      }
+      if (name === "name" && el.localName !== "a") {
+        bad.push(`${el.localName} name`);
+      }
+      if (name === "srcset" || name === "srcdoc" || name === "formaction") {
+        bad.push(name);
+      }
       // Browsers drop control characters and spaces before reading a URL's scheme; mirror that.
       // oxlint-disable-next-line no-control-regex
-      const url = value.replace(/[\u0000- ]/g, "");
-      if (/^(href|src|background|cite)$/.test(name) && /^(javascript|vbscript):/i.test(url))
+      const url = value.replaceAll(/[\u0000- ]/g, "");
+      if (/^(href|src|background|cite)$/.test(name) && /^(javascript|vbscript):/i.test(url)) {
         bad.push(`${name} ${value}`);
+      }
       if (
         /^(href|src|background|cite)$/.test(name) &&
         /^data:(?!image\/(png|gif|jpe?g|webp))/i.test(url)
-      )
+      ) {
         bad.push(`${name} ${value}`);
+      }
     }
   }
   return bad;

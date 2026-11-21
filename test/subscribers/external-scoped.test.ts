@@ -2,11 +2,14 @@
 // selector forms, a subscriber outside the user's lists keeps 403, a list-scoped subscriber is
 // served, and refusals write nothing. Observed through the HTTP API of the production router.
 import { afterEach, expect, test } from "bun:test";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
-const fixtures: QueryFixture[] = [];
+const fixtures: Array<QueryFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 
 const forms = (external: string) =>

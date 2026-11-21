@@ -29,7 +29,9 @@ try {
     const response = await result;
     const body = response.slice(response.indexOf("\r\n\r\n") + 4);
     const actual = JSON.parse(body).pathname;
-    if (actual !== expected) throw new Error(`Unexpected normalized path for ${wirePath}`);
+    if (actual !== expected) {
+      throw new Error(`Unexpected normalized path for ${wirePath}`);
+    }
     process.stdout.write(`${wirePath} -> ${actual}\n`);
   }
 } finally {

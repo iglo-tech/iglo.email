@@ -5,14 +5,15 @@
 // Limits, cancellation and shutdown are recorded in docs/design/09-decisions.md D62.
 import { readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { createAnalyticsStore, type AnalyticsStore } from "@/analytics/store";
+import { createAnalyticsStore } from "@/analytics/store";
+import type { AnalyticsStore } from "@/analytics/store";
 import { ok } from "@/server/response";
 import { openReadOnly } from "@/subscribers/query-runner";
 
 /** The command line that makes the executable run the child instead of the server. */
 export const analyticsChildArgument = "__analytics-read";
 /** Bytes per piece of a streamed response; a smaller body is sent whole and not counted. */
-const PIECE = 65536;
+const PIECE = 65_536;
 const methods = [
   "campaignCounts",
   "listCounts",
@@ -27,7 +28,7 @@ const methods = [
 type Method = (typeof methods)[number];
 
 /** Reads whose rows can number one per ID and period; these stream instead of collecting. */
-const streamed: readonly Method[] = ["campaignCounts", "listCounts"];
+const streamed: ReadonlySet<Method> = new Set(["campaignCounts", "listCounts"]);
 
 /** Child entry: one read in one snapshot; stdout is the response body, ready to serve. */
 export async function runAnalyticsChild(): Promise<void> {
@@ -53,7 +54,7 @@ export async function runAnalyticsChild(): Promise<void> {
     db.run("BEGIN");
     const read = store[request.method] as (...args: unknown[]) => unknown;
     const result = read.apply(store, request.args);
-    if (streamed.includes(request.method)) {
+    if (streamed.has(request.method)) {
       emit(`{"data":[`);
       let separator = "";
       for (const row of result as Iterable<unknown>) {
@@ -61,7 +62,9 @@ export async function runAnalyticsChild(): Promise<void> {
         separator = ",";
       }
       emit("]}");
-    } else emit(await ok(result).text());
+    } else {
+      emit(await ok(result).text());
+    }
     flush();
     db.run("COMMIT");
   } finally {
@@ -112,10 +115,10 @@ export interface ReaderOptions {
   onGap?: () => void;
   /** The clock for the gap; tests inject theirs. */
   now?: () => number;
-  command?: string[];
+  command?: Array<string>;
 }
 
-function defaultCommand(): string[] {
+function defaultCommand(): Array<string> {
   // A compiled executable re-runs itself; a source checkout runs the module directly.
   return import.meta.path.startsWith("/$bunfs/")
     ? [process.execPath, analyticsChildArgument]
@@ -148,7 +151,9 @@ export function createAnalyticsReader(options: ReaderOptions) {
   /** Reads have overlapped for too long: admit none until the running ones finish. */
   const draining = () => active > 0 && now() - streakStart >= gapAfterMs;
   const admit = () => {
-    if (active === 0) streakStart = now();
+    if (active === 0) {
+      streakStart = now();
+    }
     active++;
   };
   const release = () => {
@@ -165,26 +170,37 @@ export function createAnalyticsReader(options: ReaderOptions) {
   const admitWaiting = () => {
     while (active < concurrency && !draining()) {
       const [next] = waiting;
-      if (!next) return;
+      if (!next) {
+        return;
+      }
       admit();
       next();
     }
   };
   const acquire = (signal: AbortSignal | undefined) => {
-    if (closed) throw closing();
-    if (signal?.aborted) throw cancelled();
+    if (closed) {
+      throw closing();
+    }
+    if (signal?.aborted) {
+      throw cancelled();
+    }
     if (active < concurrency && !draining() && waiting.size === 0) {
       admit();
       return;
     }
-    if (waiting.size >= maxQueued) throw busy();
+    if (waiting.size >= maxQueued) {
+      throw busy();
+    }
     return new Promise<void>((resolve, reject) => {
       const settle = (error?: ReaderError) => {
         waiting.delete(settle);
         clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
-        if (error) reject(error);
-        else resolve();
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
       };
       const abort = () => settle(cancelled());
       const timer = setTimeout(() => settle(busy()), admissionMs);
@@ -216,7 +232,9 @@ export function createAnalyticsReader(options: ReaderOptions) {
     const watchdog = setInterval(() => {
       try {
         const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
-        if (found && Number(found[1]) * 1024 > memoryBytes) stop(tooLarge());
+        if (found && Number(found[1]) * 1024 > memoryBytes) {
+          stop(tooLarge());
+        }
       } catch {
         /* exited, or no /proc */
       }
@@ -228,7 +246,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
       } catch {
         /* A child that exited early reports through its exit code. */
       }
-      const chunks: Uint8Array[] = [];
+      const chunks: Array<Uint8Array> = [];
       let size = 0;
       for await (const chunk of child.stdout) {
         size += chunk.length;
@@ -239,8 +257,12 @@ export function createAnalyticsReader(options: ReaderOptions) {
         chunks.push(chunk);
       }
       const code = await child.exited;
-      if (stopped) throw stopped;
-      if (code !== 0) throw new ReaderError("failed", "analytics read failed");
+      if (stopped) {
+        throw stopped;
+      }
+      if (code !== 0) {
+        throw new ReaderError("failed", "analytics read failed");
+      }
       return new Uint8Array(Bun.concatArrayBuffers(chunks));
     } finally {
       child.kill("SIGKILL");
@@ -264,11 +286,17 @@ export function createAnalyticsReader(options: ReaderOptions) {
     ): Promise<Uint8Array<ArrayBuffer>> {
       await acquire(signal);
       try {
-        if (closed) throw closing();
+        if (closed) {
+          throw closing();
+        }
         // A read that waited for a child meets the budget again, so a queue of reads cannot
         // all pass a check made while nothing was held yet.
-        if (counted && held >= egressBytes) throw overloaded();
-        if (signal?.aborted) throw cancelled();
+        if (counted && held >= egressBytes) {
+          throw overloaded();
+        }
+        if (signal?.aborted) {
+          throw cancelled();
+        }
         return await run(JSON.stringify({ path: options.path, method, args }), signal);
       } finally {
         release();
@@ -284,17 +312,23 @@ export function createAnalyticsReader(options: ReaderOptions) {
       args: Parameters<AnalyticsStore[M]>,
       signal?: AbortSignal,
     ): Promise<Response> {
-      if (held >= egressBytes) throw overloaded();
+      if (held >= egressBytes) {
+        throw overloaded();
+      }
       const bytes = await this.read(method, args, signal, true);
       const headers = { "Content-Type": "application/json" };
       // A body of one piece is handed over whole, with its length, and is not counted: it is
       // small and the server's own connection limits bound how many wait.
-      if (bytes.length <= PIECE) return new Response(bytes, { headers });
+      if (bytes.length <= PIECE) {
+        return new Response(bytes, { headers });
+      }
       held += bytes.length;
       let at = 0;
       let returned = false;
       const done = () => {
-        if (returned) return;
+        if (returned) {
+          return;
+        }
         returned = true;
         held -= bytes.length;
       };
@@ -318,8 +352,12 @@ export function createAnalyticsReader(options: ReaderOptions) {
     /** Refuse new and queued reads, kill running children and wait for them to exit. */
     async close() {
       closed = true;
-      for (const settle of Array.from(waiting)) settle(closing());
-      for (const stop of children.values()) stop(closing());
+      for (const settle of Array.from(waiting)) {
+        settle(closing());
+      }
+      for (const stop of children.values()) {
+        stop(closing());
+      }
       await Promise.all([...children.keys()].map((child) => child.exited));
     },
   };

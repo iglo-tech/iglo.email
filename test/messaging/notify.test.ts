@@ -41,11 +41,8 @@ import { registerSettingsRoutes } from "@/settings/routes";
 import { registerImportRoutes } from "@/subscribers/import/routes";
 import { createImporter } from "@/subscribers/import/importer";
 import { createAdminNotifier } from "@/messaging/notify";
-import {
-  createCampaignRunnerRegistry,
-  startCampaignRunner,
-  type RunnerSettings,
-} from "@/campaigns/runner/runner";
+import { createCampaignRunnerRegistry, startCampaignRunner } from "@/campaigns/runner/runner";
+import type { RunnerSettings } from "@/campaigns/runner/runner";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
@@ -79,9 +76,9 @@ interface Fixture {
   createList(name?: string): { id: bigint; uuid: string; name: string };
   drainOutbox(): Promise<void>;
   /** Errors logged through the app logger, in order. */
-  errors: unknown[];
+  errors: Array<unknown>;
   /** Makes the runner's open of a campaign fail when `fn` is true for its audience. */
-  failOpen(fn: ((audience: { lists: { id: unknown }[] }) => boolean) | undefined): void;
+  failOpen(fn: ((audience: { lists: Array<{ id: unknown }> }) => boolean) | undefined): void;
   /** Advances the clock until `done` holds; fails with `what` if it never does. */
   waitUntil(done: () => boolean, what: string, step?: number, rounds?: number): Promise<void>;
   close(): Promise<void>;
@@ -89,7 +86,7 @@ interface Fixture {
 
 async function createNotifyFixture(
   options: {
-    notifyEmails?: string[];
+    notifyEmails?: Array<string>;
     sinkReject?: (to: string) => boolean;
   } = {},
 ): Promise<Fixture> {
@@ -97,7 +94,7 @@ async function createNotifyFixture(
   const clock = new TestClock();
   const db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const i18n = createTranslation();
   const app = createApp({
     bootstrap: {
@@ -126,7 +123,9 @@ async function createNotifyFixture(
   const auth = await createAuthentication(users, roles, clock, root, defaultAuthPolicy);
   await bootstrapAdmin(users, auth, admin);
   const session = await auth.login(admin.user, admin.password);
-  if (!session || !("id" in session)) throw new Error("fixture login failed");
+  if (!session || !("id" in session)) {
+    throw new Error("fixture login failed");
+  }
 
   const sink = await startSink({
     clock,
@@ -211,7 +210,7 @@ async function createNotifyFixture(
     mediaFilename: (id) => media.filename(id),
   });
 
-  const touchLists = (ids: bigint[]) => {
+  const touchLists = (ids: Array<bigint>) => {
     listStore.touch(ids);
   };
 
@@ -297,7 +296,7 @@ async function createNotifyFixture(
     {
       activity: (id) => subscriberTracking.activity(id),
       clearActivity: (id, type) => subscriberTracking.clear(id, type),
-      exportSections: () => ({}) as any,
+      exportSections: () => ({}),
     },
   );
   registerWebhookRoutes(router, { webhooks, auth });
@@ -332,17 +331,19 @@ async function createNotifyFixture(
     return { status: response.status, data: text ? JSON.parse(text) : null };
   };
 
-  let openFailure: ((audience: { lists: { id: unknown }[] }) => boolean) | undefined;
+  let openFailure: ((audience: { lists: Array<{ id: unknown }> }) => boolean) | undefined;
   const recipientStore = createCampaignRecipients(db);
   const recipients: typeof recipientStore = {
     ...recipientStore,
     measure(audience) {
-      if (openFailure?.(audience)) throw new Error("injected open failure");
+      if (openFailure?.(audience)) {
+        throw new Error("injected open failure");
+      }
       return recipientStore.measure(audience);
     },
   };
   const registry = createCampaignRunnerRegistry();
-  const runners: ReturnType<typeof startCampaignRunner>[] = [];
+  const runners: Array<ReturnType<typeof startCampaignRunner>> = [];
 
   const startRunner = (customSettings?: Partial<RunnerSettings>) => {
     const runner = startCampaignRunner({
@@ -370,7 +371,7 @@ async function createNotifyFixture(
         maxSendErrors: 1000,
         slidingWindow: false,
         slidingWindowDuration: "1h",
-        slidingWindowRate: 10000,
+        slidingWindowRate: 10_000,
         rootUrl: root,
         messengers: ["email", "fixture"],
         unsubscribeHeader: true,
@@ -387,14 +388,17 @@ async function createNotifyFixture(
 
   // Every send with this status, read through GET /api/sends as a client reads it (B57).
   const sendsWithStatus = async (status: "queued" | "sending") => {
-    const rows: { next_attempt_at: string | null }[] = [];
+    const rows: Array<{ next_attempt_at: string | null }> = [];
     for (let page = 1; ; page++) {
       const response = await json(`/api/sends?status=${status}&per_page=100&page=${page}`);
-      if (response.status !== 200)
+      if (response.status !== 200) {
         throw new Error(`GET /api/sends?status=${status} answered ${response.status}`);
+      }
       const list = response.data.data;
       rows.push(...list.results);
-      if (page * 100 >= list.total) return rows;
+      if (page * 100 >= list.total) {
+        return rows;
+      }
     }
   };
   // Waits until no send is in flight and none is due: a retry scheduled for later does not count.
@@ -407,7 +411,9 @@ async function createNotifyFixture(
         const due = (await sendsWithStatus("queued")).filter(
           (row) => row.next_attempt_at === null || Date.parse(row.next_attempt_at) <= now,
         );
-        if ((await sendsWithStatus("sending")).length > 0) return false;
+        if ((await sendsWithStatus("sending")).length > 0) {
+          return false;
+        }
         return due.length === 0;
       },
       { label: "outbox drain", advance: (ms) => clock.advance(ms), step: 100 },
@@ -415,11 +421,15 @@ async function createNotifyFixture(
 
   const waitUntil = async (done: () => boolean, what: string, step = 50, rounds = 200) => {
     for (let i = 0; i < rounds; i++) {
-      if (done()) return;
+      if (done()) {
+        return;
+      }
       clock.advance(step);
       await Bun.sleep(5);
     }
-    if (!done()) throw new Error(`timed out waiting for ${what}`);
+    if (!done()) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
   };
 
   return {
@@ -461,7 +471,9 @@ async function createNotifyFixture(
     drainOutbox,
     async close() {
       // A runner whose claim failed reports that again at stop; a test that expects it has asserted it.
-      for (const runner of runners) await runner.stop().catch(() => undefined);
+      for (const runner of runners) {
+        await runner.stop().catch(() => undefined);
+      }
       await outbox.stop();
       await webhookDelivery.stop();
       sink.close();
@@ -1257,7 +1269,9 @@ describe("B38 admin notification mails", () => {
 
     const runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
     await f.waitUntil(() => cancelled, "the cancel to be issued", 50);
-    if (cancelPromise) await cancelPromise;
+    if (cancelPromise) {
+      await cancelPromise;
+    }
     await f.waitUntil(
       () => f.runnerStore.state(campaignId)?.status === "cancelled",
       "the campaign to be cancelled",
@@ -1329,7 +1343,7 @@ describe("B38 admin notification mails", () => {
       JSON.stringify(["not an address"]),
     ]);
     const empty = f.createList("Empty");
-    const ids: bigint[] = [];
+    const ids: Array<bigint> = [];
     for (const name of ["First", "Second"]) {
       const res = await f.json("/api/campaigns", "POST", {
         name,

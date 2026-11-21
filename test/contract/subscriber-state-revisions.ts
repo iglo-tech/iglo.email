@@ -7,7 +7,7 @@ export async function runSubscriberStateRevisions(target: {
   credentials: Credentials;
 }) {
   const suffix = crypto.randomUUID();
-  const owned: { path: string; id: number }[] = [];
+  const owned: Array<{ path: string; id: number }> = [];
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", body?: unknown) =>
     fetch(`${target.baseUrl}${path}`, {
@@ -16,12 +16,16 @@ export async function runSubscriberStateRevisions(target: {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL ${label}`);
+    if (!value) {
+      throw new Error(`FAIL ${label}`);
+    }
   }
   async function create(path: string, body: unknown) {
     const response = await request(`/api/${path}`, "POST", body);
     const data = (await response.json()).data;
-    if (response.status === 200 && typeof data?.id === "number") owned.push({ path, id: data.id });
+    if (response.status === 200 && typeof data?.id === "number") {
+      owned.push({ path, id: data.id });
+    }
     check(response.status === 200 && data, "subscriber-state-seed");
     return data;
   }
@@ -90,8 +94,9 @@ export async function runSubscriberStateRevisions(target: {
     }
     const other = await create("subscribers", { email: `other-state-${suffix}@example.test` });
     const conflictPaths = [`/api/subscribers/${sub.id}`];
-    if (target.mode !== "reference")
+    if (target.mode !== "reference") {
       conflictPaths.push(`/api/subscribers/external?external_id=state-${suffix}`);
+    }
     for (const path of conflictPaths) {
       for (const method of path.includes("?") ? ["PUT"] : ["PUT", "PATCH"]) {
         const before = await get(sub.id);
@@ -151,8 +156,9 @@ export async function runSubscriberStateRevisions(target: {
         after.lists.find((l: any) => l.id === tagged.id).subscription_status === "confirmed",
         "D41-unrelated-membership-retained",
       );
-      if (target.mode === "reference")
+      if (target.mode === "reference") {
         check(JSON.stringify(after) === JSON.stringify(before), "D41-reference-duplicate-no-write");
+      }
     }
     const blocked = await create("subscribers", {
       email: `blocked-state-${suffix}@example.test`,
@@ -189,8 +195,11 @@ export async function runSubscriberStateRevisions(target: {
       "subscriber-empty-status-history-persisted",
     );
   } finally {
-    for (const { path, id } of owned.reverse())
+    for (const { path, id } of owned.reverse()) {
       if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL subscriber-state-revision-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL subscriber-state-revision-cleanup");
+  }
 }

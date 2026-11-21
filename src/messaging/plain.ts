@@ -227,8 +227,10 @@ const REFERENCE = /&(?:#[xX]([0-9a-fA-F]{1,8});?|#([0-9]{1,8});?|([A-Za-z][A-Za-
  * prefix decodes.
  */
 function decodeReferences(text: string, attribute = false): string {
-  if (!text.includes("&")) return text;
-  return text.replace(
+  if (!text.includes("&")) {
+    return text;
+  }
+  return text.replaceAll(
     REFERENCE,
     (
       match,
@@ -240,24 +242,32 @@ function decodeReferences(text: string, attribute = false): string {
       whole?: string,
     ) => {
       if (hex !== undefined || dec !== undefined) {
-        const code = hex !== undefined ? parseInt(hex, 16) : parseInt(dec!, 10);
+        const code = hex !== undefined ? Number.parseInt(hex, 16) : Number.parseInt(dec!, 10);
         const windows = WINDOWS_1252.get(code);
-        if (windows !== undefined) return windows;
+        if (windows !== undefined) {
+          return windows;
+        }
         // Zero, a surrogate and anything past U+10FFFF are not characters: the replacement character.
-        return code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
+        return code === 0 || code > 0x10_ff_ff || (code >= 0xd8_00 && code <= 0xdf_ff)
           ? "�"
           : String.fromCodePoint(code);
       }
-      if (semicolon === ";") return NAMED.get(name!) ?? match;
+      if (semicolon === ";") {
+        return NAMED.get(name!) ?? match;
+      }
       // A reference without `;` decodes only when it is a legacy name.
       if (attribute) {
         const after = whole?.[(offset ?? 0) + match.length] ?? "";
-        if (after === "=" || /[A-Za-z0-9]/.test(after)) return match;
+        if (after === "=" || /[A-Za-z0-9]/.test(after)) {
+          return match;
+        }
         return LEGACY.get(name!) ?? match;
       }
       for (let end = name!.length; end > 0; end--) {
         const value = LEGACY.get(name!.slice(0, end));
-        if (value !== undefined) return value + name!.slice(end);
+        if (value !== undefined) {
+          return value + name!.slice(end);
+        }
       }
       return match;
     },
@@ -271,24 +281,35 @@ function decodeReferences(text: string, attribute = false): string {
  * style is passed decoded, since the rewriter returns attribute values as written.
  */
 function hiddenByStyle(style: string): boolean {
-  if (!style.includes(":")) return false;
+  if (!style.includes(":")) {
+    return false;
+  }
   const declared = new Map<string, string>();
   for (const declaration of style.split(";")) {
     const colon = declaration.indexOf(":");
-    if (colon < 0) continue;
+    if (colon < 0) {
+      continue;
+    }
     let value = declaration
       .slice(colon + 1)
       .trim()
       .toLowerCase();
     const bang = value.lastIndexOf("!");
-    if (bang >= 0 && value.slice(bang + 1).trim() === "important")
+    if (bang >= 0 && value.slice(bang + 1).trim() === "important") {
       value = value.slice(0, bang).trim();
+    }
     declared.set(declaration.slice(0, colon).trim().toLowerCase(), value);
   }
-  if (declared.get("display") === "none") return true;
+  if (declared.get("display") === "none") {
+    return true;
+  }
   const visibility = declared.get("visibility");
-  if (visibility === "hidden" || visibility === "collapse") return true;
-  if (declared.get("mso-hide") === "all") return true;
+  if (visibility === "hidden" || visibility === "collapse") {
+    return true;
+  }
+  if (declared.get("mso-hide") === "all") {
+    return true;
+  }
   const maxHeight = declared.get("max-height");
   return (
     maxHeight !== undefined &&
@@ -298,7 +319,7 @@ function hiddenByStyle(style: string): boolean {
 }
 
 /** One text node: references decoded, invisible characters removed, whitespace collapsed to a space. */
-const clean = (text: string) => text.replace(INVISIBLE, "").replace(/\s+/g, " ");
+const clean = (text: string) => text.replaceAll(INVISIBLE, "").replaceAll(/\s+/g, " ");
 
 /**
  * A URL in the text part is written between angle brackets, so the characters that could end it
@@ -306,7 +327,7 @@ const clean = (text: string) => text.replace(INVISIBLE, "").replace(/\s+/g, " ")
  */
 const escapeUrl = (href: string) =>
   // oxlint-disable-next-line no-control-regex
-  href.replace(/[\s<>"\u0000-\u001f\u007f]/gu, (character) => encodeURIComponent(character));
+  href.replaceAll(/[\s<>"\u0000-\u001f\u007f]/gu, (character) => encodeURIComponent(character));
 
 interface Link {
   /** The href, decoded once: the URL a reader follows. */
@@ -344,9 +365,9 @@ export async function plainText(html: string, budget: MessageBudget): Promise<st
 }
 
 async function convert(html: string, budget: MessageBudget): Promise<string> {
-  const parts: string[] = [];
-  const stack: Entry[] = [];
-  const open = new Map<string, Entry[]>();
+  const parts: Array<string> = [];
+  const stack: Array<Entry> = [];
+  const open = new Map<string, Array<Entry>>();
   // Depth of hidden elements on the stack. Their content, and the markup that marks it, is not kept.
   let hidden = 0;
   // The current text node, joined across chunks so no character reference is split.
@@ -360,18 +381,20 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
 
   const latest = (name: string) => open.get(name)?.at(-1);
   const indexOf = (name: string) => latest(name)?.index ?? -1;
-  const newest = (...names: string[]) => {
+  const newest = (...names: Array<string>) => {
     let best: Entry | undefined;
     for (const name of names) {
       const entry = latest(name);
-      if (entry && (!best || entry.index > best.index)) best = entry;
+      if (entry && (!best || entry.index > best.index)) {
+        best = entry;
+      }
     }
     return best;
   };
-  const boundary = (...names: string[]) => Math.max(-1, ...names.map(indexOf));
+  const boundary = (...names: Array<string>) => Math.max(-1, ...names.map(indexOf));
 
   const finishLink = (link: Link) => {
-    const text = parts.slice(link.at).join("").replace(/\s+/g, " ").trim();
+    const text = parts.slice(link.at).join("").replaceAll(/\s+/g, " ").trim();
     parts.length = link.at;
     // A symbol with no letter or digit (an arrow, an emoji) is empty text: a reader still needs its URL.
     const shown = text !== "" && !/[\p{L}\p{N}]/u.test(text) ? "" : text;
@@ -383,7 +406,9 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
       gap.trim() === "" &&
       !gap.includes("\n")
     ) {
-      if (shown !== "") parts.push(` ${shown}`);
+      if (shown !== "") {
+        parts.push(` ${shown}`);
+      }
       lastLink = { href: link.href, end: parts.length };
       return;
     }
@@ -393,7 +418,9 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   };
 
   const finishOnce = (link: Link) => {
-    if (link.done) return;
+    if (link.done) {
+      return;
+    }
     link.done = true;
     finishLink(link);
   };
@@ -401,14 +428,24 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   const finish = (entry: Entry) => {
     entry.popped = true;
     open.get(entry.name)!.pop();
-    if (entry.own) hidden--;
-    if (entry.own || hidden > 0) return;
-    if (entry.link) finishOnce(entry.link);
-    if (BLOCK.has(entry.name)) parts.push("\n");
+    if (entry.own) {
+      hidden--;
+    }
+    if (entry.own || hidden > 0) {
+      return;
+    }
+    if (entry.link) {
+      finishOnce(entry.link);
+    }
+    if (BLOCK.has(entry.name)) {
+      parts.push("\n");
+    }
   };
   // Closes an entry and everything above it, as an end tag or an implied end does.
   const close = (entry: Entry) => {
-    while (!entry.popped) finish(stack.pop()!);
+    while (!entry.popped) {
+      finish(stack.pop()!);
+    }
   };
 
   // The HTML rules by which a start tag implies the end of an open element, for the elements the
@@ -417,30 +454,46 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
     // A head with no end tag ends at the body, or at the first element that is not head content.
     if (name === "body" || (name !== "html" && name !== "head" && !HEAD_CONTENT.has(name))) {
       const head = latest("head");
-      if (head) close(head);
+      if (head) {
+        close(head);
+      }
     }
     if (name === "td" || name === "th") {
       const cell = newest("td", "th");
-      if (cell && cell.index > indexOf("table")) close(cell);
+      if (cell && cell.index > indexOf("table")) {
+        close(cell);
+      }
     } else if (name === "tr") {
       const row = latest("tr");
-      if (row && row.index > indexOf("table")) close(row);
+      if (row && row.index > indexOf("table")) {
+        close(row);
+      }
     } else if (name === "thead" || name === "tbody" || name === "tfoot") {
       const section = newest("thead", "tbody", "tfoot");
-      if (section && section.index > indexOf("table")) close(section);
+      if (section && section.index > indexOf("table")) {
+        close(section);
+      }
     } else if (name === "li") {
       const item = latest("li");
-      if (item && item.index > boundary("ul", "ol")) close(item);
+      if (item && item.index > boundary("ul", "ol")) {
+        close(item);
+      }
     } else if (name === "dt" || name === "dd") {
       const item = newest("dt", "dd");
-      if (item && item.index > indexOf("dl")) close(item);
+      if (item && item.index > indexOf("dl")) {
+        close(item);
+      }
     } else if (name === "option") {
       const item = latest("option");
-      if (item && item.index > boundary("select", "datalist", "optgroup")) close(item);
+      if (item && item.index > boundary("select", "datalist", "optgroup")) {
+        close(item);
+      }
     }
     if (CLOSES_P.has(name)) {
       const paragraph = latest("p");
-      if (paragraph && paragraph.index > boundary(...P_SCOPE)) close(paragraph);
+      if (paragraph && paragraph.index > boundary(...P_SCOPE)) {
+        close(paragraph);
+      }
     }
   };
 
@@ -455,38 +508,52 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
         const own =
           content &&
           (SKIPPED.has(name) || (style !== null && hiddenByStyle(decodeReferences(style, true))));
-        if (own) hidden++;
+        if (own) {
+          hidden++;
+        }
         const shown = hidden === 0;
         if (shown) {
-          if (name === "li") parts.push("\n- ");
-          else if (name === "td" || name === "th") parts.push(" ");
-          else if (BLOCK.has(name) || name === "br" || name === "hr") parts.push("\n");
+          if (name === "li") {
+            parts.push("\n- ");
+          } else if (name === "td" || name === "th") {
+            parts.push(" ");
+          } else if (BLOCK.has(name) || name === "br" || name === "hr") {
+            parts.push("\n");
+          }
         }
         let link: Link | undefined;
         if (name === "a" && content && shown) {
           // A new link ends the open one, as a browser shows it. The rewriter keeps the element nested, so
           // the stack keeps the outer one until its own end tag, which the handler count depends on.
-          if (activeLink) finishOnce(activeLink);
+          if (activeLink) {
+            finishOnce(activeLink);
+          }
           activeLink = undefined;
           const href = decodeReferences(el.getAttribute("href") ?? "", true).trim();
           // A browser ignores the controls and spaces around a scheme and drops tab and newline inside
           // it, so the scheme is read after both. A script or data scheme writes no URL.
           // oxlint-disable-next-line no-control-regex
-          const scheme = href.replace(/[\u0000-  ]/g, "");
+          const scheme = href.replaceAll(/[\u0000-  ]/g, "");
           if (href && !href.startsWith("#") && !/^(javascript|vbscript|data):/i.test(scheme)) {
             link = { href, at: parts.length, done: false };
             activeLink = link;
           }
         }
-        if (!content) return;
+        if (!content) {
+          return;
+        }
         // The rewriter keeps every registered handler until it fires, so the held count is the cost of
         // the next end tag. Past the cap the conversion stops: a throw rejects the rewriter's output.
-        if (held >= HELD_CAP) throw new Error("end-tag handlers held");
+        if (held >= HELD_CAP) {
+          throw new Error("end-tag handlers held");
+        }
         held++;
         const entry: Entry = { name, index: stack.length, own, popped: false, link };
         stack.push(entry);
         let list = open.get(name);
-        if (!list) open.set(name, (list = []));
+        if (!list) {
+          open.set(name, (list = []));
+        }
         list.push(entry);
         el.onEndTag(() => {
           held--;
@@ -497,29 +564,39 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
     .onDocument({
       text(chunk) {
         raw += chunk.text;
-        if (!chunk.lastInTextNode) return;
+        if (!chunk.lastInTextNode) {
+          return;
+        }
         const value = clean(decodeReferences(raw));
         raw = "";
         // Text directly inside an open head ends the head, as a browser ends it.
-        const top = stack[stack.length - 1];
-        if (top?.name === "head" && /\S/.test(value)) close(top);
-        if (hidden === 0) parts.push(value);
+        const top = stack.at(-1);
+        if (top?.name === "head" && /\S/.test(value)) {
+          close(top);
+        }
+        if (hidden === 0) {
+          parts.push(value);
+        }
       },
       end() {
         // A document that ends with elements open closes them, so their links and markers count.
-        while (stack.length > 0) close(stack[stack.length - 1]!);
+        while (stack.length > 0) {
+          close(stack[stack.length - 1]!);
+        }
       },
     });
   await rewriter.transform(new Response(html)).text();
   const text = parts
     .join("")
-    .replace(/ {2,}/g, " ")
-    .replace(/ ?\n ?/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
+    .replaceAll(/ {2,}/g, " ")
+    .replaceAll(/ ?\n ?/g, "\n")
+    .replaceAll(/\n{3,}/g, "\n\n")
     .trim();
   // A backstop: the output is never longer than the input. Markup is always longer than the text
   // that replaces it, so this only matters for a URL escaped longer than the markup around it.
-  if (Buffer.byteLength(text) > Buffer.byteLength(html)) return "";
+  if (Buffer.byteLength(text) > Buffer.byteLength(html)) {
+    return "";
+  }
   budget.charge(Buffer.byteLength(text));
   return text;
 }

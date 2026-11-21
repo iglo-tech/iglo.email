@@ -23,8 +23,9 @@ const base = resolve(
 mkdirSync(base, { recursive: true });
 const resolvedBase = realpathSync(base);
 const filesystemType = Number(statfsSync(resolvedBase).type);
-if ([0x01021994, 0x858458f6].includes(filesystemType))
+if ([0x01_02_19_94, 0x85_84_58_f6].includes(filesystemType)) {
   throw new Error("Storage evidence requires a disk-backed directory, not tmpfs or ramfs");
+}
 const root = mkdtempSync(join(resolvedBase, "iglo-schema-measure-"));
 const clock = createRealClock();
 const timestamp = clock.now().toISOString();
@@ -100,10 +101,11 @@ function ftsWorkload(enabled: boolean, repetition: number) {
   const directory = join(root, `fts-${enabled ? "enabled" : "disabled"}-${repetition}`);
   let db = openDatabase(directory);
   runMigrations(db, directory, clock, productionMigrations);
-  if (!enabled)
+  if (!enabled) {
     db.run(
       "DROP TRIGGER subscribers_fts_insert; DROP TRIGGER subscribers_fts_update; DROP TRIGGER subscribers_fts_delete",
     );
+  }
   integrity(db);
   searchCheck(db, enabled, 0n, 0n);
   const insert = db.prepare(
@@ -114,8 +116,9 @@ function ftsWorkload(enabled: boolean, repetition: number) {
   const started = performance.now();
   for (let first = 1; first <= rows; first += batch) {
     writeTransaction(db, () => {
-      for (let id = first; id < first + batch; id++)
+      for (let id = first; id < first + batch; id++) {
         insert.run(id, `sub-${id}`, `user${id}@example.test`, "seedtoken", timestamp, timestamp);
+      }
     });
   }
   const inserted = performance.now();
@@ -123,8 +126,9 @@ function ftsWorkload(enabled: boolean, repetition: number) {
   const updateStarted = performance.now();
   for (let first = 1; first <= 500; first += batch) {
     writeTransaction(db, () => {
-      for (let id = first; id < first + batch; id++)
+      for (let id = first; id < first + batch; id++) {
         update.run("changedtoken", `changed${id}@example.test`, timestamp, id);
+      }
     });
   }
   const updated = performance.now();
@@ -132,27 +136,33 @@ function ftsWorkload(enabled: boolean, repetition: number) {
   const deleteStarted = performance.now();
   for (let first = 1; first <= 250; first += batch) {
     writeTransaction(db, () => {
-      for (let id = first; id < Math.min(first + batch, 251); id++) remove.run(id);
+      for (let id = first; id < Math.min(first + batch, 251); id++) {
+        remove.run(id);
+      }
     });
   }
   const deleted = performance.now();
   const rollbackStarted = performance.now();
   try {
     writeTransaction(db, () => {
-      for (let id = 251; id <= 350; id++)
+      for (let id = 251; id <= 350; id++) {
         update.run("rollbacktoken", `rollback${id}@example.test`, timestamp, id);
+      }
       throw new Error("expected rollback");
     });
     throw new Error("rollback unexpectedly committed");
   } catch (error) {
-    if (!(error instanceof Error) || error.message !== "expected rollback") throw error;
+    if (!(error instanceof Error) || error.message !== "expected rollback") {
+      throw error;
+    }
   }
   const rolledBack = performance.now();
   assert.equal(scalar(db, "SELECT count(*) FROM subscribers"), 1750n);
   searchCheck(db, enabled, 1500n, 250n);
   integrity(db);
-  if (enabled)
+  if (enabled) {
     db.run("INSERT INTO subscribers_fts(subscribers_fts, rank) VALUES ('integrity-check', 1)");
+  }
   const validated = performance.now();
   const beforeCheckpoint = sizes(directory);
   insert.finalize();
@@ -163,8 +173,9 @@ function ftsWorkload(enabled: boolean, repetition: number) {
   db = openDatabase(directory);
   integrity(db);
   searchCheck(db, enabled, 1500n, 250n);
-  if (enabled)
+  if (enabled) {
     db.run("INSERT INTO subscribers_fts(subscribers_fts, rank) VALUES ('integrity-check', 1)");
+  }
   const reopened = performance.now();
   const afterReopen = sizes(directory);
   db.close(true);
@@ -212,8 +223,9 @@ try {
   for (let repetition = 1; repetition <= 3; repetition++) {
     console.log(JSON.stringify(initialize("empty", repetition)));
     console.log(JSON.stringify(initialize("v1", repetition)));
-    for (const enabled of repetition % 2 ? [false, true] : [true, false])
+    for (const enabled of repetition % 2 ? [false, true] : [true, false]) {
       console.log(JSON.stringify(ftsWorkload(enabled, repetition)));
+    }
   }
 } finally {
   rmSync(root, { recursive: true, force: true });

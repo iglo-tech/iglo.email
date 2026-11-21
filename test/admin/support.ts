@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { startUserFixture } from "@/test/users/fixture";
+import type { startUserFixture } from "@/test/users/fixture";
 
 export type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
@@ -36,7 +36,12 @@ export async function api(f: Fixture, cookie: string, path: string, method: stri
   });
 }
 /** A user with its own role, returning the login session. */
-export async function userWith(f: Fixture, cookie: string, name: string, permissions: string[]) {
+export async function userWith(
+  f: Fixture,
+  cookie: string,
+  name: string,
+  permissions: Array<string>,
+) {
   const role = await fetch(`${f.origin}/fixture/role`, {
     method: "POST",
     body: JSON.stringify({ name, permissions }),

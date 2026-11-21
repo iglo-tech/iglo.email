@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createServer, type Socket } from "node:net";
-import { createEmailer, type SMTPServer } from "@/messaging/email";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
+import { createEmailer } from "@/messaging/email";
+import type { SMTPServer } from "@/messaging/email";
 import { TestClock } from "@/test/server/fixture";
 
 const message = {
@@ -27,7 +29,9 @@ async function peer() {
   let connections = 0;
   const listener = createServer((socket) => {
     connections++;
-    if (connections === 2) secondEntered();
+    if (connections === 2) {
+      secondEntered();
+    }
     sockets.add(socket);
     socket.on("error", () => {});
     socket.once("close", () => {
@@ -38,7 +42,9 @@ async function peer() {
   });
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   const address = listener.address();
-  if (!address || typeof address === "string") throw new Error("missing address");
+  if (!address || typeof address === "string") {
+    throw new Error("missing address");
+  }
   const server: SMTPServer = {
     name: "fixture",
     enabled: true,
@@ -63,10 +69,14 @@ async function peer() {
     closed,
     connections: () => connections,
     trickle: () => {
-      for (const socket of sockets) socket.write("220-");
+      for (const socket of sockets) {
+        socket.write("220-");
+      }
     },
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((resolve, reject) =>
         listener.close((e) => (e ? reject(e) : resolve())),
       );
@@ -75,7 +85,9 @@ async function peer() {
 }
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const close of cleanup.splice(0)) await close();
+  for (const close of cleanup.splice(0)) {
+    await close();
+  }
 });
 
 describe("messaging absolute deadlines", () => {
@@ -91,7 +103,7 @@ describe("messaging absolute deadlines", () => {
     await sink.connected;
     const second = emailer.push(message);
     sink.trickle();
-    clock.advance(59999);
+    clock.advance(59_999);
     await Promise.resolve();
     sink.trickle();
     clock.advance(1);
@@ -113,7 +125,7 @@ describe("messaging absolute deadlines", () => {
     const clock = new TestClock();
     const emailer = createEmailer({
       settings: () => {
-        clock.advance(60000);
+        clock.advance(60_000);
         return { smtp: [sink.server], rootUrl: "https://example.test" };
       },
       clock,
@@ -140,7 +152,7 @@ describe("messaging absolute deadlines", () => {
     const sends = [emailer.push(message), emailer.push(message), emailer.push(message)];
     await sink.secondConnected;
     expect(sink.connections()).toBe(2);
-    clock.advance(60000);
+    clock.advance(60_000);
     expect(
       (await Promise.all(sends.map((send) => send.result))).map((outcome) => outcome.status),
     ).toEqual(["ambiguous", "ambiguous", "proven-not-accepted"]);
@@ -196,10 +208,10 @@ describe("messaging absolute deadlines", () => {
     await replacement.connected;
     // Trigger reconciliation while the old configuration is still in flight.
     const queued = emailer.push(message);
-    clock.advance(10000);
+    clock.advance(10_000);
     expect((await second.result).status).toBe("ambiguous");
     await replacement.closed;
-    clock.advance(50000);
+    clock.advance(50_000);
     expect((await first.result).status).toBe("ambiguous");
     await old.closed;
     expect((await queued.result).status).toBe("ambiguous");
@@ -227,7 +239,9 @@ test("a temporary implicit TLS connection is physically closed at its deadline",
   });
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   const address = listener.address();
-  if (!address || typeof address === "string") throw new Error("missing address");
+  if (!address || typeof address === "string") {
+    throw new Error("missing address");
+  }
   const server: SMTPServer = {
     name: "",
     enabled: true,
@@ -253,7 +267,7 @@ test("a temporary implicit TLS connection is physically closed at its deadline",
   try {
     const send = emailer.test(server, message, "https://example.test");
     await connected;
-    clock.advance(10000);
+    clock.advance(10_000);
     expect((await send.result).status).toBe("ambiguous");
     await closed;
     await emailer.close();
@@ -281,7 +295,9 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
       buffer += part.toString();
       for (;;) {
         const end = buffer.indexOf("\r\n");
-        if (end < 0) break;
+        if (end < 0) {
+          break;
+        }
         const line = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
         if (data) {
@@ -289,17 +305,22 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
             data = false;
             socket.write("250 queued\r\n");
           }
-        } else if (line.startsWith("EHLO")) socket.write("250 fixture\r\n");
-        else if (line.startsWith("DATA")) {
+        } else if (line.startsWith("EHLO")) {
+          socket.write("250 fixture\r\n");
+        } else if (line.startsWith("DATA")) {
           data = true;
           socket.write("354 send\r\n");
-        } else socket.write("250 ok\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   });
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   const address = listener.address();
-  if (!address || typeof address === "string") throw new Error("missing address");
+  if (!address || typeof address === "string") {
+    throw new Error("missing address");
+  }
   const config: SMTPServer = {
     name: "",
     enabled: true,
@@ -330,7 +351,9 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
     clock.advance(5000);
     await close;
   } finally {
-    for (const socket of sockets) socket.destroy();
+    for (const socket of sockets) {
+      socket.destroy();
+    }
     await new Promise<void>((resolve) => listener.close(() => resolve()));
   }
 });

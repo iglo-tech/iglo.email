@@ -1,6 +1,7 @@
 // Compiled fixture process killed at explicit producer/SMTP/journal barriers.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,7 +9,8 @@ import { randomBytes } from "node:crypto";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";
-import { createServer, createConnection, type Socket } from "node:net";
+import { createServer, createConnection } from "node:net";
+import type { Socket } from "node:net";
 
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
@@ -26,12 +28,16 @@ async function launch(dir: string, smtpPort = sink.port) {
     let value = "";
     child.stdout.on("data", (chunk) => {
       value += chunk.toString();
-      if (value.includes("\n")) resolvePort(value.split("\n")[0]!);
+      if (value.includes("\n")) {
+        resolvePort(value.split("\n")[0]!);
+      }
     });
     child.once("exit", () => reject(new Error("Fixture exited before readiness")));
     child.once("error", reject);
   });
-  if (!/^\d+$/.test(port)) throw new Error("Invalid fixture readiness");
+  if (!/^\d+$/.test(port)) {
+    throw new Error("Invalid fixture readiness");
+  }
   const origin = `http://127.0.0.1:${port}`;
   async function call(
     path: string,
@@ -43,9 +49,11 @@ async function launch(dir: string, smtpPort = sink.port) {
       method,
       headers,
       ...(body === undefined ? {} : { body }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`Fixture ${path} returned ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`Fixture ${path} returned ${response.status}`);
+    }
     return ((await response.json()) as { data: any }).data;
   }
   const session = await call("/fixture/session");
@@ -56,7 +64,9 @@ async function kill(child: ChildProcessWithoutNullStreams) {
   const done = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
   child.kill("SIGKILL");
   await done;
-  if (active === child) active = undefined;
+  if (active === child) {
+    active = undefined;
+  }
 }
 async function dataBarrier() {
   const sockets = new Set<Socket>();
@@ -85,7 +95,9 @@ async function dataBarrier() {
       pending += chunk.toString("latin1");
       for (;;) {
         const index = pending.indexOf("\r\n");
-        if (index < 0) break;
+        if (index < 0) {
+          break;
+        }
         const line = pending.slice(0, index);
         pending = pending.slice(index + 2);
         if (data) {
@@ -93,18 +105,24 @@ async function dataBarrier() {
           return;
         }
         upstream.write(`${line}\r\n`, "latin1");
-        if (line === "DATA") data = true;
+        if (line === "DATA") {
+          data = true;
+        }
       }
     });
   });
   await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Missing relay address");
+  if (!address || typeof address === "string") {
+    throw new Error("Missing relay address");
+  }
   return {
     port: address.port,
     entered,
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((resolveClose, reject) =>
         server.close((error) => (error ? reject(error) : resolveClose())),
       );
@@ -135,7 +153,9 @@ try {
     await kill(process.child);
     process = await launch(dataDir);
     await process.call("/fixture/start", "POST", "normal");
-    if (scenario === "queued") await process.call("/fixture/committed");
+    if (scenario === "queued") {
+      await process.call("/fixture/committed");
+    }
     const row = await process.get(entry.id);
     assert.equal(
       row.status,
@@ -145,11 +165,12 @@ try {
     assert.equal(row.smtp_message_id, entry.smtp_message_id);
     const messages = (await mailpit.list()).filter((m) => m.Subject === `${marker} ${scenario}`);
     assert.equal(messages.length, scenario.endsWith("claimed") ? 0 : 1, scenario);
-    if (messages.length)
+    if (messages.length) {
       assert.equal(
         messages[0]!.MessageID.replace(/[<>]/g, ""),
         entry.smtp_message_id.replace(/[<>]/g, ""),
       );
+    }
     await kill(process.child);
     globalThis.process.stdout.write(`PASS compiled ${kind} fixture ${scenario}\n`);
   }
@@ -182,11 +203,12 @@ try {
         (m) => m.Subject === `${marker} ${kind}-${scenario}`,
       );
       assert.equal(messages.length, scenario === "lost-final" ? 1 : 0, scenario);
-      if (messages.length)
+      if (messages.length) {
         assert.equal(
           messages[0]!.MessageID.replace(/[<>]/g, ""),
           entry.smtp_message_id.replace(/[<>]/g, ""),
         );
+      }
       await kill(worker.child);
       globalThis.process.stdout.write(`PASS compiled ${kind} fixture ${scenario}\n`);
     } finally {
@@ -194,7 +216,9 @@ try {
     }
   }
 } finally {
-  if (active) await kill(active);
+  if (active) {
+    await kill(active);
+  }
   await mailpit.removeOwned();
   await rm(directory, { recursive: true, force: true });
 }

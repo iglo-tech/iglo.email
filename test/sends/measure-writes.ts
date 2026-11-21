@@ -5,7 +5,7 @@ const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 for (let repetition = 1; repetition <= 3; repetition++) {
   await withProduction(
     resolve(process.argv[2]!),
-    AbortSignal.timeout(120000),
+    AbortSignal.timeout(120_000),
     async (origin) => {
       const credential = await provisionApiUser(origin, admin);
       const headers = {
@@ -18,18 +18,21 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           headers,
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
-        if (response.status !== 200)
+        if (response.status !== 200) {
           throw new Error(`Unexpected status ${response.status} for ${method} ${path}`);
+        }
         return ((await response.json()) as { data: any }).data;
       };
       const list = await call("/api/lists", "POST", { name: "measure-list" });
       const subscriber = await call("/api/subscribers", "POST", { email: "measure@example.test" });
       async function measure(fn: (i: number) => Promise<void>) {
-        const samples: number[] = [];
+        const samples: Array<number> = [];
         for (let i = 0; i < 25; i++) {
           const start = performance.now();
           await fn(i);
-          if (i >= 5) samples.push(performance.now() - start);
+          if (i >= 5) {
+            samples.push(performance.now() - start);
+          }
         }
         return samples.reduce((a, b) => a + b, 0) / samples.length;
       }
@@ -42,6 +45,6 @@ for (let repetition = 1; repetition <= 3; repetition++) {
       process.stdout.write(`${JSON.stringify({ repetition, listUpdate, subscriberUpdate })}\n`);
     },
     admin,
-    120000,
+    120_000,
   );
 }

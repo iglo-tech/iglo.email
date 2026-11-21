@@ -2,11 +2,14 @@
 // missing and duplicate selectors stay 400 and numeric IDs keep listmonk's 400 (D38, D39).
 // Observed through the HTTP API of the production router, with nothing written on refusal.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();

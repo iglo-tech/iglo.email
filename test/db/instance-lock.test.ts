@@ -9,10 +9,11 @@ import { join, resolve } from "node:path";
 import { openDatabase, withStoppedDatabase } from "@/db/connection";
 import { holdDataDirectory } from "@/db/instance-lock";
 
-const directories: string[] = [];
+const directories: Array<string> = [];
 afterEach(() => {
-  for (const directory of directories.splice(0))
+  for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
+  }
 });
 function dataDir() {
   const base = mkdtempSync(join(tmpdir(), "iglo-instance-lock-"));
@@ -99,7 +100,7 @@ test("a database that something else has open is refused with 'stop what has it 
 test("a contender that finds the lock busy only for a moment gets it on the retry", () => {
   const dir = dataDir();
   const holder = holdDataDirectory(dir);
-  const waits: number[] = [];
+  const waits: Array<number> = [];
   const taken = holdDataDirectory(dir, (milliseconds) => {
     waits.push(milliseconds);
     holder.release();
@@ -115,7 +116,7 @@ test("a contender that finds the lock busy only for a moment gets it on the retr
 test("a holder that never lets go is refused after a bounded number of waits", () => {
   const dir = dataDir();
   const holder = holdDataDirectory(dir);
-  const waits: number[] = [];
+  const waits: Array<number> = [];
   try {
     expect(() => holdDataDirectory(dir, (milliseconds) => waits.push(milliseconds))).toThrow(
       "is in use by another iglo.email process: stop it first",

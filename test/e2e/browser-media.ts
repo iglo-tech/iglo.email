@@ -6,13 +6,14 @@ import { admin } from "@/test/worked-example/harness";
 
 const session = `m45-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
-function browser(...args: string[]): string {
+function browser(...args: Array<string>): string {
   const run = Bun.spawnSync(
     ["agent-browser", "--session", session, "--allowed-domains", "127.0.0.1", ...args],
     { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
   );
-  if (run.exitCode !== 0)
+  if (run.exitCode !== 0) {
     throw new Error(`agent-browser ${args[0]}: ${run.stdout} ${run.stderr.toString()}`);
+  }
   return run.stdout.toString().trim();
 }
 const value = (expression: string) => JSON.parse(browser("eval", expression));
@@ -26,7 +27,9 @@ process.exitCode = await withStack(async ({ origin }) => {
   const visit = (path: string, name: string) => {
     browser("open", `${origin}${path}`);
     settle();
-    if (shots) browser("screenshot", `${shots}/${name}.png`);
+    if (shots) {
+      browser("screenshot", `${shots}/${name}.png`);
+    }
   };
   try {
     browser("open", `${origin}/admin/login`);
@@ -66,7 +69,9 @@ process.exitCode = await withStack(async ({ origin }) => {
     see("bounces heading", text(".page-title"));
     see("bounce row", text("[data-testid=bounce-row]"));
     browser("eval", `document.querySelector("[data-testid=btn-meta]").click()`);
-    if (shots) browser("screenshot", `${shots}/bounce-meta.png`);
+    if (shots) {
+      browser("screenshot", `${shots}/bounce-meta.png`);
+    }
     see("bounce meta", text("dialog[open] pre"));
     see("bounces safe", safe());
 
@@ -98,7 +103,9 @@ process.exitCode = await withStack(async ({ origin }) => {
     see("forms heading", text(".page-title"));
     browser("eval", `document.querySelector("[data-testid=lists] input").click()`);
     settle();
-    if (shots) browser("screenshot", `${shots}/forms-html.png`);
+    if (shots) {
+      browser("screenshot", `${shots}/forms-html.png`);
+    }
     see("form html", text("[data-testid=form] [role=textbox]"));
     see("forms safe", safe());
     return 0;

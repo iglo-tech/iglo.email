@@ -3,8 +3,9 @@
 import packageJson from "@/../package.json";
 import { differences } from "@/openapi/differences";
 import { excluded } from "@/openapi/excluded";
-import { operations, type Operation } from "@/openapi/operations";
-import { schemas, type Schema } from "@/openapi/schemas";
+import { operations } from "@/openapi/operations";
+import type { Operation } from "@/openapi/operations";
+import { schemas } from "@/openapi/schemas";
 
 const error = { $ref: "#/components/responses/Error" };
 const errorContent = {
@@ -24,9 +25,15 @@ const refused: Record<number, string> = {
 };
 
 function applies(entry: string, operation: Operation): boolean {
-  if (entry === "*id") return /\{id\}/.test(operation.route);
-  if (entry === "*secured") return !operation.anonymous;
-  if (entry === operation.route) return true;
+  if (entry === "*id") {
+    return /\{id\}/.test(operation.route);
+  }
+  if (entry === "*secured") {
+    return !operation.anonymous;
+  }
+  if (entry === operation.route) {
+    return true;
+  }
   return operation.route.includes(entry) && !/^[A-Z]+ /.test(entry);
 }
 
@@ -40,8 +47,12 @@ const pathParameters = ({ route, path }: Operation) =>
 
 function build(operation: Operation): Record<string, unknown> {
   const statuses = new Set(operation.errors);
-  if (!operation.anonymous) statuses.add(403);
-  if (/\{id\}/.test(operation.route)) statuses.add(400);
+  if (!operation.anonymous) {
+    statuses.add(403);
+  }
+  if (/\{id\}/.test(operation.route)) {
+    statuses.add(400);
+  }
   const content = operation.answer
     ? Object.fromEntries(
         Object.entries(operation.answer).map(([type, schema]) => [type, { schema }]),
@@ -135,7 +146,7 @@ export function buildDocument(): string {
       responses: {
         Error: { description: "The error envelope.", content: errorContent },
       },
-      schemas: schemas as Record<string, Schema>,
+      schemas: schemas,
     },
     "x-deliberate-differences": differences.map(({ area, summary }) => ({ area, summary })),
     "x-excluded-routes": excluded,

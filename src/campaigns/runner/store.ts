@@ -30,18 +30,22 @@ export type DeliveryStatus = "sent" | "failed" | "unknown" | "skipped";
 export function createRunnerStore(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "campaigns/runner/store", sql }]);
   return {
-    due(now: string): bigint[] {
-      return (q.get("due-campaigns").all(now) as { id: bigint }[]).map((r) => r.id);
+    due(now: string): Array<bigint> {
+      return (q.get("due-campaigns").all(now) as Array<{ id: bigint }>).map((r) => r.id);
     },
     /** Takes the lease when the campaign is due and no live lease holds it. */
     acquire(id: bigint, token: string, until: string, now: string): RunnableCampaign | null {
       return q.get("acquire-campaign").get(id, token, until, now) as RunnableCampaign | null;
     },
-    listIds(id: bigint): bigint[] {
-      return (q.get("campaign-list-ids").all(id) as { list_id: bigint }[]).map((r) => r.list_id);
+    listIds(id: bigint): Array<bigint> {
+      return (q.get("campaign-list-ids").all(id) as Array<{ list_id: bigint }>).map(
+        (r) => r.list_id,
+      );
     },
-    mediaIds(id: bigint): bigint[] {
-      return (q.get("campaign-media-ids").all(id) as { media_id: bigint }[]).map((r) => r.media_id);
+    mediaIds(id: bigint): Array<bigint> {
+      return (q.get("campaign-media-ids").all(id) as Array<{ media_id: bigint }>).map(
+        (r) => r.media_id,
+      );
     },
     /** Records to_send and max_subscriber_id and sets the campaign running. */
     start(id: bigint, token: string, toSend: bigint, max: bigint, now: string) {
@@ -95,8 +99,8 @@ export function createRunnerStore(db: Database) {
       return q.get("unclaim-delivery").run(id, subscriberId, token).changes > 0;
     },
     /** Marks claims left by a stopped runner as unknown and returns their range. */
-    claimedCampaigns(): { id: bigint; name: string }[] {
-      return q.get("claimed-campaigns").all() as { id: bigint; name: string }[];
+    claimedCampaigns(): Array<{ id: bigint; name: string }> {
+      return q.get("claimed-campaigns").all() as Array<{ id: bigint; name: string }>;
     },
     abandon(id: bigint, now: string): { count: number; first: bigint | null; last: bigint | null } {
       const found = q.get("abandoned-deliveries").get(id) as {
@@ -104,7 +108,9 @@ export function createRunnerStore(db: Database) {
         first: bigint | null;
         last: bigint | null;
       };
-      if (found.count > 0n) q.get("mark-abandoned").run(id, now);
+      if (found.count > 0n) {
+        q.get("mark-abandoned").run(id, now);
+      }
       return {
         count: Number(found.count),
         first: found.first,

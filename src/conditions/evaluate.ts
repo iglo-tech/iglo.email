@@ -5,18 +5,21 @@
 // Failures are returned, never thrown, and nothing runs on the write connection, so a caller's
 // transaction is never involved.
 import type { Database, Statement } from "bun:sqlite";
-import { compile, type CompiledCondition } from "@/conditions/compile";
+import { compile } from "@/conditions/compile";
+import type { CompiledCondition } from "@/conditions/compile";
 import { ContextError, instant, sinceBound, subscriberID } from "@/conditions/since";
 import type { ConditionContext, ConditionError, EvaluationResult } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
-import { RunnerError, type QueryRunner } from "@/subscribers/query-runner";
+import { RunnerError } from "@/subscribers/query-runner";
+import type { QueryRunner } from "@/subscribers/query-runner";
 
 /** Prepared statements kept per evaluator; the least recently used is finalized beyond it. */
 const CACHE = 64;
 
 function runnerError(error: RunnerError): ConditionError {
-  if (error.kind === "execution" && error.message === "query exceeded the memory limit")
+  if (error.kind === "execution" && error.message === "query exceeded the memory limit") {
     return { kind: "memory", message: error.message };
+  }
   return { kind: error.kind, message: error.message };
 }
 
@@ -30,8 +33,11 @@ export function createConditionEvaluator(options: {
   const statements = new Map<string, Statement>();
   const prepared = (sql: string) => {
     let stmt = statements.get(sql);
-    if (stmt) statements.delete(sql);
-    else stmt = readonly.prepare(sql);
+    if (stmt) {
+      statements.delete(sql);
+    } else {
+      stmt = readonly.prepare(sql);
+    }
     statements.set(sql, stmt);
     if (statements.size > CACHE) {
       const [oldest, old] = statements.entries().next().value!;
@@ -45,7 +51,7 @@ export function createConditionEvaluator(options: {
     compiled: CompiledCondition,
     context: ConditionContext,
   ): Promise<EvaluationResult> {
-    let id: bigint, args: (string | number | bigint)[];
+    let id: bigint, args: Array<string | number | bigint>;
     try {
       id = subscriberID(context.subscriberId);
       const now = instant(context.now, "now");
@@ -54,8 +60,9 @@ export function createConditionEvaluator(options: {
         typeof param !== "object" ? param : param.slot === "subscriber" ? id : after(param.since),
       );
     } catch (error) {
-      if (error instanceof ContextError)
+      if (error instanceof ContextError) {
         return { ok: false, error: { kind: "context", message: error.message } };
+      }
       return { ok: false, error: { kind: "execution", message: "condition query failed" } };
     }
     try {
@@ -67,12 +74,15 @@ export function createConditionEvaluator(options: {
               fragments: compiled.fragments,
             })
           )[0]
-        : (prepared(compiled.sql).values(...args) as unknown[][])[0]?.[0];
-      if (matched === undefined)
+        : (prepared(compiled.sql).values(...args) as Array<unknown>[])[0]?.[0];
+      if (matched === undefined) {
         return { ok: false, error: { kind: "not_found", message: "subscriber not found" } };
+      }
       return { ok: true, value: matched === 1n || matched === 1 };
     } catch (error) {
-      if (error instanceof RunnerError) return { ok: false, error: runnerError(error) };
+      if (error instanceof RunnerError) {
+        return { ok: false, error: runnerError(error) };
+      }
       return { ok: false, error: { kind: "execution", message: "condition query failed" } };
     }
   }
@@ -98,7 +108,9 @@ export function createConditionEvaluator(options: {
     },
     evaluateCompiled,
     close() {
-      for (const stmt of statements.values()) stmt.finalize();
+      for (const stmt of statements.values()) {
+        stmt.finalize();
+      }
       statements.clear();
     },
   };

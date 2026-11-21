@@ -4,11 +4,14 @@
 // blocklists, exports or wipes nobody. Through HTTP, on the public fixture with the SMTP sink and
 // the effects spy; the campaign deliveries come from the runner's own claim.
 import { afterEach, expect, test } from "bun:test";
-import { publicFixture, type PublicFixture } from "@/test/public/fixture";
+import { publicFixture } from "@/test/public/fixture";
+import type { PublicFixture } from "@/test/public/fixture";
 
-const fixtures: PublicFixture[] = [];
+const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await publicFixture();
@@ -21,14 +24,14 @@ const placeholder = "00000000-0000-0000-0000-000000000000";
 const unknownCampaign = "3f6b1c2d-8e4a-4b7c-9d1e-2a5f6b7c8d9e";
 const unknownSend = "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f";
 let peers = 0;
-const form = (values: [string, string][]) => new URLSearchParams(values).toString();
+const form = (values: Array<[string, string]>) => new URLSearchParams(values).toString();
 
 /** A POST from a new peer, so the per-peer limits stay out of the way. */
 const act = (f: PublicFixture, path: string, body = "") => f.fresh(path, body);
 const visit = (f: PublicFixture, path: string) => f.peer(path, `198.51.100.${++peers}`);
 
 /** A campaign the runner has delivered to each of these subscribers: the pairing D126 names. */
-const delivered = (f: PublicFixture, list: number, subscribers: number[]) => ({
+const delivered = (f: PublicFixture, list: number, subscribers: Array<number>) => ({
   uuid: f.deliveredCampaign(subscribers, [list]),
 });
 
@@ -47,7 +50,7 @@ test("a random campaign, the placeholder campaign and the retired sub-only route
   const weekly = delivered(f, news.id, [bob]);
   // Blocklisting through an unpaired campaign, and through the placeholder one.
   const blocklist = "blocklist=true";
-  const attacks: [string, string][] = [
+  const attacks: Array<[string, string]> = [
     [`/subscription/${unknownCampaign}/${adaUuid}`, blocklist],
     [
       `/subscription/${unknownCampaign}/${adaUuid}?manage=true`,
@@ -74,7 +77,7 @@ test("a random campaign, the placeholder campaign and the retired sub-only route
     [`/subscription/${placeholder}/export/${adaUuid}`, ""],
     [`/subscription/${placeholder}/wipe/${adaUuid}`, ""],
   ];
-  const answers: string[] = [];
+  const answers: Array<string> = [];
   for (const [path, body] of attacks) {
     const response = await act(f, path, body);
     expect([path, response.status]).toEqual([path, 404]);
@@ -247,10 +250,12 @@ test("a marketing send's manage page exports and wipes through its send, for its
 // subscriber through the journal; view in browser answers only a delivered subscriber.
 const decoded = (data: string) =>
   data
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
 /** Admin confirmation of each list, as an administrator's list change makes it. */
-const confirm = (f: PublicFixture, id: number, lists: number[]) =>
+const confirm = (f: PublicFixture, id: number, lists: Array<number>) =>
   f.json("/api/subscribers/lists", "PUT", {
     ids: [id],
     action: "add",

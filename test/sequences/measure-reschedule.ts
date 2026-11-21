@@ -14,8 +14,9 @@ import { sequencesFixture } from "@/test/sequences/fixture";
 const repository = resolve(import.meta.dir, "../..");
 const base = resolve(process.env.IGLO_EMAIL_PERF_DIR ?? join(repository, "upstream/measurements"));
 mkdirSync(base, { recursive: true });
-if (/tmpfs|ramfs/.test(Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.toString()))
+if (/tmpfs|ramfs/.test(Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.toString())) {
   throw new Error("Refusing a memory-backed measurement directory");
+}
 process.env.TMPDIR = base;
 const total = Number(process.argv[2] ?? 100_000);
 const runs = Number(process.argv[3] ?? 3);
@@ -26,7 +27,9 @@ async function once(mode: "before" | "after") {
   const f = await sequencesFixture();
   try {
     // MEASURE_NO_INDEX=1 drops migration 15's index, which is the schema before B5's fix.
-    if (process.env.MEASURE_NO_INDEX) f.db.run("DROP INDEX idx_enrollments_step_active");
+    if (process.env.MEASURE_NO_INDEX) {
+      f.db.run("DROP INDEX idx_enrollments_step_active");
+    }
     const tx = await f.template();
     const made = await f.json("/api/sequences", "POST", {
       name: "Measure",
@@ -39,7 +42,7 @@ async function once(mode: "before" | "after") {
         { wait: "PT1H", kind: "transactional", template_id: tx },
       ],
     });
-    const seq = made.body.data as { id: number; steps: { id: number }[] };
+    const seq = made.body.data as { id: number; steps: Array<{ id: number }> };
     const now = f.clock.now();
     f.db.run("BEGIN");
     f.db.run(
@@ -67,7 +70,7 @@ async function once(mode: "before" | "after") {
     expectOK(await f.json(`/api/sequences/${seq.id}`, "PUT", full));
 
     // The scheduler-like loop: one short write per turn.
-    const gaps: number[] = [];
+    const gaps: Array<number> = [];
     let running = true;
     const loop = (async () => {
       let last = performance.now();
@@ -82,7 +85,7 @@ async function once(mode: "before" | "after") {
       }
     })();
     const started = performance.now();
-    let holds: number[] = [];
+    let holds: Array<number> = [];
     if (mode === "before") {
       const t0 = performance.now();
       writeTransaction(f.db, () =>
@@ -101,7 +104,9 @@ async function once(mode: "before" | "after") {
           f.enrollments.rescheduleBatch(BigInt(seq.id), BigInt(seq.steps[0]!.id), cursor, 500),
         );
         holds.push(performance.now() - t0);
-        if (batch === "missing" || batch.next === null) break;
+        if (batch === "missing" || batch.next === null) {
+          break;
+        }
         cursor = batch.next;
         await new Promise((resolve) => setImmediate(resolve));
       }
@@ -125,7 +130,10 @@ async function once(mode: "before" | "after") {
   }
 }
 function expectOK(r: { status: number; body: unknown }) {
-  if (r.status !== 200) throw new Error(JSON.stringify(r.body));
+  if (r.status !== 200) {
+    throw new Error(JSON.stringify(r.body));
+  }
 }
-for (const mode of ["before", "after"] as const)
+for (const mode of ["before", "after"] as const) {
   for (let i = 0; i < runs; i++) console.log(JSON.stringify(await once(mode)));
+}

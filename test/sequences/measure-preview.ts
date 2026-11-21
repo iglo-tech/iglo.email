@@ -3,7 +3,7 @@
 // test/scheduler/fixture.ts. Run: bun test/sequences/measure-preview.ts. Not a CI threshold.
 import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
 
-const median = (values: number[]) => {
+const median = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 };
@@ -18,26 +18,30 @@ const f = await schedulerFixture();
 async function arrived(count: number) {
   const deadline = Date.now() + 60_000;
   while (f.sink.messages.length < count) {
-    if (Date.now() > deadline)
+    if (Date.now() > deadline) {
       throw new Error(`timed out: ${f.sink.messages.length} of ${count} at the sink`);
-    f.clock.advance(1_000);
+    }
+    f.clock.advance(1000);
     await new Promise((resolve) => setImmediate(resolve));
   }
 }
 /** Every send row, all pages (the list is newest first, 100 to a page). */
 async function allSends() {
-  const rows: { status: string }[] = [];
+  const rows: Array<{ status: string }> = [];
   for (let page = 1; ; page++) {
     const body = (await f.json(`/api/sends?per_page=100&page=${page}`)).body.data;
-    rows.push(...(body.results as { status: string }[]));
-    if (page * 100 >= body.total || body.results.length === 0) return { total: body.total, rows };
+    rows.push(...(body.results as Array<{ status: string }>));
+    if (page * 100 >= body.total || body.results.length === 0) {
+      return { total: body.total, rows };
+    }
   }
 }
 /** Sends still queued or sending, from the list's own totals (one small request each). */
 async function openSends() {
   let open = 0;
-  for (const status of ["queued", "sending"])
+  for (const status of ["queued", "sending"]) {
     open += (await f.json(`/api/sends?per_page=1&status=${status}`)).body.data.total as number;
+  }
   return open;
 }
 /**
@@ -48,19 +52,24 @@ async function openSends() {
 async function delivered(count: number, label: string) {
   const deadline = Date.now() + 60_000;
   for (;;) {
-    f.clock.advance(1_000);
+    f.clock.advance(1000);
     await new Promise((resolve) => setImmediate(resolve));
     const total = (await f.json("/api/sends?per_page=1")).body.data.total as number;
     const open = await openSends();
-    if (total >= count && open === 0) return;
-    if (Date.now() > deadline)
+    if (total >= count && open === 0) {
+      return;
+    }
+    if (Date.now() > deadline) {
       throw new Error(`timed out waiting for ${label}: total=${total} open=${open}`);
+    }
   }
 }
 /** The settled statuses of every send row, counted. */
 async function statusCounts() {
   const counts: Record<string, number> = {};
-  for (const row of (await allSends()).rows) counts[row.status] = (counts[row.status] ?? 0) + 1;
+  for (const row of (await allSends()).rows) {
+    counts[row.status] = (counts[row.status] ?? 0) + 1;
+  }
   return counts;
 }
 try {
@@ -95,16 +104,18 @@ try {
   // The scheduler's own send path: 100 due manual enrollments per round, from the clock advance until
   // every message is at the sink. A round is one pass of the loop plus the outbox delivering it.
   // First, so it runs as a baseline run does: no test sends have gone through the emailer before it.
-  const rounds: number[] = [];
+  const rounds: Array<number> = [];
   for (let round = 0; round < 3; round++) {
-    const subscribers: number[] = [];
-    for (let i = 0; i < 100; i++)
+    const subscribers: Array<number> = [];
+    for (let i = 0; i < 100; i++) {
       subscribers.push(await f.subscriber(`batch${round}-${i}@example.test`));
-    for (const subscriber of subscribers)
+    }
+    for (const subscriber of subscribers) {
       await f.json("/api/enrollments", "POST", {
         sequence_id: sequence.id,
         subscriber_id: subscriber,
       });
+    }
     const start = performance.now();
     await f.pass(day);
     await delivered((round + 1) * 100, "the scheduled sends");
@@ -123,15 +134,16 @@ try {
   );
 
   if (previews) {
-    const samples: number[] = [];
-    for (let i = 0; i < 100; i++)
+    const samples: Array<number> = [];
+    for (let i = 0; i < 100; i++) {
       samples.push(await timed(() => f.json(shownPath, "POST", { subscriber_id: ada })));
+    }
     console.log(
       JSON.stringify({ measure: "step preview", n: 100, median_ms: median(samples).toFixed(2) }),
     );
 
     // Each send settles before the next, as the in-flight cap (4) would otherwise answer 429.
-    const testSamples: number[] = [];
+    const testSamples: Array<number> = [];
     for (let i = 0; i < 20; i++) {
       testSamples.push(
         await timed(async () => {
@@ -139,13 +151,15 @@ try {
             emails: [`owner${i}@example.test`],
             subscriber_id: ada,
           });
-          if (r.status !== 200) throw new Error(JSON.stringify(r.body));
+          if (r.status !== 200) {
+            throw new Error(JSON.stringify(r.body));
+          }
         }),
       );
       await arrived(i + 1);
       // The dispatch settles after the sink has the message, on the same clock: let it settle.
       for (let tick = 0; tick < 5; tick++) {
-        f.clock.advance(1_000);
+        f.clock.advance(1000);
         await new Promise((resolve) => setImmediate(resolve));
       }
     }

@@ -6,9 +6,14 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const admin = { user: "m18-measure-admin", password: "m18-measure-password" };
-const captures: { label: string; variant: string; html: string; id: string; subject: string }[] =
-  [];
-const ids: string[] = [];
+const captures: Array<{
+  label: string;
+  variant: string;
+  html: string;
+  id: string;
+  subject: string;
+}> = [];
+const ids: Array<string> = [];
 try {
   for (const [label, executable] of [
     ["control", "node_modules/.cache/m18-baseline/dist/iglo.email"],
@@ -17,7 +22,7 @@ try {
     const address = `m18-${label}-${sink.runId}@example.test`;
     await withProduction(
       resolve(executable),
-      AbortSignal.timeout(30000),
+      AbortSignal.timeout(30_000),
       async (origin) => {
         const credentials = await provisionApiUser(origin, admin);
         const headers = {
@@ -53,14 +58,14 @@ try {
           assert.equal(response.status, 200);
           const query = new URLSearchParams({ query: `to:${variantAddress}`, limit: "100" });
           const found = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-            messages: { ID: string; MessageID: string; Subject: string }[];
+            messages: Array<{ ID: string; MessageID: string; Subject: string }>;
           };
           assert.equal(found.messages.length, 1);
           const item = found.messages[0]!;
           ids.push(item.ID);
           const message = (await (await fetch(`${sink.api}/api/v1/message/${item.ID}`)).json()) as {
             HTML: string;
-            To: { Address: string }[];
+            To: Array<{ Address: string }>;
           };
           assert.deepEqual(
             message.To.map((x) => x.Address),
@@ -78,7 +83,7 @@ try {
       admin,
     );
   }
-  const normalize = (html: string) => html.replace(/\s+/g, " ").trim();
+  const normalize = (html: string) => html.replaceAll(/\s+/g, " ").trim();
   for (const variant of ["empty", "populated", "unsafe"]) {
     const control = captures.find((item) => item.label === "control" && item.variant === variant)!;
     const candidate = captures.find(
@@ -86,10 +91,15 @@ try {
     )!;
     assert.equal(control.subject, candidate.subject);
     assert.notEqual(control.id, candidate.id);
-    if (variant !== "unsafe") assert.equal(normalize(control.html), normalize(candidate.html));
-    if (variant === "populated")
+    if (variant !== "unsafe") {
+      assert.equal(normalize(control.html), normalize(candidate.html));
+    }
+    if (variant === "populated") {
       assert.ok(candidate.html.includes("https://example.invalid/logo.png"));
-    if (variant === "unsafe") assert.ok(!candidate.html.includes("javascript:alert(1)"));
+    }
+    if (variant === "unsafe") {
+      assert.ok(!candidate.html.includes("javascript:alert(1)"));
+    }
     console.log(
       JSON.stringify({
         variant,
@@ -102,10 +112,11 @@ try {
     );
   }
 } finally {
-  if (ids.length)
+  if (ids.length) {
     await fetch(`${sink.api}/api/v1/messages`, {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ IDs: ids }),
     });
+  }
 }

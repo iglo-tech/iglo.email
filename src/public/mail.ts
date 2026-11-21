@@ -19,11 +19,8 @@ import { createThrottle } from "@/public/rate-limit";
 import type { PublicSettings } from "@/public/settings";
 import type { SubscriberStore } from "@/subscribers/store";
 import { systemTemplates } from "@/templates/builtins";
-import {
-  createMessageBudget,
-  type MessageBudget,
-  type TemplateRenderer,
-} from "@/templates/renderer";
+import { createMessageBudget } from "@/templates/renderer";
+import type { MessageBudget, TemplateRenderer } from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 import type { Tracking } from "@/unsubscribe/tracking";
 
@@ -44,7 +41,7 @@ export function createSubscriberMail(deps: {
   sends: Sends;
   campaigns: Pick<CampaignStore, "subscriberViews">;
   tracking: Pick<Tracking, "subscriberClicks">;
-  events: { list(subscriberId: bigint, limit: number): EventRow[] };
+  events: { list(subscriberId: bigint, limit: number): Array<EventRow> };
   bounces: Pick<BounceStore, "forExport">;
   renderer: TemplateRenderer;
   i18n: Translation;
@@ -110,11 +107,11 @@ export function createSubscriberMail(deps: {
     budget: MessageBudget,
     extra: {
       headers?: Record<string, string>;
-      attachments?: {
+      attachments?: Array<{
         name: string;
         content: Uint8Array;
         contentType: string;
-      }[];
+      }>;
     },
   ): Promise<void> =>
     // The generated text part (B120, D118) is made first, so the enqueue is one step after it. A
@@ -157,12 +154,14 @@ export function createSubscriberMail(deps: {
   }
 
   /** makeOptinNotifyHook: returns the number of double opt-in lists awaiting confirmation. */
-  function optin(sub: Subscriber, listIds: bigint[] = []): number {
+  function optin(sub: Subscriber, listIds: Array<bigint> = []): number {
     const wanted = new Set(listIds.map(Number));
     const lists = deps.subscribers
       .unconfirmedLists(sub.id)
       .filter((list) => list.optin === "double" && (!wanted.size || wanted.has(list.id)));
-    if (!lists.length) return 0;
+    if (!lists.length) {
+      return 0;
+    }
     const settings = deps.settings();
     const query = new URLSearchParams(lists.map((list) => ["l", list.uuid]));
     const unsubscribeUrl = `${settings.rootUrl}/subscription/${dummyUUID}/${sub.uuid}`;
@@ -206,8 +205,10 @@ export function createSubscriberMail(deps: {
   return {
     optin,
     /** InsertSubscriber/UpdateSubscriberWithLists from the admin API. */
-    afterAdminWrite(sub: Subscriber, listIds: bigint[]) {
-      if (deps.settings().sendOptin) quietly(() => optin(sub, listIds));
+    afterAdminWrite(sub: Subscriber, listIds: Array<bigint>) {
+      if (deps.settings().sendOptin) {
+        quietly(() => optin(sub, listIds));
+      }
     },
     /** Record a committed public signup, whatever its subscriber's state. */
     acceptSignup(id: bigint) {
@@ -220,21 +221,29 @@ export function createSubscriberMail(deps: {
       }
     },
     queued: () => signups.size,
-    takeSignups(limit: number): bigint[] {
+    takeSignups(limit: number): Array<bigint> {
       const taken = [...signups.values().take(limit)];
-      for (const id of taken) signups.delete(id);
+      for (const id of taken) {
+        signups.delete(id);
+      }
       return taken;
     },
     /** sendOptinConfirmation for public signups: one mail per address in the window. */
     prepareSignup(id: bigint) {
       const sub = deps.subscribers.get(id);
-      if (!sub || !deps.settings().sendOptin) return;
+      if (!sub || !deps.settings().sendOptin) {
+        return;
+      }
       const pending = deps.subscribers
         .unconfirmedLists(id)
         .filter((list) => list.optin === "double")
         .map((list) => list.id);
-      if (!pending.length) return;
-      if (throttle(sub.email.trim().toLowerCase())) quietly(() => optin(sub, pending.map(BigInt)));
+      if (!pending.length) {
+        return;
+      }
+      if (throttle(sub.email.trim().toLowerCase())) {
+        quietly(() => optin(sub, pending.map(BigInt)));
+      }
     },
     exportSections,
     /**
@@ -242,7 +251,9 @@ export function createSubscriberMail(deps: {
      * window a second request sends nothing; the caller answers the same either way (B125).
      */
     exportData(sub: Subscriber) {
-      if (!exportThrottle(String(sub.id))) return;
+      if (!exportThrottle(String(sub.id))) {
+        return;
+      }
       const settings = deps.settings();
       // One budget for the render and the generated text part (D118).
       const budget = createMessageBudget();
@@ -294,7 +305,7 @@ export function createSignupMail(deps: {
   logger: ErrorLogger;
   mail: SubscriberMail;
 }) {
-  const prepare = (ids: bigint[]) => {
+  const prepare = (ids: Array<bigint>) => {
     for (const id of ids) {
       try {
         deps.mail.prepareSignup(id);
@@ -329,12 +340,14 @@ export function createSignupMail(deps: {
   };
 }
 
-function boundedEvents(rows: EventRow[]) {
+function boundedEvents(rows: Array<EventRow>) {
   let bytes = 0;
-  const out: { name: string; data: unknown; occurred_at: string }[] = [];
+  const out: Array<{ name: string; data: unknown; occurred_at: string }> = [];
   for (const row of rows) {
     bytes += Buffer.byteLength(row.name) + Buffer.byteLength(row.data);
-    if (bytes > exportEventBytes) break;
+    if (bytes > exportEventBytes) {
+      break;
+    }
     out.push({
       name: row.name,
       data: JSON.parse(row.data),

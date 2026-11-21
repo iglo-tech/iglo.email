@@ -62,7 +62,9 @@ const payload = `<p>visible marker</p>
 function watch(page) {
   const asked = [];
   page.on("response", (r) => {
-    if (r.url().includes("pwned")) asked.push(r.url());
+    if (r.url().includes("pwned")) {
+      asked.push(r.url());
+    }
   });
   return asked;
 }
@@ -248,7 +250,9 @@ test("a second click changes the status once", async ({ page }) => {
   await signIn(page);
   const puts = [];
   page.on("request", (r) => {
-    if (r.method() === "PUT" && r.url().endsWith("/status")) puts.push(r.url());
+    if (r.method() === "PUT" && r.url().endsWith("/status")) {
+      puts.push(r.url());
+    }
   });
   const c = await create(page);
   await page.goto(`${CAMPAIGNS}?query=${c.name}`);
@@ -288,7 +292,9 @@ test("live stats update while a campaign runs and stop when nothing runs or the 
   await page.route("**/api/campaigns?*", async (route) => {
     const response = await route.fetch();
     const out = await response.json();
-    for (const row of out.data.results) if (row.id === c.id) row.status = statuses;
+    for (const row of out.data.results) {
+      if (row.id === c.id) row.status = statuses;
+    }
     await route.fulfill({ response, json: out });
   });
   let reads = 0;
@@ -398,8 +404,9 @@ test("the screen offers what each permission allows", async ({ page, browser }) 
     await expect(rows(other)).toHaveCount(1);
     await openMenu(rows(other));
     await expect(rows(other).getByRole("menuitem", { name: "Preview", exact: true })).toBeVisible();
-    for (const hidden of ["Start campaign", "Clone", "Delete"])
+    for (const hidden of ["Start campaign", "Clone", "Delete"]) {
       await expect(rows(other).getByRole("menuitem", { name: hidden, exact: true })).toHaveCount(0);
+    }
     await other.goto(`${CAMPAIGNS}/${c.id}`);
     await expect(other.locator('input[name="name"]')).toBeDisabled();
     await expect(button(other, "Save changes")).toHaveCount(0);

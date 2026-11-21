@@ -18,8 +18,8 @@ export interface ModelSubscriber {
   id: bigint;
   status: "enabled" | "disabled" | "blocklisted";
   attribs: Record<string, unknown>;
-  lists: { list: number; status: "unconfirmed" | "confirmed" | "unsubscribed" }[];
-  events: ModelEvent[];
+  lists: Array<{ list: number; status: "unconfirmed" | "confirmed" | "unsubscribed" }>;
+  events: Array<ModelEvent>;
 }
 
 export async function conditionsFixture(
@@ -32,14 +32,14 @@ export async function conditionsFixture(
   const readonly = openReadOnly(db.filename);
   const runner = createQueryRunner({
     path: db.filename,
-    timeoutMs: options.timeoutMs ?? 5_000,
+    timeoutMs: options.timeoutMs ?? 5000,
     concurrency: 2,
     ...(options.memoryBytes ? { memoryBytes: options.memoryBytes } : {}),
   });
   const evaluator = createConditionEvaluator({ readonly, runner });
-  const subscribers: ModelSubscriber[] = [];
+  const subscribers: Array<ModelSubscriber> = [];
   let serial = 0;
-  const lists: number[] = [];
+  const lists: Array<number> = [];
 
   const addList = (name: string) => {
     const row = db
@@ -71,8 +71,12 @@ export async function conditionsFixture(
       lists: [],
       events: [],
     };
-    for (const m of input.lists ?? []) addMembership(subscriber, m.list, m.status);
-    for (const e of input.events ?? []) addEvent(subscriber, e.name, e.data, e.occurredAt);
+    for (const m of input.lists ?? []) {
+      addMembership(subscriber, m.list, m.status);
+    }
+    for (const e of input.events ?? []) {
+      addEvent(subscriber, e.name, e.data, e.occurredAt);
+    }
     subscribers.push(subscriber);
     return subscriber;
   };

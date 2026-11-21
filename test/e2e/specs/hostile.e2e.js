@@ -79,7 +79,9 @@ test("hostile names render as text on every screen", async ({ page }) => {
   await expect(listRow).toHaveCount(1);
   await expect(listRow.locator(".list-name .avatar-label a").first()).toHaveText(listName);
   await expect(listRow.locator(".description")).toHaveText(description);
-  await expect(listRow.locator(`a[title$="${tag.replaceAll('"', '\\"')}"]`)).toHaveText(`#${tag}`);
+  await expect(listRow.locator(`a[title$="${tag.replaceAll('"', String.raw`\"`)}"]`)).toHaveText(
+    `#${tag}`,
+  );
   await clean();
 
   await page.goto(`/admin/lists/${list.id}`);

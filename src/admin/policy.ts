@@ -20,7 +20,7 @@ function origin(value: string): string | undefined {
  * need not be the address the admin is reached at, and the favicon can be anywhere.
  */
 export function adminPolicy(options: {
-  origins: readonly string[];
+  origins: ReadonlyArray<string>;
   remoteImages?: boolean;
 }): string {
   const named = options.origins.map(origin).filter((value) => value !== undefined);

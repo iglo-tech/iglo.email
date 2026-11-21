@@ -356,8 +356,9 @@ export const subscribersView: AdminView = ({ context, can, listScope }) => {
   const listID = context.params.id === undefined ? null : BigInt(getID(context));
   if (listID !== null) {
     const scope = listScope("list:get");
-    if (!scope.all && !scope.ids.includes(listID))
+    if (!scope.all && !scope.ids.includes(listID)) {
       throw new HttpError(403, t.Ts("globals.messages.permissionDenied", "name", "lists"));
+    }
   }
   const base = listID === null ? "/admin/subscribers" : `/admin/subscribers/lists/${listID}`;
   const subStatus = params.get("subscription_status") ?? "";

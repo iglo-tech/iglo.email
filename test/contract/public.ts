@@ -8,7 +8,8 @@ import { randomBytes } from "node:crypto";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
-import { altchaPayload, solveAltcha, type AltchaChallenge } from "@/test/public/altcha-solver";
+import { altchaPayload, solveAltcha } from "@/test/public/altcha-solver";
+import type { AltchaChallenge } from "@/test/public/altcha-solver";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 const uuidText = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -30,7 +31,9 @@ export async function runPublicContract(target: {
   const marker = `m25${randomBytes(8).toString("hex")}`;
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const check = (condition: unknown, label: string) => {
-    if (!condition) throw new Error(`FAIL public-${label}`);
+    if (!condition) {
+      throw new Error(`FAIL public-${label}`);
+    }
   };
   const call = async (path: string, method = "GET", body?: unknown) => {
     const response = await settingsFetch(
@@ -81,7 +84,9 @@ export async function runPublicContract(target: {
       ...init,
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`FAIL public-mailpit-${response.status}`);
+    if (!response.ok) {
+      throw new Error(`FAIL public-mailpit-${response.status}`);
+    }
     return response;
   };
   const mails = async (address: string) => {
@@ -90,7 +95,7 @@ export async function runPublicContract(target: {
       limit: "50",
     });
     const found = (await (await mailpit(`/api/v1/search?${query}`)).json()) as {
-      messages: { ID: string; Subject: string }[];
+      messages: Array<{ ID: string; Subject: string }>;
     };
     return found.messages;
   };
@@ -98,22 +103,24 @@ export async function runPublicContract(target: {
     const deadline = Date.now() + 10_000;
     for (;;) {
       const found = await mails(address);
-      if (found.length >= count || Date.now() > deadline) return found;
+      if (found.length >= count || Date.now() > deadline) {
+        return found;
+      }
       await Bun.sleep(25);
     }
   };
   const message = async (id: string) =>
     (await (await mailpit(`/api/v1/message/${encodeURIComponent(id)}`)).json()) as {
       HTML: string;
-      Attachments: { PartID: string; FileName: string; ContentType: string }[];
+      Attachments: Array<{ PartID: string; FileName: string; ContentType: string }>;
     };
   const raw = async (id: string) =>
     await (await mailpit(`/api/v1/message/${encodeURIComponent(id)}/raw`)).text();
   const owned = {
-    lists: [] as number[],
+    lists: [] as Array<number>,
     subscribers: new Set<number>(),
-    campaigns: [] as number[],
-    addresses: [] as string[],
+    campaigns: [] as Array<number>,
+    addresses: [] as Array<string>,
   };
   const address = (name: string) => {
     const value = `${name}-${marker}@example.test`;
@@ -127,13 +134,15 @@ export async function runPublicContract(target: {
       per_page: "1",
     });
     const found = (await call(`/api/subscribers?${query}`)).body?.data?.results?.[0];
-    if (found) owned.subscribers.add(found.id);
+    if (found) {
+      owned.subscribers.add(found.id);
+    }
     return found as {
       id: number;
       uuid: string;
       name: string;
       status: string;
-      lists: any[];
+      lists: Array<any>;
     };
   };
   const membership = async (id: number, list: number) =>
@@ -152,7 +161,7 @@ export async function runPublicContract(target: {
     owned.lists.push(response.body.data.id);
     return response.body.data as { id: number; uuid: string; name: string };
   };
-  const createSubscriber = async (name: string, lists: number[], preconfirm = false) => {
+  const createSubscriber = async (name: string, lists: Array<number>, preconfirm = false) => {
     const email = address(name);
     const response = await call("/api/subscribers", "POST", {
       email,
@@ -224,7 +233,9 @@ export async function runPublicContract(target: {
     );
     for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
       const current = (await call(`/api/campaigns/${created.body.data.id}`)).body.data.status;
-      if (current === "finished") break;
+      if (current === "finished") {
+        break;
+      }
       check(Date.now() < deadline, "paired-finish");
     }
     return created.body.data.uuid as string;
@@ -240,7 +251,9 @@ export async function runPublicContract(target: {
           const health = await fetch(`${target.baseUrl}/health`, {
             signal: AbortSignal.timeout(1000),
           });
-          if (health.ok) break;
+          if (health.ok) {
+            break;
+          }
         } catch {
           /* Still reloading. */
         }
@@ -287,7 +300,7 @@ export async function runPublicContract(target: {
 
     // GET /api/public/lists: minimal fields, public lists only.
     const lists = await visit("/api/public/lists");
-    const listed = JSON.parse(lists.text) as Record<string, unknown>[];
+    const listed = JSON.parse(lists.text) as Array<Record<string, unknown>>;
     check(
       lists.status === 200 &&
         listed.some((l) => l.uuid === single.uuid && l.name === single.name) &&
@@ -501,7 +514,7 @@ export async function runPublicContract(target: {
     // branded message at 200; upstream answers 500. The public lists are archived for the check
     // and restored after it, so the rest of the suite sees them as before.
     const minimal = (await call("/api/lists?minimal=true&status=active")).body.data as {
-      results: { id: number; type: string }[];
+      results: Array<{ id: number; type: string }>;
     };
     const publicIds = minimal.results
       .filter((list) => list.type === "public")
@@ -521,14 +534,18 @@ export async function runPublicContract(target: {
         status,
       });
     };
-    for (const id of publicIds) await setStatus(id, "archived");
+    for (const id of publicIds) {
+      await setStatus(id, "archived");
+    }
     const emptyForm = await visit("/subscription/form");
     check(
       emptyForm.status === (reference ? 500 : 200) &&
         emptyForm.text.includes("No lists available to subscribe."),
       "form-empty-d119",
     );
-    for (const id of publicIds) await setStatus(id, "active");
+    for (const id of publicIds) {
+      await setStatus(id, "active");
+    }
 
     // An unsubscribed membership resubscribes as unconfirmed; only a public signup can.
     const carol = await createSubscriber("carol", [single.id], true);
@@ -1005,7 +1022,7 @@ export async function runPublicContract(target: {
         body: "<p>Receipt</p>",
       });
       check(created.status === 200, "wipe-template");
-      const removals: [string, (who: { id: number; uuid: string }) => Promise<number>][] = [
+      const removals: Array<[string, (who: { id: number; uuid: string }) => Promise<number>]> = [
         ["wipe", async (who) => (await post(await privacyPath(who, "wipe"))).status],
         [
           "bulk",
@@ -1043,7 +1060,7 @@ export async function runPublicContract(target: {
 
     // A finished campaign: view in browser, template URLs and the archive.
     const reader = await createSubscriber("reader", [single.id], true);
-    const templates = (await call("/api/templates?no_body=true")).body.data as any[];
+    const templates = (await call("/api/templates?no_body=true")).body.data as Array<any>;
     const archiveTemplate = templates.find((t) => t.name === "Default archive template")
       .id as number;
     const defaultTemplate = templates.find((t) => t.is_default).id as number;
@@ -1099,7 +1116,9 @@ export async function runPublicContract(target: {
     );
     for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
       const current = (await call(`/api/campaigns/${campaign.id}`)).body.data.status;
-      if (current === "finished") break;
+      if (current === "finished") {
+        break;
+      }
       check(Date.now() < deadline, "campaign-finish");
     }
     const [readerMail] = (await received(reader.email)).filter(
@@ -1318,11 +1337,12 @@ export async function runPublicContract(target: {
           body: "username=nobody&password=wrong",
         });
       const budget = { subscribe: 3, optin: 60, unsubscribe: 300, privacy: 10 };
-      for (const bad of ["not-an-ip", "10.0.0.0/33", "0.0.0.0/0", "::/0", "1.2.3.4/8/8"])
+      for (const bad of ["not-an-ip", "10.0.0.0/33", "0.0.0.0/0", "::/0", "1.2.3.4/8/8"]) {
         check(
           (await call("/api/settings/security.trusted_proxies", "PUT", [bad])).status === 400,
           "proxy-invalid",
         );
+      }
       check(
         (
           await call("/api/settings/security.public_rate_limit", "PUT", {
@@ -1334,8 +1354,9 @@ export async function runPublicContract(target: {
       );
       await withSetting("security.public_rate_limit", budget, async () => {
         await withSetting("security.trusted_proxies", ["127.0.0.0/8", "::1"], async () => {
-          for (let i = 0; i < 3; i++)
+          for (let i = 0; i < 3; i++) {
             check((await signup("203.0.113.1")).status === 400, "proxy-own-budget");
+          }
           const limited = await signup("203.0.113.1");
           check(
             limited.status === 429 && Number(limited.headers.get("retry-after")) > 0,
@@ -1343,8 +1364,9 @@ export async function runPublicContract(target: {
           );
           check((await signup("203.0.113.2")).status === 400, "proxy-other-visitor");
           check((await signup("9.9.9.9, 203.0.113.1")).status === 429, "proxy-spoofed-prefix");
-          for (let i = 0; i < 20; i++)
+          for (let i = 0; i < 20; i++) {
             check((await login("203.0.113.3")).status !== 429, "proxy-login-budget");
+          }
           const locked = await login("203.0.113.3");
           check(
             locked.status === 429 && Number(locked.headers.get("retry-after")) > 0,
@@ -1354,7 +1376,9 @@ export async function runPublicContract(target: {
         });
         // Without a configured proxy the same header is only client input.
         // The peer spent budget above, so new header values only ever reach its one limit.
-        for (let i = 0; i < 3; i++) await signup(`198.51.100.${i}`);
+        for (let i = 0; i < 3; i++) {
+          await signup(`198.51.100.${i}`);
+        }
         check((await signup("198.51.100.200")).status === 429, "proxy-untrusted-limited");
       });
     }
@@ -1508,7 +1532,7 @@ export async function runPublicContract(target: {
       await withSetting(
         "security.captcha",
         {
-          altcha: { enabled: false, complexity: 300000 },
+          altcha: { enabled: false, complexity: 300_000 },
           hcaptcha: { enabled: true, key: "site-key", secret: "" },
         },
         async () => {
@@ -1532,13 +1556,15 @@ export async function runPublicContract(target: {
       );
     };
     // The subscribe budget is native; the checks above must not meet it.
-    if (reference) await captchaChecks();
-    else
+    if (reference) {
+      await captchaChecks();
+    } else {
       await withSetting(
         "security.public_rate_limit",
         { ...settings["security.public_rate_limit"], subscribe: 1000 },
         captchaChecks,
       );
+    }
 
     if (target.restart) {
       await target.restart();
@@ -1550,42 +1576,58 @@ export async function runPublicContract(target: {
       let limited: Awaited<ReturnType<typeof post>> | undefined;
       for (let i = 0; i < 40 && !limited; i++) {
         const response = await post("/subscription/form", "email=bad&l=" + single.uuid);
-        if (response.status === 429) limited = response;
+        if (response.status === 429) {
+          limited = response;
+        }
       }
       check(limited?.headers.get("retry-after"), "rate-limit");
     }
   } finally {
-    for (const [key, value] of originals) await setSetting(key, value);
+    for (const [key, value] of originals) {
+      await setSetting(key, value);
+    }
     for (const id of owned.campaigns) {
       const response = await call(`/api/campaigns/${id}`, "DELETE");
-      if (response.status !== 200 && response.status !== 400) cleanupFailed = true;
+      if (response.status !== 200 && response.status !== 400) {
+        cleanupFailed = true;
+      }
     }
     for (const id of owned.subscribers) {
       const response = await call(`/api/subscribers/${id}`, "DELETE");
-      if (response.status !== 200 && response.status !== 400) cleanupFailed = true;
+      if (response.status !== 200 && response.status !== 400) {
+        cleanupFailed = true;
+      }
     }
-    for (const id of owned.lists)
+    for (const id of owned.lists) {
       if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const email of owned.addresses)
+    }
+    for (const email of owned.addresses) {
       for (const found of await mails(email).catch(() => []))
         await mailpit("/api/v1/messages", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ IDs: [found.ID] }),
         }).catch(() => {});
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL public-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL public-cleanup");
+  }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runPublicContract({
       mode: "reference",
       baseUrl,

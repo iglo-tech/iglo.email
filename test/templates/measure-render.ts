@@ -76,7 +76,9 @@ function run(kind: "control" | "owner", count: number, rep: number) {
       Buffer.byteLength(output.subject) +
       Buffer.byteLength(output.body) +
       Buffer.byteLength(plainOutput);
-    if (i % 100 === 0) rss = Math.max(rss, process.memoryUsage().rss);
+    if (i % 100 === 0) {
+      rss = Math.max(rss, process.memoryUsage().rss);
+    }
   }
   return {
     kind,
@@ -93,8 +95,12 @@ function run(kind: "control" | "owner", count: number, rep: number) {
 const records = [];
 for (const kind of ["control", "owner"] as const) {
   run(kind, 200, 0);
-  for (let n = 1; n <= 3; n++) records.push(run(kind, 10000, n));
+  for (let n = 1; n <= 3; n++) {
+    records.push(run(kind, 10000, n));
+  }
 }
-for (const row of records) console.log(JSON.stringify(row));
+for (const row of records) {
+  console.log(JSON.stringify(row));
+}
 assert.equal(new Set(records.map((row) => row.digest)).size, 1);
 assert.equal(new Set(records.map((row) => row.bytes)).size, 1);

@@ -7,13 +7,14 @@ import { admin, check } from "@/test/worked-example/harness";
 
 const session = `m41-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
-function browser(...args: string[]): string {
+function browser(...args: Array<string>): string {
   const run = Bun.spawnSync(
     ["agent-browser", "--session", session, "--allowed-domains", "127.0.0.1", ...args],
     { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
   );
-  if (run.exitCode !== 0)
+  if (run.exitCode !== 0) {
     throw new Error(`agent-browser ${args[0]}: ${run.stdout} ${run.stderr.toString()}`);
+  }
   return run.stdout.toString().trim();
 }
 const value = (expression: string) => JSON.parse(browser("eval", expression));
@@ -21,7 +22,9 @@ const path = () => value("location.pathname") as string;
 const see = (label: string, observed: unknown) =>
   console.log(`${label}: ${JSON.stringify(observed)}`);
 const shot = (name: string) => {
-  if (shots) browser("screenshot", `${shots}/${name}.png`);
+  if (shots) {
+    browser("screenshot", `${shots}/${name}.png`);
+  }
 };
 const settle = () => browser("wait", "--load", "networkidle");
 const logout = () => {
@@ -68,12 +71,14 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
     see(
       "dashboard stats",
       value(
-        '[...document.querySelectorAll(".stat-card")].map((c) => c.innerText.replace(/\\s+/g, " "))',
+        String.raw`[...document.querySelectorAll(".stat-card")].map((c) => c.innerText.replace(/\s+/g, " "))`,
       ),
     );
     see(
       "campaign row",
-      value('document.querySelector("[data-testid=campaign-row]").innerText.replace(/\\s+/g, " ")'),
+      value(
+        String.raw`document.querySelector("[data-testid=campaign-row]").innerText.replace(/\s+/g, " ")`,
+      ),
     );
     see(
       "markup injected from campaign name",
@@ -81,7 +86,9 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
     );
     see(
       "system card",
-      value('document.querySelector("[data-testid=system]").innerText.replace(/\\s+/g, " ")'),
+      value(
+        String.raw`document.querySelector("[data-testid=system]").innerText.replace(/\s+/g, " ")`,
+      ),
     );
     shot("dashboard");
     check(made > 0, "user created");
@@ -109,7 +116,7 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
     see(
       "after enabling",
       value(
-        'document.querySelector("[data-testid=twofa-enabled]").innerText.replace(/\\s+/g, " ")',
+        String.raw`document.querySelector("[data-testid=twofa-enabled]").innerText.replace(/\s+/g, " ")`,
       ),
     );
     logout();

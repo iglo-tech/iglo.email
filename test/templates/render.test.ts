@@ -115,13 +115,13 @@ describe("bounded Liquid caller", () => {
 
 test("UTF-8 bounds and explicit raw output", async () => {
   const call = caller();
-  expect((await call("😀".repeat(16384), {})).status).toBe(200);
-  expect((await call("😀".repeat(16384) + "x", {})).status).toBe(400);
+  expect((await call("😀".repeat(16_384), {})).status).toBe(200);
+  expect((await call("😀".repeat(16_384) + "x", {})).status).toBe(400);
   const body = "{% for i in (1..16) %}{{ value | raw }}{% endfor %}";
-  const exactly = await call(body, { value: "x".repeat(65536) });
+  const exactly = await call(body, { value: "x".repeat(65_536) });
   expect(exactly.status).toBe(200);
   expect((await exactly.text()).length).toBe(1024 * 1024);
-  expect((await call(body.replace("1..16", "1..17"), { value: "x".repeat(65536) })).status).toBe(
+  expect((await call(body.replace("1..16", "1..17"), { value: "x".repeat(65_536) })).status).toBe(
     400,
   );
 });
@@ -158,7 +158,9 @@ test("all entry points reject non-string contexts without observing them", async
     },
   );
   const fields: Record<PropertyKey, unknown> = {};
-  for (let i = 0; i < 1100; i++) Object.defineProperty(fields, `hidden${i}`, { value: i });
+  for (let i = 0; i < 1100; i++) {
+    Object.defineProperty(fields, `hidden${i}`, { value: i });
+  }
   Object.defineProperty(fields, "enumerable", {
     enumerable: true,
     get() {
@@ -187,7 +189,7 @@ test("all entry points reject non-string contexts without observing them", async
   class CallerValue {
     value = "class";
   }
-  const values: unknown[] = [
+  const values: Array<unknown> = [
     proxy,
     fields,
     enumerable,
@@ -216,7 +218,7 @@ test("all entry points reject non-string contexts without observing them", async
 test("serialized input is bounded before decoding and still checks nested limits", async () => {
   const renderer = createRenderer(createRealClock(), createTranslation());
   const render = (data: string) => renderer.renderSync({ body: "ok", mode: "plain", data });
-  const chunk = "é".repeat(32768);
+  const chunk = "é".repeat(32_768);
   const value = { a: chunk, b: chunk, c: chunk, d: "" };
   value.d =
     "é".repeat(Math.floor((256 * 1024 - Buffer.byteLength(JSON.stringify(value))) / 2)) + "x";
@@ -239,7 +241,9 @@ test("serialized input is bounded before decoding and still checks nested limits
   expect(() => render('{"private-data-canary')).toThrow("Invalid template data");
   expect(() => render('{"a":{"__proto__":0}}')).toThrow();
   let nested: unknown = null;
-  for (let i = 0; i < 17; i++) nested = [nested];
+  for (let i = 0; i < 17; i++) {
+    nested = [nested];
+  }
   expect(() => render(JSON.stringify({ nested }))).toThrow();
   expect(() =>
     render(JSON.stringify({ a: Array.from({ length: 10 }, () => Array(1024).fill(0)) })),
@@ -291,7 +295,7 @@ test("built-ins render synthetic semantic content and clock stays instance-owned
     hostname: "127.0.0.1",
     fetch: async (request) => {
       const path = new URL(request.url).pathname;
-      if (path === "/date")
+      if (path === "/date") {
         return new Response(
           (
             await renderer.render({
@@ -301,6 +305,7 @@ test("built-ins render synthetic semantic content and clock stays instance-owned
             })
           ).body,
         );
+      }
       if (path.startsWith("/initial/")) {
         const item = initialTemplates[Number(path.slice("/initial/".length))]!;
         const result = await renderer.render(
@@ -428,13 +433,13 @@ test("compiled snapshots retain their source and sanitize data for every caller"
 test("UTF-8 output and data bounds, tracking and URL contexts", async () => {
   const call = caller();
   const body = "{% for i in (1..16) %}{{ value | raw }}{% endfor %}";
-  const exact = await call(body, { value: "😀".repeat(16384) });
+  const exact = await call(body, { value: "😀".repeat(16_384) });
   expect(exact.status).toBe(200);
   expect(Buffer.byteLength(await exact.text())).toBe(1024 * 1024);
-  expect((await call(body.replace("1..16", "1..17"), { value: "😀".repeat(16384) })).status).toBe(
+  expect((await call(body.replace("1..16", "1..17"), { value: "😀".repeat(16_384) })).status).toBe(
     400,
   );
-  expect((await call("{{ value }}", { value: "😀".repeat(16384) + "a" })).status).toBe(400);
+  expect((await call("{{ value }}", { value: "😀".repeat(16_384) + "a" })).status).toBe(400);
   expect(
     (await call("{% for x in xs %}{{ x }}{% endfor %}", { xs: Array(1025).fill("a") })).status,
   ).toBe(400);
@@ -469,8 +474,8 @@ test("translation arguments are finite and instance-local", async () => {
 
 test("long expression work is charged even without output", async () => {
   const call = caller();
-  const body = `{% if ${"x or ".repeat(10001)}x %}not emitted{% endif %}`;
-  expect(Buffer.byteLength(body)).toBeLessThan(65536);
+  const body = `{% if ${"x or ".repeat(10_001)}x %}not emitted{% endif %}`;
+  expect(Buffer.byteLength(body)).toBeLessThan(65_536);
   expect((await call(body, { x: false }, "plain")).status).toBe(400);
 });
 
@@ -508,7 +513,7 @@ test("inherited and sparse objects are rejected without inspection", async () =>
       return "canary";
     },
   });
-  const input: unknown[] = [];
+  const input: Array<unknown> = [];
   input.length = 2;
   Object.setPrototypeOf(input, prototype);
   expect((await call("hello", input, "html", undefined, true)).status).toBe(400);
@@ -518,14 +523,16 @@ test("inherited and sparse objects are rejected without inspection", async () =>
 test("iterating large objects charges conversion even when limit is zero", async () => {
   const call = caller();
   const data: Record<string, number> = {};
-  for (let index = 0; index < 1024; index++) data[`k${index}`] = index;
+  for (let index = 0; index < 1024; index++) {
+    data[`k${index}`] = index;
+  }
   const body = "{% for i in (1..1000) %}{% for pair in values limit: 0 %}{% endfor %}{% endfor %}";
   expect((await call(body, { values: data }, "plain")).status).toBe(400);
 });
 
 test("encoded context and rendered subject use UTF-8 byte boundaries", async () => {
   const call = caller();
-  const chunk = "x".repeat(65536),
+  const chunk = "x".repeat(65_536),
     data = { a: chunk, b: chunk, c: chunk, d: "" };
   data.d = "x".repeat(256 * 1024 - Buffer.byteLength(JSON.stringify(data)));
   expect(Buffer.byteLength(JSON.stringify(data))).toBe(256 * 1024);
@@ -573,7 +580,7 @@ test("encoded context and rendered subject use UTF-8 byte boundaries", async () 
 test("independent renderers keep translation and clock state separate", async () => {
   const firstClock = new TestClock(),
     secondClock = new TestClock();
-  secondClock.advance(86400000);
+  secondClock.advance(86_400_000);
   const first = createRenderer(
     firstClock,
     new Translation({ "_.code": "a", "_.name": "A", fixture: "First" }),
@@ -615,18 +622,18 @@ test("computed prototype names cannot be smuggled through array keys", async () 
 test("repeated long contains operations consume finite text work", async () => {
   const call = caller();
   const body = "{% for n in (1..500) %}{% if hay contains 'z' %}{% endif %}{% endfor %}";
-  expect((await call(body, { hay: "a".repeat(65536) }, "plain")).status).toBe(400);
+  expect((await call(body, { hay: "a".repeat(65_536) }, "plain")).status).toBe(400);
 });
 
 test("captures share one cumulative emission budget", async () => {
   const call = caller();
   const capture =
     "{% capture x %}{% for n in (1..16) %}{{ value | raw }}{% endfor %}{% endcapture %}";
-  expect((await call(capture.repeat(4), { value: "x".repeat(65536) }, "plain")).status).toBe(200);
-  expect((await call(capture.repeat(4) + "x", { value: "x".repeat(65536) }, "plain")).status).toBe(
+  expect((await call(capture.repeat(4), { value: "x".repeat(65_536) }, "plain")).status).toBe(200);
+  expect((await call(capture.repeat(4) + "x", { value: "x".repeat(65_536) }, "plain")).status).toBe(
     400,
   );
-  expect((await call(capture.repeat(5), { value: "x".repeat(65536) }, "plain")).status).toBe(400);
+  expect((await call(capture.repeat(5), { value: "x".repeat(65_536) }, "plain")).status).toBe(400);
 });
 
 test("Markdown runs after Liquid and composes once through a layout", async () => {
@@ -655,7 +662,7 @@ test("Markdown runs after Liquid and composes once through a layout", async () =
 // of output) are refused. Ordinary-size tables, wide rows and quotes fit the bounds and render.
 test("Markdown bounds repeated reference URLs and accepts ordinary tables and quotes", async () => {
   const call = caller();
-  const reference = `[ref]: https://example.invalid/${"x".repeat(40000)}\n\n`;
+  const reference = `[ref]: https://example.invalid/${"x".repeat(40_000)}\n\n`;
   expect((await call(reference + "[x][ref] ".repeat(40), {}, "markdown")).status).toBe(400);
   expect((await call(reference + "![x][ref] ".repeat(40), {}, "markdown")).status).toBe(400);
   const table =
@@ -666,9 +673,9 @@ test("Markdown bounds repeated reference URLs and accepts ordinary tables and qu
     "\n" +
     ("| " + "v | ".repeat(100) + "\n").repeat(120);
   expect((await call(table, {}, "markdown")).status).toBe(200);
-  const wide = "|" + "h|".repeat(10001) + "\n|" + "- |".repeat(10001) + "\n";
+  const wide = "|" + "h|".repeat(10_001) + "\n|" + "- |".repeat(10_001) + "\n";
   expect((await call(wide, {}, "markdown")).status).toBe(200);
-  expect((await call("> x\n".repeat(10001), {}, "markdown")).status).toBe(200);
+  expect((await call("> x\n".repeat(10_001), {}, "markdown")).status).toBe(200);
   expect(
     (
       await call(
@@ -682,7 +689,7 @@ test("Markdown bounds repeated reference URLs and accepts ordinary tables and qu
     (
       await call(
         "{% for i in (1..17) %}{{ value | raw }}{% endfor %}",
-        { value: "x".repeat(65536) },
+        { value: "x".repeat(65_536) },
         "markdown",
       )
     ).status,
@@ -693,7 +700,7 @@ test("Markdown stage accepts a source of exactly 128 KiB after expansion and rej
   // D112: the expanded Markdown source is capped at 128 KiB, checked before the parser sees it.
   const call = caller();
   const body = "<div>{{ x | raw }}{{ y | raw }}</div>";
-  const data = { x: "a".repeat(65536), y: "a".repeat(65525) };
+  const data = { x: "a".repeat(65_536), y: "a".repeat(65_525) };
   const exact = await call(body, data, "markdown");
   expect(exact.status).toBe(200);
   // The raw block is written as it is, with the newline Bun's html() ends a block with (B106, D113).
@@ -709,7 +716,7 @@ test("nested rendering respects the depth limit", async () => {
 
 test("number formats in plain and Markdown templates, as in HTML", async () => {
   const call = caller();
-  const data = { n: 1234567 };
+  const data = { n: 1_234_567 };
   expect(await (await call("[{{ data.n | number }}]", { data }, "plain")).text()).toBe(
     "[1,234,567]",
   );

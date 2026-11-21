@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { admin, get, login, userWith, type Fixture } from "@/test/admin/support";
+import { admin, get, login, userWith } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 // The fixture's password hashing and the whole file take 4 s of a 5 s default on an idle host.
@@ -56,8 +57,9 @@ test("a preview frame allows nothing, and an editor comes only from the embedded
     expect(html).toMatch(/<iframe[^>]* sandbox=""/);
     expect(html).not.toContain("allow-scripts");
     expect(html).not.toContain("allow-same-origin");
-    for (const [, src] of html.matchAll(/<script[^>]* src="([^"]+)"/g))
+    for (const [, src] of html.matchAll(/<script[^>]* src="([^"]+)"/g)) {
       if (!src!.startsWith("/admin/custom.js?")) expect(src).toStartWith("/admin/static/");
+    }
   }
 });
 
@@ -75,7 +77,7 @@ test("the query string and settings are escaped in hidden fields, values, badges
   }
   const form = await (await get(f, "/admin/campaigns/new", cookie)).text();
   expect(form).toContain('value="Fixture &lt;fixture@example.test&gt;"');
-  expect(form).toContain('"from_emails":["Fixture \\u003cfixture@example.test\\u003e"');
+  expect(form).toContain(String.raw`"from_emails":["Fixture \u003cfixture@example.test\u003e"`);
 });
 
 test("a malformed ID is the admin error page", async () => {
@@ -100,8 +102,9 @@ test("each route asks for its endpoint's permissions", async () => {
     "/admin/templates",
     "/admin/templates/new",
     "/admin/templates/1",
-  ])
+  ]) {
     expect((await get(f, path, none)).status).toBe(403);
+  }
 
   for (const [name, permission] of [
     ["get", "campaigns:get"],

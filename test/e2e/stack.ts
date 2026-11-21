@@ -2,12 +2,8 @@
 // data directory, the loopback SMTP sink, and a second instance that never gets an administrator.
 import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
-import {
-  apiClient,
-  startMailbox,
-  startProduction,
-  type Mailbox,
-} from "@/test/worked-example/harness";
+import { apiClient, startMailbox, startProduction } from "@/test/worked-example/harness";
+import type { Mailbox } from "@/test/worked-example/harness";
 
 export const root = resolve(import.meta.dir, "../..");
 
@@ -66,9 +62,11 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
  */
 export async function withStacks(
   count: number,
-  run: (stacks: Stack[]) => Promise<number>,
-  started: Stack[] = [],
+  run: (stacks: Array<Stack>) => Promise<number>,
+  started: Array<Stack> = [],
 ): Promise<number> {
-  if (started.length === count) return run(started);
+  if (started.length === count) {
+    return run(started);
+  }
   return withStack((stack) => withStacks(count, run, [...started, stack]));
 }

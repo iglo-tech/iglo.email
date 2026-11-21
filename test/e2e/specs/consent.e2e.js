@@ -120,7 +120,9 @@ async function shortenMarketingCap(page) {
   await ok(page, "/api/settings/marketing.min_interval", "PUT", "PT1S");
 }
 test.afterEach(async ({ request }) => {
-  if (capped === null) return;
+  if (capped === null) {
+    return;
+  }
   const original = capped;
   capped = null;
   const call = await requestAdmin(request);
@@ -208,7 +210,9 @@ const outside = (url, body) =>
 async function unsubscribeInBrowser(page, url, { blocklist = false } = {}) {
   await page.goto(url);
   await expect(page.locator("#btn-unsub")).toBeVisible();
-  if (blocklist) await page.locator("#privacy-blocklist").check();
+  if (blocklist) {
+    await page.locator("#privacy-blocklist").check();
+  }
   await page.locator("#btn-unsub").click();
   await expect(page.locator("body")).toContainText(/unsubscribed/i);
 }
@@ -225,8 +229,11 @@ async function subscribeThroughForm(page, { email, name, lists }) {
     const label = (await item.locator("label").innerText()).trim();
     offered.push(label);
     const box = item.locator("input[type=checkbox]");
-    if (wanted.has(label)) await box.check();
-    else await box.uncheck();
+    if (wanted.has(label)) {
+      await box.check();
+    } else {
+      await box.uncheck();
+    }
   }
   expect(offered, "every named list is on the form").toEqual(expect.arrayContaining([...wanted]));
   // The handler answers with the pending text when a named list is double opt-in, else the other.

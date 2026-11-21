@@ -5,7 +5,7 @@ import { txFixture } from "@/test/tx/fixture";
 
 const N = Number(process.env.UNSUB_MEASURE_N ?? "200");
 const part = process.env.MEASURE_PART ?? "all";
-const stats = (values: number[]) => {
+const stats = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
   return {
@@ -14,7 +14,7 @@ const stats = (values: number[]) => {
     p95: +at(0.95).toFixed(2),
   };
 };
-const rss = () => Math.round(process.memoryUsage().rss / 1048576);
+const rss = () => Math.round(process.memoryUsage().rss / 1_048_576);
 const results: Record<string, unknown> = { n: N, bun: Bun.version, part, rssStartMiB: rss() };
 const body =
   '<p>Hello {{ subscriber.name }} <a href="{{ "https://example.test/offer" | track_link }}">offer</a></p>';
@@ -23,14 +23,18 @@ const body =
   // Transactional sync sends to linked subscribers through POST /api/tx.
   const f = await txFixture({ clock: createRealClock() });
   const template = await f.template(body);
-  const ids: number[] = [];
-  for (let i = 0; i < N; i++) ids.push(await f.subscriber(`tx-${i}@example.test`, `Tx ${i}`));
-  const latencies: number[] = [];
+  const ids: Array<number> = [];
+  for (let i = 0; i < N; i++) {
+    ids.push(await f.subscriber(`tx-${i}@example.test`, `Tx ${i}`));
+  }
+  const latencies: Array<number> = [];
   const started = performance.now();
   for (const id of ids) {
     const t = performance.now();
     const r = await f.tx({ subscriber_id: id, template_id: template });
-    if (r.status !== 200 || r.body.data.sends[0].status !== "sent") throw new Error("tx failed");
+    if (r.status !== 200 || r.body.data.sends[0].status !== "sent") {
+      throw new Error("tx failed");
+    }
     latencies.push(performance.now() - t);
   }
   results.txSync = {
@@ -46,9 +50,10 @@ if (part === "all") {
   const list = (
     await f.json("/api/lists", "POST", { name: "measure", type: "public", optin: "single" })
   ).body.data.id as number;
-  const ids: number[] = [];
-  for (let i = 0; i < N; i++)
+  const ids: Array<number> = [];
+  for (let i = 0; i < N; i++) {
     ids.push(await f.subscriber(`m-${i}@example.test`, `M ${i}`, { lists: [list] }));
+  }
   // Synthetic history: 20,000 older delivered marketing rows across the subscribers,
   // outside the cap window, so the cap query runs against a populated journal.
   const old = new Date(Date.now() - 30 * 86_400_000).toISOString();
@@ -64,13 +69,15 @@ if (part === "all") {
   f.db.run("COMMIT");
   const send = (id: number) =>
     f.tx({ subscriber_id: id, template_id: template, kind: "marketing", list_id: list });
-  const sent: number[] = [];
-  const uuids: string[] = [];
-  let started = performance.now();
+  const sent: Array<number> = [];
+  const uuids: Array<string> = [];
+  const started = performance.now();
   for (const id of ids) {
     const t = performance.now();
     const r = await send(id);
-    if (r.status !== 200 || r.body.data.sends[0].status !== "sent") throw new Error("send failed");
+    if (r.status !== 200 || r.body.data.sends[0].status !== "sent") {
+      throw new Error("send failed");
+    }
     uuids.push(r.body.data.sends[0].uuid);
     sent.push(performance.now() - t);
   }
@@ -78,34 +85,40 @@ if (part === "all") {
     requestMs: stats(sent),
     sentPerSecond: Math.round((N * 1000) / (performance.now() - started)),
   };
-  const capped: number[] = [];
+  const capped: Array<number> = [];
   for (const id of ids) {
     const t = performance.now();
     const r = await send(id);
-    if (r.body.data.sends[0].status !== "skipped") throw new Error("cap failed");
+    if (r.body.data.sends[0].status !== "skipped") {
+      throw new Error("cap failed");
+    }
     capped.push(performance.now() - t);
   }
   results.marketingCapSkipMs = stats(capped);
   const mails = f.sink.messages.slice(-N);
   const link = (data: string) =>
     /http:\/\/fixture\.test(\/m\/[0-9a-f-]+\/link\/[0-9a-f-]+)/.exec(
-      data.replace(/=\r\n/g, "").replace(/=3D/g, "="),
+      data.replaceAll("=\r\n", "").replaceAll("=3D", "="),
     )![1]!;
   const timed = async (fn: (i: number) => Promise<Response>, expected: number) => {
-    const values: number[] = [];
+    const values: Array<number> = [];
     for (let i = 0; i < N; i++) {
       const t = performance.now();
       const response = await fn(i);
       await response.arrayBuffer();
-      if (response.status !== expected) throw new Error(`public route ${response.status}`);
+      if (response.status !== expected) {
+        throw new Error(`public route ${response.status}`);
+      }
       values.push(performance.now() - t);
     }
     return stats(values);
   };
   const subscriberUuid = async (id: number) =>
     (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
-  const subs: string[] = [];
-  for (const id of ids) subs.push(await subscriberUuid(id));
+  const subs: Array<string> = [];
+  for (const id of ids) {
+    subs.push(await subscriberUuid(id));
+  }
   results.publicMs = {
     pixel: await timed((i) => f.request(`/m/${uuids[i]}/px.png`), 200),
     linkRedirect: await timed((i) => f.request(link(mails[i]!.data)), 307),

@@ -24,12 +24,13 @@ function seed(db: Database) {
   const started = performance.now();
   db.run("PRAGMA synchronous = OFF");
   db.run("BEGIN IMMEDIATE");
-  for (let i = 1; i <= 21; i++)
+  for (let i = 1; i <= 21; i++) {
     db.run("INSERT INTO lists (uuid, name, type, optin) VALUES (?, ?, 'public', ?)", [
       crypto.randomUUID(),
       `measure ${i}`,
       i === 21 ? "double" : "single",
     ]);
+  }
   const person = db.prepare(
     `INSERT INTO subscribers (uuid, email, name, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
   );
@@ -50,19 +51,26 @@ function seed(db: Database) {
       at,
       at,
     );
-    if (kind === 1 || kind === 2) continue;
-    if (kind === 3 || kind === 4) member.run(i, 21, "unconfirmed", at, at);
-    else {
+    if (kind === 1 || kind === 2) {
+      continue;
+    }
+    if (kind === 3 || kind === 4) {
+      member.run(i, 21, "unconfirmed", at, at);
+    } else {
       const status = blocklisted ? "unsubscribed" : "confirmed";
       member.run(i, 1 + (i % 20), status, at, at);
-      if (i % 2) member.run(i, 1 + ((i + 7) % 20), status, at, at);
+      if (i % 2) {
+        member.run(i, 1 + ((i + 7) % 20), status, at, at);
+      }
     }
   }
   const campaign = db.prepare(
     `INSERT INTO campaigns (uuid, name, subject, from_email, body, status, type, messenger, template_id)
      VALUES (?, ?, 's', 'a@example.test', 'b', 'finished', 'regular', 'email', NULL)`,
   );
-  for (let i = 1; i <= 100; i++) campaign.run(crypto.randomUUID(), `measure ${i}`);
+  for (let i = 1; i <= 100; i++) {
+    campaign.run(crypto.randomUUID(), `measure ${i}`);
+  }
   db.run(
     `INSERT INTO links (uuid, url) VALUES ('${crypto.randomUUID()}', 'https://example.test/a')`,
   );
@@ -75,7 +83,9 @@ function seed(db: Database) {
   for (let i = 1; i <= 1_000_000; i++) {
     const owner = 1 + ((i * 7) % subscribers);
     views.run(1 + (i % 100), owner, stamp(i, 1_000_000));
-    if (i % 2) clicks.run(1 + (i % 100), owner, stamp(i, 1_000_000));
+    if (i % 2) {
+      clicks.run(1 + (i % 100), owner, stamp(i, 1_000_000));
+    }
   }
   // A sent transactional message for the blocklisted and half the orphans, to anonymize.
   const send = db.prepare(
@@ -83,8 +93,9 @@ function seed(db: Database) {
      VALUES (?, 'tx', 'transactional', ?, ?, 'sent', '{}', ?)`,
   );
   for (let i = 1; i <= subscribers; i++) {
-    if (i % 10 < 2)
+    if (i % 10 < 2) {
       send.run(crypto.randomUUID(), i, `measure-${i}@example.test`, stamp(i, subscribers));
+    }
   }
   db.run("COMMIT");
   db.run("PRAGMA wal_checkpoint(TRUNCATE)");
@@ -100,7 +111,7 @@ interface Result {
   pixelP99: number;
   pixels: number;
 }
-const results: Result[] = [];
+const results: Array<Result> = [];
 
 /** The server on the data directory, up. It is seeded stopped: a loop gives up on a held lock. */
 async function serve() {
@@ -119,8 +130,12 @@ async function serve() {
   );
   const origin = `http://127.0.0.1:${port}`;
   for (const deadline = Date.now() + 30_000; ; await Bun.sleep(50)) {
-    if ((await fetch(`${origin}/health`).catch(() => null))?.ok) break;
-    if (Date.now() > deadline) throw new Error("server did not start");
+    if ((await fetch(`${origin}/health`).catch(() => null))?.ok) {
+      break;
+    }
+    if (Date.now() > deadline) {
+      throw new Error("server did not start");
+    }
   }
   const stop = async () => {
     child.kill("SIGTERM");
@@ -139,7 +154,7 @@ try {
     const file = join(dataDir, "iglo-email.db");
     const db = new Database(file);
     const seeded = seed(db);
-    console.log(`seeded in ${seeded} s, ${Math.round(statSync(file).size / 1048576)} MiB`);
+    console.log(`seeded in ${seeded} s, ${Math.round(statSync(file).size / 1_048_576)} MiB`);
     const { uuid: campaign } = db.query("SELECT uuid FROM campaigns LIMIT 1").get() as {
       uuid: string;
     };
@@ -166,13 +181,15 @@ try {
         stdout: "pipe",
       });
       let running = true;
-      const pixels: number[] = [];
+      const pixels: Array<number> = [];
       const pixel = (async () => {
         while (running) {
           const started = performance.now();
           const response = await fetch(`${origin}/campaign/${campaign}/${reader}/px.png`);
           await response.arrayBuffer();
-          if (response.status !== 200) throw new Error(`pixel ${response.status}`);
+          if (response.status !== 200) {
+            throw new Error(`pixel ${response.status}`);
+          }
           pixels.push(performance.now() - started);
           await Bun.sleep(5);
         }
@@ -202,7 +219,9 @@ try {
         headers: { authorization },
       });
       const body = (await response.json()) as { data: { count: number } | true; message?: string };
-      if (response.status !== 200) throw new Error(`${path}: ${response.status} ${body.message}`);
+      if (response.status !== 200) {
+        throw new Error(`${path}: ${response.status} ${body.message}`);
+      }
       return body.data === true ? "" : body.data.count;
     };
     const exported = async (type: string) => {
@@ -212,8 +231,9 @@ try {
         { headers: { authorization } },
       );
       let lines = 0;
-      for await (const chunk of response.body!)
+      for await (const chunk of response.body!) {
         for (let at = -1; (at = (chunk as Buffer).indexOf(10, at + 1)) >= 0;) lines++;
+      }
       return lines - 1;
     };
 
@@ -259,7 +279,9 @@ try {
         events: ["subscriber.deleted"],
       }),
     });
-    if (hook.status !== 200) throw new Error(`hook ${hook.status}`);
+    if (hook.status !== 200) {
+      throw new Error(`hook ${hook.status}`);
+    }
     const again = new Database(file);
     again.run("PRAGMA busy_timeout = 10000");
     again.run(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50000)

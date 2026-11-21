@@ -38,21 +38,27 @@ export interface BounceSettings {
   webhooksEnabled: boolean;
   ses: boolean;
   /** `bounce.ses_topic_arns`: empty accepts no SES message (D75). */
-  sesTopics: string[];
+  sesTopics: Array<string>;
 }
 // Go strconv.Atoi, ignoring its error.
 const atoi = (value: string | null) => {
-  if (!value || !/^[+-]?\d+$/.test(value)) return 0;
+  if (!value || !/^[+-]?\d+$/.test(value)) {
+    return 0;
+  }
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : 0;
 };
 /** parseStringIDs: every value a positive integer, or null. */
-function parseIDs(values: string[]): bigint[] | null {
-  const ids: bigint[] = [];
+function parseIDs(values: Array<string>): Array<bigint> | null {
+  const ids: Array<bigint> = [];
   for (const value of values) {
-    if (!/^[+-]?\d+$/.test(value)) return null;
+    if (!/^[+-]?\d+$/.test(value)) {
+      return null;
+    }
     const id = BigInt(value);
-    if (id < 1n || id > 9223372036854775807n) return null;
+    if (id < 1n || id > 9_223_372_036_854_775_807n) {
+      return null;
+    }
     ids.push(id);
   }
   return ids;
@@ -62,14 +68,17 @@ function parseIDs(values: string[]): bigint[] | null {
  * the string's object is stored and any other value is kept under `value`.
  */
 export function bounceMeta(value: unknown): string {
-  if (value === undefined || value === null) return "{}";
+  if (value === undefined || value === null) {
+    return "{}";
+  }
   let parsed = value;
-  if (typeof value === "string")
+  if (typeof value === "string") {
     try {
       parsed = JSON.parse(value);
     } catch {
       /* Plain text. */
     }
+  }
   return JSON.stringify(
     parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : { value },
   );
@@ -114,7 +123,9 @@ export function registerBounceRoutes(
   /** hasSubPerm: a subscriber who exists must be on a permitted list. */
   const subscriberPermission = (c: RequestContext, id: bigint | number, kind: "get" | "manage") => {
     const i = c.identity;
-    if (!i) throw new Error("Identity required");
+    if (!i) {
+      throw new Error("Identity required");
+    }
     const get = roles.listScope(i.role, i.user.list_role_id, "list:get"),
       manage = roles.listScope(i.role, i.user.list_role_id, "list:manage");
     const scope =
@@ -125,31 +136,42 @@ export function registerBounceRoutes(
           : get.ids.length
             ? get
             : manage;
-    if (scope.all || !subscribers.get(BigInt(id))) return;
-    if (!subscribers.memberships(BigInt(id)).some((m) => scope.ids.includes(m.list_id)))
+    if (scope.all || !subscribers.get(BigInt(id))) {
+      return;
+    }
+    if (!subscribers.memberships(BigInt(id)).some((m) => scope.ids.includes(m.list_id))) {
       throw new HttpError(
         403,
         c.app.i18n.Ts("globals.messages.permissionDenied", "name", `subscriber: ${id}`),
       );
+    }
   };
   const campaignFilter = (c: RequestContext) => {
     const raw = c.url.searchParams.get("campaign_id");
-    if (!raw) return 0;
+    if (!raw) {
+      return 0;
+    }
     const id = /^[+-]?\d+$/.test(raw) ? Number(raw) : 0;
-    if (id < 1) throw invalidID(c);
+    if (id < 1) {
+      throw invalidID(c);
+    }
     return id;
   };
   // A type outside the enum fails upstream's cast with a 500: here it matches nothing.
   const typeFilter = (value: string) =>
-    value && !(bounceTypes as readonly string[]).includes(value) ? "none" : value;
+    value && !(bounceTypes as ReadonlyArray<string>).includes(value) ? "none" : value;
 
   const collection: Handler = (c) => {
     const params = c.url.searchParams;
     let page = atoi(params.get("page"));
-    if (page < 1) page = 1;
+    if (page < 1) {
+      page = 1;
+    }
     const rawPer = params.get("per_page");
     let perPage = rawPer === "all" ? 0 : atoi(rawPer);
-    if (rawPer !== "all" && perPage < 1) perPage = 20;
+    if (rawPer !== "all" && perPage < 1) {
+      perPage = 20;
+    }
     const { results, total } = store.query({
       campaignId: atoi(params.get("campaign_id")),
       source: params.get("source") ?? "",
@@ -159,8 +181,9 @@ export function registerBounceRoutes(
       offset: perPage ? Math.min((page - 1) * perPage, Number.MAX_SAFE_INTEGER) : 0,
       limit: perPage,
     });
-    if (!results.length)
+    if (!results.length) {
       return ok({ results: [], search: "", query: "", total: 0, per_page: 0, page: 0 });
+    }
     return ok({
       results,
       search: "",
@@ -172,21 +195,24 @@ export function registerBounceRoutes(
   };
   const one: Handler = (c) => {
     const found = store.get(getID(c));
-    if (!found)
+    if (!found) {
       throw new HttpError(
         400,
         c.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.bounce}"),
       );
+    }
     return ok(found);
   };
   const remove: Handler = (c) => {
     const params = c.url.searchParams;
     let all = parseBool(params.get("all") ?? "") ?? false;
     const raw = params.getAll("id");
-    let ids: bigint[] = [];
+    let ids: Array<bigint> = [];
     if (!all || raw.length) {
       const parsed = parseIDs(raw);
-      if (!parsed?.length) throw invalidID(c);
+      if (!parsed?.length) {
+        throw invalidID(c);
+      }
       ids = parsed;
       all = false;
     }
@@ -194,8 +220,11 @@ export function registerBounceRoutes(
     const source = params.get("source") ?? "",
       type = typeFilter(params.get("type") ?? "");
     writeTransaction(db, () => {
-      if (all) store.deleteFiltered(campaignId, source, type);
-      else store.deleteIDs(ids);
+      if (all) {
+        store.deleteFiltered(campaignId, source, type);
+      } else {
+        store.deleteIDs(ids);
+      }
     });
     return ok(true);
   };
@@ -207,7 +236,9 @@ export function registerBounceRoutes(
   const blocklist: Handler = (c) => {
     const params = c.url.searchParams;
     const ids = parseIDs(params.getAll("id"));
-    if (!ids) throw invalidID(c);
+    if (!ids) {
+      throw invalidID(c);
+    }
     const campaignId = campaignFilter(c);
     const source = params.get("source") ?? "",
       type = typeFilter(params.get("type") ?? "");
@@ -228,11 +259,15 @@ export function registerBounceRoutes(
 
   /** validateBounceFields, over what Go's decoder accepts for models.Bounce. */
   const nativeEvent = (c: RequestContext, value: unknown): BounceEvent => {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) throw invalidData(c);
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw invalidData(c);
+    }
     const body = value as Record<string, unknown>;
     const text = (key: string) => {
       const field = body[key] ?? "";
-      if (typeof field !== "string" || field.includes("\0")) throw invalidData(c);
+      if (typeof field !== "string" || field.includes("\0")) {
+        throw invalidData(c);
+      }
       return field;
     };
     const email = text("email"),
@@ -240,14 +275,25 @@ export function registerBounceRoutes(
       sendUuid = text("send_uuid"),
       type = text("type"),
       createdAt = text("created_at");
-    if (!email && !subscriberUuid && !sendUuid) throw invalidField(c, "email / subscriber_uuid");
-    if (subscriberUuid && !reUUID.test(subscriberUuid)) throw invalidField(c, "subscriber_uuid");
-    if (sendUuid && !reUUID.test(sendUuid)) throw invalidField(c, "send_uuid");
+    if (!email && !subscriberUuid && !sendUuid) {
+      throw invalidField(c, "email / subscriber_uuid");
+    }
+    if (subscriberUuid && !reUUID.test(subscriberUuid)) {
+      throw invalidField(c, "subscriber_uuid");
+    }
+    if (sendUuid && !reUUID.test(sendUuid)) {
+      throw invalidField(c, "send_uuid");
+    }
     const sanitized = email ? sanitizeEmail(email) : "";
-    if (sanitized === undefined) throw new HttpError(400, "Invalid email.");
-    if (!(bounceTypes as readonly string[]).includes(type)) throw invalidField(c, "type");
-    if (createdAt && (!reRFC3339.test(createdAt) || Number.isNaN(Date.parse(createdAt))))
+    if (sanitized === undefined) {
+      throw new HttpError(400, "Invalid email.");
+    }
+    if (!(bounceTypes as ReadonlyArray<string>).includes(type)) {
+      throw invalidField(c, "type");
+    }
+    if (createdAt && (!reRFC3339.test(createdAt) || Number.isNaN(Date.parse(createdAt)))) {
       throw invalidData(c);
+    }
     return {
       subscriberUuid: subscriberUuid.toLowerCase(),
       email: sanitized,
@@ -265,7 +311,9 @@ export function registerBounceRoutes(
     };
   };
   const native: Handler = async (c) => {
-    if (!settings().enabled) throw unavailable(c);
+    if (!settings().enabled) {
+      throw unavailable(c);
+    }
     const raw = (await readBodyBytes(c.request)).toString("utf8");
     let body: unknown;
     try {
@@ -280,11 +328,13 @@ export function registerBounceRoutes(
   };
   /** The body, up to SNS's own message limit; a larger one is refused before it is parsed. */
   const readSns = async (request: Request) => {
-    if (Number(request.headers.get("content-length")) > SES_BODY_LIMIT) throw new HttpError(413);
-    const chunks: Uint8Array[] = [];
+    if (Number(request.headers.get("content-length")) > SES_BODY_LIMIT) {
+      throw new HttpError(413);
+    }
+    const chunks: Array<Uint8Array> = [];
     let size = 0;
     const reader = request.body?.getReader();
-    if (reader)
+    if (reader) {
       try {
         for (;;) {
           const item = await reader.read();
@@ -299,6 +349,7 @@ export function registerBounceRoutes(
       } finally {
         reader.releaseLock();
       }
+    }
     return Buffer.concat(chunks).toString("utf8");
   };
   /**
@@ -313,16 +364,17 @@ export function registerBounceRoutes(
         : `sequence ${test.sequence_id} step ${test.step_id}`;
     // The address is the notice's own (bouncedRecipients or complainedRecipients), not a stored one.
     const where = `kind ${test.kind}, ${named}, recipient ${event.email}`;
-    if (event.type === "complaint")
+    if (event.type === "complaint") {
       logger.attention(
         `Test send got a complaint: ${where}, feedback ${String(codes.feedback_type ?? "unknown")}`,
         "A test send got a complaint",
       );
-    else
+    } else {
       logger.attention(
         `Test send bounced: ${where}, bounce ${String(codes.bounce_type ?? "unknown")} ${String(codes.bounce_sub_type ?? "")}`.trimEnd(),
         "A test send bounced",
       );
+    }
   };
   /** cmd/bounce.go's `ses` branch. Every refusal is upstream's 400 and changes nothing. */
   const ses: Handler = async (c) => {
@@ -332,44 +384,68 @@ export function registerBounceRoutes(
       type !== "SubscriptionConfirmation" &&
       type !== "UnsubscribeConfirmation" &&
       type !== "Notification"
-    )
+    ) {
       throw invalidData(c);
+    }
     const message = parseSns(raw);
     // The header is not signed: it must agree with the signed type.
-    if (!message || message.Type !== type || !(await sns.verify(message))) throw invalidData(c);
+    if (!message || message.Type !== type || !(await sns.verify(message))) {
+      throw invalidData(c);
+    }
     // Anyone with an AWS account can sign a message: only the operator's topics are believed.
-    if (!topicAllowed(message.TopicArn, settings().sesTopics)) throw invalidData(c);
+    if (!topicAllowed(message.TopicArn, settings().sesTopics)) {
+      throw invalidData(c);
+    }
     if (type === "SubscriptionConfirmation") {
-      if (!(await sns.confirm(message))) throw invalidData(c);
+      if (!(await sns.confirm(message))) {
+        throw invalidData(c);
+      }
       return ok(true);
     }
     // An unsubscription is acknowledged: the link it carries would end the subscription.
-    if (type === "UnsubscribeConfirmation") return ok(true);
+    if (type === "UnsubscribeConfirmation") {
+      return ok(true);
+    }
     const id = message.MessageId ?? "";
-    if (!id || id.length > MAX_RECEIPT_ID) throw invalidData(c);
+    if (!id || id.length > MAX_RECEIPT_ID) {
+      throw invalidData(c);
+    }
     const now = clock.now();
     const events = sesEvents(message.Message ?? "", now);
-    if (!events) throw invalidData(c);
-    const tests: { event: BounceEvent; test: TestSendRecord }[] = [];
+    if (!events) {
+      throw invalidData(c);
+    }
+    const tests: Array<{ event: BounceEvent; test: TestSendRecord }> = [];
     writeTransaction(db, () => {
       store.pruneReceipts();
       // SNS delivers at least once: a repeated message is recorded once. The receipt outlasts the
       // last moment the message verifies (its Timestamp plus the age limit), even when it is dated ahead.
       const sent = Math.max(now.getTime(), Date.parse(message.Timestamp ?? ""));
-      if (!store.receive(`sns:${id}`, new Date(sent + SNS_MAX_AGE_MS + 1000))) return;
+      if (!store.receive(`sns:${id}`, new Date(sent + SNS_MAX_AGE_MS + 1000))) {
+        return;
+      }
       for (const event of events) {
         const test = store.testOf(event);
-        if (test) tests.push({ event, test });
-        else store.record(event);
+        if (test) {
+          tests.push({ event, test });
+        } else {
+          store.record(event);
+        }
       }
     });
     // Named after the commit, so a line is never written for a notice that did not land.
-    for (const { event, test } of tests) testNotice(event, test);
+    for (const { event, test } of tests) {
+      testNotice(event, test);
+    }
     return ok(true);
   };
   const service: Handler = (c) => {
-    if (!settings().enabled) throw unavailable(c);
-    if (c.params.service === "ses" && settings().ses) return ses(c);
+    if (!settings().enabled) {
+      throw unavailable(c);
+    }
+    if (c.params.service === "ses" && settings().ses) {
+      return ses(c);
+    }
     throw unknownService(c);
   };
   router.route("GET", "/api/bounces", collection, auth.middleware("bounces:get"));

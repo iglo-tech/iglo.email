@@ -40,7 +40,7 @@ test("primary references move to default, nullable archive references clear", as
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);
 
 test("historical missing default is not reseeded, and high IDs retain exact wire values", async () => {
   const f = await startTemplateFixture();
@@ -77,7 +77,7 @@ test("historical missing default is not reseeded, and high IDs retain exact wire
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);
 
 // M5.6: a tx template also serves marketing sends (tx API and sequence marketing steps), where
 // unsubscribe_url is filled in, so referencing it is not something that needs attention.
@@ -104,9 +104,9 @@ test("a tx template referencing unsubscribe_url saves without an attention diagn
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);
 
-for (const operation of ["save", "preview"] as const)
+for (const operation of ["save", "preview"] as const) {
   for (const change of ["role", "disabled", "deleted"] as const)
     test(`held ${operation} input cannot outlive ${change} revocation`, async () => {
       const { createConnection } = await import("node:net");
@@ -183,8 +183,9 @@ for (const operation of ["save", "preview"] as const)
         await f.close();
       }
     }, 30000);
+}
 
-for (const operation of ["save", "preview"] as const)
+for (const operation of ["save", "preview"] as const) {
   test(`held ${operation} input cannot outlive logout`, async () => {
     const { createConnection } = await import("node:net");
     const f = await startTemplateFixture();
@@ -271,6 +272,7 @@ for (const operation of ["save", "preview"] as const)
       await f.close();
     }
   }, 30000);
+}
 
 test("concurrent omitted-field updates and default/delete retain valid state", async () => {
   const f = await startTemplateFixture();
@@ -323,7 +325,7 @@ test("concurrent omitted-field updates and default/delete retain valid state", a
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);
 
 test("preview reports real renderer admission exhaustion and recovers after failures", async () => {
   const f = await startTemplateFixture({ saturateFirstPreview: true });
@@ -343,9 +345,9 @@ test("preview reports real renderer admission exhaustion and recovers after fail
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);
 
-for (const change of ["role", "disabled", "deleted"] as const)
+for (const change of ["role", "disabled", "deleted"] as const) {
   test(`preview revalidates ${change} after a held real render`, async () => {
     const f = await startTemplateFixture({ holdPreview: true });
     try {
@@ -402,6 +404,7 @@ for (const change of ["role", "disabled", "deleted"] as const)
       await f.close();
     }
   }, 30000);
+}
 
 test("preview revalidates a logged-out session after a held real render", async () => {
   const f = await startTemplateFixture({ holdPreview: true });
@@ -436,7 +439,7 @@ test("preview revalidates a logged-out session after a held real render", async 
     f.releasePreview();
     await f.close();
   }
-}, 30000);
+}, 30_000);
 
 test("omission preserves writable fields and explicit valid empty values clear them", async () => {
   const f = await startTemplateFixture();
@@ -490,4 +493,4 @@ test("omission preserves writable fields and explicit valid empty values clear t
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);

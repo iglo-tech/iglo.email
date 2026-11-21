@@ -4,7 +4,7 @@ import { queryFixture } from "@/test/subscribers/fixture";
 
 const count = Number(process.argv[2] ?? 1_000_000);
 const f = await queryFixture({ timeoutMs: 120_000 });
-const mb = (bytes: number) => Math.round((bytes / 1048576) * 10) / 10;
+const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
 const report = (name: string, values: Record<string, unknown>) =>
   process.stdout.write(`${JSON.stringify({ name, ...values })}\n`);
 const seeded = performance.now();
@@ -13,8 +13,9 @@ const insert = f.db.prepare(
   "INSERT INTO subscribers (uuid, email, name, status, attribs, created_at, updated_at) VALUES (?, ?, ?, 'enabled', '{}', ?, ?)",
 );
 const now = new Date().toISOString();
-for (let i = 0; i < count; i++)
+for (let i = 0; i < count; i++) {
   insert.run(crypto.randomUUID(), `s${i}@example.test`, `s${i}`, now, now);
+}
 f.db.run("COMMIT");
 report("seed", { subscribers: count, ms: Math.round(performance.now() - seeded) });
 
@@ -39,7 +40,9 @@ async function drain(response: Response) {
   const reader = response.body!.getReader();
   while (true) {
     const chunk = await reader.read();
-    if (chunk.done) break;
+    if (chunk.done) {
+      break;
+    }
     bytes += chunk.value.byteLength;
   }
   return { bytes, status: response.status };

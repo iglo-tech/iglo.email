@@ -4,10 +4,10 @@
 export interface Difference {
   area: string;
   summary: string;
-  applies: string[];
+  applies: Array<string>;
 }
 
-export const differences: Difference[] = [
+export const differences: Array<Difference> = [
   {
     area: "Admin Content-Security-Policy (B3)",
     summary:

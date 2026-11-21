@@ -6,7 +6,8 @@ import type { Database } from "bun:sqlite";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { publicMessage } from "@/public/message";
-import { wipeConfirmation, type PageOptions } from "@/public/preferences";
+import { wipeConfirmation } from "@/public/preferences";
+import type { PageOptions } from "@/public/preferences";
 import type { SubscriberMail } from "@/public/mail";
 import type { RequestContext } from "@/server/context";
 import { sendingHeld } from "@/settings/hold";
@@ -39,9 +40,15 @@ export function createPrivacy(deps: {
     export(context, current) {
       const t = context.app.i18n;
       const sub = current();
-      if (!sub) return null;
-      if (!deps.page().allowExport) return failed(t, 400, t.T("public.invalidFeature"));
-      if (sendingHeld(context.app.db)) return failed(t, 503, t.T("public.errorProcessingRequest"));
+      if (!sub) {
+        return null;
+      }
+      if (!deps.page().allowExport) {
+        return failed(t, 400, t.T("public.invalidFeature"));
+      }
+      if (sendingHeld(context.app.db)) {
+        return failed(t, 503, t.T("public.errorProcessingRequest"));
+      }
       try {
         deps.mail().exportData(sub);
       } catch (error) {
@@ -52,19 +59,28 @@ export function createPrivacy(deps: {
     },
     wipe(context, current, manage) {
       const t = context.app.i18n;
-      if (!current()) return null;
-      if (!deps.page().allowWipe) return failed(t, 400, t.T("public.invalidFeature"));
+      if (!current()) {
+        return null;
+      }
+      if (!deps.page().allowWipe) {
+        return failed(t, 400, t.T("public.invalidFeature"));
+      }
       // B126 (D123): the first POST asks on its own page. Only the confirmed POST deletes anything.
-      if (context.url.searchParams.get("confirm") !== "true")
+      if (context.url.searchParams.get("confirm") !== "true") {
         return wipeConfirmation(t, context.url.pathname, manage, deps.page());
+      }
       // The pairing is read again inside the write, so a change since the check writes nothing.
       const removed = writeTransaction(deps.db, () => {
         const sub = current();
-        if (!sub) return false;
+        if (!sub) {
+          return false;
+        }
         deps.subscribers.remove([sub.id], { wipe: true });
         return true;
       });
-      if (!removed) return null;
+      if (!removed) {
+        return null;
+      }
       return message(t, 200, t.T("public.dataRemovedTitle"), t.T("public.dataRemoved"));
     },
   };

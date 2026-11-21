@@ -12,15 +12,18 @@ const root = resolve(import.meta.dir, "..");
 // cross-compiles the other one.
 const architectures: Record<string, string | undefined> = { x64: "x64", arm64: "arm64" };
 const architecture = architectures[process.arch];
-if (process.platform !== "linux" || architecture === undefined)
+if (process.platform !== "linux" || architecture === undefined) {
   throw new Error(`Unsupported platform ${process.platform}/${process.arch}: Linux x64 and arm64`);
+}
 const executableName = `iglo.email-linux-${architecture}`;
 const licenses = join(root, "dist/assets/admin/licenses");
 const projectLicense = "listmonk-AGPL-3.0.txt";
 
 // A tag decides the expected version. A dry run has no tag and uses package.json.
 function expectedVersion(): string {
-  if (process.env.GITHUB_REF_TYPE !== "tag") return version;
+  if (process.env.GITHUB_REF_TYPE !== "tag") {
+    return version;
+  }
   return (process.env.GITHUB_REF_NAME ?? "").replace(/^v/, "");
 }
 
@@ -32,14 +35,18 @@ async function availablePort(): Promise<number> {
   });
   const address = socket.address();
   await new Promise<void>((done) => socket.close(() => done()));
-  if (address === null || typeof address === "string") throw new Error("No port was assigned");
+  if (address === null || typeof address === "string") {
+    throw new Error("No port was assigned");
+  }
   return address.port;
 }
 
 async function healthWhenReady(child: Bun.Subprocess, origin: string): Promise<Response> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Server exited with ${child.exitCode}`);
+    if (child.exitCode !== null) {
+      throw new Error(`Server exited with ${child.exitCode}`);
+    }
     try {
       return await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) });
     } catch {
@@ -51,15 +58,18 @@ async function healthWhenReady(child: Bun.Subprocess, origin: string): Promise<R
 }
 
 function expectEqual(name: string, actual: unknown, expected: unknown): void {
-  if (actual !== expected)
+  if (actual !== expected) {
     throw new Error(`${name}: expected ${String(expected)}, got ${String(actual)}`);
+  }
 }
 
 async function login(origin: string, username: string, password: string): Promise<string> {
   const page = await fetch(`${origin}/admin/login`);
   const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1];
   const cookie = page.headers.getSetCookie().find((item) => item.startsWith("nonce="));
-  if (!nonce || !cookie) throw new Error("Login form is missing its nonce");
+  if (!nonce || !cookie) {
+    throw new Error("Login form is missing its nonce");
+  }
   const response = await fetch(`${origin}/admin/login`, {
     method: "POST",
     redirect: "manual",
@@ -71,7 +81,9 @@ async function login(origin: string, username: string, password: string): Promis
   });
   expectEqual("Login status", response.status, 302);
   const session = response.headers.getSetCookie().find((item) => item.startsWith("session="));
-  if (!session) throw new Error("Login did not set a session");
+  if (!session) {
+    throw new Error("Login did not set a session");
+  }
   return session.split(";", 1)[0]!;
 }
 
@@ -124,14 +136,16 @@ async function verify(source: string): Promise<void> {
     expectEqual("Embedded asset status", notices.status, 200);
 
     child.kill("SIGTERM");
-    const timer = setTimeout(() => child?.kill("SIGKILL"), 5_000);
+    const timer = setTimeout(() => child?.kill("SIGKILL"), 5000);
     const exit = await child.exited;
     clearTimeout(timer);
     expectEqual("Exit code after SIGTERM", exit, 0);
     expectEqual("Server stderr", await new Response(child.stderr).text(), "");
     console.log(`Verified ${basename(source)} ${expectedVersion()}`);
   } catch (error) {
-    if (child?.exitCode === null) child.kill("SIGKILL");
+    if (child?.exitCode === null) {
+      child.kill("SIGKILL");
+    }
     throw error;
   } finally {
     await child?.exited;
@@ -146,8 +160,9 @@ async function verify(source: string): Promise<void> {
 const runtime = { bun: "1.4.5", webkit: "d6375c72affe0f70222cdcb45012b10f0bf3a9d5" };
 
 async function notices(): Promise<string> {
-  if (Bun.version !== runtime.bun)
+  if (Bun.version !== runtime.bun) {
     throw new Error(`Update the WebKit revision in notices() for Bun ${Bun.version}`);
+  }
   const license = (name: string) => Bun.file(join(root, "assets/licenses", name)).text();
   const sections = [
     `iglo.email ${version} third-party notices
@@ -180,7 +195,9 @@ linked against your library.
     `----- GNU Lesser General Public License, version 2.1 -----\n\n${await license("LGPL-2.1.txt")}`,
   ];
   for (const name of (await readdir(licenses)).sort()) {
-    if (name === projectLicense) continue;
+    if (name === projectLicense) {
+      continue;
+    }
     const text = await Bun.file(join(licenses, name)).text();
     sections.push(`----- ${name.replace(/\.txt$/, "")} -----\n\n${text}`);
   }
@@ -198,7 +215,7 @@ async function packageRelease(source: string, output: string): Promise<void> {
   await writeFile(join(output, "THIRD-PARTY-NOTICES.txt"), await notices());
 
   // The publish job merges the two architectures' directories and writes the final SHA256SUMS.
-  const lines: string[] = [];
+  const lines: Array<string> = [];
   for (const name of [executableName, "LICENSE", "THIRD-PARTY-NOTICES.txt"]) {
     const hash = createHash("sha256").update(await Bun.file(join(output, name)).bytes());
     lines.push(`${hash.digest("hex")}  ${name}\n`);
@@ -208,7 +225,10 @@ async function packageRelease(source: string, output: string): Promise<void> {
 }
 
 const [command, source, output, ...rest] = process.argv.slice(2);
-if (command === "verify" && source && !output) await verify(source);
-else if (command === "package" && source && output && rest.length === 0)
+if (command === "verify" && source && !output) {
+  await verify(source);
+} else if (command === "package" && source && output && rest.length === 0) {
   await packageRelease(source, output);
-else throw new Error("Usage: release.ts verify <executable> | package <executable> <output>");
+} else {
+  throw new Error("Usage: release.ts verify <executable> | package <executable> <output>");
+}

@@ -1,14 +1,15 @@
 // Adapted from listmonk static/admin/views/base.html and partials/sidebar.html at 6fcd95f.
 import { Icon } from "@/admin/layout/icon";
 import type { Translation } from "@/i18n/i18n";
-import { raw, render, type Child } from "@/jsx/render";
+import { raw, render } from "@/jsx/render";
+import type { Child } from "@/jsx/render";
 
 export type JSONValue =
   | string
   | number
   | boolean
   | null
-  | readonly JSONValue[]
+  | ReadonlyArray<JSONValue>
   | { readonly [name: string]: JSONValue };
 export interface NavigationLink {
   readonly label: string;
@@ -20,16 +21,16 @@ export interface NavigationGroup {
   readonly label: string;
   readonly icon: string;
   readonly open: boolean;
-  readonly links: readonly NavigationLink[];
+  readonly links: ReadonlyArray<NavigationLink>;
 }
 export interface AdminShellProps {
   readonly title: string;
   readonly siteName: string;
   readonly assetVersion: string;
   readonly i18n: Translation;
-  readonly translationKeys?: readonly string[];
+  readonly translationKeys?: ReadonlyArray<string>;
   readonly config: Readonly<Record<string, JSONValue>>;
-  readonly navigation?: readonly (NavigationLink | NavigationGroup)[];
+  readonly navigation?: ReadonlyArray<NavigationLink | NavigationGroup>;
   readonly profile?: { readonly name: string };
   readonly faviconUrl?: string;
   /** Module under /admin/static/js/views, without its extension. */
@@ -48,21 +49,30 @@ export interface AdminShellProps {
 function scriptJSON(value: JSONValue): string {
   const seen = new Set<object>();
   function validate(item: JSONValue): void {
-    if (item === null || typeof item === "string" || typeof item === "boolean") return;
-    if (typeof item === "number" && Number.isFinite(item)) return;
-    if (typeof item !== "object" || seen.has(item)) throw new TypeError("Invalid bootstrap JSON");
+    if (item === null || typeof item === "string" || typeof item === "boolean") {
+      return;
+    }
+    if (typeof item === "number" && Number.isFinite(item)) {
+      return;
+    }
+    if (typeof item !== "object" || seen.has(item)) {
+      throw new TypeError("Invalid bootstrap JSON");
+    }
     if (
       !Array.isArray(item) &&
       Object.getPrototypeOf(item) !== Object.prototype &&
       Object.getPrototypeOf(item) !== null
-    )
+    ) {
       throw new TypeError("Invalid bootstrap JSON");
+    }
     seen.add(item);
-    for (const child of Object.values(item)) validate(child);
+    for (const child of Object.values(item)) {
+      validate(child);
+    }
     seen.delete(item);
   }
   validate(value);
-  return JSON.stringify(value).replace(
+  return JSON.stringify(value).replaceAll(
     /[<>&\u2028\u2029]/g,
     (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
   );
@@ -76,14 +86,17 @@ function localLink(value: string): string {
         character === "\\" || character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127,
     ) ||
     /%(?:2f|5c|0[0-9a-f]|1[0-9a-f]|7f)/i.test(value)
-  )
+  ) {
     throw new TypeError("Navigation must use a local URL");
+  }
   return value;
 }
 /** cmd/avatar.go makeInitials. */
 function initials(name: string): string {
   const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  if (!words.length) return "?";
+  if (!words.length) {
+    return "?";
+  }
   const [first, second] = words.map((word) => [...word]);
   return (first![0]! + (second?.[0] ?? first![1] ?? "")).toUpperCase();
 }
@@ -96,7 +109,7 @@ function Link({ item, icon }: { item: NavigationLink; icon?: string }) {
     </a>
   );
 }
-function Navigation({ items }: { items: readonly (NavigationLink | NavigationGroup)[] }) {
+function Navigation({ items }: { items: ReadonlyArray<NavigationLink | NavigationGroup> }) {
   return (
     <nav>
       <ul>
@@ -230,9 +243,12 @@ function Chrome(props: AdminShellProps) {
 function AdminShell(props: AdminShellProps) {
   const { title, siteName, assetVersion, i18n, config, children } = props;
   const { faviconUrl, script, customAssets } = props;
-  if (script !== undefined && !/^[a-z][a-z0-9-]*$/.test(script))
+  if (script !== undefined && !/^[a-z][a-z0-9-]*$/.test(script)) {
     throw new TypeError("Invalid view script");
-  if (!/^[a-f0-9]{10}$/.test(assetVersion)) throw new TypeError("Invalid asset version");
+  }
+  if (!/^[a-f0-9]{10}$/.test(assetVersion)) {
+    throw new TypeError("Invalid asset version");
+  }
   const keys = new Set([
     "globals.buttons.ok",
     "globals.buttons.cancel",

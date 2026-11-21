@@ -52,7 +52,9 @@ export function withStoppedDatabase<T>(
   work: (db: Database) => T,
 ): T {
   const path = join(resolve(dataDir), "iglo-email.db");
-  if (!statSync(path, { throwIfNoEntry: false })) throw new Error(`No database at ${path}`);
+  if (!statSync(path, { throwIfNoEntry: false })) {
+    throw new Error(`No database at ${path}`);
+  }
   const instance = holdDataDirectory(dataDir);
   try {
     const db = new Database(path, { readwrite: true, strict: true, safeIntegers: true });
@@ -67,10 +69,12 @@ export function withStoppedDatabase<T>(
       }
       const version = db.query<{ user_version: bigint }, []>("PRAGMA user_version").get();
       db.run("ROLLBACK");
-      if (version?.user_version === 0n)
+      if (version?.user_version === 0n) {
         throw new Error(`${path} has no schema yet; start the server once`);
-      if (Number(version?.user_version) > supportedVersion)
+      }
+      if (Number(version?.user_version) > supportedVersion) {
         throw new Error(`Database version ${version?.user_version} is ahead of this executable`);
+      }
       return work(db);
     } finally {
       db.close(true);

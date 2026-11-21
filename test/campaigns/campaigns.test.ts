@@ -3,14 +3,19 @@
 // through HTTP and mail received by a loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
 import { createRunnerStore } from "@/campaigns/runner/store";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 
-const fixtures: CampaignsFixture[] = [];
-const runnerCloses: (() => Promise<void>)[] = [];
+const fixtures: Array<CampaignsFixture> = [];
+const runnerCloses: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
-  for (const close of runnerCloses.splice(0)) await close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
+  for (const close of runnerCloses.splice(0)) {
+    await close();
+  }
 });
 async function open() {
   const f = await campaignsFixture();
@@ -27,8 +32,10 @@ async function openRunner() {
 const decode = (data: string) =>
   Buffer.from(
     data
-      .replace(/=\r\n/g, "")
-      .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))),
+      .replaceAll("=\r\n", "")
+      .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+        String.fromCharCode(Number.parseInt(hex, 16)),
+      ),
     "latin1",
   ).toString("utf8");
 
@@ -148,7 +155,7 @@ test("a test send renders Liquid per recipient, with unsubscribe headers that na
   expect(f.sink.messages).toHaveLength(1);
   // Marketing deliveries go to the subscriber only: server copy headers are dropped.
   expect(message!.to).toEqual(["ada@example.test"]);
-  const data = decode(message!.data).replace(/\r\n[ \t]+/g, " ");
+  const data = decode(message!.data).replaceAll(/\r\n[ \t]+/g, " ");
   expect(data).toContain("Subject: Hi Ada");
   expect(data).toContain("X-Who: ada@example.test");
   expect(data).toContain(`X-Listmonk-Campaign: ${c.uuid}`);
@@ -214,7 +221,7 @@ test("campaign unsubscribe changes only the campaign's lists, or blocklists", as
   });
   expect(manage.status).toBe(400);
   const statuses = async () =>
-    ((await f.json(`/api/subscribers/${ada.id}`)).body.data.lists as any[]).map(
+    ((await f.json(`/api/subscribers/${ada.id}`)).body.data.lists as Array<any>).map(
       (l) => l.subscription_status,
     );
   expect(await statuses()).toEqual(["unconfirmed", "unconfirmed"]);
@@ -373,9 +380,11 @@ test("a test send has an aggregate size limit across recipients and sends nothin
   const f = await open();
   const news = await f.list("news");
   const emails = Array.from({ length: 40 }, (_, i) => `r${i}@example.test`);
-  for (const email of emails) await f.subscriber(email, [news]);
+  for (const email of emails) {
+    await f.subscriber(email, [news]);
+  }
   const c = await f.campaign({ name: "c", subject: "s", lists: [news] });
-  const send = (to: string[]) =>
+  const send = (to: Array<string>) =>
     f.json(`/api/campaigns/${c.id}/test`, "POST", {
       name: "c",
       subject: "s",
@@ -401,7 +410,7 @@ test("custom header values are limited in number", async () => {
   const f = await open();
   const news = await f.list("news");
   const headers = (n: number) => Array.from({ length: n }, (_, i) => ({ [`X-H-${i}`]: "v" }));
-  const create = (name: string, value: object[]) =>
+  const create = (name: string, value: Array<object>) =>
     f.json("/api/campaigns", "POST", { name, subject: "s", lists: [news], headers: value });
   expect((await create("ok", headers(32))).status).toBe(200);
   const many = await create("many", [{ "X-A": "v", "X-B": "v" }, ...headers(31)]);
@@ -476,14 +485,16 @@ test("order_by=status follows upstream's status enum rank across pages", async (
       200,
     );
   // Created so that neither creation order nor text order matches the enum rank.
-  const make = async (name: string, ...steps: string[]) => {
+  const make = async (name: string, ...steps: Array<string>) => {
     const c = await f.campaign({
       name,
       subject: "s",
       lists: [news],
       ...(steps[0] === "scheduled" ? { send_at: later } : {}),
     });
-    for (const step of steps) await status(c.id, step);
+    for (const step of steps) {
+      await status(c.id, step);
+    }
     return c;
   };
   await make("finished", "finished");

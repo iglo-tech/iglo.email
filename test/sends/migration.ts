@@ -9,7 +9,7 @@ const candidate = resolve("dist/iglo.email");
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 await withProduction(
   control,
-  AbortSignal.timeout(30000),
+  AbortSignal.timeout(30_000),
   async (origin, _signal, restart, dataDir) => {
     const credentials = await provisionApiUser(origin, admin);
     const authorization = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
@@ -36,7 +36,7 @@ await withProduction(
     const old = spawnSync(
       control,
       ["serve", "--host", "127.0.0.1", "--port", "12345", "--data-dir", dataDir],
-      { encoding: "utf8", timeout: 10000 },
+      { encoding: "utf8", timeout: 10_000 },
     );
     assert.notEqual(old.status, 0);
     assert.match(old.stderr, /Database version 3 is ahead/);

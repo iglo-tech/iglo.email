@@ -25,14 +25,16 @@ interface Sleeper {
 export class TestClock implements Clock {
   private time = Date.parse("2026-01-02T03:04:05Z");
   private sleepers = new Set<Sleeper>();
-  private scheduled: (() => void)[] = [];
+  private scheduled: Array<() => void> = [];
 
   now(): Date {
     return new Date(this.time);
   }
 
   sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
-    if (signal?.aborted) return Promise.reject(signal.reason);
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason);
+    }
     return new Promise((resolve, reject) => {
       const sleeper: Sleeper = {
         due: this.time + milliseconds,
@@ -47,7 +49,9 @@ export class TestClock implements Clock {
       };
       this.sleepers.add(sleeper);
       signal?.addEventListener("abort", sleeper.abort, { once: true });
-      for (const notify of this.scheduled.splice(0)) notify();
+      for (const notify of this.scheduled.splice(0)) {
+        notify();
+      }
     });
   }
 
@@ -57,11 +61,16 @@ export class TestClock implements Clock {
   }
 
   whenSleeping(count = 1): Promise<void> {
-    if (this.sleepers.size >= count) return Promise.resolve();
+    if (this.sleepers.size >= count) {
+      return Promise.resolve();
+    }
     return new Promise((resolve) => {
       const notify = () => {
-        if (this.sleepers.size >= count) resolve();
-        else this.scheduled.push(notify);
+        if (this.sleepers.size >= count) {
+          resolve();
+        } else {
+          this.scheduled.push(notify);
+        }
       };
       this.scheduled.push(notify);
     });
@@ -88,9 +97,9 @@ function wrapper(name: string): Middleware {
 }
 
 export function startFixture(
-  options: { clock?: Clock; i18n?: Translation; routePaths?: readonly string[] } = {},
+  options: { clock?: Clock; i18n?: Translation; routePaths?: ReadonlyArray<string> } = {},
 ) {
-  const errors: unknown[] = [];
+  const errors: Array<unknown> = [];
   const clock = options.clock ?? new TestClock();
   const i18n = options.i18n ?? createTranslation();
   const dataDir = mkdtempSync(join(tmpdir(), "iglo-http-fixture-"));
@@ -140,7 +149,9 @@ export function startFixture(
     }
   }
   if (options.routePaths) {
-    for (const path of options.routePaths) router.route("GET", path, () => ok(path));
+    for (const path of options.routePaths) {
+      router.route("GET", path, () => ok(path));
+    }
     return start();
   }
   router.use(wrapper("outer"), wrapper("inner"));
@@ -242,9 +253,13 @@ export function startFixture(
   });
   router.route("GET", "/fixture/abort/:when", async ({ app, params }) => {
     const controller = new AbortController();
-    if (params.when === "before") controller.abort();
+    if (params.when === "before") {
+      controller.abort();
+    }
     const completion = app.clock.sleep(60_000, controller.signal);
-    if (params.when === "after") controller.abort();
+    if (params.when === "after") {
+      controller.abort();
+    }
     try {
       await completion;
       return ok("completed");

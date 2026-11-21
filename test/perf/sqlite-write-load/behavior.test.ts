@@ -23,8 +23,9 @@ async function withFixture(fn: (origin: string, reopen: () => Promise<string>) =
   );
   await mkdir(base, { recursive: true });
   const disk = await realpath(base);
-  if ([0x01021994, 0x858458f6].includes(Number(statfsSync(disk).type)))
+  if ([0x01_02_19_94, 0x85_84_58_f6].includes(Number(statfsSync(disk).type))) {
     throw new Error("Synthetic subscriber/event fixtures require disk-backed storage");
+  }
   const directory = await mkdtemp(join(disk, "iglo-spike-contract-"));
   let fixture = startSpikeFixture(directory);
   try {

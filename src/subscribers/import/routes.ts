@@ -12,8 +12,8 @@ import {
   multipartBoundary,
   receiveForm,
   UploadTooLarge,
-  type ReceivedForm,
 } from "@/subscribers/import/multipart";
+import type { ReceivedForm } from "@/subscribers/import/multipart";
 import type { Authentication } from "@/users/auth";
 
 const MEBIBYTE = 1024 * 1024;
@@ -35,27 +35,37 @@ interface Params {
 /** Upstream's SessionOpt: wrong types are errors and absent or null fields are empty. */
 function parseParams(raw: string) {
   const value = JSON.parse(raw) as unknown;
-  if (typeof value !== "object" || value === null || Array.isArray(value))
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("params must be an object");
+  }
   const params = value as Params;
   const text = (item: unknown) => {
-    if (item === undefined || item === null) return "";
-    if (typeof item !== "string") throw new Error("expected a string");
+    if (item === undefined || item === null) {
+      return "";
+    }
+    if (typeof item !== "string") {
+      throw new Error("expected a string");
+    }
     return item;
   };
   const flag = (item: unknown) => {
-    if (item === undefined || item === null) return false;
-    if (typeof item !== "boolean") throw new Error("expected a boolean");
+    if (item === undefined || item === null) {
+      return false;
+    }
+    if (typeof item !== "boolean") {
+      throw new Error("expected a boolean");
+    }
     return item;
   };
   const lists = params.lists ?? [];
-  if (!Array.isArray(lists) || !lists.every((id) => Number.isSafeInteger(id)))
+  if (!Array.isArray(lists) || !lists.every((id) => Number.isSafeInteger(id))) {
     throw new Error("expected a list of integers");
+  }
   return {
     mode: text(params.mode),
     status: text(params.subscription_status),
     delim: text(params.delim),
-    listIds: [...new Set((lists as number[]).map(BigInt))],
+    listIds: [...new Set((lists as Array<number>).map(BigInt))],
     overwrite: flag(params.overwrite),
     overwriteUserInfo: flag(params.overwrite_userinfo),
     overwriteStatus: flag(params.overwrite_subscription_status),
@@ -70,15 +80,23 @@ export function registerImportRoutes(
   const already = (c: RequestContext) => new HttpError(400, c.app.i18n.T("import.alreadyRunning"));
   const receive = async (c: RequestContext, slot: UploadSlot): Promise<ReceivedForm> => {
     const boundary = multipartBoundary(c.request.headers.get("content-type"));
-    if (!boundary || !c.request.body) return {};
+    if (!boundary || !c.request.body) {
+      return {};
+    }
     const file = await open(slot.path, "wx", 0o600);
     try {
       return await receiveForm(c.request.body, boundary, file, MAX_BODY_BYTES, slot.signal);
     } catch (error) {
-      if (error instanceof UploadTooLarge) throw new HttpError(413, "The file is too large.");
-      if (slot.signal.aborted) throw new HttpError(503, "The server is shutting down.");
+      if (error instanceof UploadTooLarge) {
+        throw new HttpError(413, "The file is too large.");
+      }
+      if (slot.signal.aborted) {
+        throw new HttpError(503, "The server is shutting down.");
+      }
       // A broken or abandoned request: Go's FormValue finds no parameters in it.
-      if (error instanceof MalformedForm) return {};
+      if (error instanceof MalformedForm) {
+        return {};
+      }
       throw error;
     } finally {
       await file.close();
@@ -104,20 +122,26 @@ export function registerImportRoutes(
       ? params.listIds
       : params.listIds.filter((id) => scope.ids.includes(id));
     // Blocklist mode doesn't require list subscriptions.
-    if (!listIds.length && mode !== "blocklist")
+    if (!listIds.length && mode !== "blocklist") {
       throw new HttpError(403, i18n.Ts("globals.messages.permissionDenied", "name", "lists"));
-    if (mode !== "subscribe" && mode !== "blocklist")
+    }
+    if (mode !== "subscribe" && mode !== "blocklist") {
       throw new HttpError(400, i18n.T("globals.messages.invalidMode"));
+    }
     const status = params.status || (mode === "subscribe" ? "unconfirmed" : "unsubscribed");
-    if (!["unconfirmed", "confirmed", "unsubscribed"].includes(status))
+    if (!["unconfirmed", "confirmed", "unsubscribed"].includes(status)) {
       throw new HttpError(400, i18n.T("import.invalidSubStatus"));
-    if (Buffer.byteLength(params.delim) !== 1)
+    }
+    if (Buffer.byteLength(params.delim) !== 1) {
       throw new HttpError(400, i18n.T("import.invalidDelim"));
-    if (form.filename === undefined)
+    }
+    if (form.filename === undefined) {
       throw new HttpError(400, i18n.Ts("globals.messages.invalidFile", "error", "no such file"));
+    }
     // Upstream takes anything else for a ZIP, which is after v1 (01-scope.md).
-    if (!form.filename.toLowerCase().endsWith(".csv"))
+    if (!form.filename.toLowerCase().endsWith(".csv")) {
       throw new HttpError(400, "Only a CSV file can be imported: ZIP files are not supported.");
+    }
     return {
       mode,
       status,
@@ -130,16 +154,22 @@ export function registerImportRoutes(
   };
   const start: Handler = async (c) => {
     const current = importer.status().status;
-    if (current === "importing") throw already(c);
-    if (current === "stopping")
+    if (current === "importing") {
+      throw already(c);
+    }
+    if (current === "stopping") {
       throw new HttpError(
         500,
         c.app.i18n.Ts("import.errorStarting", "error", "an import is already running"),
       );
-    if (Number(c.request.headers.get("content-length")) > MAX_BODY_BYTES)
+    }
+    if (Number(c.request.headers.get("content-length")) > MAX_BODY_BYTES) {
       throw new HttpError(413, "The file is too large.");
+    }
     const slot = importer.reserve();
-    if (!slot) throw already(c);
+    if (!slot) {
+      throw already(c);
+    }
     try {
       importer.start(slot, options(c, await receive(c, slot)));
       return ok(importer.status());

@@ -8,9 +8,11 @@ import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hol
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+  for (const close of cleanups.splice(0).reverse()) {
+    await close();
+  }
 });
 
 async function open(reject: () => boolean) {
@@ -48,7 +50,9 @@ for (const wiped of [true, false]) {
     const template = await f.template("<p>hi</p>");
     let fired = false;
     onReject = () => {
-      if (fired) return;
+      if (fired) {
+        return;
+      }
       fired = true;
       wipe(f, gone, wiped);
     };
@@ -86,13 +90,14 @@ test("a restart ends a wiped in-flight send silently and an unrelated one with s
   for (const [id, email] of [
     [gone, "gone@example.test"],
     [kept, "kept@example.test"],
-  ] as const)
+  ] as const) {
     f.sends.enqueue({
       source: "tx",
       kind: "transactional",
       subscriberId: BigInt(id),
       message: message(email),
     });
+  }
   const now = f.clock.now();
   writeTransaction(f.db, () => f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2));
   wipe(f, gone, true);
@@ -132,20 +137,22 @@ test("a wiped send whose lease expires in the running loop reports nothing; an u
   for (const [id, email] of [
     [gone, "gone@example.test"],
     [kept, "kept@example.test"],
-  ] as const)
+  ] as const) {
     f.sends.enqueue({
       source: "tx",
       kind: "transactional",
       subscriberId: BigInt(id),
       message: message(email),
     });
+  }
   // In flight under a claim no push of this process holds, as another holder's.
   const now = f.clock.now();
   writeTransaction(f.db, () => f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2));
   wipe(f, gone, true);
   f.clock.advance(130_000);
-  while ((f.db.query("SELECT 1 FROM sends WHERE status = 'sending'").all() as unknown[]).length)
+  while (f.db.query("SELECT 1 FROM sends WHERE status = 'sending'").all().length) {
     await Bun.sleep(5);
+  }
   // Webhook deliveries are held with everything else: release now that both rows have ended.
   releaseRestoreHold(f.db, holdRecord(f.db)!, f.clock.now().toISOString());
   f.advanceWebhooks(0);

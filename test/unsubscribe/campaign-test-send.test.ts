@@ -5,7 +5,8 @@
 // message and opt-in links are checked in test/public/test-send-links.test.ts, which mounts those
 // routes.
 import { afterEach, expect, test } from "bun:test";
-import { campaignsFixture, type CampaignsFixture } from "@/test/campaigns/fixture";
+import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 
@@ -18,14 +19,18 @@ const form = { "content-type": "application/x-www-form-urlencoded" };
 const decode = (data: string) =>
   Buffer.from(
     data
-      .replace(/=\r\n/g, "")
-      .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))),
+      .replaceAll("=\r\n", "")
+      .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+        String.fromCharCode(Number.parseInt(hex, 16)),
+      ),
     "latin1",
   ).toString("utf8");
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0)) await cleanup();
+  for (const cleanup of cleanups.splice(0)) {
+    await cleanup();
+  }
 });
 
 async function open(options: Parameters<typeof campaignsFixture>[0] = {}) {
@@ -59,7 +64,7 @@ test("a test send's links name the test page, and its message has no tracking", 
   });
   expect(sent.status).toBe(200);
   const [mail] = await f.mail(1);
-  const data = decode(mail!.data).replace(/\r\n[ \t]+/g, " ");
+  const data = decode(mail!.data).replaceAll(/\r\n[ \t]+/g, " ");
   const unsubscribe = `http://fixture.test/subscription/${testSend}/${ada.uuid}`;
   expect(data).toContain(`List-Unsubscribe: <${unsubscribe}>`);
   expect(data).toContain("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
@@ -106,7 +111,7 @@ test("following a test send's links changes no subscriber, queues no webhook and
     expect(response.headers.get("x-robots-tag")).toBe("noindex");
     expect(await response.text()).toContain(message);
   }
-  const posts: [string, string][] = [
+  const posts: Array<[string, string]> = [
     [base, "List-Unsubscribe=One-Click"],
     [base, "manage=true&blocklist=on"],
     [`${base}?manage=true`, "manage=true&lists=1&lists=2"],

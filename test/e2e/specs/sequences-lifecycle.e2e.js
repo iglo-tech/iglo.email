@@ -17,23 +17,29 @@ const NOT_ACTIVE = "The sequence is not active.";
 // Settings and the SMTP server this file changed. `afterEach` puts them back through the request
 // fixture, since a test that timed out has closed its page by then.
 let changed = {};
-let sinks = [];
+const sinks = [];
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
 });
 
 test.afterEach(async ({ request }) => {
-  for (const sink of sinks.splice(0)) await sink.close();
+  for (const sink of sinks.splice(0)) {
+    await sink.close();
+  }
   const pending = changed;
   changed = {};
-  if (Object.keys(pending).length === 0) return;
+  if (Object.keys(pending).length === 0) {
+    return;
+  }
   const call = await requestAdmin(request);
   const failures = [];
   for (const [key, value] of Object.entries(pending)) {
     try {
       const response = await call(`/api/settings/${key}`, "PUT", value);
-      if (response.status !== 200) failures.push(`${key} answered ${response.status}`);
+      if (response.status !== 200) {
+        failures.push(`${key} answered ${response.status}`);
+      }
     } catch (error) {
       failures.push(`${key}: ${error.message}`);
     }
@@ -42,7 +48,9 @@ test.afterEach(async ({ request }) => {
 });
 
 async function change(page, key, value) {
-  if (!(key in changed)) changed[key] = (await ok(page, "/api/settings"))[key];
+  if (!(key in changed)) {
+    changed[key] = (await ok(page, "/api/settings"))[key];
+  }
   await ok(page, `/api/settings/${key}`, "PUT", value);
 }
 
@@ -188,7 +196,7 @@ test("a PT0S first step wakes the scheduler at once: the event's reader is maile
   const rows = await fire(page, email, evt);
   expect(rows.started).toHaveLength(1);
   await arrived(email, subject, TICK_MS);
-  expect(Date.now() - started).toBeLessThan(TICK_MS + 5_000);
+  expect(Date.now() - started).toBeLessThan(TICK_MS + 5000);
 });
 
 test("a step's aggregates reach the mail: the sink gets the totals the subscriber's events add up to", async ({
@@ -231,7 +239,7 @@ test("a step's aggregates reach the mail: the sink gets the totals the subscribe
 
   await arrived(email, subject, TICK_MS);
   const [mail] = await mailFor(email);
-  const body = mail.body.replace(/=\r?\n/g, "");
+  const body = mail.body.replaceAll(/=\r?\n/g, "");
   // Counted: 4 events; summed: 2 + 5 + 1 (the string adds nothing); distinct kinds: a, b, c.
   expect(body).toContain("Items 4 total 8 kinds 3");
 });

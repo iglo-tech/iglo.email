@@ -1,5 +1,6 @@
 // Adapted from listmonk cmd/lists.go and cmd/handlers.go at 6fcd95f.
-import { trimSpace, type ListFilter, type ListStore } from "@/lists/store";
+import { trimSpace } from "@/lists/store";
+import type { ListFilter, ListStore } from "@/lists/store";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -9,18 +10,21 @@ import type { Authentication } from "@/users/auth";
 import { listInput } from "@/lists/input";
 
 function principal(context: RequestContext) {
-  if (!context.identity) throw new Error("Authenticated identity required");
+  if (!context.identity) {
+    throw new Error("Authenticated identity required");
+  }
   return context.identity;
 }
 function permitted(
   context: RequestContext,
   roles: Roles,
   permission: "list:get" | "list:manage",
-  ids: bigint[],
+  ids: Array<bigint>,
 ) {
   const identity = principal(context);
-  if (!roles.canList(identity.role, identity.user.list_role_id, permission, ids))
+  if (!roles.canList(identity.role, identity.user.list_role_id, permission, ids)) {
     throw new HttpError(403, "permission denied");
+  }
 }
 function scope(context: RequestContext, roles: Roles, permission: "list:get" | "list:manage") {
   const identity = principal(context);
@@ -31,12 +35,15 @@ function validate(context: RequestContext, type: string, optin: string, status: 
     ["type", type, ["public", "private"]],
     ["optin", optin, ["single", "double"]],
     ["status", status, ["active", "archived"]],
-  ] as const)
+  ] as const) {
     if (value && !(allowed as readonly string[]).includes(value))
       throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
+  }
 }
 function numeric(value: string): number {
-  if (!/^[+-]?\d+$/.test(value)) return 0;
+  if (!/^[+-]?\d+$/.test(value)) {
+    return 0;
+  }
   const n = Number(value);
   return Number.isSafeInteger(n) ? n : 0;
 }
@@ -73,7 +80,9 @@ export function registerListRoutes(
     const f = filter(context, params, "active");
     const minimal = first(params, "minimal") === "true";
     let page = numeric(first(params, "page"));
-    if (page < 1) page = 1;
+    if (page < 1) {
+      page = 1;
+    }
     const perRaw = first(params, "per_page");
     let perPage = perRaw === "all" ? -1 : numeric(perRaw);
     perPage = perPage < 0 ? 0 : perPage < 1 ? 20 : perPage;
@@ -86,7 +95,9 @@ export function registerListRoutes(
       page,
       perPage,
     );
-    if (minimal && !result.total) return ok([]);
+    if (minimal && !result.total) {
+      return ok([]);
+    }
     return ok({
       results: result.results,
       search: "",
@@ -134,34 +145,41 @@ export function registerListRoutes(
     // Pinned Go ParseForm does not consume URL-encoded DELETE bodies.
     const params = context.url.searchParams;
     const raw = context.url.searchParams.getAll("id");
-    const ids: bigint[] = [];
+    const ids: Array<bigint> = [];
     for (const value of raw) {
       let reason = "";
-      if (!/^[+-]?\d+$/.test(value))
+      if (!/^[+-]?\d+$/.test(value)) {
         reason = `strconv.Atoi: parsing ${JSON.stringify(value)}: invalid syntax`;
-      else {
+      } else {
         const id = BigInt(value);
-        if (id < -9223372036854775808n || id > 9223372036854775807n)
+        if (id < -9_223_372_036_854_775_808n || id > 9_223_372_036_854_775_807n) {
           reason = `strconv.Atoi: parsing ${JSON.stringify(value)}: value out of range`;
-        else if (id < 1n) reason = `${id} is not a valid ID`;
-        else ids.push(id);
+        } else if (id < 1n) {
+          reason = `${id} is not a valid ID`;
+        } else {
+          ids.push(id);
+        }
       }
-      if (reason)
+      if (reason) {
         throw new HttpError(
           400,
           context.app.i18n.Ts("globals.messages.errorInvalidIDs", "error", reason),
         );
+      }
     }
     const f = ids.length
       ? { query: "", type: "", optin: "", status: "", tags: [] }
       : filter(context, params, "", true);
-    if (!ids.length && !f.query && params.get("all") !== "true")
+    if (!ids.length && !f.query && params.get("all") !== "true") {
       throw new HttpError(
         400,
         context.app.i18n.Ts("globals.messages.errorInvalidIDs", "error", "id or query required"),
       );
+    }
     auth.revalidate(context);
-    if (ids.length) permitted(context, roles, "list:manage", ids);
+    if (ids.length) {
+      permitted(context, roles, "list:manage", ids);
+    }
     store.remove(ids, f, scope(context, roles, "list:manage"));
     return ok(true);
   };

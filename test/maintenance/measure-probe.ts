@@ -3,12 +3,13 @@
 // longest wait is the longest hold, within a retry. It writes nothing. It stops when stdin closes.
 import { Database } from "bun:sqlite";
 
-const db = new Database(process.argv[2]!);
+const db = new Database(process.argv[2]);
 db.run("PRAGMA busy_timeout = 0");
 let longest = 0;
 let stopped = false;
 (async () => {
-  for await (const _ of Bun.stdin.stream());
+  for await (const _ of Bun.stdin.stream()) {
+  }
   stopped = true;
 })();
 while (!stopped) {

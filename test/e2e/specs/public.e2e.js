@@ -22,7 +22,9 @@ const MESSAGE_UNSUBSCRIBE = new RegExp(`^/m/${UUID}/unsubscribe/${UUID}$`, "i");
 // that timed out has closed its page by then.
 let changed = {};
 async function change(page, key, value) {
-  if (!(key in changed)) changed[key] = (await ok(page, "/api/settings"))[key];
+  if (!(key in changed)) {
+    changed[key] = (await ok(page, "/api/settings"))[key];
+  }
   await ok(page, `/api/settings/${key}`, "PUT", value);
 }
 
@@ -33,7 +35,9 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async ({ request }) => {
   const pending = changed;
   changed = {};
-  if (Object.keys(pending).length === 0) return;
+  if (Object.keys(pending).length === 0) {
+    return;
+  }
   const call = await requestAdmin(request);
   for (const [key, value] of Object.entries(pending)) {
     const response = await call(`/api/settings/${key}`, "PUT", value);

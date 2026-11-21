@@ -3,7 +3,8 @@
 // permission. Through the MCP endpoint of the compiled production server.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import { admin, startProduction, type Production } from "@/test/worked-example/harness";
+import { admin, startProduction } from "@/test/worked-example/harness";
+import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 
 let production: Production;
@@ -43,10 +44,12 @@ async function callTool(name: string, args: Record<string, unknown>, auth: strin
     }),
   });
   const reply = (await response.json()) as {
-    result?: { isError?: boolean; content: { type: string; text: string }[] };
+    result?: { isError?: boolean; content: Array<{ type: string; text: string }> };
     error?: { message: string };
   };
-  if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
+  if (reply.error) {
+    throw new Error(`${name}: ${reply.error.message}`);
+  }
   return reply.result!;
 }
 

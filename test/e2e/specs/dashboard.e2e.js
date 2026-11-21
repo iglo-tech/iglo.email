@@ -11,7 +11,7 @@ const hostile = `<img src=x onerror="window.pwned=1"> ${unique("Launch")}`;
 async function expectShownCount(locator, total) {
   await expect
     .poll(async () => {
-      const digits = ((await locator.textContent()) ?? "").replace(/\D/g, "");
+      const digits = ((await locator.textContent()) ?? "").replaceAll(/\D/g, "");
       return digits === "" ? null : Number(digits);
     })
     .toBe(Number(total));

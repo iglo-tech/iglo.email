@@ -4,9 +4,11 @@
 // on disk under upstream/measurements (never tmpfs) and removed afterwards.
 import assert from "node:assert/strict";
 import { Database } from "bun:sqlite";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer, type Socket } from "node:net";
+import { createServer } from "node:net";
+import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 
@@ -15,7 +17,9 @@ const executable = join(repository, "dist/iglo.email");
 const base = resolve(process.env.IGLO_EMAIL_PERF_DIR ?? join(repository, "upstream/measurements"));
 mkdirSync(base, { recursive: true });
 const fsType = Bun.spawnSync(["stat", "-f", "-c", "%T", base]).stdout.toString().trim();
-if (/tmpfs|ramfs/.test(fsType)) throw new Error(`Refusing ${fsType} measurement directory`);
+if (/tmpfs|ramfs/.test(fsType)) {
+  throw new Error(`Refusing ${fsType} measurement directory`);
+}
 const results = join(repository, "docs/perf/M3.2-results.jsonl");
 const fixtures = readFileSync(join(repository, "test/users/fixtures.md"), "utf8");
 const admin = {
@@ -34,8 +38,10 @@ function record(entry: object) {
   appendFileSync(results, JSON.stringify({ at: new Date().toISOString(), head, ...entry }) + "\n");
   console.log(JSON.stringify(entry, null, 2));
 }
-function stats(values: number[]) {
-  if (!values.length) return null;
+function stats(values: Array<number>) {
+  if (!values.length) {
+    return null;
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
   const round = (n: number) => +n.toFixed(2);
@@ -61,7 +67,7 @@ interface Delivery {
  * every further final dot without replying, so those messages are never accepted.
  */
 async function startSink() {
-  const delivered: Delivery[] = [];
+  const delivered: Array<Delivery> = [];
   const sockets = new Set<Socket>();
   let open = 0;
   let peak = 0;
@@ -77,7 +83,9 @@ async function startSink() {
     let current: { to: string; mail: number; attached: boolean } | null = null;
     socket.write("220 sink.test ESMTP\r\n");
     socket.on("close", () => {
-      if (current) open--;
+      if (current) {
+        open--;
+      }
       current = null;
     });
     socket.on("data", (chunk: string) => {
@@ -87,8 +95,12 @@ async function startSink() {
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 2);
         if (data) {
-          if (/filename="?crash-note\.txt"?/i.test(line)) current!.attached = true;
-          if (line !== ".") continue;
+          if (/filename="?crash-note\.txt"?/i.test(line)) {
+            current!.attached = true;
+          }
+          if (line !== ".") {
+            continue;
+          }
           data = false;
           if (delivered.length >= limit) {
             held++;
@@ -101,8 +113,9 @@ async function startSink() {
           continue;
         }
         const verb = line.slice(0, 4).toUpperCase();
-        if (verb === "EHLO") socket.write("250-sink.test\r\n250 8BITMIME\r\n");
-        else if (verb === "MAIL") {
+        if (verb === "EHLO") {
+          socket.write("250-sink.test\r\n250 8BITMIME\r\n");
+        } else if (verb === "MAIL") {
           current = { to: "", mail: performance.now(), attached: false };
           peak = Math.max(peak, ++open);
           socket.write("250 ok\r\n");
@@ -112,14 +125,19 @@ async function startSink() {
         } else if (verb === "DATA") {
           data = true;
           socket.write("354 go\r\n");
-        } else if (verb === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
+        } else if (verb === "QUIT") {
+          socket.end("221 bye\r\n");
+        } else {
+          socket.write("250 ok\r\n");
+        }
       }
     });
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("sink address");
+  if (!address || typeof address === "string") {
+    throw new Error("sink address");
+  }
   return {
     port: address.port,
     delivered,
@@ -135,10 +153,14 @@ async function startSink() {
     },
     release() {
       limit = Infinity;
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
     },
     async close() {
-      for (const socket of sockets) socket.destroy();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
       await new Promise<void>((done) => server.close(() => done()));
     },
   };
@@ -182,13 +204,19 @@ async function server(directory: string) {
       },
     );
     child.stderr!.on("data", (chunk: Buffer) => {
-      if (stderr.length < 4_000_000) stderr += chunk.toString();
+      if (stderr.length < 4_000_000) {
+        stderr += chunk.toString();
+      }
     });
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
-      if (child.exitCode !== null) throw new Error(`server exited: ${stderr}`);
+      if (child.exitCode !== null) {
+        throw new Error(`server exited: ${stderr}`);
+      }
       try {
-        if ((await fetch(`${origin}/health`)).status === 200) return;
+        if ((await fetch(`${origin}/health`)).status === 200) {
+          return;
+        }
       } catch {
         /* not ready */
       }
@@ -198,8 +226,11 @@ async function server(directory: string) {
   };
   const exited = () =>
     new Promise<void>((done) => {
-      if (!child || child.exitCode !== null || child.signalCode !== null) done();
-      else child.once("exit", () => done());
+      if (!child || child.exitCode !== null || child.signalCode !== null) {
+        done();
+      } else {
+        child.once("exit", () => done());
+      }
     });
   await start();
   return {
@@ -264,11 +295,11 @@ async function seed(
   api: Api,
   prefix: string,
   count: number,
-  lists: number[],
+  lists: Array<number>,
   extra: object = { preconfirm_subscriptions: true },
   parallel = 8,
 ) {
-  const ids: number[] = Array.from({ length: count }, () => 0);
+  const ids: Array<number> = Array.from({ length: count }, () => 0);
   let next = 0;
   await Promise.all(
     Array.from({ length: parallel }, async () => {
@@ -291,7 +322,9 @@ async function seed(
 async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs: number, what: string) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await check()) return;
+    if (await check()) {
+      return;
+    }
     await Bun.sleep(100);
   }
   throw new Error(`timed out waiting for ${what}`);
@@ -333,8 +366,8 @@ async function limits() {
         await api("/api/lists", "POST", { name: "double", type: "public", optin: "double" })
       ).body.data.id;
       const seeding = performance.now();
-      await seed(api, "s", 9_000, [single]);
-      await seed(api, "both", 1_000, [single, double]);
+      await seed(api, "s", 9000, [single]);
+      await seed(api, "both", 1000, [single, double]);
       // Ineligible: unconfirmed on double opt-in, unsubscribed, blocklisted.
       await seed(api, "unconfirmed", 20, [double], { preconfirm_subscriptions: false });
       const unsubscribed = await seed(api, "unsub", 20, [single]);
@@ -372,24 +405,31 @@ async function limits() {
       const mails = sink.delivered.map((d) => d.mail).sort((a, b) => a - b);
       let perSecond = 0;
       for (let i = 0, j = 0; i < mails.length; i++) {
-        while (mails[j]! < mails[i]! - 1000 + 1e-9) j++;
+        while (mails[j]! < mails[i]! - 1000 + 1e-9) {
+          j++;
+        }
         perSecond = Math.max(perSecond, i - j + 1);
       }
       // Runner windows are separated by the sliding-window pause (the rest of a minute after
       // 2,500 messages at 50/s). Group sends by gaps of over 2 s; the first MAIL of a run comes
       // late (connection setup), so fixed 60 s spans from it are not the runner's windows.
-      const windows: number[] = [];
-      const pauses: number[] = [];
+      const windows: Array<number> = [];
+      const pauses: Array<number> = [];
       for (let i = 0; i < mails.length; i++) {
         if (i === 0 || mails[i]! - mails[i - 1]! > 2000) {
-          if (i) pauses.push(Math.round(mails[i]! - mails[i - 1]!));
+          if (i) {
+            pauses.push(Math.round(mails[i]! - mails[i - 1]!));
+          }
           windows.push(0);
         }
-        windows[windows.length - 1]!++;
+        const last = windows.length - 1;
+        windows[last] = windows[last]! + 1;
       }
       let anySixty = 0;
       for (let i = 0, j = 0; i < mails.length; i++) {
-        while (mails[j]! < mails[i]! - windowMs) j++;
+        while (mails[j]! < mails[i]! - windowMs) {
+          j++;
+        }
         anySixty = Math.max(anySixty, i - j + 1);
       }
       const seconds = new Map<number, number>();
@@ -489,9 +529,11 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
         (await api(`/api/campaigns/${id}/status`, "PUT", { status: "running" })).status,
         200,
       );
-      if (point === "unheld")
+      if (point === "unheld") {
         await waitFor(() => sink.delivered.length >= 420, 120_000, "420 deliveries");
-      else await waitFor(() => sink.held > 0, 120_000, "a held message");
+      } else {
+        await waitFor(() => sink.held > 0, 120_000, "a held message");
+      }
       const reader = new Database(join(directory, "data/iglo-email.db"), { readonly: true });
       const cursorAtKill = (
         reader.query("SELECT last_subscriber_id AS c FROM campaigns WHERE id = ?").get(id) as {
@@ -545,7 +587,9 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
         assert.ok(+logged[1]! <= batch);
       }
       // Batch 3 (indexes 200-299) was committed before any of it was sent.
-      if (point !== "unheld") assert.ok(cursorAtKill >= ids[299]!, "cursor committed first");
+      if (point !== "unheld") {
+        assert.ok(cursorAtKill >= ids[299]!, "cursor committed first");
+      }
     } finally {
       await app.stop();
     }
@@ -583,17 +627,18 @@ async function mixed(name: "events" | "campaign" | "mixed") {
           })
         ).body.data.id;
       }
-      for (let i = 0; i < 20; i++)
+      for (let i = 0; i < 20; i++) {
         await api("/api/subscriber-events", "POST", {
           subscriber: { email: `warm${i}@example.test` },
           name: "warmup",
         });
+      }
       if (campaign) {
         await api(`/api/campaigns/${id}/status`, "PUT", { status: "running" });
         // Start the window once the runner is sending.
         await waitFor(() => sink.delivered.length > 0, 30_000, "first campaign message");
       }
-      const results: { deadline: number; done: number; status: number }[] = [];
+      const results: Array<{ deadline: number; done: number; status: number }> = [];
       let inFlight = 0,
         peak = 0,
         shed = 0;
@@ -601,7 +646,7 @@ async function mixed(name: "events" | "campaign" | "mixed") {
       const start = performance.now() + 50;
       const end = start + windowMs;
       const deliveredBefore = sink.delivered.length;
-      const samples: object[] = [];
+      const samples: Array<object> = [];
       let nextSample = start;
       for (let i = 0; events && i * 10 < windowMs;) {
         const now = performance.now();
@@ -651,7 +696,9 @@ async function mixed(name: "events" | "campaign" | "mixed") {
         }
         await Bun.sleep(1);
       }
-      if (!events) await Bun.sleep(Math.max(0, end - performance.now()));
+      if (!events) {
+        await Bun.sleep(Math.max(0, end - performance.now()));
+      }
       const inFlightAtEnd = inFlight;
       const mailInWindow = sink.delivered.filter((d) => d.accepted >= start && d.accepted < end);
       const campaignAtEnd = campaign ? await campaignOf(api, id) : null;
@@ -660,7 +707,9 @@ async function mixed(name: "events" | "campaign" | "mixed") {
       const mails = mailInWindow.map((d) => d.mail).sort((a, b) => a - b);
       let perSecond = 0;
       for (let i = 0, j = 0; i < mails.length; i++) {
-        while (mails[j]! < mails[i]! - 1000) j++;
+        while (mails[j]! < mails[i]! - 1000) {
+          j++;
+        }
         perSecond = Math.max(perSecond, i - j + 1);
       }
       record({
@@ -693,7 +742,9 @@ async function mixed(name: "events" | "campaign" | "mixed") {
         samples,
         freeMiB: free(),
       });
-      if (campaign) await api(`/api/campaigns/${id}/status`, "PUT", { status: "cancelled" });
+      if (campaign) {
+        await api(`/api/campaigns/${id}/status`, "PUT", { status: "cancelled" });
+      }
     } finally {
       await app.stop();
     }
@@ -701,10 +752,14 @@ async function mixed(name: "events" | "campaign" | "mixed") {
 }
 
 const mode = process.argv[2] ?? "all";
-if (mode === "limits" || mode === "all") await limits();
-if (mode === "crash" || mode === "all")
+if (mode === "limits" || mode === "all") {
+  await limits();
+}
+if (mode === "crash" || mode === "all") {
   for (const point of ["after-commit", "mid-batch", "batch-end", "unheld"] as const)
     await crash(point);
-if (mode === "mixed" || mode === "all")
+}
+if (mode === "mixed" || mode === "all") {
   for (const name of (process.env.M32_SCENARIOS ?? "events,campaign,mixed").split(","))
     await mixed(name as "events" | "campaign" | "mixed");
+}

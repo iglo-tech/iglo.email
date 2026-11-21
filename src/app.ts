@@ -36,7 +36,7 @@ export function createErrorLogger(buffer?: Pick<LogBuffer, "add" | "attention">)
     },
     attention(message, safe) {
       // One line: a line break in a recipient's or a provider's text would make a second one.
-      console.error(message.replace(/[\r\n]+/g, " "));
+      console.error(message.replaceAll(/[\r\n]+/g, " "));
       buffer?.attention(safe);
     },
   };

@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { closeSync, existsSync, openSync, readdirSync, readlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { STAGE_CHUNK } from "@/subscribers/id-stage";
-import { queryFixture, type QueryFixture } from "@/test/subscribers/fixture";
+import { queryFixture } from "@/test/subscribers/fixture";
+import type { QueryFixture } from "@/test/subscribers/fixture";
 
 const TOTAL = STAGE_CHUNK * 2 + 123;
 const q = (fragment: string) => encodeURIComponent(fragment);
@@ -16,11 +17,13 @@ let f: QueryFixture;
 const staged = () => {
   const dir = join(f.db.filename, "..", "stage");
   const named = existsSync(dir) ? readdirSync(dir) : [];
-  const open: string[] = [];
+  const open: Array<string> = [];
   for (const fd of readdirSync("/proc/self/fd")) {
     try {
       const target = readlinkSync(join("/proc/self/fd", fd));
-      if (target.startsWith(`${dir}/`)) open.push(target);
+      if (target.startsWith(`${dir}/`)) {
+        open.push(target);
+      }
     } catch {
       // The descriptor that listed the directory is already closed.
     }
@@ -35,8 +38,9 @@ beforeAll(async () => {
     "INSERT INTO subscribers (uuid, email, name, status, attribs, created_at, updated_at) VALUES (?, ?, ?, 'enabled', '{}', ?, ?)",
   );
   const now = new Date().toISOString();
-  for (let i = 0; i < TOTAL; i++)
+  for (let i = 0; i < TOTAL; i++) {
     insert.run(crypto.randomUUID(), `s${i}@example.test`, `s${i}`, now, now);
+  }
   f.db.run("COMMIT");
 });
 afterAll(async () => {
@@ -56,7 +60,7 @@ describe("staged selections", () => {
 
   test("a built-in page over the chunk is complete and in order", async () => {
     const response = await f.json("/api/subscribers?per_page=all&order_by=id&order=desc");
-    const ids: number[] = response.body.data.results.map((r: { id: number }) => r.id);
+    const ids: Array<number> = response.body.data.results.map((r: { id: number }) => r.id);
     expect(ids).toHaveLength(TOTAL);
     expect(ids).toEqual([...ids].sort((a, b) => b - a));
     expect(staged()).toEqual([]);

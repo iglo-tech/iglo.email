@@ -7,10 +7,10 @@ import { createQueryRunner } from "@/subscribers/query-runner";
 import { queryFixture } from "@/test/subscribers/fixture";
 
 const count = Number(process.argv[2] ?? 100_000);
-const f = await queryFixture({ timeoutMs: 2_000 });
+const f = await queryFixture({ timeoutMs: 2000 });
 let peak = 0;
 const sampler = setInterval(() => (peak = Math.max(peak, process.memoryUsage().rss)), 5);
-const mb = (bytes: number) => Math.round((bytes / 1048576) * 10) / 10;
+const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
 const report = (name: string, values: Record<string, unknown>) =>
   process.stdout.write(`${JSON.stringify({ name, ...values })}\n`);
 const cpuSeconds = (pid: number) => {
@@ -19,7 +19,9 @@ const cpuSeconds = (pid: number) => {
 };
 const children = () =>
   readdirSync("/proc").filter((entry) => {
-    if (!/^\d+$/.test(entry)) return false;
+    if (!/^\d+$/.test(entry)) {
+      return false;
+    }
     try {
       return new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(
         readFileSync(`/proc/${entry}/status`, "utf8"),
@@ -40,7 +42,9 @@ async function timed(name: string, path: string, init: RequestInit = {}) {
   const reader = response.body!.getReader();
   while (true) {
     const chunk = await reader.read();
-    if (chunk.done) break;
+    if (chunk.done) {
+      break;
+    }
     bytes += chunk.value.byteLength;
     peak = Math.max(peak, process.memoryUsage().rss);
   }
@@ -83,10 +87,11 @@ try {
         JSON.stringify({ city: cities[i % 4], n: i }),
         "2026-01-02T03:04:05.000Z",
         "2026-01-02T03:04:05.000Z",
-      ) as unknown;
+      );
       void row;
-      if (i % 2 === 0)
+      if (i % 2 === 0) {
         member.run(BigInt(i), BigInt(listA), i % 4 === 0 ? "confirmed" : "unconfirmed");
+      }
     }
   })();
   insert.finalize();
@@ -152,7 +157,7 @@ try {
       concurrency: 1,
       ...(command ? { command: [...command] } : {}),
     });
-    const samples: number[] = [];
+    const samples: Array<number> = [];
     for (let i = 0; i < 5; i++) {
       const started = performance.now();
       await runner.all([{ sql: "SELECT 1", args: [] }]);

@@ -1,11 +1,14 @@
 // B5: rescheduling waiting enrollments after a wait changes, and live condition validation
 // (docs/design/05-sequences.md#editing-and-rescheduling), through the HTTP API.
 import { afterEach, expect, test } from "bun:test";
-import { sequencesFixture, type SequencesFixture } from "@/test/sequences/fixture";
+import { sequencesFixture } from "@/test/sequences/fixture";
+import type { SequencesFixture } from "@/test/sequences/fixture";
 
-const fixtures: SequencesFixture[] = [];
+const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await sequencesFixture();
@@ -32,7 +35,7 @@ async function make(f: SequencesFixture) {
     tx,
     seq: created.body.data as {
       id: number;
-      steps: { id: number; wait: string }[];
+      steps: Array<{ id: number; wait: string }>;
     },
   };
 }
@@ -49,10 +52,9 @@ const setWait = async (
 };
 const dues = async (f: SequencesFixture) =>
   Object.fromEntries(
-    ((await f.json("/api/enrollments")).body.data.results as Record<string, any>[]).map((e) => [
-      e.subscriber_id,
-      e.due_at as string,
-    ]),
+    ((await f.json("/api/enrollments")).body.data.results as Array<Record<string, any>>).map(
+      (e) => [e.subscriber_id, e.due_at as string],
+    ),
   );
 const reschedule = (f: SequencesFixture, s: Awaited<ReturnType<typeof make>>, headers?: any) =>
   f.json(
@@ -113,9 +115,9 @@ test("leased enrollments are untouched, and a test enrollment keeps its 1-minute
   const after = await dues(f);
   expect(after[a]).toBe(before[a]);
   expect(after[b]).toBe(before[b]);
-  expect(after[c]).toBe(new Date(Date.parse(before[c]!) - hour + 10 * hour).toISOString());
+  expect(after[c]).toBe(new Date(Date.parse(before[c]) - hour + 10 * hour).toISOString());
   // The cap holds for a test even with a longer wait.
-  expect(Date.parse(after[b]!) - f.clock.now().getTime()).toBeLessThanOrEqual(60_000);
+  expect(Date.parse(after[b]) - f.clock.now().getTime()).toBeLessThanOrEqual(60_000);
 });
 
 test("a large waiting set is done in batches and sends nothing", async () => {
@@ -213,11 +215,12 @@ test("a step deleted between batches reports the rows already moved, not a 404 (
   const now = f.clock.now().toISOString();
   const total = 1300;
   f.db.run("BEGIN");
-  for (let i = 0; i < total; i++)
+  for (let i = 0; i < total; i++) {
     f.db.run("INSERT INTO subscribers (uuid, email, name, status) VALUES (?, ?, 'x', 'enabled')", [
       crypto.randomUUID(),
       `mid${i}@example.test`,
     ]);
+  }
   f.db.run(
     `INSERT INTO enrollments (sequence_id, subscriber_id, step_id, due_at, status, created_at, updated_at, test)
      SELECT ?, id, ?, ?, 'active', ?, ?, 0 FROM subscribers WHERE email LIKE 'mid%'`,

@@ -2,11 +2,14 @@
 // observed through POST /api/subscriber-events(/batch), the subscriber and list APIs.
 import { afterEach, expect, test } from "bun:test";
 import { createTranslation } from "@/i18n/i18n";
-import { eventsFixture, type EventsFixture } from "@/test/events/fixture";
+import { eventsFixture } from "@/test/events/fixture";
+import type { EventsFixture } from "@/test/events/fixture";
 
-const fixtures: EventsFixture[] = [];
+const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
-  for (const f of fixtures.splice(0)) f.close();
+  for (const f of fixtures.splice(0)) {
+    f.close();
+  }
 });
 async function open(language = "en") {
   const f = await eventsFixture({ language });
@@ -136,7 +139,7 @@ test("invalid grant lists are a 400 with no write", async () => {
   const news = await f.list("news");
   const double = await f.list("double", "double");
   const many = Array.from({ length: 21 }, (_, i) => news + i);
-  const cases: unknown[] = [
+  const cases: Array<unknown> = [
     [],
     [news, news],
     [news, 1.5],
@@ -163,8 +166,10 @@ test("invalid grant lists are a 400 with no write", async () => {
 
 test("a grant may name up to 20 distinct lists", async () => {
   const f = await open();
-  const lists: number[] = [];
-  for (let i = 0; i < 20; i++) lists.push(await f.list(`l${i}`));
+  const lists: Array<number> = [];
+  for (let i = 0; i < 20; i++) {
+    lists.push(await f.list(`l${i}`));
+  }
   const r = await f.post(order({ email: "many@example.test", grant_lists: lists }));
   expect(r.status).toBe(200);
   expect(r.body.data.grants.map((g: { list_id: number }) => g.list_id)).toEqual(lists);

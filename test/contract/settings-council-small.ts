@@ -20,7 +20,9 @@ export async function runSettingsCouncilSmall(target: {
       target.mode === "reference",
     );
   function check(value: unknown, label: string): asserts value {
-    if (!value) throw new Error(`FAIL settings-council-small-${label}`);
+    if (!value) {
+      throw new Error(`FAIL settings-council-small-${label}`);
+    }
   }
   async function read() {
     const response = await request();
@@ -79,12 +81,13 @@ export async function runSettingsCouncilSmall(target: {
       saved["bounce.actions"].constructor.count === 4,
     "full-map-projection",
   );
-  for (const [key, value] of Object.entries(headers))
+  for (const [key, value] of Object.entries(headers)) {
     check(
       Object.hasOwn(saved.smtp[0].email_headers[0], key) &&
         saved.smtp[0].email_headers[0][key] === value,
       `header-${key}`,
     );
+  }
   const replacement = JSON.parse('{"__proto__":{"count":9,"action":"blocklist"}}');
   check(
     (await request("/api/settings/bounce.actions", "PUT", replacement)).status === 200,

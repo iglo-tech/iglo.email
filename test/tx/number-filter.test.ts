@@ -1,11 +1,14 @@
 // The `number` Liquid filter (docs/design/06-templates.md, D102), observed through POST /api/tx
 // into the loopback SMTP sink, the template save and preview APIs.
 import { afterEach, expect, test } from "bun:test";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 
-const fixtures: TxFixture[] = [];
+const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await txFixture();
@@ -23,8 +26,10 @@ async function render(f: TxFixture, body: string, data: object = {}) {
   const at = raw.indexOf("\r\n\r\n");
   const message = raw
     .slice(at + 4)
-    .replace(/=\r\n/g, "")
-    .replace(/=([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   return { http: response.status, status: row?.status as string | undefined, message };
 }
 
@@ -44,7 +49,7 @@ test("negatives keep their sign, and zero and values that round to zero render 0
   const sent = await render(
     f,
     "[{{ data.a | number }}] [{{ data.b | number }}] [{{ data.c | number }}] [{{ data.d | number }}] [{{ data.e | number }}]",
-    { a: -1234, b: 0, c: -0.0001, d: -1234.5678, e: -1000000 },
+    { a: -1234, b: 0, c: -0.0001, d: -1234.5678, e: -1_000_000 },
   );
   expect(sent.status).toBe("sent");
   expect(sent.message).toContain("[-1,234] [0] [0] [-1,234.568] [-1,000,000]");
@@ -132,7 +137,7 @@ test("number before default: a missing value is 0, and a present number formats"
     f,
     "[{{ data.missing | number | default: 0 }}] [{{ data.n | number | default: 0 }}] " +
       "[{{ data.text | number | default: 0 }}]",
-    { n: 1234567, text: "none" },
+    { n: 1_234_567, text: "none" },
   );
   expect(sent.status).toBe("sent");
   expect(sent.message).toContain("[0] [1,234,567] [none]");
@@ -159,7 +164,7 @@ test("number in a subject formats the value the subject renders", async () => {
   const response = await f.tx({
     subscriber_emails: [email],
     template_id: template,
-    data: { n: 1234567 },
+    data: { n: 1_234_567 },
   });
   expect(response.body?.data?.sends?.[0]?.status).toBe("sent");
   expect(f.mailTo(email)[0]?.data).toContain("Subject: Total 1,234,567 items");

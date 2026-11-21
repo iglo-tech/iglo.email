@@ -2,19 +2,15 @@
 // transactions (docs/design/04-sending.md#outbound-webhooks).
 import { HttpError } from "@/server/response";
 import type { BulkAction, BulkSpend, SubscriberStore } from "@/subscribers/store";
-import {
-  webhookID,
-  type WebhookEvent,
-  type WebhookStore,
-  type WebhookSubject,
-} from "@/webhooks/store";
+import { webhookID } from "@/webhooks/store";
+import type { WebhookEvent, WebhookStore, WebhookSubject } from "@/webhooks/store";
 
 /**
  * Delivery rows one bulk action may queue. They share its synchronous transaction, so this
  * bounds how long it holds the event loop (docs/perf/M2.6-webhooks.md).
  */
 export const MAX_BULK_DELIVERIES = 50_000;
-const bulkEvents: Record<BulkAction, WebhookEvent[]> = {
+const bulkEvents: Record<BulkAction, Array<WebhookEvent>> = {
   delete: ["subscriber.deleted"],
   blocklist: ["subscriber.blocklisted", "subscriber.unsubscribed"],
   unsubscribe: ["subscriber.unsubscribed"],
@@ -67,28 +63,30 @@ export function createWebhookEffects(
     subscribers()
       .memberships(id)
       .map((m) => webhookID(m.list_id));
-  const unsubscribing = (ids: bigint[], listIds: bigint[] | null) =>
+  const unsubscribing = (ids: Array<bigint>, listIds: Array<bigint> | null) =>
     webhooks.queueMany("subscriber.unsubscribed", () =>
       subscribers().webhookUnsubscribed(ids, listIds),
     );
   return {
     subscriberEffects: {
       /** Consent that really changed; a repeated request queues nothing. */
-      changed(change: { id: bigint; blocklisted: boolean; listIds: bigint[] }) {
+      changed(change: { id: bigint; blocklisted: boolean; listIds: Array<bigint> }) {
         const row = () => subscribers().get(change.id)!;
-        if (change.listIds.length)
+        if (change.listIds.length) {
           webhooks.queueWebhook("subscriber.unsubscribed", () => ({
             subscriber: subject(row()),
             list_ids: change.listIds.map(webhookID),
           }));
-        if (change.blocklisted)
+        }
+        if (change.blocklisted) {
           webhooks.queueWebhook("subscriber.blocklisted", () => ({
             subscriber: subject(row()),
             list_ids: listIDs(change.id),
           }));
+        }
       },
       /** Before the write, so its queries see what is about to change. */
-      blocklisting(ids: bigint[]) {
+      blocklisting(ids: Array<bigint>) {
         unsubscribing(ids, null);
         webhooks.queueMany("subscriber.blocklisted", () => subscribers().webhookBlocklisted(ids));
       },
@@ -100,13 +98,14 @@ export function createWebhookEffects(
           0,
         );
         const deliveries = perSubscriber && selected() * perSubscriber;
-        if (deliveries > MAX_BULK_DELIVERIES)
+        if (deliveries > MAX_BULK_DELIVERIES) {
           throw new HttpError(
             400,
             `This action would queue ${deliveries.toLocaleString("en-US")} webhook deliveries, ` +
               `over the limit of ${MAX_BULK_DELIVERIES.toLocaleString("en-US")} per bulk action. ` +
               "Narrow the selection and try again.",
           );
+        }
       },
       /**
        * One batch of an import, with the budget of one bulk action across all its batches. The
@@ -117,13 +116,14 @@ export function createWebhookEffects(
           spent.deliveries +
           batch.unsubscribed * webhooks.subscribed("subscriber.unsubscribed") +
           batch.blocklisted * webhooks.subscribed("subscriber.blocklisted");
-        if (deliveries > MAX_BULK_DELIVERIES)
+        if (deliveries > MAX_BULK_DELIVERIES) {
           throw new HttpError(
             400,
             `This import would reach ${deliveries.toLocaleString("en-US")} webhook deliveries, ` +
               `over the limit of ${MAX_BULK_DELIVERIES.toLocaleString("en-US")} per bulk action. ` +
               "It stopped before this batch: earlier batches stay, with their webhooks.",
           );
+        }
         spent.deliveries = deliveries;
       },
       /**
@@ -132,13 +132,14 @@ export function createWebhookEffects(
        */
       admitDeleteBatch(spent: BulkSpend, selected: number) {
         const deliveries = spent.deliveries + selected * webhooks.subscribed("subscriber.deleted");
-        if (deliveries > MAX_BULK_DELIVERIES)
+        if (deliveries > MAX_BULK_DELIVERIES) {
           throw new HttpError(
             400,
             `This delete would reach ${deliveries.toLocaleString("en-US")} webhook deliveries, ` +
               `over the limit of ${MAX_BULK_DELIVERIES.toLocaleString("en-US")} per bulk action. ` +
               "It stopped before this batch: earlier batches stay, with their webhooks.",
           );
+        }
         spent.deliveries = deliveries;
       },
     },
@@ -149,9 +150,11 @@ export function createWebhookEffects(
      * subscriber's own wipe also clears the list IDs of their earlier deliveries (D61), so only
      * the wipe's own deleted event names what the person had.
      */
-    deleting(deleted: { id: bigint }[], wipe = false) {
+    deleting(deleted: Array<{ id: bigint }>, wipe = false) {
       const ids = deleted.map(({ id }) => id);
-      if (!ids.length) return;
+      if (!ids.length) {
+        return;
+      }
       webhooks.clearSubscribers(ids, wipe);
       webhooks.queueMany("subscriber.deleted", () => subscribers().webhookDeleted(ids));
     },

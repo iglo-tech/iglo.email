@@ -3,7 +3,8 @@
 // internal/core/core.go makeSearchQuery at 6fcd95f), so docs/design/07-api-and-ui.md names it.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
-import { startProduction, admin, type Production } from "@/test/worked-example/harness";
+import { startProduction, admin } from "@/test/worked-example/harness";
+import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 
 const ASCENDING = ["asc", "ASC", "Asc"];
@@ -36,7 +37,7 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
       headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    return { status: response.status, json: (await response.json()) as any };
+    return { status: response.status, json: await response.json() };
   }
 
   /**
@@ -45,8 +46,8 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
    */
   async function expectOrder(
     path: string,
-    rows: (json: any) => { name: string }[],
-    ascending: string[],
+    rows: (json: any) => Array<{ name: string }>,
+    ascending: Array<string>,
   ) {
     for (const order of ASCENDING) {
       const reply = await api("GET", `${path}&order=${order}`);
@@ -61,8 +62,9 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
   }
 
   test("GET /api/lists", async () => {
-    for (const name of ["B80 Lists Zeta", "B80 Lists Alpha", "B80 Lists Mid"])
+    for (const name of ["B80 Lists Zeta", "B80 Lists Alpha", "B80 Lists Mid"]) {
       expect((await api("POST", "/api/lists", { name, type: "public" })).status).toBe(200);
+    }
     await expectOrder("/api/lists?query=B80%20Lists&order_by=name", (json) => json.data.results, [
       "B80 Lists Alpha",
       "B80 Lists Mid",
@@ -108,10 +110,11 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     for (const [name, email] of [
       ["Zeta", "zeta-b80ord@example.test"],
       ["Alpha", "alpha-b80ord@example.test"],
-    ])
+    ]) {
       expect(
         (await api("POST", "/api/subscribers", { email, name, status: "enabled" })).status,
       ).toBe(200);
+    }
     await expectOrder(
       "/api/subscribers?search=b80ord&order_by=email",
       (json) => json.data.results.map((row: { email: string }) => ({ name: row.email })),
@@ -155,8 +158,9 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
   });
 
   test("GET /api/bounces", async () => {
-    for (const key of ["bounce.enabled", "bounce.webhooks_enabled"])
+    for (const key of ["bounce.enabled", "bounce.webhooks_enabled"]) {
       expect((await api("PUT", `/api/settings/${key}`, true)).status).toBe(200);
+    }
     for (const [name, email] of [
       ["Zeta", "zeta-b80bnc@example.test"],
       ["Alpha", "alpha-b80bnc@example.test"],

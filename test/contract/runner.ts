@@ -11,7 +11,7 @@ import type {
 import { rawRequest } from "@/test/server/raw-request";
 
 const differences: Readonly<
-  Record<Difference, { readonly cases: readonly string[]; readonly reason: string }>
+  Record<Difference, { readonly cases: ReadonlyArray<string>; readonly reason: string }>
 > = {
   D17: {
     cases: ["positive-id-overflow", "users-positive-id-overflow"],
@@ -37,7 +37,7 @@ const differences: Readonly<
 
 export interface ContractReport {
   readonly passed: boolean;
-  readonly lines: readonly string[];
+  readonly lines: ReadonlyArray<string>;
 }
 
 export function validateTarget(target: ContractTarget): void {
@@ -49,12 +49,15 @@ export function validateTarget(target: ContractTarget): void {
     (target.mode === "normal" &&
       target.target === "fixture" &&
       ["staged", "probe"].includes(target.profile));
-  if (!validProfile) throw new Error("Unsupported mode, target, or profile combination");
+  if (!validProfile) {
+    throw new Error("Unsupported mode, target, or profile combination");
+  }
   // Numeric loopback only: DNS, external services, credentials and URL paths are forbidden.
-  if (!/^http:\/\/(?:127\.0\.0\.1|\[::1\]):[0-9]{1,5}\/?$/.test(target.baseUrl))
+  if (!/^http:\/\/(?:127\.0\.0\.1|\[::1\]):[0-9]{1,5}\/?$/.test(target.baseUrl)) {
     throw new Error(
       "Invalid base URL: use a loopback HTTP origin with an explicit port and no credentials or path",
     );
+  }
   let url: URL;
   try {
     url = new URL(target.baseUrl);
@@ -63,9 +66,12 @@ export function validateTarget(target: ContractTarget): void {
   }
   const match = /:([0-9]+)\/?$/.exec(target.baseUrl);
   const port = Number(match?.[1]);
-  if (!url || !Number.isInteger(port) || port < 1 || port > 65535)
+  if (!url || !Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("Invalid loopback port");
-  if (target.credentials) validateCredentials(target.credentials);
+  }
+  if (target.credentials) {
+    validateCredentials(target.credentials);
+  }
 }
 
 function validateCredentials(credentials: Credentials): void {
@@ -77,11 +83,12 @@ function validateCredentials(credentials: Credentials): void {
   }
 }
 
-function validateCorpus(items: readonly ContractCase[], complete: boolean): void {
+function validateCorpus(items: ReadonlyArray<ContractCase>, complete: boolean): void {
   const ids = new Set<string>();
   for (const item of items) {
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.id) || ids.has(item.id))
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.id) || ids.has(item.id)) {
       throw new Error("Invalid or duplicate contract case ID");
+    }
     ids.add(item.id);
     for (const endpoint of [item.reference, item.production, item.fixture]) {
       const invalidCharacter =
@@ -103,8 +110,9 @@ function validateCorpus(items: readonly ContractCase[], complete: boolean): void
     const prescribed = Object.entries(differences).find(([, metadata]) =>
       metadata.cases.includes(item.id),
     )?.[0];
-    if (item.difference !== prescribed)
+    if (item.difference !== prescribed) {
       throw new Error("Unknown, missing, duplicate, or orphaned deliberate-difference marker");
+    }
     if (item.difference && items !== corpus) {
       const canonical = corpus.find((entry) => entry.id === item.id);
       if (
@@ -112,8 +120,9 @@ function validateCorpus(items: readonly ContractCase[], complete: boolean): void
         !isDeepStrictEqual(item.reference, canonical.reference) ||
         !isDeepStrictEqual(item.production, canonical.production) ||
         !isDeepStrictEqual(item.fixture, canonical.fixture)
-      )
+      ) {
         throw new Error("Deliberate-difference expectations do not match the declared contract");
+      }
     }
     if (
       item.difference &&
@@ -125,15 +134,18 @@ function validateCorpus(items: readonly ContractCase[], complete: boolean): void
     }
   }
   if (complete) {
-    for (const metadata of Object.values(differences))
+    for (const metadata of Object.values(differences)) {
       for (const id of metadata.cases) {
         if (!ids.has(id)) throw new Error("Orphaned deliberate-difference metadata");
       }
+    }
   }
 }
 
 function selected(item: ContractCase, target: ContractTarget): boolean {
-  if (target.profile === "all") return item.group !== "probe" && item.group !== "production-only";
+  if (target.profile === "all") {
+    return item.group !== "probe" && item.group !== "production-only";
+  }
   return (
     item.group === target.profile ||
     (target.target === "fixture" && item.fixtureGroup === target.profile) ||
@@ -142,7 +154,9 @@ function selected(item: ContractCase, target: ContractTarget): boolean {
 }
 
 function redact(message: string, credentials?: Credentials): string {
-  if (!credentials) return message;
+  if (!credentials) {
+    return message;
+  }
   const pair = `${credentials.user}:${credentials.token}`;
   const encoded = Buffer.from(pair).toString("base64");
   const secrets = [
@@ -156,13 +170,14 @@ function redact(message: string, credentials?: Credentials): string {
   ];
   let result = message;
   for (const value of secrets.sort((a, b) => b.length - a.length)) {
-    if (value)
+    if (value) {
       for (const representation of [
         value,
         encodeURIComponent(value),
         JSON.stringify(value).slice(1, -1),
       ])
         result = result.replaceAll(representation, "[redacted]");
+    }
   }
   return result;
 }
@@ -173,22 +188,25 @@ interface Binding {
 }
 function normalize(
   value: unknown,
-  fields: readonly VolatileField[],
+  fields: ReadonlyArray<VolatileField>,
   bindings: Map<string, Binding>,
   numericTokens: WeakMap<object, Map<string, string>>,
 ): unknown {
   for (const field of fields) {
-    if (!field.path.length || !/^[a-z][a-z0-9-]*$/.test(field.bind))
+    if (!field.path.length || !/^[a-z][a-z0-9-]*$/.test(field.bind)) {
       throw new Error("Invalid volatile field declaration");
+    }
     let parent: unknown = value;
     for (const component of field.path.slice(0, -1)) {
-      if (typeof parent !== "object" || parent === null || !Object.hasOwn(parent, component))
+      if (typeof parent !== "object" || parent === null || !Object.hasOwn(parent, component)) {
         throw new Error(`Missing volatile field ${field.path.join(".")}`);
+      }
       parent = (parent as Record<string, unknown>)[component];
     }
     const key = field.path.at(-1)!;
-    if (typeof parent !== "object" || parent === null || !Object.hasOwn(parent, key))
+    if (typeof parent !== "object" || parent === null || !Object.hasOwn(parent, key)) {
       throw new Error(`Missing volatile field ${field.path.join(".")}`);
+    }
     const object = parent as Record<string, unknown>;
     const original = object[key];
     if (field.kind === "id") {
@@ -200,28 +218,35 @@ function normalize(
         !token ||
         !/^[1-9][0-9]*$/.test(token) ||
         BigInt(token) > BigInt(Number.MAX_SAFE_INTEGER)
-      )
+      ) {
         throw new Error(`Invalid or unsafe ID at ${field.path.join(".")}`);
+      }
     } else if (field.kind === "timestamp") {
       if (
         typeof original !== "string" ||
         !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(original) ||
         Number.isNaN(Date.parse(original)) ||
         new Date(original).toISOString() !== original
-      )
+      ) {
         throw new Error(`Invalid timestamp at ${field.path.join(".")}`);
-    } else throw new Error("Unknown volatile field type");
+      }
+    } else {
+      throw new Error("Unknown volatile field type");
+    }
     const previous = bindings.get(field.bind);
-    if (field.requireBound && !previous)
+    if (field.requireBound && !previous) {
       throw new Error(`${field.kind} ${field.bind} requires an existing binding`);
-    if (previous && (previous.kind !== field.kind || previous.value !== original))
+    }
+    if (previous && (previous.kind !== field.kind || previous.value !== original)) {
       throw new Error(`Inconsistent ${field.kind} binding ${field.bind}`);
+    }
     if (
       !previous &&
       field.kind === "id" &&
       [...bindings.values()].some((entry) => entry.kind === "id" && entry.value === original)
-    )
+    ) {
       throw new Error(`Distinct ID binding ${field.bind} reused another entity`);
+    }
     if (field.after) {
       const earlier = bindings.get(field.after);
       if (
@@ -229,10 +254,11 @@ function normalize(
         !earlier ||
         earlier.kind !== "timestamp" ||
         Date.parse(original as string) <= Date.parse(earlier.value as string)
-      )
+      ) {
         throw new Error(`Timestamp ${field.bind} is not after ${field.after}`);
+      }
     }
-    bindings.set(field.bind, { kind: field.kind, value: original as number | string });
+    bindings.set(field.bind, { kind: field.kind, value: original });
     object[key] = `<${field.kind}:${field.bind}>`;
   }
   return value;
@@ -254,12 +280,16 @@ async function comparePublic404(
     counts[name] = (counts[name] ?? 0) + 1;
   };
   const version = (value: string | null, path: string): string => {
-    const match = value?.match(new RegExp(`^${path.replaceAll(".", "\\.")}\\?v=([a-f0-9]{10})$`));
-    if (!match) throw new Error(`Invalid versioned ${path}`);
+    const match = value?.match(
+      new RegExp(`^${path.replaceAll(".", String.raw`\.`)}\\?v=([a-f0-9]{10})$`),
+    );
+    if (!match) {
+      throw new Error(`Invalid versioned ${path}`);
+    }
     return match[1]!;
   };
   // This is the specified default 404 page, not an arbitrary HTML sanitizer.
-  const attributes: Readonly<Record<string, readonly string[]>> = {
+  const attributes: Readonly<Record<string, ReadonlyArray<string>>> = {
     html: [],
     head: [],
     body: [],
@@ -274,7 +304,7 @@ async function comparePublic404(
     a: ["href", "target", "rel"],
     script: ["src", "async", "defer"],
   };
-  const classes: Readonly<Record<string, readonly string[]>> = {
+  const classes: Readonly<Record<string, ReadonlyArray<string>>> = {
     div: ["container", "wrap", "logo"],
     header: ["header"],
     footer: ["container"],
@@ -282,7 +312,7 @@ async function comparePublic404(
   // HTMLRewriter exposes tokens without a browser's tree-repair step. Validate
   // every token's parent instead of letting selectors silently skip misplaced
   // content that a browser would move into the visible document.
-  const stack: { tag: string; role: string; text: string }[] = [];
+  const stack: Array<{ tag: string; role: string; text: string }> = [];
   let headClosed = false,
     bodyClosed = false,
     documentClosed = false;
@@ -302,23 +332,29 @@ async function comparePublic404(
   const rewriter = new HTMLRewriter()
     .onDocument({
       doctype(node) {
-        if (node.name !== "html" || stack.length || counts.html || documentClosed)
+        if (node.name !== "html" || stack.length || counts.html || documentClosed) {
           throw new Error("Invalid doctype");
+        }
         count("doctype");
       },
       text(chunk) {
         const current = stack.at(-1);
-        if (current?.role === "footer-link") current.text += chunk.text;
+        if (current?.role === "footer-link") {
+          current.text += chunk.text;
+        }
         if (
           chunk.text.trim() &&
           !["title", "h2", "message", "footer", "footer-link"].includes(current?.role ?? "")
-        )
+        ) {
           throw new Error("Unexpected public page text");
+        }
       },
     })
     .on("*", {
       element(element) {
-        if (!Object.hasOwn(attributes, element.tagName)) throw new Error("Unexpected HTML element");
+        if (!Object.hasOwn(attributes, element.tagName)) {
+          throw new Error("Unexpected HTML element");
+        }
         const tag = element.tagName;
         const parent = stack.at(-1)?.role ?? "document";
         let role = tag;
@@ -342,8 +378,9 @@ async function comparePublic404(
             role = "footer-link";
             requiredParent = "footer";
             const link = expected.footerLinks[counts.footerLinks ?? 0];
-            if (!link || element.getAttribute("href") !== link.href)
+            if (!link || element.getAttribute("href") !== link.href) {
               throw new Error("Unexpected footer link");
+            }
             count("footerLinks");
           } else if (expected.customScript) {
             role = "logo-link";
@@ -358,8 +395,9 @@ async function comparePublic404(
                 url.pathname !== "/subscription/form" ||
                 url.search ||
                 url.hash
-              )
+              ) {
                 throw new Error("Unexpected logo link");
+              }
             }
             count("logoLink");
           }
@@ -370,31 +408,45 @@ async function comparePublic404(
           documentClosed ||
           (tag === "html" && counts.doctype !== 1) ||
           (tag === "body" && !headClosed)
-        )
+        ) {
           throw new Error("Unexpected public page element placement");
+        }
         if (!voidTags.has(tag)) {
           const entry = { tag, role, text: "" };
           const footerLink =
             role === "footer-link" ? expected.footerLinks[counts.footerLinks! - 1] : null;
           stack.push(entry);
           element.onEndTag(() => {
-            if (stack.pop() !== entry) throw new Error("Unclosed public page element");
-            if (footerLink && entry.text.trim() !== footerLink.text)
+            if (stack.pop() !== entry) {
+              throw new Error("Unclosed public page element");
+            }
+            if (footerLink && entry.text.trim() !== footerLink.text) {
               throw new Error("Wrong footer link text");
-            if (tag === "head") headClosed = true;
-            if (tag === "body") bodyClosed = true;
-            if (tag === "html") documentClosed = true;
+            }
+            if (tag === "head") {
+              headClosed = true;
+            }
+            if (tag === "body") {
+              bodyClosed = true;
+            }
+            if (tag === "html") {
+              documentClosed = true;
+            }
           });
         }
-        if (element.tagName === "h2") count("allHeadings");
+        if (element.tagName === "h2") {
+          count("allHeadings");
+        }
         for (const [name, value] of element.attributes) {
-          if (!attributes[element.tagName]!.includes(name))
+          if (!attributes[element.tagName]!.includes(name)) {
             throw new Error(`Unexpected HTML attribute ${element.tagName}.${name}`);
+          }
           if (
             name === "class" &&
             value.split(/\s+/).some((value) => !classes[element.tagName]?.includes(value))
-          )
+          ) {
             throw new Error("Unexpected HTML class");
+          }
           if (name === "href" || name === "src") {
             // These fixed URLs contain neither character references nor raw
             // control characters. HTMLRewriter exposes attribute spellings,
@@ -406,13 +458,15 @@ async function comparePublic404(
                   character.charCodeAt(0) <= 32 ||
                   character.charCodeAt(0) === 127,
               )
-            )
+            ) {
               throw new Error("Unsupported encoded HTML URL");
+            }
             // WHATWG URL parsing removes embedded ASCII tabs/newlines just as
             // a browser does; a literal scheme-prefix regex misses those URLs.
             const url = new URL(value, "http://127.0.0.1/");
-            if (url.protocol !== "http:" && url.protocol !== "https:")
+            if (url.protocol !== "http:" && url.protocol !== "https:") {
               throw new Error("Unsafe HTML URL");
+            }
           }
         }
         if (element.tagName === "meta") {
@@ -426,8 +480,9 @@ async function comparePublic404(
               name === "viewport" &&
               content === "width=device-width, initial-scale=1, minimum-scale=1"
             )
-          )
+          ) {
             throw new Error("Unexpected public metadata");
+          }
         }
       },
     })
@@ -462,8 +517,9 @@ async function comparePublic404(
             .getAttribute("class")
             ?.split(/\s+/)
             .some((name) => name !== "wrap" && name !== "container")
-        )
+        ) {
           throw new Error("Unexpected page wrapper class");
+        }
       },
     })
     .on("body > .wrap > header", {
@@ -524,8 +580,9 @@ async function comparePublic404(
             url.pathname !== "/archive.xml" ||
             url.search ||
             url.hash
-          )
+          ) {
             throw new Error("Unexpected archive metadata");
+          }
           count("archive");
         } else {
           throw new Error("Unexpected public stylesheet");
@@ -536,7 +593,9 @@ async function comparePublic404(
       element(element) {
         count("images");
         logoVersion = version(element.getAttribute("src"), "/public/static/logo.svg");
-        if (element.getAttribute("alt") !== expected.logoAlt) throw new Error("Wrong logo context");
+        if (element.getAttribute("alt") !== expected.logoAlt) {
+          throw new Error("Wrong logo context");
+        }
       },
     })
     .on("body > footer", {
@@ -553,13 +612,15 @@ async function comparePublic404(
         if (
           !expected.customScript ||
           !/^\/public\/custom\.js\?v=[a-f0-9]{10}$/.test(element.getAttribute("src") ?? "")
-        )
+        ) {
           throw new Error("Unexpected script");
+        }
       },
     });
   await rewriter.transform(new Response(actual)).text();
-  if (stack.length || !bodyClosed || !documentClosed)
+  if (stack.length || !bodyClosed || !documentClosed) {
     throw new Error("Unclosed public page document");
+  }
   for (const name of [
     "doctype",
     "html",
@@ -576,29 +637,38 @@ async function comparePublic404(
     "icon",
     "images",
   ]) {
-    if (counts[name] !== 1) throw new Error(`Expected exactly one ${name}`);
+    if (counts[name] !== 1) {
+      throw new Error(`Expected exactly one ${name}`);
+    }
   }
   // B126 (D123): production's shell has no footer; upstream's has one with its credit.
-  if ((counts.footer ?? 0) !== (expected.footerText ? 1 : 0))
+  if ((counts.footer ?? 0) !== (expected.footerText ? 1 : 0)) {
     throw new Error("Wrong public footer count");
-  if ((counts.script ?? 0) !== (expected.customScript ? 1 : 0))
+  }
+  if ((counts.script ?? 0) !== (expected.customScript ? 1 : 0)) {
     throw new Error("Wrong script count");
+  }
   if (
     (counts.footerLinks ?? 0) !== expected.footerLinks.length ||
     (counts.logoLink ?? 0) !== (expected.customScript ? 1 : 0)
-  )
+  ) {
     throw new Error("Wrong public link count");
+  }
   if (
     (counts.customStyle ?? 0) !== (expected.customScript ? 1 : 0) ||
     (counts.archive ?? 0) !== (expected.archiveTitle ? 1 : 0)
-  )
+  ) {
     throw new Error("Wrong reference-only asset count");
-  if (title !== `${expected.heading} - ${expected.siteName}` || heading !== expected.heading)
+  }
+  if (title !== `${expected.heading} - ${expected.siteName}` || heading !== expected.heading) {
     throw new Error("Wrong public 404 title or heading");
-  if (message.trim() !== "" || footer.replace(/\s+/g, " ").trim() !== expected.footerText)
+  }
+  if (message.trim() !== "" || footer.replaceAll(/\s+/g, " ").trim() !== expected.footerText) {
     throw new Error("Wrong public 404 message or attribution");
-  if (styleVersion !== logoVersion || styleVersion !== iconVersion)
+  }
+  if (styleVersion !== logoVersion || styleVersion !== iconVersion) {
     throw new Error("Inconsistent asset versions");
+  }
 }
 
 async function compareBody(
@@ -606,19 +676,24 @@ async function compareBody(
   expected: ExpectedBody,
   bindings: Map<string, Binding>,
 ): Promise<void> {
-  if (expected.kind === "public-404") return comparePublic404(actual, expected);
+  if (expected.kind === "public-404") {
+    return comparePublic404(actual, expected);
+  }
   if (expected.kind === "public-css") {
-    if (actual.length < 100 || !actual.includes("box-sizing"))
+    if (actual.length < 100 || !actual.includes("box-sizing")) {
       throw new Error("Invalid public stylesheet");
+    }
     return;
   }
   if (expected.kind === "wire") {
-    if (actual !== expected.value)
+    if (actual !== expected.value) {
       throw new Error(`body ${JSON.stringify(actual)}; expected ${JSON.stringify(expected.value)}`);
+    }
     return;
   }
-  if (!actual.endsWith("\n") || actual.endsWith("\n\n"))
+  if (!actual.endsWith("\n") || actual.endsWith("\n\n")) {
     throw new Error("JSON response must end with exactly one newline");
+  }
   let value: unknown;
   // Preserve the original JSON number token so a rounded value cannot masquerade
   // as a safe integer after parsing. Other fields retain their original values.
@@ -648,15 +723,16 @@ async function compareBody(
     throw new Error("Invalid JSON response");
   }
   const normalized = normalize(value, expected.volatile, bindings, numericTokens);
-  if (!isDeepStrictEqual(normalized, expected.value))
+  if (!isDeepStrictEqual(normalized, expected.value)) {
     throw new Error(
       `JSON body ${JSON.stringify(normalized)}; expected ${JSON.stringify(expected.value)}`,
     );
+  }
 }
 
 export async function runContract(
   target: ContractTarget,
-  options: { readonly caseId?: string; readonly cases?: readonly ContractCase[] } = {},
+  options: { readonly caseId?: string; readonly cases?: ReadonlyArray<ContractCase> } = {},
 ): Promise<ContractReport> {
   validateTarget(target);
   const items = options.cases ?? corpus;
@@ -664,13 +740,16 @@ export async function runContract(
   const filtered = items.filter((item) => selected(item, target));
   const selectedCases =
     options.caseId === undefined ? filtered : filtered.filter((item) => item.id === options.caseId);
-  if (!selectedCases.length)
+  if (!selectedCases.length) {
     throw new Error("Unsupported or unknown case for the selected target/profile");
+  }
   for (const item of selectedCases) {
-    if (!item[target.target === "upstream" ? "reference" : target.target])
+    if (!item[target.target === "upstream" ? "reference" : target.target]) {
       throw new Error("Unsupported case for the selected target/profile");
-    if (item.auth && !target.credentials)
+    }
+    if (item.auth && !target.credentials) {
       throw new Error("Synthetic credentials are required for the selected cases");
+    }
   }
   const lines = [`mode=${target.mode} target=${target.target} profile=${target.profile}`];
   const bindings = new Map<string, Binding>();
@@ -690,7 +769,9 @@ export async function runContract(
           ? `Basic ${Buffer.from(`${credentials.user}:${token}`).toString("base64")}`
           : `token ${credentials.user}:${token}`;
     }
-    if (item.requestContentType) headers["Content-Type"] = item.requestContentType;
+    if (item.requestContentType) {
+      headers["Content-Type"] = item.requestContentType;
+    }
     try {
       const actual = await rawRequest(target.baseUrl, endpoint.path, {
         method: item.method ?? "GET",
@@ -704,20 +785,24 @@ export async function runContract(
       if (
         actual.status !== endpoint.expect.status ||
         actual.contentType !== endpoint.expect.contentType
-      )
+      ) {
         throw new Error(
           `status/content-type ${actual.status} ${actual.contentType}; expected ${endpoint.expect.status} ${endpoint.expect.contentType}; body ${JSON.stringify(actual.body)}`,
         );
+      }
       for (const [name, expected] of Object.entries(endpoint.expect.headers ?? {})) {
-        if (actual.headers?.[name.toLowerCase()] !== expected)
+        if (actual.headers?.[name.toLowerCase()] !== expected) {
           throw new Error(
             `header ${name}: ${JSON.stringify(actual.headers?.[name.toLowerCase()])}; expected ${JSON.stringify(expected)}`,
           );
+        }
       }
       const caseBindings = new Map(bindings);
       await compareBody(actual.body, endpoint.expect.body, caseBindings);
       bindings.clear();
-      for (const [name, binding] of caseBindings) bindings.set(name, binding);
+      for (const [name, binding] of caseBindings) {
+        bindings.set(name, binding);
+      }
       lines.push(`PASS ${item.id}${marker}`);
     } catch (error) {
       target.signal?.throwIfAborted();
@@ -727,10 +812,12 @@ export async function runContract(
       );
     }
   }
-  if (target.profile === "probe")
+  if (target.profile === "probe") {
     lines.push("NOTE synthetic harness probe; no upstream domain or production coverage");
-  if (target.target === "fixture")
+  }
+  if (target.target === "fixture") {
     lines.push("NOTE synthetic helper routes; production lists run separately");
+  }
   lines.push(`RESULT ${selectedCases.length - failures} passed, ${failures} failed`);
   return { passed: failures === 0, lines };
 }

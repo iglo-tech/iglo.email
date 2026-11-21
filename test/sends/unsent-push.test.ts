@@ -3,16 +3,21 @@
 import { afterEach, expect, test } from "bun:test";
 import { placeRestoreHold, releaseRestoreHold, restoreHold, holdRecord } from "@/settings/hold";
 import { HttpError } from "@/server/response";
-import { txFixture, type TxFixture } from "@/test/tx/fixture";
+import { txFixture } from "@/test/tx/fixture";
+import type { TxFixture } from "@/test/tx/fixture";
 
-const fixtures: TxFixture[] = [];
+const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
 async function until(condition: () => boolean, f: TxFixture) {
   for (const end = performance.now() + 20_000; !condition(); await tick()) {
-    if (performance.now() > end) throw new Error("condition not reached");
+    if (performance.now() > end) {
+      throw new Error("condition not reached");
+    }
     f.clock.advance(1000);
   }
 }
@@ -28,7 +33,9 @@ test("a send refused by the restore hold goes back to queued, uncounted, and is 
   let armed = false;
   const f = await txFixture({
     refuse: () => {
-      if (!armed) return;
+      if (!armed) {
+        return;
+      }
       // The hold lands between the loop's check and the push: the emailer's last gate refuses.
       placeRestoreHold(f.db, f.clock.now().toISOString());
       throw new HttpError(503, "Sending is held.");

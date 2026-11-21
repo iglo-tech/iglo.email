@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, api, get, login, userWith, type Fixture } from "@/test/admin/support";
+import { admin, api, get, login, userWith } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 const sent = "If the account is active, you will receive a password reset email.";
@@ -29,7 +30,7 @@ const reset = (link: string, password: string, password2 = password, extra = {})
 async function resetLink(address: string, seen = 0): Promise<string> {
   for (let attempt = 0; attempt < 200; attempt++) {
     const response = await fetch(`${f.origin}/fixture/mail`);
-    const { data } = (await response.json()) as { data: { to: string[]; body: string }[] };
+    const { data } = (await response.json()) as { data: Array<{ to: string[]; body: string }> };
     const mails = data.filter((mail) => mail.to[0] === address);
     if (mails.length > seen) {
       const href = /href="http:\/\/fixture\.test(\/admin\/reset\?[^"]+)"/.exec(mails.at(-1)!.body);
@@ -40,7 +41,8 @@ async function resetLink(address: string, seen = 0): Promise<string> {
   throw new Error(`No mail for ${address}`);
 }
 const mailCount = async () =>
-  ((await (await fetch(`${f.origin}/fixture/mail`)).json()) as { data: unknown[] }).data.length;
+  ((await (await fetch(`${f.origin}/fixture/mail`)).json()) as { data: Array<unknown> }).data
+    .length;
 
 test("the screens keep upstream's fields and the login page links to them", async () => {
   const login = await (await get(f, "/admin/login")).text();
@@ -85,7 +87,7 @@ test("a link sets the password once, ends sessions and logs the user in", async 
   expect(done.status).toBe(302);
   expect(done.headers.get("location")).toBe("/admin");
   const session = done.headers.getSetCookie().find((value) => value.startsWith("session="))!;
-  expect((await get(f, "/admin", session.split(";", 1)[0]!)).status).toBe(200);
+  expect((await get(f, "/admin", session.split(";", 1)[0])).status).toBe(200);
   expect((await get(f, "/admin", old)).status).toBe(307);
 
   expect((await get(f, link)).status).toBe(400);
@@ -133,7 +135,7 @@ test("an identity change retires the link", async () => {
   await forgot("reset-newer@example.test");
   const second = await resetLink("reset-newer@example.test");
   const { data } = (await (await get(f, "/api/users", cookie)).json()) as {
-    data: { id: number; username: string }[];
+    data: Array<{ id: number; username: string }>;
   };
   const user = data.find((item) => item.username === "reset-newer")!;
   const disabled = await api(f, cookie, `/api/users/${user.id}`, "PUT", {

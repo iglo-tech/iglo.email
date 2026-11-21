@@ -378,7 +378,7 @@ function Attachment({ t }: { t: Translation }) {
         x-bind:title="m.filename"
       >
         <template x-if="rasterThumb(m)">
-          <img x-bind:src="m.thumb_url" x-bind:alt="m.filename" />
+          <img alt="" x-bind:src="m.thumb_url" x-bind:alt="m.filename" />
         </template>
         <template x-if="!rasterThumb(m)">
           <span class="ext" x-text="fileExt(m.filename)"></span>
@@ -580,7 +580,7 @@ function Tabs(props: FormProps & { canManage: boolean }) {
   const { t, canManage } = props;
   const tab = (id: string, icon: string, label: string, mark: unknown = null) => (
     <button type="button" role="tab" id={id}>
-      <Icon name={icon} /> {label} {mark as never}
+      <Icon name={icon} /> {label} {mark}
     </button>
   );
   const done = (when: string) => (
@@ -777,11 +777,12 @@ function view(isNew: boolean): AdminView {
     const t = context.app.i18n;
     const id = isNew ? "" : String(getID(context));
     const tab = isNew ? undefined : context.params.tab;
-    if (tab === "content" || tab === "attribs" || tab === "archive")
+    if (tab === "content" || tab === "attribs" || tab === "archive") {
       return new Response(null, {
         status: 302,
         headers: { Location: `/admin/campaigns/${id}#tab=${tab}`, "Cache-Control": "no-store" },
       });
+    }
     const canManage = can("campaigns:manage", "campaigns:manage_all");
     const canSend = can("campaigns:send");
     const keys = {

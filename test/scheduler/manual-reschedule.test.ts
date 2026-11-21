@@ -2,11 +2,14 @@
 // docs/design/05-sequences.md#reschedule): the wait counts from the enrollment's creation, and a
 // test keeps its 1-minute cap. Through the HTTP API on the injected clock, no sleeps.
 import { afterEach, expect, test } from "bun:test";
-import { day, minute, schedulerFixture, type SchedulerFixture } from "@/test/scheduler/fixture";
+import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
-const fixtures: SchedulerFixture[] = [];
+const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
-  for (const f of fixtures.splice(0)) await f.close();
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
 });
 async function open() {
   const f = await schedulerFixture();
@@ -19,7 +22,7 @@ async function shorten(f: SchedulerFixture, id: number, wait: string) {
   delete full.status;
   expect((await f.json(`/api/sequences/${id}`, "PUT", full)).status).toBe(200);
 }
-const reschedule = (f: SchedulerFixture, seq: { id: number; steps: { id: number }[] }) =>
+const reschedule = (f: SchedulerFixture, seq: { id: number; steps: Array<{ id: number }> }) =>
   f.json(`/api/sequences/${seq.id}/steps/${seq.steps[0]!.id}/reschedule`, "POST");
 
 /** A purchase ten days old, recorded before any sequence exists, so it starts nothing. */

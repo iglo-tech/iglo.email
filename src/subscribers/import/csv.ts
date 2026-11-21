@@ -28,7 +28,7 @@ export const validDelimiter = (byte: number) =>
 export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord) => void) {
   let buffer = Buffer.allocUnsafe(64 * 1024);
   let size = 0;
-  let ends: number[] = [];
+  let ends: Array<number> = [];
   let state: "start" | "plain" | "quoted" | "quote" = "start";
   let carriage = false;
   let newlines = 0;
@@ -37,19 +37,26 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
     get count() {
       return ends.length;
     },
-    field: (index) => buffer.subarray(index ? ends[index - 1]! : 0, ends[index]!),
+    field: (index) => buffer.subarray(index ? ends[index - 1]! : 0, ends[index]),
   };
   const fail = (message: string) => new CsvError(`parse error on line ${newlines + 1}: ${message}`);
   const overBudget = () => fail(`record over ${MAX_RECORD_BYTES} bytes`);
   const append = (byte: number) => {
-    if (size + ends.length >= MAX_RECORD_BYTES) throw overBudget();
-    if (size === buffer.length)
+    if (size + ends.length >= MAX_RECORD_BYTES) {
+      throw overBudget();
+    }
+    if (size === buffer.length) {
       buffer = Buffer.concat([buffer], Math.min(size * 2, MAX_RECORD_BYTES));
+    }
     buffer[size++] = byte;
   };
   const endField = () => {
-    if (ends.length === MAX_RECORD_FIELDS) throw fail(`record over ${MAX_RECORD_FIELDS} fields`);
-    if (size + ends.length >= MAX_RECORD_BYTES) throw overBudget();
+    if (ends.length === MAX_RECORD_FIELDS) {
+      throw fail(`record over ${MAX_RECORD_FIELDS} fields`);
+    }
+    if (size + ends.length >= MAX_RECORD_BYTES) {
+      throw overBudget();
+    }
     ends.push(size);
     state = "start";
   };
@@ -60,33 +67,51 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
     size = 0;
   };
   const step = (byte: number) => {
-    if (byte === LF) newlines++;
+    if (byte === LF) {
+      newlines++;
+    }
     switch (state) {
       case "start":
-        if (byte === QUOTE) state = "quoted";
-        else if (byte === delimiter) endField();
-        else if (byte !== LF) {
+        if (byte === QUOTE) {
+          state = "quoted";
+        } else if (byte === delimiter) {
+          endField();
+        } else if (byte !== LF) {
           state = "plain";
           append(byte);
-        } else if (ends.length) endRecord();
+        } else if (ends.length) {
+          endRecord();
+        }
         return;
       case "plain":
-        if (byte === delimiter) endField();
-        else if (byte === LF) endRecord();
-        else if (byte === QUOTE) throw fail('bare " in non-quoted field');
-        else append(byte);
+        if (byte === delimiter) {
+          endField();
+        } else if (byte === LF) {
+          endRecord();
+        } else if (byte === QUOTE) {
+          throw fail('bare " in non-quoted field');
+        } else {
+          append(byte);
+        }
         return;
       case "quoted":
-        if (byte === QUOTE) state = "quote";
-        else append(byte);
+        if (byte === QUOTE) {
+          state = "quote";
+        } else {
+          append(byte);
+        }
         return;
       case "quote":
         if (byte === QUOTE) {
           state = "quoted";
           append(byte);
-        } else if (byte === delimiter) endField();
-        else if (byte === LF) endRecord();
-        else throw fail('extraneous or missing " in quoted-field');
+        } else if (byte === delimiter) {
+          endField();
+        } else if (byte === LF) {
+          endRecord();
+        } else {
+          throw fail('extraneous or missing " in quoted-field');
+        }
     }
   };
   return {
@@ -96,16 +121,27 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
         // A CR is part of the text unless a LF follows it.
         if (carriage) {
           carriage = false;
-          if (byte !== LF) step(CR);
+          if (byte !== LF) {
+            step(CR);
+          }
         }
-        if (byte === CR) carriage = true;
-        else step(byte);
+        if (byte === CR) {
+          carriage = true;
+        } else {
+          step(byte);
+        }
       }
-      if (chunk.length) last = chunk[chunk.length - 1]!;
+      if (chunk.length) {
+        last = chunk[chunk.length - 1]!;
+      }
     },
     end() {
-      if (state === "quoted") throw fail('extraneous or missing " in quoted-field');
-      if (state !== "start" || ends.length) endRecord();
+      if (state === "quoted") {
+        throw fail('extraneous or missing " in quoted-field');
+      }
+      if (state !== "start" || ends.length) {
+        endRecord();
+      }
     },
     /** listmonk's countLines: line breaks, and an unfinished last line. */
     lines: () => newlines + (last !== 0 && last !== LF ? 1 : 0),

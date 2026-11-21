@@ -11,8 +11,8 @@ import {
   parseJson,
   readBounded,
   SINGLE_BODY_BYTES,
-  type EventInput,
 } from "@/events/input";
+import type { EventInput } from "@/events/input";
 import type { EventStore, EventResult, ExistingSubscriber } from "@/events/store";
 import type { Roles } from "@/roles/roles";
 import type { Authentication } from "@/users/auth";
@@ -38,31 +38,47 @@ export function registerEventRoutes(
    * creates needs no more than the target lists. Checked where the event's own permission is
    * revalidated, inside the write transaction, against the memberships as they are now.
    */
-  const grantAccess = (c: RequestContext, lists: bigint[], existing: ExistingSubscriber | null) => {
-    if (!lists.length) return;
+  const grantAccess = (
+    c: RequestContext,
+    lists: Array<bigint>,
+    existing: ExistingSubscriber | null,
+  ) => {
+    if (!lists.length) {
+      return;
+    }
     auth.revalidate(c, "subscribers:manage");
-    if (!c.identity) throw new Error("Identity required");
+    if (!c.identity) {
+      throw new Error("Identity required");
+    }
     const { role, user } = c.identity;
-    if (!roles.canList(role, user.list_role_id, "list:manage", lists))
+    if (!roles.canList(role, user.list_role_id, "list:manage", lists)) {
       throw new HttpError(403, c.app.i18n.Ts("globals.messages.permissionDenied", "name", "lists"));
-    if (existing === null) return;
+    }
+    if (existing === null) {
+      return;
+    }
     const scope = roles.listScope(role, user.list_role_id, "list:manage");
-    if (!scope.all && !existing.lists.some((list) => scope.ids.includes(list)))
+    if (!scope.all && !existing.lists.some((list) => scope.ids.includes(list))) {
       throw new HttpError(
         403,
         c.app.i18n.Ts("globals.messages.permissionDenied", "name", "subscriber"),
       );
+    }
   };
   const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
     try {
       return eventInput(value);
     } catch (error) {
-      if (error instanceof EventInputError) return invalid(c, error.field);
+      if (error instanceof EventInputError) {
+        return invalid(c, error.field);
+      }
       throw error;
     }
   };
   const respond = (r: EventResult) => {
-    if (r.status !== 200) throw new HttpError(r.status, "message" in r ? r.message : "");
+    if (r.status !== 200) {
+      throw new HttpError(r.status, "message" in r ? r.message : "");
+    }
     const { status: _status, ...data } = r as Extract<EventResult, { status: 200 }>;
     return ok(data);
   };
@@ -73,12 +89,16 @@ export function registerEventRoutes(
     async (c) => {
       const receivedAt = c.app.clock.now();
       // Reserve before reading the body so overload is shed instead of buffered.
-      if (singles >= MAX_SINGLES_IN_FLIGHT) throw new HttpError(429, "Too many requests");
+      if (singles >= MAX_SINGLES_IN_FLIGHT) {
+        throw new HttpError(429, "Too many requests");
+      }
       singles++;
       try {
         const body = await readBounded(c.request, SINGLE_BODY_BYTES);
         const input = item(c, parseJson(c.request, body));
-        if (input instanceof HttpError) throw input;
+        if (input instanceof HttpError) {
+          throw input;
+        }
         return respond(
           await store.submit(input, receivedAt, (existing) => {
             auth.revalidate(c, PERMISSION);
@@ -97,16 +117,20 @@ export function registerEventRoutes(
     "/api/subscriber-events/batch",
     async (c) => {
       const receivedAt = c.app.clock.now();
-      if (batches >= MAX_BATCHES_IN_FLIGHT) throw new HttpError(429, "Too many requests");
+      if (batches >= MAX_BATCHES_IN_FLIGHT) {
+        throw new HttpError(429, "Too many requests");
+      }
       batches++;
       let items: Array<EventInput | HttpError>;
       try {
         const body = parseJson(c.request, await readBounded(c.request, BATCH_BODY_BYTES));
-        let values: unknown[];
+        let values: Array<unknown>;
         try {
           values = batchItems(body);
         } catch (error) {
-          if (error instanceof EventInputError) throw invalid(c, error.field);
+          if (error instanceof EventInputError) {
+            throw invalid(c, error.field);
+          }
           throw error;
         }
         items = values.map((value) => item(c, value));

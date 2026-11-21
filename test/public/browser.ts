@@ -13,19 +13,23 @@ const screenshots = process.env.PUBLIC_BROWSER_SHOTS;
 const fail = (label: string): never => {
   throw new Error(`FAIL browser-${label}`);
 };
-function browser(...args: string[]) {
+function browser(...args: Array<string>) {
   const run = Bun.spawnSync(
     ["agent-browser", "--session", session, "--allowed-domains", "127.0.0.1", ...args],
     { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
   );
   const out = run.stdout.toString();
-  if (run.exitCode !== 0) fail(`command-${args[0]}: ${out} ${run.stderr.toString()}`);
+  if (run.exitCode !== 0) {
+    fail(`command-${args[0]}: ${out} ${run.stderr.toString()}`);
+  }
   return out;
 }
 const text = () => browser("get", "text", "body");
 const expectText = (value: string, label: string) => {
   const body = text();
-  if (!body.includes(value)) fail(`${label}: ${body.slice(0, 400)}`);
+  if (!body.includes(value)) {
+    fail(`${label}: ${body.slice(0, 400)}`);
+  }
 };
 
 const fixtures = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
@@ -75,14 +79,20 @@ const passed = await withProduction(
     await api("/api/lists", "POST", { name: "Staff only", type: "private", optin: "single" });
     const email = `browser-${randomBytes(6).toString("hex")}@example.test`;
     const shot = (name: string) => {
-      if (screenshots) browser("screenshot", `${screenshots}/${name}.png`);
+      if (screenshots) {
+        browser("screenshot", `${screenshots}/${name}.png`);
+      }
     };
 
     // Subscription form: the hidden bot field stays hidden and private lists do not show.
     browser("open", `${origin}/subscription/form`);
     expectText("Weekly news", "form-lists");
-    if (text().includes("Staff only")) fail("form-private");
-    if (browser("is", "visible", "input[name=nonce]").trim() !== "false") fail("form-nonce");
+    if (text().includes("Staff only")) {
+      fail("form-private");
+    }
+    if (browser("is", "visible", "input[name=nonce]").trim() !== "false") {
+      fail("form-nonce");
+    }
     shot("form");
     browser("fill", "input[name=email]", email);
     browser("fill", "input[name=name]", "Browser Person");
@@ -95,18 +105,22 @@ const passed = await withProduction(
     let id = "";
     for (let i = 0; i < 100 && !id; i++, await Bun.sleep(50)) {
       const found = (await (await fetch(`${sink.api}/api/v1/search?${search}`)).json()) as {
-        messages: { ID: string }[];
+        messages: Array<{ ID: string }>;
       };
       id = found.messages[0]?.ID ?? "";
     }
-    if (!id) fail("optin-mail");
+    if (!id) {
+      fail("optin-mail");
+    }
     const mail = (await (await fetch(`${sink.api}/api/v1/message/${id}`)).json()) as {
       HTML: string;
     };
     const link = /href="([^"]*\/subscription\/optin\/[^"]*)"/
       .exec(mail.HTML)?.[1]
       ?.replaceAll("&amp;", "&");
-    if (!link) fail("optin-link");
+    if (!link) {
+      fail("optin-link");
+    }
     browser("open", link!);
     expectText("Product updates", "optin-page");
     shot("optin");
@@ -114,10 +128,14 @@ const passed = await withProduction(
     const row = async () => (await api(`/api/subscribers?${query}`)).data.results[0];
     const status = async (list: number) =>
       (await row()).lists.find((l: { id: number }) => l.id === list)?.subscription_status;
-    if ((await status(double.id)) !== "unconfirmed") fail("optin-get-changed");
+    if ((await status(double.id)) !== "unconfirmed") {
+      fail("optin-get-changed");
+    }
     browser("click", "#btn-unsub");
     browser("wait", "--text", "Subscribed successfully.");
-    if ((await status(double.id)) !== "confirmed") fail("optin-confirm");
+    if ((await status(double.id)) !== "confirmed") {
+      fail("optin-confirm");
+    }
 
     // Preferences through the page reached from the unsubscribe link.
     const uuid = (await row()).uuid as string;
@@ -132,9 +150,15 @@ const passed = await withProduction(
     browser("click", "#btn-unsub");
     browser("wait", "--text", "Your preferences have been saved.");
     const saved = await row();
-    if (saved.name !== "Renamed Person") fail("prefs-name");
-    if ((await status(double.id)) !== "unsubscribed") fail("prefs-list");
-    if ((await status(single.id)) === "unsubscribed") fail("prefs-kept");
+    if (saved.name !== "Renamed Person") {
+      fail("prefs-name");
+    }
+    if ((await status(double.id)) !== "unsubscribed") {
+      fail("prefs-list");
+    }
+    if ((await status(single.id)) === "unsubscribed") {
+      fail("prefs-kept");
+    }
 
     // Export, then wipe with the confirmation dialog. The privacy forms need a paired page (D126):
     // the manage page of a marketing send to this subscriber, not the placeholder page above.
@@ -168,7 +192,9 @@ const passed = await withProduction(
     browser("click", "#btn-wipe");
     browser("wait", "--text", "Your email data has been deleted.");
     shot("wipe");
-    if (await row()) fail("wipe");
+    if (await row()) {
+      fail("wipe");
+    }
     process.stdout.write("PASS public browser checks\n");
     return true;
   },
@@ -177,4 +203,6 @@ const passed = await withProduction(
 ).finally(() => {
   Bun.spawnSync(["agent-browser", "--session", session, "close"]);
 });
-if (!passed) process.exitCode = 1;
+if (!passed) {
+  process.exitCode = 1;
+}

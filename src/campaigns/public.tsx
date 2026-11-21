@@ -8,15 +8,11 @@ import type { Database } from "bun:sqlite";
 import { deflateSync, crc32 } from "node:zlib";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
-import { parseBool, readPreferences, type PreferenceForm } from "@/public/form";
+import { parseBool, readPreferences } from "@/public/form";
+import type { PreferenceForm } from "@/public/form";
 import { publicMessage } from "@/public/message";
-import {
-  savePendingLists,
-  savePreferences,
-  subscriptionPage,
-  type PageMode,
-  type PageOptions,
-} from "@/public/preferences";
+import { savePendingLists, savePreferences, subscriptionPage } from "@/public/preferences";
+import type { PageMode, PageOptions } from "@/public/preferences";
 import type { Privacy } from "@/public/privacy";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
@@ -89,7 +85,7 @@ export function registerCampaignPublicRoutes(
     const site = options();
     return publicMessage(i18n, { status, title, message, site }, headers);
   };
-  const invalidUUID = (context: RequestContext, ...names: string[]) =>
+  const invalidUUID = (context: RequestContext, ...names: Array<string>) =>
     names.some((name) => !uuidPattern.test(context.params[name] ?? ""))
       ? page(
           context.app.i18n,
@@ -107,10 +103,16 @@ export function registerCampaignPublicRoutes(
    */
   const pairing = (campUuid: string, subUuid: string) => {
     const subscriber = deps.subscribers.byUuid(subUuid.toLowerCase());
-    if (!subscriber) return null;
-    if (campUuid === dummyUUID) return { subscriber, campaign: null };
+    if (!subscriber) {
+      return null;
+    }
+    if (campUuid === dummyUUID) {
+      return { subscriber, campaign: null };
+    }
     const campaign = deps.store.byUuid(campUuid);
-    if (!campaign || !deps.store.delivered(campaign.id, subscriber.id)) return null;
+    if (!campaign || !deps.store.delivered(campaign.id, subscriber.id)) {
+      return null;
+    }
     return { subscriber, campaign: campaign.id };
   };
   /** The subscriber a privacy action pairs: only a campaign's own delivery does (D126). */
@@ -144,15 +146,22 @@ export function registerCampaignPublicRoutes(
     page(t, 200, t.T("public.testSendTitle"), t.T("public.testSendInfo"), noIndex);
 
   router.route("GET", "/subscription/:campUUID/:subUUID", (context) => {
-    if (isTestSend(context)) return testPage(context.app.i18n);
+    if (isTestSend(context)) {
+      return testPage(context.app.i18n);
+    }
     const t = context.app.i18n;
     const bad = invalidUUID(context, "campUUID", "subUUID");
-    if (bad) return bad;
+    if (bad) {
+      return bad;
+    }
     const camp = context.params.campUUID!.toLowerCase();
     const found = pairing(camp, context.params.subUUID!);
-    if (!found) return unpaired(t);
-    if (found.subscriber.status === "blocklisted")
+    if (!found) {
+      return unpaired(t);
+    }
+    if (found.subscriber.status === "blocklisted") {
       return page(t, 200, t.T("public.noSubTitle"), t.T("public.blocklisted"), noIndex);
+    }
     const manage = parseBool(context.url.searchParams.get("manage")) === true;
     return subscriptionPage(
       t,
@@ -171,23 +180,33 @@ export function registerCampaignPublicRoutes(
     "/subscription/:campUUID/:subUUID",
     async (context) => {
       // D117: a one-click or page-form POST to a test send changes nothing.
-      if (isTestSend(context)) return testPage(context.app.i18n);
+      if (isTestSend(context)) {
+        return testPage(context.app.i18n);
+      }
       const t = context.app.i18n;
       const bad = invalidUUID(context, "campUUID", "subUUID");
-      if (bad) return bad;
+      if (bad) {
+        return bad;
+      }
       const camp = context.params.campUUID!.toLowerCase();
       const subUuid = context.params.subUUID!;
-      if (!pairing(camp, subUuid)) return unpaired(t);
+      if (!pairing(camp, subUuid)) {
+        return unpaired(t);
+      }
       let form: PreferenceForm;
       try {
         form = await readPreferences(context.request);
       } catch (error) {
-        if (error instanceof HttpError) throw error;
+        if (error instanceof HttpError) {
+          throw error;
+        }
         return page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidData"));
       }
       const blocklist = deps.settings().allowBlocklist && form.blocklist;
       // D126: the placeholder campaign pairs no campaign, so its mail cannot blocklist anyone.
-      if (blocklist && camp === dummyUUID) return unpaired(t);
+      if (blocklist && camp === dummyUUID) {
+        return unpaired(t);
+      }
       if (form.manage && !blocklist) {
         // The placeholder's save ends pending lists only; a campaign's save manages its subscriber.
         const current = () => pairing(camp, subUuid)?.subscriber ?? null;
@@ -200,18 +219,21 @@ export function registerCampaignPublicRoutes(
       writeTransaction(deps.db, () => {
         // Re-read inside the write: unsubscribe from the campaign's lists, or blocklist.
         const found = pairing(camp, subUuid);
-        if (!found) return;
+        if (!found) {
+          return;
+        }
         const sub = found.subscriber;
         // The placeholder campaign is the opt-in mail's link: end every unconfirmed subscription.
         if (found.campaign === null) {
           const changed = deps.subscribers.unsubscribeUnconfirmed(sub.id);
-          for (const list of changed)
+          for (const list of changed) {
             deps.effects.unsubscribed({
               subscriberId: sub.id,
               listId: list,
               listIds: [list],
               blocklisted: false,
             });
+          }
           return;
         }
         const lists = deps.store.listIds(found.campaign);
@@ -245,9 +267,13 @@ export function registerCampaignPublicRoutes(
     "POST",
     "/subscription/:campUUID/export/:subUUID",
     (context) => {
-      if (isTestSend(context)) return testPage(context.app.i18n);
+      if (isTestSend(context)) {
+        return testPage(context.app.i18n);
+      }
       const bad = invalidUUID(context, "campUUID", "subUUID");
-      if (bad) return bad;
+      if (bad) {
+        return bad;
+      }
       const camp = context.params.campUUID!.toLowerCase();
       return (
         deps.privacy.export(context, () => privacySubscriber(camp, context.params.subUUID!)) ??
@@ -260,9 +286,13 @@ export function registerCampaignPublicRoutes(
     "POST",
     "/subscription/:campUUID/wipe/:subUUID",
     (context) => {
-      if (isTestSend(context)) return testPage(context.app.i18n);
+      if (isTestSend(context)) {
+        return testPage(context.app.i18n);
+      }
       const bad = invalidUUID(context, "campUUID", "subUUID");
-      if (bad) return bad;
+      if (bad) {
+        return bad;
+      }
       const camp = context.params.campUUID!.toLowerCase();
       // B126 (D123): the confirmation's "Keep my data" returns to this campaign's page, with the manage view
       // only when preferences are on.
@@ -280,7 +310,9 @@ export function registerCampaignPublicRoutes(
 
   router.route("GET", "/campaign/:campUUID/:subUUID/px.png", (context) => {
     const bad = invalidUUID(context, "campUUID", "subUUID");
-    if (bad) return bad;
+    if (bad) {
+      return bad;
+    }
     const settings = deps.settings();
     const campUuid = context.params.campUUID!.toLowerCase();
     const subUuid = context.params.subUUID!.toLowerCase();
@@ -296,14 +328,17 @@ export function registerCampaignPublicRoutes(
         if (campaign) {
           const sub = deps.subscribers.byUuid(subUuid);
           if (settings.individualTracking) {
-            if (sub && deps.store.delivered(campaign.id, sub.id))
+            if (sub && deps.store.delivered(campaign.id, sub.id)) {
               deps.store.registerView(campaign.id, sub.id);
+            }
           } else {
             const counted =
               subUuid === dummyUUID
                 ? deps.store.hasDeliveries(campaign.id)
                 : Boolean(sub && deps.store.delivered(campaign.id, sub.id));
-            if (counted) deps.store.registerView(campaign.id, null);
+            if (counted) {
+              deps.store.registerView(campaign.id, null);
+            }
           }
         }
       } catch (error) {
@@ -320,17 +355,23 @@ export function registerCampaignPublicRoutes(
   router.route("GET", "/link/:linkUUID/:campUUID/:subUUID", (context) => {
     const t = context.app.i18n;
     const bad = invalidUUID(context, "linkUUID", "campUUID", "subUUID");
-    if (bad) return bad;
+    if (bad) {
+      return bad;
+    }
     const link = deps.tracking.get(context.params.linkUUID!.toLowerCase());
     const settings = deps.settings();
     const invalid = () =>
       page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidLink"), noIndex);
-    if (!link) return invalid();
+    if (!link) {
+      return invalid();
+    }
     const campaign = deps.store.byUuid(context.params.campUUID!.toLowerCase());
-    if (!settings.disableTracking && !campaign) return invalid();
+    if (!settings.disableTracking && !campaign) {
+      return invalid();
+    }
     // Only links this campaign's content registered redirect, so a URL registered by another
     // send can't use the campaign domain as an open redirect (a deliberate difference).
-    if (!campaign || !deps.store.hasLink(campaign.id, link.id))
+    if (!campaign || !deps.store.hasLink(campaign.id, link.id)) {
       return page(
         t,
         404,
@@ -338,6 +379,7 @@ export function registerCampaignPublicRoutes(
         t.T("globals.messages.invalidLink"),
         noIndex,
       );
+    }
     if (!settings.disableTracking) {
       // RegisterCampaignLinkClick: the subscriber is optional.
       const sub = settings.individualTracking

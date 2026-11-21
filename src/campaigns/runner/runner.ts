@@ -19,11 +19,8 @@ import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
-import {
-  createMessageBudget,
-  RenderCapacityError,
-  type TemplateRenderer,
-} from "@/templates/renderer";
+import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
+import type { TemplateRenderer } from "@/templates/renderer";
 import type { Tracking } from "@/unsubscribe/tracking";
 import { compileCampaign, dummyUUID } from "@/campaigns/render";
 import type { CampaignStore } from "@/campaigns/store";
@@ -41,7 +38,7 @@ export interface RunnerSettings {
   slidingWindowRate: number;
   rootUrl: string;
   /** "email" and the names of enabled SMTP servers. */
-  messengers: string[];
+  messengers: Array<string>;
   unsubscribeHeader: boolean;
   disableTracking: boolean;
   individualTracking: boolean;
@@ -70,7 +67,7 @@ export interface RunnerDeps {
   };
   settings: () => RunnerSettings;
   /** Reads a campaign's files, so never inside the claim transaction. */
-  attachments(ids: bigint[], inline: InlineImage[]): Promise<Attachments>;
+  attachments(ids: Array<bigint>, inline: Array<InlineImage>): Promise<Attachments>;
   embedImages: EmbedImages;
   /**
    * Campaigns with a live pipe in this process. Runners sharing a data directory share it
@@ -88,8 +85,8 @@ interface Pipe {
   campaign: RunnableCampaign;
   compiled: ReturnType<typeof compileCampaign>;
   /** The files of the pipe, by ID. Their bytes are loaded for each batch and kept by no pipe. */
-  media: bigint[];
-  images: InlineImage[];
+  media: Array<bigint>;
+  images: Array<InlineImage>;
   /** Why the campaign's images cannot be embedded: found when it compiles, reported as `attach`. */
   embedProblem: string | null;
   /** Tracked links seen in the current batch; campaign_links is the lasting record. */
@@ -99,7 +96,7 @@ interface Pipe {
 type Attachments = NonNullable<Message["attachments"]>;
 interface Batch {
   pipe: Pipe;
-  recipients: CampaignRecipient[];
+  recipients: Array<CampaignRecipient>;
 }
 /**
  * Why a batch stopped early. "emailer": the emailer closed under the batch, so nothing more of it
@@ -107,7 +104,7 @@ interface Batch {
  */
 type Stop = "status" | "errors" | "shutdown" | "emailer";
 
-const scanInterval = 5_000;
+const scanInterval = 5000;
 const defaultLease = 30_000;
 /** Bound on the per-batch tracked link cache: personalized URLs are distinct per recipient. */
 const maxCachedLinks = 10_000;
@@ -130,21 +127,29 @@ export function createCampaignRunnerRegistry() {
     /** Takes the campaign for `token`; false while another runner's pipe holds it. */
     take(id: bigint, token: string): boolean {
       const owner = owners.get(id);
-      if (owner !== undefined && owner !== token) return false;
+      if (owner !== undefined && owner !== token) {
+        return false;
+      }
       owners.set(id, token);
       return true;
     },
     drop(id: bigint, token: string): void {
-      if (owners.get(id) === token) owners.delete(id);
+      if (owners.get(id) === token) {
+        owners.delete(id);
+      }
     },
     /** The batch slot: one batch, and so at most `concurrency` messages, at a time. */
     begin(token: string): boolean {
-      if (sending !== null && sending !== token) return false;
+      if (sending !== null && sending !== token) {
+        return false;
+      }
       sending = token;
       return true;
     },
     end(token: string): void {
-      if (sending === token) sending = null;
+      if (sending === token) {
+        sending = null;
+      }
     },
   };
 }
@@ -170,7 +175,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
   const stopping = new AbortController();
   // Worker pacing and the sliding window are shared by all campaigns (Manager). Each worker
   // keeps the times of its last `app.message_rate` messages (D59).
-  const workerTimes: number[][] = [];
+  const workerTimes: Array<number>[] = [];
   let slidingStart = clock.now().getTime();
   let slidingCount = 0;
   let slidingUntil = 0;
@@ -185,11 +190,15 @@ export function createCampaignRunner(deps: RunnerDeps) {
   }> = [];
 
   function flushNotifications() {
-    if (!deps.notify || pendingNotifications.length === 0) return;
+    if (!deps.notify || pendingNotifications.length === 0) {
+      return;
+    }
     const batch = pendingNotifications.splice(0, pendingNotifications.length);
     for (const item of batch) {
       const current = store.state(item.campaign.id);
-      if (current?.status !== item.campaign.status) continue;
+      if (current?.status !== item.campaign.status) {
+        continue;
+      }
       try {
         deps.notify.campaignStatus(item.campaign, item.reason);
       } catch (error) {
@@ -202,7 +211,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
     campaign: { id: bigint; name: string; status: string; sent: number; to_send: number };
     reason?: string;
   }) {
-    if (!deps.notify) return;
+    if (!deps.notify) {
+      return;
+    }
     pendingNotifications.push(item);
     queueMicrotask(flushNotifications);
   }
@@ -220,7 +231,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const lists = [];
     for (const id of store.listIds(c.id)) {
       const list = deps.lists.subscriberMetadata(id);
-      if (list) lists.push({ id, optin: list.optin });
+      if (list) {
+        lists.push({ id, optin: list.optin });
+      }
     }
     return { lists, type: c.type ?? "regular" };
   }
@@ -233,13 +246,14 @@ export function createCampaignRunner(deps: RunnerDeps) {
   /** Marks claims no live pipe owns as unknown and logs their range, so they stop holding the cap. */
   function abandonClaims(id: bigint, now: number, name: string) {
     const abandoned = store.abandon(id, iso(now));
-    if (abandoned.count)
+    if (abandoned.count) {
       log(
         "campaign claims abandoned after the runner stopped: resend manually if needed",
         `${name}: ${abandoned.count} subscribers with IDs ${abandoned.first}-${abandoned.last} ` +
           "were claimed before the runner stopped and may not have received the campaign. " +
           "They are not sent again; resend to them manually if needed.",
       );
+    }
   }
   /**
    * One process per data directory (D15): at startup, claims that no pipe in this process owns
@@ -250,7 +264,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const now = clock.now().getTime();
     writeTransaction(db, () => {
       for (const { id, name } of store.claimedCampaigns()) {
-        if (!registry.take(id, token)) continue;
+        if (!registry.take(id, token)) {
+          continue;
+        }
         try {
           abandonClaims(id, now, `campaign ${id} (${name})`);
         } finally {
@@ -263,16 +279,22 @@ export function createCampaignRunner(deps: RunnerDeps) {
   /** newPipe and next-campaigns' pickup, inside the claim transaction. */
   function open(id: bigint, now: number, settings: RunnerSettings): void {
     // A pipe still alive in this process, even one whose lease lapsed, keeps the campaign.
-    if (!registry.take(id, token)) return;
+    if (!registry.take(id, token)) {
+      return;
+    }
     try {
       openPipe(id, now, settings);
     } finally {
-      if (!pipes.has(id)) registry.drop(id, token);
+      if (!pipes.has(id)) {
+        registry.drop(id, token);
+      }
     }
   }
   function openPipe(id: bigint, now: number, settings: RunnerSettings): void {
     const campaign = store.acquire(id, token, iso(now + leaseMs), iso(now));
-    if (!campaign) return;
+    if (!campaign) {
+      return;
+    }
     abandonClaims(id, now, label(campaign));
     if (!settings.messengers.includes(campaign.messenger)) {
       store.cancel(id, iso(now));
@@ -330,7 +352,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
       return;
     }
     const started = store.start(id, token, measured.count, measured.max, iso(now));
-    if (!started) return;
+    if (!started) {
+      return;
+    }
     retryAt.delete(id);
     pipes.set(id, {
       // The scheduled -> running flip bumped the generation (a trigger, so RETURNING cannot
@@ -393,32 +417,42 @@ export function createCampaignRunner(deps: RunnerDeps) {
     return { pipe, recipients };
   }
 
-  function claim(nowDate: Date): Batch[] {
+  function claim(nowDate: Date): Array<Batch> {
     // Held (D67) or closed: nothing is claimed, so no batch is handed back and claimed again.
-    if (sendingHeld(db) || deps.emailer.closed) return [];
+    if (sendingHeld(db) || deps.emailer.closed) {
+      return [];
+    }
     const now = nowDate.getTime();
     const settings = deps.settings();
     // Another runner in this process is sending a batch: wait for it.
-    if (!registry.begin(token)) return [];
+    if (!registry.begin(token)) {
+      return [];
+    }
     try {
       const batch = claimBatch(now, settings);
-      if (!batch.length) registry.end(token);
+      if (!batch.length) {
+        registry.end(token);
+      }
       return batch;
     } catch (error) {
       registry.end(token);
       throw error;
     }
   }
-  function claimBatch(now: number, settings: RunnerSettings): Batch[] {
+  function claimBatch(now: number, settings: RunnerSettings): Array<Batch> {
     for (const id of store.due(iso(now))) {
-      if (pipes.has(id) || (retryAt.get(id) ?? 0) > now) continue;
+      if (pipes.has(id) || (retryAt.get(id) ?? 0) > now) {
+        continue;
+      }
       open(id, now, settings);
     }
     while (pipes.size) {
       const all = [...pipes.values()];
       const pipe = all[rotation++ % all.length]!;
       const batch = next(pipe, now, settings);
-      if (batch) return [batch];
+      if (batch) {
+        return [batch];
+      }
     }
     return [];
   }
@@ -426,12 +460,16 @@ export function createCampaignRunner(deps: RunnerDeps) {
   function renewAll() {
     const until = iso(clock.now().getTime() + leaseMs);
     writeTransaction(db, () => {
-      for (const id of pipes.keys()) store.renew(id, token, until);
+      for (const id of pipes.keys()) {
+        store.renew(id, token, until);
+      }
     });
   }
 
   async function sleep(ms: number) {
-    if (ms <= 0) return;
+    if (ms <= 0) {
+      return;
+    }
     try {
       await clock.sleep(ms, stopping.signal);
     } catch {
@@ -456,11 +494,15 @@ export function createCampaignRunner(deps: RunnerDeps) {
           link(url: string) {
             let uuid = pipe.links.get(url);
             if (uuid === undefined) {
-              if (pipe.links.size >= maxCachedLinks) pipe.links.clear();
+              if (pipe.links.size >= maxCachedLinks) {
+                pipe.links.clear();
+              }
               uuid = deps.tracking.link(url);
               const link = uuid === null ? null : deps.tracking.get(uuid);
               // The campaign redirect follows only links this campaign registered.
-              if (link) deps.campaigns.registerLink(c.id, link.id);
+              if (link) {
+                deps.campaigns.registerLink(c.id, link.id);
+              }
               pipe.links.set(url, uuid);
             }
             return uuid ? `${root}/link/${uuid}/${c.uuid}/${tracked}` : url;
@@ -486,7 +528,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         const altBody =
           out.altBody ??
           (c.content_type === "plain" ? null : (await plainText(out.body, budget)) || null);
-        const headers: Record<string, string | string[]> = {
+        const headers: Record<string, string | Array<string>> = {
           "X-Listmonk-Campaign": c.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
         };
@@ -494,11 +536,12 @@ export function createCampaignRunner(deps: RunnerDeps) {
           headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
           headers["List-Unsubscribe"] = `<${unsubscribeUrl}>`;
         }
-        for (const set of out.headers)
+        for (const set of out.headers) {
           for (const [name, value] of Object.entries(set)) {
             const prior = headers[name];
             headers[name] = prior === undefined ? value : [...[prior].flat(), value];
           }
+        }
         let domain = "localhost";
         try {
           domain = new URL(settings.rootUrl).hostname || domain;
@@ -520,8 +563,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
         return message;
       } catch (error) {
         // Other renders hold the shared capacity: wait briefly; nothing has been sent.
-        if (!(error instanceof RenderCapacityError) || attempt >= 50 || stopping.signal.aborted)
+        if (!(error instanceof RenderCapacityError) || attempt >= 50 || stopping.signal.aborted) {
           throw error;
+        }
         await sleep(20);
       }
     }
@@ -536,7 +580,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
   async function attach({ pipe, recipients }: Batch): Promise<Attachments | null> {
     const c = pipe.campaign;
     try {
-      if (pipe.embedProblem) throw new Error(pipe.embedProblem);
+      if (pipe.embedProblem) {
+        throw new Error(pipe.embedProblem);
+      }
       return await deps.attachments(pipe.media, pipe.images);
     } catch (error) {
       log(
@@ -546,8 +592,12 @@ export function createCampaignRunner(deps: RunnerDeps) {
     }
     const now = iso(clock.now().getTime());
     writeTransaction(db, () => {
-      for (const sub of recipients) store.unclaim(c.id, token, sub.id);
-      if (recipients.length) store.rewind(c.id, token, recipients[0]!.id - 1n, now);
+      for (const sub of recipients) {
+        store.unclaim(c.id, token, sub.id);
+      }
+      if (recipients.length) {
+        store.rewind(c.id, token, recipients[0]!.id - 1n, now);
+      }
       store.pause(c.id, token, c.runner_generation, now);
       release(pipe);
     });
@@ -559,7 +609,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
     const attachments = await attach(batch);
-    if (!attachments) return;
+    if (!attachments) {
+      return;
+    }
     const settings = deps.settings();
     const concurrency = settings.concurrency >= 1 ? Math.floor(settings.concurrency) : 1;
     const rate = settings.messageRate >= 1 ? Math.floor(settings.messageRate) : 1;
@@ -576,17 +628,21 @@ export function createCampaignRunner(deps: RunnerDeps) {
     let sent = 0;
     let index = 0;
     const stopped = (): boolean => {
-      if (stop) return true;
-      if (stopping.signal.aborted) stop = "shutdown";
-      else {
+      if (stop) {
+        return true;
+      }
+      if (stopping.signal.aborted) {
+        stop = "shutdown";
+      } else {
         const state = store.state(c.id);
         if (
           !state ||
           state.status !== "running" ||
           state.runner_lease !== token ||
           state.runner_generation !== c.runner_generation
-        )
+        ) {
           stop = "status";
+        }
       }
       return stop !== null;
     };
@@ -608,7 +664,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const worker = async (w: number) => {
       while (!stopped()) {
         const i = index++;
-        if (i >= recipients.length) return;
+        if (i >= recipients.length) {
+          return;
+        }
         const sub = recipients[i]!;
         let message: Message;
         try {
@@ -628,25 +686,30 @@ export function createCampaignRunner(deps: RunnerDeps) {
         const times = (workerTimes[w] ??= []);
         if (times.length >= rate) {
           const until = times[times.length - rate]! + 1000;
-          while (clock.now().getTime() < until && !stopping.signal.aborted)
+          while (clock.now().getTime() < until && !stopping.signal.aborted) {
             await sleep(until - clock.now().getTime());
+          }
           times.splice(0, times.length - rate + 1);
         }
         const slot = times.push(clock.now().getTime()) - 1;
         // The sliding window holds every worker until the window is over.
-        while (slidingUntil > clock.now().getTime() && !stopping.signal.aborted)
+        while (slidingUntil > clock.now().getTime() && !stopping.signal.aborted) {
           await sleep(slidingUntil - clock.now().getTime());
-        if (stopped()) return;
+        }
+        if (stopped()) {
+          return;
+        }
         // Consent is rechecked at the push: an unsubscribe or blocklist during the batch holds.
         // The message was rendered for the captured address: a changed one is not sent.
         const current = deps.recipients.eligible(audience(c), sub);
         if (current !== "eligible") {
-          if (current === "changed")
+          if (current === "changed") {
             log(
               "campaign subscriber changed after its claim: message not sent",
               `${label(c)}: subscriber ${sub.id} changed its UUID or email after the batch was ` +
                 "claimed; the message was not sent. Resend to them manually if needed.",
             );
+          }
           // B116 (D131): the delivery names why it was skipped; no log line, since it is not a fault.
           outcomes.set(i, {
             status: "skipped",
@@ -727,7 +790,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
       await beating;
       pipe.links.clear();
     }
-    if (failure) throw (failure as PromiseRejectedResult).reason;
+    if (failure) {
+      throw (failure as PromiseRejectedResult).reason;
+    }
     // Progress for the batch: sent count, outcomes, and the unsent rest returned to the cursor.
     const now = iso(clock.now().getTime());
     const unsent = recipients.filter((_, i) => !pushed.has(i) && !outcomes.has(i));
@@ -738,7 +803,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         drop(c.id);
         return;
       }
-      for (const [i, outcome] of outcomes)
+      for (const [i, outcome] of outcomes) {
         store.settle(
           c.id,
           token,
@@ -747,14 +812,19 @@ export function createCampaignRunner(deps: RunnerDeps) {
           iso(outcome.at),
           outcome.reason ?? null,
         );
+      }
       if (unsent.length) {
-        for (const sub of unsent) store.unclaim(c.id, token, sub.id);
+        for (const sub of unsent) {
+          store.unclaim(c.id, token, sub.id);
+        }
         store.rewind(c.id, token, unsent[0]!.id - 1n, now);
       }
       if (stop === "errors") {
         paused = store.pause(c.id, token, c.runner_generation, now);
         release(pipe);
-      } else if (stop === "status") release(pipe);
+      } else if (stop === "status") {
+        release(pipe);
+      }
     });
     if (paused) {
       try {
@@ -831,10 +901,11 @@ export function createCampaignRunner(deps: RunnerDeps) {
       } finally {
         flushNotifications();
         registry.end(token);
-        if (pipes.size)
+        if (pipes.size) {
           writeTransaction(db, () => {
             for (const pipe of pipes.values()) release(pipe);
           });
+        }
       }
     },
   };

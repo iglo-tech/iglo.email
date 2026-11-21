@@ -4,11 +4,11 @@ import { STATUS_CODES } from "node:http";
 
 function json(value: unknown, status: number): Response {
   const body = JSON.stringify(value)
-    .replaceAll("<", "\\u003c")
-    .replaceAll(">", "\\u003e")
-    .replaceAll("&", "\\u0026")
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029");
+    .replaceAll("<", String.raw`\u003c`)
+    .replaceAll(">", String.raw`\u003e`)
+    .replaceAll("&", String.raw`\u0026`)
+    .replaceAll("\u2028", String.raw`\u2028`)
+    .replaceAll("\u2029", String.raw`\u2029`);
   return new Response(`${body}\n`, { status, headers: { "Content-Type": "application/json" } });
 }
 
@@ -28,12 +28,15 @@ export class HttpError extends Error {
 }
 
 export function errorResponse(error: HttpError, method: string): Response {
-  if (method === "HEAD")
+  if (method === "HEAD") {
     return new Response(null, { status: error.status, headers: error.headers });
+  }
   const response = json(
     { message: error.message || STATUS_CODES[error.status] || "" },
     error.status,
   );
-  for (const [name, value] of Object.entries(error.headers)) response.headers.set(name, value);
+  for (const [name, value] of Object.entries(error.headers)) {
+    response.headers.set(name, value);
+  }
   return response;
 }

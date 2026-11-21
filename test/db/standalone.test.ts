@@ -13,7 +13,9 @@ test("compiled fixture embeds migration and named SQL outside the checkout with 
       { cwd: resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" },
     );
     const [code, stderr] = await Promise.all([build.exited, new Response(build.stderr).text()]);
-    if (code) throw new Error(`Fixture build failed: ${stderr}`);
+    if (code) {
+      throw new Error(`Fixture build failed: ${stderr}`);
+    }
     const started = Bun.spawn([binary, join(directory, "data")], {
       cwd: directory,
       env: { PATH: "" },

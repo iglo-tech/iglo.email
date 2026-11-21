@@ -3,7 +3,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 // @ts-expect-error The package ships this source without types.
 import { generateRuntimeFunction, Parser, Tokenizer } from "@alpinejs/csp/src/parser.js";
-import { admin, get, login, type Fixture } from "@/test/admin/support";
+import { admin, get, login } from "@/test/admin/support";
+import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
 const screens = [
@@ -92,18 +93,21 @@ test("every screen carries it, and loads no inline script", async () => {
     const response = await get(f, path, cookie);
     expect(`${path} ${response.status}`).toBe(`${path} 200`);
     expect(response.headers.get("content-security-policy")).toBe(strict);
-    const inline: string[] = [];
+    const inline: Array<string> = [];
     await new HTMLRewriter()
       .on("script", {
         element(element) {
           const type = element.getAttribute("type");
-          if (!element.hasAttribute("src") && type !== "application/json") inline.push(path);
+          if (!element.hasAttribute("src") && type !== "application/json") {
+            inline.push(path);
+          }
         },
       })
       .on("*", {
         element(element) {
-          for (const [name] of element.attributes)
+          for (const [name] of element.attributes) {
             if (/^on[a-z]+$/.test(name)) inline.push(`${path} ${element.tagName} ${name}`);
+          }
         },
       })
       .transform(response)
@@ -173,7 +177,7 @@ test("every kind of response has nosniff", async () => {
     ["/api/no-such-route", session],
     ["/api/health", {}],
     ["/%00", {}],
-  ] as [string, Record<string, string>][]) {
+  ] as Array<[string, Record<string, string>]>) {
     const response = await fetch(`${f.origin}${path}`, { redirect: "manual", headers });
     expect(`${path} ${response.headers.get("x-content-type-options")}`).toBe(`${path} nosniff`);
   }
@@ -238,19 +242,29 @@ const browserGlobals = new Set([
 const isGlobal = (name: string) => name in globalThis || browserGlobals.has(name);
 
 /** What the CSP build refuses at run time rather than when it parses. */
-function refused(node: Node, found: string[]): void {
+function refused(node: Node, found: Array<string>): void {
   if (node.type === "AssignmentExpression" || node.type === "UpdateExpression") {
     let target = node.left ?? node.argument;
-    while (target?.type === "MemberExpression") target = target.object;
-    if (target?.name?.startsWith("$")) found.push(`assigns through ${target.name}`);
+    while (target?.type === "MemberExpression") {
+      target = target.object;
+    }
+    if (target?.name?.startsWith("$")) {
+      found.push(`assigns through ${target.name}`);
+    }
   }
-  if (node.type === "Identifier" && node.name && isGlobal(node.name))
+  if (node.type === "Identifier" && node.name && isGlobal(node.name)) {
     found.push(`reads global ${node.name}`);
+  }
   for (const [key, child] of Object.entries(node)) {
-    if (key === "property" && !node.computed) continue;
-    if (key === "key") continue;
-    for (const item of Array.isArray(child) ? child : [child])
+    if (key === "property" && !node.computed) {
+      continue;
+    }
+    if (key === "key") {
+      continue;
+    }
+    for (const item of Array.isArray(child) ? child : [child]) {
       if (item && typeof item === "object") refused(item as Node, found);
+    }
   }
 }
 
@@ -264,13 +278,13 @@ test("refused() names a browser global even where this runtime has none", () => 
     "Alpine.store('x')",
     "items.includes(location.hash)",
   ]) {
-    const found: string[] = [];
+    const found: Array<string> = [];
     refused(new Parser(new Tokenizer(expression).tokenize()).parse(), found);
     expect(found.length, expression).toBeGreaterThan(0);
   }
   // Names in the scope, and properties that merely share a global's name, are not reads of it.
   for (const expression of ["open", "item.window", "items.length > 0", "$store.x.open"]) {
-    const found: string[] = [];
+    const found: Array<string> = [];
     refused(new Parser(new Tokenizer(expression).tokenize()).parse(), found);
     expect(found, expression).toEqual([]);
   }
@@ -278,8 +292,8 @@ test("refused() names a browser global even where this runtime has none", () => 
 
 test("every rendered Alpine expression is one the CSP build can run", async () => {
   const seen = new Map<string, string>();
-  const framed: string[] = [];
-  for (const path of screens)
+  const framed: Array<string> = [];
+  for (const path of screens) {
     await new HTMLRewriter()
       .on("*", {
         element(element) {
@@ -293,18 +307,21 @@ test("every rendered Alpine expression is one the CSP build can run", async () =
       })
       .transform(await get(f, path, cookie))
       .text();
+  }
   expect(framed).toEqual([]);
   expect(seen.size).toBeGreaterThan(900);
 
-  const failures: string[] = [];
+  const failures: Array<string> = [];
   for (const [key, path] of seen) {
     const [name, value] = key.split("\0") as [string, string];
     const expression = name === "x-for" ? value.replace(/^.*?\s(?:in|of)\s/, "") : value;
     try {
       generateRuntimeFunction(expression);
-      const found: string[] = [];
+      const found: Array<string> = [];
       refused(new Parser(new Tokenizer(expression).tokenize()).parse(), found);
-      for (const reason of found) failures.push(`${path} ${name}="${value}": ${reason}`);
+      for (const reason of found) {
+        failures.push(`${path} ${name}="${value}": ${reason}`);
+      }
     } catch (error) {
       failures.push(`${path} ${name}="${value}": ${(error as Error).message}`);
     }

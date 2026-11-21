@@ -14,8 +14,8 @@ export async function runSubscribersContract(target: {
   credentials: Credentials;
 }) {
   const suffix = crypto.randomUUID();
-  const subscribers: number[] = [];
-  const lists: number[] = [];
+  const subscribers: Array<number> = [];
+  const lists: Array<number> = [];
   let cleanupFailed = false;
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", body?: unknown, authorization = auth) =>
@@ -28,7 +28,9 @@ export async function runSubscribersContract(target: {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   function check(condition: unknown, label: string): asserts condition {
-    if (!condition) throw new Error(`FAIL ${label}`);
+    if (!condition) {
+      throw new Error(`FAIL ${label}`);
+    }
   }
   async function createList(name: string) {
     const response = await request("/api/lists", "POST", { name, optin: "single" });
@@ -40,7 +42,9 @@ export async function runSubscribersContract(target: {
   async function create(body: Record<string, unknown>) {
     const response = await request("/api/subscribers", "POST", body);
     const data = (await response.json()).data;
-    if (response.status === 200 && typeof data?.id === "number") subscribers.push(data.id);
+    if (response.status === 200 && typeof data?.id === "number") {
+      subscribers.push(data.id);
+    }
     check(response.status === 200 && typeof data?.id === "number", "subscriber-create");
     return data;
   }
@@ -108,8 +112,9 @@ export async function runSubscribersContract(target: {
         body,
       });
       const value = await response.json();
-      if (response.status === 200 && typeof value.data?.id === "number")
+      if (response.status === 200 && typeof value.data?.id === "number") {
         subscribers.push(value.data.id);
+      }
       return { response, value };
     }
     for (const [local, domain, accepted] of [
@@ -406,7 +411,7 @@ export async function runSubscribersContract(target: {
       (
         await request("/api/subscribers/lists", "PUT", {
           ids: [semantics.id],
-          target_list_ids: [2147483647],
+          target_list_ids: [2_147_483_647],
           action: "add",
         })
       ).status === 500,
@@ -551,23 +556,31 @@ export async function runSubscribersContract(target: {
       check(counts.subscriber_count === 0, "subscriber-production-count-after-delete");
     }
   } finally {
-    for (const id of subscribers.reverse())
+    for (const id of subscribers.reverse()) {
       if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
-    for (const id of lists.reverse())
+    }
+    for (const id of lists.reverse()) {
       if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+    }
   }
-  if (cleanupFailed) throw new Error("FAIL subscriber-cleanup");
+  if (cleanupFailed) {
+    throw new Error("FAIL subscriber-cleanup");
+  }
 }
 
 if (import.meta.main) {
   try {
-    if (process.argv[2] !== "reference") throw new Error("Invalid mode");
+    if (process.argv[2] !== "reference") {
+      throw new Error("Invalid mode");
+    }
     const {
       REFERENCE_URL: baseUrl,
       REFERENCE_API_USER: user,
       REFERENCE_API_TOKEN: token,
     } = process.env;
-    if (!baseUrl || !user || !token) throw new Error("Missing reference credentials");
+    if (!baseUrl || !user || !token) {
+      throw new Error("Missing reference credentials");
+    }
     await runSubscribersContract({ mode: "reference", baseUrl, credentials: { user, token } });
     await runSubscriberScope({ mode: "reference", baseUrl, credentials: { user, token } });
     await runSubscriberQuery({ mode: "reference", baseUrl, credentials: { user, token } });

@@ -96,8 +96,9 @@ for (const [mode, bypassCSP] of [
       test(group, async ({ page }) => {
         const outside = [];
         page.on("request", (request) => {
-          if (/^https?:/.test(request.url()) && !request.url().startsWith(ORIGIN))
+          if (/^https?:/.test(request.url()) && !request.url().startsWith(ORIGIN)) {
             outside.push(request.url());
+          }
         });
         await signIn(page);
         const c = await campaign(page);
@@ -132,8 +133,9 @@ test.describe("what the editor keeps from a hostile body", () => {
     );
     await open(page, c.id);
     const notice = page.getByTestId("editor-removed");
-    for (const name of ["title", "style", "meta", "base", "script"])
+    for (const name of ["title", "style", "meta", "base", "script"]) {
       await expect(notice).toContainText(name);
+    }
   });
 
   test("a body holding the confirm template's id leaves the dialog working", async ({ page }) => {
@@ -169,8 +171,15 @@ test.describe("foreign content and undo", () => {
     await page.keyboard.type("line");
     await page.keyboard.press("Control+a");
     await page.keyboard.press("Control+b");
-    for (const key of ["Control+z", "Control+z", "Control+z", "Control+Shift+z", "Control+Shift+z"])
+    for (const key of [
+      "Control+z",
+      "Control+z",
+      "Control+z",
+      "Control+Shift+z",
+      "Control+Shift+z",
+    ]) {
       await page.keyboard.press(key);
+    }
     const bad = await page.evaluate(`(${audit})(document.querySelector("[data-rte-content]"))`);
     expect(bad).toEqual([]);
     await expect(editor).toContainText("cell");
@@ -365,10 +374,11 @@ test.describe("remote images load on request", () => {
     const probe = await context.newPage();
     for (const [i, original] of cells.entries()) {
       const got = await page.evaluate(`(${styleOf})(${JSON.stringify(stored)}, ${i})`);
-      expect(got.replace(/\s+/g, " ")).toBe(original);
+      expect(got.replaceAll(/\s+/g, " ")).toBe(original);
       const computed = (style) =>
         probe.evaluate((css) => {
-          const el = document.body.appendChild(document.createElement("div"));
+          const el = document.createElement("div");
+          document.body.append(el);
           el.setAttribute("style", css);
           const s = getComputedStyle(el);
           return [
@@ -403,7 +413,7 @@ test.describe("remote images load on request", () => {
     expect(stored).not.toContain("data-rte-");
   });
 
-  const storedStyle = (stored) => /<p[^>]*style="([^"]*)"/.exec(stored)[1].replace(/\s+/g, " ");
+  const storedStyle = (stored) => /<p[^>]*style="([^"]*)"/.exec(stored)[1].replaceAll(/\s+/g, " ");
 
   test("repeated identical declarations in a held block keep their order (B12)", async ({
     page,
@@ -436,7 +446,7 @@ test.describe("remote images load on request", () => {
     expect(got).toContain(`url('${remote}/cm.gif')`);
     expect(got).toMatch(/text-align: center/);
     expect(got.indexOf("color: red")).toBeLessThan(got.indexOf("background-image"));
-    expect(got.replace(/\/\*.*?\*\//g, "")).not.toMatch(/\/\*|\*\/|[a-z-]+; [a-z]+ \*\//);
+    expect(got.replaceAll(/\/\*.*?\*\//g, "")).not.toMatch(/\/\*|\*\/|[a-z-]+; [a-z]+ \*\//);
   });
 
   test("a shorthand the editor rewrites stays before a later held declaration (B12)", async ({
@@ -520,7 +530,9 @@ test.describe("remote images load on request", () => {
       const c = await campaign(page, body);
       await open(page, c.id);
       await page.locator(`${EDITOR} p`).first().click();
-      for (const key of ["Control+a", "Control+x", "Control+v"]) await page.keyboard.press(key);
+      for (const key of ["Control+a", "Control+x", "Control+v"]) {
+        await page.keyboard.press(key);
+      }
       await expect(page.getByTestId("editor-held")).toBeVisible();
       const stored = await saved(page, c.id);
       expect(stored).toContain(`url('${remote}/moved-bg.gif')`);
@@ -584,7 +596,9 @@ test.describe("remote images load on request", () => {
       const c = await campaign(page, body);
       await open(page, c.id);
       await page.locator(`${EDITOR} p`).first().click();
-      for (const key of ["Control+a", "Control+x"]) await page.keyboard.press(key);
+      for (const key of ["Control+a", "Control+x"]) {
+        await page.keyboard.press(key);
+      }
       await expect(page.locator(`${EDITOR} img`)).toHaveCount(0);
       await page.keyboard.press("Control+v");
       await expect(page.locator(`${EDITOR} img`)).toHaveCount(1);
@@ -688,7 +702,9 @@ test.describe("remote images load on request", () => {
     // One click selects an image for Squire's resizer; a drag on the corner handle resizes it.
     const dragCorner = async (page) => {
       const handle = page.locator(".squire-resize-handle-se");
-      if (!(await handle.count())) return false;
+      if (!(await handle.count())) {
+        return false;
+      }
       const box = await handle.boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
@@ -714,7 +730,7 @@ test.describe("remote images load on request", () => {
     for (const [label, stored] of [
       ["with a stored size", `<img src="REMOTE/sized.gif" alt="b" width="600" height="400">`],
       ["with no stored size", `<img src="REMOTE/plain.gif" alt="b">`],
-    ])
+    ]) {
       test(`are not offered on a held image ${label}, and a drag changes nothing`, async ({
         page,
       }) => {
@@ -727,6 +743,7 @@ test.describe("remote images load on request", () => {
         }
         expect(dragged).toBe(false);
       });
+    }
 
     test("a click on a held image releases an image selected before", async ({ page }) => {
       await signIn(page);
@@ -760,7 +777,9 @@ test.describe("remote images load on request", () => {
       await open(page, c.id);
       const typedAfter = async (key) => {
         await page.locator(`${EDITOR} img`).click();
-        if (key) await page.keyboard.press(key);
+        if (key) {
+          await page.keyboard.press(key);
+        }
         await page.keyboard.type("X");
         const save = page.waitForResponse((r) => r.request().method() === "PUT");
         await page.keyboard.press("Control+s");
@@ -783,7 +802,7 @@ test.describe("remote images load on request", () => {
     for (const [label, before] of [
       ["alone in it", ""],
       ["last in it", "Get "],
-    ])
+    ]) {
       test(`a click on a held image ${label} in a link types outside the link (B14)`, async ({
         page,
       }) => {
@@ -798,6 +817,7 @@ test.describe("remote images load on request", () => {
         const body = await saveBody(page, c.id);
         expect(body).toMatch(/<img[^>]*alt="banner"[^>]*><\/a>X(&nbsp;| )tail/);
       });
+    }
 
     test("Backspace after a click on a held image with text after it in a link removes only the image (B14)", async ({
       page,
@@ -896,7 +916,7 @@ test.describe("remote images load on request", () => {
         (src) =>
           `<p>first</p><p>Click<a href="https://example.com/x"> <img src="${src}" alt="arrow"></a></p>`,
       ],
-    ])
+    ]) {
       test(`a click on a held image keeps a visible space ${label} (B15)`, async ({ page }) => {
         await signIn(page);
         const c = await campaign(page, html(`${remote}/arrow.gif`));
@@ -908,6 +928,7 @@ test.describe("remote images load on request", () => {
         const body = await saveBody(page, c.id);
         expect(body).toMatch(/(<\/b>|<a [^>]*>)(&nbsp;| )<img/);
       });
+    }
 
     test("a click on a linked banner keeps the space before text after the link (B16)", async ({
       page,
@@ -946,7 +967,7 @@ test.describe("remote images load on request", () => {
         `<p><a href="https://example.com/x" style="white-space: pre"><img src="IMG" alt="banner"> </a> tail</p>`,
         /<img[^>]*alt="banner"[^>]*>(&nbsp;| )<\/a>(&nbsp;| )tail/,
       ],
-    ])
+    ]) {
       test(`a click on a linked banner keeps ${label} (B16)`, async ({ page }) => {
         await signIn(page);
         const c = await campaign(page, `<p>one</p>${html.replace("IMG", `${remote}/ws2.gif`)}`);
@@ -957,6 +978,7 @@ test.describe("remote images load on request", () => {
         await page.keyboard.type("Z");
         expect(await saveBody(page, c.id)).toMatch(expected);
       });
+    }
 
     test("a banner alone in a table cell keeps its br after typing (B16)", async ({ page }) => {
       await signIn(page);
@@ -1002,7 +1024,9 @@ test.describe("remote images load on request", () => {
       release = resolve;
     });
     await page.route(`**/api/campaigns/${c.id}`, async (route) => {
-      if (route.request().method() === "PUT") await held;
+      if (route.request().method() === "PUT") {
+        await held;
+      }
       await route.continue();
     });
     const subject = page.locator('input[name="subject"]');
@@ -1037,7 +1061,9 @@ test.describe("remote images load on request", () => {
       release = resolve;
     });
     await page.route(`**/api/campaigns/${c.id}`, async (route) => {
-      if (route.request().method() === "PUT") await held;
+      if (route.request().method() === "PUT") {
+        await held;
+      }
       await route.continue();
     });
     const slug = page.locator('input[name="archive_slug"]');

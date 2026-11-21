@@ -19,7 +19,9 @@ if (process.env.BATCH_CRASH_MODE === "seed") {
       .get()!.n;
   const deadline = Date.now() + 30_000;
   while (queued() < count) {
-    if (Date.now() > deadline) throw new Error("seed: sends were not queued");
+    if (Date.now() > deadline) {
+      throw new Error("seed: sends were not queued");
+    }
     await Bun.sleep(20);
   }
   await live.close();

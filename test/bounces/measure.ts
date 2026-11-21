@@ -14,7 +14,7 @@ const base = join(repository, "upstream/measurements");
 mkdirSync(base, { recursive: true });
 process.env.TMPDIR = base;
 
-const stats = (values: number[]) => {
+const stats = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
   return {
@@ -31,7 +31,9 @@ const receiver = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
   fetch(request) {
-    if (request.method === "POST") received++;
+    if (request.method === "POST") {
+      received++;
+    }
     return new Response("ok");
   },
 });
@@ -50,7 +52,9 @@ try {
           body: JSON.stringify(body),
         });
         const text = await response.text();
-        if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${text}`);
+        if (!response.ok) {
+          throw new Error(`${method} ${path}: ${response.status} ${text}`);
+        }
         return JSON.parse(text);
       };
       const settings = (await (
@@ -64,11 +68,12 @@ try {
       await api("/api/settings/bounce.enabled", "PUT", true);
       // The receiver is on loopback, which the default refuses (D122).
       await api("/api/settings/webhooks.block_private_addresses", "PUT", false);
-      for (let i = 0; i < hooks; i++)
+      for (let i = 0; i < hooks; i++) {
         await api("/api/webhooks", "POST", {
           url: `http://127.0.0.1:${receiver.port}/h/${i}`,
           events: ["bounce.recorded", "subscriber.blocklisted", "subscriber.deleted"],
         });
+      }
       const list = (
         await api("/api/lists", "POST", { name: "measure", type: "public", optin: "single" })
       ).data.id as number;
@@ -84,7 +89,9 @@ try {
           }),
         });
         await response.text();
-        if (response.status !== 200) throw new Error(`ingest: ${response.status}`);
+        if (response.status !== 200) {
+          throw new Error(`ingest: ${response.status}`);
+        }
         return performance.now() - started;
       };
       const results: Record<string, ReturnType<typeof stats>> = {};
@@ -100,21 +107,23 @@ try {
           hard: { count, action },
           complaint: { count: 1, action: "blocklist" },
         });
-        const emails: string[] = [];
+        const emails: Array<string> = [];
         for (let i = 0; i < N; i++) {
           const email = `${action}${count}-${i}@example.test`;
           await api("/api/subscribers", "POST", { email, name: `M ${i}`, lists: [list] });
           emails.push(email);
         }
-        const times: number[] = [];
-        for (const [i, email] of emails.entries())
+        const times: Array<number> = [];
+        for (const [i, email] of emails.entries()) {
           times.push(await ingest(email, `${name.replace(" ", "")}${i}`));
+        }
         results[name] = stats(times);
       }
       const drainStart = performance.now();
       const expected = hooks * N * 6;
-      while (hooks && received < expected && performance.now() - drainStart < 120_000)
+      while (hooks && received < expected && performance.now() - drainStart < 120_000) {
         await Bun.sleep(25);
+      }
       return {
         bun: Bun.version,
         hooks,

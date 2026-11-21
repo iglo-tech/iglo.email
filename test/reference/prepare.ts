@@ -37,7 +37,9 @@ const platforms = {
 // The single platform table: prepare() and mailpitBinaryPath() both read it.
 function platformFor(key: string) {
   const platform = platforms[key as keyof typeof platforms];
-  if (!platform) throw new Error(`Unsupported platform ${key}; supported: Linux x64/arm64`);
+  if (!platform) {
+    throw new Error(`Unsupported platform ${key}; supported: Linux x64/arm64`);
+  }
   return platform;
 }
 
@@ -65,17 +67,21 @@ async function exists(path: string): Promise<boolean> {
     await lstat(path);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
     throw error;
   }
 }
 
 async function regularFile(path: string): Promise<Uint8Array> {
-  if (!(await lstat(path)).isFile()) throw new Error(`Cache entry is not a regular file: ${path}`);
+  if (!(await lstat(path)).isFile()) {
+    throw new Error(`Cache entry is not a regular file: ${path}`);
+  }
   return readFile(path);
 }
 
-async function git(args: string[], cwd: string, signal?: AbortSignal): Promise<string> {
+async function git(args: Array<string>, cwd: string, signal?: AbortSignal): Promise<string> {
   const result = await command(["git", "-c", "core.hooksPath=/dev/null", ...args], {
     cwd,
     timeout: 120_000,
@@ -88,17 +94,21 @@ async function git(args: string[], cwd: string, signal?: AbortSignal): Promise<s
     },
     ...(signal ? { signal } : {}),
   });
-  if (result.code !== 0) throw new Error(`Git ${args[0]} failed: ${result.stderr.trim()}`);
+  if (result.code !== 0) {
+    throw new Error(`Git ${args[0]} failed: ${result.stderr.trim()}`);
+  }
   return result.stdout.trim();
 }
 
 async function verifySource(signal?: AbortSignal) {
-  if (!(await lstat(source)).isDirectory())
+  if (!(await lstat(source)).isDirectory()) {
     throw new Error(`Source cache is not a directory: ${source}`);
+  }
   const head = await git(["rev-parse", "HEAD"], source, signal);
   const changes = await git(["status", "--porcelain", "--untracked-files=all"], source, signal);
-  if (head !== sourceCommit || changes)
+  if (head !== sourceCommit || changes) {
     throw new Error(`Source cache is not clean at ${sourceCommit}: ${source}`);
+  }
 }
 
 async function prepareSource(signal?: AbortSignal) {
@@ -121,14 +131,16 @@ async function prepareSource(signal?: AbortSignal) {
       );
       await git(["checkout", "--quiet", "--detach", "FETCH_HEAD"], temp, signal);
       const head = await git(["rev-parse", "HEAD"], temp, signal);
-      if (head !== sourceCommit) throw new Error("Fetched listmonk source has the wrong commit");
+      if (head !== sourceCommit) {
+        throw new Error("Fetched listmonk source has the wrong commit");
+      }
       // Reserve the destination exclusively. Rename can then only replace the
       // empty directory we just created, never an existing checkout.
       try {
         await mkdir(source);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST")
-          throw new Error(`Source cache appeared during preparation: ${source}`);
+          throw new Error(`Source cache appeared during preparation: ${source}`, { cause: error });
         throw error;
       }
       try {
@@ -157,20 +169,25 @@ async function prepareArchive(
         ? AbortSignal.any([signal, AbortSignal.timeout(120_000)])
         : AbortSignal.timeout(120_000),
     });
-    if (!response.ok)
+    if (!response.ok) {
       throw new Error(`Download failed for ${archiveName}: HTTP ${response.status}`);
+    }
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (hash(bytes) !== expected)
+    if (hash(bytes) !== expected) {
       throw new Error(`Downloaded archive checksum mismatch: ${archiveName}`);
+    }
     try {
       await writeFile(archivePath, bytes, { flag: "wx", mode: 0o600 });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
     }
   }
   const archive = await regularFile(archivePath);
-  if (hash(archive) !== expected)
+  if (hash(archive) !== expected) {
     throw new Error(`Cached archive checksum mismatch: ${archivePath}`);
+  }
   return { path: archivePath, bytes: archive };
 }
 
@@ -184,16 +201,21 @@ async function prepareBinary(
   const { bytes: archive } = await prepareArchive(archiveName, url, expected, signal);
   const files = await new Bun.Archive(archive).files();
   const entries = [...files.entries()].filter(([path]) => path === name || path === `./${name}`);
-  if (entries.length !== 1) throw new Error(`Expected one ${name} executable in ${archiveName}`);
+  if (entries.length !== 1) {
+    throw new Error(`Expected one ${name} executable in ${archiveName}`);
+  }
   const executable = new Uint8Array(await entries[0]![1].arrayBuffer());
   const binaryPath = executablePath(archiveName, name);
   try {
     await writeFile(binaryPath, executable, { flag: "wx", mode: 0o755 });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw error;
+    }
   }
-  if (hash(await regularFile(binaryPath)) !== hash(executable))
+  if (hash(await regularFile(binaryPath)) !== hash(executable)) {
     throw new Error(`Cached executable differs from verified archive: ${binaryPath}`);
+  }
   await chmod(binaryPath, 0o755);
   return binaryPath;
 }
@@ -234,8 +256,9 @@ export async function prepare(signal?: AbortSignal) {
       ...(signal ? { signal } : {}),
     });
     const version = `${result.stdout} ${result.stderr}`.trim();
-    if (result.code !== 0 || !version.includes(expectedVersion))
+    if (result.code !== 0 || !version.includes(expectedVersion)) {
       throw new Error(`Unexpected ${binary} version: ${version}`);
+    }
     console.log(`${binary === listmonk ? "listmonk" : "Mailpit"}: ${version}`);
   }
   console.log(`listmonk source: ${sourceCommit}`);

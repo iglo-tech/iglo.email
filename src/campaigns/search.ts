@@ -7,24 +7,36 @@
 function simpleLower(char: string): string {
   const lower = char.toLowerCase();
   const points = [...lower];
-  if (points.length === 1) return lower;
+  if (points.length === 1) {
+    return lower;
+  }
   // Full case mapping adds combining marks (İ → i̇); the simple mapping keeps the base letter.
-  if (points.slice(1).every((point) => /\p{M}/u.test(point))) return points[0]!;
+  if (points.slice(1).every((point) => /\p{M}/u.test(point))) {
+    return points[0]!;
+  }
   return char;
 }
 
-let classes: Map<string, string[]> | undefined;
+let classes: Map<string, Array<string>> | undefined;
 /** Every character grouped by its simple lowercase form. Built once on first non-ASCII use. */
-function lowerClasses(): Map<string, string[]> {
-  if (classes) return classes;
+function lowerClasses(): Map<string, Array<string>> {
+  if (classes) {
+    return classes;
+  }
   classes = new Map();
-  for (let code = 0; code <= 0x1ffff; code++) {
-    if (code >= 0xd800 && code <= 0xdfff) continue;
+  for (let code = 0; code <= 0x1_ff_ff; code++) {
+    if (code >= 0xd8_00 && code <= 0xdf_ff) {
+      continue;
+    }
     const char = String.fromCodePoint(code);
     const key = simpleLower(char);
-    if (key === char && char.toUpperCase() === char) continue;
+    if (key === char && char.toUpperCase() === char) {
+      continue;
+    }
     const members = classes.get(key) ?? [key];
-    if (!members.includes(char)) members.push(char);
+    if (!members.includes(char)) {
+      members.push(char);
+    }
     classes.set(key, members);
   }
   return classes;
@@ -35,8 +47,11 @@ export function lowercaseGlob(search: string): string {
   let pattern = "*";
   for (const char of search) {
     const members = lowerClasses().get(simpleLower(char)) ?? [char];
-    if (members.length > 1) pattern += `[${members.join("")}]`;
-    else pattern += "*?[".includes(char) ? `[${char}]` : char;
+    if (members.length > 1) {
+      pattern += `[${members.join("")}]`;
+    } else {
+      pattern += "*?[".includes(char) ? `[${char}]` : char;
+    }
   }
   return `${pattern}*`;
 }
